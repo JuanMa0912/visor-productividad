@@ -20,6 +20,8 @@ type AlexReportRow = {
   sede: string;
   moreThan72With2: number;
   moreThan92: number;
+  oddMarks: number;
+  absences: number;
 };
 
 type AlexReportResponse = {
@@ -28,6 +30,8 @@ type AlexReportResponse = {
   totals?: {
     moreThan72With2: number;
     moreThan92: number;
+    oddMarks: number;
+    absences: number;
   };
   error?: string;
 };
@@ -74,7 +78,12 @@ export default function JornadaExtendidaPage() {
   const [alexStartDate, setAlexStartDate] = useState("");
   const [alexEndDate, setAlexEndDate] = useState("");
   const [alexRows, setAlexRows] = useState<AlexReportRow[]>([]);
-  const [alexTotals, setAlexTotals] = useState({ moreThan72With2: 0, moreThan92: 0 });
+  const [alexTotals, setAlexTotals] = useState({
+    moreThan72With2: 0,
+    moreThan92: 0,
+    oddMarks: 0,
+    absences: 0,
+  });
   const [alexLoading, setAlexLoading] = useState(false);
   const [alexError, setAlexError] = useState<string | null>(null);
   const [exportingAlexPng, setExportingAlexPng] = useState(false);
@@ -180,22 +189,37 @@ export default function JornadaExtendidaPage() {
     if (alexRows.length === 0) return;
     setExportingAlexPng(true);
     try {
-      const headers = ["Sede", "Mas de 7:20h con 2 marcaciones", "Mas de 9:20h"];
+      const headers = [
+        "Sede",
+        "Mas de 7:20h con 2 marcaciones",
+        "Mas de 9:20h",
+        "Marcaciones impares",
+        "Inasistencias",
+      ];
       const rows = alexRows.map((row) => [
         row.sede,
         row.moreThan72With2 === 0 ? "-" : String(row.moreThan72With2),
         row.moreThan92 === 0 ? "-" : String(row.moreThan92),
+        row.oddMarks === 0 ? "-" : String(row.oddMarks),
+        row.absences === 0 ? "-" : String(row.absences),
       ]);
-      rows.push(["TOTAL", String(alexTotals.moreThan72With2), String(alexTotals.moreThan92)]);
+      rows.push([
+        "TOTAL",
+        String(alexTotals.moreThan72With2),
+        String(alexTotals.moreThan92),
+        String(alexTotals.oddMarks),
+        String(alexTotals.absences),
+      ]);
 
-      const colWidths = [260, 330, 220];
+      const colWidths = [220, 280, 180, 220, 160];
       const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
       const rowHeight = 34;
       const headerHeight = 40;
       const paddingX = 24;
       const paddingY = 24;
       const title = "Reporte Alex";
-      const subtitle = "Laboraron mas de 7:20h con 2 marcaciones y mas de 9:20h";
+      const subtitle =
+        "Laboraron mas de 7:20h con 2 marcaciones, mas de 9:20h, marcaciones impares e inasistencias";
       const range = alexRangeLabel || `${alexStartDate} a ${alexEndDate}`;
       const maxTextWidth = tableWidth - 16;
       const measureCanvas = document.createElement("canvas");
@@ -348,6 +372,8 @@ export default function JornadaExtendidaPage() {
           payload.totals ?? {
             moreThan72With2: 0,
             moreThan92: 0,
+            oddMarks: 0,
+            absences: 0,
           },
         );
       } catch (err) {
@@ -424,47 +450,49 @@ export default function JornadaExtendidaPage() {
           <>
             {canSeeAlexReport && (
               <div className="mb-5 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div className="max-w-3xl">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-500">
                       Reporte Alex
                     </p>
-                    <h2 className="mt-1 text-lg font-bold text-slate-900">
-                      Laboraron mas de 7:20h con 2 marcaciones y mas de 9:20h
+                    <h2 className="mt-1 text-lg font-bold leading-tight text-slate-900 sm:text-[1.6rem]">
+                      Laboraron mas de 7:20h con 2 marcaciones, mas de 9:20h, marcaciones impares e inasistencias
                     </h2>
                     {alexRangeLabel && (
                       <p className="mt-1 text-base font-bold text-red-700">{alexRangeLabel}</p>
                     )}
                   </div>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                      Fecha inicio
-                      <input
-                        type="date"
-                        value={alexStartDate}
+                  <div className="w-full xl:max-w-2xl">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        Fecha inicio
+                        <input
+                          type="date"
+                          value={alexStartDate}
                         onChange={(e) => setAlexStartDate(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
                         min={availableDates[0]}
                         max={availableDates[availableDates.length - 1]}
-                      />
-                    </label>
-                    <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                      Fecha fin
-                      <input
-                        type="date"
-                        value={alexEndDate}
+                        />
+                      </label>
+                      <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        Fecha fin
+                        <input
+                          type="date"
+                          value={alexEndDate}
                         onChange={(e) => setAlexEndDate(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
                         min={availableDates[0]}
                         max={availableDates[availableDates.length - 1]}
-                      />
-                    </label>
-                    <div className="md:col-span-2 md:flex md:justify-end">
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex justify-start sm:justify-end">
                       <button
                         type="button"
                         onClick={() => void handleExportAlexTablePng()}
                         disabled={alexLoading || alexRows.length === 0 || exportingAlexPng}
-                        className="inline-flex items-center rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                       >
                         {exportingAlexPng ? "Generando PNG..." : "PNG tabla"}
                       </button>
@@ -485,7 +513,7 @@ export default function JornadaExtendidaPage() {
                   <p className="mt-3 text-sm text-slate-600">Cargando reporte Alex...</p>
                 ) : (
                   <div className="mt-3 overflow-auto rounded-xl border border-slate-200">
-                    <table className="min-w-[520px] w-full text-sm">
+                    <table className="min-w-[820px] w-full text-sm">
                       <thead className="bg-slate-100 text-slate-800">
                         <tr>
                           <th className="border-b border-slate-200 px-3 py-2 text-left font-bold">
@@ -496,6 +524,12 @@ export default function JornadaExtendidaPage() {
                           </th>
                           <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">
                             Más de 9:20h
+                          </th>
+                          <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">
+                            Marcaciones impares
+                          </th>
+                          <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">
+                            Inasistencias
                           </th>
                         </tr>
                       </thead>
@@ -509,12 +543,20 @@ export default function JornadaExtendidaPage() {
                             <td className="px-3 py-2 text-right text-slate-800">
                               {row.moreThan92 === 0 ? "-" : row.moreThan92}
                             </td>
+                            <td className="px-3 py-2 text-right text-slate-800">
+                              {row.oddMarks === 0 ? "-" : row.oddMarks}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-800">
+                              {row.absences === 0 ? "-" : row.absences}
+                            </td>
                           </tr>
                         ))}
                         <tr className="bg-slate-50 font-bold text-slate-900">
                           <td className="px-3 py-2">TOTAL</td>
                           <td className="px-3 py-2 text-right">{alexTotals.moreThan72With2}</td>
                           <td className="px-3 py-2 text-right">{alexTotals.moreThan92}</td>
+                          <td className="px-3 py-2 text-right">{alexTotals.oddMarks}</td>
+                          <td className="px-3 py-2 text-right">{alexTotals.absences}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -544,9 +586,6 @@ export default function JornadaExtendidaPage() {
     </div>
   );
 }
-
-
-
 
 
 

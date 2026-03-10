@@ -325,6 +325,17 @@ const parseHoursValue = (value: string | number): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const normalizeIncidentValue = (value: string | null | undefined) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, " ");
+
+const isAbsenceIncident = (value: string | null | undefined) =>
+  normalizeIncidentValue(value).includes("inasistencia");
+
 const buildNormalizeSedeSql = (columnName: string) => `
   REGEXP_REPLACE(
     LOWER(
@@ -562,7 +573,7 @@ const fetchHourlyData = async (
     const presenceByHourByLine = new Map<number, Map<string, number>>();
 
     let attendanceDateUsed: string | null = null;
-    let overtimeEmployees: OvertimeEmployee[] = [];
+    const overtimeEmployees: OvertimeEmployee[] = [];
 
     try {
       const selectedAttendanceNames = Array.from(
@@ -866,7 +877,9 @@ const fetchHourlyData = async (
             const employeeName =
               employeeNameRaw || employeeId || "Empleado sin nombre";
             const workedHours = parseHoursValue(typedRow.total_hours);
-            if (workedHours <= 0) {
+            const incident = typedRow.incidencia?.trim() || undefined;
+            const isAbsence = isAbsenceIncident(incident);
+            if (workedHours <= 0 && !isAbsence) {
               continue;
             }
             const role = typedRow.cargo?.trim() || undefined;
@@ -891,13 +904,14 @@ const fetchHourlyData = async (
               employeeId,
               employeeName,
               workedHours,
+              isAbsence,
               lineName: lineId ? lineNameById.get(lineId) ?? lineId : undefined,
               sede: typedRow.sede?.trim() || undefined,
               department: typedRow.departamento?.trim() || undefined,
               marksCount: Number(typedRow.marks_count ?? 0),
               role,
               employeeType,
-              incident: typedRow.incidencia?.trim() || undefined,
+              incident,
               markIn: typedRow.hora_entrada?.trim() || undefined,
               markBreak1: typedRow.hora_intermedia1?.trim() || undefined,
               markBreak2: typedRow.hora_intermedia2?.trim() || undefined,

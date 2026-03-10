@@ -42,6 +42,7 @@ export interface OvertimeEmployee {
   employeeId?: string | null;
   employeeName: string;
   workedHours: number;
+  isAbsence?: boolean;
   lineName?: string;
   sede?: string;
   department?: string;

@@ -6,6 +6,8 @@ type AlexRow = {
   sede: string;
   moreThan72With2: number;
   moreThan92: number;
+  oddMarks: number;
+  absences: number;
 };
 
 type SedeConfig = {
@@ -119,8 +121,19 @@ const parseHoursValue = (value: string | number | null | undefined): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-// "7.2h" y "9.2h" en el reporte significan 7:20 y 9:20 (base 60).
-const HOURS_7_20 = 7 + 20 / 60;
+const normalizeIncidentValue = (value: string | null | undefined) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, " ");
+
+const isAbsenceIncident = (value: string | null | undefined) =>
+  normalizeIncidentValue(value).includes("inasistencia");
+
+// Se conserva la etiqueta visible 7:20h, pero el filtro interno usa 7:29h.
+const HOURS_7_20 = 7 + 29 / 60;
 const HOURS_9_20 = 9 + 20 / 60;
 
 export async function GET(request: Request) {
@@ -217,7 +230,7 @@ export async function GET(request: Request) {
             {
               usedRange: null,
               rows: [],
-              totals: { moreThan72With2: 0, moreThan92: 0 },
+              totals: { moreThan72With2: 0, moreThan92: 0, oddMarks: 0, absences: 0 },
             },
           ),
         );
@@ -273,6 +286,7 @@ export async function GET(request: Request) {
           NULLIF(TRIM(CAST(sede AS text)), '') AS raw_sede,
           fecha::date AS worked_date,
           COALESCE(total_laborado_horas, 0) AS total_laborado_horas,
+          NULLIF(TRIM(CAST(incidencia AS text)), '') AS incidencia,
           (
             (CASE WHEN hora_entrada IS NOT NULL THEN 1 ELSE 0 END) +
             (CASE WHEN hora_intermedia1 IS NOT NULL THEN 1 ELSE 0 END) +
@@ -301,21 +315,26 @@ export async function GET(request: Request) {
           worked_date,
           employee_key,
           COALESCE(SUM(total_laborado_horas), 0) AS total_hours,
-          MAX(marks_count_row)::int AS marks_count
+          MAX(marks_count_row)::int AS marks_count,
+          MAX(incidencia) AS incidencia
         FROM raw
         GROUP BY raw_sede, worked_date, employee_key
       )
       SELECT
         raw_sede,
         total_hours,
-        marks_count
+        marks_count,
+        incidencia
       FROM base
       `,
       [startDate, endDate],
     );
-    const counters = new Map<string, { moreThan72With2: number; moreThan92: number }>();
+    const counters = new Map<
+      string,
+      { moreThan72With2: number; moreThan92: number; oddMarks: number; absences: number }
+    >();
     REPORT_SEDES.forEach((sede) => {
-      counters.set(sede, { moreThan72With2: 0, moreThan92: 0 });
+      counters.set(sede, { moreThan72With2: 0, moreThan92: 0, oddMarks: 0, absences: 0 });
     });
 
     for (const row of result.rows ?? []) {
@@ -323,11 +342,13 @@ export async function GET(request: Request) {
         raw_sede: string | null;
         total_hours: number | string | null;
         marks_count: number | null;
+        incidencia: string | null;
       };
       const sedeMapped = mapSedeToCanonical(typed.raw_sede ?? "");
       if (!sedeMapped || !counters.has(sedeMapped)) continue;
       const totalHours = parseHoursValue(typed.total_hours);
       const marksCount = Number(typed.marks_count ?? 0);
+      const incident = typed.incidencia;
       const current = counters.get(sedeMapped)!;
 
       if (totalHours > HOURS_7_20 && totalHours <= HOURS_9_20 && marksCount === 2) {
@@ -336,20 +357,30 @@ export async function GET(request: Request) {
       if (totalHours > HOURS_9_20) {
         current.moreThan92 += 1;
       }
+      if (marksCount > 0 && marksCount % 2 !== 0) {
+        current.oddMarks += 1;
+      }
+      if (isAbsenceIncident(incident)) {
+        current.absences += 1;
+      }
     }
 
     const rows: AlexRow[] = REPORT_SEDES.map((sede) => ({
       sede,
       moreThan72With2: counters.get(sede)?.moreThan72With2 ?? 0,
       moreThan92: counters.get(sede)?.moreThan92 ?? 0,
+      oddMarks: counters.get(sede)?.oddMarks ?? 0,
+      absences: counters.get(sede)?.absences ?? 0,
     }));
 
     const totals = rows.reduce(
       (acc, row) => ({
         moreThan72With2: acc.moreThan72With2 + row.moreThan72With2,
         moreThan92: acc.moreThan92 + row.moreThan92,
+        oddMarks: acc.oddMarks + row.oddMarks,
+        absences: acc.absences + row.absences,
       }),
-      { moreThan72With2: 0, moreThan92: 0 },
+      { moreThan72With2: 0, moreThan92: 0, oddMarks: 0, absences: 0 },
     );
 
     return withSession(

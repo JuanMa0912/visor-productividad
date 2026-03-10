@@ -129,6 +129,7 @@ const OVERTIME_QUICK_RANGE_OPTIONS: Array<{
 const OVERTIME_PAGE_SIZE = 150;
 const OVERTIME_PAGE_TAB_WINDOW = 8;
 const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
+const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 29;
 
 const minuteToTime = (value: number) => {
   const safe = Math.max(0, Math.min(1439, value));
@@ -169,6 +170,17 @@ const PPT_SEDE_KEYS = new Set([
 
 const isPptSede = (sedeName: string) =>
   PPT_SEDE_KEYS.has(canonicalizeSedeValue(sedeName));
+
+const normalizeIncidentValue = (value: string | null | undefined) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, " ");
+
+const isAbsenceIncident = (value: string | null | undefined) =>
+  normalizeIncidentValue(value).includes("inasistencia");
 
 const HourlyLoadingSkeleton = () => (
   <div className="space-y-3 animate-pulse">
@@ -366,6 +378,8 @@ export const HourlyAnalysis = ({
     useState("all");
   const [overtimeMarksFilter, setOvertimeMarksFilter] = useState("all");
   const [overtimeAlertOnly, setOvertimeAlertOnly] = useState(false);
+  const [overtimeAbsenceOnly, setOvertimeAbsenceOnly] = useState(false);
+  const [overtimeOddMarksOnly, setOvertimeOddMarksOnly] = useState(false);
   const [overtimeAlertMode, setOvertimeAlertMode] = useState<"920" | "720-2marks">(
     "920",
   );
@@ -1015,6 +1029,13 @@ export const HourlyAnalysis = ({
       return { ...employee, sede: match.name };
     });
   }, [overtimeEmployees, availableSedes]);
+  const overtimeAbsenceCount = useMemo(
+    () =>
+      overtimeEmployeesResolved.filter(
+        (employee) => employee.isAbsence || isAbsenceIncident(employee.incident),
+      ).length,
+    [overtimeEmployeesResolved],
+  );
   const overtimeSedeOptions = useMemo(() => {
     const fromAvailable = availableSedes
       .map((sede) => sede.name?.trim())
@@ -1157,20 +1178,29 @@ export const HourlyAnalysis = ({
     overtimeRangeMax,
   ]);
   const filteredOvertimeEmployees = useMemo(() => {
-    const filtered = overtimeAlertOnly
-      ? baseFilteredOvertimeEmployees.filter((employee) => {
+    const filtered = overtimeAbsenceOnly
+      ? baseFilteredOvertimeEmployees.filter(
+          (employee) => employee.isAbsence || isAbsenceIncident(employee.incident),
+        )
+      : overtimeOddMarksOnly
+        ? baseFilteredOvertimeEmployees.filter((employee) => {
+            const marks = employee.marksCount ?? 0;
+            return marks > 0 && marks % 2 !== 0;
+          })
+      : overtimeAlertOnly
+        ? baseFilteredOvertimeEmployees.filter((employee) => {
           const employeeMinutes = decimalHoursToMinutes(employee.workedHours);
           if (overtimeAlertMode === "720-2marks") {
             const marks = employee.marksCount ?? 0;
             return (
-              employeeMinutes > 7 * 60 + 20 &&
+              employeeMinutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
               employeeMinutes <= ALERT_THRESHOLD_MINUTES &&
               marks === 2
             );
           }
           return employeeMinutes > ALERT_THRESHOLD_MINUTES;
-        })
-      : baseFilteredOvertimeEmployees;
+          })
+        : baseFilteredOvertimeEmployees;
     return [...filtered].sort((a, b) => {
       const hoursDiff = a.workedHours - b.workedHours;
       if (hoursDiff !== 0) {
@@ -1178,10 +1208,16 @@ export const HourlyAnalysis = ({
       }
       const aDateTs = a.workedDate ? new Date(a.workedDate).getTime() : 0;
       const bDateTs = b.workedDate ? new Date(b.workedDate).getTime() : 0;
-      return bDateTs - aDateTs;
+      const dateDiff = aDateTs - bDateTs;
+      if (dateDiff !== 0) {
+        return overtimeDateOrder === "asc" ? dateDiff : -dateDiff;
+      }
+      return a.employeeName.localeCompare(b.employeeName, "es");
     });
   }, [
     baseFilteredOvertimeEmployees,
+    overtimeAbsenceOnly,
+    overtimeOddMarksOnly,
     overtimeAlertOnly,
     overtimeAlertMode,
     overtimeDateOrder,
@@ -1191,7 +1227,11 @@ export const HourlyAnalysis = ({
       baseFilteredOvertimeEmployees.filter((employee) => {
         const minutes = decimalHoursToMinutes(employee.workedHours);
         const marks = employee.marksCount ?? 0;
-        return minutes > 7 * 60 + 20 && minutes <= ALERT_THRESHOLD_MINUTES && marks === 2;
+        return (
+          minutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
+          minutes <= ALERT_THRESHOLD_MINUTES &&
+          marks === 2
+        );
       }).length,
     [baseFilteredOvertimeEmployees],
   );
@@ -1200,6 +1240,14 @@ export const HourlyAnalysis = ({
       baseFilteredOvertimeEmployees.filter((employee) => {
         const minutes = decimalHoursToMinutes(employee.workedHours);
         return minutes > ALERT_THRESHOLD_MINUTES;
+      }).length,
+    [baseFilteredOvertimeEmployees],
+  );
+  const oddMarksCount = useMemo(
+    () =>
+      baseFilteredOvertimeEmployees.filter((employee) => {
+        const marks = employee.marksCount ?? 0;
+        return marks > 0 && marks % 2 !== 0;
       }).length,
     [baseFilteredOvertimeEmployees],
   );
@@ -1272,6 +1320,8 @@ export const HourlyAnalysis = ({
     overtimeDateOrder,
     overtimeRangeMin,
     overtimeRangeMax,
+    overtimeAbsenceOnly,
+    overtimeOddMarksOnly,
     overtimeAlertOnly,
   ]);
 
@@ -1729,6 +1779,44 @@ export const HourlyAnalysis = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setOvertimeAbsenceOnly((prev) => !prev);
+                    setOvertimeOddMarksOnly(false);
+                    setOvertimeAlertOnly(false);
+                    setOvertimeRangeMin("");
+                    setOvertimeRangeMax("");
+                    setOvertimeQuickRange("custom");
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
+                    overtimeAbsenceOnly
+                      ? "bg-amber-600 text-white shadow-sm"
+                      : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
+                  }`}
+                >
+                  {`Ver inasistencias (${overtimeAbsenceCount})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOvertimeAbsenceOnly(false);
+                    setOvertimeOddMarksOnly((prev) => !prev);
+                    setOvertimeAlertOnly(false);
+                    setOvertimeRangeMin("");
+                    setOvertimeRangeMax("");
+                    setOvertimeQuickRange("custom");
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
+                    overtimeOddMarksOnly
+                      ? "bg-amber-600 text-white shadow-sm"
+                      : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
+                  }`}
+                >
+                  {`Ver marcaciones impares (${oddMarksCount})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOvertimeAbsenceOnly(false);
+                    setOvertimeOddMarksOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
                     setOvertimeQuickRange("custom");
@@ -1748,6 +1836,8 @@ export const HourlyAnalysis = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setOvertimeAbsenceOnly(false);
+                    setOvertimeOddMarksOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
                     setOvertimeQuickRange("custom");
@@ -2231,18 +2321,22 @@ export const HourlyAnalysis = ({
                   </div>
                   {pagedOvertimeEmployees.map((employee, index) => {
                     const employeeKey = getOvertimeEmployeeKey(employee);
+                    const isAbsence =
+                      employee.isAbsence || isAbsenceIncident(employee.incident);
                     const absoluteIndex =
                       (overtimePage - 1) * OVERTIME_PAGE_SIZE + index + 1;
                     return (
                       <div
                         key={employeeKey}
                         className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr] items-start gap-1 border-b border-slate-100 px-2 py-2 text-[12px] last:border-b-0 ${
-                          (employee.marksCount ?? 0) % 2 !== 0 ||
-                          (employee.incident ?? "")
-                            .toLowerCase()
-                            .includes("no marco")
-                            ? "bg-amber-50/70"
-                            : ""
+                          isAbsence
+                            ? "bg-red-50/80"
+                            : (employee.marksCount ?? 0) % 2 !== 0 ||
+                                (employee.incident ?? "")
+                                  .toLowerCase()
+                                  .includes("no marco")
+                              ? "bg-amber-50/70"
+                              : ""
                         }`}
                       >
                         <span className="text-center text-xs font-semibold text-slate-500">
@@ -2268,7 +2362,9 @@ export const HourlyAnalysis = ({
                           {employee.workedDate ?? "-"}
                         </span>
                         <span className="text-center text-xs font-semibold text-amber-700">
-                          {formatHoursBase60(employee.workedHours)}h
+                          {isAbsence
+                            ? "0.00h"
+                            : `${formatHoursBase60(employee.workedHours)}h`}
                         </span>
                         <span className="text-center text-xs font-semibold text-slate-700">
                           {employee.marksCount ?? 0}
