@@ -1,0 +1,4058 @@
+﻿"use client";
+
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { animate, remove } from "animejs";
+import {
+  LayoutGrid,
+  Table2,
+  Sparkles,
+  ChevronDown,
+  Search,
+  ArrowUpDown,
+  BarChart3,
+  Clock,
+} from "lucide-react";
+import { LineChart } from "@mui/x-charts/LineChart";
+import {
+  ChartsTooltipContainer,
+  ChartsTooltipPaper,
+  ChartsTooltipTable,
+  ChartsTooltipRow,
+  ChartsTooltipCell,
+  useAxesTooltip,
+} from "@mui/x-charts/ChartsTooltip";
+import type { ChartsTooltipProps } from "@mui/x-charts/ChartsTooltip";
+import { ChartsLabelMark } from "@mui/x-charts/ChartsLabel";
+import * as ExcelJS from "exceljs";
+import type { XAxis, YAxis } from "@mui/x-charts/models";
+import type { LineSeries } from "@mui/x-charts/LineChart";
+import type { MarkPlotProps, LinePlotProps } from "@mui/x-charts/LineChart";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { HourlyAnalysis } from "@/components/HourlyAnalysis";
+import { LineCard } from "@/components/LineCard";
+import { LineComparisonTable } from "@/components/LineComparisonTable";
+import { TopBar } from "@/components/TopBar";
+import {
+  calcLineMargin,
+  formatCOP,
+  getSedeM2,
+  hasLaborDataForLine,
+} from "@/lib/calc";
+import { formatDateLabel } from "@/lib/utils";
+import {
+  DEFAULT_LINES,
+  DEFAULT_SEDES,
+  SEDE_ORDER,
+  SEDE_GROUPS,
+  Sede,
+} from "@/lib/constants";
+import { DailyProductivity, LineMetrics } from "@/types";
+
+// ============================================================================
+// UTILIDADES DE FECHA
+// ============================================================================
+
+const parseDateKey = (dateKey: string): Date => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const toDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getYesterdayDateKey = () => {
+  const yesterday = new Date();
+  yesterday.setHours(0, 0, 0, 0);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return toDateKey(yesterday);
+};
+
+const dateLabelOptions: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+};
+
+const formatPdfDate = () =>
+  new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date());
+
+const formatPdfNumber = (value: number) =>
+  new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: 0,
+  }).format(value);
+
+// ============================================================================
+// TIPOS
+// ============================================================================
+
+type ApiResponse = {
+  dailyData: DailyProductivity[];
+  sedes: Array<{ id: string; name: string }>;
+  error?: string;
+};
+
+type DateRange = {
+  start: string;
+  end: string;
+};
+
+type ExportPayload = {
+  pdfLines: LineMetrics[];
+  selectedScopeLabel: string;
+  selectedScopeId: string;
+  dateRange: DateRange;
+  dateRangeLabel: string;
+  lineFilterLabel: string;
+};
+
+const formatRangeLabel = (range: DateRange) => {
+  if (!range.start || !range.end) return "";
+  if (range.start === range.end) {
+    return `${formatDateLabel(range.start, dateLabelOptions)}`;
+  }
+  return `${formatDateLabel(range.start, dateLabelOptions)} al ${formatDateLabel(range.end, dateLabelOptions)}`;
+};
+
+// ============================================================================
+// HOOKS PERSONALIZADOS
+// ============================================================================
+
+const useProductivityData = () => {
+  const [dailyDataSet, setDailyDataSet] = useState<DailyProductivity[]>([]);
+  const [availableSedes, setAvailableSedes] = useState<Sede[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+
+    const loadData = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch("/api/productivity", {
+          signal: controller.signal,
+        });
+
+        const payload = (await response.json()) as ApiResponse;
+
+        if (!isMounted) return;
+
+        if (response.status === 401) {
+          setError("No autorizado.");
+          setDailyDataSet([]);
+          setAvailableSedes([]);
+          return;
+        }
+
+        const resolvedDailyData = payload.dailyData ?? [];
+        const resolvedSedes =
+          payload.sedes && payload.sedes.length > 0
+            ? payload.sedes
+            : DEFAULT_SEDES;
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "No se pudo cargar la información");
+        }
+
+        setDailyDataSet(resolvedDailyData);
+        setAvailableSedes(resolvedSedes);
+        if (payload.error) {
+          setError(payload.error);
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : "Error desconocido");
+          setDailyDataSet([]);
+          setAvailableSedes([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadData();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, []);
+
+  return { dailyDataSet, availableSedes, isLoading, error };
+};
+
+const useAnimations = (
+  isLoading: boolean,
+  filteredLinesCount: number,
+  viewMode: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2",
+) => {
+  useEffect(() => {
+    if (
+      isLoading ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    const hasLineItems = filteredLinesCount > 0;
+
+    remove?.("[data-animate]");
+
+    const hasTargets = (selector: string) =>
+      document.querySelectorAll(selector).length > 0;
+
+    const runAnimations = () => {
+      if (hasTargets("[data-animate='top-bar']")) {
+        animate("[data-animate='top-bar']", {
+          translateY: [-16, 0],
+          opacity: [0, 1],
+          delay: (_el: unknown, index: number) => index * 90,
+          duration: 650,
+          easing: "easeOutCubic",
+        });
+      }
+
+      if (hasLineItems && hasTargets("[data-animate='line-card']")) {
+        animate("[data-animate='line-card']", {
+          translateY: [18, 0],
+          opacity: [0, 1],
+          duration: 550,
+          easing: "easeOutCubic",
+        });
+      }
+
+      if (viewMode === "comparison") {
+        if (hasTargets("[data-animate='comparison-card']")) {
+          animate("[data-animate='comparison-card']", {
+            translateY: [-8, 0],
+            opacity: [0, 1],
+            duration: 550,
+            easing: "easeOutCubic",
+          });
+        }
+
+        if (hasLineItems && hasTargets("[data-animate='comparison-row']")) {
+          animate("[data-animate='comparison-row']", {
+            translateX: [-12, 0],
+            opacity: [0, 1],
+            delay: (_el: unknown, index: number) => index * 40,
+            duration: 450,
+            easing: "easeOutCubic",
+          });
+        }
+      }
+
+      if (viewMode === "chart") {
+        if (hasTargets("[data-animate='chart-card']")) {
+          animate("[data-animate='chart-card']", {
+            translateY: [-8, 0],
+            opacity: [0, 1],
+            duration: 550,
+            easing: "easeOutCubic",
+          });
+        }
+      }
+
+      if (viewMode === "hourly") {
+        if (hasTargets("[data-animate='hourly-card']")) {
+          animate("[data-animate='hourly-card']", {
+            translateY: [-8, 0],
+            opacity: [0, 1],
+            duration: 550,
+            easing: "easeOutCubic",
+          });
+        }
+      }
+    };
+
+    const animationFrame = window.requestAnimationFrame(runAnimations);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [isLoading, filteredLinesCount, viewMode]);
+};
+
+// ============================================================================
+// FUNCIONES AUXILIARES
+// ============================================================================
+
+const extractSedesFromData = (data: DailyProductivity[]): Sede[] => {
+  return Array.from(
+    new Map(data.map((item) => [item.sede, item.sede])).entries(),
+  ).map(([id, name]) => ({ id, name }));
+};
+
+const normalizeSedeKey = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]/g, "");
+
+const SEDE_ORDER_MAP = new Map(
+  SEDE_ORDER.map((name, index) => [normalizeSedeKey(name), index]),
+);
+
+const sortSedesByOrder = (sedes: Sede[]) => {
+  return [...sedes].sort((a, b) => {
+    const aKey = normalizeSedeKey(a.id || a.name);
+    const bKey = normalizeSedeKey(b.id || b.name);
+    const aOrder = SEDE_ORDER_MAP.get(aKey) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = SEDE_ORDER_MAP.get(bKey) ?? Number.MAX_SAFE_INTEGER;
+
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.name.localeCompare(b.name, "es");
+  });
+};
+
+const getHeatColor = (ratioPercent: number) => {
+  if (ratioPercent >= 110) return "#16a34a";
+  if (ratioPercent >= 100) return "#facc15";
+  if (ratioPercent >= 90) return "#f97316";
+  return "#dc2626";
+};
+
+const buildCompanyOptions = (): Sede[] =>
+  SEDE_GROUPS.filter((group) => group.id !== "all").map((group) => ({
+    id: group.id,
+    name: group.name,
+  }));
+
+const resolveSelectedSedeIds = (
+  selectedSede: string,
+  selectedCompanies: string[],
+  availableSedes: Sede[],
+): string[] => {
+  const availableByKey = new Map(
+    availableSedes.map((sede) => [normalizeSedeKey(sede.id), sede.id]),
+  );
+
+  if (selectedCompanies.length > 0) {
+    const resolved = new Set<string>();
+    selectedCompanies.forEach((companyId) => {
+      const group = SEDE_GROUPS.find(
+        (candidate) => candidate.id === companyId,
+      );
+      if (!group) return;
+      group.sedes.forEach((sedeId) => {
+        const resolvedId = availableByKey.get(normalizeSedeKey(sedeId));
+        if (resolvedId) resolved.add(resolvedId);
+      });
+    });
+    return Array.from(resolved);
+  }
+
+  if (selectedSede) {
+    const resolved = availableByKey.get(normalizeSedeKey(selectedSede));
+    return resolved ? [resolved] : [];
+  }
+
+  return availableSedes.map((sede) => sede.id);
+};
+const aggregateLines = (dailyData: DailyProductivity[]): LineMetrics[] => {
+  const lineMap = new Map<
+    string,
+    { id: string; name: string; sales: number; hours: number; cost: number }
+  >();
+
+  dailyData.forEach((day) => {
+    day.lines.forEach((line) => {
+      const hasLaborData = hasLaborDataForLine(line.id);
+      const hours = hasLaborData ? line.hours : 0;
+      const hourlyRate = hasLaborData ? line.hourlyRate : 0;
+      const cost = hours * hourlyRate;
+      const existing = lineMap.get(line.id);
+
+      if (existing) {
+        existing.sales += line.sales;
+        existing.hours += hours;
+        existing.cost += cost;
+      } else {
+        lineMap.set(line.id, {
+          id: line.id,
+          name: line.name,
+          sales: line.sales,
+          hours,
+          cost,
+        });
+      }
+    });
+  });
+
+  DEFAULT_LINES.forEach((line) => {
+    if (!lineMap.has(line.id)) {
+      lineMap.set(line.id, {
+        id: line.id,
+        name: line.name,
+        sales: 0,
+        hours: 0,
+        cost: 0,
+      });
+    }
+  });
+
+  return Array.from(lineMap.values()).map((line) => ({
+    id: line.id,
+    name: line.name,
+    sales: line.sales,
+    hours: line.hours,
+    hourlyRate: line.hours ? line.cost / line.hours : 0,
+  }));
+};
+
+const filterLinesByStatus = (
+  lines: LineMetrics[],
+  filterType: string,
+): LineMetrics[] => {
+  return lines;
+};
+
+// ============================================================================
+// COMPONENTES
+// ============================================================================
+
+const LoadingSkeleton = () => (
+  <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+    {Array.from({ length: 6 }).map((_, index) => (
+      <div
+        key={`line-skeleton-${index}`}
+        className="h-80 rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]"
+      >
+        <div className="flex h-full flex-col gap-4 animate-pulse">
+          <div className="h-6 w-32 rounded-full bg-slate-200/70" />
+          <div className="h-4 w-24 rounded-full bg-slate-200/70" />
+          <div className="h-12 rounded-2xl bg-slate-200/70" />
+          <div className="flex-1 rounded-2xl bg-slate-200/70" />
+        </div>
+      </div>
+    ))}
+  </section>
+);
+
+const EmptyState = ({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) => (
+  <section className="rounded-3xl border border-dashed border-slate-200/70 bg-slate-50 p-10 text-center">
+    <p className="text-sm uppercase tracking-[0.3em] text-slate-700">
+      Sin datos
+    </p>
+    <h2 className="mt-3 text-2xl font-semibold text-slate-900">{title}</h2>
+    <p className="mt-2 text-sm text-slate-700">{description}</p>
+    {actionLabel && onAction && (
+      <button
+        type="button"
+        onClick={onAction}
+        className="mt-6 inline-flex items-center gap-2 rounded-full border border-mercamio-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-mercamio-700 transition-all hover:border-mercamio-300 hover:bg-mercamio-50"
+      >
+        <Sparkles className="h-4 w-4" />
+        {actionLabel}
+      </button>
+    )}
+  </section>
+);
+
+const SearchAndSort = ({
+  searchQuery,
+  onSearchChange,
+  sortBy,
+  onSortByChange,
+  sortOrder,
+  onSortOrderToggle,
+}: {
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  sortBy: "sales" | "hours" | "name";
+  onSortByChange: (value: "sales" | "hours" | "name") => void;
+  sortOrder: "asc" | "desc";
+  onSortOrderToggle: () => void;
+}) => (
+  <div className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap gap-3 flex-1">
+        <div className="relative flex-1 min-w-50">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-700" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Buscar por nombre o código..."
+            className="w-full rounded-full border border-slate-200/70 bg-slate-50 py-2 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-600 transition-all focus:border-mercamio-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
+          Ordenar:
+        </span>
+        <select
+          value={sortBy}
+          onChange={(e) =>
+            onSortByChange(e.target.value as "sales" | "hours" | "name")
+          }
+          className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:border-slate-300 focus:border-mercamio-300 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+        >
+          <option value="sales">Ventas</option>
+          <option value="hours">Horas</option>
+          <option value="name">Nombre</option>
+        </select>
+        <button
+          type="button"
+          onClick={onSortOrderToggle}
+          className="rounded-full border border-slate-200/70 bg-slate-50 p-2 text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100"
+          title={sortOrder === "asc" ? "Ascendente" : "Descendente"}
+        >
+          <ArrowUpDown
+            className={`h-4 w-4 transition-transform ${sortOrder === "asc" ? "rotate-180" : ""}`}
+          />
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+const ViewToggle = ({
+  viewMode,
+  onChange,
+}: {
+  viewMode: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2";
+  onChange: (
+    value: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2",
+  ) => void;
+}) => {
+  const getModeLabel = () => {
+    switch (viewMode) {
+      case "cards":
+        return "Tarjetas detalladas";
+      case "comparison":
+        return "Comparativo de líneas";
+      case "chart":
+        return "Top 6 líneas (gráfico)";
+      case "trends":
+        return "Análisis de tendencias";
+      case "hourly":
+        return "Análisis por hora";
+      case "m2":
+        return "Indicadores por m2";
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-linear-to-b from-white to-slate-50/70 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+      <div>
+        <p className="text-xs uppercase tracking-[0.24em] text-slate-600">
+          Vista de líneas
+        </p>
+        <p className="text-sm font-semibold text-slate-900">{getModeLabel()}</p>
+        <p className="mt-1 text-xs text-slate-600">
+          Alterna la visualización para detectar oportunidades rápidamente.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 rounded-full border border-slate-300/70 bg-slate-100 p-1">
+        <button
+          type="button"
+          onClick={() => onChange("cards")}
+          aria-pressed={viewMode === "cards"}
+          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
+            viewMode === "cards"
+              ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200/80 shadow-sm"
+              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
+          }`}
+        >
+          <LayoutGrid className="h-4 w-4" />
+          Tarjetas
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("comparison")}
+          aria-pressed={viewMode === "comparison"}
+          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
+            viewMode === "comparison"
+              ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200/80 shadow-sm"
+              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
+          }`}
+        >
+          <Table2 className="h-4 w-4" />
+          Comparativo
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("chart")}
+          aria-pressed={viewMode === "chart"}
+          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
+            viewMode === "chart"
+              ? "bg-violet-100 text-violet-800 ring-1 ring-violet-200/80 shadow-sm"
+              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
+          }`}
+        >
+          <BarChart3 className="h-4 w-4" />
+          Gráfico
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("trends")}
+          aria-pressed={viewMode === "trends"}
+          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
+            viewMode === "trends"
+              ? "bg-amber-100 text-amber-800 ring-1 ring-amber-200/80 shadow-sm"
+              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
+          }`}
+        >
+          <ArrowUpDown className="h-4 w-4" />
+          Tendencias
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("hourly")}
+          aria-pressed={viewMode === "hourly"}
+          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
+            viewMode === "hourly"
+              ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200/80 shadow-sm"
+              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          Por hora
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// CHART TOOLTIP CUSTOM - Sorted descending + highlight support
+// ============================================================================
+
+const HighlightContext = createContext<{
+  clicked: string | null;
+  hovered: string | null;
+}>({ clicked: null, hovered: null });
+
+const SortedAxisTooltipContent = () => {
+  const { clicked: clickedSid, hovered: hoveredSid } =
+    useContext(HighlightContext);
+  const tooltipData = useAxesTooltip();
+
+  if (tooltipData === null) return null;
+
+  return (
+    <ChartsTooltipPaper>
+      {tooltipData.map(
+        ({ axisId, axisFormattedValue, seriesItems, mainAxis }) => {
+          const sorted = [...seriesItems].sort((a, b) => {
+            const aVal = typeof a.value === "number" ? a.value : 0;
+            const bVal = typeof b.value === "number" ? b.value : 0;
+            return bVal - aVal;
+          });
+
+          return (
+            <ChartsTooltipTable key={axisId}>
+              {!mainAxis.hideTooltip && (
+                <caption
+                  style={{
+                    textAlign: "start",
+                    padding: "4px 8px",
+                    fontWeight: 600,
+                    fontSize: "0.75rem",
+                  }}
+                >
+                  {axisFormattedValue}
+                </caption>
+              )}
+              <tbody>
+                {sorted.map(
+                  ({
+                    seriesId,
+                    color,
+                    formattedValue,
+                    formattedLabel,
+                    markType,
+                  }) => {
+                    if (formattedValue == null) return null;
+                    const sid = String(seriesId);
+                    const isClicked = clickedSid === sid;
+                    const isFadedByClick =
+                      clickedSid != null && !isClicked;
+                    const isHovered = hoveredSid === sid;
+                    return (
+                      <ChartsTooltipRow
+                        key={seriesId}
+                        style={{
+                          opacity: isFadedByClick ? 0.35 : 1,
+                          fontWeight: isClicked ? 700 : 400,
+                          transition: "opacity 0.2s",
+                        }}
+                      >
+                        <ChartsTooltipCell component="th">
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <ChartsLabelMark type={markType} color={color} />
+                            <span
+                              style={{
+                                textDecoration: isHovered
+                                  ? "underline"
+                                  : "none",
+                                textUnderlineOffset: 2,
+                              }}
+                            >
+                              {formattedLabel || null}
+                            </span>
+                          </div>
+                        </ChartsTooltipCell>
+                        <ChartsTooltipCell component="td">
+                          <span
+                            style={{
+                              textDecoration: isHovered
+                                ? "underline"
+                                : "none",
+                              textUnderlineOffset: 2,
+                            }}
+                          >
+                            {formattedValue}
+                          </span>
+                        </ChartsTooltipCell>
+                      </ChartsTooltipRow>
+                    );
+                  },
+                )}
+              </tbody>
+            </ChartsTooltipTable>
+          );
+        },
+      )}
+    </ChartsTooltipPaper>
+  );
+};
+
+const CustomChartTooltip = (props: ChartsTooltipProps) => (
+  <ChartsTooltipContainer {...props}>
+    <SortedAxisTooltipContent />
+  </ChartsTooltipContainer>
+);
+
+const MAX_CHART_DAYS = 7;
+
+// ============================================================================
+
+const ChartVisualization = ({
+  dailyDataSet,
+  selectedSedeIds,
+  availableDates,
+  dateRange,
+  lines,
+  sedes,
+}: {
+  dailyDataSet: DailyProductivity[];
+  selectedSedeIds: string[];
+  availableDates: string[];
+  dateRange: DateRange;
+  lines: LineMetrics[];
+  sedes: Sede[];
+}) => {
+  const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
+  const [selectedChartSedes, setSelectedChartSedes] = useState<string[]>([]);
+  const [chartStartDate, setChartStartDate] = useState<string>(dateRange.start);
+  const [chartEndDate, setChartEndDate] = useState<string>(dateRange.end);
+  const [clickedSeriesId, setClickedSeriesId] = useState<string | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<{
+    seriesId: string | number;
+    dataIndex?: number;
+  } | null>(null);
+
+  // Click overrides hover; when nothing clicked, hover highlighting works
+  const effectiveHighlight = useMemo(
+    () =>
+      clickedSeriesId != null
+        ? { seriesId: clickedSeriesId }
+        : hoveredItem,
+    [clickedSeriesId, hoveredItem],
+  );
+
+  const hoveredSeriesId = hoveredItem ? String(hoveredItem.seriesId) : null;
+
+  const highlightCtx = useMemo(
+    () => ({ clicked: clickedSeriesId, hovered: hoveredSeriesId }),
+    [clickedSeriesId, hoveredSeriesId],
+  );
+
+  const sedeOptions = useMemo(() => sortSedesByOrder(sedes ?? []), [sedes]);
+
+  const chartDates = useMemo<string[]>(() => {
+    if (!chartStartDate || !chartEndDate) {
+      return availableDates;
+    }
+    return availableDates.filter(
+      (date) => date >= chartStartDate && date <= chartEndDate,
+    );
+  }, [availableDates, chartStartDate, chartEndDate]);
+
+  // Date options filtered within global range, constrained by 7-day max
+  const globalRangeDates = useMemo(
+    () =>
+      availableDates.filter(
+        (d) => d >= dateRange.start && d <= dateRange.end,
+      ),
+    [availableDates, dateRange.start, dateRange.end],
+  );
+
+  const chartRangeBounds = useMemo(() => {
+    if (globalRangeDates.length === 0) return { min: "", max: "" };
+    const sorted = [...globalRangeDates].sort();
+    return { min: sorted[0], max: sorted[sorted.length - 1] };
+  }, [globalRangeDates]);
+
+  const lineOptions = useMemo(
+    () =>
+      lines.map((line) => ({
+        id: line.id,
+        name: line.name,
+      })),
+    [lines],
+  );
+
+  useEffect(() => {
+    if (lineOptions.length === 0) {
+      setSelectedSeries([]);
+      return;
+    }
+    setSelectedSeries((prev) => {
+      const available = new Set(lineOptions.map((line) => line.id));
+      return prev.filter((id) => available.has(id));
+    });
+  }, [lineOptions]);
+
+  useEffect(() => {
+    if (sedeOptions.length === 0) {
+      setSelectedChartSedes([]);
+      return;
+    }
+    setSelectedChartSedes((prev) => {
+      const available = new Set(sedeOptions.map((sede) => sede.id));
+      return prev.filter((id) => available.has(id));
+    });
+  }, [sedeOptions]);
+
+  // Sync local chart dates with global dateRange, clamping to MAX_CHART_DAYS
+  useEffect(() => {
+    const start = parseDateKey(dateRange.start);
+    const end = parseDateKey(dateRange.end);
+    const diffDays =
+      (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+    setChartStartDate(dateRange.start);
+    if (diffDays > MAX_CHART_DAYS) {
+      const clamped = new Date(start);
+      clamped.setDate(clamped.getDate() + MAX_CHART_DAYS);
+      setChartEndDate(toDateKey(clamped));
+    } else {
+      setChartEndDate(dateRange.end);
+    }
+  }, [dateRange.start, dateRange.end]);
+
+  const effectiveSedes = useMemo(
+    () =>
+      selectedChartSedes.length > 0 ? selectedChartSedes : selectedSedeIds,
+    [selectedChartSedes, selectedSedeIds],
+  );
+  const selectedSedeIdSet = useMemo(
+    () => new Set(effectiveSedes),
+    [effectiveSedes],
+  );
+
+  const sedeNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    sedes.forEach((sede) => map.set(sede.id, sede.name));
+    return map;
+  }, [sedes]);
+
+  const handleChartStartChange = useCallback(
+    (value: string) => {
+      setChartStartDate(value);
+      setChartEndDate((prevEnd) => {
+        const start = parseDateKey(value);
+        const end = parseDateKey(prevEnd);
+        const diffDays =
+          (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays > MAX_CHART_DAYS || diffDays < 0) {
+          const clamped = new Date(start);
+          clamped.setDate(clamped.getDate() + MAX_CHART_DAYS);
+          return toDateKey(clamped);
+        }
+        return prevEnd;
+      });
+    },
+    [],
+  );
+
+  const handleChartEndChange = useCallback(
+    (value: string) => {
+      setChartEndDate(value);
+      setChartStartDate((prevStart) => {
+        const start = parseDateKey(prevStart);
+        const end = parseDateKey(value);
+        const diffDays =
+          (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays > MAX_CHART_DAYS || diffDays < 0) {
+          const clamped = new Date(end);
+          clamped.setDate(clamped.getDate() - MAX_CHART_DAYS);
+          return toDateKey(clamped);
+        }
+        return prevStart;
+      });
+    },
+    [],
+  );
+
+  const seriesDefinitions = useMemo(() => {
+    if (selectedSeries.length === 0 || effectiveSedes.length === 0) {
+      return [] as Array<{
+        id: string;
+        lineId: string;
+        sedeId: string;
+        label: string;
+      }>;
+    }
+    return selectedSeries.flatMap((lineId) =>
+      effectiveSedes.map((sedeId) => ({
+        id: `${sedeId}::${lineId}`,
+        lineId,
+        sedeId,
+        label: `${sedeNameMap.get(sedeId) ?? sedeId} ${
+          lineOptions.find((line) => line.id === lineId)?.name ?? lineId
+        }`,
+      })),
+    );
+  }, [effectiveSedes, lineOptions, selectedSeries, sedeNameMap]);
+
+  const seriesMap = useMemo(() => {
+    const map = new Map<string, number[]>();
+    const dailyByDate = new Map<string, DailyProductivity[]>();
+
+    chartDates.forEach((date) => {
+      const dayData = dailyDataSet.filter(
+        (item) => selectedSedeIdSet.has(item.sede) && item.date === date,
+      );
+      dailyByDate.set(date, dayData);
+    });
+
+    seriesDefinitions.forEach(({ id, lineId, sedeId }) => {
+      const data = chartDates.map((date) => {
+        const dayData = (dailyByDate.get(date) ?? []).filter(
+          (item) => item.sede === sedeId,
+        );
+        const totals = dayData.reduce(
+          (acc, item) => {
+            const lineData = item.lines.find((line) => line.id === lineId);
+            if (!lineData) return acc;
+
+            const hasLaborData = hasLaborDataForLine(lineData.id);
+            const hours = hasLaborData ? lineData.hours : 0;
+
+            return {
+              sales: acc.sales + lineData.sales,
+              hours: acc.hours + hours,
+            };
+          },
+          { sales: 0, hours: 0 },
+        );
+
+        return totals.hours > 0 ? totals.sales / 1_000_000 / totals.hours : 0;
+      });
+
+      map.set(id, data);
+    });
+
+    return map;
+  }, [chartDates, dailyDataSet, selectedSedeIdSet, seriesDefinitions]);
+
+  const chartDataset = useMemo(() => {
+    return chartDates.map((date, index) => {
+      const row: Record<string, number | string | null> = { date };
+      seriesDefinitions.forEach((series) => {
+        const data = seriesMap.get(series.id);
+        row[series.id] = data ? data[index] : null;
+      });
+      return row;
+    });
+  }, [chartDates, seriesDefinitions, seriesMap]);
+  const chartAxisLabel = useMemo(() => {
+    if (chartDates.length === 0) return "";
+    const first = parseDateKey(chartDates[0]);
+    const last = parseDateKey(chartDates[chartDates.length - 1]);
+    const fmtMonth = new Intl.DateTimeFormat("es-CO", {
+      month: "long",
+      year: "numeric",
+    });
+    const firstLabel = fmtMonth.format(first);
+    const lastLabel = fmtMonth.format(last);
+    return firstLabel === lastLabel
+      ? firstLabel.charAt(0).toUpperCase() + firstLabel.slice(1)
+      : `${firstLabel.charAt(0).toUpperCase() + firstLabel.slice(1)} – ${lastLabel}`;
+  }, [chartDates]);
+
+  const xAxis = useMemo<XAxis<"point", string>[]>(
+    () => [
+      {
+        dataKey: "date",
+        scaleType: "point",
+        label: chartAxisLabel,
+        valueFormatter: (value: string) => value.slice(8),
+      },
+    ],
+    [chartAxisLabel],
+  );
+
+  const yAxis = useMemo<YAxis<"linear", number>[]>(
+    () => [{ label: "Vta/Hr" }],
+    [],
+  );
+
+  const chartSeries = useMemo<LineSeries[]>(
+    () =>
+      seriesDefinitions.map((series) => ({
+        type: "line",
+        dataKey: series.id,
+        label: series.label,
+        showMark: true,
+        curve: "linear",
+        valueFormatter: (value: number | null) => `${(value ?? 0).toFixed(3)}`,
+        highlightScope: { highlight: "series" as const, fade: "global" as const },
+      })),
+    [seriesDefinitions],
+  );
+
+  const handleToggleSeries = (lineId: string) => {
+    setSelectedSeries((prev) =>
+      prev.includes(lineId)
+        ? prev.filter((id) => id !== lineId)
+        : [...prev, lineId],
+    );
+  };
+
+  const handleToggleSede = (sedeId: string) => {
+    setSelectedChartSedes((prev) =>
+      prev.includes(sedeId)
+        ? prev.filter((id) => id !== sedeId)
+        : [...prev, sedeId],
+    );
+  };
+
+  const handleMarkClick = useCallback<
+    NonNullable<MarkPlotProps["onItemClick"]>
+  >((event, identifier) => {
+    event.stopPropagation();
+    const sid = String(identifier.seriesId);
+    setClickedSeriesId((prev) => (prev === sid ? null : sid));
+  }, []);
+
+  const handleLineClick = useCallback<
+    NonNullable<LinePlotProps["onItemClick"]>
+  >((event, identifier) => {
+    event.stopPropagation();
+    const sid = String(identifier.seriesId);
+    setClickedSeriesId((prev) => (prev === sid ? null : sid));
+  }, []);
+
+  // Reset clicked series when it no longer exists
+  useEffect(() => {
+    if (clickedSeriesId === null) return;
+    const stillExists = seriesDefinitions.some(
+      (s) => s.id === clickedSeriesId,
+    );
+    if (!stillExists) setClickedSeriesId(null);
+  }, [seriesDefinitions, clickedSeriesId]);
+
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="relative overflow-visible rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+      <div className="mb-6">
+        <p className="text-xs uppercase tracking-[0.3em] text-slate-700">
+          Grafico de productividad
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-900">
+          Vta/Hr por dia
+        </h3>
+      </div>
+
+      <div className="mb-6">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-700">
+            Series a graficar
+          </span>
+          <button
+            type="button"
+            className="text-xs font-semibold text-mercamio-700 transition-colors hover:text-mercamio-800"
+            onClick={() =>
+              setSelectedSeries(
+                selectedSeries.length === lineOptions.length
+                  ? []
+                  : lineOptions.map((line) => line.id),
+              )
+            }
+          >
+            {selectedSeries.length === lineOptions.length
+              ? "Deseleccionar todas"
+              : "Seleccionar todas"}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {lineOptions.map((line) => {
+            const isSelected = selectedSeries.includes(line.id);
+            return (
+              <button
+                key={line.id}
+                type="button"
+                onClick={() => handleToggleSeries(line.id)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                  isSelected
+                    ? "border-mercamio-300 bg-mercamio-50 text-mercamio-700"
+                    : "border-slate-200/70 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                }`}
+              >
+                {line.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-700">
+            Sedes a comparar
+          </span>
+          <button
+            type="button"
+            className="text-xs font-semibold text-mercamio-700 transition-colors hover:text-mercamio-800"
+            onClick={() =>
+              setSelectedChartSedes(
+                selectedChartSedes.length === sedeOptions.length
+                  ? []
+                  : sedeOptions.map((sede) => sede.id),
+              )
+            }
+          >
+            {selectedChartSedes.length === sedeOptions.length
+              ? "Deseleccionar todas"
+              : "Seleccionar todas"}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {sedeOptions.map((sede) => {
+            const isSelected = selectedChartSedes.includes(sede.id);
+            return (
+              <button
+                key={sede.id}
+                type="button"
+                onClick={() => handleToggleSede(sede.id)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                  isSelected
+                    ? "border-sky-300 bg-sky-50 text-sky-700 ring-2 ring-sky-300 shadow-sm"
+                    : "border-slate-200/70 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                }`}
+              >
+                {sede.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Date range filter (max 7 days) */}
+      <div className="mb-6">
+        <div className="mb-2">
+          <span className="text-xs font-semibold text-slate-700">
+            Rango de fechas{" "}
+            <span className="font-normal text-slate-400">(max 7 dias)</span>
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-700">
+              Desde
+            </span>
+            <input
+              type="date"
+              value={chartStartDate}
+              onChange={(e) => handleChartStartChange(e.target.value)}
+              min={chartRangeBounds.min}
+              max={chartRangeBounds.max}
+              className="rounded-lg border border-slate-200/70 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-mercamio-200 focus:border-mercamio-400 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+            />
+          </label>
+          <span className="mt-5 text-sm text-slate-400">&mdash;</span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-700">
+              Hasta
+            </span>
+            <input
+              type="date"
+              value={chartEndDate}
+              onChange={(e) => handleChartEndChange(e.target.value)}
+              min={chartRangeBounds.min}
+              max={chartRangeBounds.max}
+              className="rounded-lg border border-slate-200/70 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-mercamio-200 focus:border-mercamio-400 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+            />
+          </label>
+        </div>
+      </div>
+
+      {selectedSeries.length === 0 ||
+      effectiveSedes.length === 0 ||
+      chartDates.length === 0 ? (
+        <p className="py-10 text-center text-sm text-slate-600">
+          Selecciona al menos una serie para ver el grafico.
+        </p>
+      ) : (
+        <HighlightContext.Provider value={highlightCtx}>
+          <div
+            className="h-85"
+            onClick={() => setClickedSeriesId(null)}
+          >
+            <LineChart
+              height={340}
+              dataset={chartDataset}
+              xAxis={xAxis}
+              yAxis={yAxis}
+              series={chartSeries}
+              grid={{ horizontal: true, vertical: false }}
+              slots={{ tooltip: CustomChartTooltip }}
+              highlightedItem={effectiveHighlight}
+              onHighlightChange={(item) => setHoveredItem(item)}
+              onMarkClick={handleMarkClick}
+              onLineClick={handleLineClick}
+            />
+          </div>
+        </HighlightContext.Provider>
+      )}
+    </div>
+  );
+};
+const LineTrends = ({
+  dailyDataSet,
+  selectedSedeIds,
+  availableDates,
+  lines,
+  sedes,
+  dateRange,
+}: {
+  dailyDataSet: DailyProductivity[];
+  selectedSedeIds: string[];
+  availableDates: string[];
+  lines: LineMetrics[];
+  sedes: Sede[];
+  dateRange: DateRange;
+}) => {
+  const [selectedLine, setSelectedLine] = useState<string>("");
+  const [viewType, setViewType] = useState<"temporal" | "por-sede">("temporal");
+  const [comparisonSedeIds, setComparisonSedeIds] = useState<string[]>([]);
+  const [trendSede, setTrendSede] = useState<string>("");
+  const [heatBaseline, setHeatBaseline] = useState<"sede" | "todas">("sede");
+  const [comparisonBaseline, setComparisonBaseline] = useState<
+    "seleccionadas" | "todas" | "propia"
+  >("seleccionadas");
+  const [comparisonSort, setComparisonSort] = useState<
+    "none" | "m2_desc" | "m2_asc"
+  >("none");
+  const [trendDateFilterMode, setTrendDateFilterMode] = useState<
+    "mes_corrido" | "mes_anterior" | "rango"
+  >("mes_corrido");
+  const [customTrendRange, setCustomTrendRange] = useState<DateRange>({
+    start: dateRange.start,
+    end: dateRange.end,
+  });
+  const [comparisonSizeFilter, setComparisonSizeFilter] = useState<
+    | "all"
+    | "gte_1000"
+    | "gte_2000"
+    | "gte_3000"
+    | "between_1000_2000"
+    | "between_2000_3000"
+  >("all");
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const filtersRef = useRef<HTMLDivElement | null>(null);
+  const [showFloatingFilters, setShowFloatingFilters] = useState(false);
+  const availableDateBounds = useMemo(() => {
+    if (availableDates.length === 0) return { min: "", max: "" };
+    const sortedDates = [...availableDates].sort();
+    return {
+      min: sortedDates[0] ?? "",
+      max: sortedDates[sortedDates.length - 1] ?? "",
+    };
+  }, [availableDates]);
+  const visibleSedes = useMemo(() => {
+    const hidden = new Set(
+      [
+        "adm",
+        "cedi-cavasa",
+        "cedicavasa",
+        "panificadora",
+        "planta desposte mixto",
+        "planta desprese pollo",
+      ].map(normalizeSedeKey),
+    );
+    return sedes.filter((sede) => {
+      const idKey = normalizeSedeKey(sede.id);
+      const nameKey = normalizeSedeKey(sede.name);
+      return !hidden.has(idKey) && !hidden.has(nameKey);
+    });
+  }, [sedes]);
+
+  useEffect(() => {
+    setComparisonSedeIds([]);
+    setTrendSede((prev) => {
+      if (prev && visibleSedes.some((s) => s.id === prev)) return prev;
+      return visibleSedes[0]?.id ?? "";
+    });
+  }, [visibleSedes]);
+
+  useEffect(() => {
+    if (!availableDateBounds.min || !availableDateBounds.max) return;
+
+    setCustomTrendRange((prev) => {
+      let start = prev.start || dateRange.start || availableDateBounds.min;
+      let end = prev.end || dateRange.end || availableDateBounds.max;
+
+      if (start < availableDateBounds.min) start = availableDateBounds.min;
+      if (start > availableDateBounds.max) start = availableDateBounds.max;
+      if (end < availableDateBounds.min) end = availableDateBounds.min;
+      if (end > availableDateBounds.max) end = availableDateBounds.max;
+      if (start > end) {
+        const swapped = start;
+        start = end;
+        end = swapped;
+      }
+
+      if (start === prev.start && end === prev.end) return prev;
+      return { start, end };
+    });
+  }, [
+    availableDateBounds.max,
+    availableDateBounds.min,
+    dateRange.end,
+    dateRange.start,
+  ]);
+
+  const todayDateKey = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return toDateKey(today);
+  }, []);
+
+  const trendEffectiveDateRange = useMemo<DateRange>(() => {
+    if (!availableDateBounds.min || !availableDateBounds.max) {
+      return { start: "", end: "" };
+    }
+
+    if (trendDateFilterMode === "mes_corrido") {
+      const today = parseDateKey(todayDateKey);
+      return {
+        start: toDateKey(new Date(today.getFullYear(), today.getMonth(), 1)),
+        end: todayDateKey,
+      };
+    }
+
+    if (trendDateFilterMode === "mes_anterior") {
+      const today = parseDateKey(todayDateKey);
+      const previousMonthStart = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        1,
+      );
+      const previousMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+      return {
+        start: toDateKey(previousMonthStart),
+        end: toDateKey(previousMonthEnd),
+      };
+    }
+
+    const fallbackStart = dateRange.start || availableDateBounds.min;
+    const fallbackEnd = dateRange.end || availableDateBounds.max;
+    const start = customTrendRange.start || fallbackStart;
+    const end = customTrendRange.end || fallbackEnd;
+    return start <= end ? { start, end } : { start: end, end: start };
+  }, [
+    availableDateBounds.max,
+    availableDateBounds.min,
+    customTrendRange.end,
+    customTrendRange.start,
+    dateRange.end,
+    dateRange.start,
+    todayDateKey,
+    trendDateFilterMode,
+  ]);
+
+  const trendDateRangeLabel = useMemo(
+    () => formatRangeLabel(trendEffectiveDateRange),
+    [trendEffectiveDateRange],
+  );
+
+  const handleCustomTrendStartChange = useCallback((value: string) => {
+    setCustomTrendRange((prev) => {
+      const nextEnd =
+        !prev.end || value <= prev.end ? prev.end || value : value;
+      return { start: value, end: nextEnd };
+    });
+  }, []);
+
+  const handleCustomTrendEndChange = useCallback((value: string) => {
+    setCustomTrendRange((prev) => {
+      const nextStart =
+        !prev.start || value >= prev.start ? prev.start || value : value;
+      return { start: nextStart, end: value };
+    });
+  }, []);
+
+  const toggleComparisonSede = useCallback((sedeId: string) => {
+    setComparisonSedeIds((prev) =>
+      prev.includes(sedeId)
+        ? prev.filter((id) => id !== sedeId)
+        : [...prev, sedeId],
+    );
+  }, []);
+
+  // Temporal view: use single local sede, fall back to global selection
+  const effectiveTrendSedeIds = useMemo(
+    () => (trendSede ? [trendSede] : selectedSedeIds),
+    [trendSede, selectedSedeIds],
+  );
+
+  const selectedSedeIdSet = useMemo(
+    () => new Set(effectiveTrendSedeIds),
+    [effectiveTrendSedeIds],
+  );
+  const baselineSedeIds = useMemo(
+    () =>
+      heatBaseline === "todas"
+        ? visibleSedes.map((s) => s.id)
+        : effectiveTrendSedeIds,
+    [heatBaseline, visibleSedes, effectiveTrendSedeIds],
+  );
+  const baselineSedeIdSet = useMemo(
+    () => new Set(baselineSedeIds),
+    [baselineSedeIds],
+  );
+  const sedeNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    sedes.forEach((s) => map.set(s.id, s.name));
+    return map;
+  }, [sedes]);
+  const getSedeM2Value = useCallback(
+    (sede: Sede) => getSedeM2(sede.name) ?? getSedeM2(sede.id),
+    [],
+  );
+  const filteredVisibleSedes = useMemo(() => {
+    if (comparisonSizeFilter === "all") return visibleSedes;
+    return visibleSedes.filter((sede) => {
+      const m2 = getSedeM2Value(sede);
+      if (m2 == null) return false;
+      switch (comparisonSizeFilter) {
+        case "gte_1000":
+          return m2 >= 1000;
+        case "gte_2000":
+          return m2 >= 2000;
+        case "gte_3000":
+          return m2 >= 3000;
+        case "between_1000_2000":
+          return m2 >= 1000 && m2 < 2000;
+        case "between_2000_3000":
+          return m2 >= 2000 && m2 < 3000;
+        default:
+          return true;
+      }
+    });
+  }, [comparisonSizeFilter, getSedeM2Value, visibleSedes]);
+
+  useEffect(() => {
+    const available = new Set(filteredVisibleSedes.map((s) => s.id));
+    setComparisonSedeIds((prev) => prev.filter((id) => available.has(id)));
+  }, [filteredVisibleSedes]);
+
+  const toggleAllComparisonSedes = useCallback(() => {
+    setComparisonSedeIds((prev) =>
+      prev.length === filteredVisibleSedes.length
+        ? []
+        : filteredVisibleSedes.map((s) => s.id),
+    );
+  }, [filteredVisibleSedes]);
+  const orderedVisibleSedes = useMemo(() => {
+    if (comparisonSort === "none") return filteredVisibleSedes;
+    const sorted = [...filteredVisibleSedes].sort((a, b) => {
+      const aM2 = getSedeM2Value(a);
+      const bM2 = getSedeM2Value(b);
+      const aUnknown = aM2 == null;
+      const bUnknown = bM2 == null;
+      if (aUnknown && bUnknown) {
+        return a.name.localeCompare(b.name, "es", { sensitivity: "base" });
+      }
+      if (aUnknown) return 1;
+      if (bUnknown) return -1;
+      return comparisonSort === "m2_desc" ? bM2 - aM2 : aM2 - bM2;
+    });
+    return sorted;
+  }, [comparisonSort, getSedeM2Value, filteredVisibleSedes]);
+  const orderedComparisonSedeIds = useMemo(() => {
+    if (comparisonSort === "none") return comparisonSedeIds;
+    const m2ById = new Map<string, number | null>();
+    orderedVisibleSedes.forEach((s) => m2ById.set(s.id, getSedeM2Value(s)));
+    return [...comparisonSedeIds].sort((a, b) => {
+      const aM2 = m2ById.get(a) ?? getSedeM2(sedeNameMap.get(a) ?? a);
+      const bM2 = m2ById.get(b) ?? getSedeM2(sedeNameMap.get(b) ?? b);
+      const aUnknown = aM2 == null;
+      const bUnknown = bM2 == null;
+      if (aUnknown && bUnknown) {
+        const aName = sedeNameMap.get(a) ?? a;
+        const bName = sedeNameMap.get(b) ?? b;
+        return aName.localeCompare(bName, "es", { sensitivity: "base" });
+      }
+      if (aUnknown) return 1;
+      if (bUnknown) return -1;
+      return comparisonSort === "m2_desc" ? bM2 - aM2 : aM2 - bM2;
+    });
+  }, [
+    comparisonSort,
+    comparisonSedeIds,
+    getSedeM2Value,
+    orderedVisibleSedes,
+    sedeNameMap,
+  ]);
+  const temporalDates = useMemo(() => {
+    if (!trendEffectiveDateRange.start || !trendEffectiveDateRange.end) {
+      return [];
+    }
+    return availableDates.filter(
+      (date) =>
+        date >= trendEffectiveDateRange.start &&
+        date <= trendEffectiveDateRange.end,
+    );
+  }, [
+    availableDates,
+    trendEffectiveDateRange.end,
+    trendEffectiveDateRange.start,
+  ]);
+
+  const trendData = useMemo(() => {
+    if (!selectedLine) return [];
+
+    const dataByDate = temporalDates.map((date) => {
+      const dayData = dailyDataSet.filter(
+        (item) => selectedSedeIdSet.has(item.sede) && item.date === date,
+      );
+
+      if (dayData.length === 0) {
+        return { date, value: 0, sales: 0, hours: 0 };
+      }
+
+      const totals = dayData.reduce(
+        (acc, item) => {
+          const lineData = item.lines.find((line) => line.id === selectedLine);
+          if (!lineData) {
+            return acc;
+          }
+
+          const hasLaborData = hasLaborDataForLine(lineData.id);
+          const hours = hasLaborData ? lineData.hours : 0;
+
+          return {
+            sales: acc.sales + lineData.sales,
+            hours: acc.hours + hours,
+          };
+        },
+        { sales: 0, hours: 0 },
+      );
+
+      return { date, value: totals.sales, sales: totals.sales, hours: totals.hours };
+    });
+
+    return dataByDate;
+  }, [
+    selectedLine,
+    dailyDataSet,
+    selectedSedeIdSet,
+    temporalDates,
+  ]);
+
+  const maxValue = useMemo(() => {
+    if (trendData.length === 0) return 1;
+    return Math.max(...trendData.map((d) => d.value), 1);
+  }, [trendData]);
+
+  const maxSalesPerHour = useMemo(() => {
+    if (trendData.length === 0) return 1;
+    return Math.max(
+      ...trendData.map((d) => (d.hours > 0 ? d.sales / 1_000_000 / d.hours : 0)),
+      1,
+    );
+  }, [trendData]);
+
+  const avgValue = useMemo(() => {
+    if (trendData.length === 0) return 0;
+    const sum = trendData.reduce((acc, d) => acc + d.value, 0);
+    return sum / trendData.length;
+  }, [trendData]);
+
+  const totalPeriodStats = useMemo(() => {
+    if (!selectedLine || temporalDates.length === 0) {
+      return { salesPerDay: 0, hoursPerDay: 0 };
+    }
+    const sedeIdSet = new Set(visibleSedes.map((s) => s.id));
+    let sales = 0;
+    let hours = 0;
+
+    dailyDataSet.forEach((item) => {
+      if (!sedeIdSet.has(item.sede)) return;
+      if (
+        item.date < trendEffectiveDateRange.start ||
+        item.date > trendEffectiveDateRange.end
+      )
+        return;
+      const lineData = item.lines.find((l) => l.id === selectedLine);
+      if (!lineData) return;
+      const hasLaborData = hasLaborDataForLine(lineData.id);
+      sales += lineData.sales;
+      hours += hasLaborData ? lineData.hours : 0;
+    });
+
+    const days = temporalDates.length || 1;
+    return {
+      salesPerDay: sales / days,
+      hoursPerDay: hours / days,
+    };
+  }, [
+    dailyDataSet,
+    selectedLine,
+    temporalDates.length,
+    trendEffectiveDateRange.end,
+    trendEffectiveDateRange.start,
+    visibleSedes,
+  ]);
+
+  // Average sales/hour over the selected trends range.
+  const avgSalesPerHour = useMemo(() => {
+    if (!selectedLine || temporalDates.length === 0) return 0;
+    const totals = temporalDates.reduce(
+      (acc, date) => {
+        const dayData = dailyDataSet.filter(
+          (item) => baselineSedeIdSet.has(item.sede) && item.date === date,
+        );
+        for (const item of dayData) {
+          const lineData = item.lines.find((l) => l.id === selectedLine);
+          if (!lineData) continue;
+          const hasLaborData = hasLaborDataForLine(lineData.id);
+          acc.sales += lineData.sales;
+          acc.hours += hasLaborData ? lineData.hours : 0;
+        }
+        return acc;
+      },
+      { sales: 0, hours: 0 },
+    );
+    return totals.hours > 0 ? totals.sales / 1_000_000 / totals.hours : 0;
+  }, [selectedLine, temporalDates, dailyDataSet, baselineSedeIdSet]);
+
+  // Daily average sales/hour for the selected range (used for "promedio total")
+  const dailyAvgSalesPerHour = useMemo(() => {
+    if (!selectedLine || temporalDates.length === 0) return new Map<string, number>();
+    const map = new Map<string, number>();
+    temporalDates.forEach((date) => {
+      let sales = 0;
+      let hours = 0;
+      const dayData = dailyDataSet.filter(
+        (item) => baselineSedeIdSet.has(item.sede) && item.date === date,
+      );
+      for (const item of dayData) {
+        const lineData = item.lines.find((l) => l.id === selectedLine);
+        if (!lineData) continue;
+        const hasLaborData = hasLaborDataForLine(lineData.id);
+        sales += lineData.sales;
+        hours += hasLaborData ? lineData.hours : 0;
+      }
+      map.set(date, hours > 0 ? sales / 1_000_000 / hours : 0);
+    });
+    return map;
+  }, [selectedLine, temporalDates, dailyDataSet, baselineSedeIdSet]);
+
+  const comparisonBaselineIds = useMemo(
+    () =>
+      comparisonBaseline === "todas"
+        ? filteredVisibleSedes.map((s) => s.id)
+        : comparisonSedeIds,
+    [comparisonBaseline, filteredVisibleSedes, comparisonSedeIds],
+  );
+
+  useEffect(() => {
+    if (viewType !== "por-sede") {
+      setShowFloatingFilters(false);
+      return;
+    }
+
+    const updateFloating = () => {
+      if (!filtersRef.current || !cardRef.current) return;
+      const filtersRect = filtersRef.current.getBoundingClientRect();
+      const cardRect = cardRef.current.getBoundingClientRect();
+      const cardVisible = cardRect.bottom > 120 && cardRect.top < window.innerHeight;
+      const shouldFloat = filtersRect.bottom < 12;
+      setShowFloatingFilters(cardVisible && shouldFloat);
+    };
+
+    updateFloating();
+    window.addEventListener("scroll", updateFloating, { passive: true });
+    window.addEventListener("resize", updateFloating);
+    return () => {
+      window.removeEventListener("scroll", updateFloating);
+      window.removeEventListener("resize", updateFloating);
+    };
+  }, [viewType]);
+
+  const dailyComparisonBaseline = useMemo(() => {
+    if (comparisonBaseline === "propia") return new Map<string, number>();
+    if (!selectedLine || temporalDates.length === 0) return new Map<string, number>();
+    const map = new Map<string, number>();
+    const rangeDates = temporalDates;
+
+    rangeDates.forEach((date) => {
+      let sales = 0;
+      let hours = 0;
+      const dayData = dailyDataSet.filter(
+        (item) => comparisonBaselineIds.includes(item.sede) && item.date === date,
+      );
+      for (const item of dayData) {
+        const lineData = item.lines.find((l) => l.id === selectedLine);
+        if (!lineData) continue;
+        const hasLaborData = hasLaborDataForLine(lineData.id);
+        sales += lineData.sales;
+        hours += hasLaborData ? lineData.hours : 0;
+      }
+      map.set(date, hours > 0 ? sales / 1_000_000 / hours : 0);
+    });
+
+    return map;
+  }, [
+    comparisonBaseline,
+    selectedLine,
+    dailyDataSet,
+    comparisonBaselineIds,
+    temporalDates,
+  ]);
+
+  const ownSedeBaseline = useMemo(() => {
+    const map = new Map<string, number>();
+    const rangeDates = temporalDates;
+    if (!selectedLine || comparisonSedeIds.length === 0 || rangeDates.length === 0) {
+      return map;
+    }
+
+    comparisonSedeIds.forEach((sedeId) => {
+      let sales = 0;
+      let hours = 0;
+
+      rangeDates.forEach((date) => {
+        const dayData = dailyDataSet.filter(
+          (item) => item.sede === sedeId && item.date === date,
+        );
+        dayData.forEach((item) => {
+          const lineData = item.lines.find((l) => l.id === selectedLine);
+          if (!lineData) return;
+          const hasLaborData = hasLaborDataForLine(lineData.id);
+          sales += lineData.sales;
+          hours += hasLaborData ? lineData.hours : 0;
+        });
+      });
+
+      map.set(sedeId, hours > 0 ? sales / 1_000_000 / hours : 0);
+    });
+
+    return map;
+  }, [comparisonSedeIds, dailyDataSet, selectedLine, temporalDates]);
+
+  const comparisonRangeDates = useMemo(
+    () => temporalDates,
+    [temporalDates],
+  );
+
+  const computeComparisonStats = useCallback(
+    (sedeIds: string[]) => {
+      if (!selectedLine || sedeIds.length === 0) {
+        return { sales: 0, hours: 0, days: 0, salesPerHour: 0, salesPerDay: 0, hoursPerDay: 0 };
+      }
+
+      const sedeSet = new Set(sedeIds);
+      let sales = 0;
+      let hours = 0;
+
+      dailyDataSet.forEach((item) => {
+        if (!sedeSet.has(item.sede)) return;
+        if (
+          item.date < trendEffectiveDateRange.start ||
+          item.date > trendEffectiveDateRange.end
+        )
+          return;
+        const lineData = item.lines.find((l) => l.id === selectedLine);
+        if (!lineData) return;
+        const hasLaborData = hasLaborDataForLine(lineData.id);
+        sales += lineData.sales;
+        hours += hasLaborData ? lineData.hours : 0;
+      });
+
+      const days = comparisonRangeDates.length;
+      const salesPerHour = hours > 0 ? sales / 1_000_000 / hours : 0;
+      const salesPerDay = days > 0 ? sales / days : 0;
+      const hoursPerDay = days > 0 ? hours / days : 0;
+
+      return { sales, hours, days, salesPerHour, salesPerDay, hoursPerDay };
+    },
+    [
+      comparisonRangeDates.length,
+      dailyDataSet,
+      selectedLine,
+      trendEffectiveDateRange.end,
+      trendEffectiveDateRange.start,
+    ],
+  );
+
+  const selectedComparisonStats = useMemo(
+    () => computeComparisonStats(comparisonSedeIds),
+    [comparisonSedeIds, computeComparisonStats],
+  );
+
+  const totalComparisonStats = useMemo(() => {
+    if (!selectedLine) {
+      return { sales: 0, hours: 0, days: 0, salesPerHour: 0, salesPerDay: 0, hoursPerDay: 0 };
+    }
+
+    let sales = 0;
+    let hours = 0;
+
+    dailyDataSet.forEach((item) => {
+      if (
+        item.date < trendEffectiveDateRange.start ||
+        item.date > trendEffectiveDateRange.end
+      )
+        return;
+      const lineData = item.lines.find((l) => l.id === selectedLine);
+      if (!lineData) return;
+      const hasLaborData = hasLaborDataForLine(lineData.id);
+      sales += lineData.sales;
+      hours += hasLaborData ? lineData.hours : 0;
+    });
+
+    const days = comparisonRangeDates.length;
+    const salesPerHour = hours > 0 ? sales / 1_000_000 / hours : 0;
+    const salesPerDay = days > 0 ? sales / days : 0;
+    const hoursPerDay = days > 0 ? hours / days : 0;
+
+    return { sales, hours, days, salesPerHour, salesPerDay, hoursPerDay };
+  }, [
+    comparisonRangeDates.length,
+    dailyDataSet,
+    selectedLine,
+    trendEffectiveDateRange.end,
+    trendEffectiveDateRange.start,
+  ]);
+
+  const sedeComparisonData = useMemo(() => {
+    if (!selectedLine || comparisonSedeIds.length === 0) return [];
+
+    const rangeDates = comparisonRangeDates;
+
+    return rangeDates.map((date) => {
+      const sedesForDay = orderedComparisonSedeIds.map((sedeId) => {
+        const dayData = dailyDataSet.filter(
+          (item) => item.sede === sedeId && item.date === date,
+        );
+
+        const totals = dayData.reduce(
+          (acc, item) => {
+            const lineData = item.lines.find((l) => l.id === selectedLine);
+            if (!lineData) return acc;
+
+            const hasLaborData = hasLaborDataForLine(lineData.id);
+            const hours = hasLaborData ? lineData.hours : 0;
+
+            return {
+              sales: acc.sales + lineData.sales,
+              hours: acc.hours + hours,
+            };
+          },
+          { sales: 0, hours: 0 },
+        );
+
+        return {
+          sedeId,
+          sedeName: sedeNameMap.get(sedeId) || sedeId,
+          value: totals.sales,
+          sales: totals.sales,
+          hours: totals.hours,
+        };
+      });
+
+      return { date, sedes: sedesForDay };
+    });
+  }, [
+    selectedLine,
+    comparisonSedeIds,
+    orderedComparisonSedeIds,
+    dailyDataSet,
+    comparisonRangeDates,
+    sedeNameMap,
+  ]);
+
+  const sedeMaxValue = useMemo(() => {
+    if (sedeComparisonData.length === 0) return 1;
+    const allValues = sedeComparisonData.flatMap((d) =>
+      d.sedes.map((s) => s.value),
+    );
+    return Math.max(...allValues, 1);
+  }, [sedeComparisonData]);
+
+  if (lines.length === 0 || availableDates.length === 0) return null;
+
+  const renderComparisonFilters = (compact = false) => (
+    <div
+      className={`rounded-2xl border border-slate-200/70 bg-white/95 ${
+        compact ? "px-4 py-3" : "p-4"
+      } shadow-[0_18px_40px_-35px_rgba(15,23,42,0.5)] backdrop-blur`}
+    >
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-slate-700">
+          Sedes a comparar
+        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            Orden
+            <select
+              value={comparisonSort}
+              onChange={(e) =>
+                setComparisonSort(e.target.value as typeof comparisonSort)
+              }
+              className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 transition-all focus:border-mercamio-300 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+            >
+              <option value="none">Por defecto</option>
+              <option value="m2_desc">M2: mayor a menor</option>
+              <option value="m2_asc">M2: menor a mayor</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            Tamano m2
+            <select
+              value={comparisonSizeFilter}
+              onChange={(e) =>
+                setComparisonSizeFilter(
+                  e.target.value as typeof comparisonSizeFilter,
+                )
+              }
+              className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 transition-all focus:border-mercamio-300 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+            >
+              <option value="all">Todas</option>
+              <option value="gte_1000">Mayor o igual a 1000 m2</option>
+              <option value="gte_2000">Mayor o igual a 2000 m2</option>
+              <option value="gte_3000">Mayor o igual a 3000 m2</option>
+              <option value="between_1000_2000">Entre 1000 y 2000 m2</option>
+              <option value="between_2000_3000">Entre 2000 y 3000 m2</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div>
+        <span className="mb-3 block text-xs font-semibold text-slate-700">
+          Mapa de calor
+        </span>
+        <div className="flex items-center gap-2 rounded-full border border-slate-200/70 bg-slate-50 p-1">
+          <button
+            type="button"
+            onClick={() => setComparisonBaseline("seleccionadas")}
+            className={`flex-1 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+              comparisonBaseline === "seleccionadas"
+                ? "bg-white text-mercamio-700 shadow-sm"
+                : "text-slate-700 hover:text-slate-800"
+            }`}
+          >
+            Promedio seleccionadas
+          </button>
+          <button
+            type="button"
+            onClick={() => setComparisonBaseline("todas")}
+            className={`flex-1 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+              comparisonBaseline === "todas"
+                ? "bg-white text-mercamio-700 shadow-sm"
+                : "text-slate-700 hover:text-slate-800"
+            }`}
+          >
+            Promedio total
+          </button>
+          <button
+            type="button"
+            onClick={() => setComparisonBaseline("propia")}
+            className={`flex-1 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+              comparisonBaseline === "propia"
+                ? "bg-white text-mercamio-700 shadow-sm"
+                : "text-slate-700 hover:text-slate-800"
+            }`}
+          >
+            Promedio por sede
+          </button>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-slate-700">
+          Seleccion de sedes
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {orderedVisibleSedes.map((sede) => {
+          const isSelected = comparisonSedeIds.includes(sede.id);
+          return (
+            <button
+              key={sede.id}
+              type="button"
+              onClick={() => toggleComparisonSede(sede.id)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                isSelected
+                  ? "border-sky-300 bg-sky-50 text-sky-700 ring-2 ring-sky-300 shadow-sm"
+                  : "border-slate-200/70 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+              }`}
+            >
+              {sede.name}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={toggleAllComparisonSedes}
+          className="rounded-full border border-mercamio-200/70 bg-white px-3 py-1.5 text-xs font-semibold text-mercamio-700 transition-all hover:border-mercamio-300 hover:text-mercamio-800"
+        >
+          {comparisonSedeIds.length === filteredVisibleSedes.length
+            ? "Deseleccionar todas"
+            : "Seleccionar todas"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      ref={cardRef}
+      className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]"
+    >
+      {viewType === "por-sede" && showFloatingFilters && (
+        <div className="fixed left-1/2 top-0 z-30 w-[calc(100vw-1rem)] max-w-none -translate-x-1/2">
+          {renderComparisonFilters(true)}
+        </div>
+      )}
+      <div className="mb-4">
+        <p className="text-xs uppercase tracking-[0.3em] text-slate-700">
+          Analisis de tendencias
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-900">
+          {viewType === "temporal"
+            ? "Evolucion temporal por linea"
+            : "Comparativo por sede"}
+        </h3>
+      </div>
+
+      <div className="mb-4 flex items-center gap-2 rounded-full border border-slate-200/70 bg-slate-50 p-1">
+        <button
+          type="button"
+          onClick={() => setViewType("temporal")}
+          className={`flex-1 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.15em] transition-all ${
+            viewType === "temporal"
+              ? "bg-white text-mercamio-700 shadow-sm"
+              : "text-slate-700 hover:text-slate-800"
+          }`}
+        >
+          Evolucion temporal
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewType("por-sede")}
+          className={`flex-1 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.15em] transition-all ${
+            viewType === "por-sede"
+              ? "bg-white text-mercamio-700 shadow-sm"
+              : "text-slate-700 hover:text-slate-800"
+          }`}
+        >
+          Comparativo por sede
+        </button>
+      </div>
+
+      <div className="mb-6">
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-700">Linea</span>
+          <select
+            value={selectedLine}
+            onChange={(e) => setSelectedLine(e.target.value)}
+            className="mt-1 w-full rounded-full border border-slate-200/70 bg-slate-50 px-3 py-2 text-sm text-slate-900 transition-all focus:border-mercamio-300 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+          >
+            <option value="">Selecciona una linea</option>
+            {lines.map((line) => (
+              <option key={line.id} value={line.id}>
+                {line.name} ({line.id})
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="mb-6 space-y-3 rounded-2xl border border-slate-200/70 bg-slate-50 p-4">
+        <span className="text-xs font-semibold text-slate-700">
+          Filtro de fechas (tendencias)
+        </span>
+        <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-200/70 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => setTrendDateFilterMode("mes_corrido")}
+            className={`rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+              trendDateFilterMode === "mes_corrido"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-700 hover:text-slate-800"
+            }`}
+          >
+            Mes corrido
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrendDateFilterMode("mes_anterior")}
+            className={`rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+              trendDateFilterMode === "mes_anterior"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-700 hover:text-slate-800"
+            }`}
+          >
+            Mes anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrendDateFilterMode("rango")}
+            className={`rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+              trendDateFilterMode === "rango"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-700 hover:text-slate-800"
+            }`}
+          >
+            Rango
+          </button>
+        </div>
+        {trendDateFilterMode === "rango" && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-700">
+                Desde
+              </span>
+              <input
+                type="date"
+                value={customTrendRange.start}
+                onChange={(e) => handleCustomTrendStartChange(e.target.value)}
+                min={availableDateBounds.min}
+                max={availableDateBounds.max}
+                className="rounded-lg border border-slate-200/70 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-mercamio-200 focus:border-mercamio-400 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-700">
+                Hasta
+              </span>
+              <input
+                type="date"
+                value={customTrendRange.end}
+                onChange={(e) => handleCustomTrendEndChange(e.target.value)}
+                min={availableDateBounds.min}
+                max={availableDateBounds.max}
+                className="rounded-lg border border-slate-200/70 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-mercamio-200 focus:border-mercamio-400 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+              />
+            </label>
+          </div>
+        )}
+        <p className="text-xs text-slate-600">
+          Rango aplicado: {trendDateRangeLabel || "Sin rango definido"}
+        </p>
+      </div>
+
+      {viewType === "temporal" && (
+        <div className="mb-6 grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-700">Sede</span>
+            <select
+              value={trendSede}
+              onChange={(e) => setTrendSede(e.target.value)}
+              className="mt-1 w-full rounded-full border border-slate-200/70 bg-slate-50 px-3 py-2 text-sm text-slate-900 transition-all focus:border-mercamio-300 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+            >
+              {visibleSedes.map((sede) => (
+                <option key={sede.id} value={sede.id}>
+                  {sede.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold text-slate-700">
+              Mapa de calor
+            </span>
+            <div className="mt-1 flex items-center gap-2 rounded-full border border-slate-200/70 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => setHeatBaseline("sede")}
+                className={`flex-1 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+                  heatBaseline === "sede"
+                    ? "bg-white text-mercamio-700 shadow-sm"
+                    : "text-slate-700 hover:text-slate-800"
+                }`}
+              >
+                Sede actual
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeatBaseline("todas")}
+                className={`flex-1 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] transition-all ${
+                  heatBaseline === "todas"
+                    ? "bg-white text-mercamio-700 shadow-sm"
+                    : "text-slate-700 hover:text-slate-800"
+                }`}
+              >
+                Promedio total
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewType === "por-sede" && (
+        <div className="mb-6">
+          <div ref={filtersRef}>{renderComparisonFilters()}</div>
+          <div className="mt-4" />
+        </div>
+      )}
+
+      {viewType === "temporal" ? (
+        <>
+          {selectedLine && trendData.length > 0 && (
+            <>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-slate-700">Promedio del periodo</p>
+                  <p className="text-2xl font-semibold text-slate-900">
+                    {formatCOP(avgValue)}
+                  </p>
+                  <p className="text-lg font-semibold text-slate-800">
+                    {(
+                      trendData.reduce((a, d) => a + d.hours, 0) /
+                      (trendData.length || 1)
+                    ).toFixed(1)}
+                    h
+                  </p>
+                  <p className="text-xs text-slate-500">Horas promedio/dia</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-2 shadow-[0_12px_30px_-22px_rgba(15,23,42,0.35)]">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-500">
+                    Prom. total (todas las sedes)
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
+                    <span>Ventas {formatCOP(totalPeriodStats.salesPerDay)}</span>
+                    <span>Horas {totalPeriodStats.hoursPerDay.toFixed(1)}h</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {trendData.map((point) => {
+                  const salesPerHour =
+                    point.hours > 0 ? point.sales / 1_000_000 / point.hours : 0;
+                  const percentage =
+                    maxSalesPerHour > 0 ? (salesPerHour / maxSalesPerHour) * 100 : 0;
+                  const dailyBaseline =
+                    heatBaseline === "todas"
+                      ? (dailyAvgSalesPerHour.get(point.date) ?? 0)
+                      : avgSalesPerHour;
+                  const heatRatio =
+                    dailyBaseline > 0
+                      ? (salesPerHour / dailyBaseline) * 100
+                      : 0;
+                  const heatColor = getHeatColor(heatRatio);
+
+                  return (
+                    <div key={point.date} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono text-slate-700">
+                          {formatDateLabel(point.date, dateLabelOptions)}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-semibold text-slate-900">
+                            Vta/Hr: {salesPerHour.toFixed(3)}
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-700">
+                            {formatCOP(point.value)}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {point.hours.toFixed(1)}h
+                          </span>
+                        </div>
+                      </div>
+                      <div className="relative h-6 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${percentage}%`,
+                            backgroundColor: heatColor,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {!selectedLine && (
+            <p className="py-8 text-center text-sm text-slate-700">
+              Selecciona una linea para ver su tendencia temporal
+            </p>
+          )}
+
+          {selectedLine && trendData.length === 0 && (
+            <p className="py-8 text-center text-sm text-slate-700">
+              No hay datos disponibles para esta linea
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          {selectedLine && sedeComparisonData.length > 0 && (
+            <>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-slate-700">Comparativo diario</p>
+                  <p className="text-lg font-semibold text-slate-900">
+                    {sedeComparisonData.length}{" "}
+                    {sedeComparisonData.length === 1 ? "dia" : "dias"},{" "}
+                    {comparisonSedeIds.length}{" "}
+                    {comparisonSedeIds.length === 1 ? "sede" : "sedes"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                  <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-2 shadow-[0_12px_30px_-22px_rgba(15,23,42,0.35)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-500">
+                      Prom. seleccionadas
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
+                      <span>
+                        Vta/Hr{" "}
+                        {comparisonSedeIds.length > 0
+                          ? selectedComparisonStats.salesPerHour.toFixed(3)
+                          : "—"}
+                      </span>
+                      <span>
+                        Ventas{" "}
+                        {comparisonSedeIds.length > 0
+                          ? formatCOP(selectedComparisonStats.salesPerDay)
+                          : "—"}
+                      </span>
+                      <span>
+                        Horas{" "}
+                        {comparisonSedeIds.length > 0
+                          ? `${selectedComparisonStats.hoursPerDay.toFixed(1)}h`
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-2 shadow-[0_12px_30px_-22px_rgba(15,23,42,0.35)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-500">
+                      Prom. total
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
+                      <span>Vta/Hr {totalComparisonStats.salesPerHour.toFixed(3)}</span>
+                      <span>Ventas {formatCOP(totalComparisonStats.salesPerDay)}</span>
+                      <span>Horas {totalComparisonStats.hoursPerDay.toFixed(1)}h</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {sedeComparisonData.map((day) => (
+                  <div key={day.date}>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
+                      {formatDateLabel(day.date, dateLabelOptions)}
+                    </p>
+                    <div className="space-y-1">
+                      {(() => {
+                        const sedeSalesPerHour = day.sedes
+                          .map((sede) =>
+                            sede.hours > 0
+                              ? sede.sales / 1_000_000 / sede.hours
+                              : 0,
+                          )
+                          .filter((value) => value > 0);
+                        const dayMaxSalesPerHour =
+                          sedeSalesPerHour.length > 0
+                            ? Math.max(...sedeSalesPerHour)
+                            : 0;
+                        const dayAvgSalesPerHour =
+                          dailyComparisonBaseline.get(day.date) ?? 0;
+
+                        return day.sedes.map((sede) => {
+                          const salesPerHour =
+                            sede.hours > 0
+                              ? sede.sales / 1_000_000 / sede.hours
+                              : 0;
+                          const percentage =
+                            dayMaxSalesPerHour > 0
+                              ? (salesPerHour / dayMaxSalesPerHour) * 100
+                              : 0;
+                          const heatRatio =
+                            dayAvgSalesPerHour > 0
+                              ? (salesPerHour / dayAvgSalesPerHour) * 100
+                              : 0;
+                          const ownBaseline = ownSedeBaseline.get(sede.sedeId) ?? 0;
+                          const resolvedHeatRatio =
+                            comparisonBaseline === "propia"
+                              ? ownBaseline > 0
+                                ? (salesPerHour / ownBaseline) * 100
+                                : 0
+                              : heatRatio;
+                          const heatColor = getHeatColor(resolvedHeatRatio);
+
+                          return (
+                            <div
+                              key={sede.sedeId}
+                              className="flex items-center gap-3"
+                            >
+                              <span className="w-32 truncate text-sm font-semibold text-slate-900">
+                                {sede.sedeName}
+                              </span>
+                              <div className="relative h-7 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className="absolute inset-y-0 left-0 flex items-center gap-3 truncate rounded-full px-3 text-[12px] font-semibold text-slate-900"
+                                  style={{
+                                    width: `${percentage}%`,
+                                    backgroundColor: heatColor,
+                                  }}
+                                >
+                                  <span className="ml-auto shrink-0 rounded-full bg-white/85 px-2 py-0.5 text-[12px] font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200/60">
+                                    Vta/Hr: {salesPerHour.toFixed(3)} |{" "}
+                                    {formatCOP(sede.value)} |{" "}
+                                    {sede.hours.toFixed(1)}h
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {!selectedLine && (
+            <p className="py-8 text-center text-sm text-slate-700">
+              Selecciona una linea para comparar entre sedes
+            </p>
+          )}
+
+          {selectedLine && sedeComparisonData.length === 0 && (
+            <p className="py-8 text-center text-sm text-slate-700">
+              {comparisonSedeIds.length === 0
+                ? "Selecciona al menos una sede para ver la comparacion."
+                : "No hay datos disponibles para esta linea en las sedes seleccionadas."}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const formatM2Value = (value: number | null) => {
+  if (value == null) return "--";
+  return new Intl.NumberFormat("es-CO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+};
+
+const M2MetricsSection = ({
+  dailyDataSet,
+  sedes,
+  selectedSedeIds,
+  dateRange,
+}: {
+  dailyDataSet: DailyProductivity[];
+  sedes: Sede[];
+  selectedSedeIds: string[];
+  dateRange: DateRange;
+}) => {
+  const selectedSedeIdSet = useMemo(
+    () => new Set(selectedSedeIds),
+    [selectedSedeIds],
+  );
+  const filteredSedes = useMemo(() => {
+    if (selectedSedeIds.length === 0) return sedes;
+    return sedes.filter((sede) => selectedSedeIdSet.has(sede.id));
+  }, [selectedSedeIds.length, sedes, selectedSedeIdSet]);
+  const metrics = useMemo(() => {
+    const bySede = new Map<
+      string,
+      { sales: number; hours: number; margin: number }
+    >();
+
+    dailyDataSet.forEach((item) => {
+      if (dateRange.start && item.date < dateRange.start) return;
+      if (dateRange.end && item.date > dateRange.end) return;
+      if (selectedSedeIds.length > 0 && !selectedSedeIdSet.has(item.sede)) return;
+
+      const entry = bySede.get(item.sede) ?? { sales: 0, hours: 0, margin: 0 };
+      item.lines.forEach((line) => {
+        const hasLabor = hasLaborDataForLine(line.id);
+        const hours = hasLabor ? line.hours : 0;
+        entry.sales += line.sales;
+        entry.hours += hours;
+        entry.margin += calcLineMargin(line);
+      });
+      bySede.set(item.sede, entry);
+    });
+
+    return filteredSedes.map((sede) => {
+      const totals = bySede.get(sede.id) ?? { sales: 0, hours: 0, margin: 0 };
+      const m2 = getSedeM2(sede.name) ?? getSedeM2(sede.id);
+      const salesPerM2 = m2 ? totals.sales / m2 : null;
+      const hoursPerM2 = m2 ? totals.hours / m2 : null;
+      const marginPerM2 = m2 ? totals.margin / m2 : null;
+
+      return {
+        sedeId: sede.id,
+        sedeName: sede.name,
+        m2,
+        salesPerM2,
+        hoursPerM2,
+        marginPerM2,
+      };
+    });
+  }, [
+    dailyDataSet,
+    dateRange.end,
+    dateRange.start,
+    filteredSedes,
+    selectedSedeIdSet,
+    selectedSedeIds.length,
+  ]);
+
+  if (metrics.length === 0) return null;
+
+  return (
+    <div className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+      <div className="mb-4">
+        <p className="text-xs uppercase tracking-[0.3em] text-slate-700">
+          Indicadores por m2
+        </p>
+        <h3 className="mt-1 text-lg font-semibold text-slate-900">
+          Ventas, horas y margen por m2
+        </h3>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm text-slate-700">
+          <thead className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+            <tr>
+              <th className="px-3 py-2 text-left font-semibold">Sede</th>
+              <th className="px-3 py-2 text-right font-semibold">m2</th>
+              <th className="px-3 py-2 text-right font-semibold">Ventas/m2</th>
+              <th className="px-3 py-2 text-right font-semibold">Horas/m2</th>
+              <th className="px-3 py-2 text-right font-semibold">Margen/m2</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.map((item) => (
+              <tr key={item.sedeId} className="border-t border-slate-100">
+                <td className="px-3 py-2 font-semibold text-slate-900">
+                  {item.sedeName}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {formatM2Value(item.m2)}
+                </td>
+                <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                  {item.salesPerM2 == null ? "--" : formatCOP(item.salesPerM2)}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {item.hoursPerM2 == null ? "--" : item.hoursPerM2.toFixed(2)}
+                </td>
+                <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                  {item.marginPerM2 == null ? "--" : formatCOP(item.marginPerM2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+// ============================================================================
+// COMPONENTE PRINCIPAL
+// ============================================================================
+
+export default function Home() {
+  // Estado para controlar hidratación
+  const [mounted, setMounted] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [authLoaded, setAuthLoaded] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const [pendingSedeKey, setPendingSedeKey] = useState<string | null>(null);
+  const [allowedLineIds, setAllowedLineIds] = useState<string[]>([]);
+  const [appliedUserDefault, setAppliedUserDefault] = useState(false);
+  const router = useRouter();
+
+  // Estado con persistencia - siempre inicia con valores por defecto
+  const [selectedSede, setSelectedSede] = useState("");
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    const yesterday = getYesterdayDateKey();
+    return { start: yesterday, end: yesterday };
+  });
+  const [lineFilter, setLineFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<
+    "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2"
+  >("cards");
+
+  const prefsKey = useMemo(
+    () => `vp_prefs_${username ?? "default"}`,
+    [username],
+  );
+
+  const resolveUsernameSedeKey = useCallback((value?: string | null) => {
+    if (!value) return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized.startsWith("sede_")) return null;
+    const raw = normalized.replace(/^sede_/, "").replace(/_/g, " ");
+    return normalizeSedeKey(raw);
+  }, []);
+
+  const resolveAllowedLineIds = useCallback((value?: string[] | null) => {
+    if (!Array.isArray(value) || value.length === 0) return [];
+    const fallbackIds = new Set(DEFAULT_LINES.map((line) => line.id));
+    return Array.from(
+      new Set(
+        value
+          .map((line) => (typeof line === "string" ? line.trim().toLowerCase() : ""))
+          .filter((line) => fallbackIds.has(line)),
+      ),
+    );
+  }, []);
+
+  // Cargar preferencias desde localStorage después de montar
+  useEffect(() => {
+    setMounted(true);
+    document.documentElement.classList.remove("dark");
+  }, []);
+
+  // Cargar preferencias por usuario cuando auth esté listo
+  useEffect(() => {
+    if (!mounted || !authLoaded) return;
+
+    const rawPrefs = localStorage.getItem(prefsKey);
+    if (rawPrefs) {
+      try {
+        const parsed = JSON.parse(rawPrefs) as {
+          selectedSede?: string;
+          selectedCompanies?: string[];
+          dateRange?: DateRange;
+          lineFilter?: string;
+          viewMode?: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2";
+        };
+        if (Array.isArray(parsed.selectedCompanies)) {
+          setSelectedCompanies(parsed.selectedCompanies.slice(0, 2));
+        }
+        if (typeof parsed.selectedSede === "string") {
+          setSelectedSede(parsed.selectedSede);
+        }
+        if (typeof parsed.lineFilter === "string") {
+          setLineFilter(parsed.lineFilter);
+        }
+        if (parsed.viewMode) {
+          setViewMode(parsed.viewMode);
+        }
+        setPrefsReady(true);
+        return;
+      } catch {
+        // fallback a preferencias antiguas
+      }
+    }
+
+    const savedCompanies = localStorage.getItem("selectedCompanies");
+    const savedCompany = localStorage.getItem("selectedCompany");
+    const savedSede = localStorage.getItem("selectedSede");
+    if (savedCompanies) {
+      try {
+        const parsed = JSON.parse(savedCompanies) as string[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSelectedCompanies(parsed.slice(0, 2));
+          setSelectedSede("");
+        }
+      } catch {
+        // Mantener valores por defecto si hay error
+      }
+    } else if (savedCompany) {
+      setSelectedCompanies([savedCompany]);
+      setSelectedSede("");
+    } else if (savedSede) {
+      setSelectedSede(savedSede);
+      setSelectedCompanies([]);
+    }
+
+    const savedLineFilter = localStorage.getItem("lineFilter");
+    if (savedLineFilter) setLineFilter(savedLineFilter);
+
+    const savedViewMode = localStorage.getItem("viewMode");
+    if (savedViewMode) {
+      setViewMode(
+        savedViewMode as
+          | "cards"
+          | "comparison"
+          | "chart"
+          | "trends"
+          | "hourly"
+          | "m2",
+      );
+    }
+
+    setPrefsReady(true);
+  }, [authLoaded, mounted, prefsKey]);
+
+  // Guardar preferencias por usuario
+  useEffect(() => {
+    if (!mounted || !prefsReady) return;
+    const payload = {
+      selectedSede,
+      selectedCompanies,
+      dateRange,
+      lineFilter,
+      viewMode,
+    };
+    localStorage.setItem(prefsKey, JSON.stringify(payload));
+  }, [
+    dateRange,
+    lineFilter,
+    mounted,
+    prefsKey,
+    prefsReady,
+    selectedCompanies,
+    selectedSede,
+    viewMode,
+  ]);
+
+  // Estados adicionales para búsqueda y ordenamiento
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"sales" | "hours" | "name">("sales");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Cargar datos
+  const { dailyDataSet: rawDailyDataSet, availableSedes, isLoading, error } =
+    useProductivityData();
+  const dailyDataSet = useMemo(() => {
+    if (isAdmin || allowedLineIds.length === 0) return rawDailyDataSet;
+    const allowedSet = new Set(allowedLineIds);
+    return rawDailyDataSet
+      .map((item) => ({
+        ...item,
+        lines: item.lines.filter((line) => allowedSet.has(line.id.toLowerCase())),
+      }))
+      .filter((item) => item.lines.length > 0);
+  }, [allowedLineIds, isAdmin, rawDailyDataSet]);
+  const orderedSedes = useMemo(() => {
+    const hidden = new Set(
+      [
+        "adm",
+        "cedicavasa",
+        "panificadora",
+        "planta desposte mixto",
+        "planta desprese pollo",
+      ].map(normalizeSedeKey),
+    );
+    const filtered = availableSedes.filter((sede) => {
+      const idKey = normalizeSedeKey(sede.id);
+      const nameKey = normalizeSedeKey(sede.name);
+      return !hidden.has(idKey) && !hidden.has(nameKey);
+    });
+    return sortSedesByOrder(filtered);
+  }, [availableSedes]);
+
+  const companyOptions = useMemo(() => buildCompanyOptions(), []);
+  const selectedSedeIds = useMemo(
+    () => resolveSelectedSedeIds(selectedSede, selectedCompanies, orderedSedes),
+    [selectedSede, selectedCompanies, orderedSedes],
+  );
+  const selectedSedeIdSet = useMemo(
+    () => new Set(selectedSedeIds),
+    [selectedSedeIds],
+  );
+  const availableSedesKey = useMemo(
+    () => orderedSedes.map((sede) => sede.id).join("|"),
+    [orderedSedes],
+  );
+
+  // Fechas disponibles
+  const availableDates = useMemo(() => {
+    return Array.from(
+      new Set(
+        dailyDataSet
+          .filter((item) => selectedSedeIdSet.has(item.sede))
+          .map((item) => item.date),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [dailyDataSet, selectedSedeIdSet]);
+
+  const allAvailableDates = useMemo(() => {
+    return Array.from(new Set(dailyDataSet.map((item) => item.date))).sort(
+      (a, b) => a.localeCompare(b),
+    );
+  }, [dailyDataSet]);
+  const exportMinDate = allAvailableDates[0] ?? "";
+  const exportMaxDate =
+    allAvailableDates[allAvailableDates.length - 1] ?? "";
+
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportSedeIds, setExportSedeIds] = useState<string[]>([]);
+  const [exportDateRange, setExportDateRange] = useState<DateRange>({
+    start: "",
+    end: "",
+  });
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Sincronizar sede seleccionada
+  useEffect(() => {
+    if (orderedSedes.length === 0) return;
+
+    if (selectedCompanies.length > 0) return;
+
+    if (
+      selectedSede &&
+      !orderedSedes.some((sede) => sede.id === selectedSede)
+    ) {
+      setSelectedSede(orderedSedes[0].id);
+    }
+  }, [availableSedesKey, selectedSede, selectedCompanies, orderedSedes]);
+
+  // Si el usuario es sede_*, seleccionar su sede por defecto
+  useEffect(() => {
+    if (!prefsReady || appliedUserDefault) return;
+    if (!pendingSedeKey) {
+      setAppliedUserDefault(true);
+      return;
+    }
+    const match = orderedSedes.find((sede) => {
+      const idKey = normalizeSedeKey(sede.id);
+      const nameKey = normalizeSedeKey(sede.name);
+      return idKey === pendingSedeKey || nameKey === pendingSedeKey;
+    });
+    if (match) {
+      setSelectedCompanies([]);
+      setSelectedSede(match.id);
+      setAppliedUserDefault(true);
+    }
+  }, [appliedUserDefault, orderedSedes, pendingSedeKey, prefsReady]);
+
+  // Rango por defecto al cargar sesión: siempre ayer
+  useEffect(() => {
+    if (!prefsReady) return;
+    const yesterday = getYesterdayDateKey();
+    setDateRange({ start: yesterday, end: yesterday });
+  }, [prefsReady]);
+
+  // Datos derivados
+  const selectedSedeName = (() => {
+    if (selectedCompanies.length > 0) {
+      const names = selectedCompanies
+        .map(
+          (companyId) =>
+            SEDE_GROUPS.find((group) => group.id === companyId)?.name,
+        )
+        .filter((name): name is string => Boolean(name));
+      if (names.length > 0) return names.join(" + ");
+    }
+    return (
+      orderedSedes.find((sede) => sede.id === selectedSede)?.name ??
+      "Todas las sedes"
+    );
+  })();
+
+  const dateRangeLabel = useMemo(
+    () => formatRangeLabel(dateRange),
+    [dateRange],
+  );
+
+  const rangeDailyData = useMemo(() => {
+    return dailyDataSet.filter(
+      (item) =>
+        selectedSedeIdSet.has(item.sede) &&
+        item.date >= dateRange.start &&
+        item.date <= dateRange.end,
+    );
+  }, [dailyDataSet, dateRange, selectedSedeIdSet]);
+
+  const lines = useMemo(() => aggregateLines(rangeDailyData), [rangeDailyData]);
+  const hasRangeData = rangeDailyData.length > 0;
+
+  const filteredLines = useMemo(() => {
+    let result = filterLinesByStatus(lines, lineFilter);
+
+    // Aplicar búsqueda
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        (line) =>
+          line.name.toLowerCase().includes(query) ||
+          line.id.toLowerCase().includes(query),
+      );
+    }
+
+    // Aplicar ordenamiento
+    result.sort((a, b) => {
+      let compareValue = 0;
+
+      switch (sortBy) {
+        case "sales":
+          compareValue = a.sales - b.sales;
+          break;
+        case "hours":
+          compareValue = a.hours - b.hours;
+          break;
+        case "name":
+          compareValue = a.name.localeCompare(b.name);
+          break;
+      }
+
+      return sortOrder === "asc" ? compareValue : -compareValue;
+    });
+
+    return result;
+  }, [lineFilter, lines, searchQuery, sortBy, sortOrder]);
+  const pdfLines = useMemo(
+    () => [...filteredLines].sort((a, b) => b.sales - a.sales),
+    [filteredLines],
+  );
+
+  const lineFilterLabels: Record<string, string> = {
+    all: "Todas las líneas",
+    critical: "Líneas críticas (alerta)",
+    improving: "Líneas en mejora (atención)",
+  };
+
+  const lineFilterLabel = lineFilterLabels[lineFilter] ?? "Todas las líneas";
+
+  const buildExportPayload = useCallback(
+    (options?: { sedeIds?: string[]; dateRange?: DateRange }): ExportPayload => {
+      const resolvedDateRange: DateRange = {
+        start: options?.dateRange?.start || exportMinDate || dateRange.start,
+        end: options?.dateRange?.end || exportMaxDate || dateRange.end,
+      };
+
+      const hasSedeOverride = options?.sedeIds !== undefined;
+      const resolvedSedeIds = hasSedeOverride
+        ? options!.sedeIds!.length > 0
+          ? options!.sedeIds!
+          : orderedSedes.map((sede) => sede.id)
+        : selectedSedeIds.length > 0
+          ? selectedSedeIds
+          : orderedSedes.map((sede) => sede.id);
+
+      const resolvedSedeIdSet = new Set(resolvedSedeIds);
+      const rangeData = dailyDataSet.filter(
+        (item) =>
+          resolvedSedeIdSet.has(item.sede) &&
+          item.date >= resolvedDateRange.start &&
+          item.date <= resolvedDateRange.end,
+      );
+
+      const exportLines = aggregateLines(rangeData);
+      let exportFilteredLines = filterLinesByStatus(exportLines, lineFilter);
+
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        exportFilteredLines = exportFilteredLines.filter(
+          (line) =>
+            line.name.toLowerCase().includes(query) ||
+            line.id.toLowerCase().includes(query),
+        );
+      }
+
+      exportFilteredLines.sort((a, b) => {
+        let compareValue = 0;
+        switch (sortBy) {
+          case "sales":
+            compareValue = a.sales - b.sales;
+            break;
+          case "hours":
+            compareValue = a.hours - b.hours;
+            break;
+          case "name":
+            compareValue = a.name.localeCompare(b.name);
+            break;
+        }
+        return sortOrder === "asc" ? compareValue : -compareValue;
+      });
+
+      const exportPdfLines = [...exportFilteredLines].sort(
+        (a, b) => b.sales - a.sales,
+      );
+
+      const selectedScopeLabel =
+        resolvedSedeIds.length === 0
+          ? "Todas las sedes"
+          : resolvedSedeIds
+              .map(
+                (sedeId) =>
+                  orderedSedes.find((sede) => sede.id === sedeId)?.name,
+              )
+              .filter((name): name is string => Boolean(name))
+              .join(" + ") || "Todas las sedes";
+
+      const selectedScopeId =
+        resolvedSedeIds.length > 0 ? resolvedSedeIds.join("-") : "todas";
+
+      return {
+        pdfLines: exportPdfLines,
+        selectedScopeLabel,
+        selectedScopeId,
+        dateRange: resolvedDateRange,
+        dateRangeLabel: formatRangeLabel(resolvedDateRange),
+        lineFilterLabel,
+      };
+    },
+    [
+      dailyDataSet,
+      dateRange.end,
+      dateRange.start,
+      exportMaxDate,
+      exportMinDate,
+      lineFilter,
+      lineFilterLabel,
+      orderedSedes,
+      searchQuery,
+      selectedSedeIds,
+      sortBy,
+      sortOrder,
+    ],
+  );
+
+  // Handlers
+  const handleStartDateChange = useCallback((value: string) => {
+    setDateRange((prev) => ({
+      start: value,
+      end: value > prev.end ? value : prev.end,
+    }));
+  }, []);
+
+  const handleSedeChange = useCallback((value: string) => {
+    setSelectedSede(value);
+    if (value) {
+      setSelectedCompanies([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+
+    const loadUser = async () => {
+      try {
+        const response = await fetch("/api/auth/me", {
+          signal: controller.signal,
+        });
+        if (response.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          user?: {
+            role?: string;
+            username?: string;
+            allowedLines?: string[] | null;
+            allowedDashboards?: string[] | null;
+          };
+        };
+        if (!isMounted) return;
+        const isUserAdmin = payload.user?.role === "admin";
+        if (
+          !isUserAdmin &&
+          Array.isArray(payload.user?.allowedDashboards) &&
+          !payload.user?.allowedDashboards.includes("productividad")
+        ) {
+          router.replace("/tableros");
+          return;
+        }
+        setIsAdmin(isUserAdmin);
+        setUsername(payload.user?.username ?? null);
+        setPendingSedeKey(resolveUsernameSedeKey(payload.user?.username));
+        setAllowedLineIds(resolveAllowedLineIds(payload.user?.allowedLines));
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+      } finally {
+        if (isMounted) setAuthLoaded(true);
+      }
+    };
+
+    void loadUser();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [resolveAllowedLineIds, resolveUsernameSedeKey, router]);
+
+  const handleCompaniesChange = useCallback((value: string[]) => {
+    const next = value.slice(0, 2);
+    setSelectedCompanies(next);
+    if (next.length > 0) {
+      setSelectedSede("");
+    }
+  }, []);
+
+  const handleEndDateChange = useCallback((value: string) => {
+    setDateRange((prev) => ({
+      start: value < prev.start ? value : prev.start,
+      end: value,
+    }));
+  }, []);
+
+  const openExportModal = useCallback(() => {
+    setExportError(null);
+    setExportSedeIds(selectedSedeIds);
+    setExportDateRange({
+      start: dateRange.start || exportMinDate,
+      end: dateRange.end || exportMaxDate,
+    });
+    setExportModalOpen((prev) => !prev);
+  }, [dateRange.end, dateRange.start, exportMaxDate, exportMinDate, selectedSedeIds]);
+
+  const handleExportStartChange = useCallback((value: string) => {
+    setExportDateRange((prev) => ({
+      start: value,
+      end: value > prev.end ? value : prev.end,
+    }));
+  }, []);
+
+  const handleExportEndChange = useCallback((value: string) => {
+    setExportDateRange((prev) => ({
+      start: value < prev.start ? value : prev.start,
+      end: value,
+    }));
+  }, []);
+
+  const toggleExportSede = useCallback((sedeId: string) => {
+    setExportSedeIds((prev) =>
+      prev.includes(sedeId)
+        ? prev.filter((id) => id !== sedeId)
+        : [...prev, sedeId],
+    );
+  }, []);
+
+  const handleViewChange = useCallback(
+    (value: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2") => {
+      setViewMode(value);
+    },
+    [],
+  );
+
+  const handleSortOrderToggle = useCallback(() => {
+    setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+  }, []);
+
+  const selectedScopeId =
+    selectedCompanies.length > 0
+      ? selectedCompanies.join("-")
+      : selectedSede || "todas";
+  const selectedScopeLabel = selectedSedeName;
+
+  const handleDownloadCsv = useCallback((payload?: ExportPayload) => {
+    const {
+      pdfLines: exportLines,
+      selectedScopeLabel: exportScopeLabel,
+      selectedScopeId: exportScopeId,
+      dateRange: exportDateRange,
+      dateRangeLabel: exportDateRangeLabel,
+      lineFilterLabel: exportLineFilterLabel,
+    } = payload ?? buildExportPayload();
+    const pdfLines = exportLines;
+    const selectedScopeLabel = exportScopeLabel;
+    const selectedScopeId = exportScopeId;
+    const dateRange = exportDateRange;
+    const dateRangeLabel = exportDateRangeLabel;
+    const lineFilterLabel = exportLineFilterLabel;
+    const escapeCsv = (value: string | number) => {
+      const str = String(value);
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const formatNumber = (value: number) => {
+      return new Intl.NumberFormat("es-CO", {
+        maximumFractionDigits: 0,
+      }).format(value);
+    };
+
+    // Calcular totales
+    const totalSales = exportLines.reduce((acc, line) => acc + line.sales, 0);
+    const totalHours = exportLines.reduce((acc, line) => {
+      const hasLaborData = hasLaborDataForLine(line.id);
+      return acc + (hasLaborData ? line.hours : 0);
+    }, 0);
+
+    const csvLines = [
+      "REPORTE DE PRODUCTIVIDAD POR LINEA",
+      "",
+      "BLOQUE: INFORMACION",
+      "Sede,Valor",
+      `Sede,${escapeCsv(selectedScopeLabel)}`,
+      `Rango,${escapeCsv(dateRangeLabel || "Sin rango definido")}`,
+      `Filtro,${escapeCsv(lineFilterLabel)}`,
+      `Generado,${escapeCsv(formatPdfDate())}`,
+      "",
+      "BLOQUE: DETALLE POR LINEA",
+      "",
+      "#,Línea,Código,Ventas ($),Horas",
+      ...pdfLines.map((line, index) => {
+        const hasLaborData = hasLaborDataForLine(line.id);
+        const hours = hasLaborData ? line.hours : 0;
+        return [
+          index + 1,
+          escapeCsv(line.name),
+          escapeCsv(line.id),
+          formatNumber(Math.round(line.sales)),
+          hours.toFixed(2),
+        ].join(",");
+      }),
+      "",
+      "BLOQUE: TOTALES",
+      "Etiqueta,Valor",
+      `,TOTAL,,${formatNumber(Math.round(totalSales))},${totalHours.toFixed(2)}`,
+      "",
+      "",
+      "FIN REPORTE",
+    ];
+
+    const csvContent = csvLines.join("\n");
+    const blob = new Blob(["\ufeff" + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeSede = selectedScopeId.replace(/\s+/g, "-");
+    const fileName = `reporte-productividad-${safeSede}-${dateRange.start || "sin-fecha"}-${
+      dateRange.end || "sin-fecha"
+    }.csv`;
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [buildExportPayload]);
+
+  const handleDownloadXlsx = useCallback(async (payload?: ExportPayload) => {
+    const {
+      pdfLines: exportLines,
+      selectedScopeLabel: exportScopeLabel,
+      selectedScopeId: exportScopeId,
+      dateRange: exportDateRange,
+      dateRangeLabel: exportDateRangeLabel,
+      lineFilterLabel: exportLineFilterLabel,
+    } = payload ?? buildExportPayload();
+    const pdfLines = exportLines;
+    const selectedScopeLabel = exportScopeLabel;
+    const selectedScopeId = exportScopeId;
+    const dateRange = exportDateRange;
+    const dateRangeLabel = exportDateRangeLabel;
+    const lineFilterLabel = exportLineFilterLabel;
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Visor de Productividad";
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet("Productividad", {
+      views: [{ showGridLines: false }],
+    });
+
+    // Colores corporativos
+    const primaryColor = "1F4E79";
+    const accentColor = "2E75B6";
+    const lightBg = "D6DCE4";
+    const totalBg = "BDD7EE";
+
+    // Configurar anchos de columna
+    worksheet.columns = [
+      { key: "num", width: 6 },
+      { key: "linea", width: 22 },
+      { key: "codigo", width: 18 },
+      { key: "ventas", width: 18 },
+      { key: "horas", width: 12 },
+    ];
+
+    // === TÍTULO ===
+    worksheet.mergeCells("A1:E1");
+    const titleCell = worksheet.getCell("A1");
+    titleCell.value = "REPORTE DE PRODUCTIVIDAD POR LÍNEA";
+    titleCell.font = {
+      name: "Calibri",
+      size: 18,
+      bold: true,
+      color: { argb: primaryColor },
+    };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+    worksheet.getRow(1).height = 30;
+
+    // === INFORMACIÓN DEL REPORTE ===
+    const infoStartRow = 3;
+    const infoData = [
+      ["Sede:", selectedScopeLabel],
+      ["Rango:", dateRangeLabel || "Sin rango definido"],
+      ["Filtro:", lineFilterLabel],
+      ["Generado:", formatPdfDate()],
+    ];
+
+    worksheet.mergeCells(`A${infoStartRow}:E${infoStartRow}`);
+    const infoHeaderCell = worksheet.getCell(`A${infoStartRow}`);
+    infoHeaderCell.value = "Información del Reporte";
+    infoHeaderCell.font = {
+      name: "Calibri",
+      size: 12,
+      bold: true,
+      color: { argb: primaryColor },
+    };
+    infoHeaderCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: lightBg },
+    };
+    worksheet.getRow(infoStartRow).height = 22;
+
+    infoData.forEach((item, index) => {
+      const rowNum = infoStartRow + 1 + index;
+      worksheet.getCell(`A${rowNum}`).value = item[0];
+      worksheet.getCell(`A${rowNum}`).font = {
+        name: "Calibri",
+        size: 11,
+        bold: true,
+      };
+      worksheet.getCell(`B${rowNum}`).value = item[1];
+      worksheet.getCell(`B${rowNum}`).font = { name: "Calibri", size: 11 };
+    });
+
+    // === ENCABEZADOS DE TABLA ===
+    const headerRow = infoStartRow + infoData.length + 2;
+    const headers = ["#", "Línea", "Código", "Ventas ($)", "Horas"];
+
+    const headerRowObj = worksheet.getRow(headerRow);
+    headers.forEach((header, index) => {
+      const cell = headerRowObj.getCell(index + 1);
+      cell.value = header;
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: true,
+        color: { argb: "FFFFFF" },
+      };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: primaryColor },
+      };
+      cell.alignment = {
+        horizontal: index <= 2 ? "left" : "right",
+        vertical: "middle",
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: primaryColor } },
+        bottom: { style: "thin", color: { argb: primaryColor } },
+        left: { style: "thin", color: { argb: primaryColor } },
+        right: { style: "thin", color: { argb: primaryColor } },
+      };
+    });
+    headerRowObj.height = 24;
+
+    // === FILAS DE DATOS ===
+    const dataStartRow = headerRow + 1;
+    let totalSales = 0;
+    let totalHours = 0;
+
+    pdfLines.forEach((line, index) => {
+      const hasLaborData = hasLaborDataForLine(line.id);
+      const hours = hasLaborData ? line.hours : 0;
+
+      totalSales += line.sales;
+      totalHours += hours;
+
+      const rowNum = dataStartRow + index;
+      const row = worksheet.getRow(rowNum);
+      const isEven = index % 2 === 0;
+      const rowBg = isEven ? "F2F2F2" : "FFFFFF";
+
+      const rowData = [
+        index + 1,
+        line.name,
+        line.id,
+        Math.round(line.sales),
+        hours,
+      ];
+
+      rowData.forEach((value, colIndex) => {
+        const cell = row.getCell(colIndex + 1);
+        cell.value = value;
+        cell.font = { name: "Calibri", size: 11 };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: rowBg },
+        };
+        cell.alignment = {
+          horizontal: colIndex <= 2 ? "left" : "right",
+          vertical: "middle",
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "D9D9D9" } },
+          bottom: { style: "thin", color: { argb: "D9D9D9" } },
+          left: { style: "thin", color: { argb: "D9D9D9" } },
+          right: { style: "thin", color: { argb: "D9D9D9" } },
+        };
+
+        // Formato numérico
+        if (colIndex >= 3) {
+          cell.numFmt = "#,##0";
+        }
+      });
+      row.height = 20;
+    });
+
+    // === FILA DE TOTALES ===
+    const totalRowNum = dataStartRow + pdfLines.length + 1;
+    const totalRow = worksheet.getRow(totalRowNum);
+
+    const totalsData = ["", "TOTAL", "", Math.round(totalSales), totalHours];
+
+    totalsData.forEach((value, colIndex) => {
+      const cell = totalRow.getCell(colIndex + 1);
+      cell.value = value;
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: true,
+        color: { argb: primaryColor },
+      };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: totalBg },
+      };
+      cell.alignment = {
+        horizontal: colIndex <= 2 ? "left" : "right",
+        vertical: "middle",
+      };
+      cell.border = {
+        top: { style: "medium", color: { argb: accentColor } },
+        bottom: { style: "medium", color: { argb: accentColor } },
+        left: { style: "thin", color: { argb: accentColor } },
+        right: { style: "thin", color: { argb: accentColor } },
+      };
+
+      if (colIndex >= 3) {
+        cell.numFmt = "#,##0";
+      }
+    });
+    totalRow.height = 24;
+
+    // === PIE DE PÁGINA ===
+    const footerRow = totalRowNum + 2;
+    worksheet.mergeCells(`A${footerRow}:E${footerRow}`);
+    const footerCell = worksheet.getCell(`A${footerRow}`);
+    footerCell.value = "Generado automáticamente por Visor de Productividad";
+    footerCell.font = {
+      name: "Calibri",
+      size: 9,
+      italic: true,
+      color: { argb: "808080" },
+    };
+    footerCell.alignment = { horizontal: "center" };
+
+    // Generar y descargar archivo
+    const safeSede = selectedScopeId.replace(/\s+/g, "-");
+    const fileName = `reporte-productividad-${safeSede}-${dateRange.start || "sin-fecha"}-${
+      dateRange.end || "sin-fecha"
+    }.xlsx`;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [buildExportPayload]);
+
+  const handleDownloadPdf = useCallback((payload?: ExportPayload) => {
+    const {
+      pdfLines: exportLines,
+      selectedScopeLabel: exportScopeLabel,
+      selectedScopeId: exportScopeId,
+      dateRange: exportDateRange,
+      dateRangeLabel: exportDateRangeLabel,
+      lineFilterLabel: exportLineFilterLabel,
+    } = payload ?? buildExportPayload();
+    const pdfLines = exportLines;
+    const selectedScopeLabel = exportScopeLabel;
+    const selectedScopeId = exportScopeId;
+    const dateRange = exportDateRange;
+    const dateRangeLabel = exportDateRangeLabel;
+    const lineFilterLabel = exportLineFilterLabel;
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const primaryColor: [number, number, number] = [31, 78, 121];
+    const accentColor: [number, number, number] = [46, 117, 182];
+
+    const formatNumber = (value: number) =>
+      new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 }).format(
+        value,
+      );
+    const formatHoursAsClock = (value: number) => {
+      const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
+      const totalMinutes = Math.round(safeValue * 60);
+      const hoursPart = Math.floor(totalMinutes / 60);
+      const minutesPart = totalMinutes % 60;
+      return `${String(hoursPart).padStart(2, "0")}:${String(minutesPart).padStart(2, "0")}`;
+    };
+
+    // === TÍTULO ===
+    doc.setFillColor(...primaryColor);
+    doc.rect(0, 0, pageWidth, 20, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("REPORTE DE PRODUCTIVIDAD POR LÍNEA", pageWidth / 2, 13, {
+      align: "center",
+    });
+
+    // === INFORMACIÓN DEL REPORTE ===
+    doc.setTextColor(0, 0, 0);
+    doc.setFillColor(214, 220, 228);
+    doc.rect(15, 25, pageWidth - 30, 8, "F");
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...primaryColor);
+    doc.text("Información del Reporte", 20, 30.5);
+
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    const infoY = 40;
+    const infoData = [
+      ["Sede:", selectedScopeLabel],
+      ["Rango:", dateRangeLabel || "Sin rango definido"],
+      ["Filtro:", lineFilterLabel],
+      ["Generado:", formatPdfDate()],
+    ];
+
+    infoData.forEach((item, index) => {
+      const y = infoY + index * 6;
+      doc.setFont("helvetica", "bold");
+      doc.text(item[0], 20, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(item[1], 45, y);
+    });
+
+    // === TABLA DE DATOS ===
+    const tableStartY = infoY + infoData.length * 6 + 8;
+
+    // Calcular totales
+    const totalSales = pdfLines.reduce((acc, line) => acc + line.sales, 0);
+    const totalHours = pdfLines.reduce((acc, line) => {
+      const hasLaborData = hasLaborDataForLine(line.id);
+      return acc + (hasLaborData ? line.hours : 0);
+    }, 0);
+
+    // Preparar filas de datos
+    const tableBody = pdfLines.map((line, index) => {
+      const hasLaborData = hasLaborDataForLine(line.id);
+      const hours = hasLaborData ? line.hours : 0;
+
+      return [
+        (index + 1).toString(),
+        line.name,
+        line.id,
+        `$ ${formatNumber(Math.round(line.sales))}`,
+        formatHoursAsClock(hours),
+      ];
+    });
+
+    // Fila de totales
+    const totalsRow = [
+      "",
+      "TOTAL",
+      "",
+      `$ ${formatNumber(Math.round(totalSales))}`,
+      formatHoursAsClock(totalHours),
+    ];
+
+    autoTable(doc, {
+      startY: tableStartY,
+      head: [["#", "Línea", "Código", "Ventas", "Horas trabajadas"]],
+      body: tableBody,
+      foot: [totalsRow],
+      theme: "grid",
+      headStyles: {
+        fillColor: primaryColor,
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        halign: "center",
+        fontSize: 10,
+      },
+      bodyStyles: {
+        fontSize: 9,
+        textColor: [50, 50, 50],
+      },
+      footStyles: {
+        fillColor: [189, 215, 238],
+        textColor: primaryColor,
+        fontStyle: "bold",
+        fontSize: 10,
+      },
+      alternateRowStyles: {
+        fillColor: [245, 245, 245],
+      },
+      columnStyles: {
+        0: { halign: "center", cellWidth: 15 },
+        1: { halign: "left", cellWidth: 80 },
+        2: { halign: "left", cellWidth: 50 },
+        3: { halign: "right", cellWidth: 50 },
+        4: { halign: "right", cellWidth: 30 },
+      },
+      margin: { left: 15, right: 15 },
+      styles: {
+        lineColor: [200, 200, 200],
+        lineWidth: 0.1,
+      },
+    });
+
+    // === PIE DE PÁGINA ===
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.setFillColor(...accentColor);
+    doc.rect(0, pageHeight - 10, pageWidth, 10, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.text(
+      "Generado automáticamente por Visor de Productividad",
+      pageWidth / 2,
+      pageHeight - 4,
+      {
+        align: "center",
+      },
+    );
+
+    // Descargar
+    const safeSede = selectedScopeId.replace(/\s+/g, "-");
+    const fileName = `reporte-productividad-${safeSede}-${dateRange.start || "sin-fecha"}-${
+      dateRange.end || "sin-fecha"
+    }.pdf`;
+    doc.save(fileName);
+  }, [buildExportPayload]);
+
+  const handleExport = useCallback(
+    async (format: "pdf" | "csv" | "xlsx") => {
+      const payload = buildExportPayload({
+        sedeIds: exportSedeIds,
+        dateRange: exportDateRange,
+      });
+
+      if (payload.pdfLines.length === 0) {
+        setExportError("No hay datos para el rango y sedes seleccionadas.");
+        return;
+      }
+
+      setExportError(null);
+      if (format === "pdf") {
+        handleDownloadPdf(payload);
+      } else if (format === "csv") {
+        handleDownloadCsv(payload);
+      } else {
+        await handleDownloadXlsx(payload);
+      }
+
+      setExportModalOpen(false);
+    },
+    [
+      buildExportPayload,
+      exportDateRange,
+      exportSedeIds,
+      handleDownloadCsv,
+      handleDownloadPdf,
+      handleDownloadXlsx,
+    ],
+  );
+
+  // Atajos de teclado
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Ignorar si está escribiendo en un input
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLSelectElement
+      ) {
+        // Solo permitir Escape para limpiar búsqueda
+        if (
+          event.key === "Escape" &&
+          event.target instanceof HTMLInputElement
+        ) {
+          setSearchQuery("");
+          event.target.blur();
+        }
+        return;
+      }
+
+      // Ctrl/Cmd + E: Abrir menú de exportación
+      if ((event.ctrlKey || event.metaKey) && event.key === "e") {
+        event.preventDefault();
+        // Trigger del botón de exportar (se implementará con ref si es necesario)
+      }
+
+      // Ctrl/Cmd + F: Enfocar búsqueda
+      if ((event.ctrlKey || event.metaKey) && event.key === "f") {
+        event.preventDefault();
+        const searchInput = document.querySelector(
+          'input[placeholder*="Buscar"]',
+        ) as HTMLInputElement;
+        if (searchInput) {
+          searchInput.focus();
+        }
+      }
+
+      // T: Toggle vista (tarjetas/comparativo/gráfico/tendencias)
+      if (event.key === "t") {
+        setViewMode((prev) => {
+          if (prev === "cards") return "comparison";
+          if (prev === "comparison") return "chart";
+          if (prev === "chart") return "trends";
+          if (prev === "trends") return "hourly";
+          return "cards";
+        });
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyPress);
+    return () => document.removeEventListener("keydown", handleKeyPress);
+  }, []);
+
+  // Animaciones
+  useAnimations(isLoading, filteredLines.length, viewMode);
+
+  // Render
+  return (
+    <div className="min-h-screen bg-background px-3 pb-8 pt-4 text-foreground sm:px-4 sm:pb-12 sm:pt-6 md:px-8 md:pb-16 md:pt-10">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 sm:gap-6 md:gap-10">
+        {isAdmin && (
+          <div className="flex justify-end">
+            <Link
+              href="/admin/usuarios"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-900/90 bg-slate-900 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_14px_30px_-16px_rgba(15,23,42,0.6)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
+            >
+              Administrar usuarios
+            </Link>
+          </div>
+        )}
+        <TopBar
+          title="Tablero de Productividad por Línea"
+          selectedSede={selectedSede}
+          sedes={orderedSedes}
+          selectedCompanies={selectedCompanies}
+          companies={companyOptions}
+          startDate={dateRange.start}
+          endDate={dateRange.end}
+          dates={availableDates}
+          onSedeChange={handleSedeChange}
+          onCompaniesChange={handleCompaniesChange}
+          onStartDateChange={handleStartDateChange}
+          onEndDateChange={handleEndDateChange}
+          onExportClick={openExportModal}
+          isExportDisabled={dailyDataSet.length === 0}
+        />
+
+        {exportModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+            <div className="w-full max-w-3xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                    Exportar reporte
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+                    Selecciona sedes y fechas
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Elige el rango y las sedes para generar el archivo.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExportModalOpen(false)}
+                  className="rounded-full border border-slate-200/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition-colors hover:bg-slate-50"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="mt-6 grid gap-6 md:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                    Sedes
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExportSedeIds(orderedSedes.map((sede) => sede.id))}
+                      className="rounded-full border border-slate-200/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                      Seleccionar todas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExportSedeIds([])}
+                      className="rounded-full border border-slate-200/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                      Quitar todas
+                    </button>
+                  </div>
+
+                  <div className="mt-3 max-h-56 space-y-2 overflow-auto rounded-2xl border border-slate-200/70 p-3">
+                    {orderedSedes.map((sede) => {
+                      const checked = exportSedeIds.includes(sede.id);
+                      return (
+                        <label
+                          key={sede.id}
+                          className="flex items-center justify-between rounded-xl px-2 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+                        >
+                          <span>{sede.name}</span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleExportSede(sede.id)}
+                            className="h-4 w-4 rounded border-slate-300 text-mercamio-600 focus:ring-mercamio-200"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                    Fechas
+                  </p>
+                  <div className="mt-3 grid gap-3">
+                    <label className="flex flex-col gap-1 text-sm text-slate-700">
+                      Desde
+                      <input
+                        type="date"
+                        value={exportDateRange.start}
+                        min={exportMinDate}
+                        max={exportMaxDate}
+                        onChange={(e) => handleExportStartChange(e.target.value)}
+                        className="rounded-lg border border-slate-200/70 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-mercamio-400 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm text-slate-700">
+                      Hasta
+                      <input
+                        type="date"
+                        value={exportDateRange.end}
+                        min={exportMinDate}
+                        max={exportMaxDate}
+                        onChange={(e) => handleExportEndChange(e.target.value)}
+                        className="rounded-lg border border-slate-200/70 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-mercamio-400 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Rango disponible: {exportMinDate || "--"} a {exportMaxDate || "--"}
+                  </p>
+                </div>
+              </div>
+
+              {exportError && (
+                <p className="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700">
+                  {exportError}
+                </p>
+              )}
+
+              <div className="mt-6 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExportModalOpen(false)}
+                  className="rounded-full border border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition-colors hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("pdf")}
+                  className="rounded-full border border-mercamio-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-mercamio-700 transition-all hover:border-mercamio-300 hover:bg-mercamio-50"
+                >
+                  PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("csv")}
+                  className="rounded-full border border-mercamio-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-mercamio-700 transition-all hover:border-mercamio-300 hover:bg-mercamio-50"
+                >
+                  CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("xlsx")}
+                  className="rounded-full border border-slate-900 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-900 transition-all hover:bg-slate-100"
+                >
+                  XLSX
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-center">
+            <p className="text-sm font-semibold text-red-900">{error}</p>
+          </div>
+        )}
+
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : lines.length === 0 ? (
+          <EmptyState
+            title={`No hay datos para ${selectedSedeName} ${dateRangeLabel}.`}
+            description="Prueba otra fecha o sede para ver actividad."
+          />
+        ) : (
+          <div className="space-y-6">
+            <ViewToggle viewMode={viewMode} onChange={handleViewChange} />
+
+            {viewMode === "comparison" ? (
+              filteredLines.length > 0 ? (
+                <LineComparisonTable
+                  lines={filteredLines}
+                  dailyDataSet={dailyDataSet}
+                  sedes={orderedSedes}
+                  dateRange={dateRange}
+                  defaultSedeIds={selectedSedeIds}
+                  hasData={hasRangeData}
+                />
+              ) : (
+                <EmptyState
+                  title="No hay líneas para comparar con este filtro."
+                  description="Ajusta el filtro para ver el comparativo de líneas."
+                />
+              )
+            ) : viewMode === "chart" ? (
+              <div data-animate="chart-card">
+                <ChartVisualization
+                  dailyDataSet={dailyDataSet}
+                  selectedSedeIds={selectedSedeIds}
+                  availableDates={availableDates}
+                  dateRange={dateRange}
+                  lines={lines}
+                  sedes={orderedSedes}
+                />
+              </div>
+            ) : viewMode === "trends" ? (
+              <LineTrends
+                dailyDataSet={dailyDataSet}
+                selectedSedeIds={selectedSedeIds}
+                availableDates={availableDates}
+                lines={lines}
+                sedes={orderedSedes}
+                dateRange={dateRange}
+              />
+            ) : viewMode === "hourly" ? (
+              <HourlyAnalysis
+                availableDates={availableDates}
+                availableSedes={orderedSedes}
+                defaultDate={dateRange.end}
+                defaultSede={selectedSede || undefined}
+                allowedLineIds={!isAdmin ? allowedLineIds : undefined}
+                sections={["map"]}
+              />
+            ) : viewMode === "m2" ? (
+              <M2MetricsSection
+                dailyDataSet={dailyDataSet}
+                sedes={orderedSedes}
+                selectedSedeIds={selectedSedeIds}
+                dateRange={dateRange}
+              />
+            ) : (
+              <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {filteredLines.map((line) => (
+                  <LineCard key={line.id} line={line} hasData={hasRangeData} />
+                ))}
+              </section>
+            )}
+
+            {viewMode === "cards" && filteredLines.length === 0 && (
+              <EmptyState
+                title="No hay líneas para este segmento."
+                description="Prueba otro filtro o revisa un rango distinto."
+                actionLabel="Ver todas las líneas"
+                onAction={() => setLineFilter("all")}
+              />
+            )}
+
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

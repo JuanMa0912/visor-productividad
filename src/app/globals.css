@@ -1,0 +1,148 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.985 0.006 240);
+  --foreground: oklch(0.18 0.02 255);
+  --card: oklch(0.995 0.003 240);
+  --card-foreground: oklch(0.18 0.02 255);
+  --popover: oklch(0.995 0.003 240);
+  --popover-foreground: oklch(0.18 0.02 255);
+  --primary: oklch(0.28 0.03 255);
+  --primary-foreground: oklch(0.985 0.006 240);
+  --secondary: oklch(0.95 0.006 240);
+  --secondary-foreground: oklch(0.28 0.03 255);
+  --muted: oklch(0.96 0.006 240);
+  --muted-foreground: oklch(0.35 0.03 255);
+  --accent: oklch(0.96 0.006 240);
+  --accent-foreground: oklch(0.28 0.03 255);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.84 0.01 240 / 70%);
+  --input: oklch(0.86 0.01 240 / 75%);
+  --ring: oklch(0.58 0.05 255);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.99 0.003 240);
+  --sidebar-foreground: oklch(0.18 0.02 255);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
+  --sidebar-accent: oklch(0.96 0.006 240);
+  --sidebar-accent-foreground: oklch(0.28 0.03 255);
+  --sidebar-border: oklch(0.84 0.01 240 / 70%);
+  --sidebar-ring: oklch(0.58 0.05 255);
+}
+
+.dark {
+  --background: oklch(0.16 0.02 255);
+  --foreground: oklch(0.93 0.01 255);
+  --card: oklch(0.2 0.02 255);
+  --card-foreground: oklch(0.93 0.01 255);
+  --popover: oklch(0.2 0.02 255);
+  --popover-foreground: oklch(0.93 0.01 255);
+  --primary: oklch(0.78 0.02 255);
+  --primary-foreground: oklch(0.18 0.02 255);
+  --secondary: oklch(0.24 0.02 255);
+  --secondary-foreground: oklch(0.93 0.01 255);
+  --muted: oklch(0.24 0.02 255);
+  --muted-foreground: oklch(0.75 0.01 255);
+  --accent: oklch(0.26 0.02 255);
+  --accent-foreground: oklch(0.93 0.01 255);
+  --border: oklch(0.32 0.02 255 / 70%);
+  --input: oklch(0.28 0.02 255 / 75%);
+  --ring: oklch(0.7 0.04 255);
+  --sidebar: oklch(0.2 0.02 255);
+  --sidebar-foreground: oklch(0.93 0.01 255);
+  --sidebar-border: oklch(0.32 0.02 255 / 70%);
+  --sidebar-ring: oklch(0.7 0.04 255);
+}
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  }
+}
+
+@layer utilities {
+  .dark .bg-white {
+    background-color: var(--card);
+  }
+  .dark .bg-slate-50 {
+    background-color: oklch(0.22 0.02 255);
+  }
+  .dark .bg-slate-100 {
+    background-color: oklch(0.24 0.02 255);
+  }
+  .dark .bg-slate-200 {
+    background-color: oklch(0.28 0.02 255);
+  }
+  .dark .bg-slate-200\/70 {
+    background-color: oklch(0.28 0.02 255 / 70%);
+  }
+  .dark .bg-slate-100\/50 {
+    background-color: oklch(0.24 0.02 255 / 50%);
+  }
+  .dark .border-slate-200 {
+    border-color: oklch(0.32 0.02 255);
+  }
+  .dark .border-slate-200\/70 {
+    border-color: oklch(0.32 0.02 255 / 70%);
+  }
+  .dark .text-slate-900 {
+    color: oklch(0.93 0.01 255);
+  }
+  .dark .text-slate-800 {
+    color: oklch(0.9 0.01 255);
+  }
+  .dark .text-slate-700 {
+    color: oklch(0.86 0.01 255);
+  }
+  .dark .text-slate-600 {
+    color: oklch(0.78 0.01 255);
+  }
+  .dark .text-slate-500 {
+    color: oklch(0.7 0.01 255);
+  }
+  .dark .text-slate-400 {
+    color: oklch(0.62 0.01 255);
+  }
+  .dark .placeholder-slate-600::placeholder {
+    color: oklch(0.68 0.01 255);
+  }
+  .dark .placeholder-slate-500::placeholder {
+    color: oklch(0.66 0.01 255);
+  }
+  .dark .from-white {
+    --tw-gradient-from: oklch(0.2 0.02 255);
+    --tw-gradient-to: oklch(0.2 0.02 255 / 0);
+  }
+  .dark .via-slate-50 {
+    --tw-gradient-stops: var(--tw-gradient-from), oklch(0.22 0.02 255),
+      var(--tw-gradient-to);
+  }
+  .dark .from-slate-900 {
+    --tw-gradient-from: oklch(0.93 0.01 255);
+    --tw-gradient-to: oklch(0.93 0.01 255 / 0);
+  }
+  .dark .via-slate-800 {
+    --tw-gradient-stops: var(--tw-gradient-from), oklch(0.9 0.01 255),
+      var(--tw-gradient-to);
+  }
+  .dark .to-slate-700 {
+    --tw-gradient-to: oklch(0.86 0.01 255);
+  }
+}
