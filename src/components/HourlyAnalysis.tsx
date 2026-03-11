@@ -1029,13 +1029,6 @@ export const HourlyAnalysis = ({
       return { ...employee, sede: match.name };
     });
   }, [overtimeEmployees, availableSedes]);
-  const overtimeAbsenceCount = useMemo(
-    () =>
-      overtimeEmployeesResolved.filter(
-        (employee) => employee.isAbsence || isAbsenceIncident(employee.incident),
-      ).length,
-    [overtimeEmployeesResolved],
-  );
   const overtimeSedeOptions = useMemo(() => {
     const fromAvailable = availableSedes
       .map((sede) => sede.name?.trim())
@@ -1222,6 +1215,13 @@ export const HourlyAnalysis = ({
     overtimeAlertMode,
     overtimeDateOrder,
   ]);
+  const overtimeAbsenceCount = useMemo(
+    () =>
+      baseFilteredOvertimeEmployees.filter(
+        (employee) => employee.isAbsence || isAbsenceIncident(employee.incident),
+      ).length,
+    [baseFilteredOvertimeEmployees],
+  );
   const alexAlertCount720 = useMemo(
     () =>
       baseFilteredOvertimeEmployees.filter((employee) => {
