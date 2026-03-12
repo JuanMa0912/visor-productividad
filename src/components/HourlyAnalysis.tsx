@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Users,
@@ -396,15 +396,19 @@ export const HourlyAnalysis = ({
   const [overtimeSedeOpen, setOvertimeSedeOpen] = useState(false);
   const [overtimeDepartmentOpen, setOvertimeDepartmentOpen] = useState(false);
   const [overtimeSedePopoverPos, setOvertimeSedePopoverPos] = useState<{
-    top: number;
+    top?: number;
+    bottom?: number;
     left: number;
     width: number;
+    maxHeight: number;
   } | null>(null);
   const [overtimeDepartmentPopoverPos, setOvertimeDepartmentPopoverPos] =
     useState<{
-      top: number;
+      top?: number;
+      bottom?: number;
       left: number;
       width: number;
+      maxHeight: number;
     } | null>(null);
   const overtimeSedeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const overtimeSedePanelRef = useRef<HTMLDivElement | null>(null);
@@ -613,27 +617,54 @@ export const HourlyAnalysis = ({
     setOvertimeDepartmentFilter([]);
   };
 
-  const updateOvertimeSedePopoverPos = () => {
+  const getResponsivePopoverPosition = useCallback((trigger: HTMLButtonElement) => {
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const viewportPadding = 16;
+    const gap = 8;
+    const minWidth = 260;
+    const preferredMaxHeight = 320;
+    const minimumVisibleHeight = 160;
+    const width = Math.min(
+      Math.max(minWidth, rect.width),
+      Math.max(minWidth, viewportWidth - viewportPadding * 2),
+    );
+    const maxLeft = Math.max(viewportPadding, viewportWidth - viewportPadding - width);
+    const left = Math.min(Math.max(rect.left, viewportPadding), maxLeft);
+    const availableBelow = viewportHeight - rect.bottom - gap - viewportPadding;
+    const availableAbove = rect.top - gap - viewportPadding;
+    const shouldOpenUpward =
+      availableBelow < minimumVisibleHeight && availableAbove > availableBelow;
+
+    if (shouldOpenUpward) {
+      return {
+        bottom: Math.max(viewportPadding, viewportHeight - rect.top + gap),
+        left,
+        width,
+        maxHeight: Math.max(minimumVisibleHeight, Math.min(preferredMaxHeight, availableAbove)),
+      };
+    }
+
+    return {
+      top: rect.bottom + gap,
+      left,
+      width,
+      maxHeight: Math.max(minimumVisibleHeight, Math.min(preferredMaxHeight, availableBelow)),
+    };
+  }, []);
+
+  const updateOvertimeSedePopoverPos = useCallback(() => {
     const trigger = overtimeSedeTriggerRef.current;
     if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    setOvertimeSedePopoverPos({
-      top: rect.bottom + 8,
-      left: rect.left,
-      width: rect.width,
-    });
-  };
+    setOvertimeSedePopoverPos(getResponsivePopoverPosition(trigger));
+  }, [getResponsivePopoverPosition]);
 
-  const updateOvertimeDepartmentPopoverPos = () => {
+  const updateOvertimeDepartmentPopoverPos = useCallback(() => {
     const trigger = overtimeDepartmentTriggerRef.current;
     if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    setOvertimeDepartmentPopoverPos({
-      top: rect.bottom + 8,
-      left: rect.left,
-      width: rect.width,
-    });
-  };
+    setOvertimeDepartmentPopoverPos(getResponsivePopoverPosition(trigger));
+  }, [getResponsivePopoverPosition]);
 
   useEffect(() => {
     if (!overtimeSedeOpen) return;
@@ -661,7 +692,7 @@ export const HourlyAnalysis = ({
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [overtimeSedeOpen]);
+  }, [overtimeSedeOpen, updateOvertimeSedePopoverPos]);
 
   useEffect(() => {
     if (!overtimeDepartmentOpen) return;
@@ -689,7 +720,7 @@ export const HourlyAnalysis = ({
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [overtimeDepartmentOpen]);
+  }, [overtimeDepartmentOpen, updateOvertimeDepartmentPopoverPos]);
 
   const fetchHourly = async (
     date: string,
@@ -1920,8 +1951,8 @@ export const HourlyAnalysis = ({
               <div
                 className={`mt-3 grid gap-3 ${
                   showDepartmentFilterInOvertime
-                    ? "sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-9"
-                    : "sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8"
+                    ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9"
+                    : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-8"
                 }`}
               >
                 <label className="block xl:col-span-2">
@@ -2107,11 +2138,14 @@ export const HourlyAnalysis = ({
                 createPortal(
                   <div
                     ref={overtimeSedePanelRef}
-                    className="fixed z-9999 min-w-60 rounded-2xl border border-slate-200/70 bg-white p-2 shadow-2xl"
+                    className="fixed z-9999 flex flex-col overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-2 shadow-2xl"
                     style={{
                       top: overtimeSedePopoverPos.top,
+                      bottom: overtimeSedePopoverPos.bottom,
                       left: overtimeSedePopoverPos.left,
-                      width: Math.max(260, overtimeSedePopoverPos.width),
+                      width: overtimeSedePopoverPos.width,
+                      maxHeight: overtimeSedePopoverPos.maxHeight,
+                      maxWidth: "calc(100vw - 32px)",
                     }}
                   >
                     <button
@@ -2125,7 +2159,7 @@ export const HourlyAnalysis = ({
                     >
                       Todas
                     </button>
-                    <div className="mt-2 max-h-64 space-y-1 overflow-auto pr-1">
+                    <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-auto pr-1">
                       {overtimeSedeOptions.map((sede) => {
                         const checked = overtimeSedeFilter.includes(sede);
                         return (
@@ -2156,11 +2190,14 @@ export const HourlyAnalysis = ({
                 createPortal(
                   <div
                     ref={overtimeDepartmentPanelRef}
-                    className="fixed z-9999 min-w-60 rounded-2xl border border-slate-200/70 bg-white p-2 shadow-2xl"
+                    className="fixed z-9999 flex flex-col overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-2 shadow-2xl"
                     style={{
                       top: overtimeDepartmentPopoverPos.top,
+                      bottom: overtimeDepartmentPopoverPos.bottom,
                       left: overtimeDepartmentPopoverPos.left,
-                      width: Math.max(260, overtimeDepartmentPopoverPos.width),
+                      width: overtimeDepartmentPopoverPos.width,
+                      maxHeight: overtimeDepartmentPopoverPos.maxHeight,
+                      maxWidth: "calc(100vw - 32px)",
                     }}
                   >
                     <button
@@ -2174,59 +2211,7 @@ export const HourlyAnalysis = ({
                     >
                       Todos
                     </button>
-                    <div className="mt-2 max-h-64 space-y-1 overflow-auto pr-1">
-                      {overtimeDepartmentOptions.map((department) => {
-                        const checked =
-                          overtimeDepartmentFilter.includes(department);
-                        return (
-                          <label
-                            key={department}
-                            className="flex items-start gap-2 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() =>
-                                toggleOvertimeDepartment(department)
-                              }
-                              className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-200"
-                            />
-                            <span className="whitespace-normal wrap-break-word leading-5">
-                              {department}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>,
-                  document.body,
-                )}
-
-              {overtimeDepartmentOpen &&
-                overtimeDepartmentPopoverPos &&
-                typeof document !== "undefined" &&
-                createPortal(
-                  <div
-                    ref={overtimeDepartmentPanelRef}
-                    className="fixed z-9999 min-w-60 rounded-2xl border border-slate-200/70 bg-white p-2 shadow-2xl"
-                    style={{
-                      top: overtimeDepartmentPopoverPos.top,
-                      left: overtimeDepartmentPopoverPos.left,
-                      width: Math.max(260, overtimeDepartmentPopoverPos.width),
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={clearOvertimeDepartmentFilter}
-                      className={`w-full rounded-full border px-3 py-2 text-sm font-semibold transition-all ${
-                        overtimeDepartmentFilter.length === 0
-                          ? "border-rose-200/70 bg-rose-50 text-rose-700"
-                          : "border-slate-200/70 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      Todos
-                    </button>
-                    <div className="mt-2 max-h-64 space-y-1 overflow-auto pr-1">
+                    <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-auto pr-1">
                       {overtimeDepartmentOptions.map((department) => {
                         const checked =
                           overtimeDepartmentFilter.includes(department);
