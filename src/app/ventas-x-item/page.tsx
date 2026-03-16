@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LineChart } from "@mui/x-charts/LineChart";
@@ -9,6 +9,7 @@ import * as ExcelJS from "exceljs";
 import {
   buildDailyTableAllRange,
   buildNumericPivotRange,
+  getItemLabel,
   itemsDisplayList,
   prepareDataframe,
   type DailyTableRow,
@@ -39,6 +40,11 @@ const LOAD_EMPRESA_OPTIONS = Object.keys(EMPRESA_LABELS).sort();
 
 const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
 type ComparisonMode = "day" | "week" | "month";
+
+const parseDateKeyUtc = (value: string) => new Date(`${value}T00:00:00Z`);
+
+const countDaysInclusive = (start: Date, end: Date) =>
+  Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000) + 1);
 
 const getIsoWeekKey = (date: Date) => {
   const utc = new Date(
@@ -90,12 +96,72 @@ const getComparisonLabel = (date: Date, mode: ComparisonMode) => {
   }).format(date)})`;
 };
 
-const firstWordsFromOption = (option: string) => {
-  const desc = (option.includes(" - ") ? option.split(" - ", 2)[1] : option)
-    .trim()
-    .replace(/[^A-Za-z0-9ÁÉÍÓÚáéíóúÑñ/ ]+/g, "");
-  if (!desc) return "";
-  return desc.split(/\s+/).slice(0, 2).join(" ");
+const buildComparisonOptionsFromRange = (
+  startKey: string,
+  endKey: string,
+  mode: ComparisonMode,
+) => {
+  if (!startKey || !endKey || startKey > endKey) return [] as Array<{ value: string; label: string }>;
+
+  const options = new Map<string, string>();
+  const cursor = parseDateKeyUtc(startKey);
+  const end = parseDateKeyUtc(endKey);
+
+  while (cursor.getTime() <= end.getTime()) {
+    const key = getComparisonKey(cursor, mode);
+    if (!options.has(key)) {
+      options.set(key, getComparisonLabel(cursor, mode));
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return Array.from(options.entries())
+    .sort((a, b) => (a[0] > b[0] ? -1 : 1))
+    .map(([value, label]) => ({ value, label }));
+};
+
+const getComparisonDayCount = (
+  periodKey: string,
+  mode: ComparisonMode,
+  startKey: string,
+  endKey: string,
+) => {
+  if (!periodKey || !startKey || !endKey || startKey > endKey) return 0;
+
+  const rangeStart = parseDateKeyUtc(startKey);
+  const rangeEnd = parseDateKeyUtc(endKey);
+
+  if (mode === "day") {
+    return periodKey >= startKey && periodKey <= endKey ? 1 : 0;
+  }
+
+  if (mode === "week") {
+    const anyDayInWeek = parseDateKeyUtc(`${periodKey.slice(0, 4)}-01-04`);
+    const [yearPart, weekPart] = periodKey.split("-W");
+    const targetYear = Number(yearPart);
+    const targetWeek = Number(weekPart);
+    if (!Number.isFinite(targetYear) || !Number.isFinite(targetWeek)) return 0;
+
+    anyDayInWeek.setUTCFullYear(targetYear, 0, 4);
+    const day = anyDayInWeek.getUTCDay() || 7;
+    anyDayInWeek.setUTCDate(anyDayInWeek.getUTCDate() + (targetWeek - 1) * 7 - (day - 1));
+    const weekStart = new Date(anyDayInWeek);
+    const weekEnd = new Date(anyDayInWeek);
+    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+    const actualStart = weekStart.getTime() < rangeStart.getTime() ? rangeStart : weekStart;
+    const actualEnd = weekEnd.getTime() > rangeEnd.getTime() ? rangeEnd : weekEnd;
+    return countDaysInclusive(actualStart, actualEnd);
+  }
+
+  const [yearPart, monthPart] = periodKey.split("-");
+  const targetYear = Number(yearPart);
+  const targetMonth = Number(monthPart);
+  if (!Number.isFinite(targetYear) || !Number.isFinite(targetMonth)) return 0;
+  const monthStart = new Date(Date.UTC(targetYear, targetMonth - 1, 1));
+  const monthEnd = new Date(Date.UTC(targetYear, targetMonth, 0));
+  const actualStart = monthStart.getTime() < rangeStart.getTime() ? rangeStart : monthStart;
+  const actualEnd = monthEnd.getTime() > rangeEnd.getTime() ? rangeEnd : monthEnd;
+  return countDaysInclusive(actualStart, actualEnd);
 };
 
 const escapeCsv = (value: string | number) => {
@@ -131,7 +197,6 @@ export default function VentasXItemPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [loadingDb, setLoadingDb] = useState(false);
-  const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<VentasXItemPreparedRow[]>([]);
   const [fileName, setFileName] = useState("");
@@ -141,6 +206,8 @@ export default function VentasXItemPage() {
   const [empresasSel, setEmpresasSel] = useState<string[]>([]);
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
+  const [loadedDateStart, setLoadedDateStart] = useState("");
+  const [loadedDateEnd, setLoadedDateEnd] = useState("");
   const [itemLimit, setItemLimit] = useState(10);
   const [itemsSel, setItemsSel] = useState<string[]>([]);
   const [itemsOrder, setItemsOrder] = useState<string[]>([]);
@@ -149,6 +216,7 @@ export default function VentasXItemPage() {
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("day");
   const [comparisonA, setComparisonA] = useState("");
   const [comparisonB, setComparisonB] = useState("");
+  const [summaryRows, setSummaryRows] = useState<VentasXItemPreparedRow[]>([]);
   const [exportingXlsx, setExportingXlsx] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [parityLoading, setParityLoading] = useState(false);
@@ -236,7 +304,7 @@ export default function VentasXItemPage() {
         validRows[0].fecha!,
       ),
     );
-  }, [validRows]);
+  }, [dbMinDate, validRows]);
   const maxDateKey = useMemo(() => {
     if (dbMaxDate) return dbMaxDate;
     if (validRows.length === 0) return "";
@@ -246,7 +314,16 @@ export default function VentasXItemPage() {
         validRows[0].fecha!,
       ),
     );
-  }, [validRows]);
+  }, [dbMaxDate, validRows]);
+  const empresasCargaLabel = useMemo(() => {
+    if (empresasCargaSel.length === 0) return "todas las empresas";
+    const labels = empresasCargaSel.map(
+      (empresa) => EMPRESA_LABELS[empresa] ?? empresa.toUpperCase(),
+    );
+    if (labels.length === 1) return labels[0];
+    if (labels.length === 2) return `${labels[0]} y ${labels[1]}`;
+    return `${labels.slice(0, -1).join(", ")} y ${labels[labels.length - 1]}`;
+  }, [empresasCargaSel]);
 
   const empresasDisponibles = useMemo(
     () => Array.from(new Set(rows.map((row) => row.empresa_norm))).sort(),
@@ -260,14 +337,17 @@ export default function VentasXItemPage() {
     [empresasVisibles, rows],
   );
 
+  const activeRangeStart = loadedDateStart || dateStart;
+  const activeRangeEnd = loadedDateEnd || dateEnd;
+
   const rowsEmpresaFecha = useMemo(
     () =>
       rowsEmpresa.filter((row) => {
-        if (!row.fecha || !dateStart || !dateEnd) return false;
+        if (!row.fecha || !activeRangeStart || !activeRangeEnd) return false;
         const key = toDateKey(row.fecha);
-        return key >= dateStart && key <= dateEnd;
+        return key >= activeRangeStart && key <= activeRangeEnd;
       }),
-    [dateEnd, dateStart, rowsEmpresa],
+    [activeRangeEnd, activeRangeStart, rowsEmpresa],
   );
 
   const itemOptions = useMemo(() => {
@@ -310,21 +390,21 @@ export default function VentasXItemPage() {
 
   const title = useMemo(() => {
     if (itemsOrder.length === 0) return "Tabla diaria consolidada (unidades)";
-    const words = itemsOrder.map(firstWordsFromOption).filter(Boolean);
-    return `Tabla diaria consolidada - ${words.join(" | ")} (unidades)`;
+    return `Tabla diaria consolidada - ${itemsOrder.join(" | ")} (unidades)`;
   }, [itemsOrder]);
 
   const itemFilterMatcher = useMemo(() => {
     if (itemsSel.length === 0) {
-      return (_row: VentasXItemPreparedRow) => false;
+      return () => false;
     }
     const ids = new Set<string>();
+    const exactLabels = new Set<string>();
     const descNeedles: string[] = [];
 
     itemsSel.forEach((item) => {
       const raw = String(item);
       if (raw.includes(" - ")) {
-        ids.add(raw.split(" - ", 2)[0].trim());
+        exactLabels.add(raw.trim());
       } else if (/^\d+$/.test(raw.trim())) {
         ids.add(raw.trim());
       } else {
@@ -333,37 +413,82 @@ export default function VentasXItemPage() {
     });
 
     return (row: VentasXItemPreparedRow) => {
+      const label = getItemLabel(row.id_item, row.descripcion);
+      const byExactLabel = exactLabels.size > 0 && exactLabels.has(label);
       const byId = ids.size > 0 && ids.has(String(row.id_item));
       const desc = row.descripcion.toLowerCase();
       const byDesc =
         descNeedles.length > 0 && descNeedles.some((needle) => desc.includes(needle));
-      return byId || byDesc;
+      return byExactLabel || byId || byDesc;
     };
   }, [itemsSel]);
-
-  const rowsFilteredByItemsAllDates = useMemo(
-    () => rowsEmpresa.filter(itemFilterMatcher),
-    [itemFilterMatcher, rowsEmpresa],
-  );
 
   const rowsFilteredByItems = useMemo(
     () => rowsEmpresaFecha.filter(itemFilterMatcher),
     [itemFilterMatcher, rowsEmpresaFecha],
   );
+  const analysisRows = itemsSel.length > 0 ? summaryRows : rowsFilteredByItems;
+
+  useEffect(() => {
+    if (itemsSel.length === 0 || !activeRangeStart || !activeRangeEnd) {
+      setSummaryRows([]);
+      return;
+    }
+
+    const itemIds = Array.from(
+      new Set(
+        itemsSel
+          .map((item) => String(item).split(" - ", 2)[0]?.trim() ?? "")
+          .filter(Boolean),
+      ),
+    );
+    if (itemIds.length === 0) {
+      setSummaryRows([]);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadSummary = async () => {
+      try {
+        const params = new URLSearchParams({
+          mode: "summary",
+          start: activeRangeStart,
+          end: activeRangeEnd,
+        });
+        params.set("empresa", empresasVisibles.join(","));
+        params.set("itemIds", itemIds.join(","));
+
+        const response = await fetch(`${VENTAS_X_ITEM_API_BASE}?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as {
+          rows?: VentasXItemRawRow[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "No se pudo cargar el resumen del ítem.");
+        }
+        setSummaryRows(prepareDataframe(payload.rows ?? []));
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    void loadSummary();
+
+    return () => controller.abort();
+  }, [activeRangeEnd, activeRangeStart, empresasVisibles, itemsSel]);
 
   const comparisonOptions = useMemo(() => {
-    const optionMap = new Map<string, string>();
-    rowsFilteredByItemsAllDates.forEach((row) => {
-      if (!row.fecha) return;
-      const key = getComparisonKey(row.fecha, comparisonMode);
-      if (!optionMap.has(key)) {
-        optionMap.set(key, getComparisonLabel(row.fecha, comparisonMode));
-      }
-    });
-    return Array.from(optionMap.entries())
-      .sort((a, b) => (a[0] > b[0] ? -1 : 1))
-      .map(([value, label]) => ({ value, label }));
-  }, [comparisonMode, rowsFilteredByItemsAllDates]);
+    return buildComparisonOptionsFromRange(
+      activeRangeStart,
+      activeRangeEnd,
+      comparisonMode,
+    );
+  }, [activeRangeEnd, activeRangeStart, comparisonMode]);
 
   useEffect(() => {
     if (comparisonOptions.length === 0) {
@@ -385,7 +510,7 @@ export default function VentasXItemPage() {
       if (!targetKey) {
         return { units: 0, sales: 0 };
       }
-      return rowsFilteredByItemsAllDates.reduce(
+      return analysisRows.reduce(
         (acc, row) => {
           if (!row.fecha) return acc;
           if (getComparisonKey(row.fecha, comparisonMode) !== targetKey) return acc;
@@ -410,23 +535,26 @@ export default function VentasXItemPage() {
       salesPct:
         previous.sales === 0 ? null : ((current.sales - previous.sales) / previous.sales) * 100,
     };
-  }, [comparisonA, comparisonB, comparisonMode, rowsFilteredByItemsAllDates]);
+  }, [analysisRows, comparisonA, comparisonB, comparisonMode]);
 
   const comparisonDetails = useMemo(() => {
     const getPeriodStats = (targetKey: string) => {
-      const daySet = new Set<string>();
       const sedeSet = new Set<string>();
       const itemSet = new Set<string>();
       const bySede = new Map<string, { units: number; sales: number }>();
+      const periodDayCount = getComparisonDayCount(
+        targetKey,
+        comparisonMode,
+        activeRangeStart,
+        activeRangeEnd,
+      );
 
       let units = 0;
       let sales = 0;
 
-      rowsFilteredByItemsAllDates.forEach((row) => {
+      analysisRows.forEach((row) => {
         if (!row.fecha) return;
         if (!targetKey || getComparisonKey(row.fecha, comparisonMode) !== targetKey) return;
-        const day = toDateKey(row.fecha);
-        daySet.add(day);
         sedeSet.add(row.sede);
         itemSet.add(String(row.id_item));
         units += row.und_dia ?? 0;
@@ -444,11 +572,11 @@ export default function VentasXItemPage() {
       return {
         units,
         sales,
-        daysCount: daySet.size,
+        daysCount: periodDayCount,
         sedeCount: sedeSet.size,
         itemCount: itemSet.size,
-        avgUnitsPerDay: daySet.size > 0 ? units / daySet.size : 0,
-        avgSalesPerDay: daySet.size > 0 ? sales / daySet.size : 0,
+        avgUnitsPerDay: periodDayCount > 0 ? units / periodDayCount : 0,
+        avgSalesPerDay: periodDayCount > 0 ? sales / periodDayCount : 0,
         salesPerUnit: units > 0 ? sales / units : null,
         bySede,
         topSede,
@@ -492,26 +620,33 @@ export default function VentasXItemPage() {
           : current.salesPerUnit - previous.salesPerUnit,
       sedeDiffRows,
     };
-  }, [comparisonA, comparisonB, comparisonMode, rowsFilteredByItemsAllDates]);
+  }, [
+    activeRangeEnd,
+    activeRangeStart,
+    comparisonA,
+    comparisonB,
+    comparisonMode,
+    analysisRows,
+  ]);
 
 
   const tableRows = useMemo<DailyTableRow[]>(() => {
-    if (!dateStart || !dateEnd) return [];
-    const start = new Date(`${dateStart}T00:00:00Z`);
-    const end = new Date(`${dateEnd}T00:00:00Z`);
-    return buildDailyTableAllRange(rowsFilteredByItems, start, end);
-  }, [dateEnd, dateStart, rowsFilteredByItems]);
+    if (!activeRangeStart || !activeRangeEnd) return [];
+    const start = new Date(`${activeRangeStart}T00:00:00Z`);
+    const end = new Date(`${activeRangeEnd}T00:00:00Z`);
+    return buildDailyTableAllRange(analysisRows, start, end);
+  }, [activeRangeEnd, activeRangeStart, analysisRows]);
   const tableColumns = useMemo(() => {
     if (tableRows.length === 0) return [] as string[];
     return Object.keys(tableRows[0]);
   }, [tableRows]);
 
   const pivot = useMemo(() => {
-    if (!dateStart || !dateEnd) return null;
-    const start = new Date(`${dateStart}T00:00:00Z`);
-    const end = new Date(`${dateEnd}T00:00:00Z`);
-    return buildNumericPivotRange(rowsFilteredByItems, start, end);
-  }, [dateEnd, dateStart, rowsFilteredByItems]);
+    if (!activeRangeStart || !activeRangeEnd) return null;
+    const start = new Date(`${activeRangeStart}T00:00:00Z`);
+    const end = new Date(`${activeRangeEnd}T00:00:00Z`);
+    return buildNumericPivotRange(analysisRows, start, end);
+  }, [activeRangeEnd, activeRangeStart, analysisRows]);
 
   const lineLabels = useMemo(
     () => (pivot ? pivot.rows.map((row) => toDateKey(row.fecha).slice(5)) : []),
@@ -568,11 +703,14 @@ export default function VentasXItemPage() {
       { units: 0, sales: 0 },
     );
 
-  const onLoadMeta = async () => {
-    setLoadingMeta(true);
+  const onLoadMeta = useCallback(async (empresasObjetivo: string[] = empresasCargaSel) => {
     setError(null);
     try {
-      const response = await fetch(`${VENTAS_X_ITEM_API_BASE}?mode=meta`, {
+      const params = new URLSearchParams({ mode: "meta" });
+      if (empresasObjetivo.length > 0) {
+        params.set("empresa", empresasObjetivo.join(","));
+      }
+      const response = await fetch(`${VENTAS_X_ITEM_API_BASE}?${params.toString()}`, {
         cache: "no-store",
       });
       const payload = (await response.json()) as {
@@ -587,12 +725,22 @@ export default function VentasXItemPage() {
       const max = payload.maxDate ?? "";
       setDbMinDate(min);
       setDbMaxDate(max);
+      setDateStart((prev) => {
+        if (!prev) return min;
+        if (min && prev < min) return min;
+        if (max && prev > max) return max;
+        return prev;
+      });
+      setDateEnd((prev) => {
+        if (!prev) return max;
+        if (min && prev < min) return min;
+        if (max && prev > max) return max;
+        return prev;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingMeta(false);
     }
-  };
+  }, [empresasCargaSel]);
 
   const onLoadFromDb = async () => {
     setError(null);
@@ -611,44 +759,75 @@ export default function VentasXItemPage() {
     }
     setLoadingDb(true);
     try {
-      const params = new URLSearchParams({
-        start: dateStart,
-        end: dateEnd,
-        maxRows: "300000",
-      });
-      params.set("empresa", empresasCargaSel.join(","));
-      const response = await fetch(
-        `${VENTAS_X_ITEM_API_BASE}?${params.toString()}`,
-        {
-          cache: "no-store",
-        },
-      );
-      const payload = (await response.json()) as {
-        rows?: VentasXItemRawRow[];
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "No se pudo cargar datos desde base de datos.");
+      const batchSize = USE_V2_API ? 300000 : 500000;
+      const collectedRows: VentasXItemRawRow[] = [];
+      let nextOffset = 0;
+      let loadedStart = dateStart;
+      let loadedEnd = dateEnd;
+
+      while (true) {
+        const params = new URLSearchParams({
+          start: dateStart,
+          end: dateEnd,
+          maxRows: String(batchSize),
+          offset: String(nextOffset),
+        });
+        params.set("empresa", empresasCargaSel.join(","));
+        const response = await fetch(
+          `${VENTAS_X_ITEM_API_BASE}?${params.toString()}`,
+          {
+            cache: "no-store",
+          },
+        );
+        const payload = (await response.json()) as {
+          rows?: VentasXItemRawRow[];
+          range?: { start?: string; end?: string };
+          hasMore?: boolean;
+          nextOffset?: number;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "No se pudo cargar datos desde base de datos.");
+        }
+
+        const batchRows = payload.rows ?? [];
+        for (const row of batchRows) {
+          collectedRows.push(row);
+        }
+        loadedStart = payload.range?.start ?? loadedStart;
+        loadedEnd = payload.range?.end ?? loadedEnd;
+
+        if (!payload.hasMore || !payload.nextOffset || payload.nextOffset <= nextOffset) {
+          break;
+        }
+        nextOffset = payload.nextOffset;
       }
-      const prepared = prepareDataframe(payload.rows ?? []);
+
+      const prepared = prepareDataframe(collectedRows);
       const hasValidDates = prepared.some((row) => row.fecha !== null);
       if (!hasValidDates) throw new Error("La base de datos no tiene fechas válidas.");
       const empresas = Array.from(new Set(prepared.map((row) => row.empresa_norm))).sort();
       setRows(prepared);
+      setLoadedDateStart(loadedStart);
+      setLoadedDateEnd(loadedEnd);
       const selectedEmpresasLoaded = empresasCargaSel.filter((empresa) =>
         empresas.includes(empresa),
       );
       const empresaLabel = selectedEmpresasLoaded
         .map((empresa) => EMPRESA_LABELS[empresa] ?? empresa.toUpperCase())
         .join(" + ");
-      setFileName(`DB: ventas_item_diario (${dateStart} a ${dateEnd}) | ${empresaLabel}`);
+      setFileName(`DB: ventas_item_diario (${loadedStart} a ${loadedEnd}) | ${empresaLabel}`);
       setEmpresasSel(
         selectedEmpresasLoaded.length > 0 ? selectedEmpresasLoaded : empresas,
       );
+      setSummaryRows([]);
       setItemsSel([]);
       setItemsOrder([]);
       setItemSearch("");
       setItemsDropdownOpen(false);
+      setComparisonMode("day");
+      setComparisonA("");
+      setComparisonB("");
       setLastLoadedAt(new Date().toISOString());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -716,9 +895,9 @@ export default function VentasXItemPage() {
   };
 
   useEffect(() => {
-    if (!ready || loadingMeta || dbMinDate || dbMaxDate) return;
-    void onLoadMeta();
-  }, [ready, loadingMeta, dbMinDate, dbMaxDate]);
+    if (!ready) return;
+    void onLoadMeta(empresasCargaSel);
+  }, [ready, empresasCargaSel, onLoadMeta]);
 
   const handleDownloadCsv = () => {
     if (tableRows.length === 0 || tableColumns.length === 0) return;
@@ -958,6 +1137,11 @@ export default function VentasXItemPage() {
             {fileName
               ? `Fuente actual: ${fileName}`
               : "Selecciona fecha y una o varias empresas, luego carga desde BD."}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {minDateKey && maxDateKey
+              ? `Rango disponible para ${empresasCargaLabel}: ${minDateKey} a ${maxDateKey}.`
+              : `Aun no hay rango disponible para ${empresasCargaLabel}.`}
           </p>
           <p className="mt-1 text-[11px] text-slate-500">
             API activa: {USE_V2_API ? "v2 (controlada por flag)" : "v1 (estable)"}
@@ -1658,4 +1842,3 @@ export default function VentasXItemPage() {
     </div>
   );
 }
-

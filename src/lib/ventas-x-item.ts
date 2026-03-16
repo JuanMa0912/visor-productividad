@@ -71,6 +71,9 @@ export type VentasXItemPreparedRow = {
 export type DailyTableCell = string | number;
 export type DailyTableRow = Record<string, DailyTableCell>;
 
+export const getItemLabel = (idItem: unknown, descripcion: unknown) =>
+  `${String(idItem ?? "").trim()} - ${String(descripcion ?? "").trim()}`.trim();
+
 const stripAccents = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
@@ -186,7 +189,7 @@ export const prepareDataframe = (
 export const itemsDisplayList = (rows: VentasXItemPreparedRow[]) => {
   const values = new Set<string>();
   rows.forEach((row) => {
-    const text = `${String(row.id_item)} - ${String(row.descripcion)}`.trim();
+    const text = getItemLabel(row.id_item, row.descripcion);
     if (text) values.add(text);
   });
   return Array.from(values).sort((a, b) => a.localeCompare(b, "es"));
