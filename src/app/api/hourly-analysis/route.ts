@@ -4,6 +4,7 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import type {
   HourlyAnalysisData,
   HourlyLineSales,
+  HourlyPersonContribution,
   HourSlot,
   OvertimeEmployee,
 } from "@/types";
@@ -160,27 +161,6 @@ const findSedeConfigByName = (sedeName?: string | null) => {
   );
 };
 
-const resolveUsernameSedeConfig = (username?: string | null) => {
-  if (!username) return null;
-  const normalized = username.trim().toLowerCase();
-  if (!normalized.startsWith("sede_")) return null;
-
-  const rawSede = normalized.replace(/^sede_/, "").replace(/_/g, " ");
-  const normalizedRawSede = canonicalizeSedeMatchKey(rawSede);
-
-  return (
-    SEDE_CONFIGS.find((cfg) => {
-      const aliasPool = [cfg.name, ...cfg.aliases].map(canonicalizeSedeMatchKey);
-      return aliasPool.some(
-        (alias) =>
-          normalizedRawSede === alias ||
-          normalizedRawSede.includes(alias) ||
-          alias.includes(normalizedRawSede),
-      );
-    }) ?? null
-  );
-};
-
 const resolveLineId = (depto: string): string | undefined => {
   const normalized = normalizeDepto(depto);
   if (!normalized) return undefined;
@@ -296,6 +276,37 @@ const EMPLOYEE_NAME_COLUMN_CANDIDATES = [
   "funcionario",
 ] as const;
 
+const SALES_PERSON_ID_COLUMN_CANDIDATES = [
+  ...EMPLOYEE_ID_COLUMN_CANDIDATES,
+  "id_vend_cc",
+  "id_cajero",
+  "codigo_cajero",
+  "documento_cajero",
+  "cedula_cajero",
+  "id_vendedor",
+  "codigo_vendedor",
+  "documento_vendedor",
+  "cedula_vendedor",
+  "usuario",
+  "usuario_cajero",
+  "usuario_vendedor",
+] as const;
+
+const SALES_PERSON_NAME_COLUMN_CANDIDATES = [
+  ...EMPLOYEE_NAME_COLUMN_CANDIDATES,
+  "cajero",
+  "nombre_cajero",
+  "nombre_cajera",
+  "nombre_vendedor",
+  "vendedor",
+  "vendedora",
+  "usuario",
+  "usuario_cajero",
+  "usuario_vendedor",
+  "operador",
+  "nombre_operador",
+] as const;
+
 const normalizeColumnName = (value: string) => value.trim().toLowerCase();
 
 const quoteIdentifier = (value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -400,6 +411,8 @@ const RATE_LIMIT_MAX = 120;
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const RESPONSE_CACHE_TTL_MS = 30_000;
 const responseCache = new Map<string, { expiresAt: number; data: HourlyAnalysisData }>();
+const TABLE_COLUMNS_CACHE_TTL_MS = 5 * 60_000;
+const tableColumnsCache = new Map<string, { expiresAt: number; columns: string[] }>();
 
 const getClientIp = (request: Request) => {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -449,6 +462,39 @@ const setCachedResponse = (key: string, data: HourlyAnalysisData) => {
   }
 };
 
+const getTableColumns = async (
+  client: Awaited<ReturnType<Awaited<ReturnType<typeof getDbPool>>["connect"]>>,
+  tableName: string,
+) => {
+  const now = Date.now();
+  const cached = tableColumnsCache.get(tableName);
+  if (cached && cached.expiresAt > now) {
+    return cached.columns;
+  }
+
+  const result = await client.query(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = $1
+      ORDER BY ordinal_position
+    `,
+    [tableName],
+  );
+
+  const columns = (result.rows ?? [])
+    .map((row) => (row as { column_name?: string }).column_name)
+    .filter((value): value is string => Boolean(value));
+
+  tableColumnsCache.set(tableName, {
+    expiresAt: now + TABLE_COLUMNS_CACHE_TTL_MS,
+    columns,
+  });
+
+  return columns;
+};
+
 // ============================================================================
 // FETCH DATA
 // ============================================================================
@@ -459,6 +505,7 @@ const fetchHourlyData = async (
   bucketMinutes: number,
   selectedSedes: string[],
   allowedLineIds: string[] = [],
+  includePeopleBreakdown = false,
   overtimeDateStart?: string | null,
   overtimeDateEnd?: string | null,
 ): Promise<HourlyAnalysisData> => {
@@ -569,6 +616,160 @@ const fetchHourlyData = async (
 
     await Promise.all(salesPromises);
 
+    const personContributions: HourlyPersonContribution[] = [];
+
+    if (
+      includePeopleBreakdown &&
+      lineFilter === "cajas" &&
+      selectedLineTables.some((line) => line.id === "cajas")
+    ) {
+      try {
+        const salesColumns = await getTableColumns(client, "ventas_cajas");
+        const salesColumnLookup = new Map(
+          salesColumns.map((column) => [normalizeColumnName(column), column]),
+        );
+
+        const personIdColumn =
+          salesColumnLookup.get("id_vend_cc") ??
+          pickAttendanceColumn(salesColumns, SALES_PERSON_ID_COLUMN_CANDIDATES, [
+            "cedula",
+            "document",
+            "codigo",
+            "id",
+            "numero",
+            "usuario",
+          ]);
+        const personNameColumn =
+          salesColumnLookup.get("vendedor") ??
+          pickAttendanceColumn(salesColumns, SALES_PERSON_NAME_COLUMN_CANDIDATES, [
+            "cajer",
+            "vendedor",
+            "usuario",
+            "operador",
+            "emplead",
+            "nombre",
+          ]);
+
+        const personIdIdentifier = personIdColumn
+          ? quoteIdentifier(personIdColumn)
+          : null;
+        const personNameIdentifier = personNameColumn
+          ? quoteIdentifier(personNameColumn)
+          : null;
+        const personIdExpr = personIdIdentifier
+          ? `NULLIF(TRIM(CAST(${personIdIdentifier} AS text)), '')`
+          : "NULL::text";
+        const personNameExpr = personNameIdentifier
+          ? `NULLIF(TRIM(CAST(${personNameIdentifier} AS text)), '')`
+          : "NULL::text";
+
+        const peopleQuery = `
+          SELECT
+            COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
+            ${personIdExpr} AS person_id,
+            COALESCE(${personNameExpr}, ${personIdExpr}, 'Sin identificar') AS person_name,
+            hora_final_hora,
+            COALESCE(SUM(total_bruto), 0) AS total_sales
+          FROM ventas_cajas
+          WHERE fecha_dcto = $1
+            ${salesBranchFilter}
+          GROUP BY 1, 2, 3, hora_final_hora
+          ORDER BY 3, hora_final_hora
+        `;
+
+        const peopleResult = await client.query(peopleQuery, [
+          salesDateCompact,
+          ...salesBranchParams,
+        ]);
+
+        const peopleMap = new Map<
+          string,
+          {
+            personKey: string;
+            personId?: string | null;
+            personName: string;
+            firstMinuteOfDay: number | null;
+            lastMinuteOfDay: number | null;
+            hourlySales: Map<number, number>;
+          }
+        >();
+
+        for (const row of peopleResult.rows ?? []) {
+          const typedRow = row as {
+            person_key: string;
+            person_id?: string | null;
+            person_name: string;
+            hora_final_hora: unknown;
+            total_sales: string | number;
+          };
+          const minuteOfDay = parseMinuteOfDay(typedRow.hora_final_hora);
+          if (minuteOfDay === null) continue;
+          const bucketStartMinute =
+            Math.floor(minuteOfDay / bucketMinutes) * bucketMinutes;
+          const personKey = typedRow.person_key?.trim() || "sin-identificar";
+          const personName =
+            typedRow.person_name?.trim() ||
+            typedRow.person_id?.trim() ||
+            "Sin identificar";
+          const personId = typedRow.person_id?.trim() || null;
+          const salesValue = Number(typedRow.total_sales) || 0;
+
+          if (!peopleMap.has(personKey)) {
+            peopleMap.set(personKey, {
+              personKey,
+              personId,
+              personName,
+              firstMinuteOfDay: bucketStartMinute,
+              lastMinuteOfDay: bucketStartMinute,
+              hourlySales: new Map<number, number>(),
+            });
+          }
+
+          const personEntry = peopleMap.get(personKey)!;
+          personEntry.hourlySales.set(
+            bucketStartMinute,
+            (personEntry.hourlySales.get(bucketStartMinute) ?? 0) + salesValue,
+          );
+          personEntry.firstMinuteOfDay =
+            personEntry.firstMinuteOfDay === null
+              ? bucketStartMinute
+              : Math.min(personEntry.firstMinuteOfDay, bucketStartMinute);
+          personEntry.lastMinuteOfDay =
+            personEntry.lastMinuteOfDay === null
+              ? bucketStartMinute
+              : Math.max(personEntry.lastMinuteOfDay, bucketStartMinute);
+        }
+
+        for (const person of peopleMap.values()) {
+          const hourlySales = Array.from(person.hourlySales.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([slotStartMinute, sales]) => ({
+              slotStartMinute,
+              slotEndMinute: (slotStartMinute + bucketMinutes) % 1440,
+              label: buildSlotLabel(slotStartMinute, bucketMinutes),
+              sales,
+            }));
+
+          personContributions.push({
+            personKey: person.personKey,
+            personId: person.personId,
+            personName: person.personName,
+            firstMinuteOfDay: person.firstMinuteOfDay,
+            lastMinuteOfDay: person.lastMinuteOfDay,
+            hourlySales,
+          });
+        }
+
+        personContributions.sort((a, b) => {
+          const totalA = a.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
+          const totalB = b.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
+          return totalB - totalA;
+        });
+      } catch (error) {
+        console.warn("[hourly-analysis] Error consultando detalle de cajas:", error);
+      }
+    }
+
     const presenceByHour = new Map<number, number>();
     const presenceByHourByLine = new Map<number, Map<string, number>>();
 
@@ -620,17 +821,7 @@ const fetchHourlyData = async (
               : "AND 1=0"
           }
       `;
-      const attendanceColumnsResult = await client.query(
-        `
-          SELECT column_name
-          FROM information_schema.columns
-          WHERE table_schema = 'public'
-            AND table_name = 'asistencia_horas'
-        `,
-      );
-      const attendanceColumns = (attendanceColumnsResult.rows ?? [])
-        .map((row) => (row as { column_name?: string }).column_name)
-        .filter((value): value is string => Boolean(value));
+        const attendanceColumns = await getTableColumns(client, "asistencia_horas");
       const attendanceColumnSet = new Set(
         attendanceColumns.map((col) => normalizeColumnName(col)),
       );
@@ -976,6 +1167,7 @@ const fetchHourlyData = async (
       salesDateUsed: compactDateToISO(salesDateCompact),
       bucketMinutes,
       overtimeEmployees,
+      personContributions,
       hours,
     };
   } finally {
@@ -1044,6 +1236,9 @@ export async function GET(request: Request) {
   const overtimeDateStartParam = url.searchParams.get("overtimeDateStart");
   const overtimeDateEndParam = url.searchParams.get("overtimeDateEnd");
   const lineParam = url.searchParams.get("line")?.trim() || null;
+  const includePeopleBreakdown =
+    url.searchParams.get("includePeople") === "1" ||
+    url.searchParams.get("includePeople") === "true";
   const sedeParams = url.searchParams.getAll("sede").filter(Boolean);
   const hasAllSedes =
     Array.isArray(session.user.allowedSedes) &&
@@ -1163,6 +1358,7 @@ export async function GET(request: Request) {
     overtimeDateStartParam,
     overtimeDateEndParam,
     lineParam,
+    includePeopleBreakdown,
     bucketMinutes,
     effectiveSedeParams,
     allowedLineIds,
@@ -1184,6 +1380,7 @@ export async function GET(request: Request) {
       bucketMinutes,
       effectiveSedeParams,
       allowedLineIds,
+      includePeopleBreakdown,
       overtimeDateStartParam,
       overtimeDateEndParam,
     );

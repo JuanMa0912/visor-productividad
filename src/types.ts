@@ -38,6 +38,22 @@ export interface HourSlot {
   lines: HourlyLineSales[];
 }
 
+export interface HourlyPersonSalesSlot {
+  slotStartMinute: number;
+  slotEndMinute: number;
+  label: string;
+  sales: number;
+}
+
+export interface HourlyPersonContribution {
+  personKey: string;
+  personId?: string | null;
+  personName: string;
+  firstMinuteOfDay?: number | null;
+  lastMinuteOfDay?: number | null;
+  hourlySales: HourlyPersonSalesSlot[];
+}
+
 export interface OvertimeEmployee {
   employeeId?: string | null;
   employeeName: string;
@@ -65,4 +81,5 @@ export interface HourlyAnalysisData {
   bucketMinutes?: number;
   hours: HourSlot[];
   overtimeEmployees?: OvertimeEmployee[];
+  personContributions?: HourlyPersonContribution[];
 }

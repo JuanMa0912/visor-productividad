@@ -3813,13 +3813,14 @@ export default function Home() {
           companies={companyOptions}
           startDate={dateRange.start}
           endDate={dateRange.end}
-          dates={availableDates}
           onSedeChange={handleSedeChange}
           onCompaniesChange={handleCompaniesChange}
           onStartDateChange={handleStartDateChange}
           onEndDateChange={handleEndDateChange}
           onExportClick={openExportModal}
           isExportDisabled={dailyDataSet.length === 0}
+          backHref="/productividad"
+          backLabel="Volver a Productividad"
         />
 
         {exportModalOpen && (
@@ -4055,4 +4056,3 @@ export default function Home() {
     </div>
   );
 }
-

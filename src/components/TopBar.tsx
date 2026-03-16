@@ -16,13 +16,14 @@ interface TopBarProps {
   companies: { id: string; name: string }[];
   startDate: string;
   endDate: string;
-  dates: string[];
   onSedeChange: (value: string) => void;
   onCompaniesChange: (value: string[]) => void;
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
   onExportClick: () => void;
   isExportDisabled?: boolean;
+  backHref?: string;
+  backLabel?: string;
 }
 
 // ============================================================================
@@ -301,13 +302,14 @@ export const TopBar = ({
   companies,
   startDate,
   endDate,
-  dates,
   onSedeChange,
   onCompaniesChange,
   onStartDateChange,
   onEndDateChange,
   onExportClick,
   isExportDisabled = false,
+  backHref,
+  backLabel,
 }: TopBarProps) => {
   // Transformar datos para el componente SelectField
   const sedeOptions = [
@@ -332,6 +334,14 @@ export const TopBar = ({
       <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
         <BrandHeader title={title} />
         <div className="flex flex-wrap items-center gap-2">
+          {backHref && backLabel && (
+            <Link
+              href={backHref}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 sm:px-4 sm:py-2 sm:text-xs sm:tracking-[0.2em]"
+            >
+              {backLabel}
+            </Link>
+          )}
           <Link
             href="/tableros"
             className="inline-flex items-center gap-2 rounded-full border border-blue-200/70 bg-blue-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-blue-800 transition-all hover:border-blue-300 hover:bg-blue-100 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:px-4 sm:py-2 sm:text-xs sm:tracking-[0.2em]"
@@ -421,8 +431,6 @@ export const TopBar = ({
     </header>
   );
 };
-
-
 
 
 

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   Users,
@@ -9,6 +16,10 @@ import {
   Clock,
   Sparkles,
   Download,
+  UserRound,
+  TrendingUp,
+  TrendingDown,
+  ArrowUp,
 } from "lucide-react";
 import * as ExcelJS from "exceljs";
 import { formatDateLabel } from "@/lib/utils";
@@ -22,6 +33,7 @@ interface HourlyAnalysisProps {
   allowedLineIds?: string[];
   defaultDate?: string;
   defaultSede?: string;
+  defaultLine?: string;
   sections?: Array<"map" | "overtime">;
   defaultSection?: "map" | "overtime";
   showTimeFilters?: boolean;
@@ -31,6 +43,11 @@ interface HourlyAnalysisProps {
   showDepartmentFilterInOvertime?: boolean;
   enableOvertimeDateRange?: boolean;
   alexConsistencyMode?: boolean;
+  showComparison?: boolean;
+  badgeLabel?: string;
+  panelTitle?: string;
+  panelDescription?: string;
+  showPersonBreakdown?: boolean;
 }
 
 const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -52,6 +69,20 @@ const getHeatColor = (ratioPercent: number) => {
 };
 
 const formatProductivity = (value: number) => value.toFixed(3);
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const formatShare = (value: number) =>
+  new Intl.NumberFormat("es-CO", {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
 
 const formatHoursBase60 = (value: number) => {
   if (!Number.isFinite(value)) return "0.00";
@@ -112,6 +143,16 @@ const parseTimeToMinute = (value: string) => {
     return 0;
   }
   return hours * 60 + minutes;
+};
+
+const formatMinuteLabel = (minute: number | null | undefined) => {
+  if (minute === null || minute === undefined || !Number.isFinite(minute)) {
+    return "-";
+  }
+  const normalized = ((minute % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
 
 const OVERTIME_QUICK_RANGE_OPTIONS: Array<{
@@ -256,7 +297,10 @@ const HourBar = ({
           )}
         </div>
 
-        <div className="flex w-40 shrink-0 items-center justify-end gap-2">
+        <div className="flex w-64 shrink-0 items-center justify-end gap-2">
+          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+            {formatCurrency(totalSales)}
+          </span>
           <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-200/70">
             <Users className="h-3.5 w-3.5" />
             {employeesPresent}
@@ -272,7 +316,7 @@ const HourBar = ({
       </button>
 
       {isExpanded && hasActivity && (
-        <div className="mt-2 ml-26 mr-40 rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
+        <div className="mt-2 ml-26 mr-64 rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
           <div className="grid grid-cols-12 gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500 ring-1 ring-slate-200/60">
             <span className="col-span-8">Linea</span>
             <span className="col-span-4 text-right">Vta/Hr</span>
@@ -328,6 +372,7 @@ export const HourlyAnalysis = ({
   allowedLineIds,
   defaultDate,
   defaultSede,
+  defaultLine,
   sections = ["map", "overtime"],
   defaultSection = "map",
   showTimeFilters = true,
@@ -337,13 +382,18 @@ export const HourlyAnalysis = ({
   showDepartmentFilterInOvertime = false,
   enableOvertimeDateRange = false,
   alexConsistencyMode = false,
+  showComparison = true,
+  badgeLabel = "Analisis por hora",
+  panelTitle = "Desglose horario",
+  panelDescription = "Filtra por linea para enfocar el comportamiento horario en todas las sedes.",
+  showPersonBreakdown = false,
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
     const unique = Array.from(new Set(sections));
     return unique.length > 0 ? unique : (["map"] as Array<"map" | "overtime">);
   }, [sections]);
   const [selectedDate, setSelectedDate] = useState(defaultDate ?? "");
-  const [selectedLine, setSelectedLine] = useState("");
+  const [selectedLine, setSelectedLine] = useState(defaultLine ?? "");
   const [selectedSedes, setSelectedSedes] = useState<string[]>(
     defaultSede ? [defaultSede] : [],
   );
@@ -414,6 +464,13 @@ export const HourlyAnalysis = ({
   const overtimeSedePanelRef = useRef<HTMLDivElement | null>(null);
   const overtimeDepartmentTriggerRef = useRef<HTMLButtonElement | null>(null);
   const overtimeDepartmentPanelRef = useRef<HTMLDivElement | null>(null);
+  const [personSearchQuery, setPersonSearchQuery] = useState("");
+  const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
+  const [expandedPersonKey, setExpandedPersonKey] = useState<string | null>(null);
+  const topSectionRef = useRef<HTMLDivElement | null>(null);
+  const contributionSectionRef = useRef<HTMLDivElement | null>(null);
+  const [showFloatingContributionBack, setShowFloatingContributionBack] =
+    useState(false);
 
   const minuteRangeStepSeconds = useMemo(
     () => bucketMinutes * 60,
@@ -467,12 +524,14 @@ export const HourlyAnalysis = ({
 
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [allowedLineSet, hasLineRestriction, hourlyData]);
+  const requestedLine = defaultLine?.trim() || selectedLine;
   const effectiveSelectedLine =
+    !defaultLine &&
     hasLineRestriction &&
-    selectedLine &&
-    !allowedLineSet.has(selectedLine.toLowerCase())
+    requestedLine &&
+    !allowedLineSet.has(requestedLine.toLowerCase())
       ? ""
-      : selectedLine;
+      : requestedLine;
 
   useEffect(() => {
     const available = new Set(availableSedes.map((s) => s.name));
@@ -722,17 +781,45 @@ export const HourlyAnalysis = ({
     };
   }, [overtimeDepartmentOpen, updateOvertimeDepartmentPopoverPos]);
 
+  useEffect(() => {
+    if (!showPersonBreakdown) {
+      setShowFloatingContributionBack(false);
+      return;
+    }
+
+    const updateFloatingBack = () => {
+      const section = contributionSectionRef.current;
+      if (!section) {
+        setShowFloatingContributionBack(false);
+        return;
+      }
+      const rect = section.getBoundingClientRect();
+      const shouldShow = rect.top < -160;
+      setShowFloatingContributionBack(shouldShow);
+    };
+
+    updateFloatingBack();
+    window.addEventListener("scroll", updateFloatingBack, { passive: true });
+    window.addEventListener("resize", updateFloatingBack);
+    return () => {
+      window.removeEventListener("scroll", updateFloatingBack);
+      window.removeEventListener("resize", updateFloatingBack);
+    };
+  }, [showPersonBreakdown]);
+
   const fetchHourly = async (
     date: string,
     lineId: string,
     currentBucketMinutes: number,
     sedeNames: string[],
+    includePeople: boolean,
     overtimeDateRange?: { start: string; end: string },
     signal?: AbortSignal,
   ) => {
     const params = new URLSearchParams({ date });
     if (lineId) params.set("line", lineId);
     params.set("bucketMinutes", String(currentBucketMinutes));
+    if (includePeople) params.set("includePeople", "1");
     sedeNames.forEach((sede) => params.append("sede", sede));
     if (overtimeDateRange?.start)
       params.set("overtimeDateStart", overtimeDateRange.start);
@@ -769,6 +856,7 @@ export const HourlyAnalysis = ({
       effectiveSelectedLine,
       bucketMinutes,
       selectedSedes,
+      showPersonBreakdown,
       enableOvertimeDateRange && isOvertimeOnlyMode
         ? {
             start: overtimeDateStart || selectedDate,
@@ -794,6 +882,7 @@ export const HourlyAnalysis = ({
     effectiveSelectedLine,
     bucketMinutes,
     selectedSedes,
+    showPersonBreakdown,
     enableOvertimeDateRange,
     isOvertimeOnlyMode,
     overtimeDateStart,
@@ -815,6 +904,7 @@ export const HourlyAnalysis = ({
       effectiveSelectedLine,
       bucketMinutes,
       selectedSedes,
+      false,
       undefined,
       controller.signal,
     )
@@ -950,7 +1040,8 @@ export const HourlyAnalysis = ({
 
         return {
           slotStartMinute: h.slotStartMinute,
-          label: h.label.slice(0, 5),
+          label: h.label,
+          tickLabel: h.label.slice(0, 5),
           mainSales: h.totalSales,
           mainProductivity,
           mainHeatRatio,
@@ -962,6 +1053,9 @@ export const HourlyAnalysis = ({
         };
       })
       .filter((h) => {
+        if (showPersonBreakdown) {
+          return true;
+        }
         if (compareEnabled && compareData) {
           return h.mainSales > 0 || h.compareSales > 0;
         }
@@ -972,11 +1066,10 @@ export const HourlyAnalysis = ({
     compareData,
     compareEnabled,
     bucketMinutes,
-    minuteRangeEnd,
-    minuteRangeStart,
     hourlyData,
     mainBaselineSalesPerEmployee,
     rangedHours,
+    showPersonBreakdown,
   ]);
 
   const chartTickEvery = useMemo(() => {
@@ -1032,9 +1125,121 @@ export const HourlyAnalysis = ({
     return { sales, avgProductivity, peakEmployees, activeHoursCount };
   }, [hourlyData, rangedHours, bucketMinutes]);
 
+  const hourDifferences = useMemo(() => {
+    return rangedHours.map((slot, index) => {
+      const previous = index > 0 ? rangedHours[index - 1] : null;
+      const deltaSales = previous ? slot.totalSales - previous.totalSales : slot.totalSales;
+      const deltaPercent =
+        previous && previous.totalSales > 0
+          ? (deltaSales / previous.totalSales) * 100
+          : null;
+      return {
+        slotStartMinute: slot.slotStartMinute,
+        label: slot.label,
+        sales: slot.totalSales,
+        deltaSales,
+        deltaPercent,
+      };
+    });
+  }, [rangedHours]);
+
+  const peopleBreakdown = useMemo(() => {
+    const people = hourlyData?.personContributions ?? [];
+    if (people.length === 0) return [];
+
+    return people
+      .map((person) => {
+        const activeSlots = person.hourlySales
+          .filter(
+            (slot) =>
+              slot.slotStartMinute >= minuteRangeStart &&
+              slot.slotStartMinute <= minuteRangeEnd &&
+              slot.sales > 0,
+          )
+          .sort((a, b) => a.slotStartMinute - b.slotStartMinute);
+
+        const totalSales = activeSlots.reduce((sum, slot) => sum + slot.sales, 0);
+        const contributionShare = dayTotals.sales > 0 ? totalSales / dayTotals.sales : 0;
+        const slotDiffs = activeSlots.map((slot, index) => {
+          const previous = index > 0 ? activeSlots[index - 1] : null;
+          const deltaSales = previous ? slot.sales - previous.sales : slot.sales;
+          const deltaPercent =
+            previous && previous.sales > 0
+              ? (deltaSales / previous.sales) * 100
+              : null;
+          return {
+            ...slot,
+            deltaSales,
+            deltaPercent,
+          };
+        });
+        const peakSlot = [...activeSlots].sort((a, b) => b.sales - a.sales)[0] ?? null;
+        const firstSlot = activeSlots[0] ?? null;
+        const lastSlot = activeSlots[activeSlots.length - 1] ?? null;
+
+        return {
+          ...person,
+          activeSlots,
+          slotDiffs,
+          totalSales,
+          contributionShare,
+          peakSlot,
+          firstSlot,
+          lastSlot,
+        };
+      })
+      .filter((person) => person.totalSales > 0)
+      .sort((a, b) => b.totalSales - a.totalSales);
+  }, [dayTotals.sales, hourlyData?.personContributions, minuteRangeEnd, minuteRangeStart]);
+
+  const filteredPeopleBreakdown = useMemo(() => {
+    const query = deferredPersonSearchQuery.trim().toLowerCase();
+    if (!query) return peopleBreakdown;
+    return peopleBreakdown.filter((person) => {
+      const name = person.personName.trim().toLowerCase();
+      const id = person.personId?.trim().toLowerCase() ?? "";
+      return name.includes(query) || id.includes(query);
+    });
+  }, [deferredPersonSearchQuery, peopleBreakdown]);
+
+  const topContributor = filteredPeopleBreakdown[0] ?? peopleBreakdown[0] ?? null;
+
+  const salesByHourCards = useMemo(
+    () =>
+      rangedHours.map((slot) => ({
+        slotStartMinute: slot.slotStartMinute,
+        label: slot.label,
+        sales: slot.totalSales,
+        productivity: calcVtaHr(
+          slot.totalSales,
+          slot.employeesPresent * (bucketMinutes / 60),
+        ),
+        employeesPresent: slot.employeesPresent,
+      })),
+    [bucketMinutes, rangedHours],
+  );
+
   const handleToggleHour = (hour: number) => {
     setExpandedSlotStart((prev) => (prev === hour ? null : hour));
   };
+
+  const handleTogglePerson = (personKey: string) => {
+    setExpandedPersonKey((prev) => (prev === personKey ? null : personKey));
+  };
+
+  const handleScrollToContributionStart = useCallback(() => {
+    contributionSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
+
+  const handleScrollToTop = useCallback(() => {
+    topSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
 
   const selectedLineLabel =
     effectiveSelectedLine &&
@@ -1437,6 +1642,7 @@ export const HourlyAnalysis = ({
 
   return (
     <div
+      ref={topSectionRef}
       data-animate="hourly-card"
       className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-linear-to-br from-white via-slate-50 to-amber-50/40 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.2)]"
     >
@@ -1447,14 +1653,13 @@ export const HourlyAnalysis = ({
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-200/70 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-amber-700 shadow-sm">
             <Sparkles className="h-3.5 w-3.5" />
-            Analisis por hora
+            {badgeLabel}
           </div>
           <h3 className="mt-1 text-lg font-semibold text-slate-900">
-            Desglose horario
+            {panelTitle}
           </h3>
           <p className="mt-1 text-xs text-slate-600">
-            Filtra por linea para enfocar el comportamiento horario en todas las
-            sedes.
+            {panelDescription}
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
@@ -1630,7 +1835,7 @@ export const HourlyAnalysis = ({
         </div>
       )}
 
-      {showMapSection && (
+      {showMapSection && showComparison && (
         <div className="mb-4 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1747,7 +1952,11 @@ export const HourlyAnalysis = ({
                 )}
             </div>
 
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                <DollarSign className="h-3.5 w-3.5" />
+                Facturado rango: {formatCurrency(dayTotals.sales)}
+              </div>
               <div className="flex items-center gap-2 rounded-xl border border-amber-200/70 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                 <DollarSign className="h-3.5 w-3.5" />
                 Vta/Hr prom: {formatProductivity(dayTotals.avgProductivity)}
@@ -2451,7 +2660,7 @@ export const HourlyAnalysis = ({
                                 )}
                               </div>
                               <span className="text-[10px] font-semibold text-slate-500">
-                                {showTick ? slot.label : ""}
+                                {showTick ? slot.tickLabel : ""}
                               </span>
                             </div>
                           );
@@ -2469,6 +2678,281 @@ export const HourlyAnalysis = ({
                   </span>
                 </div>
               )}
+            </div>
+          )}
+
+          {showMapSection && hourlySection === "map" && showPersonBreakdown && (
+            <div className="mb-6 space-y-4">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Variacion por hora
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Cambio absoluto y porcentual dentro del rango seleccionado
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                      Total intervalo: {formatCurrency(dayTotals.sales)}
+                    </span>
+                    <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70">
+                      Personas: {peopleBreakdown.length}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {hourDifferences
+                    .filter((slot) => slot.sales > 0)
+                    .map((slot) => {
+                      const positive = slot.deltaSales >= 0;
+                      return (
+                        <div
+                          key={`diff-${slot.slotStartMinute}`}
+                          className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                {slot.label}
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-slate-900">
+                                {formatCurrency(slot.sales)}
+                              </p>
+                            </div>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                                positive
+                                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200/70"
+                                  : "bg-red-50 text-red-700 ring-red-200/70"
+                              }`}
+                            >
+                              {positive ? (
+                                <TrendingUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <TrendingDown className="h-3.5 w-3.5" />
+                              )}
+                              {`${positive ? "+" : "-"}${formatCurrency(Math.abs(slot.deltaSales))}`}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-600">
+                            {slot.deltaPercent === null
+                              ? "Sin base previa para porcentaje."
+                              : `${positive ? "+" : "-"}${Math.abs(slot.deltaPercent).toFixed(1)}% vs. franja anterior`}
+                          </p>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Venta x hora
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Facturacion y productividad por cada franja del rango
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70">
+                    {salesByHourCards.length} franjas
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {salesByHourCards.map((slot) => (
+                    <div
+                      key={`sales-hour-${slot.slotStartMinute}`}
+                      className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-3"
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        {slot.label}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {formatCurrency(slot.sales)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                        <span className="rounded-full bg-white px-2 py-1 text-slate-700 ring-1 ring-slate-200/70">
+                          Vta/Hr {formatProductivity(slot.productivity)}
+                        </span>
+                        <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700 ring-1 ring-sky-200/70">
+                          {slot.employeesPresent} pers.
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div
+                ref={contributionSectionRef}
+                className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Aporte individual
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Personas activas y contribucion dentro del intervalo
+                    </p>
+                  </div>
+                  {topContributor && (
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
+                      Top: {topContributor.personName} {formatCurrency(topContributor.totalSales)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <label className="min-w-64 flex-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Filtrar cajero
+                    </span>
+                    <input
+                      type="text"
+                      value={personSearchQuery}
+                      onChange={(e) => setPersonSearchQuery(e.target.value)}
+                      placeholder="Buscar por nombre o ID"
+                      className="mt-1 w-full rounded-full border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-all focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    />
+                  </label>
+                  <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 ring-1 ring-slate-200/70">
+                    Mostrando {filteredPeopleBreakdown.length} de {peopleBreakdown.length}
+                  </span>
+                  {personSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setPersonSearchQuery("")}
+                      className="rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+
+                {filteredPeopleBreakdown.length === 0 ? (
+                  <p className="mt-4 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-6 text-center text-sm text-slate-500">
+                    No se encontraron cajeros para ese filtro.
+                  </p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {filteredPeopleBreakdown.map((person) => (
+                      <div
+                        key={person.personKey}
+                        className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200/70">
+                                <UserRound className="h-3.5 w-3.5 text-sky-600" />
+                                {person.personName}
+                              </span>
+                              {person.personId && (
+                                <span className="rounded-full bg-slate-200/70 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                  ID {person.personId}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-2 text-sm font-semibold text-slate-900">
+                              {formatCurrency(person.totalSales)}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-600">
+                              Participacion: {formatShare(person.contributionShare)} del total
+                            </p>
+                          </div>
+
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                              <span className="block text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                Participacion
+                              </span>
+                              {formatMinuteLabel(person.firstSlot?.slotStartMinute)} -{" "}
+                              {formatMinuteLabel(person.lastSlot?.slotEndMinute)}
+                            </div>
+                            <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                              <span className="block text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                Franja pico
+                              </span>
+                              {person.peakSlot?.label ?? "-"}
+                            </div>
+                            <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                              <span className="block text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                Pico individual
+                              </span>
+                              {person.peakSlot ? formatCurrency(person.peakSlot.sales) : "-"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePerson(person.personKey)}
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
+                          >
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 transition-transform ${
+                                expandedPersonKey === person.personKey ? "rotate-180" : ""
+                              }`}
+                            />
+                            {expandedPersonKey === person.personKey
+                              ? "Ocultar detalle"
+                              : "Ver detalle por franja"}
+                          </button>
+                        </div>
+
+                        {expandedPersonKey === person.personKey && (
+                          <div className="mt-4 overflow-x-auto">
+                            <div className="min-w-[760px] rounded-2xl border border-slate-200/70 bg-white">
+                              <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-2 border-b border-slate-200/70 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                <span>Franja</span>
+                                <span className="text-right">Venta</span>
+                                <span className="text-right">Delta</span>
+                                <span className="text-right">% cambio</span>
+                              </div>
+                              {person.slotDiffs.map((slot) => {
+                                const positive = slot.deltaSales >= 0;
+                                return (
+                                  <div
+                                    key={`${person.personKey}-${slot.slotStartMinute}`}
+                                    className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0"
+                                  >
+                                    <span className="font-semibold text-slate-700">
+                                      {slot.label}
+                                    </span>
+                                    <span className="text-right font-semibold text-slate-900">
+                                      {formatCurrency(slot.sales)}
+                                    </span>
+                                    <span
+                                      className={`text-right font-semibold ${
+                                        positive ? "text-emerald-700" : "text-red-700"
+                                      }`}
+                                    >
+                                      {`${positive ? "+" : "-"}${formatCurrency(Math.abs(slot.deltaSales))}`}
+                                    </span>
+                                    <span className="text-right font-semibold text-slate-600">
+                                      {slot.deltaPercent === null
+                                        ? "-"
+                                        : `${positive ? "+" : "-"}${Math.abs(slot.deltaPercent).toFixed(1)}%`}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
 
@@ -2510,6 +2994,27 @@ export const HourlyAnalysis = ({
                 No hay actividad registrada para este filtro.
               </p>
             ))}
+
+          {showPersonBreakdown && showFloatingContributionBack && (
+            <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleScrollToContributionStart}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-900/90 bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.75)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
+              >
+                <ArrowUp className="h-4 w-4" />
+                Volver al aporte
+              </button>
+              <button
+                type="button"
+                onClick={handleScrollToTop}
+                className="inline-flex items-center gap-2 rounded-full border border-sky-200/80 bg-sky-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-sky-800 shadow-[0_18px_40px_-20px_rgba(14,165,233,0.45)] transition-all hover:-translate-y-0.5 hover:bg-sky-100"
+              >
+                <ArrowUp className="h-4 w-4" />
+                Volver arriba
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

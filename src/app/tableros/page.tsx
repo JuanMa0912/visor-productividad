@@ -72,7 +72,7 @@ export default function TablerosPage() {
       title: "Productividad",
       subtitle: "Tablero productividad",
       description: "Ventas, horas, margen y comparativos por sede.",
-      href: "/",
+      href: "/productividad",
       badge: "Productividad",
       classes:
         "border-blue-300/80 bg-linear-to-br from-blue-100 via-white to-cyan-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.45)] hover:border-blue-400 hover:shadow-[0_22px_44px_-26px_rgba(37,99,235,0.55)]",
