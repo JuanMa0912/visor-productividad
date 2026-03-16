@@ -22,7 +22,7 @@ import {
   ArrowUp,
 } from "lucide-react";
 import * as ExcelJS from "exceljs";
-import { formatDateLabel } from "@/lib/utils";
+import { cn, formatDateLabel } from "@/lib/utils";
 import { DEFAULT_LINES } from "@/lib/constants";
 import type { Sede } from "@/lib/constants";
 import type { HourlyAnalysisData } from "@/types";
@@ -60,6 +60,24 @@ const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
 type OvertimeEmployee = NonNullable<
   HourlyAnalysisData["overtimeEmployees"]
 >[number];
+type PersonBreakdownView = "individual" | "franjas";
+
+const PERSON_BREAKDOWN_VIEW_OPTIONS: Array<{
+  value: PersonBreakdownView;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "individual",
+    label: "Aporte individual",
+    hint: "Cajeros, aporte y picos",
+  },
+  {
+    value: "franjas",
+    label: "Desglose por franjas",
+    hint: "Horas, ventas y variaciones",
+  },
+];
 
 const getHeatColor = (ratioPercent: number) => {
   if (ratioPercent >= 110) return "#16a34a";
@@ -467,6 +485,8 @@ export const HourlyAnalysis = ({
   const [personSearchQuery, setPersonSearchQuery] = useState("");
   const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
   const [expandedPersonKey, setExpandedPersonKey] = useState<string | null>(null);
+  const [personBreakdownView, setPersonBreakdownView] =
+    useState<PersonBreakdownView>("individual");
   const topSectionRef = useRef<HTMLDivElement | null>(null);
   const contributionSectionRef = useRef<HTMLDivElement | null>(null);
   const [showFloatingContributionBack, setShowFloatingContributionBack] =
@@ -1126,6 +1146,7 @@ export const HourlyAnalysis = ({
   }, [hourlyData, rangedHours, bucketMinutes]);
 
   const hourDifferences = useMemo(() => {
+    if (personBreakdownView !== "franjas") return [];
     return rangedHours.map((slot, index) => {
       const previous = index > 0 ? rangedHours[index - 1] : null;
       const deltaSales = previous ? slot.totalSales - previous.totalSales : slot.totalSales;
@@ -1141,9 +1162,10 @@ export const HourlyAnalysis = ({
         deltaPercent,
       };
     });
-  }, [rangedHours]);
+  }, [personBreakdownView, rangedHours]);
 
   const peopleBreakdown = useMemo(() => {
+    if (personBreakdownView !== "individual") return [];
     const people = hourlyData?.personContributions ?? [];
     if (people.length === 0) return [];
 
@@ -1190,9 +1212,16 @@ export const HourlyAnalysis = ({
       })
       .filter((person) => person.totalSales > 0)
       .sort((a, b) => b.totalSales - a.totalSales);
-  }, [dayTotals.sales, hourlyData?.personContributions, minuteRangeEnd, minuteRangeStart]);
+  }, [
+    dayTotals.sales,
+    hourlyData?.personContributions,
+    minuteRangeEnd,
+    minuteRangeStart,
+    personBreakdownView,
+  ]);
 
   const filteredPeopleBreakdown = useMemo(() => {
+    if (personBreakdownView !== "individual") return [];
     const query = deferredPersonSearchQuery.trim().toLowerCase();
     if (!query) return peopleBreakdown;
     return peopleBreakdown.filter((person) => {
@@ -1200,13 +1229,17 @@ export const HourlyAnalysis = ({
       const id = person.personId?.trim().toLowerCase() ?? "";
       return name.includes(query) || id.includes(query);
     });
-  }, [deferredPersonSearchQuery, peopleBreakdown]);
+  }, [deferredPersonSearchQuery, peopleBreakdown, personBreakdownView]);
 
-  const topContributor = filteredPeopleBreakdown[0] ?? peopleBreakdown[0] ?? null;
+  const topContributor = useMemo(() => {
+    if (personBreakdownView !== "individual") return null;
+    return filteredPeopleBreakdown[0] ?? peopleBreakdown[0] ?? null;
+  }, [filteredPeopleBreakdown, peopleBreakdown, personBreakdownView]);
 
   const salesByHourCards = useMemo(
-    () =>
-      rangedHours.map((slot) => ({
+    () => {
+      if (personBreakdownView !== "franjas") return [];
+      return rangedHours.map((slot) => ({
         slotStartMinute: slot.slotStartMinute,
         label: slot.label,
         sales: slot.totalSales,
@@ -1215,9 +1248,12 @@ export const HourlyAnalysis = ({
           slot.employeesPresent * (bucketMinutes / 60),
         ),
         employeesPresent: slot.employeesPresent,
-      })),
-    [bucketMinutes, rangedHours],
+      }));
+    },
+    [bucketMinutes, personBreakdownView, rangedHours],
   );
+  const shouldShowHourBars =
+    !showPersonBreakdown || personBreakdownView === "franjas";
 
   const handleToggleHour = (hour: number) => {
     setExpandedSlotStart((prev) => (prev === hour ? null : hour));
@@ -2682,8 +2718,54 @@ export const HourlyAnalysis = ({
           )}
 
           {showMapSection && hourlySection === "map" && showPersonBreakdown && (
-            <div className="mb-6 space-y-4">
-              <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+            <div
+              ref={contributionSectionRef}
+              className="mb-6 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="max-w-2xl">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Exploracion detallada
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Alterna entre el aporte de cajeros y el comportamiento por franjas sin perder el contexto del filtro actual.
+                  </p>
+                </div>
+                <div
+                  role="tablist"
+                  aria-label="Selector de detalle de cajas"
+                  className="grid w-full grid-cols-1 rounded-2xl border border-slate-200/70 bg-slate-100/80 p-1 sm:grid-cols-2 lg:max-w-[540px]"
+                >
+                  {PERSON_BREAKDOWN_VIEW_OPTIONS.map((option) => {
+                    const isActive = personBreakdownView === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        onClick={() => setPersonBreakdownView(option.value)}
+                        className={cn(
+                          "flex w-full flex-col rounded-xl px-4 py-3 text-left transition-all",
+                          isActive
+                            ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80"
+                            : "text-slate-600 hover:bg-white/80 hover:text-slate-900",
+                        )}
+                      >
+                        <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+                          {option.label}
+                        </span>
+                        <span className="mt-1 text-xs text-slate-500">{option.hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                {personBreakdownView === "franjas" && (
+                  <>
+                    <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -2696,9 +2778,6 @@ export const HourlyAnalysis = ({
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
                       Total intervalo: {formatCurrency(dayTotals.sales)}
-                    </span>
-                    <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70">
-                      Personas: {peopleBreakdown.length}
                     </span>
                   </div>
                 </div>
@@ -2788,8 +2867,11 @@ export const HourlyAnalysis = ({
                 </div>
               </div>
 
+                  </>
+                )}
+
+                {personBreakdownView === "individual" && (
               <div
-                ref={contributionSectionRef}
                 className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2952,12 +3034,15 @@ export const HourlyAnalysis = ({
                   </div>
                 )}
               </div>
+                )}
 
+              </div>
             </div>
           )}
 
           {showMapSection &&
             hourlySection === "map" &&
+            shouldShowHourBars &&
             (activeHours.length > 0 ? (
               <div className="space-y-3">
                 {activeHours.map((slot) => {
@@ -3003,7 +3088,7 @@ export const HourlyAnalysis = ({
                 className="inline-flex items-center gap-2 rounded-full border border-slate-900/90 bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.75)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
               >
                 <ArrowUp className="h-4 w-4" />
-                Volver al aporte
+                Volver a la seccion
               </button>
               <button
                 type="button"
