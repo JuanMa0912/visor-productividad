@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Visor de Productividad
 
-## Getting Started
+Aplicacion web interna en Next.js para consultar tableros operativos de productividad, margenes, horario y ventas por item para Mercamio, Mercatodo y Merkmios.
 
-First, run the development server:
+## Estado de la documentacion
+
+El repositorio no tenia documentacion funcional del producto y venia con el `README.md` por defecto de `create-next-app`. Como primer paso se dejo un borrador tecnico de levantamiento en:
+
+- [docs/documentacion-tecnica-preliminar.md](docs/documentacion-tecnica-preliminar.md)
+
+Ese documento resume la arquitectura actual, las integraciones encontradas en codigo, el esquema de accesos y los vacios que todavia hay que validar con el equipo.
+
+## Modulos actuales
+
+- `Productividad`: tablero principal por linea en `/` y hub en `/productividad`
+- `Cajas`: subtablero de productividad en `/productividad/cajas`
+- `Margenes`: tablero en `/margenes`
+- `Horario`: hub en `/horario`, consulta en `/jornada-extendida` y apoyo operativo en `/ingresar-horarios`
+- `Ventas x item`: tablero en `/ventas-x-item`
+- `Administracion`: gestion de usuarios en `/admin/usuarios`
+
+## Stack
+
+- Next.js 16 + React 19 + TypeScript
+- App Router (`src/app`)
+- PostgreSQL via `pg`
+- Tailwind CSS 4
+- MUI Charts, ExcelJS, jsPDF, Anime.js
+
+## Ejecucion local
+
+Instalar dependencias:
+
+```bash
+npm install
+```
+
+Levantar ambiente de desarrollo:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Validaciones disponibles:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run lint
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Base de datos
 
-## Learn More
+La aplicacion depende de una base PostgreSQL. Los scripts y migraciones disponibles estan en `db/` y `scripts/`.
 
-To learn more about Next.js, take a look at the following resources:
+Archivos relevantes:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `db/schema-auth.sql`
+- `db/migrations/*.sql`
+- `scripts/create-admin.js`
+- `test-db.js`
+- `test-db-postgres.js`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Antes de ejecutar localmente conviene revisar el borrador tecnico porque hoy no existe un `.env.example` y hay valores por defecto sensibles definidos en codigo.
