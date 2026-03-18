@@ -27,6 +27,8 @@ import { DEFAULT_LINES } from "@/lib/constants";
 import type { Sede } from "@/lib/constants";
 import type { HourlyAnalysisData } from "@/types";
 
+type HourlyAnalysisDashboardContext = "productividad" | "jornada-extendida";
+
 interface HourlyAnalysisProps {
   availableDates: string[];
   availableSedes: Sede[];
@@ -48,6 +50,7 @@ interface HourlyAnalysisProps {
   panelTitle?: string;
   panelDescription?: string;
   showPersonBreakdown?: boolean;
+  dashboardContext?: HourlyAnalysisDashboardContext;
 }
 
 const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -405,6 +408,7 @@ export const HourlyAnalysis = ({
   panelTitle = "Desglose horario",
   panelDescription = "Filtra por linea para enfocar el comportamiento horario en todas las sedes.",
   showPersonBreakdown = false,
+  dashboardContext = "productividad",
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
     const unique = Array.from(new Set(sections));
@@ -833,10 +837,12 @@ export const HourlyAnalysis = ({
     currentBucketMinutes: number,
     sedeNames: string[],
     includePeople: boolean,
+    currentDashboardContext: HourlyAnalysisDashboardContext,
     overtimeDateRange?: { start: string; end: string },
     signal?: AbortSignal,
   ) => {
     const params = new URLSearchParams({ date });
+    params.set("dashboardContext", currentDashboardContext);
     if (lineId) params.set("line", lineId);
     params.set("bucketMinutes", String(currentBucketMinutes));
     if (includePeople) params.set("includePeople", "1");
@@ -877,6 +883,7 @@ export const HourlyAnalysis = ({
       bucketMinutes,
       selectedSedes,
       showPersonBreakdown,
+      dashboardContext,
       enableOvertimeDateRange && isOvertimeOnlyMode
         ? {
             start: overtimeDateStart || selectedDate,
@@ -903,6 +910,7 @@ export const HourlyAnalysis = ({
     bucketMinutes,
     selectedSedes,
     showPersonBreakdown,
+    dashboardContext,
     enableOvertimeDateRange,
     isOvertimeOnlyMode,
     overtimeDateStart,
@@ -925,6 +933,7 @@ export const HourlyAnalysis = ({
       bucketMinutes,
       selectedSedes,
       false,
+      dashboardContext,
       undefined,
       controller.signal,
     )
@@ -946,6 +955,7 @@ export const HourlyAnalysis = ({
     effectiveSelectedLine,
     bucketMinutes,
     selectedSedes,
+    dashboardContext,
   ]);
 
   const rangedHours = useMemo(() => {

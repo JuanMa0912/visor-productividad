@@ -4025,6 +4025,7 @@ export default function Home() {
                 defaultSede={selectedSede || undefined}
                 allowedLineIds={!isAdmin ? allowedLineIds : undefined}
                 sections={["map"]}
+                dashboardContext="productividad"
               />
             ) : viewMode === "m2" ? (
               <M2MetricsSection

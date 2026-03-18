@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { isIP } from "node:net";
 import { cookies } from "next/headers";
 import { getDbPool } from "@/lib/db";
 import bcrypt from "bcryptjs";
@@ -44,7 +45,53 @@ export const getClientIp = (req: Request) => {
   if (forwarded) {
     return forwarded.split(",")[0]?.trim() || null;
   }
-  return req.headers.get("x-real-ip") || null;
+  return req.headers.get("x-real-ip") || req.headers.get("cf-connecting-ip") || null;
+};
+
+const normalizeClientIp = (ip: string | null) => {
+  if (!ip) return null;
+  const trimmed = ip.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase().startsWith("::ffff:")) {
+    return trimmed.slice(7);
+  }
+  return trimmed;
+};
+
+const maskIpv4Subnet = (ip: string) => {
+  const octets = ip.split(".");
+  if (octets.length !== 4) return null;
+  return `${octets[0]}.${octets[1]}.${octets[2]}.0/24`;
+};
+
+const maskIpv6Subnet = (ip: string) => {
+  const normalized = ip.toLowerCase();
+  const segments = normalized.split(":").filter(Boolean);
+  if (segments.length === 0) return null;
+  return `${segments.slice(0, 4).join(":")}::/64`;
+};
+
+export const getAuditNetworkId = (ip: string | null) => {
+  const normalized = normalizeClientIp(ip);
+  if (!normalized) return null;
+
+  const auditSecret = process.env.AUDIT_IP_HMAC_SECRET?.trim();
+  if (auditSecret) {
+    const digest = crypto
+      .createHmac("sha256", auditSecret)
+      .update(normalized)
+      .digest("hex");
+    return `hmac:${digest.slice(0, 24)}`;
+  }
+
+  const version = isIP(normalized);
+  if (version === 4) {
+    return maskIpv4Subnet(normalized);
+  }
+  if (version === 6) {
+    return maskIpv6Subnet(normalized);
+  }
+  return null;
 };
 
 export const createSession = async (

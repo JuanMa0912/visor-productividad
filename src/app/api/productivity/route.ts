@@ -22,6 +22,7 @@ const resolveCachePath = () => {
 };
 
 const cacheFilePath = resolveCachePath();
+const NO_STORE_CACHE_CONTROL = "no-store, private";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -78,26 +79,28 @@ const buildCacheResponse = (dailyData: DailyProductivity[]) =>
     { dailyData, sedes: buildSedes(dailyData) },
     {
       headers: {
-        "Cache-Control": "no-store",
+        "Cache-Control": NO_STORE_CACHE_CONTROL,
         "X-Data-Source": "cache",
       },
     },
   );
 
-const buildFallbackResponse = (message: string) =>
-  NextResponse.json(
+const buildFallbackResponse = (message?: string) => {
+  void message;
+  return NextResponse.json(
     {
       dailyData: [],
       sedes: [],
-      error: message,
+      error: "No se pudieron cargar los datos de productividad.",
     },
     {
       headers: {
-        "Cache-Control": "no-store",
+        "Cache-Control": NO_STORE_CACHE_CONTROL,
         "X-Data-Source": "fallback",
       },
     },
   );
+};
 
 const HIDDEN_SEDES = new Set(
   [
@@ -182,44 +185,6 @@ const filterDailyDataByAllowedLines = (
       lines: item.lines.filter((line) => allowedSet.has(normalizeLineId(line.id))),
     }))
     .filter((item) => item.lines.length > 0);
-};
-
-const resolveSessionAllowedSedeKeys = (sessionUser: {
-  role: "admin" | "user";
-  sede: string | null;
-  allowedSedes?: string[] | null;
-}) => {
-  if (sessionUser.role === "admin") return null as Set<string> | null;
-  const rawAllowed = Array.isArray(sessionUser.allowedSedes)
-    ? sessionUser.allowedSedes
-    : [];
-  const normalizedAllowed = rawAllowed
-    .map((sede) => normalizeSedeKey(sede))
-    .filter(Boolean);
-  const allKey = normalizeSedeKey("Todas");
-  if (normalizedAllowed.includes(allKey)) {
-    return null as Set<string> | null;
-  }
-  if (normalizedAllowed.length > 0) {
-    return new Set(normalizedAllowed);
-  }
-  if (sessionUser.sede) {
-    return new Set([normalizeSedeKey(sessionUser.sede)]);
-  }
-  return new Set<string>();
-};
-
-const filterDailyDataByAllowedSedes = (
-  dailyData: DailyProductivity[],
-  allowedSedeKeys: Set<string> | null,
-) => {
-  if (!allowedSedeKeys) {
-    return dailyData;
-  }
-  if (allowedSedeKeys.size === 0) {
-    return [];
-  }
-  return dailyData.filter((item) => allowedSedeKeys.has(normalizeSedeKey(item.sede)));
 };
 
 // Mapeo de centro_operacion + empresa_bd a nombre de sede
@@ -631,10 +596,13 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json(
       { error: "No autorizado." },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
+      { status: 401, headers: { "Cache-Control": NO_STORE_CACHE_CONTROL } },
     );
   }
   const withSession = (response: NextResponse) => {
+    if (!response.headers.has("Cache-Control")) {
+      response.headers.set("Cache-Control", NO_STORE_CACHE_CONTROL);
+    }
     response.cookies.set(
       "vp_session",
       session.token,
@@ -646,13 +614,11 @@ export async function GET(request: Request) {
     session.user.role === "admin"
       ? []
       : resolveSessionAllowedLineIds(session.user.allowedLines);
-  const allowedSedeKeys = resolveSessionAllowedSedeKeys(session.user);
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
     Array.isArray(allowedDashboards) &&
-    !allowedDashboards.includes("productividad") &&
-    !allowedDashboards.includes("jornada-extendida")
+    !allowedDashboards.includes("productividad")
   ) {
     return withSession(
       NextResponse.json(
@@ -671,7 +637,7 @@ export async function GET(request: Request) {
           status: 429,
           headers: {
             "Retry-After": retryAfterSeconds.toString(),
-            "Cache-Control": "no-store",
+            "Cache-Control": NO_STORE_CACHE_CONTROL,
           },
         },
       ),
@@ -679,20 +645,15 @@ export async function GET(request: Request) {
   }
   const cached = await readCache();
   if (cached && cached.length > 0) {
-    const scopedCached = filterDailyDataByAllowedSedes(
-      filterDailyDataByAllowedLines(cached, allowedLineIds),
-      allowedSedeKeys,
-    );
+    // Regla de negocio: productividad por linea es global por tablero.
+    const scopedCached = filterDailyDataByAllowedLines(cached, allowedLineIds);
     return withSession(buildCacheResponse(scopedCached));
   }
   try {
     await testDbConnection();
-    const dailyData = filterDailyDataByAllowedSedes(
-      filterDailyDataByAllowedLines(
-        await fetchAllProductivityData(allowedLineIds),
-        allowedLineIds,
-      ),
-      allowedSedeKeys,
+    const dailyData = filterDailyDataByAllowedLines(
+      await fetchAllProductivityData(allowedLineIds),
+      allowedLineIds,
     );
     if (dailyData.length > 0) {
       return withSession(
@@ -703,7 +664,7 @@ export async function GET(request: Request) {
           },
           {
             headers: {
-              "Cache-Control": "no-store",
+              "Cache-Control": NO_STORE_CACHE_CONTROL,
               "X-Data-Source": "database",
             },
           },
@@ -719,7 +680,7 @@ export async function GET(request: Request) {
         },
         {
           headers: {
-            "Cache-Control": "no-store",
+            "Cache-Control": NO_STORE_CACHE_CONTROL,
             "X-Data-Source": "database",
           },
         },
@@ -734,4 +695,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

@@ -307,6 +307,7 @@ export default function ProductividadCajasPage() {
           badgeLabel="Cajas por hora"
           panelTitle="Facturacion por intervalos"
           panelDescription="Consulta cuanto se facturo por hora y el acumulado del rango seleccionado usando la misma base horaria del tablero actual."
+          dashboardContext="productividad"
         />
       </div>
     </div>

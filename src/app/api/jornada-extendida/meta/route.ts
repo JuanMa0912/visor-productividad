@@ -3,6 +3,8 @@ import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import type { Sede } from "@/lib/constants";
 
+const NO_STORE_CACHE_CONTROL = "no-store, private";
+
 const normalizeSedeKey = (value: string) =>
   value
     .normalize("NFD")
@@ -50,7 +52,11 @@ const resolveVisibleSedes = (sessionUser: {
   allowedSedes?: string[] | null;
 }) => {
   if (sessionUser.role === "admin") {
-    return { visibleSedes: BASE_SEDES, defaultSede: null as string | null };
+    return {
+      authorized: true,
+      visibleSedes: BASE_SEDES,
+      defaultSede: null as string | null,
+    };
   }
 
   const rawAllowed = Array.isArray(sessionUser.allowedSedes)
@@ -62,14 +68,22 @@ const resolveVisibleSedes = (sessionUser: {
       .filter(Boolean),
   );
   if (normalizedAllowed.has(canonicalizeSedeKey("Todas"))) {
-    return { visibleSedes: BASE_SEDES, defaultSede: null as string | null };
+    return {
+      authorized: true,
+      visibleSedes: BASE_SEDES,
+      defaultSede: null as string | null,
+    };
   }
 
   const allowedMatches = BASE_SEDES.filter((sede) =>
     normalizedAllowed.has(canonicalizeSedeKey(sede.name)),
   );
   if (allowedMatches.length > 0) {
-    return { visibleSedes: allowedMatches, defaultSede: allowedMatches[0].name };
+    return {
+      authorized: true,
+      visibleSedes: allowedMatches,
+      defaultSede: allowedMatches[0].name,
+    };
   }
 
   const legacySedeKey = sessionUser.sede
@@ -79,19 +93,33 @@ const resolveVisibleSedes = (sessionUser: {
     ? BASE_SEDES.find((sede) => canonicalizeSedeKey(sede.name) === legacySedeKey)
     : null;
   if (legacySede) {
-    return { visibleSedes: [legacySede], defaultSede: legacySede.name };
+    return {
+      authorized: true,
+      visibleSedes: [legacySede],
+      defaultSede: legacySede.name,
+    };
   }
 
-  return { visibleSedes: BASE_SEDES, defaultSede: null as string | null };
+  return {
+    authorized: false,
+    visibleSedes: [] as Sede[],
+    defaultSede: null as string | null,
+  };
 };
 
 export async function GET() {
   const session = await requireAuthSession();
   if (!session) {
-    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+    return NextResponse.json(
+      { error: "No autorizado." },
+      { status: 401, headers: { "Cache-Control": NO_STORE_CACHE_CONTROL } },
+    );
   }
 
   const withSession = (response: NextResponse) => {
+    if (!response.headers.has("Cache-Control")) {
+      response.headers.set("Cache-Control", NO_STORE_CACHE_CONTROL);
+    }
     response.cookies.set(
       "vp_session",
       session.token,
@@ -119,7 +147,17 @@ export async function GET() {
     );
   }
 
-  const { visibleSedes, defaultSede } = resolveVisibleSedes(session.user);
+  const { authorized, visibleSedes, defaultSede } = resolveVisibleSedes(
+    session.user,
+  );
+  if (!authorized) {
+    return withSession(
+      NextResponse.json(
+        { error: "No tienes permisos para consultar las sedes asignadas." },
+        { status: 403 },
+      ),
+    );
+  }
 
   const pool = await getDbPool();
   const client = await pool.connect();
@@ -144,13 +182,10 @@ export async function GET() {
       }),
     );
   } catch (error) {
+    console.error("[jornada-extendida/meta] Error:", error);
     return withSession(
       NextResponse.json(
-        {
-          error:
-            "No se pudieron cargar los metadatos de jornada extendida: " +
-            (error instanceof Error ? error.message : String(error)),
-        },
+        { error: "No se pudieron cargar los metadatos de jornada extendida." },
         { status: 500 },
       ),
     );

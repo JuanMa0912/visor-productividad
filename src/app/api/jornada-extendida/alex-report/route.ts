@@ -135,14 +135,55 @@ const isAbsenceIncident = (value: string | null | undefined) =>
 // Se conserva la etiqueta visible 7:20h, pero el filtro interno usa 7:29h.
 const HOURS_7_20 = 7 + 29 / 60;
 const HOURS_9_20 = 9 + 20 / 60;
+const NO_STORE_CACHE_CONTROL = "no-store, private";
+const ALEX_REPORT_MAX_RANGE_DAYS = 31;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 60;
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+const getClientIp = (request: Request) => {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return (
+    request.headers.get("x-real-ip") ??
+    request.headers.get("cf-connecting-ip") ??
+    "unknown"
+  );
+};
+
+const checkRateLimit = (request: Request) => {
+  const now = Date.now();
+  const clientIp = getClientIp(request);
+  const entry = rateLimitStore.get(clientIp);
+  if (!entry || entry.resetAt <= now) {
+    rateLimitStore.set(clientIp, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return null;
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return entry.resetAt;
+  entry.count += 1;
+  return null;
+};
+
+const getInclusiveDateRangeDays = (startDate: string, endDate: string) => {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+};
 
 export async function GET(request: Request) {
   const session = await requireAuthSession();
   if (!session) {
-    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+    return NextResponse.json(
+      { error: "No autorizado." },
+      { status: 401, headers: { "Cache-Control": NO_STORE_CACHE_CONTROL } },
+    );
   }
 
   const withSession = (response: NextResponse) => {
+    if (!response.headers.has("Cache-Control")) {
+      response.headers.set("Cache-Control", NO_STORE_CACHE_CONTROL);
+    }
     response.cookies.set(
       "vp_session",
       session.token,
@@ -150,6 +191,22 @@ export async function GET(request: Request) {
     );
     return response;
   };
+  const limitedUntil = checkRateLimit(request);
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta mas tarde." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": retryAfterSeconds.toString(),
+            "Cache-Control": NO_STORE_CACHE_CONTROL,
+          },
+        },
+      ),
+    );
+  }
 
   const isAdmin = session.user.role === "admin";
   const hasAlexRole =
@@ -249,6 +306,17 @@ export async function GET(request: Request) {
       return withSession(
         NextResponse.json(
           { error: "start no puede ser mayor que end." },
+          { status: 400 },
+        ),
+      );
+    }
+    const rangeDays = getInclusiveDateRangeDays(startDate, endDate);
+    if (!rangeDays || rangeDays > ALEX_REPORT_MAX_RANGE_DAYS) {
+      return withSession(
+        NextResponse.json(
+          {
+            error: `El rango del reporte Alex no puede superar ${ALEX_REPORT_MAX_RANGE_DAYS} dias.`,
+          },
           { status: 400 },
         ),
       );
@@ -391,13 +459,10 @@ export async function GET(request: Request) {
       }),
     );
   } catch (error) {
+    console.error("[jornada-extendida/alex-report] Error:", error);
     return withSession(
       NextResponse.json(
-        {
-          error:
-            "No se pudo construir el reporte Alex: " +
-            (error instanceof Error ? error.message : String(error)),
-        },
+        { error: "No se pudo construir el reporte Alex." },
         { status: 500 },
       ),
     );

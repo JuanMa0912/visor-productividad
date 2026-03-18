@@ -589,7 +589,7 @@ export default function AdminUsuariosPage() {
                             className="text-xs text-slate-500"
                             title={new Date(log.logged_at).toLocaleString("es-CO")}
                           >
-                            {formatRelativeTime(log.logged_at)} • {log.ip ?? "IP desconocida"}
+                            {formatRelativeTime(log.logged_at)} • {log.ip ?? "Origen auditado desconocido"}
                           </div>
                         </div>
                       </div>

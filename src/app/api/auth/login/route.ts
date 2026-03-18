@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import {
   createSession,
+  getAuditNetworkId,
   getClientIp,
   getSessionCookieOptions,
   verifyPassword,
@@ -77,16 +78,16 @@ export async function POST(req: Request) {
         );
       }
 
-      const ip = getClientIp(req);
+      const auditNetworkId = getAuditNetworkId(getClientIp(req));
       const userAgent = req.headers.get("user-agent");
-      const session = await createSession(user.id, ip, userAgent);
+      const session = await createSession(user.id, auditNetworkId, userAgent);
 
       await client.query(
         `
         INSERT INTO app_user_login_logs (user_id, ip, user_agent)
         VALUES ($1, $2, $3)
         `,
-        [user.id, ip, userAgent],
+        [user.id, auditNetworkId, userAgent],
       );
 
       await client.query(
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
         SET last_login_at = now(), last_login_ip = $2, updated_at = now()
         WHERE id = $1
         `,
-        [user.id, ip],
+        [user.id, auditNetworkId],
       );
 
       const response = NextResponse.json({
@@ -119,11 +120,10 @@ export async function POST(req: Request) {
     } finally {
       client.release();
     }
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "No se pudo iniciar sesión." },
       { status: 500 },
     );
   }
 }
-

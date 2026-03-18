@@ -24,6 +24,13 @@ const LINE_TABLES = [
 
 const LINE_IDS = new Set<string>(LINE_TABLES.map((line) => line.id));
 const normalizeLineId = (value: string) => value.trim().toLowerCase();
+const NO_STORE_CACHE_CONTROL = "no-store, private";
+const OVERTIME_MAX_RANGE_DAYS = 31;
+type DashboardContext = "productividad" | "jornada-extendida";
+const DASHBOARD_CONTEXTS = new Set<DashboardContext>([
+  "productividad",
+  "jornada-extendida",
+]);
 
 const resolveSessionAllowedLineIds = (allowedLines: string[] | null | undefined) => {
   if (!Array.isArray(allowedLines) || allowedLines.length === 0) {
@@ -159,6 +166,59 @@ const findSedeConfigByName = (sedeName?: string | null) => {
       );
     }) ?? null
   );
+};
+
+const normalizeRequestedSedeNames = (sedeNames: string[]): string[] => {
+  const normalized: string[] = [];
+  for (const sede of sedeNames) {
+    const matchedName = findSedeConfigByName(sede)?.name;
+    if (matchedName) {
+      normalized.push(matchedName);
+    }
+  }
+  return Array.from(new Set(normalized));
+};
+
+const resolveAuthorizedSedeAccess = (sessionUser: {
+  role: "admin" | "user";
+  sede: string | null;
+  allowedSedes?: string[] | null;
+}) => {
+  if (sessionUser.role === "admin") {
+    return { authorized: true, hasAllSedes: true, fixedSedeNames: [] as string[] };
+  }
+
+  const rawAllowed = Array.isArray(sessionUser.allowedSedes)
+    ? sessionUser.allowedSedes
+    : [];
+  const hasAllSedes = rawAllowed.some(
+    (sede) => normalizeSedeName(sede) === normalizeSedeName("Todas"),
+  );
+  if (hasAllSedes) {
+    return { authorized: true, hasAllSedes: true, fixedSedeNames: [] as string[] };
+  }
+
+  const allowedSedeNames = normalizeRequestedSedeNames(rawAllowed);
+  if (allowedSedeNames.length > 0) {
+    return {
+      authorized: true,
+      hasAllSedes: false,
+      fixedSedeNames: allowedSedeNames,
+    };
+  }
+
+  const legacySedeName = sessionUser.sede
+    ? findSedeConfigByName(sessionUser.sede)?.name ?? null
+    : null;
+  if (legacySedeName) {
+    return {
+      authorized: true,
+      hasAllSedes: false,
+      fixedSedeNames: [legacySedeName],
+    };
+  }
+
+  return { authorized: false, hasAllSedes: false, fixedSedeNames: [] as string[] };
 };
 
 const resolveLineId = (depto: string): string | undefined => {
@@ -422,6 +482,13 @@ const getClientIp = (request: Request) => {
     request.headers.get("cf-connecting-ip") ??
     "unknown"
   );
+};
+
+const getInclusiveDateRangeDays = (startDate: string, endDate: string) => {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
 };
 
 const checkRateLimit = (request: Request) => {
@@ -1184,10 +1251,13 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json(
       { error: "No autorizado." },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
+      { status: 401, headers: { "Cache-Control": NO_STORE_CACHE_CONTROL } },
     );
   }
   const withSession = (response: NextResponse) => {
+    if (!response.headers.has("Cache-Control")) {
+      response.headers.set("Cache-Control", NO_STORE_CACHE_CONTROL);
+    }
     response.cookies.set(
       "vp_session",
       session.token,
@@ -1199,12 +1269,28 @@ export async function GET(request: Request) {
     session.user.role === "admin"
       ? []
       : resolveSessionAllowedLineIds(session.user.allowedLines);
+  const url = new URL(request.url);
+  const dashboardContextParam = url.searchParams.get("dashboardContext")?.trim();
+  if (
+    dashboardContextParam &&
+    !DASHBOARD_CONTEXTS.has(dashboardContextParam as DashboardContext)
+  ) {
+    return withSession(
+      NextResponse.json(
+        { error: "Contexto de tablero invalido para el analisis por hora." },
+        { status: 400 },
+      ),
+    );
+  }
+  const dashboardContext: DashboardContext =
+    dashboardContextParam === "jornada-extendida"
+      ? "jornada-extendida"
+      : "productividad";
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
     Array.isArray(allowedDashboards) &&
-    !allowedDashboards.includes("productividad") &&
-    !allowedDashboards.includes("jornada-extendida")
+    !allowedDashboards.includes(dashboardContext)
   ) {
     return withSession(
       NextResponse.json(
@@ -1224,14 +1310,13 @@ export async function GET(request: Request) {
           status: 429,
           headers: {
             "Retry-After": retryAfterSeconds.toString(),
-            "Cache-Control": "no-store",
+            "Cache-Control": NO_STORE_CACHE_CONTROL,
           },
         },
       ),
     );
   }
 
-  const url = new URL(request.url);
   const dateParam = url.searchParams.get("date");
   const overtimeDateStartParam = url.searchParams.get("overtimeDateStart");
   const overtimeDateEndParam = url.searchParams.get("overtimeDateEnd");
@@ -1240,34 +1325,44 @@ export async function GET(request: Request) {
     url.searchParams.get("includePeople") === "1" ||
     url.searchParams.get("includePeople") === "true";
   const sedeParams = url.searchParams.getAll("sede").filter(Boolean);
-  const hasAllSedes =
-    Array.isArray(session.user.allowedSedes) &&
-    session.user.allowedSedes.some(
-      (sede) => normalizeSedeName(sede) === normalizeSedeName("Todas"),
+  const requestedSedeNames = normalizeRequestedSedeNames(sedeParams);
+  if (sedeParams.length > 0 && requestedSedeNames.length === 0) {
+    return withSession(
+      NextResponse.json(
+        { error: "Sede invalida para el analisis por hora." },
+        { status: 400 },
+      ),
     );
-  const allowedSedeNamesFromSession =
-    Array.isArray(session.user.allowedSedes) && !hasAllSedes
-      ? Array.from(
-          new Set(
-            session.user.allowedSedes
-              .map((sede) => findSedeConfigByName(sede)?.name ?? sede)
-              .filter(Boolean),
-          ),
-        )
-      : [];
-  const forcedSedeConfig =
-    !hasAllSedes && allowedSedeNamesFromSession.length === 0 && session.user.sede
-      ? findSedeConfigByName(session.user.sede)
-      : null;
-  const forcedSedeName =
-    forcedSedeConfig?.name ??
-    (hasAllSedes ? null : session.user.sede ?? null);
-  const effectiveSedeParams =
-    allowedSedeNamesFromSession.length > 0
-      ? allowedSedeNamesFromSession
-      : forcedSedeName
-        ? [forcedSedeName]
-        : sedeParams;
+  }
+  let effectiveSedeParams = requestedSedeNames;
+  if (dashboardContext === "jornada-extendida") {
+    const sedeAccess = resolveAuthorizedSedeAccess(session.user);
+    if (!sedeAccess.authorized) {
+      return withSession(
+        NextResponse.json(
+          { error: "No tienes permisos para consultar las sedes asignadas." },
+          { status: 403 },
+        ),
+      );
+    }
+    const allowedSedeSet = new Set(sedeAccess.fixedSedeNames);
+    if (
+      !sedeAccess.hasAllSedes &&
+      requestedSedeNames.some((sede) => !allowedSedeSet.has(sede))
+    ) {
+      return withSession(
+        NextResponse.json(
+          { error: "No tienes permisos para consultar alguna de las sedes solicitadas." },
+          { status: 403 },
+        ),
+      );
+    }
+    effectiveSedeParams = sedeAccess.hasAllSedes
+      ? requestedSedeNames
+      : requestedSedeNames.length > 0
+        ? requestedSedeNames
+        : sedeAccess.fixedSedeNames;
+  }
   const bucketParamRaw = url.searchParams.get("bucketMinutes");
   const bucketMinutes = bucketParamRaw ? Number(bucketParamRaw) : 60;
 
@@ -1320,6 +1415,23 @@ export async function GET(request: Request) {
     );
   }
 
+  if (overtimeDateStartParam && overtimeDateEndParam) {
+    const overtimeRangeDays = getInclusiveDateRangeDays(
+      overtimeDateStartParam,
+      overtimeDateEndParam,
+    );
+    if (!overtimeRangeDays || overtimeRangeDays > OVERTIME_MAX_RANGE_DAYS) {
+      return withSession(
+        NextResponse.json(
+          {
+            error: `El rango de overtime no puede superar ${OVERTIME_MAX_RANGE_DAYS} dias.`,
+          },
+          { status: 400 },
+        ),
+      );
+    }
+  }
+
   if (lineParam && !LINE_IDS.has(lineParam)) {
     return withSession(
       NextResponse.json(
@@ -1354,6 +1466,7 @@ export async function GET(request: Request) {
   const cacheKey = JSON.stringify({
     userId: session.user.id,
     role: session.user.role,
+    dashboardContext,
     dateParam,
     overtimeDateStartParam,
     overtimeDateEndParam,
@@ -1367,7 +1480,10 @@ export async function GET(request: Request) {
   if (cachedData) {
     return withSession(
       NextResponse.json(cachedData, {
-        headers: { "Cache-Control": "no-store", "X-Data-Source": "memory-cache" },
+        headers: {
+          "Cache-Control": NO_STORE_CACHE_CONTROL,
+          "X-Data-Source": "memory-cache",
+        },
       }),
     );
   }
@@ -1389,18 +1505,17 @@ export async function GET(request: Request) {
 
     return withSession(
       NextResponse.json(data, {
-        headers: { "Cache-Control": "no-store", "X-Data-Source": "database" },
+        headers: {
+          "Cache-Control": NO_STORE_CACHE_CONTROL,
+          "X-Data-Source": "database",
+        },
       }),
     );
   } catch (error) {
     console.error("[hourly-analysis] Error:", error);
     return withSession(
       NextResponse.json(
-        {
-          error:
-            "Error de conexion: " +
-            (error instanceof Error ? error.message : String(error)),
-        },
+        { error: "No se pudieron cargar los datos del analisis por hora." },
         { status: 500 },
       ),
     );

@@ -99,6 +99,7 @@ export default function JornadaExtendidaPage() {
       try {
         const response = await fetch("/api/jornada-extendida/meta", {
           signal: controller.signal,
+          cache: "no-store",
         });
         if (response.status === 401) {
           router.replace("/login");
@@ -579,6 +580,7 @@ export default function JornadaExtendidaPage() {
               showDepartmentFilterInOvertime
               enableOvertimeDateRange
               alexConsistencyMode={canSeeAlexReport}
+              dashboardContext="jornada-extendida"
             />
           </>
         )}
@@ -586,7 +588,5 @@ export default function JornadaExtendidaPage() {
     </div>
   );
 }
-
-
 
 
