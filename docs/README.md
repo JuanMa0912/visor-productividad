@@ -14,7 +14,6 @@ Esta carpeta organiza la documentacion operativa y tecnica del proyecto en refer
 | [accesos-y-seguridad.md](./accesos-y-seguridad.md) | autenticacion, permisos, sesiones y controles |
 | [integraciones-y-datos.md](./integraciones-y-datos.md) | fuentes de datos, endpoints e integraciones tecnicas |
 | [operacion-local-y-base-de-datos.md](./operacion-local-y-base-de-datos.md) | setup local, variables de entorno, migraciones y scripts |
-| [documentacion-tecnica-preliminar.md](./documentacion-tecnica-preliminar.md) | bitacora de levantamiento, gaps y preguntas abiertas |
 
 ## Ruta sugerida de lectura
 
@@ -22,7 +21,6 @@ Esta carpeta organiza la documentacion operativa y tecnica del proyecto en refer
 2. Continuar con [accesos-y-seguridad.md](./accesos-y-seguridad.md) si el foco es autenticacion o permisos.
 3. Ir a [integraciones-y-datos.md](./integraciones-y-datos.md) para revisar tablas, fuentes y comportamiento de cada modulo.
 4. Usar [operacion-local-y-base-de-datos.md](./operacion-local-y-base-de-datos.md) para preparar entorno o revisar migraciones.
-5. Cerrar con [documentacion-tecnica-preliminar.md](./documentacion-tecnica-preliminar.md) para ver pendientes de validacion.
 
 ## Alcance actual
 

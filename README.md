@@ -11,9 +11,8 @@ La documentacion tecnica del proyecto quedo separada por dominio en `docs/`:
 - [docs/accesos-y-seguridad.md](docs/accesos-y-seguridad.md)
 - [docs/integraciones-y-datos.md](docs/integraciones-y-datos.md)
 - [docs/operacion-local-y-base-de-datos.md](docs/operacion-local-y-base-de-datos.md)
-- [docs/documentacion-tecnica-preliminar.md](docs/documentacion-tecnica-preliminar.md)
 
-El archivo preliminar conserva hallazgos y preguntas abiertas; los demas documentos son la referencia tecnica principal.
+Estos documentos son la referencia tecnica principal del proyecto.
 
 ## Modulos actuales
 
