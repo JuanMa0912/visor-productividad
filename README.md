@@ -2,13 +2,18 @@
 
 Aplicacion web interna en Next.js para consultar tableros operativos de productividad, margenes, horario y ventas por item para Mercamio, Mercatodo y Merkmios.
 
-## Estado de la documentacion
+## Documentacion
 
-El repositorio no tenia documentacion funcional del producto y venia con el `README.md` por defecto de `create-next-app`. Como primer paso se dejo un borrador tecnico de levantamiento en:
+La documentacion tecnica del proyecto quedo separada por dominio en `docs/`:
 
+- [docs/README.md](docs/README.md)
+- [docs/arquitectura.md](docs/arquitectura.md)
+- [docs/accesos-y-seguridad.md](docs/accesos-y-seguridad.md)
+- [docs/integraciones-y-datos.md](docs/integraciones-y-datos.md)
+- [docs/operacion-local-y-base-de-datos.md](docs/operacion-local-y-base-de-datos.md)
 - [docs/documentacion-tecnica-preliminar.md](docs/documentacion-tecnica-preliminar.md)
 
-Ese documento resume la arquitectura actual, las integraciones encontradas en codigo, el esquema de accesos y los vacios que todavia hay que validar con el equipo.
+El archivo preliminar conserva hallazgos y preguntas abiertas; los demas documentos son la referencia tecnica principal.
 
 ## Modulos actuales
 
@@ -60,4 +65,4 @@ Archivos relevantes:
 - `test-db.js`
 - `test-db-postgres.js`
 
-Antes de ejecutar localmente conviene revisar el borrador tecnico porque hoy no existe un `.env.example` y hay valores por defecto sensibles definidos en codigo.
+Antes de ejecutar localmente conviene revisar `docs/operacion-local-y-base-de-datos.md` porque hoy no existe un `.env.example` y hay valores por defecto sensibles definidos en codigo.
