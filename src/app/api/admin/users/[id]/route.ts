@@ -6,6 +6,10 @@ import {
   requireAdminSession,
 } from "@/lib/auth";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/constants";
+import {
+  normalizeAllowedPortalSections,
+  resolvePortalSectionId,
+} from "@/lib/portal-sections";
 
 type Params = { params: Promise<{ id: string }> };
 const ALL_SEDES_VALUE = "Todas";
@@ -16,12 +20,6 @@ const ALLOWED_SEDE_SET = new Set([
   ALL_SEDES_VALUE,
 ]);
 const ALLOWED_LINE_SET = new Set(ALLOWED_LINE_IDS);
-const ALLOWED_DASHBOARD_SET = new Set([
-  "productividad",
-  "margenes",
-  "jornada-extendida",
-  "ventas-x-item",
-]);
 const ALLOWED_SPECIAL_ROLE_SET = new Set(["alex"]);
 
 const resolveValidSede = (value?: string | null) => {
@@ -140,26 +138,28 @@ const resolveValidAllowedDashboards = (value: unknown) => {
   if (!Array.isArray(value)) {
     return {
       ok: false as const,
-      error: "Los tableros permitidos no son válidos.",
+      error: "Las secciones permitidas no son validas.",
     };
   }
 
-  const normalized = Array.from(
-    new Set(
-      value
-        .map((board) => (typeof board === "string" ? board.trim() : ""))
-        .filter(Boolean),
-    ),
+  const hasMeaningfulEntries = value.some(
+    (board) => typeof board === "string" && board.trim(),
   );
-  if (normalized.length === 0) {
+  const normalized = normalizeAllowedPortalSections(value);
+  if (!hasMeaningfulEntries || normalized.length === 0) {
     return { ok: true as const, value: null as string[] | null };
   }
 
-  const invalid = normalized.filter((board) => !ALLOWED_DASHBOARD_SET.has(board));
+  const invalid = value.filter(
+    (board) =>
+      typeof board === "string" &&
+      board.trim() &&
+      !resolvePortalSectionId(board),
+  );
   if (invalid.length > 0) {
     return {
       ok: false as const,
-      error: "Hay tableros no válidos en la selección.",
+      error: "Hay secciones no validas en la seleccion.",
     };
   }
 
@@ -299,6 +299,9 @@ export async function PATCH(req: Request, { params }: Params) {
       allowedDashboards: string[] | null;
       specialRoles: string[] | null;
     };
+    currentUser.allowedDashboards = normalizeAllowedPortalSections(
+      currentUser.allowedDashboards,
+    );
     const allowedSedesResult = resolveValidAllowedSedes(body.allowedSedes);
     const allowedLinesResult = resolveValidAllowedLines(body.allowedLines);
     const allowedDashboardsResult = resolveValidAllowedDashboards(body.allowedDashboards);
@@ -481,7 +484,17 @@ export async function PATCH(req: Request, { params }: Params) {
       `,
       values,
     );
-    return withSession(NextResponse.json({ user: result.rows?.[0] ?? null }));
+    const user =
+      result.rows && result.rows[0]
+        ? {
+            ...(result.rows[0] as { allowedDashboards?: string[] | null }),
+            allowedDashboards: normalizeAllowedPortalSections(
+              (result.rows[0] as { allowedDashboards?: string[] | null })
+                .allowedDashboards,
+            ),
+          }
+        : null;
+    return withSession(NextResponse.json({ user }));
   } catch (error) {
     const detail =
       error instanceof Error ? error.message : "No se pudo actualizar el usuario.";

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 
 type DayKey =
   | "domingo"
@@ -132,10 +133,9 @@ export default function IngresarHorariosPage() {
         const isAdmin = payload.user?.role === "admin";
         if (
           !isAdmin &&
-          Array.isArray(payload.user?.allowedDashboards) &&
-          !payload.user?.allowedDashboards.includes("jornada-extendida")
+          !canAccessPortalSection(payload.user?.allowedDashboards, "operacion")
         ) {
-          router.replace("/tableros");
+          router.replace("/secciones");
           return;
         }
         const optionsResponse = await fetch("/api/ingresar-horarios/options", {
@@ -176,7 +176,7 @@ export default function IngresarHorariosPage() {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando tablero...</p>
+          <p className="text-sm text-slate-600">Cargando modulo...</p>
         </div>
       </div>
     );

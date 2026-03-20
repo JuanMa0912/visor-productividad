@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import type { Sede } from "@/lib/constants";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 
@@ -164,12 +165,11 @@ export async function GET() {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     !isAdmin &&
-    Array.isArray(allowedDashboards) &&
-    !allowedDashboards.includes("jornada-extendida")
+    !canAccessPortalSection(allowedDashboards, "operacion")
   ) {
     return withSession(
       NextResponse.json(
-        { error: "No tienes permisos para este tablero." },
+        { error: "No tienes permisos para esta seccion." },
         { status: 403 },
       ),
     );

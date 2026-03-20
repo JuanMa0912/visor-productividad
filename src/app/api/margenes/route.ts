@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 
 type MarginDbRow = {
   fecha: string;
@@ -237,12 +238,11 @@ export async function GET(request: Request) {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
-    Array.isArray(allowedDashboards) &&
-    !allowedDashboards.includes("margenes")
+    !canAccessPortalSection(allowedDashboards, "producto")
   ) {
     return withSession(
       NextResponse.json(
-        { error: "No tienes permisos para este tablero." },
+        { error: "No tienes permisos para esta seccion." },
         { status: 403 },
       ),
     );

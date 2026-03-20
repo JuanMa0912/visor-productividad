@@ -38,6 +38,7 @@ import type { XAxis, YAxis } from "@mui/x-charts/models";
 import type { LineSeries } from "@mui/x-charts/LineChart";
 import type { MarkPlotProps, LinePlotProps } from "@mui/x-charts/LineChart";
 import { jsPDF } from "jspdf";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 import autoTable from "jspdf-autotable";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { LineCard } from "@/components/LineCard";
@@ -3114,10 +3115,9 @@ export default function Home() {
         const isUserAdmin = payload.user?.role === "admin";
         if (
           !isUserAdmin &&
-          Array.isArray(payload.user?.allowedDashboards) &&
-          !payload.user?.allowedDashboards.includes("productividad")
+          !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
         ) {
-          router.replace("/tableros");
+          router.replace("/secciones");
           return;
         }
         setIsAdmin(isUserAdmin);
@@ -3806,7 +3806,7 @@ export default function Home() {
           </div>
         )}
         <TopBar
-          title="Tablero de Productividad por Línea"
+          title="Productividad por Línea"
           selectedSede={selectedSede}
           sedes={orderedSedes}
           selectedCompanies={selectedCompanies}

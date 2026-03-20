@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { DEFAULT_SEDES, type Sede } from "@/lib/constants";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 import type { DailyProductivity } from "@/types";
 
 type AuthPayload = {
@@ -105,10 +106,9 @@ export default function ProductividadCajasPage() {
         const isAdmin = authPayload.user?.role === "admin";
         if (
           !isAdmin &&
-          Array.isArray(authPayload.user?.allowedDashboards) &&
-          !authPayload.user?.allowedDashboards.includes("productividad")
+          !canAccessPortalSection(authPayload.user?.allowedDashboards, "producto")
         ) {
-          router.replace("/tableros");
+          router.replace("/secciones");
           return;
         }
 
@@ -121,7 +121,7 @@ export default function ProductividadCajasPage() {
           return;
         }
         if (productivityResponse.status === 403) {
-          router.replace("/tableros");
+          router.replace("/secciones");
           return;
         }
 
@@ -196,7 +196,7 @@ export default function ProductividadCajasPage() {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-5xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando tablero de cajas...</p>
+          <p className="text-sm text-slate-600">Cargando modulo de cajas...</p>
         </div>
       </div>
     );
@@ -224,10 +224,10 @@ export default function ProductividadCajasPage() {
               Volver a Productividad
             </Link>
             <Link
-              href="/tableros"
+              href="/secciones"
               className="inline-flex items-center rounded-full border border-blue-200/70 bg-blue-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700 transition-all hover:border-blue-300 hover:bg-blue-100"
             >
-              Cambiar tablero
+              Cambiar seccion
             </Link>
           </div>
         </div>
@@ -258,10 +258,10 @@ export default function ProductividadCajasPage() {
                 Volver a Productividad
               </Link>
               <Link
-                href="/tableros"
+                href="/secciones"
                 className="inline-flex items-center rounded-full border border-blue-200/70 bg-blue-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700 transition-all hover:border-blue-300 hover:bg-blue-100"
               >
-                Cambiar tablero
+                Cambiar seccion
               </Link>
             </div>
             <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2">
@@ -306,7 +306,7 @@ export default function ProductividadCajasPage() {
           showPersonBreakdown
           badgeLabel="Cajas por hora"
           panelTitle="Facturacion por intervalos"
-          panelDescription="Consulta cuanto se facturo por hora y el acumulado del rango seleccionado usando la misma base horaria del tablero actual."
+          panelDescription="Consulta cuanto se facturo por hora y el acumulado del rango seleccionado usando la misma base horaria del modulo de productividad."
           dashboardContext="productividad"
         />
       </div>

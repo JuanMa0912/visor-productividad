@@ -343,10 +343,10 @@ export const TopBar = ({
             </Link>
           )}
           <Link
-            href="/tableros"
+            href="/secciones"
             className="inline-flex items-center gap-2 rounded-full border border-blue-200/70 bg-blue-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-blue-800 transition-all hover:border-blue-300 hover:bg-blue-100 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:px-4 sm:py-2 sm:text-xs sm:tracking-[0.2em]"
           >
-            Cambiar tablero
+            Cambiar seccion
           </Link>
         </div>
       </div>
@@ -431,7 +431,5 @@ export const TopBar = ({
     </header>
   );
 };
-
-
 
 

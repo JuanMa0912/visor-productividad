@@ -1,22 +1,46 @@
 # Visor de Productividad
 
-Documento tecnico compacto del repositorio, pensado para lectura directa o exportacion a PDF. La aplicacion es una web interna en Next.js para consultar productividad, margenes, horario operativo y ventas por item de Mercamio, Mercatodo y Merkmios, usando PostgreSQL como fuente principal de datos.
+Documento tecnico compacto del repositorio, pensado para lectura directa o exportacion a PDF. La aplicacion es una web interna en Next.js para el Portal UAID de Mercamio, Mercatodo y Merkmios, usando PostgreSQL como fuente principal de datos para productividad, margenes, operacion y ventas por item.
 
 ## 1. Resumen del sistema
 
 ### Objetivo
 
-Centralizar dashboards operativos con filtros por permisos, consultas SQL directas y exportaciones a formatos de oficina.
+Centralizar la experiencia del Portal UAID con acceso por secciones, filtros por permisos, consultas SQL directas y exportaciones a formatos de oficina.
 
 ### Modulos activos
 
 | Modulo | Rutas UI | APIs clave | Salidas principales |
 | --- | --- | --- | --- |
+| Portal UAID | `/secciones` (`/tableros` redirige) | `/api/auth/me` | entrada central por secciones |
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV, XLSX, PDF |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
 | Horario y jornada extendida | `/horario`, `/jornada-extendida`, `/ingresar-horarios` | `/api/jornada-extendida/meta`, `/api/jornada-extendida/alex-report`, `/api/hourly-analysis`, `/api/ingresar-horarios/options` | consulta operativa, reporte Alex, PNG, XLSX |
 | Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, paginacion y XLSX |
 | Administracion | `/admin/usuarios`, `/cuenta/contrasena`, `/login` | `/api/auth/*`, `/api/admin/*` | login, sesiones, usuarios y permisos |
+
+### Experiencia UAID actual
+
+#### Login y entrada al portal
+
+- `/login` usa la identidad `UAID` como marca principal.
+- `Portal de Inteligencia de Datos` y `Unidad de Analitica e Inteligencia de Datos` funcionan como subtitulos institucionales.
+- Al autenticarse correctamente, el usuario entra a `/secciones`.
+- La ruta legacy `/tableros` se mantiene solo como redireccion a `/secciones`.
+
+#### Secciones iniciales del portal
+
+| Seccion | Descripcion funcional | Modulos visibles | Ruta de entrada |
+| --- | --- | --- | --- |
+| `Venta` | Analisis detallado del comportamiento de productos y ventas por item para consulta directa. | `Ventas por item` | `/ventas-x-item` |
+| `Producto` | Seguimiento de productividad, rentabilidad y comparativos por sede para entender el desempeno del negocio. | `Productividad`, `Margenes` | `/productividad` |
+| `Operacion` | Consulta de horas trabajadas, control operativo del personal y registro de horarios. | `Horarios`, `Registro de horarios` | `/horario` |
+
+#### Jerarquia visual documentada
+
+- En el login, `UAID` debe tener mas peso visual que `Portal de Inteligencia de Datos`.
+- En la portada de `/secciones`, `Portal UAID` es el titulo principal y `Explora las secciones del portal` queda como subtitulo.
+- El tono general buscado es institucional, claro y amigable, sin romper la estructura actual de la app.
 
 ### Stack actual
 
@@ -91,20 +115,23 @@ Exportaciones
 - `role`: `admin` o `user`.
 - `allowed_sedes`: controla sedes visibles; `NULL` o `Todas` equivale a acceso amplio.
 - `allowed_lines`: restringe lineas; `NULL` equivale a todas.
-- `allowed_dashboards`: restringe modulos; `NULL` equivale a todos.
+- `allowed_dashboards`: columna legacy que ahora guarda secciones UAID (`venta`, `producto`, `operacion`); `NULL` equivale a todas.
 - `special_roles`: hoy incluye `alex`.
 - `sede`: campo legacy usado como fallback cuando no hay `allowed_sedes`.
 - `is_active`: habilita o bloquea el acceso.
 
-### Tableros y acceso
+Los valores legacy de `allowed_dashboards` siguen siendo compatibles. El codigo normaliza aliases historicos como `ventas-x-item`, `productividad`, `margenes`, `horario`, `jornada-extendida` e `ingresar-horarios` hacia las secciones UAID correspondientes.
+
+### Secciones y acceso
 
 | Permiso | Rutas / APIs asociadas |
 | --- | --- |
-| `productividad` | `/`, `/productividad`, `/productividad/cajas`, `/api/productivity`, `/api/hourly-analysis` |
-| `margenes` | `/margenes`, `/api/margenes` |
-| `jornada-extendida` | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/api/jornada-extendida/*`, `/api/ingresar-horarios/options` |
-| `ventas-x-item` | `/ventas-x-item`, `/api/ventas-x-item`, `/api/ventas-x-item/v2` |
+| `venta` | `/secciones`, `/ventas-x-item`, `/api/ventas-x-item`, `/api/ventas-x-item/v2` |
+| `producto` | `/secciones`, `/`, `/productividad`, `/productividad/cajas`, `/margenes`, `/api/productivity`, `/api/margenes`, `/api/hourly-analysis` |
+| `operacion` | `/secciones`, `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/api/jornada-extendida/*`, `/api/ingresar-horarios/options`, `/api/hourly-analysis` |
 | `alex` | `special_roles` requerido para `/api/jornada-extendida/alex-report`, salvo admin |
+
+Nota operativa: la home funcional ya no se organiza por "tableros" sino por secciones UAID. El termino "tablero" queda solo como compatibilidad de ruta o de almacenamiento legacy.
 
 ### Endpoints de soporte
 
@@ -171,7 +198,7 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
 - `GET /api/jornada-extendida/meta`
   - Resuelve fechas disponibles y sedes visibles desde `asistencia_horas`.
 - `GET /api/jornada-extendida/alex-report`
-  - Usa `asistencia_horas`, requiere dashboard `jornada-extendida` y rol `alex` o `admin`.
+  - Usa `asistencia_horas`, requiere seccion `operacion` y rol `alex` o `admin`.
   - Limita el rango a 31 dias.
 - `GET /api/ventas-x-item`
   - Lee `ventas_item_diario`.
@@ -291,7 +318,7 @@ Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy
 
 Actualizar `README.md` si cambia cualquiera de estos puntos:
 
-- se agrega o elimina un tablero
+- se agrega o elimina una seccion o modulo
 - cambia el modelo de permisos, sesiones o headers de seguridad
 - cambian tablas, migraciones o variables de entorno
 - se introduce una integracion externa

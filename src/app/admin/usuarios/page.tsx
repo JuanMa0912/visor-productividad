@@ -15,6 +15,10 @@ import {
   Users,
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/constants";
+import {
+  PORTAL_SECTION_LABEL_BY_ID,
+  PORTAL_SECTIONS,
+} from "@/lib/portal-sections";
 
 const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = ["Panificadora", "Planta Desposte Mixto", "Planta Desprese Pollo"];
@@ -110,16 +114,11 @@ const inferSedeFromUsername = (username?: string | null) => {
 };
 
 const lineLabelById = new Map(DEFAULT_LINES.map((line) => [line.id, line.name]));
-const DASHBOARD_OPTIONS = [
-  { id: "productividad", label: "Productividad" },
-  { id: "margenes", label: "Margenes" },
-  { id: "jornada-extendida", label: "Horario" },
-  { id: "ventas-x-item", label: "Ventas X item" },
-];
+const SECTION_OPTIONS = PORTAL_SECTIONS.map((section) => ({
+  id: section.id,
+  label: section.label,
+}));
 const SPECIAL_ROLE_OPTIONS = [{ id: "alex", label: "Alex" }];
-const dashboardLabelById = new Map(
-  DASHBOARD_OPTIONS.map((board) => [board.id, board.label]),
-);
 
 const formatAllowedLines = (allowedLines: string[] | null) => {
   if (!allowedLines || allowedLines.length === 0) return "Todas";
@@ -128,9 +127,10 @@ const formatAllowedLines = (allowedLines: string[] | null) => {
     .join(", ");
 };
 const formatAllowedDashboards = (allowedDashboards: string[] | null) => {
-  if (!allowedDashboards || allowedDashboards.length === 0) return "Todos";
+  if (allowedDashboards === null) return "Todas";
+  if (allowedDashboards.length === 0) return "Sin secciones";
   return allowedDashboards
-    .map((boardId) => dashboardLabelById.get(boardId) ?? boardId)
+    .map((boardId) => PORTAL_SECTION_LABEL_BY_ID.get(boardId) ?? boardId)
     .join(", ");
 };
 const formatAllowedSedes = (allowedSedes: string[] | null, fallbackSede: string | null) => {
@@ -343,17 +343,17 @@ export default function AdminUsuariosPage() {
               Usuarios de la aplicación
             </h1>
             <p className="mt-2 max-w-xl text-sm text-slate-500">
-              Gestiona roles, accesos y actividad reciente con una vista clara y
-              accionable.
+              Gestiona roles, accesos por seccion y actividad reciente del
+              portal UAID.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/tableros"
+              href="/secciones"
               className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:-translate-y-0.5 hover:bg-slate-50"
             >
               <LayoutGrid className="h-3.5 w-3.5" />
-              Cambiar tablero
+              Ir a secciones
             </Link>
             <button
               type="button"
@@ -449,7 +449,7 @@ export default function AdminUsuariosPage() {
                         <th className="py-2 pr-3">Rol</th>
                         <th className="py-2 pr-3">Sede</th>
                         <th className="py-2 pr-3">Lineas</th>
-                        <th className="py-2 pr-3">Tableros</th>
+                        <th className="py-2 pr-3">Secciones</th>
                         <th className="py-2 pr-3">Especial</th>
                         <th className="py-2 pr-3">Estado</th>
                         <th className="py-2">Acciones</th>
@@ -711,13 +711,13 @@ export default function AdminUsuariosPage() {
                 </label>
 
                 <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                  Tableros permitidos (vacío = todos)
+                  Secciones permitidas (vacio = todas)
                   <div className="mt-1.5 grid max-h-28 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm sm:grid-cols-3">
-                    {DASHBOARD_OPTIONS.map((board) => {
-                      const checked = formState.allowedDashboards.includes(board.id);
+                    {SECTION_OPTIONS.map((section) => {
+                      const checked = formState.allowedDashboards.includes(section.id);
                       return (
                         <label
-                          key={board.id}
+                          key={section.id}
                           className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
                         >
                           <input
@@ -728,13 +728,13 @@ export default function AdminUsuariosPage() {
                               setFormState((prev) => ({
                                 ...prev,
                                 allowedDashboards: checked
-                                  ? prev.allowedDashboards.filter((id) => id !== board.id)
-                                  : [...prev.allowedDashboards, board.id],
+                                  ? prev.allowedDashboards.filter((id) => id !== section.id)
+                                  : [...prev.allowedDashboards, section.id],
                               }))
                             }
                             className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
                           />
-                          <span>{board.label}</span>
+                          <span>{section.label}</span>
                         </label>
                       );
                     })}

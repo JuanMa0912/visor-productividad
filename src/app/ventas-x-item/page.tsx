@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { BarChart } from "@mui/x-charts/BarChart";
 import * as ExcelJS from "exceljs";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 import {
   buildDailyTableAllRange,
   buildNumericPivotRange,
@@ -244,10 +245,9 @@ export default function VentasXItemPage() {
         const isAdmin = payload.user?.role === "admin";
         if (
           !isAdmin &&
-          Array.isArray(payload.user?.allowedDashboards) &&
-          !payload.user?.allowedDashboards.includes("ventas-x-item")
+          !canAccessPortalSection(payload.user?.allowedDashboards, "venta")
         ) {
-          router.replace("/tableros");
+          router.replace("/secciones");
           return;
         }
 
@@ -1042,7 +1042,7 @@ export default function VentasXItemPage() {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-4xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando tablero...</p>
+          <p className="text-sm text-slate-600">Cargando seccion...</p>
         </div>
       </div>
     );
@@ -1059,10 +1059,10 @@ export default function VentasXItemPage() {
             <h1 className="mt-1 text-2xl font-bold text-slate-900">Ventas por ítem(s) x sedes</h1>
           </div>
           <Link
-            href="/tableros"
+            href="/secciones"
             className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
           >
-            Volver a tableros
+            Volver a secciones
           </Link>
         </div>
 

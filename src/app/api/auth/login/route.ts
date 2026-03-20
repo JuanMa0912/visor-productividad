@@ -7,6 +7,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { normalizeAllowedPortalSections } from "@/lib/portal-sections";
 
 export async function POST(req: Request) {
   try {
@@ -62,6 +63,9 @@ export async function POST(req: Request) {
         is_active: boolean;
         password_hash: string;
       };
+      const allowedDashboards = normalizeAllowedPortalSections(
+        user.allowedDashboards,
+      );
 
       if (!user.is_active) {
         return NextResponse.json(
@@ -107,7 +111,7 @@ export async function POST(req: Request) {
           sede: user.sede,
           allowedSedes: user.allowedSedes,
           allowedLines: user.allowedLines,
-          allowedDashboards: user.allowedDashboards,
+          allowedDashboards,
           specialRoles: user.specialRoles,
         },
       });

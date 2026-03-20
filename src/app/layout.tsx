@@ -26,22 +26,23 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Visualizador de Productividad - Mercamio",
-    template: "%s | Mercamio",
+    default: "Portal de Inteligencia de Datos - UAID",
+    template: "%s | UAID Mercamio",
   },
   description:
-    "Panel diario de productividad por línea. Analiza ventas por sede en tiempo real.",
+    "Portal de Inteligencia de Datos de la UAID para consultar productividad, margenes, horarios y ventas por item.",
   keywords: [
     "productividad",
-    "análisis",
+    "analitica",
     "ventas",
-    "márgenes",
-    "dashboard",
+    "margenes",
+    "portal de inteligencia",
+    "uaid",
     "mercamio",
   ],
   authors: [{ name: "Mercamio" }],
-  creator: "Mercamio",
-  publisher: "Mercamio",
+  creator: "UAID Mercamio",
+  publisher: "UAID Mercamio",
   referrer: "strict-origin-when-cross-origin",
   robots: {
     index: true,
@@ -50,16 +51,16 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "es_CO",
-    title: "Visualizador de Productividad - Mercamio",
+    title: "Portal de Inteligencia de Datos - UAID",
     description:
-      "Panel diario de productividad por línea. Analiza ventas por sede.",
-    siteName: "Mercamio",
+      "Portal de Inteligencia de Datos para consulta operativa y analitica de Mercamio.",
+    siteName: "UAID Mercamio",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Visualizador de Productividad - Mercamio",
+    title: "Portal de Inteligencia de Datos - UAID",
     description:
-      "Panel diario de productividad por línea. Analiza ventas por sede.",
+      "Portal de Inteligencia de Datos para consulta operativa y analitica de Mercamio.",
   },
 };
 
@@ -95,4 +96,3 @@ export default function RootLayout({ children }: RootLayoutProps) {
     </html>
   );
 }
-

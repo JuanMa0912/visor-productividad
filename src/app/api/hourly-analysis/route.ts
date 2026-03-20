@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 import type {
   HourlyAnalysisData,
   HourlyLineSales,
@@ -1277,7 +1278,7 @@ export async function GET(request: Request) {
   ) {
     return withSession(
       NextResponse.json(
-        { error: "Contexto de tablero invalido para el analisis por hora." },
+        { error: "Contexto de modulo invalido para el analisis por hora." },
         { status: 400 },
       ),
     );
@@ -1286,15 +1287,16 @@ export async function GET(request: Request) {
     dashboardContextParam === "jornada-extendida"
       ? "jornada-extendida"
       : "productividad";
+  const requiredSection =
+    dashboardContext === "jornada-extendida" ? "operacion" : "producto";
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
-    Array.isArray(allowedDashboards) &&
-    !allowedDashboards.includes(dashboardContext)
+    !canAccessPortalSection(allowedDashboards, requiredSection)
   ) {
     return withSession(
       NextResponse.json(
-        { error: "No tienes permisos para este tablero." },
+        { error: "No tienes permisos para esta seccion." },
         { status: 403 },
       ),
     );

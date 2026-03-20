@@ -11,6 +11,7 @@ import {
   Sede,
 } from "@/lib/constants";
 import { formatCOP } from "@/lib/calc";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 
 type DateRange = {
   start: string;
@@ -249,10 +250,9 @@ export default function MargenesPage() {
         const isUserAdmin = payload.user?.role === "admin";
         if (
           !isUserAdmin &&
-          Array.isArray(payload.user?.allowedDashboards) &&
-          !payload.user?.allowedDashboards.includes("margenes")
+          !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
         ) {
-          router.replace("/tableros");
+          router.replace("/secciones");
           return;
         }
         setUsername(payload.user?.username ?? null);
@@ -617,7 +617,7 @@ export default function MargenesPage() {
     return (
       <div className="min-h-screen bg-background px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-md rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando tablero...</p>
+          <p className="text-sm text-slate-600">Cargando modulo...</p>
         </div>
       </div>
     );
@@ -630,7 +630,7 @@ export default function MargenesPage() {
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-500">
-                Tablero margenes
+                Modulo margenes
               </p>
               <h1 className="mt-2 bg-linear-to-r from-blue-700 via-indigo-700 to-amber-700 bg-clip-text text-2xl font-semibold text-transparent">
                 Margenes por sede y linea
@@ -697,10 +697,10 @@ export default function MargenesPage() {
             </div>
             <button
               type="button"
-              onClick={() => router.push("/tableros")}
+              onClick={() => router.push("/secciones")}
               className="inline-flex h-fit items-center justify-center rounded-full border border-slate-200/70 bg-white px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100"
             >
-              Cambiar tablero
+              Cambiar seccion
             </button>
           </div>
 
@@ -1005,10 +1005,10 @@ export default function MargenesPage() {
         <div className="mt-8">
           <button
             type="button"
-            onClick={() => router.push("/tableros")}
+            onClick={() => router.push("/secciones")}
             className="w-full rounded-full border border-slate-200/70 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:border-slate-300 hover:text-slate-900"
           >
-            Volver a tableros
+            Volver a secciones
           </button>
         </div>
       </div>

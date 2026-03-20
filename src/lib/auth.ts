@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { cookies } from "next/headers";
 import { getDbPool } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { normalizeAllowedPortalSections } from "@/lib/portal-sections";
 
 export type AuthUser = {
   id: string;
@@ -210,6 +211,7 @@ export const getUserSession = async (): Promise<
 
     if (!result.rows || result.rows.length === 0) return null;
     const user = result.rows[0] as AuthUser;
+    user.allowedDashboards = normalizeAllowedPortalSections(user.allowedDashboards);
     const expiresAt = getSessionExpiry();
     await refreshSession(tokenHash, expiresAt);
     return { user, token, expiresAt };

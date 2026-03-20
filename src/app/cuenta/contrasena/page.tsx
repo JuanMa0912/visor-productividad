@@ -56,10 +56,10 @@ export default function CambiarContrasenaPage() {
           <h1 className="text-2xl font-bold text-slate-900">Cambiar contraseña</h1>
           <button
             type="button"
-            onClick={() => router.push("/tableros")}
+            onClick={() => router.push("/secciones")}
             className="rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-700 transition-all hover:border-slate-300"
           >
-            Volver
+            Volver a secciones
           </button>
         </div>
 

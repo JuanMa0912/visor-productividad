@@ -106,7 +106,7 @@ export default function JornadaExtendidaPage() {
           return;
         }
         if (response.status === 403) {
-          router.replace("/tableros");
+          router.replace("/secciones");
           return;
         }
 
@@ -399,7 +399,7 @@ export default function JornadaExtendidaPage() {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-5xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando tablero...</p>
+          <p className="text-sm text-slate-600">Cargando modulo...</p>
         </div>
       </div>
     );
@@ -411,16 +411,16 @@ export default function JornadaExtendidaPage() {
         <div className="mb-5 flex flex-col gap-4 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)] md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-500">
-              Tablero
+              Operacion
             </p>
-            <h1 className="mt-1 text-xl font-bold text-slate-900">Horario</h1>
+            <h1 className="mt-1 text-xl font-bold text-slate-900">Horarios</h1>
           </div>
           <div className="flex flex-col gap-3 md:items-end">
             <Link
-              href="/tableros"
+              href="/secciones"
               className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
             >
-              Cambiar tablero
+              Cambiar seccion
             </Link>
             <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2">
               <div className="flex items-center gap-3">
@@ -588,5 +588,3 @@ export default function JornadaExtendidaPage() {
     </div>
   );
 }
-
-

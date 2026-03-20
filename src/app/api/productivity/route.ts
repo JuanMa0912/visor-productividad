@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { DailyProductivity } from "@/types";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, testDbConnection } from "@/lib/db";
+import { canAccessPortalSection } from "@/lib/portal-sections";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -617,12 +618,11 @@ export async function GET(request: Request) {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
-    Array.isArray(allowedDashboards) &&
-    !allowedDashboards.includes("productividad")
+    !canAccessPortalSection(allowedDashboards, "producto")
   ) {
     return withSession(
       NextResponse.json(
-        { error: "No tienes permisos para este tablero." },
+        { error: "No tienes permisos para esta seccion." },
         { status: 403 },
       ),
     );
