@@ -145,7 +145,7 @@ const resolveValidAllowedDashboards = (value: unknown) => {
   const hasMeaningfulEntries = value.some(
     (board) => typeof board === "string" && board.trim(),
   );
-  const normalized = normalizeAllowedPortalSections(value);
+  const normalized = normalizeAllowedPortalSections(value) ?? [];
   if (!hasMeaningfulEntries || normalized.length === 0) {
     return { ok: true as const, value: null as string[] | null };
   }

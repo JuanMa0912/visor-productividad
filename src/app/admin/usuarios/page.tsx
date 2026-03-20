@@ -18,6 +18,7 @@ import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/constants";
 import {
   PORTAL_SECTION_LABEL_BY_ID,
   PORTAL_SECTIONS,
+  resolvePortalSectionId,
 } from "@/lib/portal-sections";
 
 const ALL_SEDES_VALUE = "Todas";
@@ -130,7 +131,12 @@ const formatAllowedDashboards = (allowedDashboards: string[] | null) => {
   if (allowedDashboards === null) return "Todas";
   if (allowedDashboards.length === 0) return "Sin secciones";
   return allowedDashboards
-    .map((boardId) => PORTAL_SECTION_LABEL_BY_ID.get(boardId) ?? boardId)
+    .map((boardId) => {
+      const normalizedBoardId = resolvePortalSectionId(boardId);
+      return normalizedBoardId
+        ? PORTAL_SECTION_LABEL_BY_ID.get(normalizedBoardId) ?? boardId
+        : boardId;
+    })
     .join(", ");
 };
 const formatAllowedSedes = (allowedSedes: string[] | null, fallbackSede: string | null) => {

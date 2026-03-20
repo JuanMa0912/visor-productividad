@@ -59,11 +59,11 @@ export default function HorarioHubPage() {
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground">
       <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-200/70 bg-white p-7 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-rose-700">
           Operacion
         </p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">Selecciona un modulo</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Ejecucion del negocio</h1>
           <button
             type="button"
             onClick={() => router.push("/secciones")}
@@ -73,8 +73,8 @@ export default function HorarioHubPage() {
           </button>
         </div>
         <p className="mt-1 text-sm text-slate-600">
-          Consulta de horas trabajadas, control operativo del personal y registro
-          de horarios dentro del portal UAID.
+          Aqui se explica como la operacion soporta el resultado: uso de horas,
+          personal, novedades y turnos por sede.
         </p>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -84,30 +84,30 @@ export default function HorarioHubPage() {
             className="rounded-2xl border border-rose-300/80 bg-linear-to-br from-rose-100 via-white to-pink-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.4)] transition-all hover:-translate-y-0.5 hover:border-rose-400"
           >
             <span className="inline-flex rounded-full border border-rose-300/80 bg-rose-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-800">
-              Horarios
+              Ejecucion
             </span>
             <span className="mt-3 block text-sm font-semibold">
               Consulta operativa
             </span>
             <span className="mt-1 block text-xs text-slate-600">
-              Consulta horas trabajadas, novedades y control operativo del
-              personal por sede y fecha.
+              Consulta horas trabajadas, novedades y uso del personal por sede y
+              fecha para medir eficiencia operativa.
             </span>
           </button>
 
           <button
             type="button"
             onClick={() => router.push("/ingresar-horarios")}
-            className="rounded-2xl border border-sky-300/80 bg-linear-to-br from-sky-100 via-white to-cyan-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(14,165,233,0.45)] transition-all hover:-translate-y-0.5 hover:border-sky-400"
+            className="rounded-2xl border border-red-300/80 bg-linear-to-br from-red-100 via-white to-orange-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(239,68,68,0.4)] transition-all hover:-translate-y-0.5 hover:border-red-400"
           >
-            <span className="inline-flex rounded-full border border-sky-300/80 bg-sky-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-800">
-              Registro
+            <span className="inline-flex rounded-full border border-red-300/80 bg-red-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-red-800">
+              Turnos
             </span>
             <span className="mt-3 block text-sm font-semibold">
               Registro de horarios
             </span>
             <span className="mt-1 block text-xs text-slate-600">
-              Registra y administra informacion de horarios del personal para la
+              Programa y administra horarios del personal para sostener la
               operacion diaria.
             </span>
           </button>

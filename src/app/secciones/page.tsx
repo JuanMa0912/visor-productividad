@@ -9,23 +9,29 @@ import {
 
 const SECTION_STYLES: Record<
   PortalSectionId,
-  { classes: string; badgeClasses: string }
+  { classes: string; badgeClasses: string; focusClasses: string; ctaClasses: string }
 > = {
   venta: {
     classes:
-      "border-emerald-300/80 bg-linear-to-br from-emerald-100 via-white to-lime-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(16,185,129,0.45)] hover:border-emerald-400 hover:shadow-[0_22px_44px_-26px_rgba(16,185,129,0.55)]",
+      "border-blue-300/80 bg-linear-to-br from-blue-100 via-white to-indigo-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.45)] hover:border-blue-400 hover:shadow-[0_22px_44px_-26px_rgba(37,99,235,0.55)]",
     badgeClasses:
-      "border-emerald-300/80 bg-emerald-200/75 text-emerald-800",
+      "border-blue-300/80 bg-blue-200/75 text-blue-800",
+    focusClasses: "text-blue-950",
+    ctaClasses: "text-blue-800",
   },
   producto: {
     classes:
-      "border-blue-300/80 bg-linear-to-br from-blue-100 via-white to-cyan-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.45)] hover:border-blue-400 hover:shadow-[0_22px_44px_-26px_rgba(37,99,235,0.55)]",
-    badgeClasses: "border-blue-300/80 bg-blue-200/75 text-blue-800",
+      "border-amber-300/80 bg-linear-to-br from-amber-100 via-white to-yellow-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.45)] hover:border-amber-400 hover:shadow-[0_22px_44px_-26px_rgba(245,158,11,0.55)]",
+    badgeClasses: "border-amber-300/80 bg-amber-200/80 text-amber-900",
+    focusClasses: "text-amber-950",
+    ctaClasses: "text-amber-800",
   },
   operacion: {
     classes:
-      "border-rose-300/80 bg-linear-to-br from-rose-100 via-white to-pink-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.4)] hover:border-rose-400 hover:shadow-[0_22px_44px_-26px_rgba(244,63,94,0.5)]",
+      "border-rose-300/80 bg-linear-to-br from-rose-100 via-white to-red-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.4)] hover:border-rose-400 hover:shadow-[0_22px_44px_-26px_rgba(244,63,94,0.5)]",
     badgeClasses: "border-rose-300/80 bg-rose-200/75 text-rose-800",
+    focusClasses: "text-rose-950",
+    ctaClasses: "text-rose-800",
   },
 };
 
@@ -106,7 +112,7 @@ export default function SeccionesPage() {
               Portal UAID
             </h1>
             <p className="mt-2 text-sm font-semibold text-slate-600 sm:text-base">
-              Explora las secciones del portal
+              Explora las tres dimensiones clave del negocio.
             </p>
           </div>
           {isAdmin && (
@@ -120,9 +126,10 @@ export default function SeccionesPage() {
           )}
         </div>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-[15px]">
-          La UAID concentra analisis, modelos y herramientas operativas para que
-          cada equipo encuentre rapido la informacion que necesita y tome
-          decisiones con mas claridad.
+          El Portal UAID integra en un solo entorno la vision completa del
+          negocio a traves de tres dimensiones clave: Venta, Producto y
+          Operacion, permitiendo entender no solo el resultado, sino tambien sus
+          causas y la forma en que se ejecuta.
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -140,10 +147,13 @@ export default function SeccionesPage() {
                 >
                   {section.label}
                 </span>
-                <span className="mt-4 block text-xl font-bold text-slate-900">
-                  {section.label}
+                <span className="mt-4 block text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Enfoque
                 </span>
-                <span className="mt-2 block text-sm text-slate-700">
+                <span className={`mt-2 block text-2xl font-black leading-tight ${styles.focusClasses}`}>
+                  {section.focus}
+                </span>
+                <span className="mt-3 block text-sm leading-6 text-slate-700">
                   {section.description}
                 </span>
                 <div className="mt-auto pt-5">
@@ -160,6 +170,9 @@ export default function SeccionesPage() {
                       </span>
                     ))}
                   </div>
+                  <p className={`mt-4 text-xs font-semibold uppercase tracking-[0.18em] ${styles.ctaClasses}`}>
+                    Entrar a {section.label}
+                  </p>
                 </div>
               </button>
             );

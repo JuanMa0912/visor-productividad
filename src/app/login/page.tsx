@@ -61,11 +61,8 @@ export default function LoginPage() {
           <p className="inline-block bg-linear-to-r from-sky-700 via-blue-700 to-slate-800 bg-clip-text text-4xl font-black uppercase tracking-[0.16em] text-transparent sm:text-5xl">
             UAID
           </p>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 sm:text-sm">
-            Portal de Inteligencia de Datos
-          </p>
-          <p className="mt-1 text-sm font-medium text-slate-600">
-            Unidad de Analítica e Inteligencia de Datos
+          <p className="mt-2 text-sm font-medium text-slate-600">
+            Unidad de Analitica e Inteligencia de Datos
           </p>
           <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
             MercaMio y MercaTodo

@@ -3,6 +3,7 @@ export type PortalSectionId = "venta" | "producto" | "operacion";
 export type PortalSectionDefinition = {
   id: PortalSectionId;
   label: string;
+  focus: string;
   description: string;
   href: string;
   modules: string[];
@@ -12,24 +13,27 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
   {
     id: "venta",
     label: "Venta",
+    focus: "Muestra el resultado del negocio",
     description:
-      "Analisis detallado del comportamiento de productos y ventas por item para consulta directa.",
+      "Facilita una lectura rapida del desempeno comercial, tendencias y variaciones por sede, linea o producto.",
     href: "/ventas-x-item",
     modules: ["Ventas por item"],
   },
   {
     id: "producto",
     label: "Producto",
+    focus: "Explica ese resultado",
     description:
-      "Seguimiento de productividad, rentabilidad y comparativos por sede para entender el desempeno del negocio.",
+      "Identifica que categorias o items impulsan o afectan la venta en terminos de productividad, rentabilidad y participacion.",
     href: "/productividad",
     modules: ["Productividad", "Margenes"],
   },
   {
     id: "operacion",
     label: "Operacion",
+    focus: "Evalua la ejecucion",
     description:
-      "Consulta de horas trabajadas, control operativo del personal y registro de horarios.",
+      "Mide que tan eficiente es el uso de los recursos (horas, personal y horarios) para generar la venta.",
     href: "/horario",
     modules: ["Horarios", "Registro de horarios"],
   },
