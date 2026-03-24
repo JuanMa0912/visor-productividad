@@ -1,4 +1,34 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+let localEnvLoaded = false;
+
+const loadLocalEnv = () => {
+  if (localEnvLoaded || process.env.DB_PASSWORD?.trim()) return;
+
+  localEnvLoaded = true;
+  const envPath = path.join(process.cwd(), ".env.local");
+  if (!existsSync(envPath)) return;
+
+  const envContent = readFileSync(envPath, "utf-8");
+  envContent.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex <= 0) return;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const rawValue = trimmed.slice(separatorIndex + 1).trim();
+    if (!key || process.env[key]) return;
+
+    process.env[key] = rawValue.replace(/^['"]|['"]$/g, "");
+  });
+};
+
 const resolveDbConfig = () => {
+  loadLocalEnv();
+
   const password = process.env.DB_PASSWORD ?? "";
   if (!password.trim()) {
     throw new Error(
