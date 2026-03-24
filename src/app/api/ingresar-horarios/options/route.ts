@@ -26,10 +26,21 @@ const BASE_SEDES: Sede[] = [
   { id: "Guaduales", name: "Guaduales" },
   { id: "Bogota", name: "Bogota" },
   { id: "Chia", name: "Chia" },
+  { id: "ADM", name: "ADM" },
+  { id: "CEDI-CAVASA", name: "CEDI-CAVASA" },
   { id: "Panificadora", name: "Panificadora" },
   { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
   { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
 ];
+
+const canonicalizeSedeKey = (value: string) => {
+  const normalized = normalizeSedeKey(value);
+  const compact = normalized.replace(/\s+/g, "");
+  if (normalized === "cedicavasa" || compact === "cedicavasa") {
+    return normalizeSedeKey("CEDI-CAVASA");
+  }
+  return normalized;
+};
 
 const SEDE_CONFIGS = [
   { name: "Calle 5ta", attendanceNames: ["la 5a", "calle 5ta"], aliases: ["calle 5ta", "la 5a", "la 5"] },
@@ -43,6 +54,8 @@ const SEDE_CONFIGS = [
   { name: "Guaduales", attendanceNames: ["guaduales"], aliases: ["guaduales"] },
   { name: "Bogota", attendanceNames: ["bogota", "merkmios bogota"], aliases: ["bogota", "bogot", "merkmios bogota", "merkmios bogot"] },
   { name: "Chia", attendanceNames: ["chia", "merkmios chia"], aliases: ["chia", "chi", "ch a", "merkmios chia"] },
+  { name: "ADM", attendanceNames: ["adm"], aliases: ["adm"] },
+  { name: "CEDI-CAVASA", attendanceNames: ["cedi cavasa", "cedi-cavasa", "cedicavasa"], aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
   { name: "Panificadora", attendanceNames: ["panificadora"], aliases: ["panificadora"] },
   { name: "Planta Desposte Mixto", attendanceNames: ["planta desposte mixto"], aliases: ["planta desposte mixto", "planta desposte"] },
   { name: "Planta Desprese Pollo", attendanceNames: ["planta desprese pollo"], aliases: ["planta desprese pollo", "desprese pollo"] },
@@ -65,7 +78,7 @@ const resolveVisibleSedes = (sessionUser: {
     : [];
   const normalizedAllowed = new Set(
     rawAllowed
-      .map((sede) => normalizeSedeKey(sede))
+      .map((sede) => canonicalizeSedeKey(sede))
       .filter(Boolean),
   );
   if (normalizedAllowed.has(normalizeSedeKey("Todas"))) {
@@ -76,7 +89,7 @@ const resolveVisibleSedes = (sessionUser: {
     };
   }
   const allowedMatches = BASE_SEDES.filter((sede) =>
-    normalizedAllowed.has(normalizeSedeKey(sede.name)),
+    normalizedAllowed.has(canonicalizeSedeKey(sede.name)),
   );
   if (allowedMatches.length > 0) {
     return {
@@ -85,9 +98,9 @@ const resolveVisibleSedes = (sessionUser: {
       defaultSede: allowedMatches[0].name,
     };
   }
-  const legacyKey = sessionUser.sede ? normalizeSedeKey(sessionUser.sede) : null;
+  const legacyKey = sessionUser.sede ? canonicalizeSedeKey(sessionUser.sede) : null;
   const legacyMatch = legacyKey
-    ? BASE_SEDES.find((sede) => normalizeSedeKey(sede.name) === legacyKey)
+    ? BASE_SEDES.find((sede) => canonicalizeSedeKey(sede.name) === legacyKey)
     : null;
   if (legacyMatch) {
     return {
@@ -115,9 +128,9 @@ const normalizeText = (value?: string | null) =>
 
 const mapToCanonicalSede = (rawSede?: string | null) => {
   if (!rawSede) return "";
-  const normalized = normalizeText(rawSede);
+  const normalized = canonicalizeSedeKey(normalizeText(rawSede));
   const matched = SEDE_CONFIGS.find((cfg) =>
-    [cfg.name, ...cfg.aliases].map(normalizeText).some(
+    [cfg.name, ...cfg.aliases].map((alias) => canonicalizeSedeKey(normalizeText(alias))).some(
       (alias) =>
         normalized === alias || normalized.includes(alias) || alias.includes(normalized),
     ),

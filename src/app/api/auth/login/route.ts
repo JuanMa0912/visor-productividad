@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   createSession,
   getAuditNetworkId,
@@ -8,6 +8,69 @@ import {
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { normalizeAllowedPortalSections } from "@/lib/portal-sections";
+
+const FAILED_LOGIN_WINDOW_MS = 15 * 60_000;
+const FAILED_LOGIN_MAX_PER_IP = 10;
+const FAILED_LOGIN_MAX_PER_USER = 5;
+
+type FailedLoginEntry = {
+  count: number;
+  resetAt: number;
+};
+
+const failedLoginByIp = new Map<string, FailedLoginEntry>();
+const failedLoginByUser = new Map<string, FailedLoginEntry>();
+
+const getActiveFailedLoginEntry = (
+  store: Map<string, FailedLoginEntry>,
+  key: string,
+  now: number,
+) => {
+  const entry = store.get(key);
+  if (!entry) return null;
+  if (entry.resetAt <= now) {
+    store.delete(key);
+    return null;
+  }
+  return entry;
+};
+
+const getFailedLoginResetAt = (ipKey: string, userKey: string, now: number) => {
+  const ipEntry = getActiveFailedLoginEntry(failedLoginByIp, ipKey, now);
+  if (ipEntry && ipEntry.count >= FAILED_LOGIN_MAX_PER_IP) {
+    return ipEntry.resetAt;
+  }
+
+  const userEntry = getActiveFailedLoginEntry(failedLoginByUser, userKey, now);
+  if (userEntry && userEntry.count >= FAILED_LOGIN_MAX_PER_USER) {
+    return userEntry.resetAt;
+  }
+
+  return null;
+};
+
+const registerFailedLogin = (
+  store: Map<string, FailedLoginEntry>,
+  key: string,
+  now: number,
+) => {
+  const entry = getActiveFailedLoginEntry(store, key, now);
+  if (!entry) {
+    store.set(key, { count: 1, resetAt: now + FAILED_LOGIN_WINDOW_MS });
+    return;
+  }
+  entry.count += 1;
+};
+
+const registerFailedLoginAttempt = (ipKey: string, userKey: string, now: number) => {
+  registerFailedLogin(failedLoginByIp, ipKey, now);
+  registerFailedLogin(failedLoginByUser, userKey, now);
+};
+
+const clearFailedLoginAttempts = (ipKey: string, userKey: string) => {
+  failedLoginByIp.delete(ipKey);
+  failedLoginByUser.delete(userKey);
+};
 
 export async function POST(req: Request) {
   try {
@@ -19,6 +82,24 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Usuario y contraseña son obligatorios." },
         { status: 400 },
+      );
+    }
+
+    const now = Date.now();
+    const clientIp = getClientIp(req);
+    const auditNetworkId = getAuditNetworkId(clientIp) ?? clientIp ?? "unknown";
+    const userKey = username.toLowerCase();
+    const blockedUntil = getFailedLoginResetAt(auditNetworkId, userKey, now);
+    if (blockedUntil) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((blockedUntil - now) / 1000));
+      return NextResponse.json(
+        { error: "Demasiados intentos. Espera unos minutos e intenta de nuevo." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfterSeconds),
+          },
+        },
       );
     }
 
@@ -45,6 +126,7 @@ export async function POST(req: Request) {
       );
 
       if (!result.rows || result.rows.length === 0) {
+        registerFailedLoginAttempt(auditNetworkId, userKey, now);
         return NextResponse.json(
           { error: "Credenciales inválidas." },
           { status: 401 },
@@ -63,11 +145,10 @@ export async function POST(req: Request) {
         is_active: boolean;
         password_hash: string;
       };
-      const allowedDashboards = normalizeAllowedPortalSections(
-        user.allowedDashboards,
-      );
+      const allowedDashboards = normalizeAllowedPortalSections(user.allowedDashboards);
 
       if (!user.is_active) {
+        registerFailedLoginAttempt(auditNetworkId, userKey, now);
         return NextResponse.json(
           { error: "Cuenta desactivada." },
           { status: 403 },
@@ -76,13 +157,14 @@ export async function POST(req: Request) {
 
       const ok = await verifyPassword(password, user.password_hash);
       if (!ok) {
+        registerFailedLoginAttempt(auditNetworkId, userKey, now);
         return NextResponse.json(
           { error: "Credenciales inválidas." },
           { status: 401 },
         );
       }
 
-      const auditNetworkId = getAuditNetworkId(getClientIp(req));
+      clearFailedLoginAttempts(auditNetworkId, userKey);
       const userAgent = req.headers.get("user-agent");
       const session = await createSession(user.id, auditNetworkId, userAgent);
 

@@ -59,6 +59,14 @@ const SEDE_CONFIGS = [
   { name: "Guaduales", centro: "003", empresa: "mtodo", attendanceNames: ["guaduales"], aliases: ["guaduales"] },
   { name: "Bogota", centro: "001", empresa: "bogota", attendanceNames: ["bogota", "merkmios bogota"], aliases: ["bogota", "bogot", "merkmios bogota", "merkmios bogot"] },
   { name: "Chia", centro: "002", empresa: "bogota", attendanceNames: ["chia", "merkmios chia"], aliases: ["chia", "chi", "ch a", "merkmios chia"] },
+  { name: "ADM", centro: null, empresa: null, attendanceNames: ["adm"], aliases: ["adm"] },
+  {
+    name: "CEDI-CAVASA",
+    centro: null,
+    empresa: null,
+    attendanceNames: ["cedi cavasa", "cedi-cavasa", "cedicavasa"],
+    aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"],
+  },
   {
     name: "Planta Desposte Mixto",
     centro: "999",
@@ -130,6 +138,9 @@ const canonicalizeSedeMatchKey = (value: string) => {
     compact === "calle5"
   ) {
     return normalizeSedeName("Calle 5ta");
+  }
+  if (normalized === "cedicavasa" || compact === "cedicavasa") {
+    return normalizeSedeName("CEDI-CAVASA");
   }
   return normalized;
 };

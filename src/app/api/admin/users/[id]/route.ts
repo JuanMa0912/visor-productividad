@@ -13,7 +13,13 @@ import {
 
 type Params = { params: Promise<{ id: string }> };
 const ALL_SEDES_VALUE = "Todas";
-const EXTRA_SEDES = ["Panificadora", "Planta Desposte Mixto", "Planta Desprese Pollo"];
+const EXTRA_SEDES = [
+  "ADM",
+  "CEDI-CAVASA",
+  "Panificadora",
+  "Planta Desposte Mixto",
+  "Planta Desprese Pollo",
+];
 const ALLOWED_SEDE_SET = new Set([
   ...BRANCH_LOCATIONS,
   ...EXTRA_SEDES,

@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import * as ExcelJS from "exceljs";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -24,16 +25,27 @@ type AlexReportRow = {
   absences: number;
 };
 
+type AlexReportTotals = {
+  moreThan72With2: number;
+  moreThan92: number;
+  oddMarks: number;
+  absences: number;
+};
+
 type AlexReportResponse = {
   usedRange?: { start: string; end: string } | null;
   rows?: AlexReportRow[];
-  totals?: {
-    moreThan72With2: number;
-    moreThan92: number;
-    oddMarks: number;
-    absences: number;
-  };
+  totals?: AlexReportTotals;
   error?: string;
+};
+
+type AlexExportFieldKey = keyof AlexReportTotals;
+
+type AlexExportField = {
+  key: AlexExportFieldKey;
+  header: string;
+  toggleLabel: string;
+  width: number;
 };
 
 const normalizeSedeKey = (value: string) =>
@@ -66,6 +78,40 @@ const OVERTIME_EXTRA_SEDES: Sede[] = [
   { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
 ];
 
+const ALEX_EXPORT_FIELDS: AlexExportField[] = [
+  {
+    key: "moreThan72With2",
+    header: "Más de 7:20h con 2 marcaciones",
+    toggleLabel: "7:20h / 2 marcas",
+    width: 32,
+  },
+  {
+    key: "moreThan92",
+    header: "Más de 9:20h",
+    toggleLabel: "Más de 9:20h",
+    width: 18,
+  },
+  {
+    key: "oddMarks",
+    header: "Marcaciones impares",
+    toggleLabel: "Impares",
+    width: 22,
+  },
+  {
+    key: "absences",
+    header: "Inasistencias",
+    toggleLabel: "Inasistencias",
+    width: 18,
+  },
+];
+
+const formatAlexMetric = (value: number) => (value === 0 ? "-" : value);
+
+const sanitizeExcelText = (value: string) => {
+  const normalized = value.replace(/\r?\n/g, " ").trim();
+  return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
+};
+
 export default function JornadaExtendidaPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -78,7 +124,7 @@ export default function JornadaExtendidaPage() {
   const [alexStartDate, setAlexStartDate] = useState("");
   const [alexEndDate, setAlexEndDate] = useState("");
   const [alexRows, setAlexRows] = useState<AlexReportRow[]>([]);
-  const [alexTotals, setAlexTotals] = useState({
+  const [alexTotals, setAlexTotals] = useState<AlexReportTotals>({
     moreThan72With2: 0,
     moreThan92: 0,
     oddMarks: 0,
@@ -86,7 +132,13 @@ export default function JornadaExtendidaPage() {
   });
   const [alexLoading, setAlexLoading] = useState(false);
   const [alexError, setAlexError] = useState<string | null>(null);
-  const [exportingAlexPng, setExportingAlexPng] = useState(false);
+  const [exportingAlexExcel, setExportingAlexExcel] = useState(false);
+  const [isAlexExportMenuOpen, setIsAlexExportMenuOpen] = useState(false);
+  const [alexSelectedFields, setAlexSelectedFields] = useState<AlexExportFieldKey[]>(
+    () => ALEX_EXPORT_FIELDS.map((field) => field.key),
+  );
+  const [alexExportError, setAlexExportError] = useState<string | null>(null);
+  const alexExportMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -186,165 +238,188 @@ export default function JornadaExtendidaPage() {
     return `${fmt(alexStartDate)} a ${fmt(alexEndDate)}`;
   }, [alexEndDate, alexStartDate]);
 
-  const handleExportAlexTablePng = async () => {
-    if (alexRows.length === 0) return;
-    setExportingAlexPng(true);
-    try {
-      const headers = [
-        "Sede",
-        "Mas de 7:20h con 2 marcaciones",
-        "Mas de 9:20h",
-        "Marcaciones impares",
-        "Inasistencias",
-      ];
-      const rows = alexRows.map((row) => [
-        row.sede,
-        row.moreThan72With2 === 0 ? "-" : String(row.moreThan72With2),
-        row.moreThan92 === 0 ? "-" : String(row.moreThan92),
-        row.oddMarks === 0 ? "-" : String(row.oddMarks),
-        row.absences === 0 ? "-" : String(row.absences),
-      ]);
-      rows.push([
-        "TOTAL",
-        String(alexTotals.moreThan72With2),
-        String(alexTotals.moreThan92),
-        String(alexTotals.oddMarks),
-        String(alexTotals.absences),
-      ]);
+  const alexIncludedFields = useMemo(
+    () =>
+      ALEX_EXPORT_FIELDS.filter((field) =>
+        alexSelectedFields.includes(field.key),
+      ),
+    [alexSelectedFields],
+  );
 
-      const colWidths = [220, 280, 180, 220, 160];
-      const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
-      const rowHeight = 34;
-      const headerHeight = 40;
-      const paddingX = 24;
-      const paddingY = 24;
+  const toggleAlexSelectedField = (fieldKey: AlexExportFieldKey) => {
+    setAlexExportError(null);
+    setAlexSelectedFields((prev) =>
+      prev.includes(fieldKey)
+        ? prev.filter((value) => value !== fieldKey)
+        : [...prev, fieldKey],
+    );
+  };
+
+  useEffect(() => {
+    if (!isAlexExportMenuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!alexExportMenuRef.current?.contains(target)) {
+        setIsAlexExportMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsAlexExportMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAlexExportMenuOpen]);
+
+  const handleExportAlexTableExcel = async () => {
+    if (alexRows.length === 0) return;
+
+    setExportingAlexExcel(true);
+    setAlexExportError(null);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Reporte Alex");
       const title = "Reporte Alex";
       const subtitle =
-        "Laboraron mas de 7:20h con 2 marcaciones, mas de 9:20h, marcaciones impares e inasistencias";
+        "Tabla exportable con el mismo desglose visible por sede";
       const range = alexRangeLabel || `${alexStartDate} a ${alexEndDate}`;
-      const maxTextWidth = tableWidth - 16;
-      const measureCanvas = document.createElement("canvas");
-      const measureCtx = measureCanvas.getContext("2d");
-      if (!measureCtx) return;
-      const wrapText = (ctx: CanvasRenderingContext2D, text: string, width: number) => {
-        const words = text.split(/\s+/).filter(Boolean);
-        const lines: string[] = [];
-        let line = "";
-        for (const word of words) {
-          const test = line ? `${line} ${word}` : word;
-          if (ctx.measureText(test).width <= width) {
-            line = test;
-          } else {
-            if (line) lines.push(line);
-            line = word;
-          }
-        }
-        if (line) lines.push(line);
-        return lines.length > 0 ? lines : [text];
+      const exportColumns = [
+        { key: "sede" as const, header: "Sede", width: 22, align: "left" as const },
+        ...alexIncludedFields.map((field) => ({
+          key: field.key,
+          header: field.header,
+          width: field.width,
+          align: "right" as const,
+        })),
+      ];
+      const lastColumn = exportColumns.length;
+      const mergeRow = (rowNumber: number) => {
+        sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
       };
-      measureCtx.font = "600 18px Arial";
-      const subtitleLines = wrapText(measureCtx, subtitle, maxTextWidth);
-      const titleHeight = 34 + subtitleLines.length * 22 + 28;
-      const tableTop = paddingY + titleHeight + 8;
-      const tableHeight = headerHeight + rows.length * rowHeight;
-      const canvas = document.createElement("canvas");
-      canvas.width = tableWidth + paddingX * 2;
-      canvas.height = tableTop + tableHeight + paddingY;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
 
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      sheet.columns = exportColumns.map((column) => ({
+        key: column.key,
+        width: column.width,
+      }));
+      sheet.properties.defaultRowHeight = 22;
 
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "700 26px Arial";
-      ctx.fillText(title, paddingX, paddingY + 26);
-      ctx.font = "600 18px Arial";
-      let textY = paddingY + 52;
-      for (const line of subtitleLines) {
-        ctx.fillText(line, paddingX, textY);
-        textY += 22;
-      }
-      ctx.fillStyle = "#b91c1c";
-      ctx.font = "700 18px Arial";
-      ctx.fillText(range, paddingX, textY);
+      const titleRow = sheet.addRow([title]);
+      mergeRow(titleRow.number);
+      titleRow.font = { bold: true, size: 16 };
+      titleRow.alignment = { vertical: "middle", horizontal: "left" };
 
-      ctx.fillStyle = "#f1f5f9";
-      ctx.fillRect(paddingX, tableTop, tableWidth, headerHeight);
+      const subtitleRow = sheet.addRow([subtitle]);
+      mergeRow(subtitleRow.number);
+      subtitleRow.font = { size: 11, color: { argb: "FF475569" } };
+      subtitleRow.alignment = {
+        vertical: "middle",
+        horizontal: "left",
+        wrapText: true,
+      };
 
-      ctx.strokeStyle = "#cbd5e1";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(paddingX, tableTop, tableWidth, tableHeight);
+      const rangeRow = sheet.addRow([range]);
+      mergeRow(rangeRow.number);
+      rangeRow.font = { bold: true, color: { argb: "FFB91C1C" } };
+      rangeRow.alignment = { vertical: "middle", horizontal: "left" };
 
-      let x = paddingX;
-      for (let i = 0; i < colWidths.length; i += 1) {
-        const width = colWidths[i];
-        ctx.strokeStyle = "#cbd5e1";
-        ctx.beginPath();
-        ctx.moveTo(x, tableTop);
-        ctx.lineTo(x, tableTop + tableHeight);
-        ctx.stroke();
+      sheet.addRow([]);
 
-        ctx.fillStyle = "#0f172a";
-        ctx.font = "700 18px Arial";
-        if (i === 0) {
-          ctx.textAlign = "left";
-          ctx.fillText(headers[i], x + 12, tableTop + 26);
-        } else {
-          ctx.textAlign = "right";
-          ctx.fillText(headers[i], x + width - 12, tableTop + 26);
-        }
-        x += width;
-      }
-      ctx.beginPath();
-      ctx.moveTo(paddingX + tableWidth, tableTop);
-      ctx.lineTo(paddingX + tableWidth, tableTop + tableHeight);
-      ctx.stroke();
+      const headerRow = sheet.addRow(exportColumns.map((column) => column.header));
+      headerRow.eachCell((cell, colNumber) => {
+        const column = exportColumns[colNumber - 1];
+        cell.font = { bold: true, color: { argb: "FF0F172A" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF1F5F9" },
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } },
+        };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: column.align,
+        };
+      });
 
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-        const y = tableTop + headerHeight + rowIndex * rowHeight;
-        const isTotal = rowIndex === rows.length - 1;
-        if (isTotal) {
-          ctx.fillStyle = "#f8fafc";
-          ctx.fillRect(paddingX, y, tableWidth, rowHeight);
-        }
+      alexRows.forEach((row) => {
+        const dataRow = sheet.addRow([
+          sanitizeExcelText(row.sede),
+          ...alexIncludedFields.map((field) => formatAlexMetric(row[field.key])),
+        ]);
+        dataRow.eachCell((cell, colNumber) => {
+          cell.border = {
+            left: { style: "thin", color: { argb: "FFE2E8F0" } },
+            bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+            right: { style: "thin", color: { argb: "FFE2E8F0" } },
+          };
+          cell.alignment = {
+            vertical: "middle",
+            horizontal: colNumber === 1 ? "left" : "right",
+          };
+        });
+      });
 
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.beginPath();
-        ctx.moveTo(paddingX, y);
-        ctx.lineTo(paddingX + tableWidth, y);
-        ctx.stroke();
+      const totalRow = sheet.addRow([
+        "TOTAL",
+        ...alexIncludedFields.map((field) => alexTotals[field.key]),
+      ]);
+      totalRow.eachCell((cell, colNumber) => {
+        cell.font = { bold: true, color: { argb: "FF0F172A" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF8FAFC" },
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } },
+        };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: colNumber === 1 ? "left" : "right",
+        };
+      });
 
-        let cellX = paddingX;
-        for (let col = 0; col < colWidths.length; col += 1) {
-          const width = colWidths[col];
-          ctx.fillStyle = "#0f172a";
-          ctx.font = isTotal ? "700 18px Arial" : "500 18px Arial";
-          if (col === 0) {
-            ctx.textAlign = "left";
-            ctx.fillText(rows[rowIndex][col], cellX + 12, y + 23);
-          } else {
-            ctx.textAlign = "right";
-            ctx.fillText(rows[rowIndex][col], cellX + width - 12, y + 23);
-          }
-          cellX += width;
-        }
-      }
+      sheet.views = [{ state: "frozen", ySplit: headerRow.number }];
+      sheet.autoFilter = {
+        from: { row: headerRow.number, column: 1 },
+        to: { row: headerRow.number, column: lastColumn },
+      };
 
-      ctx.beginPath();
-      ctx.moveTo(paddingX, tableTop + tableHeight);
-      ctx.lineTo(paddingX + tableWidth, tableTop + tableHeight);
-      ctx.stroke();
-
-      const url = canvas.toDataURL("image/png");
+      const buffer = await workbook.xlsx.writeBuffer();
+      const url = URL.createObjectURL(
+        new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+      );
       const link = document.createElement("a");
       link.href = url;
-      link.download = `reporte-alex-${alexStartDate || "inicio"}-${alexEndDate || "fin"}.png`;
+      link.download = `reporte-alex-${alexStartDate || "inicio"}-${alexEndDate || "fin"}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setIsAlexExportMenuOpen(false);
+    } catch (error) {
+      console.error("[jornada-extendida] Error exportando Excel Alex:", error);
+      setAlexExportError("No se pudo exportar el Excel.");
     } finally {
-      setExportingAlexPng(false);
+      setExportingAlexExcel(false);
     }
   };
 
@@ -377,6 +452,8 @@ export default function JornadaExtendidaPage() {
             absences: 0,
           },
         );
+        setAlexExportError(null);
+        setIsAlexExportMenuOpen(false);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (!isMounted) return;
@@ -489,14 +566,76 @@ export default function JornadaExtendidaPage() {
                       </label>
                     </div>
                     <div className="mt-3 flex justify-start sm:justify-end">
-                      <button
-                        type="button"
-                        onClick={() => void handleExportAlexTablePng()}
-                        disabled={alexLoading || alexRows.length === 0 || exportingAlexPng}
-                        className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                      <div
+                        ref={alexExportMenuRef}
+                        className="relative w-full sm:w-auto"
                       >
-                        {exportingAlexPng ? "Generando PNG..." : "PNG tabla"}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setIsAlexExportMenuOpen((prev) => !prev)
+                          }
+                          disabled={alexLoading || alexRows.length === 0 || exportingAlexExcel}
+                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                        >
+                          {exportingAlexExcel
+                            ? "Generando Excel..."
+                            : isAlexExportMenuOpen
+                              ? "Cerrar Excel"
+                              : "Excel tabla"}
+                        </button>
+                        {isAlexExportMenuOpen && (
+                          <div className="mt-2 w-full rounded-2xl border border-slate-200/70 bg-white p-3 shadow-[0_20px_50px_-35px_rgba(15,23,42,0.35)] sm:absolute sm:right-0 sm:z-10 sm:w-[30rem]">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                                Columnas a incluir
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {alexSelectedFields.length === ALEX_EXPORT_FIELDS.length
+                                  ? "Sede + todas las métricas"
+                                  : `Sede + ${alexIncludedFields.length} columna(s)`}
+                              </p>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-500">
+                              Deja marcadas solo las métricas que quieres exportar.
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {ALEX_EXPORT_FIELDS.map((field) => {
+                                const selected = alexSelectedFields.includes(field.key);
+                                return (
+                                  <label
+                                    key={field.key}
+                                    className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      onChange={() => toggleAlexSelectedField(field.key)}
+                                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                                    />
+                                    <span>{field.toggleLabel}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            {alexExportError && (
+                              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                                {alexExportError}
+                              </div>
+                            )}
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => void handleExportAlexTableExcel()}
+                                disabled={exportingAlexExcel}
+                                className="inline-flex min-h-10 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {exportingAlexExcel ? "Generando Excel..." : "Exportar Excel"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

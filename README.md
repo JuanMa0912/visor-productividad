@@ -15,7 +15,7 @@ Centralizar la experiencia del Portal UAID con acceso por secciones, filtros por
 | Portal UAID | `/secciones` (`/tableros` redirige) | `/api/auth/me` | entrada central por secciones |
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV, XLSX, PDF |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
-| Horario y jornada extendida | `/horario`, `/jornada-extendida`, `/ingresar-horarios` | `/api/jornada-extendida/meta`, `/api/jornada-extendida/alex-report`, `/api/hourly-analysis`, `/api/ingresar-horarios/options` | consulta operativa, reporte Alex, PNG, XLSX |
+| Horario y jornada extendida | `/horario`, `/jornada-extendida`, `/ingresar-horarios` | `/api/jornada-extendida/meta`, `/api/jornada-extendida/alex-report`, `/api/hourly-analysis`, `/api/ingresar-horarios/options` | consulta operativa, reporte Alex y XLSX configurable |
 | Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, paginacion y XLSX |
 | Administracion | `/admin/usuarios`, `/cuenta/contrasena`, `/login` | `/api/auth/*`, `/api/admin/*` | login, sesiones, usuarios y permisos |
 
@@ -157,12 +157,12 @@ Nota operativa: la home funcional ya no se organiza por "tableros" sino por secc
 | `/api/ventas-x-item` | 90 req/min/IP |
 | `/api/ventas-x-item/v2` | 120 req/min/IP |
 | `/api/jornada-extendida/alex-report` | 60 req/min/IP |
+| `/api/auth/login` | 10 intentos/15 min por IP auditada y 5 intentos/15 min por usuario |
 
 ### Limitaciones de seguridad actuales
 
 - No hay `middleware.ts` para auth centralizada.
 - Los rate limits viven en memoria del proceso y no se comparten entre replicas.
-- No se observo rate limit explicito para login.
 - No hay proceso documentado de limpieza de sesiones expiradas.
 
 ## 4. Datos, endpoints e integraciones
@@ -200,6 +200,8 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
 - `GET /api/jornada-extendida/alex-report`
   - Usa `asistencia_horas`, requiere seccion `operacion` y rol `alex` o `admin`.
   - Limita el rango a 31 dias.
+  - En `/jornada-extendida`, la tabla visible se exporta a Excel en cliente con el rango seleccionado, columna `Sede` fija, fila total y solo las metricas marcadas en el selector.
+  - La exportacion sanea texto antes de escribir celdas para evitar formulas inesperadas en Excel.
 - `GET /api/ventas-x-item`
   - Lee `ventas_item_diario`.
   - Maneja `meta`, `summary`, rango por fechas, empresa, item y paginacion.
@@ -260,7 +262,7 @@ npm run start
 
 ### Variables de entorno detectadas
 
-No existe `.env.example`. Las variables observadas en el codigo son:
+El repo ya incluye `.env.example` con placeholders seguros. Las variables observadas en el codigo son:
 
 | Grupo | Variables |
 | --- | --- |
@@ -272,10 +274,11 @@ No existe `.env.example`. Las variables observadas en el codigo son:
 ### Defaults y advertencias
 
 - `src/lib/db.ts` usa defaults de conexion: host `192.168.35.232`, puerto `5432`, base `produXdia`, usuario `postgres`, schema `public`.
-- `src/lib/db.ts` contiene un `DB_PASSWORD` hardcodeado; debe externalizarse antes de cualquier despliegue serio.
-- `scripts/create-admin.js` usa los mismos defaults, salvo password vacio si `DB_PASSWORD` no existe.
-- `test-db.js` usa defaults distintos: `localhost`, usuario `produ` y password `produ`.
-- No hay plantilla segura de entorno para compartir configuracion entre ambientes.
+- `src/lib/db.ts` ya no incluye password hardcodeado: requiere `DB_PASSWORD` en el entorno y falla temprano si no existe.
+- `src/lib/db.ts` valida `DB_PORT` y `DB_SCHEMA` antes de abrir el pool.
+- `scripts/create-admin.js` lee `.env.local` si existe y exige `DB_PASSWORD` antes de conectarse.
+- `test-db.js` y `test-db-postgres.js` leen `.env.local` si existe y exigen `DB_PASSWORD`; ya no incluyen passwords embebidos.
+- `.env.example` se puede usar como base para nuevos ambientes sin exponer secretos reales.
 
 ### Esquema y migraciones
 
@@ -296,9 +299,9 @@ Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy
 
 | Archivo | Uso |
 | --- | --- |
-| `scripts/create-admin.js` | crea o actualiza un admin usando `ADMIN_USERNAME` y `ADMIN_PASSWORD` |
-| `test-db.js` | prueba conexion, lista tablas y consulta `ventas_cajas` |
-| `test-db-postgres.js` | valida conexion como `postgres` y verifica el usuario `produ` |
+| `scripts/create-admin.js` | crea o actualiza un admin usando `ADMIN_USERNAME`, `ADMIN_PASSWORD` y `DB_PASSWORD` del entorno o `.env.local` |
+| `test-db.js` | prueba conexion, lista tablas y consulta `ventas_cajas` usando `DB_PASSWORD` del entorno o `.env.local` |
+| `test-db-postgres.js` | valida conexion con PostgreSQL y verifica el usuario `produ` usando `DB_PASSWORD` del entorno o `.env.local` |
 | `db/crear-usuario.sql` | crea el usuario PostgreSQL `produ` |
 | `db/permisos-usuario.sql` | otorga permisos sobre `public` |
 | `db/seed_sede_users.sql` | inserta usuarios base por sede |

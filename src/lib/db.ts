@@ -1,11 +1,31 @@
-﻿const dbConfig = {
-  host: process.env.DB_HOST ?? "192.168.35.232",
-  port: Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME ?? "produXdia",
-  user: process.env.DB_USER ?? "postgres",
-  password: process.env.DB_PASSWORD ?? "Nomiplus2014$%",
-  schema: process.env.DB_SCHEMA ?? "public",
+const resolveDbConfig = () => {
+  const password = process.env.DB_PASSWORD ?? "";
+  if (!password.trim()) {
+    throw new Error(
+      "Falta DB_PASSWORD en el entorno. Define las variables de base de datos antes de iniciar la app.",
+    );
+  }
+
+  const port = Number(process.env.DB_PORT ?? 5432);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error("DB_PORT debe ser un entero valido entre 1 y 65535.");
+  }
+
+  const schema = process.env.DB_SCHEMA ?? "public";
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema)) {
+    throw new Error("DB_SCHEMA contiene un identificador invalido.");
+  }
+
+  return {
+    host: process.env.DB_HOST ?? "192.168.35.232",
+    port,
+    database: process.env.DB_NAME ?? "produXdia",
+    user: process.env.DB_USER ?? "postgres",
+    password,
+    schema,
+  };
 };
+
 type DbQueryResult = {
   rows?: Array<{ total?: number | string | null }>;
   rowCount?: number | null;
@@ -22,6 +42,7 @@ let pool: {
 
 export const getDbPool = async () => {
   if (!pool) {
+    const dbConfig = resolveDbConfig();
     try {
       const { Pool } = await import("pg");
       pool = new Pool({
@@ -32,9 +53,9 @@ export const getDbPool = async () => {
         password: dbConfig.password,
         options: `-c search_path=${dbConfig.schema}`,
       });
-    } catch (error) {
+    } catch {
       throw new Error(
-        "No se pudo cargar el cliente de PostgreSQL. Instala la dependencia 'pg' para habilitar la conexión.",
+        "No se pudo cargar el cliente de PostgreSQL. Instala la dependencia 'pg' para habilitar la conexion.",
       );
     }
   }
@@ -49,4 +70,3 @@ export const testDbConnection = async () => {
     client.release();
   }
 };
-

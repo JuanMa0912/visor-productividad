@@ -27,6 +27,9 @@ const canonicalizeSedeKey = (value: string) => {
   ) {
     return normalizeSedeKey("Calle 5ta");
   }
+  if (normalized === "cedicavasa" || compact === "cedicavasa") {
+    return normalizeSedeKey("CEDI-CAVASA");
+  }
   return normalized;
 };
 
@@ -42,6 +45,8 @@ const BASE_SEDES: Sede[] = [
   { id: "Guaduales", name: "Guaduales" },
   { id: "Bogota", name: "Bogota" },
   { id: "Chia", name: "Chia" },
+  { id: "ADM", name: "ADM" },
+  { id: "CEDI-CAVASA", name: "CEDI-CAVASA" },
   { id: "Panificadora", name: "Panificadora" },
   { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
   { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },

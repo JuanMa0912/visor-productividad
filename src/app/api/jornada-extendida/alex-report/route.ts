@@ -28,6 +28,8 @@ const SEDE_CONFIGS: SedeConfig[] = [
   { name: "Guaduales", aliases: ["guaduales"] },
   { name: "Bogota", aliases: ["bogota", "bogot", "merkmios bogota", "merkmios bogot"] },
   { name: "Chia", aliases: ["chia", "chi", "ch a", "merkmios chia"] },
+  { name: "ADM", aliases: ["adm"] },
+  { name: "CEDI-CAVASA", aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
   {
     name: "Planta",
     aliases: ["planta desposte mixto", "planta desposte", "panificadora", "planta desprese pollo", "desprese pollo"],
@@ -46,6 +48,8 @@ const REPORT_SEDES = [
   "Guaduales",
   "Bogota",
   "Chia",
+  "ADM",
+  "CEDI-CAVASA",
   "Planta",
 ];
 
@@ -101,6 +105,9 @@ const canonicalizeSedeMatchKey = (value: string) => {
     compact === "calle5"
   ) {
     return normalizeSedeName("Calle 5ta");
+  }
+  if (normalized === "cedicavasa" || compact === "cedicavasa") {
+    return normalizeSedeName("CEDI-CAVASA");
   }
   return normalized;
 };

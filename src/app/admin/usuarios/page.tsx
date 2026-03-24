@@ -22,7 +22,13 @@ import {
 } from "@/lib/portal-sections";
 
 const ALL_SEDES_VALUE = "Todas";
-const EXTRA_SEDES = ["Panificadora", "Planta Desposte Mixto", "Planta Desprese Pollo"];
+const EXTRA_SEDES = [
+  "ADM",
+  "CEDI-CAVASA",
+  "Panificadora",
+  "Planta Desposte Mixto",
+  "Planta Desprese Pollo",
+];
 const USER_SEDE_OPTIONS = [...BRANCH_LOCATIONS, ...EXTRA_SEDES];
 
 type UserRow = {
