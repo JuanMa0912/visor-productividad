@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { ArrowUp } from "lucide-react";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { DEFAULT_SEDES } from "@/lib/constants";
 import type { Sede } from "@/lib/constants";
@@ -40,6 +41,8 @@ type AlexReportResponse = {
 };
 
 type AlexExportFieldKey = keyof AlexReportTotals;
+type AlexSortField = "sede" | AlexExportFieldKey;
+type AlexSortDirection = "asc" | "desc";
 
 type AlexExportField = {
   key: AlexExportFieldKey;
@@ -137,6 +140,9 @@ export default function JornadaExtendidaPage() {
   const [alexSelectedFields, setAlexSelectedFields] = useState<AlexExportFieldKey[]>(
     () => ALEX_EXPORT_FIELDS.map((field) => field.key),
   );
+  const [alexSortField, setAlexSortField] = useState<AlexSortField | null>(null);
+  const [alexSortDirection, setAlexSortDirection] =
+    useState<AlexSortDirection>("desc");
   const [alexExportError, setAlexExportError] = useState<string | null>(null);
   const alexExportMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -245,6 +251,21 @@ export default function JornadaExtendidaPage() {
       ),
     [alexSelectedFields],
   );
+  const sortedAlexRows = useMemo(() => {
+    if (!alexSortField) return alexRows;
+
+    return [...alexRows].sort((a, b) => {
+      const primaryDiff =
+        alexSortField === "sede"
+          ? a.sede.localeCompare(b.sede, "es", { sensitivity: "base" })
+          : a[alexSortField] - b[alexSortField];
+      if (primaryDiff !== 0) {
+        return alexSortDirection === "asc" ? primaryDiff : -primaryDiff;
+      }
+
+      return a.sede.localeCompare(b.sede, "es", { sensitivity: "base" });
+    });
+  }, [alexRows, alexSortDirection, alexSortField]);
 
   const toggleAlexSelectedField = (fieldKey: AlexExportFieldKey) => {
     setAlexExportError(null);
@@ -252,6 +273,45 @@ export default function JornadaExtendidaPage() {
       prev.includes(fieldKey)
         ? prev.filter((value) => value !== fieldKey)
         : [...prev, fieldKey],
+    );
+  };
+  const handleAlexSort = (field: AlexSortField) => {
+    if (alexSortField === field) {
+      setAlexSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setAlexSortField(field);
+    setAlexSortDirection(field === "sede" ? "asc" : "desc");
+  };
+  const renderAlexSortHeader = (
+    field: AlexSortField,
+    label: string,
+    align: "left" | "right" = "left",
+  ) => {
+    const isActive = alexSortField === field;
+    return (
+      <button
+        type="button"
+        onClick={() => handleAlexSort(field)}
+        className={`inline-flex w-full items-center gap-1 font-bold transition-colors ${
+          align === "right"
+            ? "justify-end text-right"
+            : "justify-start text-left"
+        } ${isActive ? "text-red-700" : "text-slate-800 hover:text-red-700"}`}
+        aria-pressed={isActive}
+      >
+        <span>{label}</span>
+        <ArrowUp
+          className={`h-3.5 w-3.5 shrink-0 transition-all ${
+            isActive
+              ? `text-red-600 opacity-100 ${
+                  alexSortDirection === "desc" ? "rotate-180" : ""
+                }`
+              : "text-slate-400 opacity-50"
+          }`}
+        />
+      </button>
     );
   };
 
@@ -354,7 +414,7 @@ export default function JornadaExtendidaPage() {
         };
       });
 
-      alexRows.forEach((row) => {
+      sortedAlexRows.forEach((row) => {
         const dataRow = sheet.addRow([
           sanitizeExcelText(row.sede),
           ...alexIncludedFields.map((field) => formatAlexMetric(row[field.key])),
@@ -491,6 +551,11 @@ export default function JornadaExtendidaPage() {
               Operacion
             </p>
             <h1 className="mt-1 text-xl font-bold text-slate-900">Horarios</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Consulta horarios, detecta jornadas extendidas y revisa novedades
+              operativas como marcaciones impares, inasistencias y consolidados
+              por sede en un mismo lugar.
+            </p>
           </div>
           <div className="flex flex-col gap-3 md:items-end">
             <Link
@@ -656,25 +721,86 @@ export default function JornadaExtendidaPage() {
                     <table className="min-w-[820px] w-full text-sm">
                       <thead className="bg-slate-100 text-slate-800">
                         <tr>
-                          <th className="border-b border-slate-200 px-3 py-2 text-left font-bold">
-                            Sede
+                          <th
+                            className="border-b border-slate-200 px-3 py-2 text-left font-bold"
+                            aria-sort={
+                              alexSortField === "sede"
+                                ? alexSortDirection === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
+                          >
+                            {renderAlexSortHeader("sede", "Sede")}
                           </th>
-                          <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">
-                            Más de 7:20h con 2 marcaciones
+                          <th
+                            className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                            aria-sort={
+                              alexSortField === "moreThan72With2"
+                                ? alexSortDirection === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
+                          >
+                            {renderAlexSortHeader(
+                              "moreThan72With2",
+                              "Más de 7:20h con 2 marcaciones",
+                              "right",
+                            )}
                           </th>
-                          <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">
-                            Más de 9:20h
+                          <th
+                            className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                            aria-sort={
+                              alexSortField === "moreThan92"
+                                ? alexSortDirection === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
+                          >
+                            {renderAlexSortHeader(
+                              "moreThan92",
+                              "Más de 9:20h",
+                              "right",
+                            )}
                           </th>
-                          <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">
-                            Marcaciones impares
+                          <th
+                            className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                            aria-sort={
+                              alexSortField === "oddMarks"
+                                ? alexSortDirection === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
+                          >
+                            {renderAlexSortHeader(
+                              "oddMarks",
+                              "Marcaciones impares",
+                              "right",
+                            )}
                           </th>
-                          <th className="border-b border-slate-200 px-3 py-2 text-right font-bold">
-                            Inasistencias
+                          <th
+                            className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                            aria-sort={
+                              alexSortField === "absences"
+                                ? alexSortDirection === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
+                          >
+                            {renderAlexSortHeader(
+                              "absences",
+                              "Inasistencias",
+                              "right",
+                            )}
                           </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {alexRows.map((row) => (
+                        {sortedAlexRows.map((row) => (
                           <tr key={row.sede} className="border-b border-slate-100">
                             <td className="px-3 py-2 font-semibold text-slate-900">{row.sede}</td>
                             <td className="px-3 py-2 text-right text-slate-800">

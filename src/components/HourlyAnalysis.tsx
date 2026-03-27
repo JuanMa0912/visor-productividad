@@ -64,6 +64,13 @@ type OvertimeEmployee = NonNullable<
   HourlyAnalysisData["overtimeEmployees"]
 >[number];
 type PersonBreakdownView = "individual" | "franjas";
+type OvertimeSortField =
+  | "fecha"
+  | "horas"
+  | "marcaciones"
+  | "incidencia"
+  | "departamento";
+type OvertimeSortDirection = "asc" | "desc";
 
 const PERSON_BREAKDOWN_VIEW_OPTIONS: Array<{
   value: PersonBreakdownView;
@@ -192,6 +199,21 @@ const OVERTIME_PAGE_SIZE = 150;
 const OVERTIME_PAGE_TAB_WINDOW = 8;
 const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
 const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 29;
+
+const compareOvertimeText = (left: string, right: string) =>
+  left.localeCompare(right, "es", { sensitivity: "base" });
+
+const getOvertimeDateTimestamp = (employee: OvertimeEmployee) => {
+  if (!employee.workedDate) return 0;
+  const timestamp = new Date(employee.workedDate).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const getOvertimeIncidentValue = (employee: OvertimeEmployee) =>
+  employee.incident?.trim() ?? "";
+
+const getOvertimeDepartmentValue = (employee: OvertimeEmployee) =>
+  employee.department?.trim() || employee.lineName?.trim() || "";
 
 const minuteToTime = (value: number) => {
   const safe = Math.max(0, Math.min(1439, value));
@@ -459,9 +481,10 @@ export const HourlyAnalysis = ({
     () => new Set(),
   );
   const [overtimeQuickRange, setOvertimeQuickRange] = useState("custom");
-  const [overtimeDateOrder, setOvertimeDateOrder] = useState<"asc" | "desc">(
-    "desc",
-  );
+  const [overtimeSortField, setOvertimeSortField] =
+    useState<OvertimeSortField>("fecha");
+  const [overtimeSortDirection, setOvertimeSortDirection] =
+    useState<OvertimeSortDirection>("desc");
   const [overtimeDateStart, setOvertimeDateStart] = useState(defaultDate ?? "");
   const [overtimeDateEnd, setOvertimeDateEnd] = useState(defaultDate ?? "");
   const [overtimePage, setOvertimePage] = useState(1);
@@ -1476,18 +1499,62 @@ export const HourlyAnalysis = ({
           return employeeMinutes > ALERT_THRESHOLD_MINUTES;
           })
         : baseFilteredOvertimeEmployees;
+    const compareByDate = (left: OvertimeEmployee, right: OvertimeEmployee) =>
+      getOvertimeDateTimestamp(left) - getOvertimeDateTimestamp(right);
+    const compareByHours = (left: OvertimeEmployee, right: OvertimeEmployee) =>
+      left.workedHours - right.workedHours;
+    const compareByMarks = (left: OvertimeEmployee, right: OvertimeEmployee) =>
+      (left.marksCount ?? 0) - (right.marksCount ?? 0);
+    const compareByIncident = (left: OvertimeEmployee, right: OvertimeEmployee) =>
+      compareOvertimeText(
+        getOvertimeIncidentValue(left),
+        getOvertimeIncidentValue(right),
+      );
+    const compareByDepartment = (
+      left: OvertimeEmployee,
+      right: OvertimeEmployee,
+    ) =>
+      compareOvertimeText(
+        getOvertimeDepartmentValue(left),
+        getOvertimeDepartmentValue(right),
+      );
+    const compareByName = (left: OvertimeEmployee, right: OvertimeEmployee) =>
+      compareOvertimeText(left.employeeName, right.employeeName);
+
     return [...filtered].sort((a, b) => {
-      const hoursDiff = a.workedHours - b.workedHours;
-      if (hoursDiff !== 0) {
-        return overtimeDateOrder === "asc" ? hoursDiff : -hoursDiff;
+      const primaryDiff =
+        overtimeSortField === "fecha"
+          ? compareByDate(a, b)
+          : overtimeSortField === "horas"
+            ? compareByHours(a, b)
+            : overtimeSortField === "marcaciones"
+              ? compareByMarks(a, b)
+              : overtimeSortField === "incidencia"
+                ? compareByIncident(a, b)
+                : compareByDepartment(a, b);
+      if (primaryDiff !== 0) {
+        return overtimeSortDirection === "asc" ? primaryDiff : -primaryDiff;
       }
-      const aDateTs = a.workedDate ? new Date(a.workedDate).getTime() : 0;
-      const bDateTs = b.workedDate ? new Date(b.workedDate).getTime() : 0;
-      const dateDiff = aDateTs - bDateTs;
+
+      if (overtimeSortField === "fecha") {
+        const hoursDiff = compareByHours(a, b);
+        if (hoursDiff !== 0) return -hoursDiff;
+        return compareByName(a, b);
+      }
+
+      const dateDiff = compareByDate(a, b);
       if (dateDiff !== 0) {
-        return overtimeDateOrder === "asc" ? dateDiff : -dateDiff;
+        return -dateDiff;
       }
-      return a.employeeName.localeCompare(b.employeeName, "es");
+
+      if (overtimeSortField !== "horas") {
+        const hoursDiff = compareByHours(a, b);
+        if (hoursDiff !== 0) {
+          return -hoursDiff;
+        }
+      }
+
+      return compareByName(a, b);
     });
   }, [
     baseFilteredOvertimeEmployees,
@@ -1495,7 +1562,8 @@ export const HourlyAnalysis = ({
     overtimeOddMarksOnly,
     overtimeAlertOnly,
     overtimeAlertMode,
-    overtimeDateOrder,
+    overtimeSortDirection,
+    overtimeSortField,
   ]);
   const overtimeAbsenceCount = useMemo(
     () =>
@@ -1581,7 +1649,7 @@ export const HourlyAnalysis = ({
   const overtimePageTabs = useMemo(() => {
     const half = Math.floor(OVERTIME_PAGE_TAB_WINDOW / 2);
     let start = Math.max(1, overtimePage - half);
-    let end = Math.min(
+    const end = Math.min(
       overtimeTotalPages,
       start + OVERTIME_PAGE_TAB_WINDOW - 1,
     );
@@ -1599,13 +1667,55 @@ export const HourlyAnalysis = ({
     overtimeEmployeeTypeFilter,
     overtimeMarksFilter,
     overtimePersonFilter,
-    overtimeDateOrder,
+    overtimeSortDirection,
+    overtimeSortField,
     overtimeRangeMin,
     overtimeRangeMax,
     overtimeAbsenceOnly,
     overtimeOddMarksOnly,
     overtimeAlertOnly,
   ]);
+
+  const handleOvertimeSort = (field: OvertimeSortField) => {
+    if (overtimeSortField === field) {
+      setOvertimeSortDirection((prev) => (prev === "desc" ? "asc" : "desc"));
+      return;
+    }
+
+    setOvertimeSortField(field);
+    setOvertimeSortDirection("desc");
+  };
+
+  const renderOvertimeSortHeader = (
+    field: OvertimeSortField,
+    label: string,
+    align: "start" | "center" = "start",
+  ) => {
+    const isActive = overtimeSortField === field;
+    return (
+      <button
+        type="button"
+        onClick={() => handleOvertimeSort(field)}
+        className={cn(
+          "inline-flex w-full items-center gap-1 rounded-full border px-2 py-1 whitespace-nowrap transition-all",
+          align === "center" ? "justify-center text-center" : "justify-start text-left",
+          isActive
+            ? "border-rose-200/80 bg-linear-to-r from-rose-50 via-white to-amber-50 text-rose-700 shadow-[0_10px_20px_-16px_rgba(225,29,72,0.65)]"
+            : "border-transparent text-slate-500 hover:border-rose-100/80 hover:bg-white/80 hover:text-rose-600",
+        )}
+        aria-pressed={isActive}
+      >
+        <span>{label}</span>
+        <ArrowUp
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 transition-all",
+            isActive ? "text-rose-600 opacity-100" : "text-slate-400 opacity-60",
+            isActive && overtimeSortDirection === "desc" ? "rotate-180" : "",
+          )}
+        />
+      </button>
+    );
+  };
 
   useEffect(() => {
     setOvertimePage((prev) => Math.min(prev, overtimeTotalPages));
@@ -2206,25 +2316,10 @@ export const HourlyAnalysis = ({
               <div
                 className={`mt-3 grid gap-3 ${
                   showDepartmentFilterInOvertime
-                    ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9"
-                    : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-8"
+                    ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
+                    : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
                 }`}
               >
-                <label className="block xl:col-span-2">
-                  <span className="text-xs font-semibold text-slate-700">
-                    Orden
-                  </span>
-                  <select
-                    value={overtimeDateOrder}
-                    onChange={(e) =>
-                      setOvertimeDateOrder(e.target.value as "asc" | "desc")
-                    }
-                    className={`${overtimeFilterControlClass} min-w-0`}
-                  >
-                    <option value="asc">Ascendente</option>
-                    <option value="desc">Descendente</option>
-                  </select>
-                </label>
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-700">
                     Sede
@@ -2550,14 +2645,12 @@ export const HourlyAnalysis = ({
                     <span className="text-center whitespace-nowrap">Excel</span>
                     <span className="whitespace-nowrap">Empleado</span>
                     <span className="whitespace-nowrap">Sede</span>
-                    <span className="whitespace-nowrap">Fecha</span>
-                    <span className="text-center whitespace-nowrap">Horas</span>
-                    <span className="text-center whitespace-nowrap">Mar.</span>
+                    {renderOvertimeSortHeader("fecha", "Fecha")}
+                    {renderOvertimeSortHeader("horas", "Horas", "center")}
+                    {renderOvertimeSortHeader("marcaciones", "Mar.", "center")}
                     <span className="whitespace-nowrap">Cargo</span>
-                    <span className="whitespace-nowrap">Incid.</span>
-                    <span className="text-center whitespace-nowrap">
-                      Depto.
-                    </span>
+                    {renderOvertimeSortHeader("incidencia", "Incid.")}
+                    {renderOvertimeSortHeader("departamento", "Depto.", "center")}
                   </div>
                   {pagedOvertimeEmployees.map((employee, index) => {
                     const employeeKey = getOvertimeEmployeeKey(employee);

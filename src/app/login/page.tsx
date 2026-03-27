@@ -65,7 +65,7 @@ export default function LoginPage() {
             Unidad de Analitica e Inteligencia de Datos
           </p>
           <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
-            MercaMio y MercaTodo
+            Mercamio, Mercatodo y Merkmios
           </p>
         </div>
 
@@ -114,7 +114,7 @@ export default function LoginPage() {
 
         <div className="mt-6 border-t border-slate-200/70 pt-3 text-center">
           <p className="text-xs font-medium tracking-[0.08em] text-slate-500">
-            Created by Juan Felipe Gomez and Juan Manuel Velasquez
+            By Mercamio
           </p>
         </div>
       </div>

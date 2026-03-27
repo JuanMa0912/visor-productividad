@@ -27,7 +27,17 @@ type LineTotals = {
 };
 
 type SortMetric = "sales" | "salesPerHour" | "hours";
+type DetailSortMetric = "sedeName" | SortMetric;
 type SortOrder = "asc" | "desc";
+type DetailSortState = {
+  metric: DetailSortMetric;
+  order: SortOrder;
+};
+
+const DEFAULT_DETAIL_SORT: DetailSortState = {
+  metric: "sales",
+  order: "desc",
+};
 
 const buildSedeNameMap = (sedes: Array<{ id: string; name: string }>) =>
   new Map(sedes.map((sede) => [sede.id, sede.name]));
@@ -123,6 +133,9 @@ export const LineComparisonTable = ({
   const [customOrder, setCustomOrder] = useState<string[] | null>(null);
   const [sortMetric, setSortMetric] = useState<SortMetric>("sales");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [detailSortByLine, setDetailSortByLine] = useState<
+    Record<string, DetailSortState>
+  >({});
 
   useEffect(() => {
     const validDefault = defaultSedeIds.filter((id) => allSedeIds.includes(id));
@@ -289,6 +302,31 @@ export const LineComparisonTable = ({
     setCustomOrder(null);
   }, [sortMetric]);
 
+  const handleDetailSortToggle = useCallback(
+    (lineId: string, metric: DetailSortMetric) => {
+      setDetailSortByLine((prev) => {
+        const current = prev[lineId] ?? DEFAULT_DETAIL_SORT;
+        const nextOrder =
+          current.metric === metric
+            ? current.order === "asc"
+              ? "desc"
+              : "asc"
+            : metric === "sedeName"
+              ? "asc"
+              : "desc";
+
+        return {
+          ...prev,
+          [lineId]: {
+            metric,
+            order: nextOrder,
+          },
+        };
+      });
+    },
+    [],
+  );
+
   if (sortedLines.length === 0) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)] sm:rounded-3xl">
@@ -440,6 +478,7 @@ export const LineComparisonTable = ({
                   : 0;
               const isExpanded = expandedLineIds.includes(line.id);
               const bySede = lineSedeMetrics.get(line.id) ?? new Map<string, SedeMetrics>();
+              const detailSort = detailSortByLine[line.id] ?? DEFAULT_DETAIL_SORT;
               const orderedSedeDetails = selectedSedeIds
                 .map((sedeId) => {
                   const metrics = bySede.get(sedeId) ?? { sales: 0, hours: 0 };
@@ -454,7 +493,20 @@ export const LineComparisonTable = ({
                         : 0,
                   };
                 })
-                .sort((a, b) => b.sales - a.sales);
+                .sort((a, b) => {
+                  const comparison =
+                    detailSort.metric === "sedeName"
+                      ? a.sedeName.localeCompare(b.sedeName, "es", {
+                          sensitivity: "base",
+                        })
+                      : detailSort.metric === "sales"
+                        ? a.sales - b.sales
+                        : detailSort.metric === "hours"
+                          ? a.hours - b.hours
+                          : a.salesPerHour - b.salesPerHour;
+
+                  return detailSort.order === "asc" ? comparison : -comparison;
+                });
               const selectedSedeCount = orderedSedeDetails.length;
               const averageSales =
                 selectedSedeCount > 0
@@ -493,7 +545,7 @@ export const LineComparisonTable = ({
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragLeave={handleDragLeave}
                     onDrop={() => handleDrop(index)}
-                    className={`cursor-grab rounded-xl transition-all active:cursor-grabbing sm:rounded-2xl ${
+                    className={`rounded-xl transition-all sm:rounded-2xl ${
                       draggedIndex === index
                         ? "bg-mercamio-100 opacity-50"
                         : dragOverIndex === index
@@ -502,7 +554,9 @@ export const LineComparisonTable = ({
                     }`}
                   >
                     <td className="rounded-l-xl px-1 py-2 text-slate-700 sm:rounded-l-2xl sm:px-2 sm:py-3">
-                      <GripVertical className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="inline-flex cursor-grab touch-none active:cursor-grabbing">
+                        <GripVertical className="h-3 w-3 sm:h-4 sm:w-4" />
+                      </span>
                     </td>
                     <td className="px-1 py-2 sm:px-2 sm:py-3">
                       <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200/70 bg-white text-slate-600 transition-all">
@@ -539,10 +593,75 @@ export const LineComparisonTable = ({
                           className={`rounded-2xl border p-3 ${accent.expandedBorder} ${accent.expandedBg}`}
                         >
                           <div className="mb-2 grid grid-cols-[1.5fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            <span>Sede</span>
-                            <span className="text-right">Ventas</span>
-                            <span className="text-right">Vta/Hr</span>
-                            <span className="text-right">Horas</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDetailSortToggle(line.id, "sedeName")}
+                              className={`flex items-center gap-1 text-left transition-colors ${
+                                detailSort.metric === "sedeName"
+                                  ? "text-blue-700"
+                                  : "text-slate-500 hover:text-slate-700"
+                              }`}
+                              aria-label={`Ordenar ${line.name} por sede`}
+                            >
+                              <span>Sede</span>
+                              {detailSort.metric === "sedeName" && detailSort.order === "asc" ? (
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDetailSortToggle(line.id, "sales")}
+                              className={`flex items-center justify-end gap-1 text-right transition-colors ${
+                                detailSort.metric === "sales"
+                                  ? "text-blue-700"
+                                  : "text-slate-500 hover:text-slate-700"
+                              }`}
+                              aria-label={`Ordenar ${line.name} por ventas`}
+                            >
+                              <span>Ventas</span>
+                              {detailSort.metric === "sales" && detailSort.order === "asc" ? (
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDetailSortToggle(line.id, "salesPerHour")}
+                              className={`flex items-center justify-end gap-1 text-right transition-colors ${
+                                detailSort.metric === "salesPerHour"
+                                  ? "text-blue-700"
+                                  : "text-slate-500 hover:text-slate-700"
+                              }`}
+                              aria-label={`Ordenar ${line.name} por venta por hora`}
+                            >
+                              <span>Vta/Hr</span>
+                              {detailSort.metric === "salesPerHour" &&
+                              detailSort.order === "asc" ? (
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDetailSortToggle(line.id, "hours")}
+                              className={`flex items-center justify-end gap-1 text-right transition-colors ${
+                                detailSort.metric === "hours"
+                                  ? "text-blue-700"
+                                  : "text-slate-500 hover:text-slate-700"
+                              }`}
+                              aria-label={`Ordenar ${line.name} por horas`}
+                            >
+                              <span>Horas</span>
+                              {detailSort.metric === "hours" && detailSort.order === "asc" ? (
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              )}
+                            </button>
                           </div>
                           <div className="space-y-1">
                             {orderedSedeDetails.map((detail) => (
