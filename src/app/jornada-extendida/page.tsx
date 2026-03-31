@@ -188,7 +188,7 @@ export default function JornadaExtendidaPage() {
               return idKey === forcedSedeKey || nameKey === forcedSedeKey;
             })
           : null;
-        const visibleSedes = forcedSede
+        const visibleSedes = forcedSede && resolvedSedes.length === 1
           ? [forcedSede]
           : Array.from(
               new Map(
@@ -201,7 +201,9 @@ export default function JornadaExtendidaPage() {
 
         setAvailableDates(dates);
         setAvailableSedes(visibleSedes);
-        setDefaultSede(forcedSede?.name);
+        setDefaultSede(
+          forcedSede && resolvedSedes.length === 1 ? forcedSede.name : undefined,
+        );
         setCanSeeAlexReport(Boolean(payload.canSeeAlexReport));
         const latest = dates[dates.length - 1] ?? "";
         setAlexStartDate(latest);

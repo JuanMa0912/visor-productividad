@@ -95,7 +95,7 @@ const resolveVisibleSedes = (sessionUser: {
     return {
       authorized: true,
       visibleSedes: allowedMatches,
-      defaultSede: allowedMatches[0].name,
+      defaultSede: allowedMatches.length === 1 ? allowedMatches[0].name : null,
     };
   }
   const legacyKey = sessionUser.sede ? canonicalizeSedeKey(sessionUser.sede) : null;

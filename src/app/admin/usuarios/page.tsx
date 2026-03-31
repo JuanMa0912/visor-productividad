@@ -163,6 +163,20 @@ export default function AdminUsuariosPage() {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const handleAuthFailure = (status: number) => {
+    if (status === 401) {
+      setError("Tu sesion expiro. Inicia sesion de nuevo para continuar.");
+      router.replace("/login");
+      return true;
+    }
+    if (status === 403) {
+      setError("Tu usuario no tiene permisos de administracion en este momento.");
+      router.replace("/secciones");
+      return true;
+    }
+    return false;
+  };
+
   const sortedUsers = useMemo(
     () => [...users].sort((a, b) => a.username.localeCompare(b.username, "es")),
     [users],
@@ -180,12 +194,12 @@ export default function AdminUsuariosPage() {
     try {
       const meRes = await fetch("/api/auth/me");
       if (!meRes.ok) {
-        router.replace("/login");
+        handleAuthFailure(meRes.status);
         return;
       }
       const mePayload = (await meRes.json()) as { user?: { role?: string } };
       if (mePayload.user?.role !== "admin") {
-        router.replace("/login");
+        router.replace("/secciones");
         return;
       }
       setIsAdmin(true);
@@ -195,6 +209,9 @@ export default function AdminUsuariosPage() {
         fetch("/api/admin/login-logs?limit=25"),
       ]);
 
+      if (handleAuthFailure(usersRes.status) || handleAuthFailure(logsRes.status)) {
+        return;
+      }
       if (!usersRes.ok) throw new Error("No se pudieron cargar los usuarios.");
       if (!logsRes.ok) throw new Error("No se pudieron cargar los accesos.");
 
@@ -292,6 +309,9 @@ export default function AdminUsuariosPage() {
         },
       );
 
+      if (handleAuthFailure(response.status)) {
+        return;
+      }
       if (!response.ok) {
         const data = (await response.json()) as { error?: string };
         throw new Error(data.error ?? "No se pudo guardar el usuario.");
@@ -312,6 +332,9 @@ export default function AdminUsuariosPage() {
     const response = await fetch(`/api/admin/users/${userId}`, {
       method: "DELETE",
     });
+    if (handleAuthFailure(response.status)) {
+      return;
+    }
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
       setError(data.error ?? "No se pudo eliminar el usuario.");
@@ -329,6 +352,9 @@ export default function AdminUsuariosPage() {
     if (!confirm("¿Deseas borrar todos los accesos recientes?")) return;
     setError(null);
     const response = await fetch("/api/admin/login-logs", { method: "DELETE" });
+    if (handleAuthFailure(response.status)) {
+      return;
+    }
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
       setError(data.error ?? "No se pudieron borrar los accesos.");
