@@ -16,7 +16,6 @@ import {
   LayoutGrid,
   Table2,
   Sparkles,
-  ChevronDown,
   Search,
   ArrowUpDown,
   BarChart3,
@@ -94,11 +93,6 @@ const formatPdfDate = () =>
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date());
-
-const formatPdfNumber = (value: number) =>
-  new Intl.NumberFormat("es-CO", {
-    maximumFractionDigits: 0,
-  }).format(value);
 
 // ============================================================================
 // TIPOS
@@ -301,12 +295,6 @@ const useAnimations = (
 // FUNCIONES AUXILIARES
 // ============================================================================
 
-const extractSedesFromData = (data: DailyProductivity[]): Sede[] => {
-  return Array.from(
-    new Map(data.map((item) => [item.sede, item.sede])).entries(),
-  ).map(([id, name]) => ({ id, name }));
-};
-
 const normalizeSedeKey = (value: string) =>
   value
     .normalize("NFD")
@@ -430,6 +418,9 @@ const filterLinesByStatus = (
   lines: LineMetrics[],
   filterType: string,
 ): LineMetrics[] => {
+  if (filterType === "all") {
+    return lines;
+  }
   return lines;
 };
 
@@ -769,6 +760,22 @@ const CustomChartTooltip = (props: ChartsTooltipProps) => (
 );
 
 const MAX_CHART_DAYS = 7;
+const clampChartDateRange = (range: DateRange): DateRange => {
+  const start = parseDateKey(range.start);
+  const end = parseDateKey(range.end);
+  const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (diffDays <= MAX_CHART_DAYS) {
+    return range;
+  }
+
+  const clamped = new Date(start);
+  clamped.setDate(clamped.getDate() + MAX_CHART_DAYS);
+  return {
+    start: range.start,
+    end: toDateKey(clamped),
+  };
+};
 
 // ============================================================================
 
@@ -787,33 +794,46 @@ const ChartVisualization = ({
   lines: LineMetrics[];
   sedes: Sede[];
 }) => {
-  const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
-  const [selectedChartSedes, setSelectedChartSedes] = useState<string[]>([]);
-  const [chartStartDate, setChartStartDate] = useState<string>(dateRange.start);
-  const [chartEndDate, setChartEndDate] = useState<string>(dateRange.end);
+  const [selectedSeriesState, setSelectedSeriesState] = useState<string[]>([]);
+  const [selectedChartSedesState, setSelectedChartSedesState] = useState<string[]>([]);
+  const [chartRangeDraft, setChartRangeDraft] = useState(() => {
+    const initialRange = clampChartDateRange(dateRange);
+    return {
+      sourceStart: dateRange.start,
+      sourceEnd: dateRange.end,
+      start: initialRange.start,
+      end: initialRange.end,
+    };
+  });
   const [clickedSeriesId, setClickedSeriesId] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<{
     seriesId: string | number;
     dataIndex?: number;
   } | null>(null);
 
-  // Click overrides hover; when nothing clicked, hover highlighting works
-  const effectiveHighlight = useMemo(
-    () =>
-      clickedSeriesId != null
-        ? { seriesId: clickedSeriesId }
-        : hoveredItem,
-    [clickedSeriesId, hoveredItem],
-  );
-
-  const hoveredSeriesId = hoveredItem ? String(hoveredItem.seriesId) : null;
-
-  const highlightCtx = useMemo(
-    () => ({ clicked: clickedSeriesId, hovered: hoveredSeriesId }),
-    [clickedSeriesId, hoveredSeriesId],
-  );
-
   const sedeOptions = useMemo(() => sortSedesByOrder(sedes ?? []), [sedes]);
+  const sedeOptionIds = useMemo(
+    () => new Set(sedeOptions.map((sede) => sede.id)),
+    [sedeOptions],
+  );
+  const selectedChartSedes = useMemo(
+    () =>
+      selectedChartSedesState.filter((sedeId) => sedeOptionIds.has(sedeId)),
+    [selectedChartSedesState, sedeOptionIds],
+  );
+  const defaultChartRange = useMemo(
+    () => clampChartDateRange(dateRange),
+    [dateRange],
+  );
+  const chartRangeMatchesSource =
+    chartRangeDraft.sourceStart === dateRange.start &&
+    chartRangeDraft.sourceEnd === dateRange.end;
+  const chartStartDate = chartRangeMatchesSource
+    ? chartRangeDraft.start
+    : defaultChartRange.start;
+  const chartEndDate = chartRangeMatchesSource
+    ? chartRangeDraft.end
+    : defaultChartRange.end;
 
   const chartDates = useMemo<string[]>(() => {
     if (!chartStartDate || !chartEndDate) {
@@ -847,44 +867,14 @@ const ChartVisualization = ({
       })),
     [lines],
   );
-
-  useEffect(() => {
-    if (lineOptions.length === 0) {
-      setSelectedSeries([]);
-      return;
-    }
-    setSelectedSeries((prev) => {
-      const available = new Set(lineOptions.map((line) => line.id));
-      return prev.filter((id) => available.has(id));
-    });
-  }, [lineOptions]);
-
-  useEffect(() => {
-    if (sedeOptions.length === 0) {
-      setSelectedChartSedes([]);
-      return;
-    }
-    setSelectedChartSedes((prev) => {
-      const available = new Set(sedeOptions.map((sede) => sede.id));
-      return prev.filter((id) => available.has(id));
-    });
-  }, [sedeOptions]);
-
-  // Sync local chart dates with global dateRange, clamping to MAX_CHART_DAYS
-  useEffect(() => {
-    const start = parseDateKey(dateRange.start);
-    const end = parseDateKey(dateRange.end);
-    const diffDays =
-      (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-    setChartStartDate(dateRange.start);
-    if (diffDays > MAX_CHART_DAYS) {
-      const clamped = new Date(start);
-      clamped.setDate(clamped.getDate() + MAX_CHART_DAYS);
-      setChartEndDate(toDateKey(clamped));
-    } else {
-      setChartEndDate(dateRange.end);
-    }
-  }, [dateRange.start, dateRange.end]);
+  const lineOptionIds = useMemo(
+    () => new Set(lineOptions.map((line) => line.id)),
+    [lineOptions],
+  );
+  const selectedSeries = useMemo(
+    () => selectedSeriesState.filter((lineId) => lineOptionIds.has(lineId)),
+    [lineOptionIds, selectedSeriesState],
+  );
 
   const effectiveSedes = useMemo(
     () =>
@@ -904,40 +894,42 @@ const ChartVisualization = ({
 
   const handleChartStartChange = useCallback(
     (value: string) => {
-      setChartStartDate(value);
-      setChartEndDate((prevEnd) => {
-        const start = parseDateKey(value);
-        const end = parseDateKey(prevEnd);
-        const diffDays =
-          (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-        if (diffDays > MAX_CHART_DAYS || diffDays < 0) {
-          const clamped = new Date(start);
-          clamped.setDate(clamped.getDate() + MAX_CHART_DAYS);
-          return toDateKey(clamped);
-        }
-        return prevEnd;
+      const start = parseDateKey(value);
+      const end = parseDateKey(chartEndDate);
+      const diffDays =
+        (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+      const nextEnd =
+        diffDays > MAX_CHART_DAYS || diffDays < 0
+          ? toDateKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + MAX_CHART_DAYS))
+          : chartEndDate;
+      setChartRangeDraft({
+        sourceStart: dateRange.start,
+        sourceEnd: dateRange.end,
+        start: value,
+        end: nextEnd,
       });
     },
-    [],
+    [chartEndDate, dateRange.end, dateRange.start],
   );
 
   const handleChartEndChange = useCallback(
     (value: string) => {
-      setChartEndDate(value);
-      setChartStartDate((prevStart) => {
-        const start = parseDateKey(prevStart);
-        const end = parseDateKey(value);
-        const diffDays =
-          (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-        if (diffDays > MAX_CHART_DAYS || diffDays < 0) {
-          const clamped = new Date(end);
-          clamped.setDate(clamped.getDate() - MAX_CHART_DAYS);
-          return toDateKey(clamped);
-        }
-        return prevStart;
+      const start = parseDateKey(chartStartDate);
+      const end = parseDateKey(value);
+      const diffDays =
+        (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+      const nextStart =
+        diffDays > MAX_CHART_DAYS || diffDays < 0
+          ? toDateKey(new Date(end.getFullYear(), end.getMonth(), end.getDate() - MAX_CHART_DAYS))
+          : chartStartDate;
+      setChartRangeDraft({
+        sourceStart: dateRange.start,
+        sourceEnd: dateRange.end,
+        start: nextStart,
+        end: value,
       });
     },
-    [],
+    [chartStartDate, dateRange.end, dateRange.start],
   );
 
   const seriesDefinitions = useMemo(() => {
@@ -960,6 +952,27 @@ const ChartVisualization = ({
       })),
     );
   }, [effectiveSedes, lineOptions, selectedSeries, sedeNameMap]);
+  const activeClickedSeriesId = useMemo(() => {
+    if (clickedSeriesId === null) return null;
+    return seriesDefinitions.some((series) => series.id === clickedSeriesId)
+      ? clickedSeriesId
+      : null;
+  }, [clickedSeriesId, seriesDefinitions]);
+  const hoveredSeriesId = hoveredItem ? String(hoveredItem.seriesId) : null;
+
+  // Click overrides hover; when nothing clicked, hover highlighting works
+  const effectiveHighlight = useMemo(
+    () =>
+      activeClickedSeriesId != null
+        ? { seriesId: activeClickedSeriesId }
+        : hoveredItem,
+    [activeClickedSeriesId, hoveredItem],
+  );
+
+  const highlightCtx = useMemo(
+    () => ({ clicked: activeClickedSeriesId, hovered: hoveredSeriesId }),
+    [activeClickedSeriesId, hoveredSeriesId],
+  );
 
   const seriesMap = useMemo(() => {
     const map = new Map<string, number[]>();
@@ -1059,7 +1072,7 @@ const ChartVisualization = ({
   );
 
   const handleToggleSeries = (lineId: string) => {
-    setSelectedSeries((prev) =>
+    setSelectedSeriesState((prev) =>
       prev.includes(lineId)
         ? prev.filter((id) => id !== lineId)
         : [...prev, lineId],
@@ -1067,7 +1080,7 @@ const ChartVisualization = ({
   };
 
   const handleToggleSede = (sedeId: string) => {
-    setSelectedChartSedes((prev) =>
+    setSelectedChartSedesState((prev) =>
       prev.includes(sedeId)
         ? prev.filter((id) => id !== sedeId)
         : [...prev, sedeId],
@@ -1089,15 +1102,6 @@ const ChartVisualization = ({
     const sid = String(identifier.seriesId);
     setClickedSeriesId((prev) => (prev === sid ? null : sid));
   }, []);
-
-  // Reset clicked series when it no longer exists
-  useEffect(() => {
-    if (clickedSeriesId === null) return;
-    const stillExists = seriesDefinitions.some(
-      (s) => s.id === clickedSeriesId,
-    );
-    if (!stillExists) setClickedSeriesId(null);
-  }, [seriesDefinitions, clickedSeriesId]);
 
   if (lines.length === 0) return null;
 
@@ -1121,7 +1125,7 @@ const ChartVisualization = ({
             type="button"
             className="text-xs font-semibold text-mercamio-700 transition-colors hover:text-mercamio-800"
             onClick={() =>
-              setSelectedSeries(
+              setSelectedSeriesState(
                 selectedSeries.length === lineOptions.length
                   ? []
                   : lineOptions.map((line) => line.id),
@@ -1163,7 +1167,7 @@ const ChartVisualization = ({
             type="button"
             className="text-xs font-semibold text-mercamio-700 transition-colors hover:text-mercamio-800"
             onClick={() =>
-              setSelectedChartSedes(
+              setSelectedChartSedesState(
                 selectedChartSedes.length === sedeOptions.length
                   ? []
                   : sedeOptions.map((sede) => sede.id),
@@ -1283,8 +1287,11 @@ const LineTrends = ({
 }) => {
   const [selectedLine, setSelectedLine] = useState<string>("");
   const [viewType, setViewType] = useState<"temporal" | "por-sede">("temporal");
-  const [comparisonSedeIds, setComparisonSedeIds] = useState<string[]>([]);
-  const [trendSede, setTrendSede] = useState<string>("");
+  const [comparisonSedeSelection, setComparisonSedeSelection] = useState<{
+    scopeKey: string;
+    ids: string[];
+  }>({ scopeKey: "", ids: [] });
+  const [trendSedeState, setTrendSedeState] = useState<string>("");
   const [heatBaseline, setHeatBaseline] = useState<"sede" | "todas">("sede");
   const [comparisonBaseline, setComparisonBaseline] = useState<
     "seleccionadas" | "todas" | "propia"
@@ -1295,7 +1302,7 @@ const LineTrends = ({
   const [trendDateFilterMode, setTrendDateFilterMode] = useState<
     "mes_corrido" | "mes_anterior" | "rango"
   >("mes_corrido");
-  const [customTrendRange, setCustomTrendRange] = useState<DateRange>({
+  const [customTrendRangeState, setCustomTrendRangeState] = useState<DateRange>({
     start: dateRange.start,
     end: dateRange.end,
   });
@@ -1335,38 +1342,45 @@ const LineTrends = ({
       return !hidden.has(idKey) && !hidden.has(nameKey);
     });
   }, [sedes]);
+  const visibleSedeScopeKey = useMemo(
+    () => visibleSedes.map((sede) => sede.id).join("|"),
+    [visibleSedes],
+  );
+  const visibleSedeIdSet = useMemo(
+    () => new Set(visibleSedes.map((sede) => sede.id)),
+    [visibleSedes],
+  );
+  const trendSede = useMemo(() => {
+    if (trendSedeState && visibleSedeIdSet.has(trendSedeState)) {
+      return trendSedeState;
+    }
+    return visibleSedes[0]?.id ?? "";
+  }, [trendSedeState, visibleSedeIdSet, visibleSedes]);
+  const customTrendRange = useMemo(() => {
+    if (!availableDateBounds.min || !availableDateBounds.max) {
+      return customTrendRangeState;
+    }
 
-  useEffect(() => {
-    setComparisonSedeIds([]);
-    setTrendSede((prev) => {
-      if (prev && visibleSedes.some((s) => s.id === prev)) return prev;
-      return visibleSedes[0]?.id ?? "";
-    });
-  }, [visibleSedes]);
+    let start =
+      customTrendRangeState.start || dateRange.start || availableDateBounds.min;
+    let end =
+      customTrendRangeState.end || dateRange.end || availableDateBounds.max;
 
-  useEffect(() => {
-    if (!availableDateBounds.min || !availableDateBounds.max) return;
+    if (start < availableDateBounds.min) start = availableDateBounds.min;
+    if (start > availableDateBounds.max) start = availableDateBounds.max;
+    if (end < availableDateBounds.min) end = availableDateBounds.min;
+    if (end > availableDateBounds.max) end = availableDateBounds.max;
+    if (start > end) {
+      const swapped = start;
+      start = end;
+      end = swapped;
+    }
 
-    setCustomTrendRange((prev) => {
-      let start = prev.start || dateRange.start || availableDateBounds.min;
-      let end = prev.end || dateRange.end || availableDateBounds.max;
-
-      if (start < availableDateBounds.min) start = availableDateBounds.min;
-      if (start > availableDateBounds.max) start = availableDateBounds.max;
-      if (end < availableDateBounds.min) end = availableDateBounds.min;
-      if (end > availableDateBounds.max) end = availableDateBounds.max;
-      if (start > end) {
-        const swapped = start;
-        start = end;
-        end = swapped;
-      }
-
-      if (start === prev.start && end === prev.end) return prev;
-      return { start, end };
-    });
+    return { start, end };
   }, [
     availableDateBounds.max,
     availableDateBounds.min,
+    customTrendRangeState,
     dateRange.end,
     dateRange.start,
   ]);
@@ -1426,7 +1440,7 @@ const LineTrends = ({
   );
 
   const handleCustomTrendStartChange = useCallback((value: string) => {
-    setCustomTrendRange((prev) => {
+    setCustomTrendRangeState((prev) => {
       const nextEnd =
         !prev.end || value <= prev.end ? prev.end || value : value;
       return { start: value, end: nextEnd };
@@ -1434,7 +1448,7 @@ const LineTrends = ({
   }, []);
 
   const handleCustomTrendEndChange = useCallback((value: string) => {
-    setCustomTrendRange((prev) => {
+    setCustomTrendRangeState((prev) => {
       const nextStart =
         !prev.start || value >= prev.start ? prev.start || value : value;
       return { start: nextStart, end: value };
@@ -1442,12 +1456,17 @@ const LineTrends = ({
   }, []);
 
   const toggleComparisonSede = useCallback((sedeId: string) => {
-    setComparisonSedeIds((prev) =>
-      prev.includes(sedeId)
-        ? prev.filter((id) => id !== sedeId)
-        : [...prev, sedeId],
-    );
-  }, []);
+    setComparisonSedeSelection((prev) => {
+      const currentIds =
+        prev.scopeKey === visibleSedeScopeKey ? prev.ids : [];
+      return {
+        scopeKey: visibleSedeScopeKey,
+        ids: currentIds.includes(sedeId)
+          ? currentIds.filter((id) => id !== sedeId)
+          : [...currentIds, sedeId],
+      };
+    });
+  }, [visibleSedeScopeKey]);
 
   // Temporal view: use single local sede, fall back to global selection
   const effectiveTrendSedeIds = useMemo(
@@ -1500,19 +1519,39 @@ const LineTrends = ({
       }
     });
   }, [comparisonSizeFilter, getSedeM2Value, visibleSedes]);
-
-  useEffect(() => {
-    const available = new Set(filteredVisibleSedes.map((s) => s.id));
-    setComparisonSedeIds((prev) => prev.filter((id) => available.has(id)));
-  }, [filteredVisibleSedes]);
+  const filteredVisibleSedeIdSet = useMemo(
+    () => new Set(filteredVisibleSedes.map((sede) => sede.id)),
+    [filteredVisibleSedes],
+  );
+  const comparisonSedeIds = useMemo(() => {
+    if (comparisonSedeSelection.scopeKey !== visibleSedeScopeKey) {
+      return [];
+    }
+    return comparisonSedeSelection.ids.filter((id) =>
+      filteredVisibleSedeIdSet.has(id),
+    );
+  }, [
+    comparisonSedeSelection.ids,
+    comparisonSedeSelection.scopeKey,
+    filteredVisibleSedeIdSet,
+    visibleSedeScopeKey,
+  ]);
 
   const toggleAllComparisonSedes = useCallback(() => {
-    setComparisonSedeIds((prev) =>
-      prev.length === filteredVisibleSedes.length
-        ? []
-        : filteredVisibleSedes.map((s) => s.id),
-    );
-  }, [filteredVisibleSedes]);
+    setComparisonSedeSelection((prev) => {
+      const currentIds =
+        prev.scopeKey === visibleSedeScopeKey
+          ? prev.ids.filter((id) => filteredVisibleSedeIdSet.has(id))
+          : [];
+      return {
+        scopeKey: visibleSedeScopeKey,
+        ids:
+          currentIds.length === filteredVisibleSedes.length
+            ? []
+            : filteredVisibleSedes.map((s) => s.id),
+      };
+    });
+  }, [filteredVisibleSedeIdSet, filteredVisibleSedes, visibleSedeScopeKey]);
   const orderedVisibleSedes = useMemo(() => {
     if (comparisonSort === "none") return filteredVisibleSedes;
     const sorted = [...filteredVisibleSedes].sort((a, b) => {
@@ -1609,11 +1648,6 @@ const LineTrends = ({
     selectedSedeIdSet,
     temporalDates,
   ]);
-
-  const maxValue = useMemo(() => {
-    if (trendData.length === 0) return 1;
-    return Math.max(...trendData.map((d) => d.value), 1);
-  }, [trendData]);
 
   const maxSalesPerHour = useMemo(() => {
     if (trendData.length === 0) return 1;
@@ -1718,10 +1752,7 @@ const LineTrends = ({
   );
 
   useEffect(() => {
-    if (viewType !== "por-sede") {
-      setShowFloatingFilters(false);
-      return;
-    }
+    if (viewType !== "por-sede") return;
 
     const updateFloating = () => {
       if (!filtersRef.current || !cardRef.current) return;
@@ -1740,6 +1771,7 @@ const LineTrends = ({
       window.removeEventListener("resize", updateFloating);
     };
   }, [viewType]);
+  const floatingFiltersVisible = viewType === "por-sede" && showFloatingFilters;
 
   const dailyComparisonBaseline = useMemo(() => {
     if (comparisonBaseline === "propia") return new Map<string, number>();
@@ -1934,14 +1966,6 @@ const LineTrends = ({
     sedeNameMap,
   ]);
 
-  const sedeMaxValue = useMemo(() => {
-    if (sedeComparisonData.length === 0) return 1;
-    const allValues = sedeComparisonData.flatMap((d) =>
-      d.sedes.map((s) => s.value),
-    );
-    return Math.max(...allValues, 1);
-  }, [sedeComparisonData]);
-
   if (lines.length === 0 || availableDates.length === 0) return null;
 
   const renderComparisonFilters = (compact = false) => (
@@ -2071,7 +2095,7 @@ const LineTrends = ({
       ref={cardRef}
       className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]"
     >
-      {viewType === "por-sede" && showFloatingFilters && (
+      {floatingFiltersVisible && (
         <div className="fixed left-1/2 top-0 z-30 w-[calc(100vw-1rem)] max-w-none -translate-x-1/2">
           {renderComparisonFilters(true)}
         </div>
@@ -2210,7 +2234,7 @@ const LineTrends = ({
             <span className="text-xs font-semibold text-slate-700">Sede</span>
             <select
               value={trendSede}
-              onChange={(e) => setTrendSede(e.target.value)}
+              onChange={(e) => setTrendSedeState(e.target.value)}
               className="mt-1 w-full rounded-full border border-slate-200/70 bg-slate-50 px-3 py-2 text-sm text-slate-900 transition-all focus:border-mercamio-300 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
             >
               {visibleSedes.map((sede) => (
@@ -2966,11 +2990,6 @@ export default function Home() {
 
     return result;
   }, [lineFilter, lines, searchQuery, sortBy, sortOrder]);
-  const pdfLines = useMemo(
-    () => [...filteredLines].sort((a, b) => b.sales - a.sales),
-    [filteredLines],
-  );
-
   const lineFilterLabels: Record<string, string> = {
     all: "Todas las líneas",
     critical: "Líneas críticas (alerta)",
@@ -3198,12 +3217,6 @@ export default function Home() {
   const handleSortOrderToggle = useCallback(() => {
     setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
   }, []);
-
-  const selectedScopeId =
-    selectedCompanies.length > 0
-      ? selectedCompanies.join("-")
-      : selectedSede || "todas";
-  const selectedScopeLabel = selectedSedeName;
 
   const handleDownloadCsv = useCallback((payload?: ExportPayload) => {
     const {
@@ -3980,6 +3993,16 @@ export default function Home() {
         ) : (
           <div className="space-y-6">
             <ViewToggle viewMode={viewMode} onChange={handleViewChange} />
+            {(viewMode === "cards" || viewMode === "comparison") && (
+              <SearchAndSort
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                sortBy={sortBy}
+                onSortByChange={setSortBy}
+                sortOrder={sortOrder}
+                onSortOrderToggle={handleSortOrderToggle}
+              />
+            )}
 
             {viewMode === "comparison" ? (
               filteredLines.length > 0 ? (

@@ -332,7 +332,6 @@ const fetchAllProductivityData = async (
   const pool = await getDbPool();
   const client = await pool.connect();
   try {
-    const isDev = process.env.NODE_ENV !== "production";
     const dailyDataMap = new Map<string, DailyProductivity>();
     const allowedSet = new Set(allowedLineIds.map(normalizeLineId));
     const lineTables =

@@ -183,18 +183,6 @@ const formatMinuteLabel = (minute: number | null | undefined) => {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
 
-const OVERTIME_QUICK_RANGE_OPTIONS: Array<{
-  value: string;
-  label: string;
-  min: number;
-  max: number;
-}> = Array.from({ length: 16 }, (_value, hour) => ({
-  value: `${hour}-${hour + 1}`,
-  label: `${hour} - ${hour + 1} horas`,
-  min: hour,
-  max: hour + 1,
-}));
-
 const OVERTIME_PAGE_SIZE = 150;
 const OVERTIME_PAGE_TAB_WINDOW = 8;
 const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
@@ -424,7 +412,6 @@ export const HourlyAnalysis = ({
   showSedeFilters = true,
   showDepartmentFilterInOvertime = false,
   enableOvertimeDateRange = false,
-  alexConsistencyMode = false,
   showComparison = true,
   badgeLabel = "Analisis por hora",
   panelTitle = "Desglose horario",
@@ -438,7 +425,7 @@ export const HourlyAnalysis = ({
   }, [sections]);
   const [selectedDate, setSelectedDate] = useState(defaultDate ?? "");
   const [selectedLine, setSelectedLine] = useState(defaultLine ?? "");
-  const [selectedSedes, setSelectedSedes] = useState<string[]>(
+  const [selectedSedesState, setSelectedSedesState] = useState<string[]>(
     defaultSede ? [defaultSede] : [],
   );
   const [bucketMinutes, setBucketMinutes] = useState(60);
@@ -447,16 +434,18 @@ export const HourlyAnalysis = ({
   const [compareEnabled, setCompareEnabled] = useState(false);
   const [compareDate, setCompareDate] = useState("");
   const [hourlyData, setHourlyData] = useState<HourlyAnalysisData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [hourlyResultKey, setHourlyResultKey] = useState("");
   const [compareData, setCompareData] = useState<HourlyAnalysisData | null>(
     null,
   );
+  const [compareResultKey, setCompareResultKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
-  const [expandedSlotStart, setExpandedSlotStart] = useState<number | null>(
-    null,
-  );
-  const [hourlySection, setHourlySection] = useState<"map" | "overtime">(
+  const [expandedSlotState, setExpandedSlotState] = useState<{
+    requestKey: string;
+    slotStart: number | null;
+  }>({ requestKey: "", slotStart: null });
+  const [hourlySectionState, setHourlySectionState] = useState<"map" | "overtime">(
     enabledSections.includes(defaultSection)
       ? defaultSection
       : enabledSections[0],
@@ -480,14 +469,20 @@ export const HourlyAnalysis = ({
   const [overtimeExcludedIds, setOvertimeExcludedIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [overtimeQuickRange, setOvertimeQuickRange] = useState("custom");
   const [overtimeSortField, setOvertimeSortField] =
     useState<OvertimeSortField>("fecha");
   const [overtimeSortDirection, setOvertimeSortDirection] =
     useState<OvertimeSortDirection>("desc");
-  const [overtimeDateStart, setOvertimeDateStart] = useState(defaultDate ?? "");
-  const [overtimeDateEnd, setOvertimeDateEnd] = useState(defaultDate ?? "");
-  const [overtimePage, setOvertimePage] = useState(1);
+  const [overtimeDateStartState, setOvertimeDateStartState] = useState(
+    defaultDate ?? "",
+  );
+  const [overtimeDateEndState, setOvertimeDateEndState] = useState(
+    defaultDate ?? "",
+  );
+  const [overtimePageState, setOvertimePageState] = useState<{
+    scopeKey: string;
+    page: number;
+  }>({ scopeKey: "", page: 1 });
   const [overtimeSedeOpen, setOvertimeSedeOpen] = useState(false);
   const [overtimeDepartmentOpen, setOvertimeDepartmentOpen] = useState(false);
   const [overtimeSedePopoverPos, setOvertimeSedePopoverPos] = useState<{
@@ -526,6 +521,22 @@ export const HourlyAnalysis = ({
   const bucketOptions = useMemo(() => [60, 30, 20, 15, 10], []);
   // Modo estricto desactivado: usuarios con rol Alex pueden ajustar filtros libremente.
   const isAlexStrictMode = false;
+  const availableSedeNameSet = useMemo(
+    () => new Set(availableSedes.map((sede) => sede.name)),
+    [availableSedes],
+  );
+  const selectedSedes = useMemo(
+    () =>
+      selectedSedesState.filter((sedeName) =>
+        availableSedeNameSet.has(sedeName),
+      ),
+    [availableSedeNameSet, selectedSedesState],
+  );
+  const setSelectedSedes = setSelectedSedesState;
+  const hourlySection = enabledSections.includes(hourlySectionState)
+    ? hourlySectionState
+    : enabledSections[0];
+  const setHourlySection = setHourlySectionState;
 
   const availableDateRange = useMemo(() => {
     if (availableDates.length === 0) return { min: "", max: "" };
@@ -543,6 +554,18 @@ export const HourlyAnalysis = ({
     [allowedLineIds],
   );
   const hasLineRestriction = allowedLineSet.size > 0;
+  const showMapSection = enabledSections.includes("map");
+  const showOvertimeSection = enabledSections.includes("overtime");
+  const isOvertimeOnlyMode = showOvertimeSection && !showMapSection;
+  const showSectionToggle = enabledSections.length > 1;
+  const overtimeDateStart = overtimeDateStartState || selectedDate;
+  const overtimeDateEnd = overtimeDateEndState || selectedDate;
+  const hourlyRequestDate =
+    enableOvertimeDateRange && isOvertimeOnlyMode
+      ? overtimeDateEnd
+      : selectedDate;
+  const setOvertimeDateStart = setOvertimeDateStartState;
+  const setOvertimeDateEnd = setOvertimeDateEndState;
 
   const lineOptions = useMemo(() => {
     const fallback = DEFAULT_LINES.map((line) => ({
@@ -570,7 +593,7 @@ export const HourlyAnalysis = ({
     });
 
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [allowedLineSet, hasLineRestriction, hourlyData]);
+  }, [hourlyData, allowedLineSet, hasLineRestriction]);
   const requestedLine = defaultLine?.trim() || selectedLine;
   const effectiveSelectedLine =
     !defaultLine &&
@@ -579,57 +602,88 @@ export const HourlyAnalysis = ({
     !allowedLineSet.has(requestedLine.toLowerCase())
       ? ""
       : requestedLine;
-
-  useEffect(() => {
-    const available = new Set(availableSedes.map((s) => s.name));
-    setSelectedSedes((prev) => {
-      const next = prev.filter((name) => available.has(name));
-      if (
-        next.length === prev.length &&
-        next.every((name, index) => name === prev[index])
-      ) {
-        return prev;
-      }
-      return next;
+  const hourlyRequestKey = useMemo(() => {
+    if (!hourlyRequestDate) return "";
+    return JSON.stringify({
+      date: hourlyRequestDate,
+      line: effectiveSelectedLine,
+      bucketMinutes,
+      sedes: selectedSedes,
+      includePeople: showPersonBreakdown,
+      dashboardContext,
+      overtimeDateRange:
+        enableOvertimeDateRange && isOvertimeOnlyMode
+          ? {
+              start: overtimeDateStart,
+              end: overtimeDateEnd,
+            }
+          : null,
     });
-  }, [availableSedes]);
-
-  useEffect(() => {
-    if (!enabledSections.includes(hourlySection)) {
-      setHourlySection(enabledSections[0]);
-    }
-  }, [enabledSections, hourlySection]);
-
-  const showMapSection = enabledSections.includes("map");
-  const showOvertimeSection = enabledSections.includes("overtime");
-  const isOvertimeOnlyMode = showOvertimeSection && !showMapSection;
-  const showSectionToggle = enabledSections.length > 1;
-  const overtimeFilterControlClass =
-    "mt-1 w-full rounded-full border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-all focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100";
-
-  useEffect(() => {
-    if (!enableOvertimeDateRange || !isOvertimeOnlyMode) return;
-    if (!overtimeDateStart && selectedDate) setOvertimeDateStart(selectedDate);
-    if (!overtimeDateEnd && selectedDate) setOvertimeDateEnd(selectedDate);
   }, [
+    bucketMinutes,
+    dashboardContext,
+    effectiveSelectedLine,
     enableOvertimeDateRange,
+    hourlyRequestDate,
     isOvertimeOnlyMode,
     overtimeDateEnd,
     overtimeDateStart,
-    selectedDate,
+    selectedSedes,
+    showPersonBreakdown,
   ]);
-
-  useEffect(() => {
-    if (!enableOvertimeDateRange || !isOvertimeOnlyMode) return;
-    if (overtimeDateEnd && selectedDate !== overtimeDateEnd) {
-      setSelectedDate(overtimeDateEnd);
-    }
+  const compareRequestKey = useMemo(() => {
+    if (!compareEnabled || !compareDate) return "";
+    return JSON.stringify({
+      date: compareDate,
+      line: effectiveSelectedLine,
+      bucketMinutes,
+      sedes: selectedSedes,
+      dashboardContext,
+    });
   }, [
-    enableOvertimeDateRange,
-    isOvertimeOnlyMode,
-    overtimeDateEnd,
-    selectedDate,
+    bucketMinutes,
+    compareDate,
+    compareEnabled,
+    dashboardContext,
+    effectiveSelectedLine,
+    selectedSedes,
   ]);
+  const isLoading =
+    Boolean(hourlyRequestKey) && hourlyResultKey !== hourlyRequestKey;
+  const activeError =
+    hourlyRequestKey && hourlyResultKey === hourlyRequestKey ? error : null;
+  const activeHourlyData =
+    hourlyRequestKey && hourlyResultKey === hourlyRequestKey ? hourlyData : null;
+  const activeCompareData =
+    compareRequestKey && compareResultKey === compareRequestKey
+      ? compareData
+      : null;
+  const activeCompareError =
+    compareRequestKey && compareResultKey === compareRequestKey
+      ? compareError
+      : null;
+  const expandedSlotStart =
+    expandedSlotState.requestKey === hourlyRequestKey
+      ? expandedSlotState.slotStart
+      : null;
+  const setExpandedSlotStart = useCallback(
+    (next: number | null | ((prev: number | null) => number | null)) => {
+      setExpandedSlotState((prev) => {
+        const previousSlot =
+          prev.requestKey === hourlyRequestKey ? prev.slotStart : null;
+        const resolvedSlot =
+          typeof next === "function" ? next(previousSlot) : next;
+
+        return {
+          requestKey: hourlyRequestKey,
+          slotStart: resolvedSlot,
+        };
+      });
+    },
+    [hourlyRequestKey],
+  );
+  const overtimeFilterControlClass =
+    "mt-1 w-full rounded-full border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-all focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100";
 
   const toggleSede = (sedeName: string) => {
     setSelectedSedes((prev) =>
@@ -829,10 +883,7 @@ export const HourlyAnalysis = ({
   }, [overtimeDepartmentOpen, updateOvertimeDepartmentPopoverPos]);
 
   useEffect(() => {
-    if (!showPersonBreakdown) {
-      setShowFloatingContributionBack(false);
-      return;
-    }
+    if (!showPersonBreakdown) return;
 
     const updateFloatingBack = () => {
       const section = contributionSectionRef.current;
@@ -853,6 +904,8 @@ export const HourlyAnalysis = ({
       window.removeEventListener("resize", updateFloatingBack);
     };
   }, [showPersonBreakdown]);
+  const floatingContributionBackVisible =
+    showPersonBreakdown && showFloatingContributionBack;
 
   const fetchHourly = async (
     date: string,
@@ -890,18 +943,12 @@ export const HourlyAnalysis = ({
   };
 
   useEffect(() => {
-    if (!selectedDate) {
-      setHourlyData(null);
-      return;
-    }
+    if (!hourlyRequestDate || !hourlyRequestKey) return;
 
     const controller = new AbortController();
-    setIsLoading(true);
-    setError(null);
-    setExpandedSlotStart(null);
 
     fetchHourly(
-      selectedDate,
+      hourlyRequestDate,
       effectiveSelectedLine,
       bucketMinutes,
       selectedSedes,
@@ -909,26 +956,28 @@ export const HourlyAnalysis = ({
       dashboardContext,
       enableOvertimeDateRange && isOvertimeOnlyMode
         ? {
-            start: overtimeDateStart || selectedDate,
-            end: overtimeDateEnd || selectedDate,
+            start: overtimeDateStart,
+            end: overtimeDateEnd,
           }
         : undefined,
       controller.signal,
     )
       .then((data) => {
         setHourlyData(data);
-        setIsLoading(false);
+        setError(null);
+        setHourlyResultKey(hourlyRequestKey);
       })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : "Error desconocido");
         setHourlyData(null);
-        setIsLoading(false);
+        setHourlyResultKey(hourlyRequestKey);
       });
 
     return () => controller.abort();
   }, [
-    selectedDate,
+    hourlyRequestDate,
+    hourlyRequestKey,
     effectiveSelectedLine,
     bucketMinutes,
     selectedSedes,
@@ -941,14 +990,9 @@ export const HourlyAnalysis = ({
   ]);
 
   useEffect(() => {
-    if (!compareEnabled || !compareDate) {
-      setCompareData(null);
-      setCompareError(null);
-      return;
-    }
+    if (!compareEnabled || !compareDate || !compareRequestKey) return;
 
     const controller = new AbortController();
-    setCompareError(null);
 
     fetchHourly(
       compareDate,
@@ -962,6 +1006,8 @@ export const HourlyAnalysis = ({
     )
       .then((data) => {
         setCompareData(data);
+        setCompareError(null);
+        setCompareResultKey(compareRequestKey);
       })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -969,12 +1015,14 @@ export const HourlyAnalysis = ({
           err instanceof Error ? err.message : "Error desconocido",
         );
         setCompareData(null);
+        setCompareResultKey(compareRequestKey);
       });
 
     return () => controller.abort();
   }, [
     compareEnabled,
     compareDate,
+    compareRequestKey,
     effectiveSelectedLine,
     bucketMinutes,
     selectedSedes,
@@ -982,23 +1030,23 @@ export const HourlyAnalysis = ({
   ]);
 
   const rangedHours = useMemo(() => {
-    if (!hourlyData) return [];
-    return hourlyData.hours.filter(
+    if (!activeHourlyData) return [];
+    return activeHourlyData.hours.filter(
       (h) =>
         h.slotStartMinute >= minuteRangeStart &&
         h.slotStartMinute <= minuteRangeEnd,
     );
-  }, [hourlyData, minuteRangeEnd, minuteRangeStart]);
+  }, [activeHourlyData, minuteRangeEnd, minuteRangeStart]);
 
   const activeHours = useMemo(() => {
-    if (!hourlyData) return [];
+    if (!activeHourlyData) return [];
     return rangedHours.filter(
       (h) => h.totalSales > 0 || h.employeesPresent > 0,
     );
-  }, [hourlyData, rangedHours]);
+  }, [activeHourlyData, rangedHours]);
 
   const mainBaselineSalesPerEmployee = useMemo(() => {
-    if (!hourlyData) return 0;
+    if (!activeHourlyData) return 0;
     const totals = rangedHours.reduce(
       (acc, h) => {
         acc.sales += h.totalSales;
@@ -1008,11 +1056,11 @@ export const HourlyAnalysis = ({
       { sales: 0, hours: 0 },
     );
     return calcVtaHr(totals.sales, totals.hours);
-  }, [rangedHours, hourlyData, bucketMinutes]);
+  }, [activeHourlyData, bucketMinutes, rangedHours]);
 
   const compareBaselineSalesPerEmployee = useMemo(() => {
-    if (!compareData) return 0;
-    const compareRangeHours = compareData.hours.filter(
+    if (!activeCompareData) return 0;
+    const compareRangeHours = activeCompareData.hours.filter(
       (h) =>
         h.slotStartMinute >= minuteRangeStart &&
         h.slotStartMinute <= minuteRangeEnd,
@@ -1026,9 +1074,9 @@ export const HourlyAnalysis = ({
       { sales: 0, hours: 0 },
     );
     return calcVtaHr(totals.sales, totals.hours);
-  }, [compareData, minuteRangeEnd, minuteRangeStart, bucketMinutes]);
+  }, [activeCompareData, bucketMinutes, minuteRangeEnd, minuteRangeStart]);
 
-  const computeHeatRatio = (
+  const computeHeatRatio = useCallback((
     sales: number,
     employees: number,
     baselineSalesPerEmployee: number,
@@ -1039,7 +1087,7 @@ export const HourlyAnalysis = ({
       return (vtaHr / baselineSalesPerEmployee) * 100;
     }
     return 0;
-  };
+  }, [bucketMinutes]);
 
   const maxProductivity = useMemo(() => {
     if (activeHours.length === 0) return 1;
@@ -1053,10 +1101,10 @@ export const HourlyAnalysis = ({
   }, [activeHours, bucketMinutes]);
 
   const chartHours = useMemo(() => {
-    if (!hourlyData) return [];
+    if (!activeHourlyData) return [];
 
     const compareByHour = new Map(
-      compareData?.hours
+      activeCompareData?.hours
         .filter(
           (h) =>
             h.slotStartMinute >= minuteRangeStart &&
@@ -1109,18 +1157,21 @@ export const HourlyAnalysis = ({
         if (showPersonBreakdown) {
           return true;
         }
-        if (compareEnabled && compareData) {
+        if (compareEnabled && activeCompareData) {
           return h.mainSales > 0 || h.compareSales > 0;
         }
         return h.mainSales > 0;
       });
   }, [
-    compareBaselineSalesPerEmployee,
-    compareData,
-    compareEnabled,
+    activeCompareData,
+    activeHourlyData,
     bucketMinutes,
-    hourlyData,
+    compareBaselineSalesPerEmployee,
+    compareEnabled,
+    computeHeatRatio,
     mainBaselineSalesPerEmployee,
+    minuteRangeEnd,
+    minuteRangeStart,
     rangedHours,
     showPersonBreakdown,
   ]);
@@ -1148,7 +1199,7 @@ export const HourlyAnalysis = ({
   }, [chartHours]);
 
   const dayTotals = useMemo(() => {
-    if (!hourlyData)
+    if (!activeHourlyData)
       return {
         sales: 0,
         avgProductivity: 0,
@@ -1176,7 +1227,7 @@ export const HourlyAnalysis = ({
       (h) => h.totalSales > 0 || h.employeesPresent > 0,
     ).length;
     return { sales, avgProductivity, peakEmployees, activeHoursCount };
-  }, [hourlyData, rangedHours, bucketMinutes]);
+  }, [activeHourlyData, bucketMinutes, rangedHours]);
 
   const hourDifferences = useMemo(() => {
     if (personBreakdownView !== "franjas") return [];
@@ -1199,7 +1250,7 @@ export const HourlyAnalysis = ({
 
   const peopleBreakdown = useMemo(() => {
     if (personBreakdownView !== "individual") return [];
-    const people = hourlyData?.personContributions ?? [];
+    const people = activeHourlyData?.personContributions ?? [];
     if (people.length === 0) return [];
 
     return people
@@ -1246,8 +1297,8 @@ export const HourlyAnalysis = ({
       .filter((person) => person.totalSales > 0)
       .sort((a, b) => b.totalSales - a.totalSales);
   }, [
+    activeHourlyData?.personContributions,
     dayTotals.sales,
-    hourlyData?.personContributions,
     minuteRangeEnd,
     minuteRangeStart,
     personBreakdownView,
@@ -1313,7 +1364,10 @@ export const HourlyAnalysis = ({
   const selectedLineLabel =
     effectiveSelectedLine &&
     lineOptions.find((line) => line.id === effectiveSelectedLine)?.name;
-  const overtimeEmployees = hourlyData?.overtimeEmployees ?? [];
+  const overtimeEmployees = useMemo(
+    () => activeHourlyData?.overtimeEmployees ?? [],
+    [activeHourlyData],
+  );
   const overtimeEmployeesResolved = useMemo(() => {
     if (overtimeEmployees.length === 0) return [];
     return overtimeEmployees.map((employee) => {
@@ -1468,7 +1522,6 @@ export const HourlyAnalysis = ({
     overtimeDepartmentFilter,
     overtimeEmployeeTypeFilter,
     overtimeMarksFilter,
-    alexConsistencyMode,
     isAlexStrictMode,
     hasEmployeeTypeData,
     overtimePersonFilter,
@@ -1642,6 +1695,59 @@ export const HourlyAnalysis = ({
       ),
     [visibleOvertimeEmployees.length],
   );
+  const overtimePaginationScopeKey = useMemo(
+    () =>
+      JSON.stringify({
+        sede: [...overtimeSedeFilter].sort(),
+        department: [...overtimeDepartmentFilter].sort(),
+        employeeType: overtimeEmployeeTypeFilter,
+        marks: overtimeMarksFilter,
+        person: overtimePersonFilter.trim().toLowerCase(),
+        sortField: overtimeSortField,
+        sortDirection: overtimeSortDirection,
+        rangeMin: overtimeRangeMin,
+        rangeMax: overtimeRangeMax,
+        absenceOnly: overtimeAbsenceOnly,
+        oddMarksOnly: overtimeOddMarksOnly,
+        alertOnly: overtimeAlertOnly,
+        alertMode: overtimeAlertMode,
+      }),
+    [
+      overtimeAlertMode,
+      overtimeAlertOnly,
+      overtimeAbsenceOnly,
+      overtimeDepartmentFilter,
+      overtimeEmployeeTypeFilter,
+      overtimeMarksFilter,
+      overtimeOddMarksOnly,
+      overtimePersonFilter,
+      overtimeRangeMax,
+      overtimeRangeMin,
+      overtimeSedeFilter,
+      overtimeSortDirection,
+      overtimeSortField,
+    ],
+  );
+  const overtimePage =
+    overtimePageState.scopeKey === overtimePaginationScopeKey
+      ? Math.max(1, Math.min(overtimeTotalPages, overtimePageState.page))
+      : 1;
+  const setOvertimePage = useCallback(
+    (next: number | ((prev: number) => number)) => {
+      setOvertimePageState((prev) => {
+        const previousPage =
+          prev.scopeKey === overtimePaginationScopeKey ? prev.page : 1;
+        const resolvedPage =
+          typeof next === "function" ? next(previousPage) : next;
+
+        return {
+          scopeKey: overtimePaginationScopeKey,
+          page: Math.max(1, Math.min(overtimeTotalPages, resolvedPage)),
+        };
+      });
+    },
+    [overtimePaginationScopeKey, overtimeTotalPages],
+  );
   const pagedOvertimeEmployees = useMemo(() => {
     const start = (overtimePage - 1) * OVERTIME_PAGE_SIZE;
     return visibleOvertimeEmployees.slice(start, start + OVERTIME_PAGE_SIZE);
@@ -1658,23 +1764,6 @@ export const HourlyAnalysis = ({
     }
     return Array.from({ length: end - start + 1 }, (_v, i) => start + i);
   }, [overtimePage, overtimeTotalPages]);
-
-  useEffect(() => {
-    setOvertimePage(1);
-  }, [
-    overtimeSedeFilter,
-    overtimeDepartmentFilter,
-    overtimeEmployeeTypeFilter,
-    overtimeMarksFilter,
-    overtimePersonFilter,
-    overtimeSortDirection,
-    overtimeSortField,
-    overtimeRangeMin,
-    overtimeRangeMax,
-    overtimeAbsenceOnly,
-    overtimeOddMarksOnly,
-    overtimeAlertOnly,
-  ]);
 
   const handleOvertimeSort = (field: OvertimeSortField) => {
     if (overtimeSortField === field) {
@@ -1717,10 +1806,6 @@ export const HourlyAnalysis = ({
     );
   };
 
-  useEffect(() => {
-    setOvertimePage((prev) => Math.min(prev, overtimeTotalPages));
-  }, [overtimeTotalPages]);
-
   const handleExportOvertimeXlsx = async () => {
     const exportEmployees = filteredOvertimeEmployees.filter(
       (employee) => !overtimeExcludedIds.has(getOvertimeEmployeeKey(employee)),
@@ -1758,7 +1843,9 @@ export const HourlyAnalysis = ({
         incident: employee.incident ?? "",
         department: employee.department ?? employee.lineName ?? "",
         workedDate:
-          employee.workedDate ?? hourlyData?.attendanceDateUsed ?? selectedDate,
+          employee.workedDate ??
+          activeHourlyData?.attendanceDateUsed ??
+          selectedDate,
         markIn: employee.markIn ?? "",
         markBreak1: employee.markBreak1 ?? "",
         markBreak2: employee.markBreak2 ?? "",
@@ -2035,14 +2122,14 @@ export const HourlyAnalysis = ({
         </div>
       )}
 
-      {error && (
+      {activeError && (
         <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-800">
-          {error}
+          {activeError}
         </div>
       )}
-      {compareError && (
+      {activeCompareError && (
         <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-800">
-          {compareError}
+          {activeCompareError}
         </div>
       )}
 
@@ -2054,7 +2141,7 @@ export const HourlyAnalysis = ({
         </p>
       )}
 
-      {!isLoading && hourlyData && (
+      {!isLoading && activeHourlyData && (
         <>
           <div className="mb-6 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -2063,7 +2150,10 @@ export const HourlyAnalysis = ({
                   Fecha
                 </p>
                 <p className="text-sm font-semibold text-slate-900">
-                  {formatDateLabel(hourlyData.date, hourlyDateLabelOptions)}
+                  {formatDateLabel(
+                    activeHourlyData.date,
+                    hourlyDateLabelOptions,
+                  )}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
@@ -2071,7 +2161,7 @@ export const HourlyAnalysis = ({
                   Alcance
                 </p>
                 <p className="text-sm font-semibold text-slate-900">
-                  {hourlyData.scopeLabel}
+                  {activeHourlyData.scopeLabel}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
@@ -2094,16 +2184,16 @@ export const HourlyAnalysis = ({
                   Linea: {selectedLineLabel}
                 </span>
               )}
-              {hourlyData.attendanceDateUsed &&
-                hourlyData.attendanceDateUsed !== hourlyData.date && (
+              {activeHourlyData.attendanceDateUsed &&
+                activeHourlyData.attendanceDateUsed !== activeHourlyData.date && (
                   <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
-                    Asistencia usada: {hourlyData.attendanceDateUsed}
+                    Asistencia usada: {activeHourlyData.attendanceDateUsed}
                   </span>
                 )}
-              {hourlyData.salesDateUsed &&
-                hourlyData.salesDateUsed !== hourlyData.date && (
+              {activeHourlyData.salesDateUsed &&
+                activeHourlyData.salesDateUsed !== activeHourlyData.date && (
                   <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
-                    Ventas usadas: {hourlyData.salesDateUsed}
+                    Ventas usadas: {activeHourlyData.salesDateUsed}
                   </span>
                 )}
             </div>
@@ -2180,7 +2270,6 @@ export const HourlyAnalysis = ({
                     setOvertimeAlertOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
-                    setOvertimeQuickRange("custom");
                   }}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
                     overtimeAbsenceOnly
@@ -2198,7 +2287,6 @@ export const HourlyAnalysis = ({
                     setOvertimeAlertOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
-                    setOvertimeQuickRange("custom");
                   }}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
                     overtimeOddMarksOnly
@@ -2215,7 +2303,6 @@ export const HourlyAnalysis = ({
                     setOvertimeOddMarksOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
-                    setOvertimeQuickRange("custom");
                     setOvertimeAlertMode("920");
                     setOvertimeAlertOnly((prev) =>
                       prev && overtimeAlertMode === "920" ? false : true,
@@ -2236,7 +2323,6 @@ export const HourlyAnalysis = ({
                     setOvertimeOddMarksOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
-                    setOvertimeQuickRange("custom");
                     setOvertimeAlertMode("720-2marks");
                     setOvertimeAlertOnly((prev) =>
                       prev && overtimeAlertMode === "720-2marks" ? false : true,
@@ -2450,7 +2536,6 @@ export const HourlyAnalysis = ({
                     value={overtimeRangeMin}
                     disabled={isAlexStrictMode}
                     onChange={(e) => {
-                      setOvertimeQuickRange("custom");
                       setOvertimeRangeMin(e.target.value);
                     }}
                     className={overtimeFilterControlClass}
@@ -2467,7 +2552,6 @@ export const HourlyAnalysis = ({
                     value={overtimeRangeMax}
                     disabled={isAlexStrictMode}
                     onChange={(e) => {
-                      setOvertimeQuickRange("custom");
                       setOvertimeRangeMax(e.target.value);
                     }}
                     className={overtimeFilterControlClass}
@@ -2788,7 +2872,7 @@ export const HourlyAnalysis = ({
                                   }}
                                   title={`${slot.label} | Vta/Hr ${formatProductivity(slot.mainProductivity)} | ${slot.mainHeatRatio.toFixed(0)}%`}
                                 />
-                                {compareEnabled && compareData && (
+                                {compareEnabled && activeCompareData && (
                                   <div
                                     className="w-[34%] min-h-0.75 rounded-t-md bg-sky-400/85 shadow-[0_8px_18px_-14px_rgba(14,165,233,0.8)]"
                                     style={{
@@ -2810,7 +2894,7 @@ export const HourlyAnalysis = ({
                 )}
               </div>
 
-              {compareEnabled && compareData && (
+              {compareEnabled && activeCompareData && (
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
                   <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700 ring-1 ring-sky-200">
                     Barra azul: dia comparado
@@ -3183,7 +3267,7 @@ export const HourlyAnalysis = ({
               </p>
             ))}
 
-          {showPersonBreakdown && showFloatingContributionBack && (
+          {floatingContributionBackVisible && (
             <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2">
               <button
                 type="button"

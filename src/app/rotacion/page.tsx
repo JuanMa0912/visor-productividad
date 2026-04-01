@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowUp,
   Building2,
   CalendarDays,
   Filter,
@@ -65,6 +66,14 @@ type RotationApiResponse = {
     visibleItems: number;
     withoutMovement: number;
   };
+  filters: {
+    companies: string[];
+    sedes: Array<{
+      empresa: string;
+      sedeId: string;
+      sedeName: string;
+    }>;
+  };
   meta: {
     effectiveRange: DateRange;
     availableRange: { min: string; max: string };
@@ -74,6 +83,18 @@ type RotationApiResponse = {
   message?: string;
   error?: string;
 };
+
+type RotationSortField =
+  | "item"
+  | "descripcion"
+  | "totalSales"
+  | "inventoryUnits"
+  | "inventoryValue"
+  | "rotation"
+  | "effectiveDays"
+  | "status";
+
+type RotationSortDirection = "asc" | "desc";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
@@ -154,6 +175,78 @@ const getStatusBadgeClassName = (status: RotationRow["status"]) => {
   }
 };
 
+const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
+  "Sin movimiento": 0,
+  "Baja rotacion": 1,
+  "En seguimiento": 2,
+};
+
+const compareRotationText = (left: string, right: string) =>
+  left.localeCompare(right, "es", { sensitivity: "base", numeric: true });
+
+const compareNullableNumbers = (left: number | null, right: number | null) => {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left - right;
+};
+
+const getDefaultSortDirection = (
+  field: RotationSortField,
+): RotationSortDirection =>
+  field === "item" || field === "descripcion" || field === "status"
+    ? "asc"
+    : "desc";
+
+const sortRotationRows = (
+  rows: RotationRow[],
+  field: RotationSortField | null,
+  direction: RotationSortDirection,
+) => {
+  if (!field) return rows;
+
+  const directionFactor = direction === "asc" ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    let result = 0;
+
+    switch (field) {
+      case "item":
+        result = compareRotationText(left.item, right.item);
+        break;
+      case "descripcion":
+        result = compareRotationText(left.descripcion, right.descripcion);
+        break;
+      case "totalSales":
+        result = left.totalSales - right.totalSales;
+        break;
+      case "inventoryUnits":
+        result = left.inventoryUnits - right.inventoryUnits;
+        break;
+      case "inventoryValue":
+        result = left.inventoryValue - right.inventoryValue;
+        break;
+      case "rotation":
+        result = left.rotation - right.rotation;
+        break;
+      case "effectiveDays":
+        result = compareNullableNumbers(left.effectiveDays, right.effectiveDays);
+        break;
+      case "status":
+        result = STATUS_SORT_ORDER[left.status] - STATUS_SORT_ORDER[right.status];
+        break;
+      default:
+        result = 0;
+    }
+
+    if (result !== 0) return result * directionFactor;
+
+    const byDescription = compareRotationText(left.descripcion, right.descripcion);
+    if (byDescription !== 0) return byDescription;
+
+    return compareRotationText(left.item, right.item);
+  });
+};
+
 const buildRowsBySede = (rows: RotationRow[]) => {
   const grouped = new Map<
     string,
@@ -190,6 +283,13 @@ const formatCompanyLabel = (value: string) =>
   COMPANY_LABELS[value] ??
   value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 
+const parseSedeSelection = (value: string) => {
+  if (!value) return null;
+  const [empresa, sedeId] = value.split("::");
+  if (!empresa || !sedeId) return null;
+  return { empresa, sedeId };
+};
+
 type StatCardProps = {
   icon: React.ElementType;
   label: string;
@@ -221,6 +321,44 @@ const StatCard = ({
   </Card>
 );
 
+type SortableRotationHeaderProps = {
+  field: RotationSortField;
+  label: React.ReactNode;
+  activeField: RotationSortField | null;
+  direction: RotationSortDirection;
+  onSort: (field: RotationSortField) => void;
+};
+
+const SortableRotationHeader = ({
+  field,
+  label,
+  activeField,
+  direction,
+  onSort,
+}: SortableRotationHeaderProps) => {
+  const isActive = activeField === field;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(field)}
+      className={`inline-flex w-full items-center gap-2 text-left transition-colors ${
+        isActive ? "text-amber-700" : "text-slate-700 hover:text-amber-700"
+      }`}
+      aria-pressed={isActive}
+    >
+      <span className="block flex-1">{label}</span>
+      <ArrowUp
+        className={`h-3.5 w-3.5 shrink-0 transition-all ${
+          isActive
+            ? `opacity-100 ${direction === "desc" ? "rotate-180" : ""}`
+            : "opacity-35"
+        }`}
+      />
+    </button>
+  );
+};
+
 type SelectFieldProps = {
   icon: React.ElementType;
   label: string;
@@ -229,6 +367,7 @@ type SelectFieldProps = {
   onChange: (value: string) => void;
   allLabel: string;
   accentClassName: string;
+  disabled?: boolean;
 };
 
 const FilterFieldLabel = ({
@@ -256,13 +395,15 @@ const FilterSelectField = ({
   onChange,
   allLabel,
   accentClassName,
+  disabled = false,
 }: SelectFieldProps) => (
   <label className="block">
     <FilterFieldLabel icon={Icon} label={label} accentClassName={accentClassName} />
     <select
       value={value}
+      disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
+      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
     >
       <option value="">{allLabel}</option>
       {options.map((option) => (
@@ -287,8 +428,19 @@ export default function RotacionPage() {
     end: "",
   });
   const [rows, setRows] = useState<RotationRow[]>([]);
-  const [apiMessage, setApiMessage] = useState<string | null>(null);
+  const [filterCatalog, setFilterCatalog] = useState<RotationApiResponse["filters"]>({
+    companies: [],
+    sedes: [],
+  });
   const [error, setError] = useState<string | null>(null);
+  const deferredValueThreshold = useDeferredValue(valueThreshold);
+  const skipNextFetchRef = useRef(false);
+  const hasLoadedCatalogRef = useRef(false);
+  const [tableSortField, setTableSortField] = useState<RotationSortField | null>(
+    null,
+  );
+  const [tableSortDirection, setTableSortDirection] =
+    useState<RotationSortDirection>("asc");
 
   useEffect(() => {
     let isMounted = true;
@@ -332,6 +484,16 @@ export default function RotacionPage() {
 
   useEffect(() => {
     if (!ready) return;
+    if (skipNextFetchRef.current) {
+      skipNextFetchRef.current = false;
+      return;
+    }
+    if (!selectedSede && hasLoadedCatalogRef.current) {
+      setRows([]);
+      setError(null);
+      setIsLoadingData(false);
+      return;
+    }
 
     const controller = new AbortController();
 
@@ -341,12 +503,21 @@ export default function RotacionPage() {
 
       try {
         const params = new URLSearchParams();
+        const selectedSedeMeta = parseSedeSelection(selectedSede);
+        const effectiveCompany = selectedSedeMeta?.empresa ?? selectedCompany;
+
         if (dateRange.start && dateRange.end) {
           params.set("start", dateRange.start);
           params.set("end", dateRange.end);
         }
-        if (valueThreshold) {
-          params.set("minInventoryValue", valueThreshold);
+        if (effectiveCompany) {
+          params.set("empresa", effectiveCompany);
+        }
+        if (selectedSedeMeta?.sedeId) {
+          params.set("sede", selectedSedeMeta.sedeId);
+        }
+        if (deferredValueThreshold) {
+          params.set("minInventoryValue", deferredValueThreshold);
         }
 
         const response = await fetch(
@@ -372,7 +543,13 @@ export default function RotacionPage() {
         }
 
         setRows(payload.rows ?? []);
-        setApiMessage(payload.message ?? null);
+        setFilterCatalog(
+          payload.filters ?? {
+            companies: [],
+            sedes: [],
+          },
+        );
+        hasLoadedCatalogRef.current = true;
 
         if (payload.meta?.availableRange) {
           setAvailableRange({
@@ -383,11 +560,10 @@ export default function RotacionPage() {
 
         if (
           payload.meta?.effectiveRange &&
-          (!dateRange.start ||
-            !dateRange.end ||
-            dateRange.start !== payload.meta.effectiveRange.start ||
+          (dateRange.start !== payload.meta.effectiveRange.start ||
             dateRange.end !== payload.meta.effectiveRange.end)
         ) {
+          skipNextFetchRef.current = true;
           setDateRange(payload.meta.effectiveRange);
         }
       } catch (err) {
@@ -401,33 +577,59 @@ export default function RotacionPage() {
 
     void loadRotation();
     return () => controller.abort();
-  }, [dateRange.end, dateRange.start, ready, router, valueThreshold]);
+  }, [
+    dateRange.end,
+    dateRange.start,
+    deferredValueThreshold,
+    ready,
+    router,
+    selectedCompany,
+    selectedSede,
+  ]);
 
   const daysConsulted = useMemo(() => countInclusiveDays(dateRange), [dateRange]);
   const formattedRange = useMemo(() => formatRangeLabel(dateRange), [dateRange]);
   const parsedThreshold = valueThreshold ? Number(valueThreshold) : 0;
   const companyOptions = useMemo(
     () =>
-      Array.from(new Set(rows.map((row) => row.empresa)))
+      [...filterCatalog.companies]
         .sort((a, b) => formatCompanyLabel(a).localeCompare(formatCompanyLabel(b), "es"))
         .map((empresa) => ({
           value: empresa,
           label: formatCompanyLabel(empresa),
         })),
-    [rows],
+    [filterCatalog.companies],
+  );
+
+  const allSedeOptions = useMemo(
+    () =>
+      filterCatalog.sedes
+        .map((option) => ({
+          value: `${option.empresa}::${option.sedeId}`,
+          label: `${formatCompanyLabel(option.empresa)} - ${option.sedeName}`,
+          empresa: option.empresa,
+          sedeId: option.sedeId,
+          sedeName: option.sedeName,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "es")),
+    [filterCatalog.sedes],
   );
 
   const sedeOptions = useMemo(() => {
-    const scopedRows = selectedCompany
-      ? rows.filter((row) => row.empresa === selectedCompany)
-      : rows;
+    const scopedOptions = selectedCompany
+      ? allSedeOptions.filter((option) => option.empresa === selectedCompany)
+      : allSedeOptions;
 
-    return Array.from(
-      new Map(
-        scopedRows.map((row) => [row.sedeId, { value: row.sedeId, label: row.sedeName }]),
-      ).values(),
-    ).sort((a, b) => a.label.localeCompare(b.label, "es"));
-  }, [rows, selectedCompany]);
+    return scopedOptions.map((option) => ({
+      value: option.value,
+      label: selectedCompany ? option.sedeName : option.label,
+    }));
+  }, [allSedeOptions, selectedCompany]);
+
+  const selectedSedeMeta = useMemo(
+    () => allSedeOptions.find((option) => option.value === selectedSede) ?? null,
+    [allSedeOptions, selectedSede],
+  );
 
   useEffect(() => {
     if (!selectedSede) return;
@@ -436,24 +638,18 @@ export default function RotacionPage() {
     }
   }, [selectedSede, sedeOptions]);
 
-  const filteredRows = useMemo(
-    () =>
-      rows.filter((row) => {
-        if (selectedCompany && row.empresa !== selectedCompany) return false;
-        if (selectedSede && row.sedeId !== selectedSede) return false;
-        return true;
-      }),
-    [rows, selectedCompany, selectedSede],
+  const sortedRows = useMemo(
+    () => sortRotationRows(rows, tableSortField, tableSortDirection),
+    [rows, tableSortDirection, tableSortField],
   );
-
-  const rowsBySede = useMemo(() => buildRowsBySede(filteredRows), [filteredRows]);
+  const rowsBySede = useMemo(() => buildRowsBySede(sortedRows), [sortedRows]);
   const visibleStats = useMemo(
     () => ({
-      evaluatedSedes: new Set(filteredRows.map((row) => row.sedeName)).size,
-      visibleItems: filteredRows.length,
-      withoutMovement: filteredRows.filter((row) => row.status === "Sin movimiento").length,
+      evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,
+      visibleItems: rows.length,
+      withoutMovement: rows.filter((row) => row.status === "Sin movimiento").length,
     }),
-    [filteredRows],
+    [rows],
   );
 
   const handleValueChange = (value: string) => {
@@ -477,6 +673,18 @@ export default function RotacionPage() {
   const handleCurrentMonthClick = () => {
     setDateRange(getCurrentMonthBounds(availableRange.end || undefined));
   };
+
+  const handleTableSort = (field: RotationSortField) => {
+    if (tableSortField === field) {
+      setTableSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setTableSortField(field);
+    setTableSortDirection(getDefaultSortDirection(field));
+  };
+
+  const shouldSelectSedeFirst = !selectedSede;
 
   if (!ready) {
     return (
@@ -527,24 +735,6 @@ export default function RotacionPage() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-3xl border border-amber-200/80 bg-white/85 p-4 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.35)] sm:p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="border-amber-200 bg-amber-100 text-amber-900">
-                  Datos reales
-                </Badge>
-                <Badge className="border-sky-200 bg-sky-50 text-sky-700">
-                  Fuente diaria
-                </Badge>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                La pantalla ya esta conectada a{" "}
-                <span className="font-semibold text-slate-800">
-                  rotacion_base_item_dia_sede
-                </span>{" "}
-                y conserva los filtros principales para seguir ajustando la lectura
-                visual sobre una base real.
-              </p>
-            </div>
           </CardContent>
         </Card>
 
@@ -571,17 +761,34 @@ export default function RotacionPage() {
                     setSelectedCompany(value);
                     setSelectedSede("");
                   }}
-                  allLabel="Todas las empresas"
+                  allLabel={
+                    isLoadingData && companyOptions.length === 0
+                      ? "Cargando empresas..."
+                      : "Todas las empresas"
+                  }
                   accentClassName="text-indigo-700"
+                  disabled={isLoadingData && companyOptions.length === 0}
                 />
                 <FilterSelectField
                   icon={MapPin}
                   label="Sede"
                   value={selectedSede}
                   options={sedeOptions}
-                  onChange={setSelectedSede}
-                  allLabel="Todas las sedes"
+                  onChange={(value) => {
+                    setSelectedSede(value);
+                    if (!value) return;
+                    const nextSede = allSedeOptions.find((option) => option.value === value);
+                    if (nextSede) {
+                      setSelectedCompany(nextSede.empresa);
+                    }
+                  }}
+                  allLabel={
+                    isLoadingData && allSedeOptions.length === 0
+                      ? "Cargando sedes..."
+                      : "Todas las sedes"
+                  }
                   accentClassName="text-sky-700"
+                  disabled={isLoadingData && allSedeOptions.length === 0}
                 />
                 <label className="block md:col-span-2 xl:col-span-1">
                   <FilterFieldLabel
@@ -611,8 +818,9 @@ export default function RotacionPage() {
                 </Badge>
                 <Badge className="border-sky-200 bg-sky-50 text-sky-700">
                   {selectedSede
-                    ? sedeOptions.find((option) => option.value === selectedSede)?.label ??
-                      selectedSede
+                    ? selectedCompany
+                      ? selectedSedeMeta?.sedeName ?? selectedSede
+                      : selectedSedeMeta?.label ?? selectedSede
                     : "Todas las sedes"}
                 </Badge>
                 <Badge className="border-amber-200 bg-amber-50 text-amber-700">
@@ -753,6 +961,22 @@ export default function RotacionPage() {
               </p>
             </CardContent>
           </Card>
+        ) : shouldSelectSedeFirst ? (
+          <Card className="border-dashed border-sky-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+            <CardContent className="flex flex-col items-center px-6 py-12 text-center">
+              <div className="rounded-full bg-sky-100 p-4 text-sky-700">
+                <MapPin className="h-7 w-7" />
+              </div>
+              <h2 className="mt-4 text-xl font-bold text-slate-900">
+                Selecciona una sede para consultar
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Mantuvimos visible el catalogo de empresas y sedes, pero la tabla
+                solo carga cuando eliges una sede para evitar una consulta demasiado
+                pesada sobre toda la base.
+              </p>
+            </CardContent>
+          </Card>
         ) : rowsBySede.length === 0 ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
@@ -815,25 +1039,89 @@ export default function RotacionPage() {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="px-0 py-0">
-                    <Table>
+                  <CardContent className="overflow-x-auto px-0 py-0">
+                    <Table className="min-w-[1180px]">
                       <TableHeader>
                         <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                          <TableHead className="px-4 py-3">Item</TableHead>
-                          <TableHead className="px-4 py-3">Descripcion</TableHead>
-                          <TableHead className="px-4 py-3">Venta periodo</TableHead>
-                          <TableHead className="px-4 py-3">Inv. cierre</TableHead>
-                          <TableHead className="px-4 py-3">Valor inventario</TableHead>
-                          <TableHead className="px-4 py-3">Rotacion</TableHead>
                           <TableHead className="px-4 py-3">
-                            <div className="flex flex-col">
-                              <span>D.E</span>
-                              <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                                Dias efectivos
-                              </span>
-                            </div>
+                            <SortableRotationHeader
+                              field="item"
+                              label="Item"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
                           </TableHead>
-                          <TableHead className="px-4 py-3">Estado</TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
+                            <SortableRotationHeader
+                              field="descripcion"
+                              label="Descripcion"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
+                            <SortableRotationHeader
+                              field="totalSales"
+                              label="Venta periodo"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
+                            <SortableRotationHeader
+                              field="inventoryUnits"
+                              label="Inv. cierre"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
+                            <SortableRotationHeader
+                              field="inventoryValue"
+                              label="Valor inventario"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3">
+                            <SortableRotationHeader
+                              field="rotation"
+                              label="Rotacion"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
+                            <SortableRotationHeader
+                              field="effectiveDays"
+                              label={
+                                <span className="flex flex-col">
+                                  <span>D.E</span>
+                                  <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                                    Dias efectivos
+                                  </span>
+                                </span>
+                              }
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3">
+                            <SortableRotationHeader
+                              field="status"
+                              label="Estado"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -842,8 +1130,8 @@ export default function RotacionPage() {
                             <TableCell className="px-4 py-3 font-semibold text-slate-900">
                               {row.item}
                             </TableCell>
-                            <TableCell className="px-4 py-3">
-                              <div className="min-w-68">
+                            <TableCell className="px-4 py-3 whitespace-normal">
+                              <div className="min-w-[24rem]">
                                 <p className="font-medium text-slate-900">
                                   {row.descripcion}
                                 </p>
@@ -867,7 +1155,7 @@ export default function RotacionPage() {
                             <TableCell className="px-4 py-3 text-slate-700">
                               {row.rotation.toFixed(2)}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-slate-700">
+                            <TableCell className="px-4 py-3 text-slate-700 whitespace-normal">
                               <div>
                                 <p>{row.effectiveDays ?? "-"}</p>
                                 <p className="mt-1 text-xs text-slate-500">
@@ -880,7 +1168,7 @@ export default function RotacionPage() {
                                 </p>
                               </div>
                             </TableCell>
-                            <TableCell className="px-4 py-3">
+                            <TableCell className="px-4 py-3 whitespace-normal">
                               <Badge
                                 variant="outline"
                                 className={getStatusBadgeClassName(row.status)}
@@ -898,36 +1186,6 @@ export default function RotacionPage() {
             })}
           </section>
         )}
-
-        <Card className="border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
-          <CardContent className="flex flex-col gap-3 px-6 py-6 sm:flex-row sm:items-start sm:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Fuente actual
-              </p>
-              <h2 className="mt-2 text-xl font-bold text-slate-900">
-                Base diaria conectada
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Esta lectura ya sale de{" "}
-                <span className="font-semibold text-slate-800">
-                  rotacion_base_item_dia_sede
-                </span>
-                . Cuando quieras, el siguiente ajuste puede ser mapearla al modelo
-                por periodo que compartiste o afinar la formula exacta de rotacion.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              {apiMessage ? (
-                <span className="font-semibold">{apiMessage}</span>
-              ) : (
-                <>
-                  Rango actual: <span className="font-semibold">{formattedRange}</span>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

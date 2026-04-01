@@ -8,6 +8,12 @@ type AvailableBoundsRow = {
   max_date: string | null;
 };
 
+type RotationFilterDbRow = {
+  empresa: string;
+  sede_id: string;
+  sede_name: string;
+};
+
 type RotationDbRow = {
   empresa: string;
   sede_id: string;
@@ -46,15 +52,31 @@ type RotationRow = {
   status: "Sin movimiento" | "Baja rotacion" | "En seguimiento";
 };
 
+type RotationFilterCatalog = {
+  companies: string[];
+  sedes: Array<{
+    empresa: string;
+    sedeId: string;
+    sedeName: string;
+  }>;
+};
+
 const CACHE_CONTROL = "no-store";
 const LOW_ROTATION_THRESHOLD = 0.65;
-const MAX_ROWS_PER_SEDE = 25;
+const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
 const HIDDEN_SEDE_KEYS = new Set([
   "adm",
   "cedicavasa",
   "centrodistribucioncavasa",
   "importados",
 ]);
+
+let availableBoundsCache:
+  | { value: AvailableBoundsRow | null; expiresAt: number }
+  | null = null;
+let rotationFilterCatalogCache:
+  | { maxDate: string; value: RotationFilterCatalog; expiresAt: number }
+  | null = null;
 
 const isIsoDate = (value: string | null) =>
   Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
@@ -114,6 +136,11 @@ const parsePositiveNumber = (value: string | null) => {
 };
 
 const getAvailableBounds = async () => {
+  const now = Date.now();
+  if (availableBoundsCache && availableBoundsCache.expiresAt > now) {
+    return availableBoundsCache.value;
+  }
+
   const client = await (await getDbPool()).connect();
   try {
     const result = await client.query(
@@ -125,7 +152,70 @@ const getAvailableBounds = async () => {
       WHERE fecha_consulta ~ '^[0-9]{8}$'
       `,
     );
-    return (result.rows?.[0] as AvailableBoundsRow | undefined) ?? null;
+    const value = (result.rows?.[0] as AvailableBoundsRow | undefined) ?? null;
+    availableBoundsCache = {
+      value,
+      expiresAt: now + ROTATION_META_CACHE_TTL_MS,
+    };
+    return value;
+  } finally {
+    client.release();
+  }
+};
+
+const getRotationFilterCatalog = async (
+  maxDateCompact: string,
+): Promise<RotationFilterCatalog> => {
+  const now = Date.now();
+  if (
+    rotationFilterCatalogCache &&
+    rotationFilterCatalogCache.maxDate === maxDateCompact &&
+    rotationFilterCatalogCache.expiresAt > now
+  ) {
+    return rotationFilterCatalogCache.value;
+  }
+
+  const client = await (await getDbPool()).connect();
+  try {
+    const result = await client.query(
+      `
+      SELECT DISTINCT
+        COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
+        COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
+        COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
+      FROM rotacion_base_item_dia_sede
+      WHERE fecha_consulta = $1
+        AND fecha_consulta ~ '^[0-9]{8}$'
+        AND item IS NOT NULL
+      ORDER BY empresa ASC, sede_name ASC, sede_id ASC
+      `,
+      [maxDateCompact],
+    );
+
+    const sedes = ((result.rows ?? []) as RotationFilterDbRow[])
+      .map((row) => ({
+        empresa: row.empresa,
+        sedeId: row.sede_id,
+        sedeName: row.sede_name,
+      }))
+      .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+
+    const companies = Array.from(new Set(sedes.map((row) => row.empresa))).sort(
+      (a, b) => a.localeCompare(b, "es"),
+    );
+
+    const value = {
+      companies,
+      sedes,
+    };
+
+    rotationFilterCatalogCache = {
+      maxDate: maxDateCompact,
+      value,
+      expiresAt: now + ROTATION_META_CACHE_TTL_MS,
+    };
+
+    return value;
   } finally {
     client.release();
   }
@@ -135,10 +225,14 @@ const queryRotationRows = async ({
   startDate,
   endDate,
   minInventoryValue,
+  empresa,
+  sedeId,
 }: {
   startDate: string;
   endDate: string;
   minInventoryValue: number | null;
+  empresa: string | null;
+  sedeId: string | null;
 }): Promise<RotationRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
@@ -167,6 +261,8 @@ const queryRotationRows = async ({
         WHERE fecha_consulta BETWEEN $1 AND $2
           AND fecha_consulta ~ '^[0-9]{8}$'
           AND item IS NOT NULL
+          AND ($5::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $5)
+          AND ($6::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $6)
       ),
       ranked AS (
         SELECT
@@ -231,7 +327,7 @@ const queryRotationRows = async ({
         WHERE COALESCE(inventory_value, 0) > 0
           AND ($4::numeric IS NULL OR COALESCE(inventory_value, 0) >= $4)
       ),
-      ranked_visible AS (
+      classified AS (
         SELECT
           empresa,
           sede_id,
@@ -250,21 +346,9 @@ const queryRotationRows = async ({
           effective_days,
           CASE
             WHEN total_sales <= 0 AND inventory_value > 0 THEN 'Sin movimiento'
-            WHEN COALESCE(rotation, 0) < $5 THEN 'Baja rotacion'
+            WHEN COALESCE(rotation, 0) < $7 THEN 'Baja rotacion'
             ELSE 'En seguimiento'
-          END AS status,
-          ROW_NUMBER() OVER (
-            PARTITION BY sede_name
-            ORDER BY
-              CASE
-                WHEN total_sales <= 0 AND inventory_value > 0 THEN 0
-                WHEN COALESCE(rotation, 0) < $5 THEN 1
-                ELSE 2
-              END,
-              COALESCE(rotation, 0) ASC,
-              inventory_value DESC,
-              item ASC
-          ) AS sede_rank
+          END AS status
         FROM enriched
       )
       SELECT
@@ -284,17 +368,27 @@ const queryRotationRows = async ({
         TO_CHAR(last_movement_date, 'YYYY-MM-DD') AS last_movement_date,
         effective_days,
         status
-      FROM ranked_visible
-      WHERE sede_rank <= $6
-      ORDER BY sede_name ASC, sede_rank ASC
+      FROM classified
+      ORDER BY
+        empresa ASC,
+        sede_name ASC,
+        CASE
+          WHEN status = 'Sin movimiento' THEN 0
+          WHEN status = 'Baja rotacion' THEN 1
+          ELSE 2
+        END,
+        COALESCE(rotation, 0) ASC,
+        inventory_value DESC,
+        item ASC
       `,
       [
         isoToCompactDate(startDate),
         isoToCompactDate(endDate),
         endDate,
         minInventoryValue,
+        empresa,
+        sedeId,
         LOW_ROTATION_THRESHOLD,
-        MAX_ROWS_PER_SEDE,
       ],
     );
 
@@ -374,6 +468,10 @@ export async function GET(request: Request) {
               visibleItems: 0,
               withoutMovement: 0,
             },
+            filters: {
+              companies: [],
+              sedes: [],
+            },
             meta: {
               effectiveRange: { start: "", end: "" },
               availableRange: { min: "", max: "" },
@@ -390,6 +488,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const requestedStart = url.searchParams.get("start");
     const requestedEnd = url.searchParams.get("end");
+    const requestedCompany = url.searchParams.get("empresa")?.trim() || null;
+    const requestedSedeId = url.searchParams.get("sede")?.trim() || null;
     const minInventoryValue = parsePositiveNumber(
       url.searchParams.get("minInventoryValue"),
     );
@@ -405,11 +505,47 @@ export async function GET(request: Request) {
       minDate: minAvailableDate,
       maxDate: maxAvailableDate,
     });
+    const filterCatalogMaxDate = bounds?.max_date ?? isoToCompactDate(maxAvailableDate);
+    const filters = await getRotationFilterCatalog(filterCatalogMaxDate);
+
+    if (!requestedSedeId) {
+      return withSession(
+        NextResponse.json(
+          {
+            rows: [],
+            stats: {
+              evaluatedSedes: 0,
+              visibleItems: 0,
+              withoutMovement: 0,
+            },
+            filters,
+            meta: {
+              effectiveRange,
+              availableRange: {
+                min: minAvailableDate,
+                max: maxAvailableDate,
+              },
+              sourceTable: "rotacion_base_item_dia_sede",
+              minInventoryValue,
+            },
+            message: "Selecciona una sede para consultar la rotacion.",
+          },
+          {
+            headers: {
+              "Cache-Control": CACHE_CONTROL,
+              "X-Data-Source": "database",
+            },
+          },
+        ),
+      );
+    }
 
     const rows = await queryRotationRows({
       startDate: effectiveRange.start,
       endDate: effectiveRange.end,
       minInventoryValue,
+      empresa: requestedCompany,
+      sedeId: requestedSedeId,
     });
 
     const stats = {
@@ -423,6 +559,7 @@ export async function GET(request: Request) {
         {
           rows,
           stats,
+          filters,
           meta: {
             effectiveRange,
             availableRange: {
@@ -451,6 +588,10 @@ export async function GET(request: Request) {
             evaluatedSedes: 0,
             visibleItems: 0,
             withoutMovement: 0,
+          },
+          filters: {
+            companies: [],
+            sedes: [],
           },
           meta: {
             effectiveRange: { start: "", end: "" },

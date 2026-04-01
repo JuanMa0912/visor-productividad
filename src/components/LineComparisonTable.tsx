@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { formatCOP, formatHours, hasLaborDataForLine } from "@/lib/calc";
 import { DailyProductivity, LineMetrics } from "@/types";
@@ -125,8 +125,19 @@ export const LineComparisonTable = ({
 }: LineComparisonTableProps) => {
   const allSedeIds = useMemo(() => sedes.map((sede) => sede.id), [sedes]);
   const sedeNameMap = useMemo(() => buildSedeNameMap(sedes), [sedes]);
+  const defaultSelectedSedeIds = useMemo(() => {
+    const validDefault = defaultSedeIds.filter((id) => allSedeIds.includes(id));
+    return validDefault.length > 0 ? validDefault : allSedeIds;
+  }, [allSedeIds, defaultSedeIds]);
+  const selectionScopeKey = useMemo(
+    () => `${allSedeIds.join("|")}::${defaultSelectedSedeIds.join("|")}`,
+    [allSedeIds, defaultSelectedSedeIds],
+  );
 
-  const [selectedSedeIds, setSelectedSedeIds] = useState<string[]>([]);
+  const [selectedSedeState, setSelectedSedeState] = useState<{
+    scopeKey: string;
+    ids: string[];
+  }>({ scopeKey: "", ids: [] });
   const [expandedLineIds, setExpandedLineIds] = useState<string[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -136,15 +147,20 @@ export const LineComparisonTable = ({
   const [detailSortByLine, setDetailSortByLine] = useState<
     Record<string, DetailSortState>
   >({});
-
-  useEffect(() => {
-    const validDefault = defaultSedeIds.filter((id) => allSedeIds.includes(id));
-    if (validDefault.length > 0) {
-      setSelectedSedeIds(validDefault);
-      return;
-    }
-    setSelectedSedeIds(allSedeIds);
-  }, [allSedeIds, defaultSedeIds]);
+  const selectedSedeIds = useMemo(() => {
+    const available = new Set(allSedeIds);
+    const sourceIds =
+      selectedSedeState.scopeKey === selectionScopeKey
+        ? selectedSedeState.ids
+        : defaultSelectedSedeIds;
+    return sourceIds.filter((id) => available.has(id));
+  }, [
+    allSedeIds,
+    defaultSelectedSedeIds,
+    selectedSedeState.ids,
+    selectedSedeState.scopeKey,
+    selectionScopeKey,
+  ]);
 
   const selectedSedeIdSet = useMemo(
     () => new Set(selectedSedeIds),
@@ -230,18 +246,28 @@ export const LineComparisonTable = ({
   }, [customOrder, enrichedLines, sortMetric, sortOrder, totalsByLine]);
 
   const toggleSede = useCallback((sedeId: string) => {
-    setSelectedSedeIds((prev) =>
-      prev.includes(sedeId)
-        ? prev.filter((id) => id !== sedeId)
-        : [...prev, sedeId],
-    );
-  }, []);
+    setSelectedSedeState((prev) => {
+      const currentIds =
+        prev.scopeKey === selectionScopeKey ? prev.ids : defaultSelectedSedeIds;
+      return {
+        scopeKey: selectionScopeKey,
+        ids: currentIds.includes(sedeId)
+          ? currentIds.filter((id) => id !== sedeId)
+          : [...currentIds, sedeId],
+      };
+    });
+  }, [defaultSelectedSedeIds, selectionScopeKey]);
 
   const toggleAllSedes = useCallback(() => {
-    setSelectedSedeIds((prev) =>
-      prev.length === allSedeIds.length ? [] : allSedeIds,
-    );
-  }, [allSedeIds]);
+    setSelectedSedeState((prev) => {
+      const currentIds =
+        prev.scopeKey === selectionScopeKey ? prev.ids : defaultSelectedSedeIds;
+      return {
+        scopeKey: selectionScopeKey,
+        ids: currentIds.length === allSedeIds.length ? [] : allSedeIds,
+      };
+    });
+  }, [allSedeIds, defaultSelectedSedeIds, selectionScopeKey]);
 
   const toggleLineExpanded = useCallback((lineId: string) => {
     setExpandedLineIds((prev) =>

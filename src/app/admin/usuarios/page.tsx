@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -94,7 +94,6 @@ const formatRelativeTime = (isoDate: string) => {
   const absHours = Math.round(absMinutes / 60);
   if (absHours < 24) return rtf.format(Math.round(diffMs / 3600000), "hour");
 
-  const absDays = Math.round(absHours / 24);
   return rtf.format(Math.round(diffMs / 86400000), "day");
 };
 
@@ -163,7 +162,7 @@ export default function AdminUsuariosPage() {
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const handleAuthFailure = (status: number) => {
+  const handleAuthFailure = useCallback((status: number) => {
     if (status === 401) {
       setError("Tu sesion expiro. Inicia sesion de nuevo para continuar.");
       router.replace("/login");
@@ -175,7 +174,7 @@ export default function AdminUsuariosPage() {
       return true;
     }
     return false;
-  };
+  }, [router]);
 
   const sortedUsers = useMemo(
     () => [...users].sort((a, b) => a.username.localeCompare(b.username, "es")),
@@ -188,7 +187,7 @@ export default function AdminUsuariosPage() {
     return { total, active, admins };
   }, [users]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -224,11 +223,11 @@ export default function AdminUsuariosPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [handleAuthFailure, router]);
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
 
   const openCreate = () => {
     setFormState(emptyForm);

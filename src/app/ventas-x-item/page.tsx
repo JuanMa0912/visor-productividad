@@ -1059,10 +1059,10 @@ export default function VentasXItemPage() {
             <h1 className="mt-1 text-2xl font-bold text-slate-900">Ventas por ítem(s) x sedes</h1>
           </div>
           <Link
-            href="/secciones"
+            href="/venta"
             className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
           >
-            Volver a secciones
+            Volver a venta
           </Link>
         </div>
 
