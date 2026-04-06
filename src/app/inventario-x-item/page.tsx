@@ -10,8 +10,12 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { toJpeg } from "html-to-image";
 import {
   ArrowUp,
+  ArrowUpDown,
   Building2,
   CalendarDays,
   Check,
@@ -91,8 +95,12 @@ type SelectOption = {
 };
 
 type LineSelectionMode = "unset" | "all" | "specific";
+type MatrixSortDirection = "asc" | "desc";
+type MatrixSortField = "sede" | string;
 
 const ALL_FILTER_VALUE = "__all__";
+const ITEM_DROPDOWN_NO_SEARCH_LIMIT = 120;
+const ITEM_DROPDOWN_SEARCH_LIMIT = 250;
 
 const dateLabelOptions: Intl.DateTimeFormatOptions = {
   day: "2-digit",
@@ -178,12 +186,15 @@ const MultiSelectField = ({
   label,
   values,
   options,
+  visibleOptions,
   onChange,
   emptyLabel,
   maxSelected,
   searchable = false,
   searchValue = "",
   onSearchChange,
+  totalResultsCount,
+  truncatedResults = false,
   disabled = false,
   invalid = false,
   helperText,
@@ -197,12 +208,15 @@ const MultiSelectField = ({
   label: string;
   values: string[];
   options: SelectOption[];
+  visibleOptions?: SelectOption[];
   onChange: (value: string[]) => void;
   emptyLabel: string;
   maxSelected?: number;
   searchable?: boolean;
   searchValue?: string;
   onSearchChange?: (value: string) => void;
+  totalResultsCount?: number;
+  truncatedResults?: boolean;
   disabled?: boolean;
   invalid?: boolean;
   helperText?: string;
@@ -226,12 +240,11 @@ const MultiSelectField = ({
   }, [open]);
 
   const selectedOptions = options.filter((option) => values.includes(option.value));
-  const selectedLabel =
-    allSelected
-      ? allLabel ?? emptyLabel
-      : selectedOptions.length > 0
-      ? selectedOptions.map((option) => option.label).join(", ")
-      : emptyLabel;
+  const renderedOptions = visibleOptions ?? options;
+  const selectedPreview = allSelected
+    ? []
+    : selectedOptions.slice(0, 2);
+  const remainingSelectedCount = Math.max(0, selectedOptions.length - selectedPreview.length);
   const limitReached =
     maxSelected !== undefined && maxSelected > 0 && values.length >= maxSelected;
 
@@ -255,13 +268,36 @@ const MultiSelectField = ({
         type="button"
         onClick={() => setOpen((current) => !current)}
         disabled={disabled}
-        className={`flex w-full items-center justify-between gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 shadow-sm transition-all focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+        className={`flex w-full items-start justify-between gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 shadow-sm transition-all focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${
           invalid
             ? "border-red-300 hover:border-red-400 focus:border-red-300 focus:ring-red-100"
             : "border-slate-200/70 hover:border-slate-300 focus:border-blue-300 focus:ring-blue-100"
         }`}
       >
-        <span className="truncate">{selectedLabel}</span>
+        <span className="min-w-0 flex-1">
+          {allSelected ? (
+            <span className="block truncate">{allLabel ?? emptyLabel}</span>
+          ) : selectedOptions.length > 0 ? (
+            <span className="flex flex-wrap gap-1.5">
+              {selectedPreview.map((option) => (
+                <span
+                  key={option.key ?? option.value}
+                  className="max-w-full rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                  title={option.label}
+                >
+                  <span className="block truncate">{option.label}</span>
+                </span>
+              ))}
+              {remainingSelectedCount > 0 && (
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                  +{remainingSelectedCount}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="block truncate text-slate-500">{emptyLabel}</span>
+          )}
+        </span>
         <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
           {allSelected
             ? "Todas"
@@ -288,6 +324,20 @@ const MultiSelectField = ({
             </label>
           )}
 
+          {searchable && (
+            <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
+              <span>
+                {renderedOptions.length} de {totalResultsCount ?? options.length} resultados
+              </span>
+            </div>
+          )}
+
+          {truncatedResults && (
+            <p className="mb-2 px-2 text-[11px] text-amber-700">
+              Mostrando una parte de resultados. Escribe mas para acotar.
+            </p>
+          )}
+
           {(onSelectAll || onClearSelection) && (
             <div className="mb-2 flex flex-wrap gap-2 px-1">
               {onSelectAll && (
@@ -312,12 +362,12 @@ const MultiSelectField = ({
           )}
 
           <div className="max-h-72 space-y-1 overflow-auto pr-1">
-            {options.length === 0 ? (
+            {renderedOptions.length === 0 ? (
               <p className="px-3 py-4 text-sm text-slate-500">
                 No hay opciones disponibles para este filtro.
               </p>
             ) : (
-              options.map((option) => {
+              renderedOptions.map((option) => {
                 const checked = values.includes(option.value);
                 const disabledOption = !checked && Boolean(limitReached);
                 return (
@@ -383,6 +433,8 @@ export default function InventarioXItemPage() {
   const [loadingFilters, setLoadingFilters] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [loadingMatrix, setLoadingMatrix] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingJpg, setExportingJpg] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [rows, setRows] = useState<InventarioSummaryRow[]>([]);
@@ -407,6 +459,10 @@ export default function InventarioXItemPage() {
     useState<LineSelectionMode>("unset");
   const [showValidation, setShowValidation] = useState(false);
   const [appliedMatrixKey, setAppliedMatrixKey] = useState("");
+  const [matrixSortField, setMatrixSortField] = useState<MatrixSortField>("sede");
+  const [matrixSortDirection, setMatrixSortDirection] =
+    useState<MatrixSortDirection>("asc");
+  const matrixImageRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -760,13 +816,7 @@ export default function InventarioXItemPage() {
 
   const itemOptions = useMemo<SelectOption[]>(() => {
     if (!hasLineSelection || !hasSubcategorySelection) return [];
-    const normalizedSearch = deferredItemSearch.trim().toLowerCase();
     return summarizedItemRows
-      .filter((row) => {
-        if (!normalizedSearch) return true;
-        const searchable = `${row.item} ${row.descripcion} ${row.lineLabel}`.toLowerCase();
-        return searchable.includes(normalizedSearch);
-      })
       .sort((left, right) => {
         if (right.inventoryValue !== left.inventoryValue) {
           return right.inventoryValue - left.inventoryValue;
@@ -779,11 +829,49 @@ export default function InventarioXItemPage() {
         hint: `${row.lineLabel} | ${formatPrice(row.inventoryValue)}`,
       }));
   }, [
-    deferredItemSearch,
     hasLineSelection,
     hasSubcategorySelection,
     summarizedItemRows,
   ]);
+
+  const selectedItemOptionSet = useMemo(
+    () => new Set(selectedItemsState),
+    [selectedItemsState],
+  );
+
+  const itemDropdownState = useMemo(() => {
+    const normalizedSearch = deferredItemSearch.trim().toLowerCase();
+    const filteredOptions = itemOptions.filter((option) => {
+      if (!normalizedSearch) return true;
+      const searchable = `${option.value} ${option.label} ${option.hint ?? ""}`.toLowerCase();
+      return searchable.includes(normalizedSearch);
+    });
+
+    if (!normalizedSearch) {
+      const selected = itemOptions.filter((option) => selectedItemOptionSet.has(option.value));
+      const others = itemOptions.filter((option) => !selectedItemOptionSet.has(option.value));
+      const limitedOthers = others.slice(0, ITEM_DROPDOWN_NO_SEARCH_LIMIT);
+      return {
+        visibleOptions: [...selected, ...limitedOthers],
+        totalResults: itemOptions.length,
+        truncated: others.length > ITEM_DROPDOWN_NO_SEARCH_LIMIT,
+      };
+    }
+
+    const selectedMatched = filteredOptions.filter((option) =>
+      selectedItemOptionSet.has(option.value),
+    );
+    const otherMatched = filteredOptions
+      .filter((option) => !selectedItemOptionSet.has(option.value))
+      .slice(0, ITEM_DROPDOWN_SEARCH_LIMIT);
+
+    return {
+      visibleOptions: [...selectedMatched, ...otherMatched],
+      totalResults: filteredOptions.length,
+      truncated:
+        filteredOptions.length - selectedMatched.length > ITEM_DROPDOWN_SEARCH_LIMIT,
+    };
+  }, [deferredItemSearch, itemOptions, selectedItemOptionSet]);
 
   const itemOptionSet = useMemo(
     () => new Set(itemOptions.map((option) => option.value)),
@@ -936,21 +1024,12 @@ export default function InventarioXItemPage() {
   }, [summarizedItemRows]);
 
   const summaryRows = useMemo(() => {
-    if (selectedItems.length > 0) {
-      return selectedItems
-        .map((item) => rowsByItem.get(item))
-        .filter((row): row is InventarioSummaryRow => Boolean(row));
-    }
+    if (selectedItems.length === 0) return [];
 
-    return [...summarizedItemRows]
-      .sort((left, right) => {
-        if (right.inventoryValue !== left.inventoryValue) {
-          return right.inventoryValue - left.inventoryValue;
-        }
-        return compareText(left.item, right.item);
-      })
-      .slice(0, INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS);
-  }, [rowsByItem, selectedItems, summarizedItemRows]);
+    return selectedItems
+      .map((item) => rowsByItem.get(item))
+      .filter((row): row is InventarioSummaryRow => Boolean(row));
+  }, [rowsByItem, selectedItems]);
 
   const selectedSedeLabel = useMemo(
     () => (selectedSedeOption ? selectedSedeOption.sedeName : "Todas"),
@@ -973,7 +1052,8 @@ export default function InventarioXItemPage() {
     hasCompanySelection &&
     hasSedeSelection &&
     hasLineSelection &&
-    hasSubcategorySelection;
+    hasSubcategorySelection &&
+    selectedItems.length > 0;
   const canBuildMatrix =
     hasRequiredFilters && hasCatalogForCurrentScope && !loadingCatalog;
   const hasAppliedCurrentFilters =
@@ -1053,27 +1133,29 @@ export default function InventarioXItemPage() {
     return totals;
   }, [filteredMatrixRows]);
 
-  const matrixFocusLabel = useMemo(() => {
-    if (selectedLines.length === 1) {
-      return (
-        lineOptions.find((option) => option.value === selectedLines[0])?.label.toUpperCase() ??
-        "POR ITEM"
-      );
-    }
-    if (selectedSubcategory && selectedSubcategory !== "all") {
-      return INVENTARIO_SUBCATEGORY_LABELS[selectedSubcategory].toUpperCase();
-    }
-    return "POR ITEM";
-  }, [lineOptions, selectedLines, selectedSubcategory]);
+  const multipleCompaniesInMatrix = useMemo(
+    () => new Set(matrixRowsBySede.map((row) => row.empresa)).size > 1,
+    [matrixRowsBySede],
+  );
 
-  const matrixScopeLabel = useMemo(() => {
-    if (selectedSedeId) {
-      return `${effectiveCompany ? effectiveCompany.toUpperCase() : "TODAS"} / ${selectedSedeLabel.toUpperCase()}`;
-    }
-    return effectiveCompany ? effectiveCompany.toUpperCase() : "TODAS LAS EMPRESAS";
-  }, [effectiveCompany, selectedSedeId, selectedSedeLabel]);
+  const sortedMatrixRowsBySede = useMemo(() => {
+    const directionFactor = matrixSortDirection === "asc" ? 1 : -1;
+    return [...matrixRowsBySede].sort((left, right) => {
+      if (matrixSortField === "sede") {
+        const byCompany = compareText(left.empresa, right.empresa);
+        if (byCompany !== 0) return byCompany * directionFactor;
+        return compareText(left.sedeName, right.sedeName) * directionFactor;
+      }
 
-  const matrixTitle = `EXISTENCIAS ${matrixFocusLabel} - ${matrixScopeLabel}`;
+      const leftValue = left.items[matrixSortField] ?? 0;
+      const rightValue = right.items[matrixSortField] ?? 0;
+      if (leftValue !== rightValue) {
+        return (leftValue - rightValue) * directionFactor;
+      }
+
+      return compareText(left.displayName, right.displayName) * directionFactor;
+    });
+  }, [matrixRowsBySede, matrixSortDirection, matrixSortField]);
 
   const handleBuildMatrix = useCallback(() => {
     setShowValidation(true);
@@ -1099,6 +1181,192 @@ export default function InventarioXItemPage() {
     loadMatrixData,
   ]);
 
+  const handleMatrixSort = useCallback((field: MatrixSortField) => {
+    setMatrixSortField((currentField) => {
+      if (currentField === field) {
+        setMatrixSortDirection((currentDirection) =>
+          currentDirection === "asc" ? "desc" : "asc",
+        );
+        return currentField;
+      }
+
+      setMatrixSortDirection("desc");
+      return field;
+    });
+  }, []);
+
+  const availableDateLabel = availableDate
+    ? formatDateLabel(availableDate, dateLabelOptions)
+    : "Sin fecha";
+
+  const handleDownloadMatrixPdf = useCallback(() => {
+    if (summaryRows.length === 0 || sortedMatrixRowsBySede.length === 0) return;
+
+    setExportingPdf(true);
+
+    try {
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a3",
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const title = "Inventario por item";
+      const scopeLabel = `Empresa: ${
+        effectiveCompany ? effectiveCompany.toUpperCase() : "TODAS"
+      } | Sede: ${selectedSedeLabel}`;
+      const filtersLabel = `Lineas: ${
+        lineSelectionMode === "all" ? "TODAS" : selectedLines.length
+      } | Subcategoria: ${
+        selectedSubcategory === "all"
+          ? "TODAS"
+          : selectedSubcategory
+            ? INVENTARIO_SUBCATEGORY_LABELS[selectedSubcategory].toUpperCase()
+            : "N/A"
+      } | Items: ${summaryRows.length}`;
+
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageWidth, 18, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text(title, 14, 11.5);
+
+      doc.setTextColor(51, 65, 85);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(scopeLabel, 14, 26);
+      doc.text(filtersLabel, 14, 32);
+      doc.text(`Corte: ${availableDateLabel}`, 14, 38);
+      doc.text(
+        `Generado: ${new Intl.DateTimeFormat("es-CO", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }).format(new Date())}`,
+        14,
+        44,
+      );
+
+      const head = [
+        [
+          "Sede",
+          ...summaryRows.map((row) => `${row.item}\n${row.descripcion}`),
+        ],
+      ];
+
+      const body = sortedMatrixRowsBySede.map((row) => [
+        row.displayName,
+        ...summaryRows.map((itemRow) => formatUnits(row.items[itemRow.item] ?? 0)),
+      ]);
+
+      const foot = [
+        [
+          "Total general",
+          ...summaryRows.map((row) => formatUnits(matrixTotalsByItem[row.item] ?? 0)),
+        ],
+      ];
+
+      autoTable(doc, {
+        startY: 50,
+        head,
+        body,
+        foot,
+        theme: "grid",
+        margin: { left: 10, right: 10, top: 10, bottom: 12 },
+        styles: {
+          fontSize: 7,
+          cellPadding: 2,
+          lineColor: [203, 213, 225],
+          lineWidth: 0.1,
+          valign: "middle",
+        },
+        headStyles: {
+          fillColor: [219, 234, 254],
+          textColor: [15, 23, 42],
+          fontStyle: "bold",
+          halign: "center",
+          valign: "middle",
+        },
+        bodyStyles: {
+          textColor: [51, 65, 85],
+        },
+        footStyles: {
+          fillColor: [254, 249, 195],
+          textColor: [15, 23, 42],
+          fontStyle: "bold",
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+        columnStyles: {
+          0: {
+            cellWidth: 58,
+            halign: "left",
+            fontStyle: "bold",
+          },
+        },
+        horizontalPageBreak: true,
+        horizontalPageBreakRepeat: 0,
+        didDrawPage: () => {
+          const pageHeight = doc.internal.pageSize.getHeight();
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(
+            "Visor de Productividad | Inventario x item",
+            pageWidth - 14,
+            pageHeight - 6,
+            { align: "right" },
+          );
+        },
+      });
+
+      const safeCompany = effectiveCompany ? effectiveCompany.toLowerCase() : "todas";
+      const safeSede = selectedSedeLabel.toLowerCase().replace(/\s+/g, "-");
+      doc.save(`inventario-x-item-${safeCompany}-${safeSede}.pdf`);
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [
+    availableDateLabel,
+    effectiveCompany,
+    lineSelectionMode,
+    matrixTotalsByItem,
+    selectedLines.length,
+    selectedSedeLabel,
+    selectedSubcategory,
+    sortedMatrixRowsBySede,
+    summaryRows,
+  ]);
+
+  const handleDownloadMatrixJpg = useCallback(async () => {
+    if (!matrixImageRef.current || summaryRows.length === 0 || sortedMatrixRowsBySede.length === 0) {
+      return;
+    }
+
+    setExportingJpg(true);
+
+    try {
+      const dataUrl = await toJpeg(matrixImageRef.current, {
+        quality: 0.95,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+      });
+
+      const link = document.createElement("a");
+      const safeCompany = effectiveCompany ? effectiveCompany.toLowerCase() : "todas";
+      const safeSede = selectedSedeLabel.toLowerCase().replace(/\s+/g, "-");
+      link.href = dataUrl;
+      link.download = `inventario-x-item-${safeCompany}-${safeSede}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setExportingJpg(false);
+    }
+  }, [effectiveCompany, selectedSedeLabel, sortedMatrixRowsBySede.length, summaryRows.length]);
+
   const subcategoryOptions = useMemo<SelectOption[]>(
     () => [
       { value: ALL_FILTER_VALUE, label: "Todas", key: ALL_FILTER_VALUE },
@@ -1107,10 +1375,6 @@ export default function InventarioXItemPage() {
     ],
     [],
   );
-
-  const availableDateLabel = availableDate
-    ? formatDateLabel(availableDate, dateLabelOptions)
-    : "Sin fecha";
   const companyHelperText =
     showValidation && !hasCompanySelection
       ? "Selecciona una empresa puntual o marca 'Todas las empresas'."
@@ -1138,10 +1402,10 @@ export default function InventarioXItemPage() {
   const itemHelperText = !hasScopeSelection
     ? "Los items se habilitan despues de definir empresa y sede."
     : !hasLineSelection || !hasSubcategorySelection
-      ? "Primero define lineas y subcategoria. Este filtro es opcional."
+      ? "Primero define lineas y subcategoria para habilitar la lista de items."
       : selectedItems.length > 0
         ? `${selectedItems.length} de ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items seleccionados.`
-        : "Opcional: si no eliges items manualmente, la tabla tomara el top 10 del filtro.";
+        : `Selecciona entre 1 y ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items para construir la tabla.`;
 
   if (!ready) {
     return (
@@ -1218,7 +1482,8 @@ export default function InventarioXItemPage() {
               <p className="mt-1 text-sm leading-6 text-slate-600">
                 Empresa y sede filtran el alcance; lineas y subcategoria
                 refinan la lectura; luego puedes escoger hasta{" "}
-                {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items.
+                {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items antes de
+                construir la tabla.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1226,7 +1491,7 @@ export default function InventarioXItemPage() {
                 <Filter className="h-3.5 w-3.5 text-blue-600" />
                 {selectedItems.length > 0
                   ? `${selectedItems.length} item(s) seleccionados`
-                  : "Sin items manuales: mostramos top 10"}
+                  : "Items pendientes por seleccionar"}
               </div>
               <button
                 type="button"
@@ -1302,12 +1567,15 @@ export default function InventarioXItemPage() {
               label="Items"
               values={selectedItems}
               options={itemOptions}
+              visibleOptions={itemDropdownState.visibleOptions}
               onChange={handleItemsChange}
-              emptyLabel="Top 10 por inventario"
+              emptyLabel="Selecciona items"
               maxSelected={INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS}
               searchable
               searchValue={itemSearch}
               onSearchChange={setItemSearch}
+              totalResultsCount={itemDropdownState.totalResults}
+              truncatedResults={itemDropdownState.truncated}
               disabled={
                 !hasScopeSelection ||
                 loadingCatalog ||
@@ -1315,6 +1583,7 @@ export default function InventarioXItemPage() {
                 !hasSubcategorySelection ||
                 itemOptions.length === 0
               }
+              invalid={showValidation && selectedItems.length === 0}
               helperText={itemHelperText}
             />
           </div>
@@ -1347,6 +1616,22 @@ export default function InventarioXItemPage() {
               <span className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1">
                 Sedes: {hasAppliedCurrentFilters ? matrixRowsBySede.length : 0}
               </span>
+              <button
+                type="button"
+                onClick={handleDownloadMatrixPdf}
+                disabled={!hasAppliedCurrentFilters || summaryRows.length === 0 || exportingPdf}
+                className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {exportingPdf ? "Generando PDF..." : "PDF"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDownloadMatrixJpg()}
+                disabled={!hasAppliedCurrentFilters || summaryRows.length === 0 || exportingJpg}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {exportingJpg ? "Generando JPG..." : "JPG"}
+              </button>
             </div>
           </div>
 
@@ -1394,8 +1679,8 @@ export default function InventarioXItemPage() {
                 Completa los filtros obligatorios para continuar.
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Debes definir empresa, sede, lineas y subcategoria. Si quieres
-                consultar todo, selecciona explicitamente la opcion
+                Debes definir empresa, sede, lineas, subcategoria e items. Si
+                quieres consultar todo, selecciona explicitamente la opcion
                 {" \"Todas\" "}en cada filtro.
               </p>
             </div>
@@ -1434,69 +1719,117 @@ export default function InventarioXItemPage() {
               </p>
             </div>
           ) : (
-            <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200/70">
-              <div className="min-w-max">
-                <div className="border-b border-slate-200 bg-slate-100/80 px-4 py-4 text-center">
-                  <p className="text-lg font-black uppercase tracking-[0.04em] text-slate-900">
-                    {matrixTitle}
-                  </p>
-                </div>
-
-                <table className="min-w-full border-collapse">
+            <div className="relative mt-6 overflow-visible rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_60px_-42px_rgba(15,23,42,0.28)]">
+              <div className="overflow-x-auto overflow-y-visible bg-[linear-gradient(180deg,rgba(248,250,252,0.8),rgba(255,255,255,1))]">
+                <div ref={matrixImageRef} className="min-w-max bg-white px-4 py-4">
+                  <table className="min-w-full border-separate border-spacing-0">
                   <thead>
-                    <tr className="bg-sky-100/80 text-center text-sm font-black uppercase text-slate-900">
+                    <tr className="text-center text-sm font-black uppercase text-slate-900">
                       <th
                         rowSpan={2}
-                        className="border border-slate-400 px-4 py-3 text-left"
+                        className="sticky top-0 left-0 z-30 min-w-72 rounded-tl-2xl border-b border-r border-slate-300 bg-slate-100 px-5 py-4 text-left align-middle shadow-[8px_0_16px_-14px_rgba(15,23,42,0.25)]"
                       >
-                        Sede
+                        <button
+                          type="button"
+                          onClick={() => handleMatrixSort("sede")}
+                          className="flex items-center gap-2 text-left"
+                          title="Ordenar por sede"
+                        >
+                          <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+                            Sede
+                          </span>
+                          <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                        </button>
                       </th>
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-head-${row.item}`}
-                          className="border border-slate-400 px-4 py-3"
+                          className="sticky top-0 z-20 min-w-44 border-b border-r border-slate-300 bg-sky-100 px-4 py-4"
                         >
-                          {row.item}
+                          <button
+                            type="button"
+                            onClick={() => handleMatrixSort(row.item)}
+                            className="flex w-full items-center justify-center gap-2"
+                            title={`Ordenar por ${row.item}`}
+                          >
+                            <div className="text-base font-black text-slate-900">
+                              {row.item}
+                            </div>
+                            <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                          </button>
                         </th>
                       ))}
                     </tr>
-                    <tr className="bg-sky-50/80 text-center text-xs font-bold uppercase tracking-[0.04em] text-slate-700">
+                    <tr className="text-center text-xs font-bold uppercase tracking-[0.04em] text-slate-700">
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-subhead-${row.item}`}
-                          className="border border-slate-400 px-3 py-2"
+                          className="sticky top-[64px] z-20 border-b border-r border-slate-300 bg-sky-50 px-4 py-3"
+                          title={row.descripcion}
                         >
-                          <div className="max-w-40 truncate">{row.descripcion}</div>
+                          <div
+                            className="max-w-44 overflow-hidden text-[11px] font-bold tracking-[0.06em] text-slate-600"
+                            style={{
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                            }}
+                          >
+                            {row.descripcion}
+                          </div>
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {matrixRowsBySede.map((row) => (
-                      <tr key={row.key} className="bg-white">
-                        <td className="border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-900">
-                          {row.displayName}
+                    {sortedMatrixRowsBySede.map((row, index) => (
+                      <tr
+                        key={row.key}
+                        className={index % 2 === 0 ? "bg-white" : "bg-slate-50/80"}
+                      >
+                        <td
+                          className="sticky left-0 z-10 border-b border-r border-slate-200 bg-inherit px-5 py-2.5 text-sm font-bold text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]"
+                          title={row.displayName}
+                        >
+                          <div className="max-w-72">
+                            {multipleCompaniesInMatrix && (
+                              <span className="mb-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                                {row.empresa}
+                              </span>
+                            )}
+                            <div className="truncate">{row.displayName}</div>
+                          </div>
                         </td>
                         {summaryRows.map((itemRow) => (
-                          <td
-                            key={`${row.key}-${itemRow.item}`}
-                            className="border border-slate-300 px-4 py-3 text-right text-sm font-semibold text-slate-800"
-                          >
-                            {formatUnits(row.items[itemRow.item] ?? 0)}
-                          </td>
+                          (() => {
+                            const value = row.items[itemRow.item] ?? 0;
+                            const isZero = value === 0;
+                            return (
+                              <td
+                                key={`${row.key}-${itemRow.item}`}
+                                title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: ${formatUnits(value)}`}
+                                className={`border-b border-r border-slate-200 px-4 py-2.5 text-right text-sm font-semibold tabular-nums ${
+                                  isZero ? "text-slate-300" : "text-slate-700"
+                                }`}
+                              >
+                                {formatUnits(value)}
+                              </td>
+                            );
+                          })()
                         ))}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-amber-50/80">
-                      <td className="border border-slate-400 px-4 py-3 text-sm font-black uppercase text-slate-900">
-                        Total
+                    <tr className="bg-amber-50/90">
+                      <td className="sticky left-0 z-10 rounded-bl-2xl border-t-2 border-r border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-black uppercase tracking-[0.12em] text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]">
+                        Total general
                       </td>
                       {summaryRows.map((row) => (
                         <td
                           key={`matrix-total-${row.item}`}
-                          className="border border-slate-400 px-4 py-3 text-right text-sm font-black text-slate-900"
+                          title={`Total ${row.item}: ${formatUnits(matrixTotalsByItem[row.item] ?? 0)}`}
+                          className="border-t-2 border-r border-amber-300 bg-amber-50 px-4 py-2.5 text-right text-sm font-black text-slate-900 tabular-nums"
                         >
                           {formatUnits(matrixTotalsByItem[row.item] ?? 0)}
                         </td>
@@ -1504,9 +1837,10 @@ export default function InventarioXItemPage() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
 
-                <div className="px-4 py-3 text-sm font-bold text-red-600">
-                  {availableDateLabel}
+                <div className="border-t border-slate-200/80 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Desplaza horizontalmente para ver todos los items.
                 </div>
               </div>
             </div>
