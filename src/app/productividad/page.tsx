@@ -77,7 +77,7 @@ export default function ProductividadHubPage() {
           explican el resultado del negocio por sede.
         </p>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <button
             type="button"
             onClick={() => router.push("/")}
@@ -126,6 +126,23 @@ export default function ProductividadHubPage() {
             <span className="mt-1 block text-xs text-slate-600">
               Visualiza productos con baja rotacion y los items que no se estan
               moviendo por sede.
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.push("/prediccion-pedidos")}
+            className="rounded-2xl border border-amber-300/80 bg-linear-to-br from-amber-50 via-white to-yellow-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.35)] transition-all hover:-translate-y-0.5 hover:border-amber-400"
+          >
+            <span className="inline-flex rounded-full border border-amber-300/80 bg-amber-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-800">
+              Prediccion
+            </span>
+            <span className="mt-3 block text-sm font-semibold">
+              Prediccion pedidos
+            </span>
+            <span className="mt-1 block text-xs text-slate-600">
+              Proximamente: un tablero para anticipar necesidades de pedido por
+              item, sede y comportamiento reciente.
             </span>
           </button>
         </div>

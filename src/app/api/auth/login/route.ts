@@ -206,9 +206,15 @@ export async function POST(req: Request) {
     } finally {
       client.release();
     }
-  } catch {
+  } catch (error) {
+    console.error("Login API error:", error);
     return NextResponse.json(
-      { error: "No se pudo iniciar sesión." },
+      {
+        error:
+          process.env.NODE_ENV === "development" && error instanceof Error
+            ? error.message
+            : "No se pudo iniciar sesión.",
+      },
       { status: 500 },
     );
   }

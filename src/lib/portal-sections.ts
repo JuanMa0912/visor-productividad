@@ -26,7 +26,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
     description:
       "Identifica que categorias o items impulsan o afectan la venta en terminos de productividad, rentabilidad y participacion.",
     href: "/productividad",
-    modules: ["Productividad", "Margenes", "Rotacion"],
+    modules: ["Productividad", "Margenes", "Rotacion", "Prediccion pedidos"],
   },
   {
     id: "operacion",
@@ -47,6 +47,7 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   productividad: "producto",
   margenes: "producto",
   rotacion: "producto",
+  "prediccion-pedidos": "producto",
   "margenes-operativos": "producto",
   operacion: "operacion",
   "operacion-es": "operacion",

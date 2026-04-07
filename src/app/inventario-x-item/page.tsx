@@ -244,6 +244,7 @@ const MultiSelectField = ({
   const selectedPreview = allSelected
     ? []
     : selectedOptions.slice(0, 2);
+  const hiddenSelectedOptions = allSelected ? [] : selectedOptions.slice(2);
   const remainingSelectedCount = Math.max(0, selectedOptions.length - selectedPreview.length);
   const limitReached =
     maxSelected !== undefined && maxSelected > 0 && values.length >= maxSelected;
@@ -289,8 +290,23 @@ const MultiSelectField = ({
                 </span>
               ))}
               {remainingSelectedCount > 0 && (
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                  +{remainingSelectedCount}
+                <span className="group/summary relative inline-flex">
+                  <span
+                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
+                    title={hiddenSelectedOptions.map((option) => option.label).join("\n")}
+                  >
+                    +{remainingSelectedCount}
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-30 hidden w-max max-w-72 -translate-x-1/2 rounded-2xl border border-slate-200/80 bg-slate-950/95 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.6)] group-hover/summary:block">
+                    {hiddenSelectedOptions.map((option) => (
+                      <span
+                        key={option.key ?? option.value}
+                        className="block whitespace-normal"
+                      >
+                        {option.label}
+                      </span>
+                    ))}
+                  </span>
                 </span>
               )}
             </span>
@@ -1181,19 +1197,19 @@ export default function InventarioXItemPage() {
     loadMatrixData,
   ]);
 
-  const handleMatrixSort = useCallback((field: MatrixSortField) => {
-    setMatrixSortField((currentField) => {
-      if (currentField === field) {
-        setMatrixSortDirection((currentDirection) =>
-          currentDirection === "asc" ? "desc" : "asc",
-        );
-        return currentField;
+  const handleMatrixSort = useCallback((
+    field: MatrixSortField,
+    direction?: MatrixSortDirection,
+  ) => {
+    setMatrixSortField(field);
+    setMatrixSortDirection((currentDirection) => {
+      if (direction) return direction;
+      if (matrixSortField === field) {
+        return currentDirection === "asc" ? "desc" : "asc";
       }
-
-      setMatrixSortDirection("desc");
-      return field;
+      return "desc";
     });
-  }, []);
+  }, [matrixSortField]);
 
   const availableDateLabel = availableDate
     ? formatDateLabel(availableDate, dateLabelOptions)
@@ -1733,12 +1749,28 @@ export default function InventarioXItemPage() {
                           type="button"
                           onClick={() => handleMatrixSort("sede")}
                           className="flex items-center gap-2 text-left"
-                          title="Ordenar por sede"
+                          title={
+                            matrixSortField === "sede" && matrixSortDirection === "asc"
+                              ? "Orden actual: A a Z. Click para cambiar a Z a A"
+                              : matrixSortField === "sede" && matrixSortDirection === "desc"
+                                ? "Orden actual: Z a A. Click para cambiar a A a Z"
+                                : "Ordenar por sede"
+                          }
                         >
                           <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
                             Sede
                           </span>
-                          <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                          {matrixSortField === "sede" ? (
+                            <ArrowUp
+                              className={`h-3.5 w-3.5 ${
+                                matrixSortDirection === "asc"
+                                  ? "text-slate-900"
+                                  : "rotate-180 text-slate-900"
+                              }`}
+                            />
+                          ) : (
+                            <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                          )}
                         </button>
                       </th>
                       {summaryRows.map((row) => (
@@ -1750,12 +1782,28 @@ export default function InventarioXItemPage() {
                             type="button"
                             onClick={() => handleMatrixSort(row.item)}
                             className="flex w-full items-center justify-center gap-2"
-                            title={`Ordenar por ${row.item}`}
+                            title={
+                              matrixSortField === row.item && matrixSortDirection === "asc"
+                                ? `Orden actual de ${row.item}: menor a mayor. Click para cambiar a mayor a menor`
+                                : matrixSortField === row.item && matrixSortDirection === "desc"
+                                  ? `Orden actual de ${row.item}: mayor a menor. Click para cambiar a menor a mayor`
+                                  : `Ordenar por ${row.item}`
+                            }
                           >
                             <div className="text-base font-black text-slate-900">
                               {row.item}
                             </div>
-                            <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                            {matrixSortField === row.item ? (
+                              <ArrowUp
+                                className={`h-3.5 w-3.5 ${
+                                  matrixSortDirection === "asc"
+                                    ? "text-sky-700"
+                                    : "rotate-180 text-sky-700"
+                                }`}
+                              />
+                            ) : (
+                              <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                            )}
                           </button>
                         </th>
                       ))}
