@@ -5,6 +5,67 @@ import type { Sede } from "@/lib/constants";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 60;
+const RATE_LIMIT_MAX_ENTRIES = 10_000;
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+const getClientIp = (request: Request) => {
+  const trustProxy = process.env.TRUST_PROXY === "true";
+  const forwarded = trustProxy ? request.headers.get("x-forwarded-for") : null;
+  if (forwarded) {
+    return forwarded.split(",")[0]?.trim() || "unknown";
+  }
+  return (
+    request.headers.get("x-real-ip") ??
+    request.headers.get("cf-connecting-ip") ??
+    "unknown"
+  );
+};
+
+const checkRateLimit = (request: Request) => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitStore.entries()) {
+    if (entry.resetAt <= now) {
+      rateLimitStore.delete(ip);
+    }
+  }
+  if (rateLimitStore.size > RATE_LIMIT_MAX_ENTRIES) {
+    const overflow = rateLimitStore.size - RATE_LIMIT_MAX_ENTRIES;
+    const keys = rateLimitStore.keys();
+    for (let i = 0; i < overflow; i += 1) {
+      const next = keys.next();
+      if (next.done) break;
+      rateLimitStore.delete(next.value);
+    }
+  }
+  const clientIp = getClientIp(request);
+  const entry = rateLimitStore.get(clientIp);
+  if (!entry || entry.resetAt <= now) {
+    rateLimitStore.set(clientIp, {
+      count: 1,
+      resetAt: now + RATE_LIMIT_WINDOW_MS,
+    });
+    return null;
+  }
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return entry.resetAt;
+  }
+  entry.count += 1;
+  return null;
+};
+
+const debugLog = (...args: unknown[]) => {
+  if (!IS_PRODUCTION) {
+    console.log(...args);
+  }
+};
+
+let cachedColumns: string[] | null = null;
+let cachedColumnsAt = 0;
+const COLUMNS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const normalizeSedeKey = (value: string) =>
   value
@@ -153,7 +214,7 @@ const buildNormalizeSql = (columnName: string) => `
   )
 `;
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await requireAuthSession();
   if (!session) {
     return NextResponse.json(
@@ -188,6 +249,23 @@ export async function GET() {
     );
   }
 
+  const limitedUntil = checkRateLimit(request);
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta mas tarde." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": retryAfterSeconds.toString(),
+            "Cache-Control": NO_STORE_CACHE_CONTROL,
+          },
+        },
+      ),
+    );
+  }
+
   const { authorized, visibleSedes, defaultSede } = resolveVisibleSedes(
     session.user,
   );
@@ -203,15 +281,22 @@ export async function GET() {
   const pool = await getDbPool();
   const client = await pool.connect();
   try {
-    const columnsResult = await client.query(`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'asistencia_horas'
-    `);
-    const columns = (columnsResult.rows ?? [])
-      .map((row) => (row as { column_name?: string }).column_name)
-      .filter((value): value is string => Boolean(value));
+    const now = Date.now();
+    let columns = cachedColumns;
+    if (!columns || now - cachedColumnsAt > COLUMNS_CACHE_TTL_MS) {
+      const columnsResult = await client.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'asistencia_horas'
+      `);
+      columns = (columnsResult.rows ?? [])
+        .map((row) => (row as { column_name?: string }).column_name)
+        .filter((value): value is string => Boolean(value));
+      cachedColumns = columns;
+      cachedColumnsAt = now;
+      debugLog("[ingresar-horarios/options] Cached columns:", columns.length);
+    }
     const normalizedToOriginal = new Map<string, string>();
     columns.forEach((col) => normalizedToOriginal.set(normalizeColumnName(col), col));
 

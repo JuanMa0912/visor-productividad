@@ -1153,16 +1153,23 @@ const fetchHourlyData = async (
               continue;
             }
             const role = typedRow.cargo?.trim() || undefined;
-            const roleKey = role
-              ? role
+            const roleSource = `${typedRow.cargo ?? ""} ${typedRow.departamento ?? ""}`.trim();
+            const roleKey = roleSource
+              ? roleSource
                   .normalize("NFD")
                   .replace(/[\u0300-\u036f]/g, "")
                   .toLowerCase()
                   .replace(/[^a-z0-9]+/g, " ")
                   .trim()
               : "";
+            const roleKeyCompact = roleKey.replace(/\s+/g, "");
             let employeeType: string | undefined;
-            if (roleKey.includes("36") && roleKey.includes("hora")) {
+            if (
+              (roleKey.includes("36") && roleKey.includes("hora")) ||
+              roleKeyCompact.includes("36h") ||
+              roleKeyCompact.includes("36hora") ||
+              roleKeyCompact.includes("36horas")
+            ) {
               employeeType = "36 horas";
             } else if (roleKey.includes("medio")) {
               employeeType = "Medio tiempo";

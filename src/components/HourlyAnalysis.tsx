@@ -272,6 +272,13 @@ const normalizeIncidentValue = (value: string | null | undefined) =>
 const isAbsenceIncident = (value: string | null | undefined) =>
   normalizeIncidentValue(value).includes("inasistencia");
 
+const normalizeEmployeeType = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+
 const HourlyLoadingSkeleton = () => (
   <div className="space-y-3 animate-pulse">
     {Array.from({ length: 14 }).map((_, i) => (
@@ -470,8 +477,8 @@ export const HourlyAnalysis = ({
       ? defaultSection
       : enabledSections[0],
   );
-  const [overtimeRangeMin, setOvertimeRangeMin] = useState("8");
-  const [overtimeRangeMax, setOvertimeRangeMax] = useState("10");
+  const [overtimeRangeMin, setOvertimeRangeMin] = useState("");
+  const [overtimeRangeMax, setOvertimeRangeMax] = useState("");
   const [overtimeSedeFilter, setOvertimeSedeFilter] = useState<string[]>([]);
   const [overtimePersonFilter, setOvertimePersonFilter] = useState("");
   const [overtimeDepartmentFilter, setOvertimeDepartmentFilter] = useState<
@@ -1596,10 +1603,14 @@ export const HourlyAnalysis = ({
         overtimeEmployeeTypeFilter !== "all"
       ) {
         const employeeType = employee.employeeType?.trim() ?? "";
-        if (
-          employeeType.toLowerCase() !==
-          overtimeEmployeeTypeFilter.toLowerCase()
-        ) {
+        const normalizedEmployeeType = normalizeEmployeeType(employeeType);
+        const normalizedFilter = normalizeEmployeeType(overtimeEmployeeTypeFilter);
+        if (normalizedFilter === "36horas") {
+          const has36 =
+            normalizedEmployeeType.includes("36horas") ||
+            normalizedEmployeeType.includes("36h");
+          if (!has36) return false;
+        } else if (normalizedEmployeeType !== normalizedFilter) {
           return false;
         }
       }

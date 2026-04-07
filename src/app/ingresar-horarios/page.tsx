@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
@@ -85,8 +85,146 @@ const normalizeText = (value?: string) =>
 const formatTimeForPrint = (value?: string) => {
   const normalized = (value ?? "").trim();
   if (!normalized) return "";
-  return normalized.length >= 5 ? normalized.slice(0, 5) : normalized;
+  const [rawHours, rawMinutes] = normalized.split(":");
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes ?? "0");
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return normalized.length >= 5 ? normalized.slice(0, 5) : normalized;
+  }
+  const period = hours >= 12 ? "pm" : "am";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${String(hour12).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${period}`;
 };
+
+type RowScheduleRowProps = {
+  row: RowSchedule;
+  rowIndex: number;
+  onRowField: (
+    rowIndex: number,
+    field: keyof Pick<RowSchedule, "nombre" | "firma">,
+    value: string,
+  ) => void;
+  onRowDayField: (
+    rowIndex: number,
+    day: DayKey,
+    field: keyof DaySchedule,
+    value: string,
+  ) => void;
+  onDescanso: (rowIndex: number, day: DayKey, checked: boolean) => void;
+};
+
+const RowScheduleRow = memo(
+  ({ row, rowIndex, onRowField, onRowDayField, onDescanso }: RowScheduleRowProps) => (
+    <tr className="odd:bg-white even:bg-slate-50/40">
+      <td className="border border-slate-200 px-2 py-1 text-center text-slate-600">
+        {rowIndex + 1}
+      </td>
+      <td className="border border-slate-200 px-2 py-1">
+        <input
+          type="text"
+          list="employees-cajas-options"
+          value={row.nombre}
+          onChange={(e) => onRowField(rowIndex, "nombre", e.target.value.trimStart())}
+          placeholder="Escribir o seleccionar empleado"
+          className="w-full min-w-70 rounded border border-slate-200 px-2 py-1 text-[12px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
+        />
+        <span className="hidden text-[8px] leading-tight text-slate-900 print:block">
+          {row.nombre}
+        </span>
+      </td>
+      {DAY_ORDER.flatMap((day) => {
+        const dayData = row.days[day];
+        if (dayData.conDescanso) {
+          return [
+            <td
+              key={`${rowIndex}-${day}-descanso`}
+              colSpan={4}
+              className="border border-slate-200 bg-amber-50/60 px-1 py-1 text-center"
+            >
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={dayData.conDescanso}
+                  onChange={(e) => onDescanso(rowIndex, day, e.target.checked)}
+                  title="Marcar este dia como descanso para este empleado"
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-200 print:hidden"
+                />
+                <span>Descanso</span>
+              </label>
+            </td>,
+          ];
+        }
+
+        return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
+          <td
+            key={`${rowIndex}-${day}-${field}`}
+            className="border border-slate-200 px-1 py-1 print:px-0.5 print:text-center"
+          >
+            {field === "he1" ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={dayData.conDescanso}
+                  onChange={(e) => onDescanso(rowIndex, day, e.target.checked)}
+                  title="Marcar este dia como descanso para este empleado"
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-200 print:hidden"
+                />
+                <input
+                  type="time"
+                  step={60}
+                  value={(dayData[field] as string | undefined) ?? ""}
+                  onClick={(e) => {
+                    const input = e.currentTarget as HTMLInputElement & {
+                      showPicker?: () => void;
+                    };
+                    if (typeof input.showPicker === "function") input.showPicker();
+                  }}
+                  onChange={(e) => onRowDayField(rowIndex, day, field, e.target.value)}
+                  className="schedule-time-input w-full rounded border border-slate-200 px-1 py-1 text-[11px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
+                />
+                <span className="hidden w-full text-center text-[8px] leading-none text-slate-900 print:block">
+                  {formatTimeForPrint(dayData[field])}
+                </span>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="time"
+                  step={60}
+                  value={(dayData[field] as string | undefined) ?? ""}
+                  onClick={(e) => {
+                    const input = e.currentTarget as HTMLInputElement & {
+                      showPicker?: () => void;
+                    };
+                    if (typeof input.showPicker === "function") input.showPicker();
+                  }}
+                  onChange={(e) => onRowDayField(rowIndex, day, field, e.target.value)}
+                  className="schedule-time-input w-full rounded border border-slate-200 px-1 py-1 text-[11px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
+                />
+                <span className="hidden w-full text-center text-[8px] leading-none text-slate-900 print:block">
+                  {formatTimeForPrint(dayData[field])}
+                </span>
+              </>
+            )}
+          </td>
+        ));
+      })}
+      <td className="h-16 border border-slate-200 px-2 py-1 align-top">
+        <textarea
+          value={row.firma}
+          onChange={(e) => onRowField(rowIndex, "firma", e.target.value)}
+          rows={2}
+          className="h-full min-h-14 w-full resize-none rounded border border-slate-200 px-2 py-1 text-[12px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
+        />
+        <span className="hidden text-[8px] leading-tight text-slate-900 print:block">
+          {row.firma}
+        </span>
+      </td>
+    </tr>
+  ),
+);
+
+RowScheduleRow.displayName = "RowScheduleRow";
 
 type HorariosOptionsResponse = {
   sedes?: Array<{ id: string; name: string }>;
@@ -172,17 +310,7 @@ export default function IngresarHorariosPage() {
     };
   }, [router]);
 
-  if (!ready) {
-    return (
-      <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
-        <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando modulo...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const updateRowField = (
+  const updateRowField = useCallback((
     rowIndex: number,
     field: keyof Pick<RowSchedule, "nombre" | "firma">,
     value: string,
@@ -192,9 +320,9 @@ export default function IngresarHorariosPage() {
         idx === rowIndex ? { ...row, [field]: value } : row,
       ),
     );
-  };
+  }, []);
 
-  const updateRowDayField = (
+  const updateRowDayField = useCallback((
     rowIndex: number,
     day: DayKey,
     field: keyof DaySchedule,
@@ -216,9 +344,13 @@ export default function IngresarHorariosPage() {
           : row,
       ),
     );
-  };
+  }, []);
 
-  const updateDescanso = (rowIndex: number, day: DayKey, checked: boolean) => {
+  const updateDescanso = useCallback((
+    rowIndex: number,
+    day: DayKey,
+    checked: boolean,
+  ) => {
     setRows((prev) =>
       prev.map((row, idx) =>
         idx === rowIndex
@@ -239,19 +371,34 @@ export default function IngresarHorariosPage() {
           : row,
       ),
     );
-  };
+  }, []);
 
-  const filteredEmployeeNames = Array.from(
-    new Set(
-      employeeOptions
-        .filter(
-          (employee) =>
-            !sede || normalizeText(employee.sede ?? "") === normalizeText(sede),
-        )
-        .map((employee) => employee.name)
-        .filter(Boolean),
-    ),
-  ).sort((a, b) => a.localeCompare(b, "es"));
+  const filteredEmployeeNames = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          employeeOptions
+            .filter(
+              (employee) =>
+                !sede ||
+                normalizeText(employee.sede ?? "") === normalizeText(sede),
+            )
+            .map((employee) => employee.name)
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b, "es")),
+    [employeeOptions, sede],
+  );
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
+        <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+          <p className="text-sm text-slate-600">Cargando modulo...</p>
+        </div>
+      </div>
+    );
+  }
 
   const dayNumbersByKey: Partial<Record<DayKey, string>> = {};
   if (fechaInicial && fechaFinal) {
@@ -461,151 +608,14 @@ export default function IngresarHorariosPage() {
             </thead>
             <tbody>
               {rows.map((row, rowIndex) => (
-                <tr
+                <RowScheduleRow
                   key={`row-${rowIndex}`}
-                  className="odd:bg-white even:bg-slate-50/40"
-                >
-                  <td className="border border-slate-200 px-2 py-1 text-center text-slate-600">
-                    {rowIndex + 1}
-                  </td>
-                  <td className="border border-slate-200 px-2 py-1">
-                    <input
-                      type="text"
-                      list="employees-cajas-options"
-                      value={row.nombre}
-                      onChange={(e) =>
-                        updateRowField(rowIndex, "nombre", e.target.value)
-                      }
-                      placeholder="Escribir o seleccionar empleado"
-                      className="w-full min-w-70 rounded border border-slate-200 px-2 py-1 text-[12px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
-                    />
-                    <span className="hidden text-[8px] leading-tight text-slate-900 print:block">
-                      {row.nombre}
-                    </span>
-                  </td>
-                  {DAY_ORDER.flatMap((day) => {
-                    const dayData = row.days[day];
-                    if (dayData.conDescanso) {
-                      return [
-                        <td
-                          key={`${rowIndex}-${day}-descanso`}
-                          colSpan={4}
-                          className="border border-slate-200 bg-amber-50/60 px-1 py-1 text-center"
-                        >
-                          <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={dayData.conDescanso}
-                              onChange={(e) =>
-                                updateDescanso(rowIndex, day, e.target.checked)
-                              }
-                              title="Marcar este dia como descanso para este empleado"
-                              className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-200 print:hidden"
-                            />
-                            <span>Descanso</span>
-                          </label>
-                        </td>,
-                      ];
-                    }
-
-                    return (["he1", "hs1", "he2", "hs2"] as const).map(
-                      (field) => (
-                        <td
-                          key={`${rowIndex}-${day}-${field}`}
-                          className="border border-slate-200 px-1 py-1 print:px-0.5 print:text-center"
-                        >
-                          {field === "he1" ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="checkbox"
-                                checked={dayData.conDescanso}
-                                onChange={(e) =>
-                                  updateDescanso(
-                                    rowIndex,
-                                    day,
-                                    e.target.checked,
-                                  )
-                                }
-                                title="Marcar este dia como descanso para este empleado"
-                                className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-200 print:hidden"
-                              />
-                              <input
-                                type="time"
-                                step={60}
-                                value={
-                                  (dayData[field] as string | undefined) ?? ""
-                                }
-                                onClick={(e) => {
-                                  const input =
-                                    e.currentTarget as HTMLInputElement & {
-                                      showPicker?: () => void;
-                                    };
-                                  if (typeof input.showPicker === "function")
-                                    input.showPicker();
-                                }}
-                                onChange={(e) =>
-                                  updateRowDayField(
-                                    rowIndex,
-                                    day,
-                                    field,
-                                    e.target.value,
-                                  )
-                                }
-                                className="schedule-time-input w-full rounded border border-slate-200 px-1 py-1 text-[11px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
-                              />
-                              <span className="hidden w-full text-center text-[8px] leading-none text-slate-900 print:block">
-                                {formatTimeForPrint(dayData[field])}
-                              </span>
-                            </div>
-                          ) : (
-                            <>
-                              <input
-                                type="time"
-                                step={60}
-                                value={
-                                  (dayData[field] as string | undefined) ?? ""
-                                }
-                                onClick={(e) => {
-                                  const input =
-                                    e.currentTarget as HTMLInputElement & {
-                                      showPicker?: () => void;
-                                    };
-                                  if (typeof input.showPicker === "function")
-                                    input.showPicker();
-                                }}
-                                onChange={(e) =>
-                                  updateRowDayField(
-                                    rowIndex,
-                                    day,
-                                    field,
-                                    e.target.value,
-                                  )
-                                }
-                                className="schedule-time-input w-full rounded border border-slate-200 px-1 py-1 text-[11px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
-                              />
-                              <span className="hidden w-full text-center text-[8px] leading-none text-slate-900 print:block">
-                                {formatTimeForPrint(dayData[field])}
-                              </span>
-                            </>
-                          )}
-                        </td>
-                      ),
-                    );
-                  })}
-                  <td className="h-16 border border-slate-200 px-2 py-1 align-top">
-                    <textarea
-                      value={row.firma}
-                      onChange={(e) =>
-                        updateRowField(rowIndex, "firma", e.target.value)
-                      }
-                      rows={2}
-                      className="h-full min-h-14 w-full resize-none rounded border border-slate-200 px-2 py-1 text-[12px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
-                    />
-                    <span className="hidden text-[8px] leading-tight text-slate-900 print:block">
-                      {row.firma}
-                    </span>
-                  </td>
-                </tr>
+                  row={row}
+                  rowIndex={rowIndex}
+                  onRowField={updateRowField}
+                  onRowDayField={updateRowDayField}
+                  onDescanso={updateDescanso}
+                />
               ))}
             </tbody>
           </table>
