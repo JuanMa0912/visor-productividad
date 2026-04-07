@@ -585,6 +585,7 @@ const fetchHourlyData = async (
   selectedSedes: string[],
   allowedLineIds: string[] = [],
   includePeopleBreakdown = false,
+  overtimeOnly = false,
   overtimeDateStart?: string | null,
   overtimeDateEnd?: string | null,
 ): Promise<HourlyAnalysisData> => {
@@ -620,7 +621,11 @@ const fetchHourlyData = async (
     });
 
     let salesDateCompact = dateCompact;
-    try {
+    let salesDateUsed: string | null = dateISO;
+    if (overtimeOnly) {
+      salesDateUsed = null;
+    }
+    if (!overtimeOnly) try {
       const latestSalesDateSubqueries = selectedLineTables
         .map(
           (line) => `
@@ -651,29 +656,30 @@ const fetchHourlyData = async (
 
     const salesByHourByLine = new Map<number, Map<string, number>>();
 
-    const salesPromises = selectedLineTables.map(async (line) => {
-      try {
-        const query = `
-          SELECT
-            hora_final_hora,
-            COALESCE(SUM(total_bruto), 0) AS total_sales
-          FROM ${line.table}
-          WHERE fecha_dcto = $1
-            ${salesBranchFilter}
-          GROUP BY hora_final_hora
-          ORDER BY hora_final_hora
-        `;
+    if (!overtimeOnly) {
+      const salesPromises = selectedLineTables.map(async (line) => {
+        try {
+          const query = `
+            SELECT
+              hora_final_hora,
+              COALESCE(SUM(total_bruto), 0) AS total_sales
+            FROM ${line.table}
+            WHERE fecha_dcto = $1
+              ${salesBranchFilter}
+            GROUP BY hora_final_hora
+            ORDER BY hora_final_hora
+          `;
 
-        const queryParams: Array<string | null> = [salesDateCompact, ...salesBranchParams];
-        const result = await client.query(query, queryParams);
+          const queryParams: Array<string | null> = [salesDateCompact, ...salesBranchParams];
+          const result = await client.query(query, queryParams);
 
-        if (!result.rows) return;
+          if (!result.rows) return;
 
-        for (const row of result.rows) {
-          const typedRow = row as {
-            hora_final_hora: unknown;
-            total_sales: string | number;
-          };
+          for (const row of result.rows) {
+            const typedRow = row as {
+              hora_final_hora: unknown;
+              total_sales: string | number;
+            };
             const minuteOfDay = parseMinuteOfDay(typedRow.hora_final_hora);
             if (minuteOfDay === null) continue;
             const bucketStartMinute =
@@ -686,18 +692,20 @@ const fetchHourlyData = async (
             lineMap.set(
               line.id,
               (lineMap.get(line.id) ?? 0) + (Number(typedRow.total_sales) || 0),
-          );
+            );
+          }
+        } catch (error) {
+          console.warn(`[hourly-analysis] Error consultando ${line.table}:`, error);
         }
-      } catch (error) {
-        console.warn(`[hourly-analysis] Error consultando ${line.table}:`, error);
-      }
-    });
+      });
 
-    await Promise.all(salesPromises);
+      await Promise.all(salesPromises);
+    }
 
     const personContributions: HourlyPersonContribution[] = [];
 
     if (
+      !overtimeOnly &&
       includePeopleBreakdown &&
       lineFilter === "cajas" &&
       selectedLineTables.some((line) => line.id === "cajas")
@@ -900,11 +908,11 @@ const fetchHourlyData = async (
               : "AND 1=0"
           }
       `;
-        const attendanceColumns = await getTableColumns(client, "asistencia_horas");
+      const attendanceColumns = await getTableColumns(client, "asistencia_horas");
       const attendanceColumnSet = new Set(
         attendanceColumns.map((col) => normalizeColumnName(col)),
       );
-      if (attendanceDateUsed) {
+      if (!overtimeOnly && attendanceDateUsed) {
         const attendanceParams: unknown[] = [attendanceDateUsed];
         if (selectedSedeConfigs.length > 0) {
           attendanceParams.push(selectedAttendanceNames);
@@ -1205,39 +1213,41 @@ const fetchHourlyData = async (
     }
 
     const hours: HourSlot[] = [];
-    for (
-      let slotStartMinute = 0;
-      slotStartMinute < 1440;
-      slotStartMinute += bucketMinutes
-    ) {
-      const lineSalesMap =
-        salesByHourByLine.get(slotStartMinute) ?? new Map<string, number>();
-      const linePresenceMap =
-        presenceByHourByLine.get(slotStartMinute) ?? new Map<string, number>();
+    if (!overtimeOnly) {
+      for (
+        let slotStartMinute = 0;
+        slotStartMinute < 1440;
+        slotStartMinute += bucketMinutes
+      ) {
+        const lineSalesMap =
+          salesByHourByLine.get(slotStartMinute) ?? new Map<string, number>();
+        const linePresenceMap =
+          presenceByHourByLine.get(slotStartMinute) ?? new Map<string, number>();
 
-      const lines: HourlyLineSales[] = selectedLineTables.map((lt) => ({
-        lineId: lt.id,
-        lineName: lt.name,
-        sales: lineSalesMap.get(lt.id) ?? 0,
-      }));
+        const lines: HourlyLineSales[] = selectedLineTables.map((lt) => ({
+          lineId: lt.id,
+          lineName: lt.name,
+          sales: lineSalesMap.get(lt.id) ?? 0,
+        }));
 
-      const totalSales = lines.reduce((sum, l) => sum + l.sales, 0);
-      const employeesByLine = Object.fromEntries(
-        selectedLineTables.map((line) => [line.id, linePresenceMap.get(line.id) ?? 0]),
-      );
+        const totalSales = lines.reduce((sum, l) => sum + l.sales, 0);
+        const employeesByLine = Object.fromEntries(
+          selectedLineTables.map((line) => [line.id, linePresenceMap.get(line.id) ?? 0]),
+        );
 
-      hours.push({
-        hour: Math.floor(slotStartMinute / 60),
-        slotStartMinute,
-        slotEndMinute: (slotStartMinute + bucketMinutes) % 1440,
-        label: buildSlotLabel(slotStartMinute, bucketMinutes),
-        totalSales,
-        employeesPresent: lineFilter
-          ? linePresenceMap.get(lineFilter) ?? 0
-          : presenceByHour.get(slotStartMinute) ?? 0,
-        employeesByLine,
-        lines,
-      });
+        hours.push({
+          hour: Math.floor(slotStartMinute / 60),
+          slotStartMinute,
+          slotEndMinute: (slotStartMinute + bucketMinutes) % 1440,
+          label: buildSlotLabel(slotStartMinute, bucketMinutes),
+          totalSales,
+          employeesPresent: lineFilter
+            ? linePresenceMap.get(lineFilter) ?? 0
+            : presenceByHour.get(slotStartMinute) ?? 0,
+          employeesByLine,
+          lines,
+        });
+      }
     }
 
     const lineName = lineFilter
@@ -1250,7 +1260,7 @@ const fetchHourlyData = async (
         ? `${selectedScopeLabel} - ${lineName}`
         : selectedScopeLabel,
       attendanceDateUsed,
-      salesDateUsed: compactDateToISO(salesDateCompact),
+      salesDateUsed: salesDateUsed ? compactDateToISO(salesDateCompact) : null,
       bucketMinutes,
       overtimeEmployees,
       personContributions,
@@ -1340,6 +1350,9 @@ export async function GET(request: Request) {
   const dateParam = url.searchParams.get("date");
   const overtimeDateStartParam = url.searchParams.get("overtimeDateStart");
   const overtimeDateEndParam = url.searchParams.get("overtimeDateEnd");
+  const overtimeOnlyParam = url.searchParams.get("overtimeOnly");
+  const overtimeOnly =
+    overtimeOnlyParam === "1" || overtimeOnlyParam === "true";
   const lineParam = url.searchParams.get("line")?.trim() || null;
   const includePeopleBreakdown =
     url.searchParams.get("includePeople") === "1" ||
@@ -1517,6 +1530,7 @@ export async function GET(request: Request) {
       effectiveSedeParams,
       allowedLineIds,
       includePeopleBreakdown,
+      overtimeOnly,
       overtimeDateStartParam,
       overtimeDateEndParam,
     );

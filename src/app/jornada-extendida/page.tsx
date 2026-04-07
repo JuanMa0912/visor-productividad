@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import * as ExcelJS from "exceljs";
+import { toJpeg } from "html-to-image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -136,6 +137,7 @@ export default function JornadaExtendidaPage() {
   const [alexLoading, setAlexLoading] = useState(false);
   const [alexError, setAlexError] = useState<string | null>(null);
   const [exportingAlexExcel, setExportingAlexExcel] = useState(false);
+  const [exportingAlexJpg, setExportingAlexJpg] = useState(false);
   const [isAlexExportMenuOpen, setIsAlexExportMenuOpen] = useState(false);
   const [alexSelectedFields, setAlexSelectedFields] = useState<AlexExportFieldKey[]>(
     () => ALEX_EXPORT_FIELDS.map((field) => field.key),
@@ -145,6 +147,7 @@ export default function JornadaExtendidaPage() {
     useState<AlexSortDirection>("desc");
   const [alexExportError, setAlexExportError] = useState<string | null>(null);
   const alexExportMenuRef = useRef<HTMLDivElement | null>(null);
+  const alexTableRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -485,6 +488,44 @@ export default function JornadaExtendidaPage() {
     }
   };
 
+  const handleExportAlexTableJpg = async () => {
+    if (!alexTableRef.current) return;
+    if (alexRows.length === 0) return;
+    const tableNode = alexTableRef.current;
+    const tableElement = tableNode.querySelector("table") as HTMLElement | null;
+    setExportingAlexJpg(true);
+    try {
+      if (!tableElement) {
+        setAlexExportError("No se pudo preparar el JPG.");
+        return;
+      }
+
+      const dataUrl = await toJpeg(tableElement, {
+        quality: 0.95,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+        width: tableElement.scrollWidth,
+        height: tableElement.scrollHeight + 24,
+        style: {
+          overflow: "visible",
+          backgroundColor: "#ffffff",
+        },
+      });
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `reporte-alex-${alexStartDate || "inicio"}-${alexEndDate || "fin"}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("[jornada-extendida] Error exportando JPG Alex:", error);
+      setAlexExportError("No se pudo exportar el JPG.");
+    } finally {
+      setExportingAlexJpg(false);
+    }
+  };
+
   useEffect(() => {
     if (!canSeeAlexReport) return;
     if (!alexStartDate || !alexEndDate) return;
@@ -651,6 +692,14 @@ export default function JornadaExtendidaPage() {
                               ? "Cerrar Excel"
                               : "Excel tabla"}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleExportAlexTableJpg()}
+                          disabled={alexLoading || alexRows.length === 0 || exportingAlexJpg}
+                          className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-amber-200/70 bg-amber-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 transition-all hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0 sm:ml-2 sm:w-auto"
+                        >
+                          {exportingAlexJpg ? "Generando JPG..." : "Exportar JPG"}
+                        </button>
                         {isAlexExportMenuOpen && (
                           <div className="mt-2 w-full rounded-2xl border border-slate-200/70 bg-white p-3 shadow-[0_20px_50px_-35px_rgba(15,23,42,0.35)] sm:absolute sm:right-0 sm:z-10 sm:w-[30rem]">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -719,7 +768,11 @@ export default function JornadaExtendidaPage() {
                 ) : alexLoading ? (
                   <p className="mt-3 text-sm text-slate-600">Cargando reporte Alex...</p>
                 ) : (
-                  <div className="mt-3 overflow-auto rounded-xl border border-slate-200">
+                  <div
+                    ref={alexTableRef}
+                    className="mt-3 overflow-x-auto overflow-y-visible rounded-xl border border-slate-200"
+                    style={{ scrollbarGutter: "stable" }}
+                  >
                     <table className="min-w-[820px] w-full text-sm">
                       <thead className="bg-slate-100 text-slate-800">
                         <tr>

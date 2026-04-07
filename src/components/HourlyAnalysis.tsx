@@ -22,7 +22,6 @@ import {
   TrendingDown,
   ArrowUp,
 } from "lucide-react";
-import * as ExcelJS from "exceljs";
 import { cn, formatDateLabel } from "@/lib/utils";
 import { DEFAULT_LINES } from "@/lib/constants";
 import type { Sede } from "@/lib/constants";
@@ -117,6 +116,8 @@ const formatCurrency = (value: number) =>
     currency: "COP",
     maximumFractionDigits: 0,
   }).format(value);
+
+const loadExcelJs = () => import("exceljs");
 
 const formatShare = (value: number) =>
   new Intl.NumberFormat("es-CO", {
@@ -941,6 +942,7 @@ export const HourlyAnalysis = ({
     sedeNames: string[],
     includePeople: boolean,
     currentDashboardContext: HourlyAnalysisDashboardContext,
+    overtimeOnly: boolean,
     overtimeDateRange?: { start: string; end: string },
     signal?: AbortSignal,
   ) => {
@@ -949,6 +951,7 @@ export const HourlyAnalysis = ({
     if (lineId) params.set("line", lineId);
     params.set("bucketMinutes", String(currentBucketMinutes));
     if (includePeople) params.set("includePeople", "1");
+    if (overtimeOnly) params.set("overtimeOnly", "1");
     sedeNames.forEach((sede) => params.append("sede", sede));
     if (overtimeDateRange?.start)
       params.set("overtimeDateStart", overtimeDateRange.start);
@@ -981,6 +984,7 @@ export const HourlyAnalysis = ({
       selectedSedes,
       showPersonBreakdown,
       dashboardContext,
+      isOvertimeOnlyMode,
       enableOvertimeDateRange && isOvertimeOnlyMode
         ? {
             start: overtimeDateStart,
@@ -1302,6 +1306,7 @@ export const HourlyAnalysis = ({
 
   const handleExportHourlyXlsx = useCallback(async () => {
     if (hourlyExportRows.length === 0) return false;
+    const ExcelJS = await loadExcelJs();
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Productividad por hora");
     sheet.columns = [
@@ -1944,6 +1949,7 @@ export const HourlyAnalysis = ({
     );
     if (exportEmployees.length === 0) return;
 
+    const ExcelJS = await loadExcelJs();
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Horario");
     sheet.columns = [

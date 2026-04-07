@@ -34,13 +34,11 @@ import {
 } from "@mui/x-charts/ChartsTooltip";
 import type { ChartsTooltipProps } from "@mui/x-charts/ChartsTooltip";
 import { ChartsLabelMark } from "@mui/x-charts/ChartsLabel";
-import * as ExcelJS from "exceljs";
 import type { XAxis, YAxis } from "@mui/x-charts/models";
 import type { LineSeries } from "@mui/x-charts/LineChart";
 import type { MarkPlotProps, LinePlotProps } from "@mui/x-charts/LineChart";
-import { jsPDF } from "jspdf";
 import { canAccessPortalSection } from "@/lib/portal-sections";
-import autoTable from "jspdf-autotable";
+import type { Row, Worksheet } from "exceljs";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { LineCard } from "@/components/LineCard";
 import { LineComparisonTable } from "@/components/LineComparisonTable";
@@ -100,6 +98,7 @@ const sanitizeExportText = (value: string) => {
   const normalized = value.replace(/\r?\n/g, " ").trim();
   return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
 };
+const loadExcelJs = () => import("exceljs");
 
 // ============================================================================
 // TIPOS
@@ -1160,6 +1159,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
 
   const handleExportChartXlsx = useCallback(async () => {
     if (chartDates.length === 0 || seriesDefinitions.length === 0) return false;
+    const ExcelJS = await loadExcelJs();
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Grafico productividad");
     sheet.columns = [
@@ -2207,6 +2207,7 @@ const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
 
   const handleExportTrendsXlsx = useCallback(async () => {
     if (!selectedLine) return false;
+    const ExcelJS = await loadExcelJs();
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet(
       viewType === "temporal" ? "Tendencias temporal" : "Tendencias sedes",
@@ -2961,6 +2962,7 @@ const M2MetricsSection = forwardRef<ViewExportHandle, M2MetricsSectionProps>(({
 
   const handleExportM2Xlsx = useCallback(async () => {
     if (metrics.length === 0) return false;
+    const ExcelJS = await loadExcelJs();
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Indicadores m2");
     sheet.columns = [
@@ -3924,6 +3926,7 @@ export default function Home() {
   }, [buildExportPayload]);
 
   const handleDownloadXlsx = useCallback(async (payload?: ExportPayload) => {
+    const ExcelJS = await loadExcelJs();
     const {
       pdfLines: exportLines,
       selectedScopeLabel: exportScopeLabel,
@@ -3975,7 +3978,7 @@ export default function Home() {
     const accentBg = "EAF2F8";
     const borderColor = "C9D3DD";
 
-    const applyHeaderStyle = (row: ExcelJS.Row) => {
+    const applyHeaderStyle = (row: Row) => {
       row.eachCell((cell) => {
         cell.font = {
           name: "Calibri",
@@ -3999,7 +4002,7 @@ export default function Home() {
       row.height = 20;
     };
 
-    const applyBodyBorder = (sheet: ExcelJS.Worksheet) => {
+    const applyBodyBorder = (sheet: Worksheet) => {
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
         row.eachCell((cell) => {
@@ -4639,7 +4642,11 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }, [buildExportPayload]);
 
-  const handleDownloadPdf = useCallback((payload?: ExportPayload) => {
+  const handleDownloadPdf = useCallback(async (payload?: ExportPayload) => {
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const {
       pdfLines: exportLines,
       selectedScopeLabel: exportScopeLabel,

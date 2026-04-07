@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { toJpeg } from "html-to-image";
 
 type DayKey =
   | "domingo"
@@ -247,9 +248,11 @@ export default function IngresarHorariosPage() {
   const [employeeOptions, setEmployeeOptions] = useState<
     Array<{ name: string; sede?: string }>
   >([]);
+  const [exportingJpg, setExportingJpg] = useState(false);
   const [rows, setRows] = useState<RowSchedule[]>(
     Array.from({ length: 16 }, () => createEmptyRow()),
   );
+  const planillaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -390,6 +393,30 @@ export default function IngresarHorariosPage() {
     [employeeOptions, sede],
   );
 
+  const handleExportPdf = () => {
+    window.print();
+  };
+  const handleExportJpg = useCallback(async () => {
+    if (!planillaRef.current) return;
+    setExportingJpg(true);
+    try {
+      const dataUrl = await toJpeg(planillaRef.current, {
+        quality: 0.95,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+      });
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `planilla-horarios-${sede || "sede"}-${mes || "mes"}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setExportingJpg(false);
+    }
+  }, [mes, sede]);
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
@@ -419,14 +446,11 @@ export default function IngresarHorariosPage() {
     }
   }
 
-  const handleExportPdf = () => {
-    window.print();
-  };
-
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground print:bg-white print:p-0">
       <div
         id="planilla-print"
+        ref={planillaRef}
         className="mx-auto w-full max-w-384 rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)] print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none"
       >
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
@@ -448,6 +472,14 @@ export default function IngresarHorariosPage() {
               className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100/70"
             >
               Exportar PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExportJpg()}
+              disabled={exportingJpg}
+              className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100/70 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exportingJpg ? "Generando JPG..." : "Exportar JPG"}
             </button>
             <button
               type="button"
