@@ -125,6 +125,11 @@ const formatShare = (value: number) =>
     maximumFractionDigits: 1,
   }).format(value);
 
+const sanitizeExportText = (value: string) => {
+  const normalized = value.replace(/\r?\n/g, " ").trim();
+  return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
+};
+
 const formatHoursBase60 = (value: number) => {
   if (!Number.isFinite(value)) return "0.00";
   const sign = value < 0 ? "-" : "";
@@ -1270,7 +1275,7 @@ export const HourlyAnalysis = ({
     const rows = [
       ["Franja", "Ventas", "Empleados", "Vta/Hr"],
       ...hourlyExportRows.map((row) => [
-        row.label,
+        sanitizeExportText(row.label),
         Math.round(row.sales),
         row.employees,
         Number.isFinite(row.productivity) ? row.productivity.toFixed(3) : "0.000",
@@ -1301,7 +1306,7 @@ export const HourlyAnalysis = ({
     sheet.addRow(["Franja", "Ventas", "Empleados", "Vta/Hr"]);
     hourlyExportRows.forEach((row) => {
       sheet.addRow([
-        row.label,
+        sanitizeExportText(row.label),
         Math.round(row.sales),
         row.employees,
         Number.isFinite(row.productivity) ? Number(row.productivity.toFixed(3)) : 0,

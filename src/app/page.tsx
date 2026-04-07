@@ -96,6 +96,11 @@ const formatPdfDate = () =>
     timeStyle: "short",
   }).format(new Date());
 
+const sanitizeExportText = (value: string) => {
+  const normalized = value.replace(/\r?\n/g, " ").trim();
+  return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
+};
+
 // ============================================================================
 // TIPOS
 // ============================================================================
@@ -1123,7 +1128,10 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
   const handleExportChartCsv = useCallback(() => {
     if (chartDates.length === 0 || seriesDefinitions.length === 0) return false;
     const escapeCsv = (value: string | number) => {
-      const str = String(value ?? "");
+      const str =
+        typeof value === "string"
+          ? sanitizeExportText(value)
+          : String(value ?? "");
       if (str.includes(",") || str.includes('"') || str.includes("\n")) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -1158,10 +1166,13 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
       { key: "date", width: 14 },
       ...seriesDefinitions.map(() => ({ key: "series", width: 18 })),
     ];
-    sheet.addRow(["Fecha", ...seriesDefinitions.map((s) => s.label)]);
+    sheet.addRow([
+      "Fecha",
+      ...seriesDefinitions.map((s) => sanitizeExportText(s.label)),
+    ]);
     chartDates.forEach((date, index) => {
       sheet.addRow([
-        date,
+        sanitizeExportText(date),
         ...seriesDefinitions.map((series) => {
           const value = seriesMap.get(series.id)?.[index];
           return value == null ? null : Number(value.toFixed(3));
@@ -2127,7 +2138,10 @@ const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
   const handleExportTrendsCsv = useCallback(() => {
     if (!selectedLine) return false;
     const escapeCsv = (value: string | number) => {
-      const str = String(value ?? "");
+      const str =
+        typeof value === "string"
+          ? sanitizeExportText(value)
+          : String(value ?? "");
       if (str.includes(",") || str.includes('"') || str.includes("\n")) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -2209,7 +2223,7 @@ const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
       sheet.addRow(["Fecha", "Ventas", "Horas", "Vta/Hr"]);
       trendData.forEach((point) => {
         sheet.addRow([
-          point.date,
+          sanitizeExportText(point.date),
           Math.round(point.sales),
           Number(point.hours.toFixed(2)),
           point.hours > 0 ? Number((point.sales / 1_000_000 / point.hours).toFixed(3)) : 0,
@@ -2230,8 +2244,8 @@ const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
       sedeComparisonData.forEach((day) => {
         day.sedes.forEach((sede) => {
           sheet.addRow([
-            day.date,
-            sede.sedeName,
+            sanitizeExportText(day.date),
+            sanitizeExportText(sede.sedeName),
             Math.round(sede.sales),
             Number(sede.hours.toFixed(2)),
             sede.hours > 0 ? Number((sede.sales / 1_000_000 / sede.hours).toFixed(3)) : 0,
@@ -2915,7 +2929,10 @@ const M2MetricsSection = forwardRef<ViewExportHandle, M2MetricsSectionProps>(({
   const handleExportM2Csv = useCallback(() => {
     if (metrics.length === 0) return false;
     const escapeCsv = (value: string | number) => {
-      const str = String(value ?? "");
+      const str =
+        typeof value === "string"
+          ? sanitizeExportText(value)
+          : String(value ?? "");
       if (str.includes(",") || str.includes('"') || str.includes("\n")) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -2956,7 +2973,7 @@ const M2MetricsSection = forwardRef<ViewExportHandle, M2MetricsSectionProps>(({
     sheet.addRow(["Sede", "m2", "Ventas/m2", "Horas/m2", "Margen/m2"]);
     metrics.forEach((item) => {
       sheet.addRow([
-        item.sedeName,
+        sanitizeExportText(item.sedeName),
         item.m2 ?? null,
         item.salesPerM2 ?? null,
         item.hoursPerM2 ?? null,
@@ -3836,7 +3853,8 @@ export default function Home() {
     const dateRangeLabel = exportDateRangeLabel;
     const lineFilterLabel = exportLineFilterLabel;
     const escapeCsv = (value: string | number) => {
-      const str = String(value);
+      const str =
+        typeof value === "string" ? sanitizeExportText(value) : String(value);
       if (str.includes(",") || str.includes('"') || str.includes("\n")) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -3861,10 +3879,10 @@ export default function Home() {
       "",
       "BLOQUE: INFORMACION",
       "Sede,Valor",
-      `Sede,${escapeCsv(selectedScopeLabel)}`,
-      `Rango,${escapeCsv(dateRangeLabel || "Sin rango definido")}`,
-      `Filtro,${escapeCsv(lineFilterLabel)}`,
-      `Generado,${escapeCsv(formatPdfDate())}`,
+      `Sede,${escapeCsv(sanitizeExportText(selectedScopeLabel))}`,
+      `Rango,${escapeCsv(sanitizeExportText(dateRangeLabel || "Sin rango definido"))}`,
+      `Filtro,${escapeCsv(sanitizeExportText(lineFilterLabel))}`,
+      `Generado,${escapeCsv(sanitizeExportText(formatPdfDate()))}`,
       "",
       "BLOQUE: DETALLE POR LINEA",
       "",
@@ -3874,8 +3892,8 @@ export default function Home() {
         const hours = hasLaborData ? line.hours : 0;
         return [
           index + 1,
-          escapeCsv(line.name),
-          escapeCsv(line.id),
+          escapeCsv(sanitizeExportText(line.name)),
+          escapeCsv(sanitizeExportText(line.id)),
           formatNumber(Math.round(line.sales)),
           hours.toFixed(2),
         ].join(",");
@@ -4266,8 +4284,8 @@ export default function Home() {
     applyHeaderStyle(allLinesHeader);
     sortedByCurrentSales.forEach((line) => {
       const row = allLinesSheet.addRow([
-        line.name,
-        line.id,
+        sanitizeExportText(line.name),
+        sanitizeExportText(line.id),
         line.currentSales,
         line.previousSales,
         line.salesDelta,
@@ -4308,8 +4326,8 @@ export default function Home() {
     sortedByCurrentSales.forEach((line, index) => {
       const row = rankingSheet.addRow([
         index + 1,
-        line.name,
-        line.id,
+        sanitizeExportText(line.name),
+        sanitizeExportText(line.id),
         line.currentSales,
         currentSalesTotal > 0 ? line.currentSales / currentSalesTotal : null,
         line.currentHours,
@@ -4358,8 +4376,8 @@ export default function Home() {
     sortedByCurrentSales.forEach((line, index) => {
       const row = comparisonSheet.addRow([
         index + 1,
-        line.name,
-        line.id,
+        sanitizeExportText(line.name),
+        sanitizeExportText(line.id),
         line.currentSales,
         line.currentHours,
         line.currentSalesPerHour,
@@ -4441,10 +4459,10 @@ export default function Home() {
       const lineSales = currentSalesByLineMap.get(detail.lineId) ?? 0;
       const row = detailSheet.addRow([
         lineRankMap.get(detail.lineId) ?? null,
-        detail.lineName,
-        detail.lineId,
+        sanitizeExportText(detail.lineName),
+        sanitizeExportText(detail.lineId),
         sedeRankByLineMap.get(detail.lineId)?.get(detail.sedeId) ?? null,
-        detail.sedeName,
+        sanitizeExportText(detail.sedeName),
         detail.currentSales,
         lineSales > 0 ? detail.currentSales / lineSales : null,
         detail.currentHours,
@@ -4482,10 +4500,10 @@ export default function Home() {
     applyHeaderStyle(dailyLineHeader);
     lineDailyDetails.forEach((detail) => {
       dailyLineSheet.addRow([
-        detail.periodLabel,
-        detail.date,
-        detail.lineName,
-        detail.lineId,
+        sanitizeExportText(detail.periodLabel),
+        sanitizeExportText(detail.date),
+        sanitizeExportText(detail.lineName),
+        sanitizeExportText(detail.lineId),
         detail.sales,
         detail.hours,
         detail.salesPerHour,
@@ -4517,12 +4535,12 @@ export default function Home() {
     applyHeaderStyle(dailySedeLineHeader);
     lineSedeDailyDetails.forEach((detail) => {
       dailySedeLineSheet.addRow([
-        detail.periodLabel,
-        detail.date,
-        detail.sedeName,
-        detail.sedeId,
-        detail.lineName,
-        detail.lineId,
+        sanitizeExportText(detail.periodLabel),
+        sanitizeExportText(detail.date),
+        sanitizeExportText(detail.sedeName),
+        sanitizeExportText(detail.sedeId),
+        sanitizeExportText(detail.lineName),
+        sanitizeExportText(detail.lineId),
         detail.sales,
         detail.hours,
         detail.salesPerHour,

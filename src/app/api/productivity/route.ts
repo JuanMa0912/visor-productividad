@@ -24,13 +24,21 @@ const resolveCachePath = () => {
 
 const cacheFilePath = resolveCachePath();
 const NO_STORE_CACHE_CONTROL = "no-store, private";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const debugLog = (...args: unknown[]) => {
+  if (!IS_PRODUCTION) {
+    console.log(...args);
+  }
+};
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
+const RATE_LIMIT_MAX_ENTRIES = 10_000;
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 const getClientIp = (request: Request) => {
-  const forwarded = request.headers.get("x-forwarded-for");
+  const trustProxy = process.env.TRUST_PROXY === "true";
+  const forwarded = trustProxy ? request.headers.get("x-forwarded-for") : null;
   if (forwarded) {
     return forwarded.split(",")[0].trim();
   }
@@ -43,6 +51,20 @@ const getClientIp = (request: Request) => {
 
 const checkRateLimit = (request: Request) => {
   const now = Date.now();
+  for (const [ip, entry] of rateLimitStore.entries()) {
+    if (entry.resetAt <= now) {
+      rateLimitStore.delete(ip);
+    }
+  }
+  if (rateLimitStore.size > RATE_LIMIT_MAX_ENTRIES) {
+    const overflow = rateLimitStore.size - RATE_LIMIT_MAX_ENTRIES;
+    const keys = rateLimitStore.keys();
+    for (let i = 0; i < overflow; i += 1) {
+      const next = keys.next();
+      if (next.done) break;
+      rateLimitStore.delete(next.value);
+    }
+  }
   const clientIp = getClientIp(request);
   const entry = rateLimitStore.get(clientIp);
   if (!entry || entry.resetAt <= now) {
@@ -428,13 +450,13 @@ const fetchAllProductivityData = async (
       const hoursResult = await client.query(hoursQuery);
 
       // DEBUG: Resumen inicial
-      console.log("=== DEBUG HORAS ===");
-      console.log("Claves ventas:", dailyDataMap.size);
-      console.log(
+      debugLog("=== DEBUG HORAS ===");
+      debugLog("Claves ventas:", dailyDataMap.size);
+      debugLog(
         "Primeras 5 claves ventas:",
         Array.from(dailyDataMap.keys()).slice(0, 5),
       );
-      console.log("Filas horas:", hoursResult.rows?.length ?? 0);
+      debugLog("Filas horas:", hoursResult.rows?.length ?? 0);
 
       let horasAsignadas = 0;
       let filasSkipped = 0;
@@ -473,7 +495,7 @@ const fetchAllProductivityData = async (
           if (primerFila) {
             const hoursKey = `${fecha}_${sedeName}`;
             const existsInVentas = dailyDataMap.has(hoursKey);
-            console.log("Primera fila horas:", {
+            debugLog("Primera fila horas:", {
               fechaRaw: typedRow.fecha,
               fechaFormateada: fecha,
               sedeRaw: typedRow.sede,
@@ -537,14 +559,14 @@ const fetchAllProductivityData = async (
           if (sedeNorm) sedesHoras.add(sedeNorm);
         }
       }
-      console.log("Sedes únicas en horas:", Array.from(sedesHoras));
-      console.log(
+      debugLog("Sedes únicas en horas:", Array.from(sedesHoras));
+      debugLog(
         "Sedes únicas en ventas:",
         Array.from(
           new Set(Array.from(dailyDataMap.values()).map((d) => d.sede)),
         ),
       );
-      console.log("Resumen:", { horasAsignadas, filasSkipped });
+      debugLog("Resumen:", { horasAsignadas, filasSkipped });
     } catch (error) {
       console.warn("No se pudo consultar la tabla asistencia_horas:", error);
     }
@@ -575,14 +597,14 @@ const fetchAllProductivityData = async (
     );
     if (sampleWithHours) {
       const lineWithHours = sampleWithHours.lines.find((l) => l.hours > 0);
-      console.log("Ejemplo con horas:", {
+      debugLog("Ejemplo con horas:", {
         fecha: sampleWithHours.date,
         sede: sampleWithHours.sede,
         linea: lineWithHours?.id,
         horas: lineWithHours?.hours,
       });
     } else {
-      console.log("ADVERTENCIA: Ningún registro tiene horas > 0");
+      debugLog("ADVERTENCIA: Ningún registro tiene horas > 0");
     }
 
     return sortedResult;
