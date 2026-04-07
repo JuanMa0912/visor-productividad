@@ -1032,6 +1032,7 @@ export const HourlyAnalysis = ({
       selectedSedes,
       false,
       dashboardContext,
+      false,
       undefined,
       controller.signal,
     )
