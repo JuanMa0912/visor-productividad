@@ -8,6 +8,8 @@ import {
   useRef,
   createContext,
   useContext,
+  forwardRef,
+  useImperativeHandle,
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -107,6 +109,11 @@ type ApiResponse = {
 type DateRange = {
   start: string;
   end: string;
+};
+
+type ViewExportHandle = {
+  exportCsv: () => boolean;
+  exportXlsx: () => Promise<boolean>;
 };
 
 type ExportPayload = {
@@ -823,6 +830,7 @@ const SortedAxisTooltipContent = () => {
   );
 };
 
+
 const CustomChartTooltip = (props: ChartsTooltipProps) => (
   <ChartsTooltipContainer {...props}>
     <SortedAxisTooltipContent />
@@ -849,21 +857,23 @@ const clampChartDateRange = (range: DateRange): DateRange => {
 
 // ============================================================================
 
-const ChartVisualization = ({
-  dailyDataSet,
-  selectedSedeIds,
-  availableDates,
-  dateRange,
-  lines,
-  sedes,
-}: {
+type ChartVisualizationProps = {
   dailyDataSet: DailyProductivity[];
   selectedSedeIds: string[];
   availableDates: string[];
   dateRange: DateRange;
   lines: LineMetrics[];
   sedes: Sede[];
-}) => {
+};
+
+const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>(({
+  dailyDataSet,
+  selectedSedeIds,
+  availableDates,
+  dateRange,
+  lines,
+  sedes,
+}, ref) => {
   const [selectedSeriesState, setSelectedSeriesState] = useState<string[]>([]);
   const [selectedChartSedesState, setSelectedChartSedesState] = useState<string[]>([]);
   const [chartRangeDraft, setChartRangeDraft] = useState(() => {
@@ -1110,6 +1120,80 @@ const ChartVisualization = ({
       : `${firstLabel.charAt(0).toUpperCase() + firstLabel.slice(1)} – ${lastLabel}`;
   }, [chartDates]);
 
+  const handleExportChartCsv = useCallback(() => {
+    if (chartDates.length === 0 || seriesDefinitions.length === 0) return false;
+    const escapeCsv = (value: string | number) => {
+      const str = String(value ?? "");
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    const header = ["Fecha", ...seriesDefinitions.map((s) => s.label)];
+    const rows = chartDates.map((date, index) => [
+      date,
+      ...seriesDefinitions.map((series) => {
+        const value = seriesMap.get(series.id)?.[index];
+        return value == null ? "" : value.toFixed(3);
+      }),
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map(escapeCsv).join(","))
+      .join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `grafico-productividad-${chartStartDate || "sin-fecha"}-${chartEndDate || "sin-fecha"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    return true;
+  }, [chartDates, chartEndDate, chartStartDate, seriesDefinitions, seriesMap]);
+
+  const handleExportChartXlsx = useCallback(async () => {
+    if (chartDates.length === 0 || seriesDefinitions.length === 0) return false;
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Grafico productividad");
+    sheet.columns = [
+      { key: "date", width: 14 },
+      ...seriesDefinitions.map(() => ({ key: "series", width: 18 })),
+    ];
+    sheet.addRow(["Fecha", ...seriesDefinitions.map((s) => s.label)]);
+    chartDates.forEach((date, index) => {
+      sheet.addRow([
+        date,
+        ...seriesDefinitions.map((series) => {
+          const value = seriesMap.get(series.id)?.[index];
+          return value == null ? null : Number(value.toFixed(3));
+        }),
+      ]);
+    });
+    sheet.getRow(1).font = { bold: true };
+    const buffer = await workbook.xlsx.writeBuffer();
+    const url = URL.createObjectURL(
+      new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `grafico-productividad-${chartStartDate || "sin-fecha"}-${chartEndDate || "sin-fecha"}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return true;
+  }, [chartDates, chartEndDate, chartStartDate, seriesDefinitions, seriesMap]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      exportCsv: handleExportChartCsv,
+      exportXlsx: handleExportChartXlsx,
+    }),
+    [handleExportChartCsv, handleExportChartXlsx],
+  );
+
   const xAxis = useMemo<XAxis<"point", string>[]>(
     () => [
       {
@@ -1339,22 +1423,26 @@ const ChartVisualization = ({
       )}
     </div>
   );
-};
-const LineTrends = ({
-  dailyDataSet,
-  selectedSedeIds,
-  availableDates,
-  lines,
-  sedes,
-  dateRange,
-}: {
+});
+
+ChartVisualization.displayName = "ChartVisualization";
+type LineTrendsProps = {
   dailyDataSet: DailyProductivity[];
   selectedSedeIds: string[];
   availableDates: string[];
   lines: LineMetrics[];
   sedes: Sede[];
   dateRange: DateRange;
-}) => {
+};
+
+const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
+  dailyDataSet,
+  selectedSedeIds,
+  availableDates,
+  lines,
+  sedes,
+  dateRange,
+}, ref) => {
   const [selectedLine, setSelectedLine] = useState<string>("");
   const [viewType, setViewType] = useState<"temporal" | "por-sede">("temporal");
   const [comparisonSedeSelection, setComparisonSedeSelection] = useState<{
@@ -2036,6 +2124,156 @@ const LineTrends = ({
     sedeNameMap,
   ]);
 
+  const handleExportTrendsCsv = useCallback(() => {
+    if (!selectedLine) return false;
+    const escapeCsv = (value: string | number) => {
+      const str = String(value ?? "");
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    if (viewType === "temporal") {
+      if (trendData.length === 0) return false;
+      const rows = [
+        ["Fecha", "Ventas", "Horas", "Vta/Hr"],
+        ...trendData.map((point) => [
+          point.date,
+          Math.round(point.sales),
+          point.hours.toFixed(2),
+          point.hours > 0 ? (point.sales / 1_000_000 / point.hours).toFixed(3) : "0.000",
+        ]),
+      ];
+      const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+      const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `tendencias-temporal-${selectedLine}-${trendEffectiveDateRange.start || "sin-fecha"}-${trendEffectiveDateRange.end || "sin-fecha"}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      return true;
+    }
+
+    if (sedeComparisonData.length === 0 || comparisonSedeIds.length === 0) {
+      return false;
+    }
+
+    const rows = [
+      ["Fecha", "Sede", "Ventas", "Horas", "Vta/Hr"],
+      ...sedeComparisonData.flatMap((day) =>
+        day.sedes.map((sede) => [
+          day.date,
+          sede.sedeName,
+          Math.round(sede.sales),
+          sede.hours.toFixed(2),
+          sede.hours > 0 ? (sede.sales / 1_000_000 / sede.hours).toFixed(3) : "0.000",
+        ]),
+      ),
+    ];
+    const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tendencias-sedes-${selectedLine}-${trendEffectiveDateRange.start || "sin-fecha"}-${trendEffectiveDateRange.end || "sin-fecha"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    return true;
+  }, [
+    comparisonSedeIds.length,
+    sedeComparisonData,
+    selectedLine,
+    trendData,
+    trendEffectiveDateRange.end,
+    trendEffectiveDateRange.start,
+    viewType,
+  ]);
+
+  const handleExportTrendsXlsx = useCallback(async () => {
+    if (!selectedLine) return false;
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(
+      viewType === "temporal" ? "Tendencias temporal" : "Tendencias sedes",
+    );
+
+    if (viewType === "temporal") {
+      if (trendData.length === 0) return false;
+      sheet.columns = [
+        { key: "date", width: 14 },
+        { key: "sales", width: 16 },
+        { key: "hours", width: 12 },
+        { key: "productivity", width: 12 },
+      ];
+      sheet.addRow(["Fecha", "Ventas", "Horas", "Vta/Hr"]);
+      trendData.forEach((point) => {
+        sheet.addRow([
+          point.date,
+          Math.round(point.sales),
+          Number(point.hours.toFixed(2)),
+          point.hours > 0 ? Number((point.sales / 1_000_000 / point.hours).toFixed(3)) : 0,
+        ]);
+      });
+    } else {
+      if (sedeComparisonData.length === 0 || comparisonSedeIds.length === 0) {
+        return false;
+      }
+      sheet.columns = [
+        { key: "date", width: 14 },
+        { key: "sede", width: 22 },
+        { key: "sales", width: 16 },
+        { key: "hours", width: 12 },
+        { key: "productivity", width: 12 },
+      ];
+      sheet.addRow(["Fecha", "Sede", "Ventas", "Horas", "Vta/Hr"]);
+      sedeComparisonData.forEach((day) => {
+        day.sedes.forEach((sede) => {
+          sheet.addRow([
+            day.date,
+            sede.sedeName,
+            Math.round(sede.sales),
+            Number(sede.hours.toFixed(2)),
+            sede.hours > 0 ? Number((sede.sales / 1_000_000 / sede.hours).toFixed(3)) : 0,
+          ]);
+        });
+      });
+    }
+
+    sheet.getRow(1).font = { bold: true };
+    const buffer = await workbook.xlsx.writeBuffer();
+    const url = URL.createObjectURL(
+      new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tendencias-${viewType}-${selectedLine}-${trendEffectiveDateRange.start || "sin-fecha"}-${trendEffectiveDateRange.end || "sin-fecha"}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return true;
+  }, [
+    comparisonSedeIds.length,
+    sedeComparisonData,
+    selectedLine,
+    trendData,
+    trendEffectiveDateRange.end,
+    trendEffectiveDateRange.start,
+    viewType,
+  ]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      exportCsv: handleExportTrendsCsv,
+      exportXlsx: handleExportTrendsXlsx,
+    }),
+    [handleExportTrendsCsv, handleExportTrendsXlsx],
+  );
+
   if (lines.length === 0 || availableDates.length === 0) return null;
 
   const renderComparisonFilters = (compact = false) => (
@@ -2594,7 +2832,9 @@ const LineTrends = ({
       )}
     </div>
   );
-};
+});
+
+LineTrends.displayName = "LineTrends";
 
 const formatM2Value = (value: number | null) => {
   if (value == null) return "--";
@@ -2604,17 +2844,19 @@ const formatM2Value = (value: number | null) => {
   }).format(value);
 };
 
-const M2MetricsSection = ({
-  dailyDataSet,
-  sedes,
-  selectedSedeIds,
-  dateRange,
-}: {
+type M2MetricsSectionProps = {
   dailyDataSet: DailyProductivity[];
   sedes: Sede[];
   selectedSedeIds: string[];
   dateRange: DateRange;
-}) => {
+};
+
+const M2MetricsSection = forwardRef<ViewExportHandle, M2MetricsSectionProps>(({
+  dailyDataSet,
+  sedes,
+  selectedSedeIds,
+  dateRange,
+}, ref) => {
   const selectedSedeIdSet = useMemo(
     () => new Set(selectedSedeIds),
     [selectedSedeIds],
@@ -2670,6 +2912,83 @@ const M2MetricsSection = ({
     selectedSedeIds.length,
   ]);
 
+  const handleExportM2Csv = useCallback(() => {
+    if (metrics.length === 0) return false;
+    const escapeCsv = (value: string | number) => {
+      const str = String(value ?? "");
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    const rows = [
+      ["Sede", "m2", "Ventas/m2", "Horas/m2", "Margen/m2"],
+      ...metrics.map((item) => [
+        item.sedeName,
+        item.m2 ?? "",
+        item.salesPerM2 ?? "",
+        item.hoursPerM2 ?? "",
+        item.marginPerM2 ?? "",
+      ]),
+    ];
+    const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `indicadores-m2-${dateRange.start || "sin-fecha"}-${dateRange.end || "sin-fecha"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    return true;
+  }, [dateRange.end, dateRange.start, metrics]);
+
+  const handleExportM2Xlsx = useCallback(async () => {
+    if (metrics.length === 0) return false;
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Indicadores m2");
+    sheet.columns = [
+      { key: "sede", width: 22 },
+      { key: "m2", width: 10 },
+      { key: "sales", width: 16 },
+      { key: "hours", width: 12 },
+      { key: "margin", width: 16 },
+    ];
+    sheet.addRow(["Sede", "m2", "Ventas/m2", "Horas/m2", "Margen/m2"]);
+    metrics.forEach((item) => {
+      sheet.addRow([
+        item.sedeName,
+        item.m2 ?? null,
+        item.salesPerM2 ?? null,
+        item.hoursPerM2 ?? null,
+        item.marginPerM2 ?? null,
+      ]);
+    });
+    sheet.getRow(1).font = { bold: true };
+    const buffer = await workbook.xlsx.writeBuffer();
+    const url = URL.createObjectURL(
+      new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `indicadores-m2-${dateRange.start || "sin-fecha"}-${dateRange.end || "sin-fecha"}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return true;
+  }, [dateRange.end, dateRange.start, metrics]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      exportCsv: handleExportM2Csv,
+      exportXlsx: handleExportM2Xlsx,
+    }),
+    [handleExportM2Csv, handleExportM2Xlsx],
+  );
+
   if (metrics.length === 0) return null;
 
   return (
@@ -2719,7 +3038,9 @@ const M2MetricsSection = ({
       </div>
     </div>
   );
-};
+});
+
+M2MetricsSection.displayName = "M2MetricsSection";
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
@@ -2951,6 +3272,10 @@ export default function Home() {
     end: "",
   });
   const [exportError, setExportError] = useState<string | null>(null);
+  const chartExportRef = useRef<ViewExportHandle | null>(null);
+  const trendsExportRef = useRef<ViewExportHandle | null>(null);
+  const hourlyExportRef = useRef<ViewExportHandle | null>(null);
+  const m2ExportRef = useRef<ViewExportHandle | null>(null);
 
   // Sincronizar sede seleccionada
   useEffect(() => {
@@ -4469,25 +4794,64 @@ export default function Home() {
 
   const handleExport = useCallback(
     async (format: "pdf" | "csv" | "xlsx") => {
-      const payload = buildExportPayload({
-        sedeIds: exportSedeIds,
-        dateRange: exportDateRange,
-      });
+      if (viewMode === "cards" || viewMode === "comparison") {
+        const payload = buildExportPayload({
+          sedeIds: exportSedeIds,
+          dateRange: exportDateRange,
+        });
 
-      if (payload.pdfLines.length === 0) {
-        setExportError("No hay datos para el rango y sedes seleccionadas.");
+        if (payload.pdfLines.length === 0) {
+          setExportError("No hay datos para el rango y sedes seleccionadas.");
+          return;
+        }
+
+        setExportError(null);
+        if (format === "pdf") {
+          handleDownloadPdf(payload);
+        } else if (format === "csv") {
+          handleDownloadCsv(payload);
+        } else {
+          await handleDownloadXlsx(payload);
+        }
+
+        setExportModalOpen(false);
+        return;
+      }
+
+      if (format === "pdf") {
+        setExportError("El PDF solo está disponible en la vista de líneas.");
+        return;
+      }
+
+      let exported = false;
+      if (viewMode === "chart") {
+        exported =
+          format === "csv"
+            ? chartExportRef.current?.exportCsv() ?? false
+            : (await chartExportRef.current?.exportXlsx?.()) ?? false;
+      } else if (viewMode === "trends") {
+        exported =
+          format === "csv"
+            ? trendsExportRef.current?.exportCsv() ?? false
+            : (await trendsExportRef.current?.exportXlsx?.()) ?? false;
+      } else if (viewMode === "hourly") {
+        exported =
+          format === "csv"
+            ? hourlyExportRef.current?.exportCsv() ?? false
+            : (await hourlyExportRef.current?.exportXlsx?.()) ?? false;
+      } else if (viewMode === "m2") {
+        exported =
+          format === "csv"
+            ? m2ExportRef.current?.exportCsv() ?? false
+            : (await m2ExportRef.current?.exportXlsx?.()) ?? false;
+      }
+
+      if (!exported) {
+        setExportError("No hay datos para exportar en esta vista.");
         return;
       }
 
       setExportError(null);
-      if (format === "pdf") {
-        handleDownloadPdf(payload);
-      } else if (format === "csv") {
-        handleDownloadCsv(payload);
-      } else {
-        await handleDownloadXlsx(payload);
-      }
-
       setExportModalOpen(false);
     },
     [
@@ -4497,6 +4861,11 @@ export default function Home() {
       handleDownloadCsv,
       handleDownloadPdf,
       handleDownloadXlsx,
+      viewMode,
+      chartExportRef,
+      trendsExportRef,
+      hourlyExportRef,
+      m2ExportRef,
     ],
   );
 
@@ -4775,6 +5144,7 @@ export default function Home() {
             ) : viewMode === "chart" ? (
               <div data-animate="chart-card">
                 <ChartVisualization
+                  ref={chartExportRef}
                   dailyDataSet={dailyDataSet}
                   selectedSedeIds={selectedSedeIds}
                   availableDates={availableDates}
@@ -4785,6 +5155,7 @@ export default function Home() {
               </div>
             ) : viewMode === "trends" ? (
               <LineTrends
+                ref={trendsExportRef}
                 dailyDataSet={dailyDataSet}
                 selectedSedeIds={selectedSedeIds}
                 availableDates={availableDates}
@@ -4801,9 +5172,11 @@ export default function Home() {
                 allowedLineIds={!isAdmin ? allowedLineIds : undefined}
                 sections={["map"]}
                 dashboardContext="productividad"
+                exportRef={hourlyExportRef}
               />
             ) : viewMode === "m2" ? (
               <M2MetricsSection
+                ref={m2ExportRef}
                 dailyDataSet={dailyDataSet}
                 sedes={orderedSedes}
                 selectedSedeIds={selectedSedeIds}

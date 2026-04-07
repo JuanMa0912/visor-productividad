@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -57,6 +58,7 @@ interface HourlyAnalysisProps {
     oddMarks: number;
     absences: number;
   };
+  exportRef?: MutableRefObject<HourlyAnalysisExportHandle | null>;
 }
 
 const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -77,6 +79,11 @@ type OvertimeSortField =
   | "incidencia"
   | "departamento";
 type OvertimeSortDirection = "asc" | "desc";
+
+export type HourlyAnalysisExportHandle = {
+  exportCsv: () => boolean;
+  exportXlsx: () => Promise<boolean>;
+};
 
 const PERSON_BREAKDOWN_VIEW_OPTIONS: Array<{
   value: PersonBreakdownView;
@@ -425,6 +432,7 @@ export const HourlyAnalysis = ({
   showPersonBreakdown = false,
   dashboardContext = "productividad",
   alexTotalsOverride,
+  exportRef,
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
     const unique = Array.from(new Set(sections));
@@ -1052,6 +1060,20 @@ export const HourlyAnalysis = ({
     );
   }, [activeHourlyData, rangedHours]);
 
+  const hourlyExportRows = useMemo(
+    () =>
+      activeHours.map((slot) => ({
+        label: slot.label,
+        sales: slot.totalSales,
+        employees: slot.employeesPresent,
+        productivity: calcVtaHr(
+          slot.totalSales,
+          slot.employeesPresent * (bucketMinutes / 60),
+        ),
+      })),
+    [activeHours, bucketMinutes],
+  );
+
   const mainBaselineSalesPerEmployee = useMemo(() => {
     if (!activeHourlyData) return 0;
     const totals = rangedHours.reduce(
@@ -1235,6 +1257,84 @@ export const HourlyAnalysis = ({
     ).length;
     return { sales, avgProductivity, peakEmployees, activeHoursCount };
   }, [activeHourlyData, bucketMinutes, rangedHours]);
+
+  const handleExportHourlyCsv = useCallback(() => {
+    if (hourlyExportRows.length === 0) return false;
+    const escapeCsv = (value: string | number) => {
+      const str = String(value ?? "");
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    const rows = [
+      ["Franja", "Ventas", "Empleados", "Vta/Hr"],
+      ...hourlyExportRows.map((row) => [
+        row.label,
+        Math.round(row.sales),
+        row.employees,
+        Number.isFinite(row.productivity) ? row.productivity.toFixed(3) : "0.000",
+      ]),
+    ];
+    const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const dateKey = selectedDate || "sin-fecha";
+    link.href = url;
+    link.download = `productividad-por-hora-${dateKey}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    return true;
+  }, [hourlyExportRows, selectedDate]);
+
+  const handleExportHourlyXlsx = useCallback(async () => {
+    if (hourlyExportRows.length === 0) return false;
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Productividad por hora");
+    sheet.columns = [
+      { key: "label", width: 12 },
+      { key: "sales", width: 16 },
+      { key: "employees", width: 14 },
+      { key: "productivity", width: 12 },
+    ];
+    sheet.addRow(["Franja", "Ventas", "Empleados", "Vta/Hr"]);
+    hourlyExportRows.forEach((row) => {
+      sheet.addRow([
+        row.label,
+        Math.round(row.sales),
+        row.employees,
+        Number.isFinite(row.productivity) ? Number(row.productivity.toFixed(3)) : 0,
+      ]);
+    });
+    sheet.getRow(1).font = { bold: true };
+    const buffer = await workbook.xlsx.writeBuffer();
+    const url = URL.createObjectURL(
+      new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const link = document.createElement("a");
+    const dateKey = selectedDate || "sin-fecha";
+    link.href = url;
+    link.download = `productividad-por-hora-${dateKey}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return true;
+  }, [hourlyExportRows, selectedDate]);
+
+  useEffect(() => {
+    if (!exportRef) return;
+    exportRef.current = {
+      exportCsv: handleExportHourlyCsv,
+      exportXlsx: handleExportHourlyXlsx,
+    };
+    return () => {
+      exportRef.current = null;
+    };
+  }, [exportRef, handleExportHourlyCsv, handleExportHourlyXlsx]);
 
   const hourDifferences = useMemo(() => {
     if (personBreakdownView !== "franjas") return [];
