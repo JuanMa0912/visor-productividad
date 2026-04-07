@@ -40,130 +40,6 @@ const VENTAS_X_ITEM_API_BASE = USE_V2_API ? "/api/ventas-x-item/v2" : "/api/vent
 const LOAD_EMPRESA_OPTIONS = Object.keys(EMPRESA_LABELS).sort();
 
 const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
-type ComparisonMode = "day" | "week" | "month";
-
-const parseDateKeyUtc = (value: string) => new Date(`${value}T00:00:00Z`);
-
-const countDaysInclusive = (start: Date, end: Date) =>
-  Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000) + 1);
-
-const getIsoWeekKey = (date: Date) => {
-  const utc = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-  const day = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${utc.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-};
-
-const getMonthKey = (date: Date) =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-
-const formatDateShort = (date: Date) =>
-  new Intl.DateTimeFormat("es-CO", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date);
-
-const getWeekLabel = (date: Date) => {
-  const base = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-  const day = base.getUTCDay() || 7;
-  const monday = new Date(base);
-  monday.setUTCDate(base.getUTCDate() - (day - 1));
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
-  return `${getIsoWeekKey(base)} (${formatDateShort(monday)} - ${formatDateShort(sunday)})`;
-};
-
-const getComparisonKey = (date: Date, mode: ComparisonMode) => {
-  if (mode === "day") return toDateKey(date);
-  if (mode === "week") return getIsoWeekKey(date);
-  return getMonthKey(date);
-};
-
-const getComparisonLabel = (date: Date, mode: ComparisonMode) => {
-  if (mode === "day") return formatDateShort(date);
-  if (mode === "week") return getWeekLabel(date);
-  return `${getMonthKey(date)} (${new Intl.DateTimeFormat("es-CO", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date)})`;
-};
-
-const buildComparisonOptionsFromRange = (
-  startKey: string,
-  endKey: string,
-  mode: ComparisonMode,
-) => {
-  if (!startKey || !endKey || startKey > endKey) return [] as Array<{ value: string; label: string }>;
-
-  const options = new Map<string, string>();
-  const cursor = parseDateKeyUtc(startKey);
-  const end = parseDateKeyUtc(endKey);
-
-  while (cursor.getTime() <= end.getTime()) {
-    const key = getComparisonKey(cursor, mode);
-    if (!options.has(key)) {
-      options.set(key, getComparisonLabel(cursor, mode));
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  return Array.from(options.entries())
-    .sort((a, b) => (a[0] > b[0] ? -1 : 1))
-    .map(([value, label]) => ({ value, label }));
-};
-
-const getComparisonDayCount = (
-  periodKey: string,
-  mode: ComparisonMode,
-  startKey: string,
-  endKey: string,
-) => {
-  if (!periodKey || !startKey || !endKey || startKey > endKey) return 0;
-
-  const rangeStart = parseDateKeyUtc(startKey);
-  const rangeEnd = parseDateKeyUtc(endKey);
-
-  if (mode === "day") {
-    return periodKey >= startKey && periodKey <= endKey ? 1 : 0;
-  }
-
-  if (mode === "week") {
-    const anyDayInWeek = parseDateKeyUtc(`${periodKey.slice(0, 4)}-01-04`);
-    const [yearPart, weekPart] = periodKey.split("-W");
-    const targetYear = Number(yearPart);
-    const targetWeek = Number(weekPart);
-    if (!Number.isFinite(targetYear) || !Number.isFinite(targetWeek)) return 0;
-
-    anyDayInWeek.setUTCFullYear(targetYear, 0, 4);
-    const day = anyDayInWeek.getUTCDay() || 7;
-    anyDayInWeek.setUTCDate(anyDayInWeek.getUTCDate() + (targetWeek - 1) * 7 - (day - 1));
-    const weekStart = new Date(anyDayInWeek);
-    const weekEnd = new Date(anyDayInWeek);
-    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-    const actualStart = weekStart.getTime() < rangeStart.getTime() ? rangeStart : weekStart;
-    const actualEnd = weekEnd.getTime() > rangeEnd.getTime() ? rangeEnd : weekEnd;
-    return countDaysInclusive(actualStart, actualEnd);
-  }
-
-  const [yearPart, monthPart] = periodKey.split("-");
-  const targetYear = Number(yearPart);
-  const targetMonth = Number(monthPart);
-  if (!Number.isFinite(targetYear) || !Number.isFinite(targetMonth)) return 0;
-  const monthStart = new Date(Date.UTC(targetYear, targetMonth - 1, 1));
-  const monthEnd = new Date(Date.UTC(targetYear, targetMonth, 0));
-  const actualStart = monthStart.getTime() < rangeStart.getTime() ? rangeStart : monthStart;
-  const actualEnd = monthEnd.getTime() > rangeEnd.getTime() ? rangeEnd : monthEnd;
-  return countDaysInclusive(actualStart, actualEnd);
-};
 
 const escapeCsv = (value: string | number) => {
   const text = String(value ?? "");
@@ -214,9 +90,6 @@ export default function VentasXItemPage() {
   const [itemsOrder, setItemsOrder] = useState<string[]>([]);
   const [itemSearch, setItemSearch] = useState("");
   const [itemsDropdownOpen, setItemsDropdownOpen] = useState(false);
-  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("day");
-  const [comparisonA, setComparisonA] = useState("");
-  const [comparisonB, setComparisonB] = useState("");
   const [summaryRows, setSummaryRows] = useState<VentasXItemPreparedRow[]>([]);
   const [exportingXlsx, setExportingXlsx] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
@@ -482,153 +355,6 @@ export default function VentasXItemPage() {
     return () => controller.abort();
   }, [activeRangeEnd, activeRangeStart, empresasVisibles, itemsSel]);
 
-  const comparisonOptions = useMemo(() => {
-    return buildComparisonOptionsFromRange(
-      activeRangeStart,
-      activeRangeEnd,
-      comparisonMode,
-    );
-  }, [activeRangeEnd, activeRangeStart, comparisonMode]);
-
-  useEffect(() => {
-    if (comparisonOptions.length === 0) {
-      setComparisonA("");
-      setComparisonB("");
-      return;
-    }
-
-    if (!comparisonA || !comparisonOptions.some((opt) => opt.value === comparisonA)) {
-      setComparisonA(comparisonOptions[0].value);
-    }
-    if (!comparisonB || !comparisonOptions.some((opt) => opt.value === comparisonB)) {
-      setComparisonB(comparisonOptions[1]?.value ?? comparisonOptions[0].value);
-    }
-  }, [comparisonA, comparisonB, comparisonOptions]);
-
-  const comparisonTotals = useMemo(() => {
-    const getTotals = (targetKey: string) => {
-      if (!targetKey) {
-        return { units: 0, sales: 0 };
-      }
-      return analysisRows.reduce(
-        (acc, row) => {
-          if (!row.fecha) return acc;
-          if (getComparisonKey(row.fecha, comparisonMode) !== targetKey) return acc;
-          return {
-            units: acc.units + (row.und_dia ?? 0),
-            sales: acc.sales + (row.venta_sin_impuesto_dia ?? 0),
-          };
-        },
-        { units: 0, sales: 0 },
-      );
-    };
-
-    const current = getTotals(comparisonA);
-    const previous = getTotals(comparisonB);
-    return {
-      current,
-      previous,
-      unitsDiff: current.units - previous.units,
-      salesDiff: current.sales - previous.sales,
-      unitsPct:
-        previous.units === 0 ? null : ((current.units - previous.units) / previous.units) * 100,
-      salesPct:
-        previous.sales === 0 ? null : ((current.sales - previous.sales) / previous.sales) * 100,
-    };
-  }, [analysisRows, comparisonA, comparisonB, comparisonMode]);
-
-  const comparisonDetails = useMemo(() => {
-    const getPeriodStats = (targetKey: string) => {
-      const sedeSet = new Set<string>();
-      const itemSet = new Set<string>();
-      const bySede = new Map<string, { units: number; sales: number }>();
-      const periodDayCount = getComparisonDayCount(
-        targetKey,
-        comparisonMode,
-        activeRangeStart,
-        activeRangeEnd,
-      );
-
-      let units = 0;
-      let sales = 0;
-
-      analysisRows.forEach((row) => {
-        if (!row.fecha) return;
-        if (!targetKey || getComparisonKey(row.fecha, comparisonMode) !== targetKey) return;
-        sedeSet.add(row.sede);
-        itemSet.add(String(row.id_item));
-        units += row.und_dia ?? 0;
-        sales += row.venta_sin_impuesto_dia ?? 0;
-        const current = bySede.get(row.sede) ?? { units: 0, sales: 0 };
-        current.units += row.und_dia ?? 0;
-        current.sales += row.venta_sin_impuesto_dia ?? 0;
-        bySede.set(row.sede, current);
-      });
-
-      const topSede = Array.from(bySede.entries())
-        .map(([sede, values]) => ({ sede, ...values }))
-        .sort((a, b) => b.units - a.units)[0] ?? null;
-
-      return {
-        units,
-        sales,
-        daysCount: periodDayCount,
-        sedeCount: sedeSet.size,
-        itemCount: itemSet.size,
-        avgUnitsPerDay: periodDayCount > 0 ? units / periodDayCount : 0,
-        avgSalesPerDay: periodDayCount > 0 ? sales / periodDayCount : 0,
-        salesPerUnit: units > 0 ? sales / units : null,
-        bySede,
-        topSede,
-      };
-    };
-
-    const current = getPeriodStats(comparisonA);
-    const previous = getPeriodStats(comparisonB);
-
-    const allSedes = new Set<string>([
-      ...Array.from(current.bySede.keys()),
-      ...Array.from(previous.bySede.keys()),
-    ]);
-
-    const sedeDiffRows = Array.from(allSedes)
-      .map((sede) => {
-        const c = current.bySede.get(sede) ?? { units: 0, sales: 0 };
-        const p = previous.bySede.get(sede) ?? { units: 0, sales: 0 };
-        return {
-          sede,
-          unitsA: c.units,
-          unitsB: p.units,
-          unitsDiff: c.units - p.units,
-          salesA: c.sales,
-          salesB: p.sales,
-          salesDiff: c.sales - p.sales,
-        };
-      })
-      .sort((a, b) => Math.abs(b.unitsDiff) - Math.abs(a.unitsDiff))
-      .slice(0, 6);
-
-    return {
-      current,
-      previous,
-      daysDiff: current.daysCount - previous.daysCount,
-      avgUnitsDiff: current.avgUnitsPerDay - previous.avgUnitsPerDay,
-      avgSalesDiff: current.avgSalesPerDay - previous.avgSalesPerDay,
-      salesPerUnitDiff:
-        current.salesPerUnit === null || previous.salesPerUnit === null
-          ? null
-          : current.salesPerUnit - previous.salesPerUnit,
-      sedeDiffRows,
-    };
-  }, [
-    activeRangeEnd,
-    activeRangeStart,
-    comparisonA,
-    comparisonB,
-    comparisonMode,
-    analysisRows,
-  ]);
-
 
   const tableRows = useMemo<DailyTableRow[]>(() => {
     if (!activeRangeStart || !activeRangeEnd) return [];
@@ -757,6 +483,12 @@ export default function VentasXItemPage() {
       setError("La fecha inicio no puede ser mayor que la fecha fin.");
       return;
     }
+    if ((dbMinDate && dateStart < dbMinDate) || (dbMaxDate && dateEnd > dbMaxDate)) {
+      setError(
+        `El rango debe estar entre ${dbMinDate || "la fecha minima disponible"} y ${dbMaxDate || "la fecha maxima disponible"}.`,
+      );
+      return;
+    }
     setLoadingDb(true);
     try {
       const batchSize = USE_V2_API ? 300000 : 500000;
@@ -785,8 +517,23 @@ export default function VentasXItemPage() {
           hasMore?: boolean;
           nextOffset?: number;
           error?: string;
+          code?: string;
+          requestedStart?: string;
+          requestedEnd?: string;
+          availableStart?: string | null;
+          availableEnd?: string | null;
+          missingBoundary?: string;
         };
         if (!response.ok) {
+          if (payload.code === "DATE_NOT_FOUND") {
+            const availableRange =
+              payload.availableStart && payload.availableEnd
+                ? ` Rango disponible: ${payload.availableStart} a ${payload.availableEnd}.`
+                : "";
+            throw new Error(
+              `${payload.error ?? "La fecha solicitada no existe en la base de datos."}${availableRange}`,
+            );
+          }
           throw new Error(payload.error ?? "No se pudo cargar datos desde base de datos.");
         }
 
@@ -825,9 +572,6 @@ export default function VentasXItemPage() {
       setItemsOrder([]);
       setItemSearch("");
       setItemsDropdownOpen(false);
-      setComparisonMode("day");
-      setComparisonA("");
-      setComparisonB("");
       setLastLoadedAt(new Date().toISOString());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1350,355 +1094,6 @@ export default function VentasXItemPage() {
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
-              <h2 className="text-base font-bold text-slate-900">
-                Comparacion de periodos
-              </h2>
-              <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  Modo
-                  <select
-                    value={comparisonMode}
-                    onChange={(e) =>
-                      setComparisonMode(e.target.value as ComparisonMode)
-                    }
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  >
-                    <option value="day">Dia vs dia</option>
-                    <option value="week">Semana vs semana</option>
-                    <option value="month">Mes vs mes</option>
-                  </select>
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  Periodo A
-                  <select
-                    value={comparisonA}
-                    onChange={(e) => setComparisonA(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  >
-                    {comparisonOptions.map((opt) => (
-                      <option key={`A-${opt.value}`} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  Periodo B
-                  <select
-                    value={comparisonB}
-                    onChange={(e) => setComparisonB(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  >
-                    {comparisonOptions.map((opt) => (
-                      <option key={`B-${opt.value}`} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Unidades
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonTotals.current.units.toLocaleString("es-CO", {
-                        maximumFractionDigits: 1,
-                      })}
-                    </span>{" "}
-                    | B:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonTotals.previous.units.toLocaleString("es-CO", {
-                        maximumFractionDigits: 1,
-                      })}
-                    </span>
-                  </p>
-                  <p
-                    className={`mt-1 text-sm font-semibold ${
-                      comparisonTotals.unitsDiff >= 0
-                        ? "text-emerald-700"
-                        : "text-red-700"
-                    }`}
-                  >
-                    Delta:{" "}
-                    {comparisonTotals.unitsDiff.toLocaleString("es-CO", {
-                      maximumFractionDigits: 1,
-                    })}
-                    {comparisonTotals.unitsPct === null
-                      ? " | %: N/A"
-                      : ` | %: ${comparisonTotals.unitsPct.toFixed(1)}%`}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Venta sin impuesto
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonTotals.current.sales.toLocaleString("es-CO", {
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>{" "}
-                    | B:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonTotals.previous.sales.toLocaleString("es-CO", {
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>
-                  </p>
-                  <p
-                    className={`mt-1 text-sm font-semibold ${
-                      comparisonTotals.salesDiff >= 0
-                        ? "text-emerald-700"
-                        : "text-red-700"
-                    }`}
-                  >
-                    Delta:{" "}
-                    {comparisonTotals.salesDiff.toLocaleString("es-CO", {
-                      maximumFractionDigits: 0,
-                    })}
-                    {comparisonTotals.salesPct === null
-                      ? " | %: N/A"
-                      : ` | %: ${comparisonTotals.salesPct.toFixed(1)}%`}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Dias con datos
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A: <span className="font-bold text-slate-900">{comparisonDetails.current.daysCount}</span> | B:{" "}
-                    <span className="font-bold text-slate-900">{comparisonDetails.previous.daysCount}</span>
-                  </p>
-                  <p
-                    className={`mt-1 text-sm font-semibold ${
-                      comparisonDetails.daysDiff >= 0 ? "text-emerald-700" : "text-red-700"
-                    }`}
-                  >
-                    Delta: {comparisonDetails.daysDiff}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Promedio diario unidades
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.current.avgUnitsPerDay.toLocaleString("es-CO", {
-                        maximumFractionDigits: 1,
-                      })}
-                    </span>{" "}
-                    | B:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.previous.avgUnitsPerDay.toLocaleString("es-CO", {
-                        maximumFractionDigits: 1,
-                      })}
-                    </span>
-                  </p>
-                  <p
-                    className={`mt-1 text-sm font-semibold ${
-                      comparisonDetails.avgUnitsDiff >= 0 ? "text-emerald-700" : "text-red-700"
-                    }`}
-                  >
-                    Delta:{" "}
-                    {comparisonDetails.avgUnitsDiff.toLocaleString("es-CO", {
-                      maximumFractionDigits: 1,
-                    })}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Promedio diario venta
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.current.avgSalesPerDay.toLocaleString("es-CO", {
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>{" "}
-                    | B:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.previous.avgSalesPerDay.toLocaleString("es-CO", {
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>
-                  </p>
-                  <p
-                    className={`mt-1 text-sm font-semibold ${
-                      comparisonDetails.avgSalesDiff >= 0 ? "text-emerald-700" : "text-red-700"
-                    }`}
-                  >
-                    Delta:{" "}
-                    {comparisonDetails.avgSalesDiff.toLocaleString("es-CO", {
-                      maximumFractionDigits: 0,
-                    })}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Cobertura (sedes / items)
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.current.sedeCount}
-                    </span>
-                    {" / "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.current.itemCount}
-                    </span>
-                  </p>
-                  <p className="text-sm text-slate-700">
-                    B:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.previous.sedeCount}
-                    </span>
-                    {" / "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.previous.itemCount}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Ticket por unidad (venta / unidades)
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.current.salesPerUnit === null
-                        ? "N/A"
-                        : comparisonDetails.current.salesPerUnit.toLocaleString("es-CO", {
-                            maximumFractionDigits: 2,
-                          })}
-                    </span>{" "}
-                    | B:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.previous.salesPerUnit === null
-                        ? "N/A"
-                        : comparisonDetails.previous.salesPerUnit.toLocaleString("es-CO", {
-                            maximumFractionDigits: 2,
-                          })}
-                    </span>
-                  </p>
-                  <p
-                    className={`mt-1 text-sm font-semibold ${
-                      (comparisonDetails.salesPerUnitDiff ?? 0) >= 0
-                        ? "text-emerald-700"
-                        : "text-red-700"
-                    }`}
-                  >
-                    Delta:{" "}
-                    {comparisonDetails.salesPerUnitDiff === null
-                      ? "N/A"
-                      : comparisonDetails.salesPerUnitDiff.toLocaleString("es-CO", {
-                          maximumFractionDigits: 2,
-                        })}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Sede lider (unidades)
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    A:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.current.topSede
-                        ? `${comparisonDetails.current.topSede.sede} (${comparisonDetails.current.topSede.units.toLocaleString(
-                            "es-CO",
-                            { maximumFractionDigits: 1 },
-                          )})`
-                        : "N/A"}
-                    </span>
-                  </p>
-                  <p className="text-sm text-slate-700">
-                    B:{" "}
-                    <span className="font-bold text-slate-900">
-                      {comparisonDetails.previous.topSede
-                        ? `${comparisonDetails.previous.topSede.sede} (${comparisonDetails.previous.topSede.units.toLocaleString(
-                            "es-CO",
-                            { maximumFractionDigits: 1 },
-                          )})`
-                        : "N/A"}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  Sedes con mayor variacion (unidades)
-                </p>
-                {comparisonDetails.sedeDiffRows.length === 0 ? (
-                  <p className="mt-2 text-sm text-slate-500">Sin datos para comparar.</p>
-                ) : (
-                  <div className="mt-2 overflow-auto">
-                    <table className="min-w-full text-xs text-slate-700">
-                      <thead className="bg-slate-100">
-                        <tr>
-                          <th className="px-2 py-2 text-left">Sede</th>
-                          <th className="px-2 py-2 text-right">Unid. A</th>
-                          <th className="px-2 py-2 text-right">Unid. B</th>
-                          <th className="px-2 py-2 text-right">Delta Unid.</th>
-                          <th className="px-2 py-2 text-right">Delta Venta</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {comparisonDetails.sedeDiffRows.map((row) => (
-                          <tr key={row.sede} className="border-b border-slate-100">
-                            <td className="px-2 py-1.5 font-semibold">{row.sede}</td>
-                            <td className="px-2 py-1.5 text-right">
-                              {row.unitsA.toLocaleString("es-CO", { maximumFractionDigits: 1 })}
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              {row.unitsB.toLocaleString("es-CO", { maximumFractionDigits: 1 })}
-                            </td>
-                            <td
-                              className={`px-2 py-1.5 text-right font-semibold ${
-                                row.unitsDiff >= 0 ? "text-emerald-700" : "text-red-700"
-                              }`}
-                            >
-                              {row.unitsDiff.toLocaleString("es-CO", {
-                                maximumFractionDigits: 1,
-                              })}
-                            </td>
-                            <td
-                              className={`px-2 py-1.5 text-right font-semibold ${
-                                row.salesDiff >= 0 ? "text-emerald-700" : "text-red-700"
-                              }`}
-                            >
-                              {row.salesDiff.toLocaleString("es-CO", {
-                                maximumFractionDigits: 0,
-                              })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
             </div>
 
