@@ -10,16 +10,16 @@ const resolveCachePath = () => {
   const defaultPath = "data/productivity-cache.json";
   const envPath = process.env.PRODUCTIVITY_CACHE_PATH?.trim();
   if (!envPath) {
-    return path.resolve(process.cwd(), defaultPath);
+    return path.resolve(/* turbopackIgnore: true */ process.cwd(), defaultPath);
   }
   const isSafeRelative =
     !path.isAbsolute(envPath) &&
     !envPath.split(path.sep).includes("..") &&
     /^[\w./-]+$/.test(envPath);
   if (!isSafeRelative) {
-    return path.resolve(process.cwd(), defaultPath);
+    return path.resolve(/* turbopackIgnore: true */ process.cwd(), defaultPath);
   }
-  return path.resolve(process.cwd(), envPath);
+  return path.resolve(/* turbopackIgnore: true */ process.cwd(), envPath);
 };
 
 const cacheFilePath = resolveCachePath();

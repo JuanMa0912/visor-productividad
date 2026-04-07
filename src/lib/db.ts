@@ -7,7 +7,10 @@ const loadLocalEnv = () => {
   if (localEnvLoaded || process.env.DB_PASSWORD?.trim()) return;
 
   localEnvLoaded = true;
-  const envPath = path.join(process.cwd(), ".env.local");
+  const envPath = path.join(
+    /* turbopackIgnore: true */ process.cwd(),
+    ".env.local",
+  );
   if (!existsSync(envPath)) return;
 
   const envContent = readFileSync(envPath, "utf-8");
