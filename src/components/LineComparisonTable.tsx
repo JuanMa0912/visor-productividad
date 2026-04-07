@@ -26,6 +26,35 @@ type LineTotals = {
   hours: number;
 };
 
+const parseDateKey = (dateKey: string) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const shiftMonthPreservingDay = (dateKey: string, months: number) => {
+  const source = parseDateKey(dateKey);
+  const target = new Date(source.getFullYear(), source.getMonth() + months, 1);
+  const lastDay = new Date(
+    target.getFullYear(),
+    target.getMonth() + 1,
+    0,
+  ).getDate();
+  target.setDate(Math.min(source.getDate(), lastDay));
+  return toDateKey(target);
+};
+
+const getPreviousComparableRange = (range: { start: string; end: string }) => ({
+  start: shiftMonthPreservingDay(range.start, -1),
+  end: shiftMonthPreservingDay(range.end, -1),
+});
+
 type SortMetric = "sales" | "salesPerHour" | "hours";
 type DetailSortMetric = "sedeName" | SortMetric;
 type SortOrder = "asc" | "desc";
@@ -144,6 +173,7 @@ export const LineComparisonTable = ({
   const [customOrder, setCustomOrder] = useState<string[] | null>(null);
   const [sortMetric, setSortMetric] = useState<SortMetric>("sales");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [showPreviousComparison, setShowPreviousComparison] = useState(false);
   const [detailSortByLine, setDetailSortByLine] = useState<
     Record<string, DetailSortState>
   >({});
@@ -188,6 +218,32 @@ export const LineComparisonTable = ({
     return byLine;
   }, [dailyDataSet, dateRange.end, dateRange.start, selectedSedeIdSet]);
 
+  const previousDateRange = useMemo(
+    () => getPreviousComparableRange(dateRange),
+    [dateRange],
+  );
+
+  const previousLineSedeMetrics = useMemo(() => {
+    const byLine = new Map<string, Map<string, SedeMetrics>>();
+    dailyDataSet.forEach((item) => {
+      if (!selectedSedeIdSet.has(item.sede)) return;
+      if (previousDateRange.start && item.date < previousDateRange.start) return;
+      if (previousDateRange.end && item.date > previousDateRange.end) return;
+
+      item.lines.forEach((line) => {
+        const bySede = byLine.get(line.id) ?? new Map<string, SedeMetrics>();
+        const current = bySede.get(item.sede) ?? { sales: 0, hours: 0 };
+        const hours = hasLaborDataForLine(line.id) ? line.hours : 0;
+        bySede.set(item.sede, {
+          sales: current.sales + line.sales,
+          hours: current.hours + hours,
+        });
+        byLine.set(line.id, bySede);
+      });
+    });
+    return byLine;
+  }, [dailyDataSet, previousDateRange.end, previousDateRange.start, selectedSedeIdSet]);
+
   const totalsByLine = useMemo(() => {
     const totals = new Map<string, LineTotals>();
     lines.forEach((line) => {
@@ -206,6 +262,25 @@ export const LineComparisonTable = ({
     });
     return totals;
   }, [lineSedeMetrics, lines]);
+
+  const previousTotalsByLine = useMemo(() => {
+    const totals = new Map<string, LineTotals>();
+    lines.forEach((line) => {
+      const bySede = previousLineSedeMetrics.get(line.id);
+      if (!bySede) {
+        totals.set(line.id, { sales: 0, hours: 0 });
+        return;
+      }
+      let sales = 0;
+      let hours = 0;
+      bySede.forEach((value) => {
+        sales += value.sales;
+        hours += value.hours;
+      });
+      totals.set(line.id, { sales, hours });
+    });
+    return totals;
+  }, [lines, previousLineSedeMetrics]);
 
   const enrichedLines = useMemo(() => lines.map((line) => ({ ...line })), [lines]);
 
@@ -380,6 +455,17 @@ export const LineComparisonTable = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPreviousComparison((prev) => !prev)}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
+              showPreviousComparison
+                ? "border-blue-300 bg-blue-50 text-blue-700"
+                : "border-slate-200/70 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            Comparar con mes anterior
+          </button>
           {customOrder && (
             <button
               type="button"
@@ -433,7 +519,7 @@ export const LineComparisonTable = ({
       </div>
 
       <div className="-mx-1 mt-3 overflow-x-auto sm:mx-0 sm:mt-6">
-        <table className="w-full min-w-100 border-separate border-spacing-y-1 text-left text-xs sm:min-w-175 sm:border-spacing-y-2 sm:text-sm">
+        <table className="w-full min-w-100 border-separate border-spacing-y-1 text-left text-xs sm:min-w-220 sm:border-spacing-y-2 sm:text-sm">
           <thead>
             <tr className="text-[10px] uppercase tracking-widest text-slate-700 sm:text-xs sm:tracking-[0.2em]">
               <th className="w-6 px-1 py-1.5 sm:w-8 sm:px-2 sm:py-2"></th>
@@ -458,6 +544,16 @@ export const LineComparisonTable = ({
                   </button>
                 </div>
               </th>
+              {showPreviousComparison ? (
+                <>
+                  <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
+                    Mes anterior
+                  </th>
+                  <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
+                    Variación
+                  </th>
+                </>
+              ) : null}
               <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
                 <div className="flex items-center gap-2">
                   <span>Vta/Hr</span>
@@ -498,12 +594,23 @@ export const LineComparisonTable = ({
             {sortedLines.map((line, index) => {
               const accent = getLineAccent(line.id);
               const totals = totalsByLine.get(line.id) ?? { sales: 0, hours: 0 };
+              const previousTotals = previousTotalsByLine.get(line.id) ?? {
+                sales: 0,
+                hours: 0,
+              };
               const salesPerHour =
                 hasLaborDataForLine(line.id) && totals.hours > 0
                   ? totals.sales / 1_000_000 / totals.hours
                   : 0;
+              const salesDelta = totals.sales - previousTotals.sales;
+              const salesDeltaPct =
+                previousTotals.sales > 0
+                  ? (salesDelta / previousTotals.sales) * 100
+                  : null;
               const isExpanded = expandedLineIds.includes(line.id);
               const bySede = lineSedeMetrics.get(line.id) ?? new Map<string, SedeMetrics>();
+              const previousBySede =
+                previousLineSedeMetrics.get(line.id) ?? new Map<string, SedeMetrics>();
               const detailSort = detailSortByLine[line.id] ?? DEFAULT_DETAIL_SORT;
               const orderedSedeDetails = selectedSedeIds
                 .map((sedeId) => {
@@ -539,10 +646,21 @@ export const LineComparisonTable = ({
                   ? orderedSedeDetails.reduce((sum, detail) => sum + detail.sales, 0) /
                     selectedSedeCount
                   : 0;
-              const averageHours =
+              const averagePreviousSales =
                 selectedSedeCount > 0
-                  ? orderedSedeDetails.reduce((sum, detail) => sum + detail.hours, 0) /
-                    selectedSedeCount
+                  ? orderedSedeDetails.reduce(
+                      (sum, detail) =>
+                        sum + (previousBySede.get(detail.sedeId)?.sales ?? 0),
+                      0,
+                    ) / selectedSedeCount
+                  : 0;
+              const averageSalesDelta =
+                selectedSedeCount > 0
+                  ? orderedSedeDetails.reduce((sum, detail) => {
+                      const previousSales =
+                        previousBySede.get(detail.sedeId)?.sales ?? 0;
+                      return sum + (detail.sales - previousSales);
+                    }, 0) / selectedSedeCount
                   : 0;
               const averageSalesPerHour =
                 selectedSedeCount > 0
@@ -550,6 +668,11 @@ export const LineComparisonTable = ({
                       (sum, detail) => sum + detail.salesPerHour,
                       0,
                     ) / selectedSedeCount
+                  : 0;
+              const averageHours =
+                selectedSedeCount > 0
+                  ? orderedSedeDetails.reduce((sum, detail) => sum + detail.hours, 0) /
+                    selectedSedeCount
                   : 0;
 
               return (
@@ -605,6 +728,21 @@ export const LineComparisonTable = ({
                     <td className="px-2 py-2 text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
                       {hasData ? formatCOP(totals.sales) : "-"}
                     </td>
+                    {showPreviousComparison ? (
+                      <>
+                        <td className="px-2 py-2 text-xs font-semibold text-slate-700 sm:px-4 sm:py-3 sm:text-sm">
+                          {hasData ? formatCOP(previousTotals.sales) : "-"}
+                        </td>
+                        <td className="px-2 py-2 text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm">
+                          <div className={salesDelta >= 0 ? "text-emerald-700" : "text-rose-700"}>
+                            {hasData ? formatCOP(salesDelta) : "-"}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            {salesDeltaPct === null ? "n/a" : `${salesDeltaPct.toFixed(1)}%`}
+                          </div>
+                        </td>
+                      </>
+                    ) : null}
                     <td className="px-2 py-2 text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
                       {hasData ? salesPerHour.toFixed(3) : "-"}
                     </td>
@@ -614,11 +752,20 @@ export const LineComparisonTable = ({
                   </tr>
                   {isExpanded && (
                     <tr key={`${line.id}-expanded`}>
-                      <td colSpan={6} className="px-2 pb-3 pt-0 sm:px-4">
+                      <td
+                        colSpan={showPreviousComparison ? 8 : 6}
+                        className="px-2 pb-3 pt-0 sm:px-4"
+                      >
                         <div
                           className={`rounded-2xl border p-3 ${accent.expandedBorder} ${accent.expandedBg}`}
                         >
-                          <div className="mb-2 grid grid-cols-[1.5fr_1fr_1fr_1fr] gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          <div
+                            className={`mb-2 grid gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 ${
+                              showPreviousComparison
+                                ? "grid-cols-[1.6fr_1fr_1fr_1fr_1fr_1fr]"
+                                : "grid-cols-[1.8fr_1fr_1fr_1fr]"
+                            }`}
+                          >
                             <button
                               type="button"
                               onClick={() => handleDetailSortToggle(line.id, "sedeName")}
@@ -653,6 +800,12 @@ export const LineComparisonTable = ({
                                 <ChevronDown className="h-3.5 w-3.5" />
                               )}
                             </button>
+                            {showPreviousComparison ? (
+                              <>
+                                <span className="text-right">Mes anterior</span>
+                                <span className="text-right">Variación</span>
+                              </>
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => handleDetailSortToggle(line.id, "salesPerHour")}
@@ -690,10 +843,20 @@ export const LineComparisonTable = ({
                             </button>
                           </div>
                           <div className="space-y-1">
-                            {orderedSedeDetails.map((detail) => (
+                            {orderedSedeDetails.map((detail) => {
+                              const previousDetail = previousBySede.get(detail.sedeId) ?? {
+                                sales: 0,
+                                hours: 0,
+                              };
+                              const detailDelta = detail.sales - previousDetail.sales;
+                              return (
                               <div
                                 key={`${line.id}-${detail.sedeId}`}
-                                className="grid grid-cols-[1.5fr_1fr_1fr_1fr] gap-2 rounded-xl border border-white/70 bg-white/75 px-3 py-2 text-xs"
+                                className={`grid gap-2 rounded-xl border border-white/70 bg-white/75 px-3 py-2 text-xs ${
+                                  showPreviousComparison
+                                    ? "grid-cols-[1.6fr_1fr_1fr_1fr_1fr_1fr]"
+                                    : "grid-cols-[1.8fr_1fr_1fr_1fr]"
+                                }`}
                               >
                                 <span className="font-semibold text-slate-900">
                                   {detail.sedeName}
@@ -701,6 +864,18 @@ export const LineComparisonTable = ({
                                 <span className="text-right font-semibold text-slate-900">
                                   {formatCOP(detail.sales)}
                                 </span>
+                                  {showPreviousComparison ? (
+                                    <>
+                                      <span className="text-right font-semibold text-slate-600">
+                                        {formatCOP(previousDetail.sales)}
+                                      </span>
+                                      <span className={`text-right font-semibold ${
+                                        detailDelta >= 0 ? "text-emerald-700" : "text-rose-700"
+                                      }`}>
+                                        {formatCOP(detailDelta)}
+                                      </span>
+                                    </>
+                                  ) : null}
                                 <span className="text-right font-semibold text-slate-800">
                                   {detail.salesPerHour.toFixed(3)}
                                 </span>
@@ -708,12 +883,27 @@ export const LineComparisonTable = ({
                                   {formatHours(detail.hours)}h
                                 </span>
                               </div>
-                            ))}
-                            <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr] gap-2 rounded-xl border border-slate-300/80 bg-slate-100 px-3 py-2 text-xs font-semibold">
+                              );
+                            })}
+                            <div className={`grid gap-2 rounded-xl border border-slate-300/80 bg-slate-100 px-3 py-2 text-xs font-semibold ${
+                                showPreviousComparison
+                                  ? "grid-cols-[1.6fr_1fr_1fr_1fr_1fr_1fr]"
+                                  : "grid-cols-[1.8fr_1fr_1fr_1fr]"
+                              }`}>
                               <span className="text-slate-800">Promedio ({selectedSedeCount} sedes)</span>
                               <span className="text-right text-slate-900">
                                 {formatCOP(averageSales)}
                               </span>
+                              {showPreviousComparison ? (
+                                <>
+                                  <span className="text-right text-slate-700">
+                                    {formatCOP(averagePreviousSales)}
+                                  </span>
+                                  <span className="text-right text-slate-900">
+                                    {formatCOP(averageSalesDelta)}
+                                  </span>
+                                </>
+                              ) : null}
                               <span className="text-right text-slate-900">
                                 {averageSalesPerHour.toFixed(3)}
                               </span>

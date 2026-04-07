@@ -116,6 +116,54 @@ type ExportPayload = {
   dateRange: DateRange;
   dateRangeLabel: string;
   lineFilterLabel: string;
+  comparisonDateRange: DateRange;
+  comparisonDateRangeLabel: string;
+  lineComparisons: Array<{
+    id: string;
+    name: string;
+    currentSales: number;
+    currentHours: number;
+    currentSalesPerHour: number;
+    previousSales: number;
+    previousHours: number;
+    previousSalesPerHour: number;
+    salesDelta: number;
+    salesDeltaPct: number | null;
+  }>;
+  lineSedeDetails: Array<{
+    lineId: string;
+    lineName: string;
+    sedeId: string;
+    sedeName: string;
+    currentSales: number;
+    currentHours: number;
+    currentSalesPerHour: number;
+    previousSales: number;
+    previousHours: number;
+    previousSalesPerHour: number;
+    salesDelta: number;
+    salesDeltaPct: number | null;
+  }>;
+  lineDailyDetails: Array<{
+    periodLabel: "actual" | "mes anterior";
+    date: string;
+    lineId: string;
+    lineName: string;
+    sales: number;
+    hours: number;
+    salesPerHour: number;
+  }>;
+  lineSedeDailyDetails: Array<{
+    periodLabel: "actual" | "mes anterior";
+    date: string;
+    sedeId: string;
+    sedeName: string;
+    lineId: string;
+    lineName: string;
+    sales: number;
+    hours: number;
+    salesPerHour: number;
+  }>;
 };
 
 const formatRangeLabel = (range: DateRange) => {
@@ -124,6 +172,28 @@ const formatRangeLabel = (range: DateRange) => {
     return `${formatDateLabel(range.start, dateLabelOptions)}`;
   }
   return `${formatDateLabel(range.start, dateLabelOptions)} al ${formatDateLabel(range.end, dateLabelOptions)}`;
+};
+
+const shiftMonthPreservingDay = (dateKey: string, months: number) => {
+  const source = parseDateKey(dateKey);
+  const targetYear = source.getFullYear();
+  const targetMonthIndex = source.getMonth() + months;
+  const candidate = new Date(targetYear, targetMonthIndex, 1);
+  const lastDay = new Date(
+    candidate.getFullYear(),
+    candidate.getMonth() + 1,
+    0,
+  ).getDate();
+  candidate.setDate(Math.min(source.getDate(), lastDay));
+  return toDateKey(candidate);
+};
+
+const getPreviousComparableRange = (range: DateRange): DateRange => {
+  if (!range.start || !range.end) return range;
+  return {
+    start: shiftMonthPreservingDay(range.start, -1),
+    end: shiftMonthPreservingDay(range.end, -1),
+  };
 };
 
 // ============================================================================
@@ -3021,8 +3091,17 @@ export default function Home() {
           item.date >= resolvedDateRange.start &&
           item.date <= resolvedDateRange.end,
       );
+      const comparisonDateRange = getPreviousComparableRange(resolvedDateRange);
+      const previousRangeData = dailyDataSet.filter(
+        (item) =>
+          resolvedSedeIdSet.has(item.sede) &&
+          item.date >= comparisonDateRange.start &&
+          item.date <= comparisonDateRange.end,
+      );
 
       const exportLines = aggregateLines(rangeData);
+      const previousLines = aggregateLines(previousRangeData);
+      const previousLineMap = new Map(previousLines.map((line) => [line.id, line]));
       let exportFilteredLines = filterLinesByStatus(exportLines, lineFilter);
 
       if (searchQuery.trim()) {
@@ -3053,6 +3132,198 @@ export default function Home() {
       const exportPdfLines = [...exportFilteredLines].sort(
         (a, b) => b.sales - a.sales,
       );
+      const lineComparisons = exportPdfLines.map((line) => {
+        const previous = previousLineMap.get(line.id);
+        const currentHours = hasLaborDataForLine(line.id) ? line.hours : 0;
+        const previousHours =
+          previous && hasLaborDataForLine(line.id) ? previous.hours : 0;
+        const currentSalesPerHour =
+          currentHours > 0 ? line.sales / 1_000_000 / currentHours : 0;
+        const previousSalesPerHour =
+          previousHours > 0 && previous
+            ? previous.sales / 1_000_000 / previousHours
+            : 0;
+        const salesDelta = line.sales - (previous?.sales ?? 0);
+        return {
+          id: line.id,
+          name: line.name,
+          currentSales: line.sales,
+          currentHours,
+          currentSalesPerHour,
+          previousSales: previous?.sales ?? 0,
+          previousHours,
+          previousSalesPerHour,
+          salesDelta,
+          salesDeltaPct:
+            previous && previous.sales !== 0
+              ? (salesDelta / previous.sales) * 100
+              : null,
+        };
+      });
+
+      const lineSedeDetails = exportPdfLines.flatMap((line) => {
+        const currentBySede = new Map<
+          string,
+          { sales: number; hours: number; sedeName: string }
+        >();
+        const previousBySede = new Map<
+          string,
+          { sales: number; hours: number; sedeName: string }
+        >();
+
+        rangeData.forEach((item) => {
+          const currentLine = item.lines.find((candidate) => candidate.id === line.id);
+          if (!currentLine) return;
+          const existing = currentBySede.get(item.sede) ?? {
+            sales: 0,
+            hours: 0,
+            sedeName:
+              orderedSedes.find((sede) => sede.id === item.sede)?.name ?? item.sede,
+          };
+          currentBySede.set(item.sede, {
+            ...existing,
+            sales: existing.sales + currentLine.sales,
+            hours:
+              existing.hours +
+              (hasLaborDataForLine(line.id) ? currentLine.hours : 0),
+          });
+        });
+
+        previousRangeData.forEach((item) => {
+          const previousLine = item.lines.find((candidate) => candidate.id === line.id);
+          if (!previousLine) return;
+          const existing = previousBySede.get(item.sede) ?? {
+            sales: 0,
+            hours: 0,
+            sedeName:
+              orderedSedes.find((sede) => sede.id === item.sede)?.name ?? item.sede,
+          };
+          previousBySede.set(item.sede, {
+            ...existing,
+            sales: existing.sales + previousLine.sales,
+            hours:
+              existing.hours +
+              (hasLaborDataForLine(line.id) ? previousLine.hours : 0),
+          });
+        });
+
+        return resolvedSedeIds.map((sedeId) => {
+          const current = currentBySede.get(sedeId) ?? {
+            sales: 0,
+            hours: 0,
+            sedeName:
+              orderedSedes.find((sede) => sede.id === sedeId)?.name ?? sedeId,
+          };
+          const previous = previousBySede.get(sedeId) ?? {
+            sales: 0,
+            hours: 0,
+            sedeName: current.sedeName,
+          };
+          const currentSalesPerHour =
+            current.hours > 0 ? current.sales / 1_000_000 / current.hours : 0;
+          const previousSalesPerHour =
+            previous.hours > 0 ? previous.sales / 1_000_000 / previous.hours : 0;
+          const salesDelta = current.sales - previous.sales;
+
+          return {
+            lineId: line.id,
+            lineName: line.name,
+            sedeId,
+            sedeName: current.sedeName,
+            currentSales: current.sales,
+            currentHours: current.hours,
+            currentSalesPerHour,
+            previousSales: previous.sales,
+            previousHours: previous.hours,
+            previousSalesPerHour,
+            salesDelta,
+            salesDeltaPct:
+              previous.sales !== 0 ? (salesDelta / previous.sales) * 100 : null,
+          };
+        });
+      });
+
+      const buildLineDailyDetails = (
+        sourceData: DailyProductivity[],
+        periodLabel: "actual" | "mes anterior",
+      ) => {
+        const details = sourceData.flatMap((item) =>
+          item.lines.map((line) => {
+            const hours = hasLaborDataForLine(line.id) ? line.hours : 0;
+            return {
+              periodLabel,
+              date: item.date,
+              lineId: line.id,
+              lineName: line.name,
+              sales: line.sales,
+              hours,
+              salesPerHour: hours > 0 ? line.sales / 1_000_000 / hours : 0,
+            };
+          }),
+        );
+
+        return details
+          .filter((detail) =>
+            exportPdfLines.some((line) => line.id === detail.lineId),
+          )
+          .sort((a, b) => {
+            if (a.periodLabel !== b.periodLabel) {
+              return a.periodLabel.localeCompare(b.periodLabel);
+            }
+            if (a.date !== b.date) {
+              return a.date.localeCompare(b.date);
+            }
+            return b.sales - a.sales;
+          });
+      };
+
+      const lineDailyDetails = [
+        ...buildLineDailyDetails(rangeData, "actual"),
+        ...buildLineDailyDetails(previousRangeData, "mes anterior"),
+      ];
+
+      const buildLineSedeDailyDetails = (
+        sourceData: DailyProductivity[],
+        periodLabel: "actual" | "mes anterior",
+      ) =>
+        sourceData
+          .flatMap((item) =>
+            item.lines.map((line) => {
+              const hours = hasLaborDataForLine(line.id) ? line.hours : 0;
+              return {
+                periodLabel,
+                date: item.date,
+                sedeId: item.sede,
+                sedeName:
+                  orderedSedes.find((sede) => sede.id === item.sede)?.name ??
+                  item.sede,
+                lineId: line.id,
+                lineName: line.name,
+                sales: line.sales,
+                hours,
+                salesPerHour: hours > 0 ? line.sales / 1_000_000 / hours : 0,
+              };
+            }),
+          )
+          .filter((detail) => exportPdfLines.some((line) => line.id === detail.lineId))
+          .sort((a, b) => {
+            if (a.periodLabel !== b.periodLabel) {
+              return a.periodLabel.localeCompare(b.periodLabel);
+            }
+            if (a.date !== b.date) {
+              return a.date.localeCompare(b.date);
+            }
+            const sedeCompare = a.sedeName.localeCompare(b.sedeName, "es", {
+              sensitivity: "base",
+            });
+            if (sedeCompare !== 0) return sedeCompare;
+            return b.sales - a.sales;
+          });
+
+      const lineSedeDailyDetails = [
+        ...buildLineSedeDailyDetails(rangeData, "actual"),
+        ...buildLineSedeDailyDetails(previousRangeData, "mes anterior"),
+      ];
 
       const selectedScopeLabel =
         resolvedSedeIds.length === 0
@@ -3075,6 +3346,12 @@ export default function Home() {
         dateRange: resolvedDateRange,
         dateRangeLabel: formatRangeLabel(resolvedDateRange),
         lineFilterLabel,
+        comparisonDateRange,
+        comparisonDateRangeLabel: formatRangeLabel(comparisonDateRange),
+        lineComparisons,
+        lineSedeDetails,
+        lineDailyDetails,
+        lineSedeDailyDetails,
       };
     },
     [
@@ -3311,6 +3588,11 @@ export default function Home() {
       dateRange: exportDateRange,
       dateRangeLabel: exportDateRangeLabel,
       lineFilterLabel: exportLineFilterLabel,
+      comparisonDateRangeLabel: exportComparisonDateRangeLabel,
+      lineComparisons,
+      lineSedeDetails,
+      lineDailyDetails,
+      lineSedeDailyDetails,
     } = payload ?? buildExportPayload();
     const pdfLines = exportLines;
     const selectedScopeLabel = exportScopeLabel;
@@ -3318,32 +3600,87 @@ export default function Home() {
     const dateRange = exportDateRange;
     const dateRangeLabel = exportDateRangeLabel;
     const lineFilterLabel = exportLineFilterLabel;
+    const comparisonDateRangeLabel = exportComparisonDateRangeLabel;
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Visor de Productividad";
     workbook.created = new Date();
 
-    const worksheet = workbook.addWorksheet("Productividad", {
+    const allLinesSheet = workbook.addWorksheet("Todas las lineas", {
+      views: [{ showGridLines: false }],
+    });
+    const summarySheet = workbook.addWorksheet("Resumen ejecutivo", {
+      views: [{ showGridLines: false }],
+    });
+    const rankingSheet = workbook.addWorksheet("Ranking lineas", {
+      views: [{ showGridLines: false }],
+    });
+    const comparisonSheet = workbook.addWorksheet("Comparativo lineas", {
+      views: [{ showGridLines: false }],
+    });
+    const detailSheet = workbook.addWorksheet("Sedes por linea", {
+      views: [{ showGridLines: false }],
+    });
+    const dailyLineSheet = workbook.addWorksheet("Diario lineas", {
+      views: [{ showGridLines: false }],
+    });
+    const dailySedeLineSheet = workbook.addWorksheet("Diario sede-linea", {
       views: [{ showGridLines: false }],
     });
 
-    // Colores corporativos
     const primaryColor = "1F4E79";
-    const accentColor = "2E75B6";
     const lightBg = "D6DCE4";
-    const totalBg = "BDD7EE";
+    const accentBg = "EAF2F8";
+    const borderColor = "C9D3DD";
 
-    // Configurar anchos de columna
-    worksheet.columns = [
-      { key: "num", width: 6 },
-      { key: "linea", width: 22 },
-      { key: "codigo", width: 18 },
-      { key: "ventas", width: 18 },
-      { key: "horas", width: 12 },
+    const applyHeaderStyle = (row: ExcelJS.Row) => {
+      row.eachCell((cell) => {
+        cell.font = {
+          name: "Calibri",
+          size: 11,
+          bold: true,
+          color: { argb: "FFFFFF" },
+        };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: primaryColor },
+        };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.border = {
+          top: { style: "thin", color: { argb: primaryColor } },
+          left: { style: "thin", color: { argb: primaryColor } },
+          bottom: { style: "thin", color: { argb: primaryColor } },
+          right: { style: "thin", color: { argb: primaryColor } },
+        };
+      });
+      row.height = 20;
+    };
+
+    const applyBodyBorder = (sheet: ExcelJS.Worksheet) => {
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin", color: { argb: borderColor } },
+            left: { style: "thin", color: { argb: borderColor } },
+            bottom: { style: "thin", color: { argb: borderColor } },
+            right: { style: "thin", color: { argb: borderColor } },
+          };
+          cell.alignment = { vertical: "middle" };
+        });
+      });
+    };
+
+    summarySheet.columns = [
+      { key: "metric", width: 28 },
+      { key: "current", width: 18 },
+      { key: "previous", width: 18 },
+      { key: "delta", width: 18 },
+      { key: "deltaPct", width: 14 },
     ];
 
-    // === TÍTULO ===
-    worksheet.mergeCells("A1:E1");
-    const titleCell = worksheet.getCell("A1");
+    summarySheet.mergeCells("A1:E1");
+    const titleCell = summarySheet.getCell("A1");
     titleCell.value = "REPORTE DE PRODUCTIVIDAD POR LÍNEA";
     titleCell.font = {
       name: "Calibri",
@@ -3352,19 +3689,19 @@ export default function Home() {
       color: { argb: primaryColor },
     };
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
-    worksheet.getRow(1).height = 30;
+    summarySheet.getRow(1).height = 30;
 
-    // === INFORMACIÓN DEL REPORTE ===
     const infoStartRow = 3;
     const infoData = [
       ["Sede:", selectedScopeLabel],
-      ["Rango:", dateRangeLabel || "Sin rango definido"],
+      ["Rango actual:", dateRangeLabel || "Sin rango definido"],
+      ["Rango comparativo:", comparisonDateRangeLabel || "Sin rango definido"],
       ["Filtro:", lineFilterLabel],
       ["Generado:", formatPdfDate()],
     ];
 
-    worksheet.mergeCells(`A${infoStartRow}:E${infoStartRow}`);
-    const infoHeaderCell = worksheet.getCell(`A${infoStartRow}`);
+    summarySheet.mergeCells(`A${infoStartRow}:E${infoStartRow}`);
+    const infoHeaderCell = summarySheet.getCell(`A${infoStartRow}`);
     infoHeaderCell.value = "Información del Reporte";
     infoHeaderCell.font = {
       name: "Calibri",
@@ -3377,156 +3714,571 @@ export default function Home() {
       pattern: "solid",
       fgColor: { argb: lightBg },
     };
-    worksheet.getRow(infoStartRow).height = 22;
 
     infoData.forEach((item, index) => {
       const rowNum = infoStartRow + 1 + index;
-      worksheet.getCell(`A${rowNum}`).value = item[0];
-      worksheet.getCell(`A${rowNum}`).font = {
+      summarySheet.getCell(`A${rowNum}`).value = item[0];
+      summarySheet.getCell(`A${rowNum}`).font = {
         name: "Calibri",
         size: 11,
         bold: true,
       };
-      worksheet.getCell(`B${rowNum}`).value = item[1];
-      worksheet.getCell(`B${rowNum}`).font = { name: "Calibri", size: 11 };
+      summarySheet.getCell(`B${rowNum}`).value = item[1];
+      summarySheet.getCell(`B${rowNum}`).font = { name: "Calibri", size: 11 };
     });
 
-    // === ENCABEZADOS DE TABLA ===
-    const headerRow = infoStartRow + infoData.length + 2;
-    const headers = ["#", "Línea", "Código", "Ventas ($)", "Horas"];
+    const currentSalesTotal = lineComparisons.reduce(
+      (acc, line) => acc + line.currentSales,
+      0,
+    );
+    const previousSalesTotal = lineComparisons.reduce(
+      (acc, line) => acc + line.previousSales,
+      0,
+    );
+    const currentHoursTotal = lineComparisons.reduce(
+      (acc, line) => acc + line.currentHours,
+      0,
+    );
+    const previousHoursTotal = lineComparisons.reduce(
+      (acc, line) => acc + line.previousHours,
+      0,
+    );
+    const currentSalesPerHour =
+      currentHoursTotal > 0 ? currentSalesTotal / 1_000_000 / currentHoursTotal : 0;
+    const previousSalesPerHour =
+      previousHoursTotal > 0
+        ? previousSalesTotal / 1_000_000 / previousHoursTotal
+        : 0;
+    const totalSalesDelta = currentSalesTotal - previousSalesTotal;
+    const totalHoursDelta = currentHoursTotal - previousHoursTotal;
+    const totalSalesDeltaPct =
+      previousSalesTotal !== 0 ? totalSalesDelta / previousSalesTotal : null;
 
-    const headerRowObj = worksheet.getRow(headerRow);
-    headers.forEach((header, index) => {
-      const cell = headerRowObj.getCell(index + 1);
+    const sortedByCurrentSales = [...lineComparisons].sort(
+      (a, b) => b.currentSales - a.currentSales,
+    );
+    const topLines = sortedByCurrentSales.slice(0, 5);
+    const linesWithWorstDelta = [...lineComparisons]
+      .sort((a, b) => a.salesDelta - b.salesDelta)
+      .slice(0, 5);
+
+    const summaryHeaderRow = infoStartRow + infoData.length + 2;
+    const summaryHeaders = [
+      "Métrica",
+      "Periodo actual",
+      "Mes anterior",
+      "Variación",
+      "Variación %",
+    ];
+    const summaryHeader = summarySheet.getRow(summaryHeaderRow);
+    summaryHeaders.forEach((header, index) => {
+      const cell = summaryHeader.getCell(index + 1);
       cell.value = header;
-      cell.font = {
-        name: "Calibri",
-        size: 11,
-        bold: true,
-        color: { argb: "FFFFFF" },
-      };
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: primaryColor },
-      };
-      cell.alignment = {
-        horizontal: index <= 2 ? "left" : "right",
-        vertical: "middle",
-      };
-      cell.border = {
-        top: { style: "thin", color: { argb: primaryColor } },
-        bottom: { style: "thin", color: { argb: primaryColor } },
-        left: { style: "thin", color: { argb: primaryColor } },
-        right: { style: "thin", color: { argb: primaryColor } },
-      };
     });
-    headerRowObj.height = 24;
+    applyHeaderStyle(summaryHeader);
 
-    // === FILAS DE DATOS ===
-    const dataStartRow = headerRow + 1;
-    let totalSales = 0;
-    let totalHours = 0;
+    const summaryRows = [
+      [
+        "Ventas totales",
+        currentSalesTotal,
+        previousSalesTotal,
+        currentSalesTotal - previousSalesTotal,
+        previousSalesTotal !== 0
+          ? (currentSalesTotal - previousSalesTotal) / previousSalesTotal
+          : null,
+      ],
+      [
+        "Horas trabajadas",
+        currentHoursTotal,
+        previousHoursTotal,
+        currentHoursTotal - previousHoursTotal,
+        previousHoursTotal !== 0
+          ? (currentHoursTotal - previousHoursTotal) / previousHoursTotal
+          : null,
+      ],
+      [
+        "Vta/Hr consolidada",
+        currentSalesPerHour,
+        previousSalesPerHour,
+        currentSalesPerHour - previousSalesPerHour,
+        previousSalesPerHour !== 0
+          ? (currentSalesPerHour - previousSalesPerHour) / previousSalesPerHour
+          : null,
+      ],
+      [
+        "Líneas incluidas",
+        pdfLines.length,
+        pdfLines.length,
+        0,
+        null,
+      ],
+    ];
 
-    pdfLines.forEach((line, index) => {
-      const hasLaborData = hasLaborDataForLine(line.id);
-      const hours = hasLaborData ? line.hours : 0;
-
-      totalSales += line.sales;
-      totalHours += hours;
-
-      const rowNum = dataStartRow + index;
-      const row = worksheet.getRow(rowNum);
-      const isEven = index % 2 === 0;
-      const rowBg = isEven ? "F2F2F2" : "FFFFFF";
-
-      const rowData = [
-        index + 1,
-        line.name,
-        line.id,
-        Math.round(line.sales),
-        hours,
-      ];
-
+    summaryRows.forEach((rowData, index) => {
+      const row = summarySheet.getRow(summaryHeaderRow + 1 + index);
       rowData.forEach((value, colIndex) => {
         const cell = row.getCell(colIndex + 1);
         cell.value = value;
-        cell.font = { name: "Calibri", size: 11 };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: rowBg },
-        };
-        cell.alignment = {
-          horizontal: colIndex <= 2 ? "left" : "right",
-          vertical: "middle",
-        };
-        cell.border = {
-          top: { style: "thin", color: { argb: "D9D9D9" } },
-          bottom: { style: "thin", color: { argb: "D9D9D9" } },
-          left: { style: "thin", color: { argb: "D9D9D9" } },
-          right: { style: "thin", color: { argb: "D9D9D9" } },
-        };
-
-        // Formato numérico
-        if (colIndex >= 3) {
-          cell.numFmt = "#,##0";
+        if (colIndex === 4 && typeof value === "number") {
+          cell.numFmt = "0.00%";
         }
       });
-      row.height = 20;
-    });
-
-    // === FILA DE TOTALES ===
-    const totalRowNum = dataStartRow + pdfLines.length + 1;
-    const totalRow = worksheet.getRow(totalRowNum);
-
-    const totalsData = ["", "TOTAL", "", Math.round(totalSales), totalHours];
-
-    totalsData.forEach((value, colIndex) => {
-      const cell = totalRow.getCell(colIndex + 1);
-      cell.value = value;
-      cell.font = {
-        name: "Calibri",
-        size: 11,
-        bold: true,
-        color: { argb: primaryColor },
-      };
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: totalBg },
-      };
-      cell.alignment = {
-        horizontal: colIndex <= 2 ? "left" : "right",
-        vertical: "middle",
-      };
-      cell.border = {
-        top: { style: "medium", color: { argb: accentColor } },
-        bottom: { style: "medium", color: { argb: accentColor } },
-        left: { style: "thin", color: { argb: accentColor } },
-        right: { style: "thin", color: { argb: accentColor } },
-      };
-
-      if (colIndex >= 3) {
-        cell.numFmt = "#,##0";
+      const metric = row.getCell(1).value;
+      if (metric === "Ventas totales") {
+        row.getCell(2).numFmt = '"$"#,##0';
+        row.getCell(3).numFmt = '"$"#,##0';
+        row.getCell(4).numFmt = '"$"#,##0';
+      } else if (metric === "Horas trabajadas") {
+        row.getCell(2).numFmt = '#,##0.00';
+        row.getCell(3).numFmt = '#,##0.00';
+        row.getCell(4).numFmt = '#,##0.00';
+      } else if (metric === "Vta/Hr consolidada") {
+        row.getCell(2).numFmt = '#,##0.000';
+        row.getCell(3).numFmt = '#,##0.000';
+        row.getCell(4).numFmt = '#,##0.000';
+      } else {
+        row.getCell(2).numFmt = '#,##0';
+        row.getCell(3).numFmt = '#,##0';
+        row.getCell(4).numFmt = '#,##0';
       }
     });
-    totalRow.height = 24;
 
-    // === PIE DE PÁGINA ===
-    const footerRow = totalRowNum + 2;
-    worksheet.mergeCells(`A${footerRow}:E${footerRow}`);
-    const footerCell = worksheet.getCell(`A${footerRow}`);
-    footerCell.value = "Generado automáticamente por Visor de Productividad";
-    footerCell.font = {
+    const highlightsStartRow = summaryHeaderRow + summaryRows.length + 3;
+    summarySheet.mergeCells(`A${highlightsStartRow}:E${highlightsStartRow}`);
+    const highlightsHeader = summarySheet.getCell(`A${highlightsStartRow}`);
+    highlightsHeader.value = "Hallazgos principales";
+    highlightsHeader.font = {
       name: "Calibri",
-      size: 9,
-      italic: true,
-      color: { argb: "808080" },
+      size: 12,
+      bold: true,
+      color: { argb: primaryColor },
     };
-    footerCell.alignment = { horizontal: "center" };
+    highlightsHeader.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: accentBg },
+    };
 
-    // Generar y descargar archivo
+    const insights = [
+      [
+        "Línea líder por ventas",
+        topLines[0]?.name ?? "Sin datos",
+        topLines[0]?.currentSales ?? 0,
+        topLines[0]?.salesDelta ?? 0,
+        topLines[0]?.salesDeltaPct !== null && topLines[0]
+          ? topLines[0].salesDeltaPct / 100
+          : null,
+      ],
+      [
+        "Mayor caída en ventas",
+        linesWithWorstDelta[0]?.name ?? "Sin datos",
+        linesWithWorstDelta[0]?.currentSales ?? 0,
+        linesWithWorstDelta[0]?.salesDelta ?? 0,
+        linesWithWorstDelta[0]?.salesDeltaPct !== null && linesWithWorstDelta[0]
+          ? linesWithWorstDelta[0].salesDeltaPct / 100
+          : null,
+      ],
+      [
+        "Ventas consolidadas",
+        currentSalesTotal,
+        previousSalesTotal,
+        totalSalesDelta,
+        totalSalesDeltaPct,
+      ],
+      [
+        "Horas consolidadas",
+        currentHoursTotal,
+        previousHoursTotal,
+        totalHoursDelta,
+        previousHoursTotal !== 0 ? totalHoursDelta / previousHoursTotal : null,
+      ],
+    ];
+
+    insights.forEach((rowData, index) => {
+      const row = summarySheet.getRow(highlightsStartRow + 1 + index);
+      rowData.forEach((value, colIndex) => {
+        const cell = row.getCell(colIndex + 1);
+        cell.value = value;
+        if (colIndex === 4 && typeof value === "number") {
+          cell.numFmt = "0.00%";
+        }
+      });
+      const metric = row.getCell(1).value;
+      if (
+        metric === "Ventas consolidadas" ||
+        metric === "Línea líder por ventas" ||
+        metric === "Mayor caída en ventas"
+      ) {
+        row.getCell(3).numFmt = '"$"#,##0';
+        row.getCell(4).numFmt = '"$"#,##0';
+      } else if (metric === "Horas consolidadas") {
+        row.getCell(2).numFmt = '#,##0.00';
+        row.getCell(3).numFmt = '#,##0.00';
+        row.getCell(4).numFmt = '#,##0.00';
+      }
+    });
+
+    allLinesSheet.columns = [
+      { key: "linea", width: 24 },
+      { key: "codigo", width: 18 },
+      { key: "ventasActual", width: 18 },
+      { key: "ventasAnterior", width: 18 },
+      { key: "delta", width: 18 },
+      { key: "deltaPct", width: 14 },
+      { key: "vtaHrActual", width: 14 },
+      { key: "horasActual", width: 14 },
+    ];
+    const allLinesHeader = allLinesSheet.addRow([
+      "Línea",
+      "Código",
+      "Ventas",
+      "Mes anterior",
+      "Variación",
+      "Variación %",
+      "Vta/Hr",
+      "Horas",
+    ]);
+    applyHeaderStyle(allLinesHeader);
+    sortedByCurrentSales.forEach((line) => {
+      const row = allLinesSheet.addRow([
+        line.name,
+        line.id,
+        line.currentSales,
+        line.previousSales,
+        line.salesDelta,
+        line.salesDeltaPct !== null ? line.salesDeltaPct / 100 : null,
+        line.currentSalesPerHour,
+        line.currentHours,
+      ]);
+      row.getCell(6).numFmt = "0.00%";
+    });
+
+    rankingSheet.columns = [
+      { key: "ranking", width: 10 },
+      { key: "linea", width: 24 },
+      { key: "codigo", width: 18 },
+      { key: "ventasActual", width: 18 },
+      { key: "participacionVentas", width: 16 },
+      { key: "horasActual", width: 16 },
+      { key: "participacionHoras", width: 16 },
+      { key: "vtaHrActual", width: 14 },
+      { key: "ventasAnterior", width: 18 },
+      { key: "variacionVentas", width: 18 },
+      { key: "variacionPct", width: 14 },
+    ];
+    const rankingHeader = rankingSheet.addRow([
+      "Rank",
+      "Línea",
+      "Código",
+      "Ventas actual",
+      "% part. ventas",
+      "Horas actual",
+      "% part. horas",
+      "Vta/Hr actual",
+      "Ventas mes anterior",
+      "Variación ventas",
+      "Variación %",
+    ]);
+    applyHeaderStyle(rankingHeader);
+    sortedByCurrentSales.forEach((line, index) => {
+      const row = rankingSheet.addRow([
+        index + 1,
+        line.name,
+        line.id,
+        line.currentSales,
+        currentSalesTotal > 0 ? line.currentSales / currentSalesTotal : null,
+        line.currentHours,
+        currentHoursTotal > 0 ? line.currentHours / currentHoursTotal : null,
+        line.currentSalesPerHour,
+        line.previousSales,
+        line.salesDelta,
+        line.salesDeltaPct !== null ? line.salesDeltaPct / 100 : null,
+      ]);
+      row.getCell(5).numFmt = "0.00%";
+      row.getCell(7).numFmt = "0.00%";
+      row.getCell(11).numFmt = "0.00%";
+    });
+
+    comparisonSheet.columns = [
+      { key: "ranking", width: 10 },
+      { key: "linea", width: 24 },
+      { key: "codigo", width: 18 },
+      { key: "ventasActual", width: 16 },
+      { key: "horasActual", width: 14 },
+      { key: "vtaHrActual", width: 14 },
+      { key: "ventasAnterior", width: 18 },
+      { key: "horasAnterior", width: 16 },
+      { key: "vtaHrAnterior", width: 16 },
+      { key: "delta", width: 16 },
+      { key: "deltaHoras", width: 16 },
+      { key: "deltaVtaHr", width: 16 },
+      { key: "deltaPct", width: 14 },
+    ];
+    const comparisonHeader = comparisonSheet.addRow([
+      "Rank",
+      "Línea",
+      "Código",
+      "Ventas actual",
+      "Horas actual",
+      "Vta/Hr actual",
+      "Ventas mes anterior",
+      "Horas mes anterior",
+      "Vta/Hr mes anterior",
+      "Variación ventas",
+      "Variación horas",
+      "Variación Vta/Hr",
+      "Variación %",
+    ]);
+    applyHeaderStyle(comparisonHeader);
+    sortedByCurrentSales.forEach((line, index) => {
+      const row = comparisonSheet.addRow([
+        index + 1,
+        line.name,
+        line.id,
+        line.currentSales,
+        line.currentHours,
+        line.currentSalesPerHour,
+        line.previousSales,
+        line.previousHours,
+        line.previousSalesPerHour,
+        line.salesDelta,
+        line.currentHours - line.previousHours,
+        line.currentSalesPerHour - line.previousSalesPerHour,
+        line.salesDeltaPct !== null ? line.salesDeltaPct / 100 : null,
+      ]);
+      row.getCell(12).numFmt = "0.00%";
+    });
+
+    detailSheet.columns = [
+      { key: "rankingLinea", width: 12 },
+      { key: "linea", width: 24 },
+      { key: "codigo", width: 18 },
+      { key: "rankingSede", width: 12 },
+      { key: "sede", width: 22 },
+      { key: "ventasActual", width: 16 },
+      { key: "participacionLinea", width: 16 },
+      { key: "horasActual", width: 14 },
+      { key: "vtaHrActual", width: 14 },
+      { key: "ventasAnterior", width: 18 },
+      { key: "horasAnterior", width: 16 },
+      { key: "vtaHrAnterior", width: 16 },
+      { key: "delta", width: 16 },
+      { key: "deltaHoras", width: 16 },
+      { key: "deltaVtaHr", width: 16 },
+      { key: "deltaPct", width: 14 },
+    ];
+    const detailHeader = detailSheet.addRow([
+      "Rank línea",
+      "Línea",
+      "Código",
+      "Rank sede",
+      "Sede",
+      "Ventas actual",
+      "% part. línea",
+      "Horas actual",
+      "Vta/Hr actual",
+      "Ventas mes anterior",
+      "Horas mes anterior",
+      "Vta/Hr mes anterior",
+      "Variación ventas",
+      "Variación horas",
+      "Variación Vta/Hr",
+      "Variación %",
+    ]);
+    applyHeaderStyle(detailHeader);
+
+    const lineRankMap = new Map(
+      sortedByCurrentSales.map((line, index) => [line.id, index + 1]),
+    );
+    const currentSalesByLineMap = new Map(
+      sortedByCurrentSales.map((line) => [line.id, line.currentSales]),
+    );
+    const sedeRankByLineMap = new Map<string, Map<string, number>>();
+    sortedByCurrentSales.forEach((line) => {
+      const rankedSedes = lineSedeDetails
+        .filter((detail) => detail.lineId === line.id)
+        .sort((a, b) => b.currentSales - a.currentSales);
+      sedeRankByLineMap.set(
+        line.id,
+        new Map(rankedSedes.map((detail, index) => [detail.sedeId, index + 1])),
+      );
+    });
+
+    lineSedeDetails
+      .sort((a, b) => {
+        const lineRankDiff =
+          (lineRankMap.get(a.lineId) ?? Number.MAX_SAFE_INTEGER) -
+          (lineRankMap.get(b.lineId) ?? Number.MAX_SAFE_INTEGER);
+        if (lineRankDiff !== 0) return lineRankDiff;
+        return b.currentSales - a.currentSales;
+      })
+      .forEach((detail) => {
+      const lineSales = currentSalesByLineMap.get(detail.lineId) ?? 0;
+      const row = detailSheet.addRow([
+        lineRankMap.get(detail.lineId) ?? null,
+        detail.lineName,
+        detail.lineId,
+        sedeRankByLineMap.get(detail.lineId)?.get(detail.sedeId) ?? null,
+        detail.sedeName,
+        detail.currentSales,
+        lineSales > 0 ? detail.currentSales / lineSales : null,
+        detail.currentHours,
+        detail.currentSalesPerHour,
+        detail.previousSales,
+        detail.previousHours,
+        detail.previousSalesPerHour,
+        detail.salesDelta,
+        detail.currentHours - detail.previousHours,
+        detail.currentSalesPerHour - detail.previousSalesPerHour,
+        detail.salesDeltaPct !== null ? detail.salesDeltaPct / 100 : null,
+      ]);
+      row.getCell(7).numFmt = "0.00%";
+      row.getCell(15).numFmt = "0.00%";
+    });
+
+    dailyLineSheet.columns = [
+      { key: "periodo", width: 14 },
+      { key: "fecha", width: 14 },
+      { key: "linea", width: 24 },
+      { key: "codigo", width: 18 },
+      { key: "ventas", width: 16 },
+      { key: "horas", width: 14 },
+      { key: "vtaHr", width: 14 },
+    ];
+    const dailyLineHeader = dailyLineSheet.addRow([
+      "Periodo",
+      "Fecha",
+      "Línea",
+      "Código",
+      "Ventas",
+      "Horas",
+      "Vta/Hr",
+    ]);
+    applyHeaderStyle(dailyLineHeader);
+    lineDailyDetails.forEach((detail) => {
+      dailyLineSheet.addRow([
+        detail.periodLabel,
+        detail.date,
+        detail.lineName,
+        detail.lineId,
+        detail.sales,
+        detail.hours,
+        detail.salesPerHour,
+      ]);
+    });
+
+    dailySedeLineSheet.columns = [
+      { key: "periodo", width: 14 },
+      { key: "fecha", width: 14 },
+      { key: "sede", width: 22 },
+      { key: "sedeId", width: 18 },
+      { key: "linea", width: 24 },
+      { key: "codigo", width: 18 },
+      { key: "ventas", width: 16 },
+      { key: "horas", width: 14 },
+      { key: "vtaHr", width: 14 },
+    ];
+    const dailySedeLineHeader = dailySedeLineSheet.addRow([
+      "Periodo",
+      "Fecha",
+      "Sede",
+      "Id sede",
+      "Línea",
+      "Código",
+      "Ventas",
+      "Horas",
+      "Vta/Hr",
+    ]);
+    applyHeaderStyle(dailySedeLineHeader);
+    lineSedeDailyDetails.forEach((detail) => {
+      dailySedeLineSheet.addRow([
+        detail.periodLabel,
+        detail.date,
+        detail.sedeName,
+        detail.sedeId,
+        detail.lineName,
+        detail.lineId,
+        detail.sales,
+        detail.hours,
+        detail.salesPerHour,
+      ]);
+    });
+
+    [
+      summarySheet,
+      allLinesSheet,
+      rankingSheet,
+      comparisonSheet,
+      detailSheet,
+      dailyLineSheet,
+      dailySedeLineSheet,
+    ].forEach((sheet) => {
+      applyBodyBorder(sheet);
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1 && sheet !== summarySheet) return;
+        row.eachCell((cell) => {
+          if (typeof cell.value === "number") {
+            if (cell.numFmt) return;
+            cell.numFmt = "#,##0.000";
+          }
+        });
+      });
+    });
+
+    allLinesSheet.getColumn(3).numFmt = '"$"#,##0';
+    allLinesSheet.getColumn(4).numFmt = '"$"#,##0';
+    allLinesSheet.getColumn(5).numFmt = '"$"#,##0';
+    allLinesSheet.getColumn(6).numFmt = "0.00%";
+    allLinesSheet.getColumn(7).numFmt = '#,##0.000';
+    allLinesSheet.getColumn(8).numFmt = '#,##0.00';
+    comparisonSheet.getColumn(4).numFmt = '"$"#,##0';
+    comparisonSheet.getColumn(5).numFmt = '#,##0.00';
+    comparisonSheet.getColumn(6).numFmt = '#,##0.000';
+    comparisonSheet.getColumn(7).numFmt = '"$"#,##0';
+    comparisonSheet.getColumn(8).numFmt = '#,##0.00';
+    comparisonSheet.getColumn(9).numFmt = '#,##0.000';
+    comparisonSheet.getColumn(10).numFmt = '"$"#,##0';
+    comparisonSheet.getColumn(11).numFmt = '#,##0.00';
+    comparisonSheet.getColumn(12).numFmt = '#,##0.000';
+    rankingSheet.getColumn(4).numFmt = '"$"#,##0';
+    rankingSheet.getColumn(5).numFmt = "0.00%";
+    rankingSheet.getColumn(6).numFmt = '#,##0.00';
+    rankingSheet.getColumn(7).numFmt = "0.00%";
+    rankingSheet.getColumn(8).numFmt = '#,##0.000';
+    rankingSheet.getColumn(9).numFmt = '"$"#,##0';
+    rankingSheet.getColumn(10).numFmt = '"$"#,##0';
+    rankingSheet.getColumn(11).numFmt = "0.00%";
+    detailSheet.getColumn(6).numFmt = '"$"#,##0';
+    detailSheet.getColumn(7).numFmt = "0.00%";
+    detailSheet.getColumn(8).numFmt = '#,##0.00';
+    detailSheet.getColumn(9).numFmt = '#,##0.000';
+    detailSheet.getColumn(10).numFmt = '"$"#,##0';
+    detailSheet.getColumn(11).numFmt = '#,##0.00';
+    detailSheet.getColumn(12).numFmt = '#,##0.000';
+    detailSheet.getColumn(13).numFmt = '"$"#,##0';
+    detailSheet.getColumn(14).numFmt = '#,##0.00';
+    detailSheet.getColumn(15).numFmt = '#,##0.000';
+    detailSheet.getColumn(16).numFmt = "0.00%";
+    dailyLineSheet.getColumn(5).numFmt = '"$"#,##0';
+    dailyLineSheet.getColumn(6).numFmt = '#,##0.00';
+    dailyLineSheet.getColumn(7).numFmt = '#,##0.000';
+    dailySedeLineSheet.getColumn(7).numFmt = '"$"#,##0';
+    dailySedeLineSheet.getColumn(8).numFmt = '#,##0.00';
+    dailySedeLineSheet.getColumn(9).numFmt = '#,##0.000';
+
+    allLinesSheet.views = [{ state: "frozen", ySplit: 1 }];
+    rankingSheet.views = [{ state: "frozen", ySplit: 1 }];
+    comparisonSheet.views = [{ state: "frozen", ySplit: 1 }];
+    detailSheet.views = [{ state: "frozen", ySplit: 1 }];
+    dailyLineSheet.views = [{ state: "frozen", ySplit: 1 }];
+    dailySedeLineSheet.views = [{ state: "frozen", ySplit: 1 }];
+    allLinesSheet.autoFilter = "A1:H1";
+    rankingSheet.autoFilter = "A1:K1";
+    comparisonSheet.autoFilter = "A1:M1";
+    detailSheet.autoFilter = "A1:P1";
+    dailyLineSheet.autoFilter = "A1:G1";
+    dailySedeLineSheet.autoFilter = "A1:I1";
+
     const safeSede = selectedScopeId.replace(/\s+/g, "-");
     const fileName = `reporte-productividad-${safeSede}-${dateRange.start || "sin-fecha"}-${
       dateRange.end || "sin-fecha"

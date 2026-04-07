@@ -833,22 +833,23 @@ export default function JornadaExtendidaPage() {
               </div>
             )}
 
-            <HourlyAnalysis
-              availableDates={availableDates}
-              availableSedes={availableSedes}
-              defaultDate={defaultDate}
-              defaultSede={defaultSede}
-              sections={["overtime"]}
-              defaultSection="overtime"
-              showTimeFilters={false}
-              showTopDateFilter={false}
-              showTopLineFilter={false}
-              showSedeFilters={false}
-              showDepartmentFilterInOvertime
-              enableOvertimeDateRange
-              alexConsistencyMode={canSeeAlexReport}
-              dashboardContext="jornada-extendida"
-            />
+              <HourlyAnalysis
+                availableDates={availableDates}
+                availableSedes={availableSedes}
+                defaultDate={defaultDate}
+                defaultSede={defaultSede}
+                sections={["overtime"]}
+                defaultSection="overtime"
+                showTimeFilters={false}
+                showTopDateFilter={false}
+                showTopLineFilter={false}
+                showSedeFilters={false}
+                showDepartmentFilterInOvertime
+                enableOvertimeDateRange
+                alexConsistencyMode={canSeeAlexReport}
+                alexTotalsOverride={canSeeAlexReport ? alexTotals : undefined}
+                dashboardContext="jornada-extendida"
+              />
           </>
         )}
       </div>

@@ -51,6 +51,12 @@ interface HourlyAnalysisProps {
   panelDescription?: string;
   showPersonBreakdown?: boolean;
   dashboardContext?: HourlyAnalysisDashboardContext;
+  alexTotalsOverride?: {
+    moreThan72With2: number;
+    moreThan92: number;
+    oddMarks: number;
+    absences: number;
+  };
 }
 
 const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -418,6 +424,7 @@ export const HourlyAnalysis = ({
   panelDescription = "Filtra por linea para enfocar el comportamiento horario en todas las sedes.",
   showPersonBreakdown = false,
   dashboardContext = "productividad",
+  alexTotalsOverride,
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
     const unique = Array.from(new Set(sections));
@@ -1654,6 +1661,15 @@ export const HourlyAnalysis = ({
       }).length,
     [baseFilteredOvertimeEmployees],
   );
+
+  const displayOvertimeAbsenceCount =
+    alexTotalsOverride?.absences ?? overtimeAbsenceCount;
+  const displayOddMarksCount =
+    alexTotalsOverride?.oddMarks ?? oddMarksCount;
+  const displayAlexAlertCount920 =
+    alexTotalsOverride?.moreThan92 ?? alexAlertCount920;
+  const displayAlexAlertCount720 =
+    alexTotalsOverride?.moreThan72With2 ?? alexAlertCount720;
   useEffect(() => {
     if (!isAlexStrictMode) return;
     setOvertimeSedeFilter([]);
@@ -2277,7 +2293,7 @@ export const HourlyAnalysis = ({
                       : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
                   }`}
                 >
-                  {`Ver inasistencias (${overtimeAbsenceCount})`}
+                  {`Ver inasistencias (${displayOvertimeAbsenceCount})`}
                 </button>
                 <button
                   type="button"
@@ -2294,7 +2310,7 @@ export const HourlyAnalysis = ({
                       : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
                   }`}
                 >
-                  {`Ver marcaciones impares (${oddMarksCount})`}
+                  {`Ver marcaciones impares (${displayOddMarksCount})`}
                 </button>
                 <button
                   type="button"
@@ -2314,7 +2330,7 @@ export const HourlyAnalysis = ({
                       : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
                   }`}
                 >
-                  {`Ver personas >9:20h (${alexAlertCount920})`}
+                  {`Ver personas >9:20h (${displayAlexAlertCount920})`}
                 </button>
                 <button
                   type="button"
@@ -2334,7 +2350,7 @@ export const HourlyAnalysis = ({
                       : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
                   }`}
                 >
-                  {`Ver personas >7:20h con 2 marcaciones (${alexAlertCount720})`}
+                  {`Ver personas >7:20h con 2 marcaciones (${displayAlexAlertCount720})`}
                 </button>
                 {overtimeExcludedIds.size > 0 && (
                   <button
