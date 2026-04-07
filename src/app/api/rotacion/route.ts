@@ -30,7 +30,7 @@ type RotationDbRow = {
   tracked_days: number | string | null;
   last_movement_date: string | null;
   effective_days: number | string | null;
-  status: "Sin movimiento" | "Baja rotacion" | "En seguimiento";
+  status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
 
 type RotationRow = {
@@ -49,7 +49,7 @@ type RotationRow = {
   trackedDays: number;
   lastMovementDate: string | null;
   effectiveDays: number | null;
-  status: "Sin movimiento" | "Baja rotacion" | "En seguimiento";
+  status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
 
 type RotationFilterCatalog = {
@@ -64,6 +64,9 @@ type RotationFilterCatalog = {
 const CACHE_CONTROL = "no-store";
 const LOW_ROTATION_THRESHOLD = 0.65;
 const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_ROTATION_RANGE_DAYS = 93;
+const MAX_SALES_THRESHOLD = 200000;
+const FUTURE_STOCKOUT_DAYS = 7;
 const HIDDEN_SEDE_KEYS = new Set([
   "adm",
   "cedicavasa",
@@ -117,6 +120,14 @@ const clampDateRange = ({
   return { start: nextStart, end: nextEnd };
 };
 
+const limitDateRangeWindow = (range: { start: string; end: string }) => {
+  const maxStart = shiftDate(range.end, -(MAX_ROTATION_RANGE_DAYS - 1));
+  if (range.start < maxStart) {
+    return { start: maxStart, end: range.end };
+  }
+  return range;
+};
+
 const toNumber = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
 
@@ -128,11 +139,73 @@ const normalizeKey = (value: string) =>
     .replace(/[^a-z0-9]+/g, "")
     .trim();
 
+const resolveVisibleSedes = (
+  sessionUser: {
+    role: "admin" | "user";
+    sede: string | null;
+    allowedSedes?: string[] | null;
+  },
+  catalog: RotationFilterCatalog,
+) => {
+  if (sessionUser.role === "admin") {
+    return {
+      authorized: true,
+      visibleSedes: catalog.sedes,
+    };
+  }
+
+  const rawAllowed = Array.isArray(sessionUser.allowedSedes)
+    ? sessionUser.allowedSedes
+    : [];
+  const normalizedAllowed = new Set(
+    rawAllowed.map((sede) => normalizeKey(sede)).filter(Boolean),
+  );
+
+  if (normalizedAllowed.has(normalizeKey("Todas"))) {
+    return {
+      authorized: true,
+      visibleSedes: catalog.sedes,
+    };
+  }
+
+  const visibleFromAllowed = catalog.sedes.filter((sede) =>
+    normalizedAllowed.has(normalizeKey(sede.sedeName)),
+  );
+  if (visibleFromAllowed.length > 0) {
+    return {
+      authorized: true,
+      visibleSedes: visibleFromAllowed,
+    };
+  }
+
+  if (sessionUser.sede) {
+    const legacyVisible = catalog.sedes.filter(
+      (sede) => normalizeKey(sede.sedeName) === normalizeKey(sessionUser.sede ?? ""),
+    );
+    if (legacyVisible.length > 0) {
+      return {
+        authorized: true,
+        visibleSedes: legacyVisible,
+      };
+    }
+  }
+
+  return {
+    authorized: false,
+    visibleSedes: [] as RotationFilterCatalog["sedes"],
+  };
+};
+
 const parsePositiveNumber = (value: string | null) => {
   if (!value) return null;
   const normalized = value.replace(/[^\d]/g, "");
   if (!normalized) return null;
   return Number(normalized);
+};
+
+const clampSalesThreshold = (value: number | null) => {
+  if (value === null) return MAX_SALES_THRESHOLD;
+  return Math.max(0, Math.min(value, MAX_SALES_THRESHOLD));
 };
 
 const getAvailableBounds = async () => {
@@ -224,13 +297,13 @@ const getRotationFilterCatalog = async (
 const queryRotationRows = async ({
   startDate,
   endDate,
-  minInventoryValue,
+  maxSalesValue,
   empresa,
   sedeId,
 }: {
   startDate: string;
   endDate: string;
-  minInventoryValue: number | null;
+  maxSalesValue: number;
   empresa: string | null;
   sedeId: string | null;
 }): Promise<RotationRow[]> => {
@@ -324,8 +397,7 @@ const queryRotationRows = async ({
             ELSE ($3::date - last_movement_date)
           END::int AS effective_days
         FROM aggregated
-        WHERE COALESCE(inventory_value, 0) > 0
-          AND ($4::numeric IS NULL OR COALESCE(inventory_value, 0) >= $4)
+        WHERE total_sales <= $4::numeric
       ),
       classified AS (
         SELECT
@@ -345,8 +417,13 @@ const queryRotationRows = async ({
           last_movement_date,
           effective_days,
           CASE
-            WHEN total_sales <= 0 AND inventory_value > 0 THEN 'Sin movimiento'
-            WHEN COALESCE(rotation, 0) < $7 THEN 'Baja rotacion'
+            WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 'Agotado'
+            WHEN total_sales > 0
+              AND tracked_days > 0
+              AND inventory_value > 0
+              AND inventory_value <= ((total_sales / tracked_days) * $7::numeric)
+              THEN 'Futuro agotado'
+            WHEN COALESCE(rotation, 0) < $8 THEN 'Baja rotacion'
             ELSE 'En seguimiento'
           END AS status
         FROM enriched
@@ -372,12 +449,7 @@ const queryRotationRows = async ({
       ORDER BY
         empresa ASC,
         sede_name ASC,
-        CASE
-          WHEN status = 'Sin movimiento' THEN 0
-          WHEN status = 'Baja rotacion' THEN 1
-          ELSE 2
-        END,
-        COALESCE(rotation, 0) ASC,
+        total_sales DESC,
         inventory_value DESC,
         item ASC
       `,
@@ -385,9 +457,10 @@ const queryRotationRows = async ({
         isoToCompactDate(startDate),
         isoToCompactDate(endDate),
         endDate,
-        minInventoryValue,
+        maxSalesValue,
         empresa,
         sedeId,
+        FUTURE_STOCKOUT_DAYS,
         LOW_ROTATION_THRESHOLD,
       ],
     );
@@ -476,7 +549,7 @@ export async function GET(request: Request) {
               effectiveRange: { start: "", end: "" },
               availableRange: { min: "", max: "" },
               sourceTable: "rotacion_base_item_dia_sede",
-              minInventoryValue: null,
+              maxSalesValue: MAX_SALES_THRESHOLD,
             },
             message: "La tabla de rotacion no tiene datos disponibles.",
           },
@@ -490,8 +563,8 @@ export async function GET(request: Request) {
     const requestedEnd = url.searchParams.get("end");
     const requestedCompany = url.searchParams.get("empresa")?.trim() || null;
     const requestedSedeId = url.searchParams.get("sede")?.trim() || null;
-    const minInventoryValue = parsePositiveNumber(
-      url.searchParams.get("minInventoryValue"),
+    const maxSalesValue = clampSalesThreshold(
+      parsePositiveNumber(url.searchParams.get("maxSalesValue")),
     );
 
     const rawEndDate = isIsoDate(requestedEnd) ? requestedEnd! : maxAvailableDate;
@@ -505,8 +578,43 @@ export async function GET(request: Request) {
       minDate: minAvailableDate,
       maxDate: maxAvailableDate,
     });
+    const boundedRange = limitDateRangeWindow(effectiveRange);
     const filterCatalogMaxDate = bounds?.max_date ?? isoToCompactDate(maxAvailableDate);
-    const filters = await getRotationFilterCatalog(filterCatalogMaxDate);
+    const fullCatalog = await getRotationFilterCatalog(filterCatalogMaxDate);
+    const sedeAccess = resolveVisibleSedes(session.user, fullCatalog);
+
+    if (!sedeAccess.authorized) {
+      return withSession(
+        NextResponse.json(
+          { error: "No tienes sedes autorizadas para esta seccion." },
+          { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+
+    const visibleSedes = sedeAccess.visibleSedes;
+    const visibleCompanies = Array.from(
+      new Set(visibleSedes.map((sede) => sede.empresa)),
+    ).sort((a, b) => a.localeCompare(b, "es"));
+    const filters = {
+      companies: visibleCompanies,
+      sedes: visibleSedes,
+    };
+    const requestedVisibleSede =
+      requestedSedeId === null
+        ? null
+        : visibleSedes.find((sede) => sede.sedeId === requestedSedeId) ?? null;
+
+    if (requestedSedeId && !requestedVisibleSede) {
+      return withSession(
+        NextResponse.json(
+          { error: "La sede solicitada no esta autorizada." },
+          { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+
+    const effectiveCompany = requestedVisibleSede?.empresa ?? requestedCompany;
 
     if (!requestedSedeId) {
       return withSession(
@@ -520,13 +628,13 @@ export async function GET(request: Request) {
             },
             filters,
             meta: {
-              effectiveRange,
+              effectiveRange: boundedRange,
               availableRange: {
                 min: minAvailableDate,
                 max: maxAvailableDate,
               },
               sourceTable: "rotacion_base_item_dia_sede",
-              minInventoryValue,
+              maxSalesValue,
             },
             message: "Selecciona una sede para consultar la rotacion.",
           },
@@ -541,17 +649,17 @@ export async function GET(request: Request) {
     }
 
     const rows = await queryRotationRows({
-      startDate: effectiveRange.start,
-      endDate: effectiveRange.end,
-      minInventoryValue,
-      empresa: requestedCompany,
-      sedeId: requestedSedeId,
+      startDate: boundedRange.start,
+      endDate: boundedRange.end,
+      maxSalesValue,
+      empresa: effectiveCompany,
+      sedeId: requestedVisibleSede?.sedeId ?? null,
     });
 
     const stats = {
       evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,
       visibleItems: rows.length,
-      withoutMovement: rows.filter((row) => row.status === "Sin movimiento").length,
+      withoutMovement: rows.filter((row) => row.status === "Agotado").length,
     };
 
     return withSession(
@@ -561,13 +669,13 @@ export async function GET(request: Request) {
           stats,
           filters,
           meta: {
-            effectiveRange,
+            effectiveRange: boundedRange,
             availableRange: {
               min: minAvailableDate,
               max: maxAvailableDate,
             },
             sourceTable: "rotacion_base_item_dia_sede",
-            minInventoryValue,
+            maxSalesValue,
           },
         },
         {
@@ -597,11 +705,9 @@ export async function GET(request: Request) {
             effectiveRange: { start: "", end: "" },
             availableRange: { min: "", max: "" },
             sourceTable: "rotacion_base_item_dia_sede",
-            minInventoryValue: null,
+            maxSalesValue: MAX_SALES_THRESHOLD,
           },
-          error:
-            "Error de conexion: " +
-            (error instanceof Error ? error.message : String(error)),
+          error: "No fue posible consultar la rotacion en este momento.",
         },
         {
           status: 500,

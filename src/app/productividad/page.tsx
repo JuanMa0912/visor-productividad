@@ -87,11 +87,11 @@ export default function ProductividadHubPage() {
               Mix y linea
             </span>
             <span className="mt-3 block text-sm font-semibold">
-              Desempeno comercial por sede
+              Desempeño comercial por sede
             </span>
             <span className="mt-1 block text-xs text-slate-600">
               Revisa que lineas y sedes empujan o frenan el resultado con
-              comparativos de venta y desempeno.
+              comparativos de venta y desempeño.
             </span>
           </button>
 

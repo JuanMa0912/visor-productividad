@@ -6,6 +6,13 @@ const enableReactCompiler = process.env.NEXT_ENABLE_REACT_COMPILER === "true";
 const enableUpgradeInsecure =
   process.env.UPGRADE_INSECURE_REQUESTS === "true";
 const allowUnsafeEval = process.env.CSP_UNSAFE_EVAL === "true";
+const allowedDevOrigins = (
+  process.env.ALLOWED_DEV_ORIGINS ??
+  "192.168.80.173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -61,6 +68,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactCompiler: enableReactCompiler,
   poweredByHeader: false,
+  allowedDevOrigins,
   async headers() {
     return [
       {

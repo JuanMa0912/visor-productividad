@@ -56,7 +56,7 @@ type RotationRow = {
   trackedDays: number;
   lastMovementDate: string | null;
   effectiveDays: number | null;
-  status: "Sin movimiento" | "Baja rotacion" | "En seguimiento";
+  status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
 
 type RotationApiResponse = {
@@ -78,7 +78,7 @@ type RotationApiResponse = {
     effectiveRange: DateRange;
     availableRange: { min: string; max: string };
     sourceTable: string;
-    minInventoryValue: number | null;
+    maxSalesValue: number | null;
   };
   message?: string;
   error?: string;
@@ -97,6 +97,7 @@ type RotationSortField =
 type RotationSortDirection = "asc" | "desc";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const MAX_SALES_THRESHOLD = 200000;
 
 const dateLabelOptions: Intl.DateTimeFormatOptions = {
   day: "2-digit",
@@ -121,6 +122,12 @@ const getCurrentMonthBounds = (baseDate?: string): DateRange => {
 };
 
 const sanitizeNumericInput = (value: string) => value.replace(/\D/g, "");
+
+const sanitizeSalesThresholdInput = (value: string) => {
+  const normalized = sanitizeNumericInput(value);
+  if (!normalized) return "";
+  return String(Math.min(Number(normalized), MAX_SALES_THRESHOLD));
+};
 
 const normalizeDateRange = (
   current: DateRange,
@@ -166,8 +173,10 @@ const formatPrice = (value: number) =>
 
 const getStatusBadgeClassName = (status: RotationRow["status"]) => {
   switch (status) {
-    case "Sin movimiento":
+    case "Agotado":
       return "border-rose-200 bg-rose-50 text-rose-700";
+    case "Futuro agotado":
+      return "border-orange-200 bg-orange-50 text-orange-700";
     case "Baja rotacion":
       return "border-amber-200 bg-amber-50 text-amber-700";
     default:
@@ -176,9 +185,10 @@ const getStatusBadgeClassName = (status: RotationRow["status"]) => {
 };
 
 const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
-  "Sin movimiento": 0,
-  "Baja rotacion": 1,
-  "En seguimiento": 2,
+  "Agotado": 0,
+  "Futuro agotado": 1,
+  "Baja rotacion": 2,
+  "En seguimiento": 3,
 };
 
 const compareRotationText = (left: string, right: string) =>
@@ -421,7 +431,7 @@ export default function RotacionPage() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedSede, setSelectedSede] = useState("");
-  const [valueThreshold, setValueThreshold] = useState("");
+  const [salesThreshold, setSalesThreshold] = useState(String(MAX_SALES_THRESHOLD));
   const [dateRange, setDateRange] = useState<DateRange>({ start: "", end: "" });
   const [availableRange, setAvailableRange] = useState<DateRange>({
     start: "",
@@ -433,14 +443,14 @@ export default function RotacionPage() {
     sedes: [],
   });
   const [error, setError] = useState<string | null>(null);
-  const deferredValueThreshold = useDeferredValue(valueThreshold);
+  const deferredSalesThreshold = useDeferredValue(salesThreshold);
   const skipNextFetchRef = useRef(false);
   const hasLoadedCatalogRef = useRef(false);
   const [tableSortField, setTableSortField] = useState<RotationSortField | null>(
-    null,
+    "totalSales",
   );
   const [tableSortDirection, setTableSortDirection] =
-    useState<RotationSortDirection>("asc");
+    useState<RotationSortDirection>("desc");
 
   useEffect(() => {
     let isMounted = true;
@@ -516,8 +526,8 @@ export default function RotacionPage() {
         if (selectedSedeMeta?.sedeId) {
           params.set("sede", selectedSedeMeta.sedeId);
         }
-        if (deferredValueThreshold) {
-          params.set("minInventoryValue", deferredValueThreshold);
+        if (deferredSalesThreshold) {
+          params.set("maxSalesValue", deferredSalesThreshold);
         }
 
         const response = await fetch(
@@ -580,7 +590,7 @@ export default function RotacionPage() {
   }, [
     dateRange.end,
     dateRange.start,
-    deferredValueThreshold,
+    deferredSalesThreshold,
     ready,
     router,
     selectedCompany,
@@ -589,7 +599,7 @@ export default function RotacionPage() {
 
   const daysConsulted = useMemo(() => countInclusiveDays(dateRange), [dateRange]);
   const formattedRange = useMemo(() => formatRangeLabel(dateRange), [dateRange]);
-  const parsedThreshold = valueThreshold ? Number(valueThreshold) : 0;
+  const parsedThreshold = salesThreshold ? Number(salesThreshold) : MAX_SALES_THRESHOLD;
   const companyOptions = useMemo(
     () =>
       [...filterCatalog.companies]
@@ -647,13 +657,14 @@ export default function RotacionPage() {
     () => ({
       evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,
       visibleItems: rows.length,
-      withoutMovement: rows.filter((row) => row.status === "Sin movimiento").length,
+      exhausted: rows.filter((row) => row.status === "Agotado").length,
+      futureStockout: rows.filter((row) => row.status === "Futuro agotado").length,
     }),
     [rows],
   );
 
   const handleValueChange = (value: string) => {
-    setValueThreshold(sanitizeNumericInput(value));
+    setSalesThreshold(sanitizeSalesThresholdInput(value));
   };
 
   const handleStartDateChange = (value: string) => {
@@ -710,9 +721,9 @@ export default function RotacionPage() {
                   Rotacion
                 </h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
-                  Esta vista toma datos reales desde la base diaria para revisar la
-                  rotacion del inventario por sede, detectar productos con salida
-                  lenta y ubicar referencias detenidas dentro del rango consultado.
+                  Esta vista toma datos reales desde la base diaria para detectar
+                  productos de baja rotación, agotados y futuros agotados por sede,
+                  usando la venta acumulada del rango consultado.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -746,8 +757,8 @@ export default function RotacionPage() {
                 Filtros principales
               </CardTitle>
               <CardDescription>
-                Selecciona empresa, sede y un umbral numerico para enfocar la
-                lectura sin perder el contexto del rango actual.
+                Selecciona empresa, sede y una venta máxima del período para
+                enfocar la lectura en productos de baja salida.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -793,22 +804,23 @@ export default function RotacionPage() {
                 <label className="block md:col-span-2 xl:col-span-1">
                   <FilterFieldLabel
                     icon={Filter}
-                    label="Valor inventario minimo"
+                    label="Venta maxima del periodo"
                     accentClassName="text-slate-500"
                   />
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={valueThreshold}
+                    value={salesThreshold}
                     onChange={(event) => handleValueChange(event.target.value)}
-                    placeholder="Ejemplo 15000"
+                    placeholder="Maximo 200000"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
                   />
                 </label>
               </div>
               <p className="text-xs leading-5 text-slate-500">
-                Solo numeros enteros, sin puntos ni comas. El filtro usa el valor de
-                inventario y nunca acepta negativos.
+                Solo números enteros, sin puntos ni comas. El filtro usa la venta
+                acumulada del producto dentro del rango seleccionado y se limita a
+                un máximo de 200.000.
               </p>
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -824,9 +836,7 @@ export default function RotacionPage() {
                     : "Todas las sedes"}
                 </Badge>
                 <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                  {valueThreshold
-                    ? `Min. ${formatPrice(parsedThreshold)}`
-                    : "Sin filtro de valor"}
+                  Venta ≤ {formatPrice(parsedThreshold)}
                 </Badge>
               </div>
             </CardContent>
@@ -908,7 +918,7 @@ export default function RotacionPage() {
           </Card>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard
             icon={Store}
             label="Sedes evaluadas"
@@ -925,9 +935,16 @@ export default function RotacionPage() {
           />
           <StatCard
             icon={PackageSearch}
-            label="Sin movimiento"
-            value={String(visibleStats.withoutMovement)}
-            description="Items con inventario vigente y venta acumulada en cero."
+            label="Futuro agotado"
+            value={String(visibleStats.futureStockout)}
+            description="Items con cobertura de inventario corta frente a la venta reciente."
+            iconClassName="bg-orange-100 text-orange-700"
+          />
+          <StatCard
+            icon={PackageSearch}
+            label="Agotados"
+            value={String(visibleStats.exhausted)}
+            description="Items que ya no tienen inventario de cierre dentro del rango."
             iconClassName="bg-rose-100 text-rose-700"
           />
         </section>
@@ -987,20 +1004,24 @@ export default function RotacionPage() {
                 Sin resultados para los filtros actuales
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                No encontramos items con valor de inventario dentro del rango actual
+                No encontramos items cuya venta del período esté dentro del umbral
+                actual
                 en{" "}
                 <span className="font-semibold text-slate-800">
                   rotacion_base_item_dia_sede
                 </span>
-                . Ajusta el rango o baja el umbral para ampliar la lectura.
+                . Ajusta el rango o sube el tope de venta para ampliar la lectura.
               </p>
             </CardContent>
           </Card>
         ) : (
           <section className="grid gap-5">
             {rowsBySede.map((group) => {
-              const withoutMovement = group.rows.filter(
-                (row) => row.status === "Sin movimiento",
+              const exhausted = group.rows.filter(
+                (row) => row.status === "Agotado",
+              ).length;
+              const futureStockout = group.rows.filter(
+                (row) => row.status === "Futuro agotado",
               ).length;
               const lowRotation = group.rows.filter(
                 (row) => row.status === "Baja rotacion",
@@ -1033,8 +1054,11 @@ export default function RotacionPage() {
                         <Badge className="border-amber-200 bg-amber-50 text-amber-700">
                           {lowRotation} baja rotacion
                         </Badge>
+                        <Badge className="border-orange-200 bg-orange-50 text-orange-700">
+                          {futureStockout} futuro agotado
+                        </Badge>
                         <Badge className="border-rose-200 bg-rose-50 text-rose-700">
-                          {withoutMovement} sin movimiento
+                          {exhausted} agotado
                         </Badge>
                       </div>
                     </div>
