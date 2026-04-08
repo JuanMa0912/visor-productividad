@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import {
-  getSessionCookieOptions,
+  applySessionCookies,
   hashPassword,
   requireAdminSession,
+  verifyCsrf,
 } from "@/lib/auth";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/constants";
 import {
   normalizeAllowedPortalSections,
   resolvePortalSectionId,
 } from "@/lib/portal-sections";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type Params = { params: Promise<{ id: string }> };
 const ALL_SEDES_VALUE = "Todas";
@@ -238,14 +240,28 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
   const { id } = await params;
-  const withSession = (response: NextResponse) => {
-    response.cookies.set(
-      "vp_session",
-      session.token,
-      getSessionCookieOptions(session.expiresAt),
+  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+
+  if (!(await verifyCsrf(req))) {
+    return withSession(
+      NextResponse.json({ error: "CSRF inválido." }, { status: 403 }),
     );
-    return response;
-  };
+  }
+
+  const limitedUntil = checkRateLimit(req, {
+    windowMs: 60_000,
+    max: 20,
+    keyPrefix: "admin-users-patch",
+  });
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429, headers: { "Retry-After": retryAfterSeconds.toString() } },
+      ),
+    );
+  }
 
   const body = (await req.json()) as {
     username?: string;
@@ -519,14 +535,28 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
   const { id } = await params;
-  const withSession = (response: NextResponse) => {
-    response.cookies.set(
-      "vp_session",
-      session.token,
-      getSessionCookieOptions(session.expiresAt),
+  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+
+  if (!(await verifyCsrf(_req))) {
+    return withSession(
+      NextResponse.json({ error: "CSRF inválido." }, { status: 403 }),
     );
-    return response;
-  };
+  }
+
+  const limitedUntil = checkRateLimit(_req, {
+    windowMs: 60_000,
+    max: 15,
+    keyPrefix: "admin-users-delete",
+  });
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429, headers: { "Retry-After": retryAfterSeconds.toString() } },
+      ),
+    );
+  }
 
   if (session.user.id === id) {
     return NextResponse.json(

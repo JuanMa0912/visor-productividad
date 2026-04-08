@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import {
+  applySessionCookies,
   createSession,
   getAuditNetworkId,
   getClientIp,
-  getSessionCookieOptions,
   verifyPassword,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
@@ -87,9 +87,11 @@ export async function POST(req: Request) {
 
     const now = Date.now();
     const clientIp = getClientIp(req);
-    const auditNetworkId = getAuditNetworkId(clientIp) ?? clientIp ?? "unknown";
+    const auditNetworkId = getAuditNetworkId(clientIp);
+    const rateLimitKey = auditNetworkId ?? clientIp ?? "unknown";
+    const ipForDb = auditNetworkId ?? clientIp ?? null;
     const userKey = username.toLowerCase();
-    const blockedUntil = getFailedLoginResetAt(auditNetworkId, userKey, now);
+    const blockedUntil = getFailedLoginResetAt(rateLimitKey, userKey, now);
     if (blockedUntil) {
       const retryAfterSeconds = Math.max(1, Math.ceil((blockedUntil - now) / 1000));
       return NextResponse.json(
@@ -126,7 +128,7 @@ export async function POST(req: Request) {
       );
 
       if (!result.rows || result.rows.length === 0) {
-        registerFailedLoginAttempt(auditNetworkId, userKey, now);
+        registerFailedLoginAttempt(rateLimitKey, userKey, now);
         return NextResponse.json(
           { error: "Credenciales inválidas." },
           { status: 401 },
@@ -148,7 +150,7 @@ export async function POST(req: Request) {
       const allowedDashboards = normalizeAllowedPortalSections(user.allowedDashboards);
 
       if (!user.is_active) {
-        registerFailedLoginAttempt(auditNetworkId, userKey, now);
+        registerFailedLoginAttempt(rateLimitKey, userKey, now);
         return NextResponse.json(
           { error: "Cuenta desactivada." },
           { status: 403 },
@@ -157,23 +159,23 @@ export async function POST(req: Request) {
 
       const ok = await verifyPassword(password, user.password_hash);
       if (!ok) {
-        registerFailedLoginAttempt(auditNetworkId, userKey, now);
+        registerFailedLoginAttempt(rateLimitKey, userKey, now);
         return NextResponse.json(
           { error: "Credenciales inválidas." },
           { status: 401 },
         );
       }
 
-      clearFailedLoginAttempts(auditNetworkId, userKey);
+      clearFailedLoginAttempts(rateLimitKey, userKey);
       const userAgent = req.headers.get("user-agent");
-      const session = await createSession(user.id, auditNetworkId, userAgent);
+      const session = await createSession(user.id, ipForDb, userAgent);
 
       await client.query(
         `
         INSERT INTO app_user_login_logs (user_id, ip, user_agent)
         VALUES ($1, $2, $3)
         `,
-        [user.id, auditNetworkId, userAgent],
+        [user.id, ipForDb, userAgent],
       );
 
       await client.query(
@@ -182,7 +184,7 @@ export async function POST(req: Request) {
         SET last_login_at = now(), last_login_ip = $2, updated_at = now()
         WHERE id = $1
         `,
-        [user.id, auditNetworkId],
+        [user.id, ipForDb],
       );
 
       const response = NextResponse.json({
@@ -197,12 +199,7 @@ export async function POST(req: Request) {
           specialRoles: user.specialRoles,
         },
       });
-      response.cookies.set(
-        "vp_session",
-        session.token,
-        getSessionCookieOptions(session.expiresAt),
-      );
-      return response;
+      return applySessionCookies(response, session);
     } finally {
       client.release();
     }

@@ -146,6 +146,15 @@ const formatAllowedSedes = (allowedSedes: string[] | null, fallbackSede: string 
   return fallbackSede ?? "-";
 };
 
+const getCookieValue = (name: string) => {
+  if (typeof document === "undefined") return null;
+  const value = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(`${name}=`));
+  if (!value) return null;
+  return decodeURIComponent(value.split("=").slice(1).join("="));
+};
+
 export default function AdminUsuariosPage() {
   const router = useRouter();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -156,6 +165,17 @@ export default function AdminUsuariosPage() {
   const [formState, setFormState] = useState<UserFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  const getCsrfToken = () => getCookieValue("vp_csrf");
+
+  const requireCsrfToken = () => {
+    const token = getCsrfToken();
+    if (!token) {
+      setError("No se pudo validar la sesión. Recarga la página.");
+      return null;
+    }
+    return token;
+  };
 
   const handleAuthFailure = useCallback((status: number) => {
     if (status === 401) {
@@ -255,6 +275,12 @@ export default function AdminUsuariosPage() {
     setSaving(true);
     setError(null);
     try {
+      const csrfToken = requireCsrfToken();
+      if (!csrfToken) {
+        setSaving(false);
+        return;
+      }
+
       if (formState.role === "user" && formState.allowedSedes.length === 0) {
         throw new Error("Debes seleccionar al menos una sede para usuarios de rol user.");
       }
@@ -298,7 +324,10 @@ export default function AdminUsuariosPage() {
         formState.id ? `/api/admin/users/${formState.id}` : "/api/admin/users",
         {
           method: formState.id ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrfToken,
+          },
           body: JSON.stringify(payload),
         },
       );
@@ -323,8 +352,11 @@ export default function AdminUsuariosPage() {
   const handleDelete = async (userId: string) => {
     if (!confirm("¿Seguro que deseas eliminar este usuario?")) return;
     setError(null);
+    const csrfToken = requireCsrfToken();
+    if (!csrfToken) return;
     const response = await fetch(`/api/admin/users/${userId}`, {
       method: "DELETE",
+      headers: { "x-csrf-token": csrfToken },
     });
     if (handleAuthFailure(response.status)) {
       return;
@@ -338,14 +370,24 @@ export default function AdminUsuariosPage() {
   };
 
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    const csrfToken = requireCsrfToken();
+    if (!csrfToken) return;
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { "x-csrf-token": csrfToken },
+    });
     router.replace("/login");
   };
 
   const handleClearLogs = async () => {
     if (!confirm("¿Deseas borrar todos los accesos recientes?")) return;
     setError(null);
-    const response = await fetch("/api/admin/login-logs", { method: "DELETE" });
+    const csrfToken = requireCsrfToken();
+    if (!csrfToken) return;
+    const response = await fetch("/api/admin/login-logs", {
+      method: "DELETE",
+      headers: { "x-csrf-token": csrfToken },
+    });
     if (handleAuthFailure(response.status)) {
       return;
     }

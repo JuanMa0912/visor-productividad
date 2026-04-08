@@ -42,6 +42,20 @@ export default function SeccionesPage() {
   const [isSwitchingUser, setIsSwitchingUser] = useState(false);
   const [allowedDashboards, setAllowedDashboards] = useState<string[] | null>(null);
 
+  const getCookieValue = (name: string) => {
+    if (typeof document === "undefined") return null;
+    const value = document.cookie
+      .split("; ")
+      .find((entry) => entry.startsWith(`${name}=`));
+    if (!value) return null;
+    return decodeURIComponent(value.split("=").slice(1).join("="));
+  };
+
+  const requireCsrfToken = () => {
+    const token = getCookieValue("vp_csrf");
+    return token ?? null;
+  };
+
   useEffect(() => {
     let isMounted = true;
     const controller = new AbortController();
@@ -82,7 +96,11 @@ export default function SeccionesPage() {
     if (isSwitchingUser) return;
     setIsSwitchingUser(true);
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      const csrfToken = requireCsrfToken();
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: csrfToken ? { "x-csrf-token": csrfToken } : undefined,
+      });
     } finally {
       router.replace("/login");
     }

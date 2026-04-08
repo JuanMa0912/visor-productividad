@@ -1,15 +1,17 @@
 ﻿import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import {
-  getSessionCookieOptions,
+  applySessionCookies,
   hashPassword,
   requireAdminSession,
+  verifyCsrf,
 } from "@/lib/auth";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/constants";
 import {
   normalizeAllowedPortalSections,
   resolvePortalSectionId,
 } from "@/lib/portal-sections";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [
@@ -230,19 +232,27 @@ const resolveValidSpecialRoles = (value: unknown) => {
   return { ok: true as const, value: normalized };
 };
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await requireAdminSession();
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
-  const withSession = (response: NextResponse) => {
-    response.cookies.set(
-      "vp_session",
-      session.token,
-      getSessionCookieOptions(session.expiresAt),
+  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+
+  const limitedUntil = checkRateLimit(req, {
+    windowMs: 60_000,
+    max: 60,
+    keyPrefix: "admin-users-get",
+  });
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429, headers: { "Retry-After": retryAfterSeconds.toString() } },
+      ),
     );
-    return response;
-  };
+  }
 
   const client = await (await getDbPool()).connect();
   try {
@@ -286,14 +296,28 @@ export async function POST(req: Request) {
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
-  const withSession = (response: NextResponse) => {
-    response.cookies.set(
-      "vp_session",
-      session.token,
-      getSessionCookieOptions(session.expiresAt),
+  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+
+  if (!(await verifyCsrf(req))) {
+    return withSession(
+      NextResponse.json({ error: "CSRF inválido." }, { status: 403 }),
     );
-    return response;
-  };
+  }
+
+  const limitedUntil = checkRateLimit(req, {
+    windowMs: 60_000,
+    max: 20,
+    keyPrefix: "admin-users-post",
+  });
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429, headers: { "Retry-After": retryAfterSeconds.toString() } },
+      ),
+    );
+  }
 
   const body = (await req.json()) as {
     username?: string;

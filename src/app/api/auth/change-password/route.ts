@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import {
-  getSessionCookieOptions,
+  applySessionCookies,
+  createSession,
+  getAuditNetworkId,
+  getClientIp,
   hashPassword,
   requireAuthSession,
+  revokeAllSessionsForUser,
   verifyPassword,
+  verifyCsrf,
 } from "@/lib/auth";
 
 export async function POST(req: Request) {
@@ -13,14 +18,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
-  const withSession = (response: NextResponse) => {
-    response.cookies.set(
-      "vp_session",
-      session.token,
-      getSessionCookieOptions(session.expiresAt),
+  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+
+  if (!(await verifyCsrf(req))) {
+    return withSession(
+      NextResponse.json({ error: "CSRF inválido." }, { status: 403 }),
     );
-    return response;
-  };
+  }
 
   const body = (await req.json()) as {
     currentPassword?: string;
@@ -97,7 +101,18 @@ export async function POST(req: Request) {
       [session.user.id, newHash],
     );
 
-    return withSession(NextResponse.json({ ok: true }));
+    await revokeAllSessionsForUser(session.user.id);
+    const clientIp = getClientIp(req);
+    const auditNetworkId = getAuditNetworkId(clientIp);
+    const ipForDb = auditNetworkId ?? clientIp ?? null;
+    const userAgent = req.headers.get("user-agent");
+    const newSession = await createSession(
+      session.user.id,
+      ipForDb,
+      userAgent,
+    );
+    const response = NextResponse.json({ ok: true });
+    return applySessionCookies(response, newSession);
   } catch {
     return withSession(
       NextResponse.json(

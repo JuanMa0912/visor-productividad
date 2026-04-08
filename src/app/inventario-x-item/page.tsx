@@ -1476,11 +1476,11 @@ export default function InventarioXItemPage() {
       setExportingPdf(false);
     }
   }, [
-    availableDateLabel,
     effectiveCompany,
     lineSelectionMode,
     matrixTotalsByItem,
     selectedLines.length,
+    selectedDateLabel,
     selectedSedeLabel,
     selectedSubcategory,
     sortedMatrixRowsBySede,

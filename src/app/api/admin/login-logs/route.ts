@@ -1,20 +1,33 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
-import { getSessionCookieOptions, requireAdminSession } from "@/lib/auth";
+import {
+  applySessionCookies,
+  requireAdminSession,
+  verifyCsrf,
+} from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function GET(req: Request) {
   const session = await requireAdminSession();
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
-  const withSession = (response: NextResponse) => {
-    response.cookies.set(
-      "vp_session",
-      session.token,
-      getSessionCookieOptions(session.expiresAt),
+  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+
+  const limitedUntil = checkRateLimit(req, {
+    windowMs: 60_000,
+    max: 60,
+    keyPrefix: "admin-login-logs-get",
+  });
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429, headers: { "Retry-After": retryAfterSeconds.toString() } },
+      ),
     );
-    return response;
-  };
+  }
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(Number(searchParams.get("limit") ?? 20), 100);
@@ -37,19 +50,33 @@ export async function GET(req: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: Request) {
   const session = await requireAdminSession();
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
-  const withSession = (response: NextResponse) => {
-    response.cookies.set(
-      "vp_session",
-      session.token,
-      getSessionCookieOptions(session.expiresAt),
+  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+
+  if (!(await verifyCsrf(req))) {
+    return withSession(
+      NextResponse.json({ error: "CSRF inválido." }, { status: 403 }),
     );
-    return response;
-  };
+  }
+
+  const limitedUntil = checkRateLimit(req, {
+    windowMs: 60_000,
+    max: 10,
+    keyPrefix: "admin-login-logs-delete",
+  });
+  if (limitedUntil) {
+    const retryAfterSeconds = Math.ceil((limitedUntil - Date.now()) / 1000);
+    return withSession(
+      NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta más tarde." },
+        { status: 429, headers: { "Retry-After": retryAfterSeconds.toString() } },
+      ),
+    );
+  }
 
   const client = await (await getDbPool()).connect();
   try {

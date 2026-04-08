@@ -12,7 +12,6 @@ import {
 import { createPortal } from "react-dom";
 import {
   Users,
-  DollarSign,
   ChevronDown,
   Clock,
   Sparkles,

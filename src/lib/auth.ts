@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { isIP } from "node:net";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { normalizeAllowedPortalSections } from "@/lib/portal-sections";
@@ -20,6 +21,7 @@ export type AuthUser = {
 };
 
 const SESSION_COOKIE = "vp_session";
+const CSRF_COOKIE = "vp_csrf";
 const SESSION_IDLE_MINUTES = 60;
 
 const getSessionExpiry = () =>
@@ -27,6 +29,8 @@ const getSessionExpiry = () =>
 
 const hashToken = (token: string) =>
   crypto.createHash("sha256").update(token).digest("hex");
+
+const createCsrfToken = () => crypto.randomBytes(32).toString("base64url");
 
 const shouldUseSecureCookies = () => {
   const envValue = process.env.SESSION_COOKIE_SECURE;
@@ -42,11 +46,16 @@ export const verifyPassword = async (password: string, hash: string) =>
   bcrypt.compare(password, hash);
 
 export const getClientIp = (req: Request) => {
-  const forwarded = req.headers.get("x-forwarded-for");
+  const trustProxy = process.env.TRUST_PROXY === "true";
+  const forwarded = trustProxy ? req.headers.get("x-forwarded-for") : null;
   if (forwarded) {
     return forwarded.split(",")[0]?.trim() || null;
   }
-  return req.headers.get("x-real-ip") || req.headers.get("cf-connecting-ip") || null;
+  return (
+    req.headers.get("x-real-ip") ||
+    req.headers.get("cf-connecting-ip") ||
+    null
+  );
 };
 
 const normalizeClientIp = (ip: string | null) => {
@@ -137,6 +146,22 @@ export const revokeSessionByToken = async (token: string) => {
   }
 };
 
+export const revokeAllSessionsForUser = async (userId: string) => {
+  const client = await (await getDbPool()).connect();
+  try {
+    await client.query(
+      `
+      UPDATE app_user_sessions
+      SET revoked_at = now()
+      WHERE user_id = $1 AND revoked_at IS NULL
+      `,
+      [userId],
+    );
+  } finally {
+    client.release();
+  }
+};
+
 const refreshSession = async (tokenHash: string, expiresAt: Date) => {
   const client = await (await getDbPool()).connect();
   try {
@@ -161,6 +186,13 @@ export const getSessionCookieOptions = (expiresAt?: Date) => ({
   ...(expiresAt ? { expires: expiresAt } : {}),
 });
 
+export const getCsrfCookieOptions = () => ({
+  httpOnly: false,
+  sameSite: "lax" as const,
+  secure: shouldUseSecureCookies(),
+  path: "/",
+});
+
 export const getExpiredSessionCookieOptions = () => ({
   httpOnly: true,
   sameSite: "lax" as const,
@@ -168,6 +200,47 @@ export const getExpiredSessionCookieOptions = () => ({
   path: "/",
   expires: new Date(0),
 });
+
+export const getExpiredCsrfCookieOptions = () => ({
+  httpOnly: false,
+  sameSite: "lax" as const,
+  secure: shouldUseSecureCookies(),
+  path: "/",
+  expires: new Date(0),
+});
+
+export const getCsrfToken = async () => {
+  const cookieStore = await cookies();
+  return cookieStore.get(CSRF_COOKIE)?.value ?? null;
+};
+
+export const ensureCsrfCookie = async (response: NextResponse) => {
+  const existing = await getCsrfToken();
+  if (existing) return existing;
+  const token = createCsrfToken();
+  response.cookies.set(CSRF_COOKIE, token, getCsrfCookieOptions());
+  return token;
+};
+
+export const verifyCsrf = async (req: Request) => {
+  const csrfToken = await getCsrfToken();
+  const headerToken = req.headers.get("x-csrf-token");
+  if (!csrfToken || !headerToken) return false;
+  return csrfToken === headerToken;
+};
+
+export const applySessionCookies = async (
+  response: NextResponse,
+  session: { token: string; expiresAt: Date },
+) => {
+  response.cookies.set(
+    "vp_session",
+    session.token,
+    getSessionCookieOptions(session.expiresAt),
+  );
+  await ensureCsrfCookie(response);
+  return response;
+};
 
 export const getSessionToken = async () => {
   const cookieStore = await cookies();

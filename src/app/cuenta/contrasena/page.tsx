@@ -12,6 +12,24 @@ export default function CambiarContrasenaPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const getCookieValue = (name: string) => {
+    if (typeof document === "undefined") return null;
+    const value = document.cookie
+      .split("; ")
+      .find((entry) => entry.startsWith(`${name}=`));
+    if (!value) return null;
+    return decodeURIComponent(value.split("=").slice(1).join("="));
+  };
+
+  const requireCsrfToken = () => {
+    const token = getCookieValue("vp_csrf");
+    if (!token) {
+      setError("No se pudo validar la sesión. Recarga la página.");
+      return null;
+    }
+    return token;
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -28,9 +46,17 @@ export default function CambiarContrasenaPage() {
 
     setIsSaving(true);
     try {
+      const csrfToken = requireCsrfToken();
+      if (!csrfToken) {
+        setIsSaving(false);
+        return;
+      }
       const response = await fetch("/api/auth/change-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
+        },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
       const payload = (await response.json()) as { error?: string };
