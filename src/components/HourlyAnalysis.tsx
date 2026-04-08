@@ -440,7 +440,6 @@ export const HourlyAnalysis = ({
   panelDescription = "Filtra por linea para enfocar el comportamiento horario en todas las sedes.",
   showPersonBreakdown = false,
   dashboardContext = "productividad",
-  alexTotalsOverride,
   exportRef,
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
@@ -1773,14 +1772,10 @@ export const HourlyAnalysis = ({
     [baseFilteredOvertimeEmployees],
   );
 
-  const displayOvertimeAbsenceCount =
-    alexTotalsOverride?.absences ?? overtimeAbsenceCount;
-  const displayOddMarksCount =
-    alexTotalsOverride?.oddMarks ?? oddMarksCount;
-  const displayAlexAlertCount920 =
-    alexTotalsOverride?.moreThan92 ?? alexAlertCount920;
-  const displayAlexAlertCount720 =
-    alexTotalsOverride?.moreThan72With2 ?? alexAlertCount720;
+  const displayOvertimeAbsenceCount = overtimeAbsenceCount;
+  const displayOddMarksCount = oddMarksCount;
+  const displayAlexAlertCount920 = alexAlertCount920;
+  const displayAlexAlertCount720 = alexAlertCount720;
   useEffect(() => {
     if (!isAlexStrictMode) return;
     setOvertimeSedeFilter([]);
