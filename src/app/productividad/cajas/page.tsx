@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { DEFAULT_SEDES, type Sede } from "@/lib/constants";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { normalizeKeyCompact } from "@/lib/normalize";
 import type { DailyProductivity } from "@/types";
 
 type AuthPayload = {
@@ -32,23 +33,10 @@ const HIDDEN_SEDE_KEYS = new Set(
     "panificadora",
     "planta desposte mixto",
     "planta desprese pollo",
-  ].map((value) =>
-    value
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "")
-      .trim(),
-  ),
+  ].map((value) => normalizeKeyCompact(value)),
 );
 
-const normalizeSedeKey = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .trim();
+const normalizeSedeKey = normalizeKeyCompact;
 
 const resolveUsernameSedeKey = (value?: string | null) => {
   if (!value) return null;

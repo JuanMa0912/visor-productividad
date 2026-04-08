@@ -20,6 +20,7 @@ import {
   PORTAL_SECTIONS,
   resolvePortalSectionId,
 } from "@/lib/portal-sections";
+import { normalizeKeySpaced } from "@/lib/normalize";
 
 const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [
@@ -97,13 +98,7 @@ const formatRelativeTime = (isoDate: string) => {
   return rtf.format(Math.round(diffMs / 86400000), "day");
 };
 
-const normalizeSedeKey = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, " ");
+const normalizeSedeKey = normalizeKeySpaced;
 
 const inferSedeFromUsername = (username?: string | null) => {
   if (!username) return null;

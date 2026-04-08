@@ -3,16 +3,11 @@ import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import type { Sede } from "@/lib/constants";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { normalizeKeySpaced } from "@/lib/normalize";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 
-const normalizeSedeKey = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, " ");
+const normalizeSedeKey = normalizeKeySpaced;
 
 const canonicalizeSedeKey = (value: string) => {
   const normalized = normalizeSedeKey(value);

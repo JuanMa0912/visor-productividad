@@ -79,6 +79,10 @@ type InventarioApiResponse = {
   filters: InventarioFilterCatalog;
   meta: {
     availableDate: string;
+    availableDateStart?: string;
+    availableDateEnd?: string;
+    selectedDateStart?: string;
+    selectedDateEnd?: string;
     sourceTable: string;
     selectedCompany?: string | null;
     selectedSede?: string | null;
@@ -202,6 +206,7 @@ const MultiSelectField = ({
   selectAllLabel,
   onSelectAll,
   onClearSelection,
+  clearLabel,
   allSelected = false,
 }: {
   icon: React.ElementType;
@@ -224,6 +229,7 @@ const MultiSelectField = ({
   selectAllLabel?: string;
   onSelectAll?: () => void;
   onClearSelection?: () => void;
+  clearLabel?: string;
   allSelected?: boolean;
 }) => {
   const [open, setOpen] = useState(false);
@@ -371,7 +377,7 @@ const MultiSelectField = ({
                   onClick={onClearSelection}
                   className="rounded-xl px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 transition-colors hover:bg-slate-50"
                 >
-                  Limpiar filtro
+                  {clearLabel ?? "Limpiar filtro"}
                 </button>
               )}
             </div>
@@ -460,6 +466,10 @@ export default function InventarioXItemPage() {
     sedes: [],
   });
   const [availableDate, setAvailableDate] = useState("");
+  const [availableDateStart, setAvailableDateStart] = useState("");
+  const [availableDateEnd, setAvailableDateEnd] = useState("");
+  const [selectedDateStartState, setSelectedDateStartState] = useState("");
+  const [selectedDateEndState, setSelectedDateEndState] = useState("");
   const [selectedCompanyState, setSelectedCompanyState] = useState("");
   const [selectedSedeState, setSelectedSedeState] = useState("");
   const [selectedLinesState, setSelectedLinesState] = useState<string[]>([]);
@@ -535,6 +545,20 @@ export default function InventarioXItemPage() {
     setMessage(null);
   }, []);
 
+  const resetDependentSelections = useCallback(() => {
+    setRows([]);
+    setMatrixRows([]);
+    setSelectedLinesState([]);
+    setLineSelectionMode("unset");
+    setSelectedSubcategoryState("");
+    setSelectedItemsState([]);
+    setItemSearch("");
+    setCatalogLoadedScopeKey("");
+    setAppliedMatrixKey("");
+    setError(null);
+    setMessage(null);
+  }, []);
+
   const selectedCompanyFilter =
     selectedCompanyState === ALL_FILTER_VALUE ? "" : selectedCompanyState;
 
@@ -574,7 +598,9 @@ export default function InventarioXItemPage() {
     selectedSede === ALL_FILTER_VALUE ? "" : selectedSedeOption?.sedeId ?? "";
   const effectiveCompany =
     selectedCompanyFilter || selectedSedeOption?.empresa || "";
-  const catalogScopeKey = `${effectiveCompany}::${selectedSedeId}`;
+  const selectedDateStart = selectedDateStartState;
+  const selectedDateEnd = selectedDateEndState || selectedDateStartState;
+  const catalogScopeKey = `${effectiveCompany}::${selectedSedeId}::${selectedDateStart}::${selectedDateEnd}`;
   const selectedSubcategory =
     selectedSubcategoryState === ALL_FILTER_VALUE
       ? "all"
@@ -589,9 +615,14 @@ export default function InventarioXItemPage() {
       setError(null);
 
       try {
-        const response = await fetch("/api/inventario-x-item?mode=filters", {
-          signal,
-        });
+        const params = new URLSearchParams();
+        params.set("mode", "filters");
+        if (selectedDateStart) params.set("dateStart", selectedDateStart);
+        if (selectedDateEnd) params.set("dateEnd", selectedDateEnd);
+        const response = await fetch(
+          `/api/inventario-x-item?${params.toString()}`,
+          { signal },
+        );
 
         if (response.status === 401) {
           router.replace("/login");
@@ -616,6 +647,18 @@ export default function InventarioXItemPage() {
           },
         );
         setAvailableDate(payload.meta?.availableDate ?? "");
+        setAvailableDateStart(payload.meta?.availableDateStart ?? "");
+        setAvailableDateEnd(payload.meta?.availableDateEnd ?? "");
+        if (payload.meta?.selectedDateStart) {
+          setSelectedDateStartState(payload.meta.selectedDateStart);
+        } else if (!selectedDateStartState && payload.meta?.availableDateEnd) {
+          setSelectedDateStartState(payload.meta.availableDateEnd);
+        }
+        if (payload.meta?.selectedDateEnd) {
+          setSelectedDateEndState(payload.meta.selectedDateEnd);
+        } else if (!selectedDateEndState && payload.meta?.availableDateEnd) {
+          setSelectedDateEndState(payload.meta.availableDateEnd);
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setFilters({
@@ -631,7 +674,7 @@ export default function InventarioXItemPage() {
         setLoadingFilters(false);
       }
     },
-    [router],
+    [router, selectedDateEnd, selectedDateStart, selectedDateEndState, selectedDateStartState],
   );
 
   const loadCatalogData = useCallback(
@@ -645,6 +688,8 @@ export default function InventarioXItemPage() {
         params.set("mode", "catalog");
         if (effectiveCompany) params.set("empresa", effectiveCompany);
         if (selectedSedeId) params.set("sede", selectedSedeId);
+        if (selectedDateStart) params.set("dateStart", selectedDateStart);
+        if (selectedDateEnd) params.set("dateEnd", selectedDateEnd);
 
         const response = await fetch(
           `/api/inventario-x-item${params.size > 0 ? `?${params.toString()}` : ""}`,
@@ -669,6 +714,14 @@ export default function InventarioXItemPage() {
 
         setRows(payload.rows ?? []);
         setAvailableDate(payload.meta?.availableDate ?? "");
+        setAvailableDateStart(payload.meta?.availableDateStart ?? "");
+        setAvailableDateEnd(payload.meta?.availableDateEnd ?? "");
+        if (payload.meta?.selectedDateStart) {
+          setSelectedDateStartState(payload.meta.selectedDateStart);
+        }
+        if (payload.meta?.selectedDateEnd) {
+          setSelectedDateEndState(payload.meta.selectedDateEnd);
+        }
         setMessage(payload.message ?? null);
         setCatalogLoadedScopeKey(catalogScopeKey);
       } catch (err) {
@@ -684,7 +737,14 @@ export default function InventarioXItemPage() {
         setLoadingCatalog(false);
       }
     },
-    [catalogScopeKey, effectiveCompany, router, selectedSedeId],
+    [
+      catalogScopeKey,
+      effectiveCompany,
+      router,
+      selectedSedeId,
+      selectedDateEnd,
+      selectedDateStart,
+    ],
   );
 
   useEffect(() => {
@@ -692,7 +752,7 @@ export default function InventarioXItemPage() {
     const controller = new AbortController();
     void loadFilterOptions(controller.signal);
     return () => controller.abort();
-  }, [loadFilterOptions, ready]);
+  }, [loadFilterOptions, ready, selectedDateEnd, selectedDateStart]);
 
   useEffect(() => {
     if (!ready || !hasScopeSelection) return;
@@ -912,6 +972,30 @@ export default function InventarioXItemPage() {
     [resetScopedData],
   );
 
+  const handleDateStartChange = useCallback(
+    (value: string) => {
+      setSelectedDateStartState(value);
+      if (selectedDateEndState && value && value > selectedDateEndState) {
+        setSelectedDateEndState(value);
+      }
+      resetDependentSelections();
+      setShowValidation(false);
+    },
+    [resetDependentSelections, selectedDateEndState],
+  );
+
+  const handleDateEndChange = useCallback(
+    (value: string) => {
+      setSelectedDateEndState(value);
+      if (selectedDateStartState && value && value < selectedDateStartState) {
+        setSelectedDateStartState(value);
+      }
+      resetDependentSelections();
+      setShowValidation(false);
+    },
+    [resetDependentSelections, selectedDateStartState],
+  );
+
   const handleSedeChange = useCallback(
     (value: string) => {
       setSelectedSedeState(value);
@@ -972,6 +1056,14 @@ export default function InventarioXItemPage() {
     setError(null);
   }, []);
 
+  const handleClearItems = useCallback(() => {
+    setSelectedItemsState([]);
+    setItemSearch("");
+    setAppliedMatrixKey("");
+    setMessage(null);
+    setError(null);
+  }, []);
+
   const loadMatrixData = useCallback(
     async (signal?: AbortSignal) => {
       setLoadingMatrix(true);
@@ -983,6 +1075,8 @@ export default function InventarioXItemPage() {
         params.set("mode", "table");
         if (effectiveCompany) params.set("empresa", effectiveCompany);
         if (selectedSedeId) params.set("sede", selectedSedeId);
+        if (selectedDateStart) params.set("dateStart", selectedDateStart);
+        if (selectedDateEnd) params.set("dateEnd", selectedDateEnd);
         if (selectedSubcategory && selectedSubcategory !== "all") {
           params.set("subcategory", selectedSubcategory);
         }
@@ -1011,6 +1105,14 @@ export default function InventarioXItemPage() {
 
         setMatrixRows(payload.matrixRows ?? []);
         setAvailableDate(payload.meta?.availableDate ?? "");
+        setAvailableDateStart(payload.meta?.availableDateStart ?? "");
+        setAvailableDateEnd(payload.meta?.availableDateEnd ?? "");
+        if (payload.meta?.selectedDateStart) {
+          setSelectedDateStartState(payload.meta.selectedDateStart);
+        }
+        if (payload.meta?.selectedDateEnd) {
+          setSelectedDateEndState(payload.meta.selectedDateEnd);
+        }
         setMessage(payload.message ?? null);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -1031,6 +1133,8 @@ export default function InventarioXItemPage() {
       selectedLines,
       selectedSedeId,
       selectedSubcategory,
+      selectedDateEnd,
+      selectedDateStart,
     ],
   );
 
@@ -1057,11 +1161,21 @@ export default function InventarioXItemPage() {
       JSON.stringify({
         empresa: effectiveCompany || ALL_FILTER_VALUE,
         sede: selectedSedeId || ALL_FILTER_VALUE,
+        dateStart: selectedDateStart || "",
+        dateEnd: selectedDateEnd || "",
         lines: selectedLines,
         subcategory: selectedSubcategory || "",
         items: selectedItems,
       }),
-    [effectiveCompany, selectedItems, selectedLines, selectedSedeId, selectedSubcategory],
+    [
+      effectiveCompany,
+      selectedDateEnd,
+      selectedDateStart,
+      selectedItems,
+      selectedLines,
+      selectedSedeId,
+      selectedSubcategory,
+    ],
   );
 
   const hasRequiredFilters =
@@ -1214,6 +1328,24 @@ export default function InventarioXItemPage() {
   const availableDateLabel = availableDate
     ? formatDateLabel(availableDate, dateLabelOptions)
     : "Sin fecha";
+  const availableRangeLabel =
+    availableDateStart && availableDateEnd
+      ? availableDateStart === availableDateEnd
+        ? formatDateLabel(availableDateStart, dateLabelOptions)
+        : `${formatDateLabel(availableDateStart, dateLabelOptions)} al ${formatDateLabel(
+            availableDateEnd,
+            dateLabelOptions,
+          )}`
+      : availableDateLabel;
+  const selectedDateLabel =
+    selectedDateStartState && selectedDateEndState
+      ? selectedDateStartState === selectedDateEndState
+        ? formatDateLabel(selectedDateStartState, dateLabelOptions)
+        : `${formatDateLabel(selectedDateStartState, dateLabelOptions)} al ${formatDateLabel(
+            selectedDateEndState,
+            dateLabelOptions,
+          )}`
+      : availableDateLabel;
 
   const handleDownloadMatrixPdf = useCallback(() => {
     if (summaryRows.length === 0 || sortedMatrixRowsBySede.length === 0) return;
@@ -1254,7 +1386,7 @@ export default function InventarioXItemPage() {
       doc.setFontSize(10);
       doc.text(scopeLabel, 14, 26);
       doc.text(filtersLabel, 14, 32);
-      doc.text(`Corte: ${availableDateLabel}`, 14, 38);
+      doc.text(`Corte: ${selectedDateLabel}`, 14, 38);
       doc.text(
         `Generado: ${new Intl.DateTimeFormat("es-CO", {
           dateStyle: "short",
@@ -1453,7 +1585,11 @@ export default function InventarioXItemPage() {
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-2 rounded-full border border-blue-200/80 bg-white/90 px-3 py-1 text-xs font-semibold text-blue-700">
                   <CalendarDays className="h-3.5 w-3.5" />
-                  Corte disponible: {availableDateLabel}
+                  Rango disponible: {availableRangeLabel}
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-600">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Seleccionado: {selectedDateLabel}
                 </span>
                 <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-600">
                   <Database className="h-3.5 w-3.5" />
@@ -1528,6 +1664,39 @@ export default function InventarioXItemPage() {
             </div>
           )}
 
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
+                Fecha desde
+              </span>
+              <input
+                type="date"
+                value={selectedDateStartState}
+                onChange={(event) => handleDateStartChange(event.target.value)}
+                min={availableDateStart || undefined}
+                max={availableDateEnd || undefined}
+                disabled={loadingFilters || !availableDateEnd}
+                className="w-full rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
+                Fecha hasta
+              </span>
+              <input
+                type="date"
+                value={selectedDateEndState}
+                onChange={(event) => handleDateEndChange(event.target.value)}
+                min={availableDateStart || undefined}
+                max={availableDateEnd || undefined}
+                disabled={loadingFilters || !availableDateEnd}
+                className="w-full rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </label>
+          </div>
+
           <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr_1.2fr_1fr_1.5fr]">
             <SelectField
               icon={Building2}
@@ -1592,6 +1761,8 @@ export default function InventarioXItemPage() {
               onSearchChange={setItemSearch}
               totalResultsCount={itemDropdownState.totalResults}
               truncatedResults={itemDropdownState.truncated}
+              onClearSelection={handleClearItems}
+              clearLabel="Borrar todo"
               disabled={
                 !hasScopeSelection ||
                 loadingCatalog ||

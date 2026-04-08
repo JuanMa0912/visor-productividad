@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
+import { normalizeKeySpaced } from "@/lib/normalize";
 import type { Sede } from "@/lib/constants";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
@@ -67,13 +68,7 @@ let cachedColumns: string[] | null = null;
 let cachedColumnsAt = 0;
 const COLUMNS_CACHE_TTL_MS = 5 * 60 * 1000;
 
-const normalizeSedeKey = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, " ");
+const normalizeSedeKey = normalizeKeySpaced;
 
 const BASE_SEDES: Sede[] = [
   { id: "Calle 5ta", name: "Calle 5ta" },

@@ -11,7 +11,8 @@ import {
 } from "@/lib/inventario-x-item";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
-type LatestDateRow = {
+type DateRangeRow = {
+  min_date: string | null;
   max_date: string | null;
 };
 
@@ -101,8 +102,8 @@ const HIDDEN_SEDE_KEYS = new Set([
   "importados",
 ]);
 
-let latestDateCache:
-  | { value: string | null; expiresAt: number }
+let dateRangeCache:
+  | { value: { min: string | null; max: string | null }; expiresAt: number }
   | null = null;
 let filterCatalogCache:
   | { dateKey: string; value: InventoryFilterCatalog; expiresAt: number }
@@ -121,28 +122,38 @@ const compactToIsoDate = (value: string | null) => {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
 };
 
+const isoToCompactDate = (value: string | null) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  return value.replace(/-/g, "");
+};
+
 const toNumber = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
 
-const getLatestAvailableDate = async () => {
+const getAvailableDateRange = async () => {
   const now = Date.now();
-  if (latestDateCache && latestDateCache.expiresAt > now) {
-    return latestDateCache.value;
+  if (dateRangeCache && dateRangeCache.expiresAt > now) {
+    return dateRangeCache.value;
   }
 
   const client = await (await getDbPool()).connect();
   try {
     const result = await client.query(
       `
-      SELECT MAX(fecha_consulta) AS max_date
+      SELECT
+        MIN(fecha_consulta) AS min_date,
+        MAX(fecha_consulta) AS max_date
       FROM rotacion_base_item_dia_sede
       WHERE fecha_consulta ~ '^[0-9]{8}$'
       `,
     );
 
-    const row = (result.rows?.[0] as LatestDateRow | undefined) ?? null;
-    const value = row?.max_date ?? null;
-    latestDateCache = {
+    const row = (result.rows?.[0] as DateRangeRow | undefined) ?? null;
+    const value = {
+      min: row?.min_date ?? null,
+      max: row?.max_date ?? null,
+    };
+    dateRangeCache = {
       value,
       expiresAt: now + META_CACHE_TTL_MS,
     };
@@ -153,12 +164,13 @@ const getLatestAvailableDate = async () => {
 };
 
 const getInventoryFilterCatalog = async (
-  latestDateCompact: string,
+  dateRangeCompact: { start: string; end: string },
 ): Promise<InventoryFilterCatalog> => {
   const now = Date.now();
+  const dateKey = `${dateRangeCompact.start}-${dateRangeCompact.end}`;
   if (
     filterCatalogCache &&
-    filterCatalogCache.dateKey === latestDateCompact &&
+    filterCatalogCache.dateKey === dateKey &&
     filterCatalogCache.expiresAt > now
   ) {
     return filterCatalogCache.value;
@@ -173,12 +185,12 @@ const getInventoryFilterCatalog = async (
         COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
         COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta = $1
+      WHERE fecha_consulta BETWEEN $1 AND $2
         AND fecha_consulta ~ '^[0-9]{8}$'
         AND item IS NOT NULL
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
       `,
-      [latestDateCompact],
+      [dateRangeCompact.start, dateRangeCompact.end],
     );
 
     const sedes = ((result.rows ?? []) as InventoryFilterDbRow[])
@@ -195,7 +207,7 @@ const getInventoryFilterCatalog = async (
 
     const value = { companies, sedes };
     filterCatalogCache = {
-      dateKey: latestDateCompact,
+      dateKey,
       value,
       expiresAt: now + META_CACHE_TTL_MS,
     };
@@ -206,11 +218,11 @@ const getInventoryFilterCatalog = async (
 };
 
 const queryInventorySummaryRows = async ({
-  latestDateCompact,
+  dateRangeCompact,
   empresa,
   sedeId,
 }: {
-  latestDateCompact: string;
+  dateRangeCompact: { start: string; end: string };
   empresa: string | null;
   sedeId: string | null;
 }): Promise<InventorySummaryRow[]> => {
@@ -236,11 +248,11 @@ const queryInventorySummaryRows = async ({
           DISTINCT COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede')
         )::int AS sede_count
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta = $1
+      WHERE fecha_consulta BETWEEN $1 AND $2
         AND fecha_consulta ~ '^[0-9]{8}$'
         AND item IS NOT NULL
-        AND ($2::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $2)
-        AND ($3::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3)
+        AND ($3::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $3)
+        AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $4)
       GROUP BY
         linea,
         linea_n1_codigo,
@@ -254,7 +266,7 @@ const queryInventorySummaryRows = async ({
         inventory_value DESC,
         item ASC
       `,
-      [latestDateCompact, empresa, sedeId],
+      [dateRangeCompact.start, dateRangeCompact.end, empresa, sedeId],
     );
 
     return ((result.rows ?? []) as InventorySummaryDbRow[]).map((row) => {
@@ -286,14 +298,14 @@ const queryInventorySummaryRows = async ({
 };
 
 const queryInventoryMatrixRows = async ({
-  latestDateCompact,
+  dateRangeCompact,
   empresa,
   sedeId,
   lines,
   subcategory,
   items,
 }: {
-  latestDateCompact: string;
+  dateRangeCompact: { start: string; end: string };
   empresa: string | null;
   sedeId: string | null;
   lines: InventoryLineFilter[];
@@ -303,17 +315,18 @@ const queryInventoryMatrixRows = async ({
   const client = await (await getDbPool()).connect();
   try {
     const params: Array<string | string[] | null> = [
-      latestDateCompact,
+      dateRangeCompact.start,
+      dateRangeCompact.end,
       empresa,
       sedeId,
     ];
 
     const whereClauses = [
-      "fecha_consulta = $1",
+      "fecha_consulta BETWEEN $1 AND $2",
       "fecha_consulta ~ '^[0-9]{8}$'",
       "item IS NOT NULL",
-      "($2::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $2)",
-      "($3::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3)",
+      "($3::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $3)",
+      "($4::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $4)",
     ];
 
     if (subcategory === "perecederos") {
@@ -485,10 +498,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const latestDateCompact = await getLatestAvailableDate();
-    const latestDate = compactToIsoDate(latestDateCompact);
+    const availableRange = await getAvailableDateRange();
+    const minDateCompact = availableRange.min;
+    const maxDateCompact = availableRange.max;
+    const availableDateStart = compactToIsoDate(minDateCompact);
+    const availableDateEnd = compactToIsoDate(maxDateCompact);
 
-    if (!latestDateCompact || !latestDate) {
+    if (!minDateCompact || !maxDateCompact || !availableDateStart || !availableDateEnd) {
       return withSession(
         NextResponse.json(
           {
@@ -500,6 +516,10 @@ export async function GET(request: Request) {
             },
             meta: {
               availableDate: "",
+              availableDateStart: "",
+              availableDateEnd: "",
+              selectedDateStart: "",
+              selectedDateEnd: "",
               sourceTable: INVENTARIO_X_ITEM_SOURCE_TABLE,
             },
             message: "La tabla de inventario por item todavia no tiene datos.",
@@ -517,6 +537,24 @@ export async function GET(request: Request) {
       requestMode === "table"
         ? requestMode
         : "full";
+    const requestedDateStart = isoToCompactDate(
+      url.searchParams.get("dateStart"),
+    );
+    const requestedDateEnd = isoToCompactDate(url.searchParams.get("dateEnd"));
+    let dateStartCompact = requestedDateStart ?? maxDateCompact;
+    let dateEndCompact = requestedDateEnd ?? dateStartCompact;
+    if (!requestedDateStart && requestedDateEnd) {
+      dateStartCompact = dateEndCompact;
+    }
+    if (dateStartCompact < minDateCompact) dateStartCompact = minDateCompact;
+    if (dateEndCompact > maxDateCompact) dateEndCompact = maxDateCompact;
+    if (dateStartCompact > dateEndCompact) {
+      const temp = dateStartCompact;
+      dateStartCompact = dateEndCompact;
+      dateEndCompact = temp;
+    }
+    const selectedDateStart = compactToIsoDate(dateStartCompact) ?? availableDateEnd;
+    const selectedDateEnd = compactToIsoDate(dateEndCompact) ?? availableDateEnd;
     const requestedCompany = url.searchParams.get("empresa")?.trim() || null;
     const requestedSede = url.searchParams.get("sede")?.trim() || null;
     const requestedSubcategory = url.searchParams.get("subcategory");
@@ -549,18 +587,21 @@ export async function GET(request: Request) {
     ).slice(0, 10);
 
     const [filters, rows, matrixRows] = await Promise.all([
-      getInventoryFilterCatalog(latestDateCompact),
+      getInventoryFilterCatalog({
+        start: dateStartCompact,
+        end: dateEndCompact,
+      }),
       mode === "table" || mode === "filters"
         ? Promise.resolve<InventorySummaryRow[]>([])
         : queryInventorySummaryRows({
-            latestDateCompact,
+            dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
             empresa: requestedCompany,
             sedeId: requestedSede,
           }),
       mode === "catalog" || mode === "filters"
         ? Promise.resolve<InventoryMatrixRow[]>([])
         : queryInventoryMatrixRows({
-            latestDateCompact,
+            dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
             empresa: requestedCompany,
             sedeId: requestedSede,
             lines,
@@ -576,7 +617,11 @@ export async function GET(request: Request) {
           matrixRows,
           filters,
           meta: {
-            availableDate: latestDate,
+            availableDate: availableDateEnd,
+            availableDateStart,
+            availableDateEnd,
+            selectedDateStart,
+            selectedDateEnd,
             sourceTable: INVENTARIO_X_ITEM_SOURCE_TABLE,
             selectedCompany: requestedCompany,
             selectedSede: requestedSede,
@@ -603,6 +648,10 @@ export async function GET(request: Request) {
           },
           meta: {
             availableDate: "",
+            availableDateStart: "",
+            availableDateEnd: "",
+            selectedDateStart: "",
+            selectedDateEnd: "",
             sourceTable: INVENTARIO_X_ITEM_SOURCE_TABLE,
           },
           error:

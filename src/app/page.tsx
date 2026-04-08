@@ -14,15 +14,6 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { animate, remove } from "animejs";
-import {
-  LayoutGrid,
-  Table2,
-  Sparkles,
-  Search,
-  ArrowUpDown,
-  BarChart3,
-  Clock,
-} from "lucide-react";
 import { LineChart } from "@mui/x-charts/LineChart";
 import {
   ChartsTooltipContainer,
@@ -38,11 +29,20 @@ import type { XAxis, YAxis } from "@mui/x-charts/models";
 import type { LineSeries } from "@mui/x-charts/LineChart";
 import type { MarkPlotProps, LinePlotProps } from "@mui/x-charts/LineChart";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  escapeCsvValue,
+  formatPdfDate,
+  sanitizeExportText,
+} from "@/lib/export-utils";
 import type { Row, Worksheet } from "exceljs";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { LineCard } from "@/components/LineCard";
 import { LineComparisonTable } from "@/components/LineComparisonTable";
 import { TopBar } from "@/components/TopBar";
+import { EmptyState } from "@/components/productividad/EmptyState";
+import { LoadingSkeleton } from "@/components/productividad/LoadingSkeleton";
+import { SearchAndSort } from "@/components/productividad/SearchAndSort";
+import { ViewToggle } from "@/components/productividad/ViewToggle";
 import {
   calcLineMargin,
   formatCOP,
@@ -57,6 +57,7 @@ import {
   SEDE_GROUPS,
   Sede,
 } from "@/lib/constants";
+import { normalizeKeyCompact } from "@/lib/normalize";
 import { DailyProductivity, LineMetrics } from "@/types";
 
 // ============================================================================
@@ -88,16 +89,6 @@ const dateLabelOptions: Intl.DateTimeFormatOptions = {
   year: "numeric",
 };
 
-const formatPdfDate = () =>
-  new Intl.DateTimeFormat("es-CO", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date());
-
-const sanitizeExportText = (value: string) => {
-  const normalized = value.replace(/\r?\n/g, " ").trim();
-  return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
-};
 const loadExcelJs = () => import("exceljs");
 
 // ============================================================================
@@ -376,13 +367,7 @@ const useAnimations = (
 // FUNCIONES AUXILIARES
 // ============================================================================
 
-const normalizeSedeKey = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]/g, "");
+const normalizeSedeKey = normalizeKeyCompact;
 
 const SEDE_ORDER_MAP = new Map(
   SEDE_ORDER.map((name, index) => [normalizeSedeKey(name), index]),
@@ -503,225 +488,6 @@ const filterLinesByStatus = (
     return lines;
   }
   return lines;
-};
-
-// ============================================================================
-// COMPONENTES
-// ============================================================================
-
-const LoadingSkeleton = () => (
-  <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-    {Array.from({ length: 6 }).map((_, index) => (
-      <div
-        key={`line-skeleton-${index}`}
-        className="h-80 rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]"
-      >
-        <div className="flex h-full flex-col gap-4 animate-pulse">
-          <div className="h-6 w-32 rounded-full bg-slate-200/70" />
-          <div className="h-4 w-24 rounded-full bg-slate-200/70" />
-          <div className="h-12 rounded-2xl bg-slate-200/70" />
-          <div className="flex-1 rounded-2xl bg-slate-200/70" />
-        </div>
-      </div>
-    ))}
-  </section>
-);
-
-const EmptyState = ({
-  title,
-  description,
-  actionLabel,
-  onAction,
-}: {
-  title: string;
-  description: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) => (
-  <section className="rounded-3xl border border-dashed border-slate-200/70 bg-slate-50 p-10 text-center">
-    <p className="text-sm uppercase tracking-[0.3em] text-slate-700">
-      Sin datos
-    </p>
-    <h2 className="mt-3 text-2xl font-semibold text-slate-900">{title}</h2>
-    <p className="mt-2 text-sm text-slate-700">{description}</p>
-    {actionLabel && onAction && (
-      <button
-        type="button"
-        onClick={onAction}
-        className="mt-6 inline-flex items-center gap-2 rounded-full border border-mercamio-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-mercamio-700 transition-all hover:border-mercamio-300 hover:bg-mercamio-50"
-      >
-        <Sparkles className="h-4 w-4" />
-        {actionLabel}
-      </button>
-    )}
-  </section>
-);
-
-const SearchAndSort = ({
-  searchQuery,
-  onSearchChange,
-  sortBy,
-  onSortByChange,
-  sortOrder,
-  onSortOrderToggle,
-}: {
-  searchQuery: string;
-  onSearchChange: (value: string) => void;
-  sortBy: "sales" | "hours" | "name";
-  onSortByChange: (value: "sales" | "hours" | "name") => void;
-  sortOrder: "asc" | "desc";
-  onSortOrderToggle: () => void;
-}) => (
-  <div className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap gap-3 flex-1">
-        <div className="relative flex-1 min-w-50">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-700" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Buscar por nombre o código..."
-            className="w-full rounded-full border border-slate-200/70 bg-slate-50 py-2 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-600 transition-all focus:border-mercamio-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-mercamio-100"
-          />
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
-          Ordenar:
-        </span>
-        <select
-          value={sortBy}
-          onChange={(e) =>
-            onSortByChange(e.target.value as "sales" | "hours" | "name")
-          }
-          className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:border-slate-300 focus:border-mercamio-300 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
-        >
-          <option value="sales">Ventas</option>
-          <option value="hours">Horas</option>
-          <option value="name">Nombre</option>
-        </select>
-        <button
-          type="button"
-          onClick={onSortOrderToggle}
-          className="rounded-full border border-slate-200/70 bg-slate-50 p-2 text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100"
-          title={sortOrder === "asc" ? "Ascendente" : "Descendente"}
-        >
-          <ArrowUpDown
-            className={`h-4 w-4 transition-transform ${sortOrder === "asc" ? "rotate-180" : ""}`}
-          />
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
-const ViewToggle = ({
-  viewMode,
-  onChange,
-}: {
-  viewMode: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2";
-  onChange: (
-    value: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2",
-  ) => void;
-}) => {
-  const getModeLabel = () => {
-    switch (viewMode) {
-      case "cards":
-        return "Tarjetas detalladas";
-      case "comparison":
-        return "Comparativo de líneas";
-      case "chart":
-        return "Top 6 líneas (gráfico)";
-      case "trends":
-        return "Análisis de tendencias";
-      case "hourly":
-        return "Análisis por hora";
-      case "m2":
-        return "Indicadores por m2";
-    }
-  };
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-linear-to-b from-white to-slate-50/70 p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-      <div>
-        <p className="text-xs uppercase tracking-[0.24em] text-slate-600">
-          Vista de líneas
-        </p>
-        <p className="text-sm font-semibold text-slate-900">{getModeLabel()}</p>
-        <p className="mt-1 text-xs text-slate-600">
-          Alterna la visualización para detectar oportunidades rápidamente.
-        </p>
-      </div>
-      <div className="flex items-center gap-2 rounded-full border border-slate-300/70 bg-slate-100 p-1">
-        <button
-          type="button"
-          onClick={() => onChange("cards")}
-          aria-pressed={viewMode === "cards"}
-          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
-            viewMode === "cards"
-              ? "bg-blue-100 text-blue-800 ring-1 ring-blue-200/80 shadow-sm"
-              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
-          }`}
-        >
-          <LayoutGrid className="h-4 w-4" />
-          Tarjetas
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange("comparison")}
-          aria-pressed={viewMode === "comparison"}
-          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
-            viewMode === "comparison"
-              ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200/80 shadow-sm"
-              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
-          }`}
-        >
-          <Table2 className="h-4 w-4" />
-          Comparativo
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange("chart")}
-          aria-pressed={viewMode === "chart"}
-          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
-            viewMode === "chart"
-              ? "bg-violet-100 text-violet-800 ring-1 ring-violet-200/80 shadow-sm"
-              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
-          }`}
-        >
-          <BarChart3 className="h-4 w-4" />
-          Gráfico
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange("trends")}
-          aria-pressed={viewMode === "trends"}
-          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
-            viewMode === "trends"
-              ? "bg-amber-100 text-amber-800 ring-1 ring-amber-200/80 shadow-sm"
-              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
-          }`}
-        >
-          <ArrowUpDown className="h-4 w-4" />
-          Tendencias
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange("hourly")}
-          aria-pressed={viewMode === "hourly"}
-          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
-            viewMode === "hourly"
-              ? "bg-rose-100 text-rose-800 ring-1 ring-rose-200/80 shadow-sm"
-              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
-          }`}
-        >
-          <Clock className="h-4 w-4" />
-          Por hora
-        </button>
-      </div>
-    </div>
-  );
 };
 
 // ============================================================================
@@ -1126,16 +892,6 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
 
   const handleExportChartCsv = useCallback(() => {
     if (chartDates.length === 0 || seriesDefinitions.length === 0) return false;
-    const escapeCsv = (value: string | number) => {
-      const str =
-        typeof value === "string"
-          ? sanitizeExportText(value)
-          : String(value ?? "");
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
     const header = ["Fecha", ...seriesDefinitions.map((s) => s.label)];
     const rows = chartDates.map((date, index) => [
       date,
@@ -1145,7 +901,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
       }),
     ]);
     const csv = [header, ...rows]
-      .map((row) => row.map(escapeCsv).join(","))
+      .map((row) => row.map(escapeCsvValue).join(","))
       .join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -2137,17 +1893,6 @@ const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
 
   const handleExportTrendsCsv = useCallback(() => {
     if (!selectedLine) return false;
-    const escapeCsv = (value: string | number) => {
-      const str =
-        typeof value === "string"
-          ? sanitizeExportText(value)
-          : String(value ?? "");
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
     if (viewType === "temporal") {
       if (trendData.length === 0) return false;
       const rows = [
@@ -2159,7 +1904,7 @@ const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
           point.hours > 0 ? (point.sales / 1_000_000 / point.hours).toFixed(3) : "0.000",
         ]),
       ];
-      const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+      const csv = rows.map((r) => r.map(escapeCsvValue).join(",")).join("\n");
       const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -2186,7 +1931,7 @@ const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
         ]),
       ),
     ];
-    const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+    const csv = rows.map((r) => r.map(escapeCsvValue).join(",")).join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -2929,16 +2674,6 @@ const M2MetricsSection = forwardRef<ViewExportHandle, M2MetricsSectionProps>(({
 
   const handleExportM2Csv = useCallback(() => {
     if (metrics.length === 0) return false;
-    const escapeCsv = (value: string | number) => {
-      const str =
-        typeof value === "string"
-          ? sanitizeExportText(value)
-          : String(value ?? "");
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
     const rows = [
       ["Sede", "m2", "Ventas/m2", "Horas/m2", "Margen/m2"],
       ...metrics.map((item) => [
@@ -2949,7 +2684,7 @@ const M2MetricsSection = forwardRef<ViewExportHandle, M2MetricsSectionProps>(({
         item.marginPerM2 ?? "",
       ]),
     ];
-    const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+    const csv = rows.map((r) => r.map(escapeCsvValue).join(",")).join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -3854,14 +3589,6 @@ export default function Home() {
     const dateRange = exportDateRange;
     const dateRangeLabel = exportDateRangeLabel;
     const lineFilterLabel = exportLineFilterLabel;
-    const escapeCsv = (value: string | number) => {
-      const str =
-        typeof value === "string" ? sanitizeExportText(value) : String(value);
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
 
     const formatNumber = (value: number) => {
       return new Intl.NumberFormat("es-CO", {
@@ -3881,10 +3608,10 @@ export default function Home() {
       "",
       "BLOQUE: INFORMACION",
       "Sede,Valor",
-      `Sede,${escapeCsv(sanitizeExportText(selectedScopeLabel))}`,
-      `Rango,${escapeCsv(sanitizeExportText(dateRangeLabel || "Sin rango definido"))}`,
-      `Filtro,${escapeCsv(sanitizeExportText(lineFilterLabel))}`,
-      `Generado,${escapeCsv(sanitizeExportText(formatPdfDate()))}`,
+      `Sede,${escapeCsvValue(sanitizeExportText(selectedScopeLabel))}`,
+      `Rango,${escapeCsvValue(sanitizeExportText(dateRangeLabel || "Sin rango definido"))}`,
+      `Filtro,${escapeCsvValue(sanitizeExportText(lineFilterLabel))}`,
+      `Generado,${escapeCsvValue(sanitizeExportText(formatPdfDate()))}`,
       "",
       "BLOQUE: DETALLE POR LINEA",
       "",
@@ -3894,8 +3621,8 @@ export default function Home() {
         const hours = hasLaborData ? line.hours : 0;
         return [
           index + 1,
-          escapeCsv(sanitizeExportText(line.name)),
-          escapeCsv(sanitizeExportText(line.id)),
+          escapeCsvValue(sanitizeExportText(line.name)),
+          escapeCsvValue(sanitizeExportText(line.id)),
           formatNumber(Math.round(line.sales)),
           hours.toFixed(2),
         ].join(",");

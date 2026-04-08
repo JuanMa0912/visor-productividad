@@ -10,6 +10,7 @@ import { ArrowUp } from "lucide-react";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { DEFAULT_SEDES } from "@/lib/constants";
 import type { Sede } from "@/lib/constants";
+import { normalizeKeySpaced } from "@/lib/normalize";
 
 type ApiResponse = {
   dates?: string[];
@@ -52,13 +53,7 @@ type AlexExportField = {
   width: number;
 };
 
-const normalizeSedeKey = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, " ");
+const normalizeSedeKey = normalizeKeySpaced;
 
 const canonicalizeSedeKey = (value: string) => {
   const normalized = normalizeSedeKey(value);

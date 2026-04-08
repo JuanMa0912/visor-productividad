@@ -23,6 +23,7 @@ import {
   ArrowUp,
 } from "lucide-react";
 import { cn, formatDateLabel } from "@/lib/utils";
+import { escapeCsvValue, sanitizeExportText } from "@/lib/export-utils";
 import { DEFAULT_LINES } from "@/lib/constants";
 import type { Sede } from "@/lib/constants";
 import type { HourlyAnalysisData } from "@/types";
@@ -125,11 +126,6 @@ const formatShare = (value: number) =>
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(value);
-
-const sanitizeExportText = (value: string) => {
-  const normalized = value.replace(/\r?\n/g, " ").trim();
-  return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
-};
 
 const formatHoursBase60 = (value: number) => {
   if (!Number.isFinite(value)) return "0.00";
@@ -1032,6 +1028,7 @@ export const HourlyAnalysis = ({
       selectedSedes,
       false,
       dashboardContext,
+      false,
       undefined,
       controller.signal,
     )
@@ -1276,13 +1273,6 @@ export const HourlyAnalysis = ({
 
   const handleExportHourlyCsv = useCallback(() => {
     if (hourlyExportRows.length === 0) return false;
-    const escapeCsv = (value: string | number) => {
-      const str = String(value ?? "");
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
     const rows = [
       ["Franja", "Ventas", "Empleados", "Vta/Hr"],
       ...hourlyExportRows.map((row) => [
@@ -1292,7 +1282,7 @@ export const HourlyAnalysis = ({
         Number.isFinite(row.productivity) ? row.productivity.toFixed(3) : "0.000",
       ]),
     ];
-    const csv = rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+    const csv = rows.map((r) => r.map(escapeCsvValue).join(",")).join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -2281,80 +2271,6 @@ export const HourlyAnalysis = ({
 
       {!isLoading && activeHourlyData && (
         <>
-          <div className="mb-6 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Fecha
-                </p>
-                <p className="text-sm font-semibold text-slate-900">
-                  {formatDateLabel(
-                    activeHourlyData.date,
-                    hourlyDateLabelOptions,
-                  )}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Alcance
-                </p>
-                <p className="text-sm font-semibold text-slate-900">
-                  {activeHourlyData.scopeLabel}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Rango
-                </p>
-                <p className="text-sm font-semibold text-slate-900">
-                  {minuteToTime(minuteRangeStart)} -{" "}
-                  {minuteToTime(minuteRangeEnd)}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70">
-                Intervalo: {bucketMinutes} min
-              </span>
-              {selectedLineLabel && (
-                <span className="rounded-full bg-mercamio-50 px-3 py-1 text-xs font-semibold text-mercamio-700 ring-1 ring-mercamio-200/70">
-                  Linea: {selectedLineLabel}
-                </span>
-              )}
-              {activeHourlyData.attendanceDateUsed &&
-                activeHourlyData.attendanceDateUsed !== activeHourlyData.date && (
-                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
-                    Asistencia usada: {activeHourlyData.attendanceDateUsed}
-                  </span>
-                )}
-              {activeHourlyData.salesDateUsed &&
-                activeHourlyData.salesDateUsed !== activeHourlyData.date && (
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
-                    Ventas usadas: {activeHourlyData.salesDateUsed}
-                  </span>
-                )}
-            </div>
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="flex items-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-                <DollarSign className="h-3.5 w-3.5" />
-                Facturado rango: {formatCurrency(dayTotals.sales)}
-              </div>
-              <div className="flex items-center gap-2 rounded-xl border border-amber-200/70 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                <DollarSign className="h-3.5 w-3.5" />
-                Vta/Hr prom: {formatProductivity(dayTotals.avgProductivity)}
-              </div>
-              <div className="flex items-center gap-2 rounded-xl border border-sky-200/70 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">
-                <Users className="h-3.5 w-3.5" />
-                Pico: {dayTotals.peakEmployees} empleados
-              </div>
-              <div className="rounded-xl border border-slate-200/70 bg-slate-100/80 px-3 py-2 text-xs font-semibold text-slate-700">
-                {dayTotals.activeHoursCount} horas con actividad
-              </div>
-            </div>
-          </div>
-
           {showSectionToggle && (
             <div className="mb-6 flex flex-wrap items-center gap-2">
               {showMapSection && (
@@ -2395,6 +2311,56 @@ export const HourlyAnalysis = ({
                 <p className="text-sm font-semibold text-slate-900">
                   Consulta horarios y total de horas trabajadas
                 </p>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Fecha
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {formatDateLabel(
+                      activeHourlyData.date,
+                      hourlyDateLabelOptions,
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Alcance
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {activeHourlyData.scopeLabel}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Rango
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {minuteToTime(minuteRangeStart)} -{" "}
+                    {minuteToTime(minuteRangeEnd)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {selectedLineLabel && (
+                  <span className="rounded-full bg-mercamio-50 px-3 py-1 text-xs font-semibold text-mercamio-700 ring-1 ring-mercamio-200/70">
+                    Linea: {selectedLineLabel}
+                  </span>
+                )}
+                {activeHourlyData.attendanceDateUsed &&
+                  activeHourlyData.attendanceDateUsed !== activeHourlyData.date && (
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
+                      Asistencia usada: {activeHourlyData.attendanceDateUsed}
+                    </span>
+                  )}
+                {activeHourlyData.salesDateUsed &&
+                  activeHourlyData.salesDateUsed !== activeHourlyData.date && (
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                      Ventas usadas: {activeHourlyData.salesDateUsed}
+                    </span>
+                  )}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200/70">
@@ -2962,6 +2928,57 @@ export const HourlyAnalysis = ({
                     Max Vta/Hr: {formatProductivity(maxProductivity)}
                   </span>
                 </div>
+              </div>
+
+              <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Fecha
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {formatDateLabel(
+                      activeHourlyData.date,
+                      hourlyDateLabelOptions,
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Alcance
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {activeHourlyData.scopeLabel}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Rango
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {minuteToTime(minuteRangeStart)} -{" "}
+                    {minuteToTime(minuteRangeEnd)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {selectedLineLabel && (
+                  <span className="rounded-full bg-mercamio-50 px-3 py-1 text-xs font-semibold text-mercamio-700 ring-1 ring-mercamio-200/70">
+                    Linea: {selectedLineLabel}
+                  </span>
+                )}
+                {activeHourlyData.attendanceDateUsed &&
+                  activeHourlyData.attendanceDateUsed !== activeHourlyData.date && (
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
+                      Asistencia usada: {activeHourlyData.attendanceDateUsed}
+                    </span>
+                  )}
+                {activeHourlyData.salesDateUsed &&
+                  activeHourlyData.salesDateUsed !== activeHourlyData.date && (
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                      Ventas usadas: {activeHourlyData.salesDateUsed}
+                    </span>
+                  )}
               </div>
 
               <div className="w-full rounded-2xl border border-slate-200/70 bg-slate-50/70 p-3">

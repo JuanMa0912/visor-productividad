@@ -3,6 +3,7 @@ import { DailyProductivity } from "@/types";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { normalizeKeyCompact } from "@/lib/normalize";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -133,23 +134,10 @@ const HIDDEN_SEDES = new Set(
     "panificadora",
     "planta desposte mixto",
     "planta desprese pollo",
-  ].map((value) =>
-    value
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "")
-      .trim(),
-  ),
+  ].map((value) => normalizeKeyCompact(value)),
 );
 
-const normalizeSedeKey = (value: string) =>
-  value
-    ?.toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .trim() || "";
+const normalizeSedeKey = normalizeKeyCompact;
 
 const buildSedes = (dailyData: DailyProductivity[]) =>
   Array.from(new Set(dailyData.map((item) => item.sede)))

@@ -10,6 +10,7 @@ import {
   DEFAULT_LINES,
   Sede,
 } from "@/lib/constants";
+import { normalizeKeyCompact } from "@/lib/normalize";
 import { formatCOP } from "@/lib/calc";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
@@ -94,13 +95,7 @@ const toDateKey = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
-const normalizeSedeKey = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]/g, "");
+const normalizeSedeKey = normalizeKeyCompact;
 
 const ALLOWED_LINE_SET = new Set(DEFAULT_LINES.map((line) => line.id));
 
