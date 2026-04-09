@@ -86,7 +86,7 @@ const BASE_SEDES: Sede[] = [
   { id: "CEDI-CAVASA", name: "CEDI-CAVASA" },
   { id: "Panificadora", name: "Panificadora" },
   { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
-  { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
+  { id: "Planta Desposte Pollo", name: "Planta Desposte Pollo" },
 ];
 
 const canonicalizeSedeKey = (value: string) => {
@@ -94,6 +94,15 @@ const canonicalizeSedeKey = (value: string) => {
   const compact = normalized.replace(/\s+/g, "");
   if (normalized === "cedicavasa" || compact === "cedicavasa") {
     return normalizeSedeKey("CEDI-CAVASA");
+  }
+  if (
+    normalized.includes("planta desposte pollo") ||
+    normalized.includes("planta desprese pollo")
+  ) {
+    return normalizeSedeKey("Planta Desposte Pollo");
+  }
+  if (normalized.includes("planta desposte mixto")) {
+    return normalizeSedeKey("Planta Desposte Mixto");
   }
   return normalized;
 };
@@ -113,8 +122,8 @@ const SEDE_CONFIGS = [
   { name: "ADM", attendanceNames: ["adm"], aliases: ["adm"] },
   { name: "CEDI-CAVASA", attendanceNames: ["cedi cavasa", "cedi-cavasa", "cedicavasa"], aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
   { name: "Panificadora", attendanceNames: ["panificadora"], aliases: ["panificadora"] },
-  { name: "Planta Desposte Mixto", attendanceNames: ["planta desposte mixto"], aliases: ["planta desposte mixto", "planta desposte"] },
-  { name: "Planta Desprese Pollo", attendanceNames: ["planta desprese pollo"], aliases: ["planta desprese pollo", "desprese pollo"] },
+  { name: "Planta Desposte Mixto", attendanceNames: ["planta desposte mixto", "planta de desposte mixto"], aliases: ["planta desposte mixto", "planta de desposte mixto", "planta desposte", "desposte mixto"] },
+  { name: "Planta Desposte Pollo", attendanceNames: ["planta desposte pollo", "planta desprese pollo", "planta de desposte pollo", "planta de desprese pollo"], aliases: ["planta desposte pollo", "planta desprese pollo", "planta de desposte pollo", "planta de desprese pollo", "desposte pollo", "desprese pollo"] },
 ] as const;
 
 const resolveVisibleSedes = (sessionUser: {
@@ -347,6 +356,8 @@ export async function GET(request: Request) {
           ${buildNormalizeSql("COALESCE(departamento, '')")} LIKE '%caja%'
           OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'supervision y cajas'
           OR ${buildNormalizeSql("COALESCE(cargo, '')")} LIKE '%caj%'
+          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'planta de produccion'
+          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'servicios generales'
         )
         AND (
           ${nameExpr} IS NOT NULL

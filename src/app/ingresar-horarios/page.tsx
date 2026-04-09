@@ -83,6 +83,18 @@ const normalizeText = (value?: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+const matchesSede = (employeeSede: string | undefined, selectedSede: string) => {
+  if (!selectedSede) return true;
+  const employeeKey = normalizeText(employeeSede ?? "");
+  const selectedKey = normalizeText(selectedSede);
+  if (!employeeKey || !selectedKey) return false;
+  return (
+    employeeKey === selectedKey ||
+    employeeKey.includes(selectedKey) ||
+    selectedKey.includes(employeeKey)
+  );
+};
+
 const formatTimeForPrint = (value?: string) => {
   const normalized = (value ?? "").trim();
   if (!normalized) return "";
@@ -313,6 +325,20 @@ export default function IngresarHorariosPage() {
     };
   }, [router]);
 
+  useEffect(() => {
+    const normalizedSede = normalizeText(sede);
+    if (
+      normalizedSede.includes("panificadora") ||
+      normalizedSede.includes("planta desposte mixto") ||
+      normalizedSede.includes("planta desposte pollo") ||
+      normalizedSede.includes("planta desprese pollo")
+    ) {
+      setSeccion("Planta");
+      return;
+    }
+    setSeccion("Cajas");
+  }, [sede]);
+
   const updateRowField = useCallback((
     rowIndex: number,
     field: keyof Pick<RowSchedule, "nombre" | "firma">,
@@ -383,8 +409,7 @@ export default function IngresarHorariosPage() {
           employeeOptions
             .filter(
               (employee) =>
-                !sede ||
-                normalizeText(employee.sede ?? "") === normalizeText(sede),
+                matchesSede(employee.sede, sede),
             )
             .map((employee) => employee.name)
             .filter(Boolean),

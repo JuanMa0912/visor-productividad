@@ -74,7 +74,7 @@ const canonicalizeSedeKey = (value: string) => {
 const OVERTIME_EXTRA_SEDES: Sede[] = [
   { id: "Panificadora", name: "Panificadora" },
   { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
-  { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
+  { id: "Planta Desposte Pollo", name: "Planta Desposte Pollo" },
 ];
 
 const ALEX_EXPORT_FIELDS: AlexExportField[] = [

@@ -133,6 +133,7 @@ const HIDDEN_SEDES = new Set(
     "cedicavasa",
     "panificadora",
     "planta desposte mixto",
+    "planta desposte pollo",
     "planta desprese pollo",
   ].map((value) => normalizeKeyCompact(value)),
 );
@@ -329,8 +330,11 @@ const normalizeSedeAsistencia = (sede: string): string => {
   }
   if (normalized.includes("floralia")) return "Floralia";
   if (normalized.includes("panificadora")) return "Panificadora";
-  if (normalized.includes("planta desprese pollo"))
-    return "Planta Desprese Pollo";
+  if (
+    normalized.includes("planta desposte pollo") ||
+    normalized.includes("planta desprese pollo")
+  )
+    return "Planta Desposte Pollo";
   if (normalized.includes("planta desposte mixto"))
     return "Planta Desposte Mixto";
   return sede?.trim() || "";
