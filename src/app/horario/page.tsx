@@ -77,7 +77,7 @@ export default function HorarioHubPage() {
           personal, novedades y turnos por sede.
         </p>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <button
             type="button"
             onClick={() => router.push("/jornada-extendida")}
@@ -109,6 +109,22 @@ export default function HorarioHubPage() {
             <span className="mt-1 block text-xs text-slate-600">
               Programa y administra horarios del personal para sostener la
               operacion diaria.
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.push("/horarios-guardados")}
+            className="rounded-2xl border border-sky-300/80 bg-linear-to-br from-sky-100 via-white to-cyan-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(14,165,233,0.4)] transition-all hover:-translate-y-0.5 hover:border-sky-400"
+          >
+            <span className="inline-flex rounded-full border border-sky-300/80 bg-sky-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-800">
+              Archivo
+            </span>
+            <span className="mt-3 block text-sm font-semibold">
+              Horarios guardados
+            </span>
+            <span className="mt-1 block text-xs text-slate-600">
+              Consulta plantillas guardadas y revisa el historial diario de cada empleado.
             </span>
           </button>
         </div>

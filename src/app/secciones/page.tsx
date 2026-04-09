@@ -41,6 +41,7 @@ export default function SeccionesPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSwitchingUser, setIsSwitchingUser] = useState(false);
   const [allowedDashboards, setAllowedDashboards] = useState<string[] | null>(null);
+  const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
 
   const getCookieValue = (name: string) => {
     if (typeof document === "undefined") return null;
@@ -71,11 +72,16 @@ export default function SeccionesPage() {
         }
         if (!response.ok) return;
         const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
+          user?: {
+            role?: string;
+            allowedDashboards?: string[] | null;
+            specialRoles?: string[] | null;
+          };
         };
         if (!isMounted) return;
         setIsAdmin(payload.user?.role === "admin");
         setAllowedDashboards(payload.user?.allowedDashboards ?? null);
+        setSpecialRoles(payload.user?.specialRoles ?? null);
         setReady(true);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -120,6 +126,8 @@ export default function SeccionesPage() {
     isAdmin || allowedDashboards === null
       ? PORTAL_SECTIONS
       : PORTAL_SECTIONS.filter((section) => allowedDashboards.includes(section.id));
+  const canAccessCronograma =
+    isAdmin || Boolean(specialRoles?.includes("cronograma"));
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground">
@@ -133,15 +141,32 @@ export default function SeccionesPage() {
               Explora las tres dimensiones clave del negocio.
             </p>
           </div>
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => router.push("/admin/usuarios")}
-              className="inline-flex items-center rounded-full border border-slate-900/90 bg-linear-to-r from-slate-900 to-slate-700 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white transition-all hover:brightness-110"
-            >
-              Usuarios
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {canAccessCronograma && (
+              <button
+                type="button"
+                onClick={() =>
+                  window.open(
+                    "https://www.notion.so/Cronograma-de-Proyectos-UAID-00e49a2ceb6b83f58fc1010dd253ae67",
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+                className="inline-flex items-center rounded-full border border-sky-200/90 bg-linear-to-r from-sky-50 to-cyan-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-800 transition-all hover:border-sky-300 hover:brightness-105"
+              >
+                Cronograma
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => router.push("/admin/usuarios")}
+                className="inline-flex items-center rounded-full border border-slate-900/90 bg-linear-to-r from-slate-900 to-slate-700 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white transition-all hover:brightness-110"
+              >
+                Usuarios
+              </button>
+            )}
+          </div>
         </div>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-[15px]">
           El Portal UAID integra en un solo entorno la vision completa del

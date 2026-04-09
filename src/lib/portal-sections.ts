@@ -55,6 +55,7 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   horarios: "operacion",
   "jornada-extendida": "operacion",
   "ingresar-horarios": "operacion",
+  "horarios-guardados": "operacion",
 };
 
 const normalizePortalSectionToken = (value?: string | null) =>

@@ -550,7 +550,7 @@ export const LineComparisonTable = ({
                     Mes anterior
                   </th>
                   <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
-                    Variación
+                    Vta/Hr mes anterior
                   </th>
                 </>
               ) : null}
@@ -602,11 +602,10 @@ export const LineComparisonTable = ({
                 hasLaborDataForLine(line.id) && totals.hours > 0
                   ? totals.sales / 1_000_000 / totals.hours
                   : 0;
-              const salesDelta = totals.sales - previousTotals.sales;
-              const salesDeltaPct =
-                previousTotals.sales > 0
-                  ? (salesDelta / previousTotals.sales) * 100
-                  : null;
+              const previousSalesPerHour =
+                hasLaborDataForLine(line.id) && previousTotals.hours > 0
+                  ? previousTotals.sales / 1_000_000 / previousTotals.hours
+                  : 0;
               const isExpanded = expandedLineIds.includes(line.id);
               const bySede = lineSedeMetrics.get(line.id) ?? new Map<string, SedeMetrics>();
               const previousBySede =
@@ -654,20 +653,25 @@ export const LineComparisonTable = ({
                       0,
                     ) / selectedSedeCount
                   : 0;
-              const averageSalesDelta =
-                selectedSedeCount > 0
-                  ? orderedSedeDetails.reduce((sum, detail) => {
-                      const previousSales =
-                        previousBySede.get(detail.sedeId)?.sales ?? 0;
-                      return sum + (detail.sales - previousSales);
-                    }, 0) / selectedSedeCount
-                  : 0;
               const averageSalesPerHour =
                 selectedSedeCount > 0
                   ? orderedSedeDetails.reduce(
                       (sum, detail) => sum + detail.salesPerHour,
                       0,
                     ) / selectedSedeCount
+                  : 0;
+              const averagePreviousSalesPerHour =
+                selectedSedeCount > 0
+                  ? orderedSedeDetails.reduce((sum, detail) => {
+                      const previousDetail = previousBySede.get(detail.sedeId);
+                      const previousHours = previousDetail?.hours ?? 0;
+                      if (!hasLaborDataForLine(line.id) || previousHours <= 0) {
+                        return sum;
+                      }
+                      return (
+                        sum + (previousDetail?.sales ?? 0) / 1_000_000 / previousHours
+                      );
+                    }, 0) / selectedSedeCount
                   : 0;
               const averageHours =
                 selectedSedeCount > 0
@@ -734,12 +738,9 @@ export const LineComparisonTable = ({
                           {hasData ? formatCOP(previousTotals.sales) : "-"}
                         </td>
                         <td className="px-2 py-2 text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm">
-                          <div className={salesDelta >= 0 ? "text-emerald-700" : "text-rose-700"}>
-                            {hasData ? formatCOP(salesDelta) : "-"}
-                          </div>
-                          <div className="text-[10px] text-slate-500">
-                            {salesDeltaPct === null ? "n/a" : `${salesDeltaPct.toFixed(1)}%`}
-                          </div>
+                          {hasData && hasLaborDataForLine(line.id) && previousTotals.hours > 0
+                            ? previousSalesPerHour.toFixed(3)
+                            : "-"}
                         </td>
                       </>
                     ) : null}
@@ -803,7 +804,7 @@ export const LineComparisonTable = ({
                             {showPreviousComparison ? (
                               <>
                                 <span className="text-right">Mes anterior</span>
-                                <span className="text-right">Variación</span>
+                                <span className="text-right">Vta/Hr mes anterior</span>
                               </>
                             ) : null}
                             <button
@@ -848,7 +849,10 @@ export const LineComparisonTable = ({
                                 sales: 0,
                                 hours: 0,
                               };
-                              const detailDelta = detail.sales - previousDetail.sales;
+                              const previousDetailSalesPerHour =
+                                hasLaborDataForLine(line.id) && previousDetail.hours > 0
+                                  ? previousDetail.sales / 1_000_000 / previousDetail.hours
+                                  : 0;
                               return (
                               <div
                                 key={`${line.id}-${detail.sedeId}`}
@@ -869,10 +873,10 @@ export const LineComparisonTable = ({
                                       <span className="text-right font-semibold text-slate-600">
                                         {formatCOP(previousDetail.sales)}
                                       </span>
-                                      <span className={`text-right font-semibold ${
-                                        detailDelta >= 0 ? "text-emerald-700" : "text-rose-700"
-                                      }`}>
-                                        {formatCOP(detailDelta)}
+                                      <span className="text-right font-semibold text-slate-800">
+                                        {hasLaborDataForLine(line.id) && previousDetail.hours > 0
+                                          ? previousDetailSalesPerHour.toFixed(3)
+                                          : "-"}
                                       </span>
                                     </>
                                   ) : null}
@@ -900,7 +904,7 @@ export const LineComparisonTable = ({
                                     {formatCOP(averagePreviousSales)}
                                   </span>
                                   <span className="text-right text-slate-900">
-                                    {formatCOP(averageSalesDelta)}
+                                    {averagePreviousSalesPerHour.toFixed(3)}
                                   </span>
                                 </>
                               ) : null}

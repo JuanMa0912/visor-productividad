@@ -75,6 +75,8 @@ const MONTH_OPTIONS = [
   "Diciembre",
 ];
 
+const LOCAL_DRAFT_VERSION = 1;
+
 const normalizeText = (value?: string) =>
   (value ?? "")
     .toLowerCase()
@@ -110,6 +112,17 @@ const formatTimeForPrint = (value?: string) => {
   const period = hours >= 12 ? "pm" : "am";
   const hour12 = hours % 12 === 0 ? 12 : hours % 12;
   return `${String(hour12).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${period}`;
+};
+
+type ScheduleDraft = {
+  version: number;
+  sede: string;
+  seccion: string;
+  fechaInicial: string;
+  fechaFinal: string;
+  mes: string;
+  rows: RowSchedule[];
+  updatedAt: string;
 };
 
 type RowScheduleRowProps = {
@@ -249,9 +262,90 @@ type HorariosOptionsResponse = {
   error?: string;
 };
 
+const getCookieValue = (name: string) => {
+  if (typeof document === "undefined") return null;
+  const value = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(`${name}=`));
+  if (!value) return null;
+  return decodeURIComponent(value.split("=").slice(1).join("="));
+};
+
+const getDraftStorageKey = (username: string) =>
+  `vp:ingresar-horarios:draft:${username}`;
+
+const createSafeDraftRows = (rows: unknown) => {
+  if (!Array.isArray(rows)) {
+    return Array.from({ length: 16 }, () => createEmptyRow());
+  }
+
+  return Array.from({ length: 16 }, (_, index) => {
+    const sourceRow = rows[index] as
+      | {
+          nombre?: string;
+          firma?: string;
+          days?: Partial<Record<DayKey, Partial<DaySchedule>>>;
+        }
+      | undefined;
+
+    if (!sourceRow) return createEmptyRow();
+
+    const nextRow = createEmptyRow();
+    nextRow.nombre = typeof sourceRow.nombre === "string" ? sourceRow.nombre : "";
+    nextRow.firma = typeof sourceRow.firma === "string" ? sourceRow.firma : "";
+
+    for (const dayKey of DAY_ORDER) {
+      const sourceDay = sourceRow.days?.[dayKey];
+      nextRow.days[dayKey] = {
+        he1: typeof sourceDay?.he1 === "string" ? sourceDay.he1 : "",
+        hs1: typeof sourceDay?.hs1 === "string" ? sourceDay.hs1 : "",
+        he2: typeof sourceDay?.he2 === "string" ? sourceDay.he2 : "",
+        hs2: typeof sourceDay?.hs2 === "string" ? sourceDay.hs2 : "",
+        conDescanso: Boolean(sourceDay?.conDescanso),
+      };
+    }
+
+    return nextRow;
+  });
+};
+
+const readScheduleDraft = (username: string) => {
+  if (typeof window === "undefined") return null;
+  try {
+    const rawValue = window.localStorage.getItem(getDraftStorageKey(username));
+    if (!rawValue) return null;
+    const parsed = JSON.parse(rawValue) as Partial<ScheduleDraft> | null;
+    if (!parsed || parsed.version !== LOCAL_DRAFT_VERSION) return null;
+
+    return {
+      sede: typeof parsed.sede === "string" ? parsed.sede : "",
+      seccion: typeof parsed.seccion === "string" ? parsed.seccion : "Cajas",
+      fechaInicial:
+        typeof parsed.fechaInicial === "string" ? parsed.fechaInicial : "",
+      fechaFinal: typeof parsed.fechaFinal === "string" ? parsed.fechaFinal : "",
+      mes: typeof parsed.mes === "string" ? parsed.mes : "",
+      rows: createSafeDraftRows(parsed.rows),
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeScheduleDraft = (username: string, draft: ScheduleDraft) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(getDraftStorageKey(username), JSON.stringify(draft));
+};
+
+const clearScheduleDraft = (username: string) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(getDraftStorageKey(username));
+};
+
 export default function IngresarHorariosPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState("");
   const [sede, setSede] = useState("");
   const [seccion, setSeccion] = useState("Cajas");
   const [fechaInicial, setFechaInicial] = useState("");
@@ -264,10 +358,16 @@ export default function IngresarHorariosPage() {
     Array<{ name: string; sede?: string }>
   >([]);
   const [exportingJpg, setExportingJpg] = useState(false);
+  const [savingForm, setSavingForm] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const [rows, setRows] = useState<RowSchedule[]>(
     Array.from({ length: 16 }, () => createEmptyRow()),
   );
   const planillaRef = useRef<HTMLDivElement | null>(null);
+  const draftSaveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -284,7 +384,11 @@ export default function IngresarHorariosPage() {
         }
         if (!response.ok) return;
         const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
+          user?: {
+            role?: string;
+            username?: string;
+            allowedDashboards?: string[] | null;
+          };
         };
         const isAdmin = payload.user?.role === "admin";
         if (
@@ -308,13 +412,27 @@ export default function IngresarHorariosPage() {
           (await optionsResponse.json()) as HorariosOptionsResponse;
         if (!isMounted) return;
         const nextSedes = optionsPayload.sedes ?? [];
+        const username = payload.user?.username?.trim() || "anon";
+        const draft = readScheduleDraft(username);
+
+        setCurrentUsername(username);
         setSedesOptions(nextSedes);
         setEmployeeOptions(optionsPayload.employees ?? []);
-        if (optionsPayload.defaultSede) {
-          setSede(optionsPayload.defaultSede);
-        } else if (nextSedes.length > 0) {
-          setSede(nextSedes[0].name);
+        if (draft) {
+          setSede(draft.sede);
+          setSeccion(draft.seccion);
+          setFechaInicial(draft.fechaInicial);
+          setFechaFinal(draft.fechaFinal);
+          setMes(draft.mes);
+          setRows(draft.rows);
+        } else {
+          if (optionsPayload.defaultSede) {
+            setSede(optionsPayload.defaultSede);
+          } else if (nextSedes.length > 0) {
+            setSede(nextSedes[0].name);
+          }
         }
+        setDraftHydrated(true);
         setReady(true);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -341,6 +459,39 @@ export default function IngresarHorariosPage() {
     }
     setSeccion("Cajas");
   }, [sede]);
+
+  useEffect(() => {
+    if (!draftHydrated || !currentUsername) return;
+
+    draftSaveTimeoutRef.current = window.setTimeout(() => {
+      writeScheduleDraft(currentUsername, {
+        version: LOCAL_DRAFT_VERSION,
+        sede,
+        seccion,
+        fechaInicial,
+        fechaFinal,
+        mes,
+        rows,
+        updatedAt: new Date().toISOString(),
+      });
+    }, 250);
+
+    return () => {
+      if (draftSaveTimeoutRef.current !== null) {
+        window.clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    currentUsername,
+    draftHydrated,
+    fechaFinal,
+    fechaInicial,
+    mes,
+    rows,
+    sede,
+    seccion,
+  ]);
 
   const updateRowField = useCallback((
     rowIndex: number,
@@ -421,9 +572,75 @@ export default function IngresarHorariosPage() {
     [employeeOptions, sede],
   );
 
+  const handleSaveForm = useCallback(async () => {
+    if (savingForm) return;
+    const csrfToken = getCookieValue("vp_csrf");
+    if (!csrfToken) {
+      setSaveError("No se pudo validar la sesion. Recarga la pagina.");
+      setSaveSuccess(null);
+      return;
+    }
+
+    setSavingForm(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+    try {
+      const response = await fetch("/api/ingresar-horarios/forms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({
+          sede,
+          seccion,
+          fechaInicial,
+          fechaFinal,
+          mes,
+          rows,
+        }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        planillaId?: number;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "No se pudo guardar la planilla.");
+      }
+      setSaveSuccess(
+        `Planilla guardada correctamente${payload.planillaId ? ` (#${payload.planillaId})` : ""}. Ahora puedes verla en Horarios guardados.`,
+      );
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Error desconocido al guardar.");
+      setSaveSuccess(null);
+    } finally {
+      setSavingForm(false);
+    }
+  }, [
+    fechaFinal,
+    fechaInicial,
+    mes,
+    rows,
+    savingForm,
+    sede,
+    seccion,
+  ]);
+
   const handleExportPdf = () => {
     window.print();
   };
+
+  const handleClearDraft = useCallback(() => {
+    if (!currentUsername) return;
+    if (draftSaveTimeoutRef.current !== null) {
+      window.clearTimeout(draftSaveTimeoutRef.current);
+      draftSaveTimeoutRef.current = null;
+    }
+    clearScheduleDraft(currentUsername);
+    setDraftMessage("Borrador local eliminado.");
+  }, [currentUsername]);
+
   const handleExportJpg = useCallback(async () => {
     if (!planillaRef.current) return;
     setExportingJpg(true);
@@ -496,6 +713,21 @@ export default function IngresarHorariosPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => void handleSaveForm()}
+              disabled={savingForm}
+              className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingForm ? "Guardando..." : "Guardar"}
+            </button>
+            <button
+              type="button"
+              onClick={handleClearDraft}
+              className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700 transition-all hover:border-amber-300 hover:bg-amber-100/70"
+            >
+              Limpiar borrador
+            </button>
+            <button
+              type="button"
               onClick={handleExportPdf}
               className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100/70"
             >
@@ -508,6 +740,13 @@ export default function IngresarHorariosPage() {
               className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100/70 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {exportingJpg ? "Generando JPG..." : "Exportar JPG"}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/horarios-guardados")}
+              className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
+            >
+              Ver guardados
             </button>
             <button
               type="button"
@@ -588,6 +827,26 @@ export default function IngresarHorariosPage() {
             </select>
           </label>
         </div>
+
+        {(saveError || saveSuccess || draftMessage) && (
+          <div className="mt-4 print:hidden">
+            {saveError ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+                {saveError}
+              </div>
+            ) : null}
+            {saveSuccess ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                {saveSuccess}
+              </div>
+            ) : null}
+            {draftMessage ? (
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-700">
+                {draftMessage}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         <div className="mt-5 hidden border border-slate-900 px-3 py-2 print:block">
           <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b border-slate-900 pb-2">

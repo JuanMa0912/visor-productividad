@@ -42,6 +42,11 @@ type AlexReportResponse = {
   error?: string;
 };
 
+type AlexCompareRange = {
+  start: string;
+  end: string;
+};
+
 type AlexExportFieldKey = keyof AlexReportTotals;
 type AlexSortField = "sede" | AlexExportFieldKey;
 type AlexSortDirection = "asc" | "desc";
@@ -80,20 +85,20 @@ const OVERTIME_EXTRA_SEDES: Sede[] = [
 const ALEX_EXPORT_FIELDS: AlexExportField[] = [
   {
     key: "moreThan72With2",
-    header: "Más de 7:20h con 2 marcaciones",
-    toggleLabel: "7:20h / 2 marcas",
+    header: "+ 7:20h con 2 marcaciones",
+    toggleLabel: "+ 7:20h / 2 marcas",
     width: 32,
   },
   {
     key: "moreThan92",
-    header: "Más de 9:20h",
-    toggleLabel: "Más de 9:20h",
+    header: "+ 9:20h",
+    toggleLabel: "+ 9:20h",
     width: 18,
   },
   {
     key: "oddMarks",
-    header: "Marcaciones impares",
-    toggleLabel: "Impares",
+    header: "Marc. impares",
+    toggleLabel: "Marc. impares",
     width: 22,
   },
   {
@@ -110,6 +115,9 @@ const sanitizeExcelText = (value: string) => {
   const normalized = value.replace(/\r?\n/g, " ").trim();
   return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
 };
+
+const PERIOD_ONE_FILL = "FFF7F0C8";
+const PERIOD_TWO_FILL = "FFE5EEF9";
 
 export default function JornadaExtendidaPage() {
   const router = useRouter();
@@ -141,6 +149,16 @@ export default function JornadaExtendidaPage() {
   const [alexSortDirection, setAlexSortDirection] =
     useState<AlexSortDirection>("desc");
   const [alexExportError, setAlexExportError] = useState<string | null>(null);
+  const [exportingAlexCompareExcel, setExportingAlexCompareExcel] = useState(false);
+  const [isAlexCompareModalOpen, setIsAlexCompareModalOpen] = useState(false);
+  const [alexComparePeriodOne, setAlexComparePeriodOne] = useState<AlexCompareRange>({
+    start: "",
+    end: "",
+  });
+  const [alexComparePeriodTwo, setAlexComparePeriodTwo] = useState<AlexCompareRange>({
+    start: "",
+    end: "",
+  });
   const alexExportMenuRef = useRef<HTMLDivElement | null>(null);
   const alexTableRef = useRef<HTMLDivElement | null>(null);
 
@@ -244,6 +262,37 @@ export default function JornadaExtendidaPage() {
     return `${fmt(alexStartDate)} a ${fmt(alexEndDate)}`;
   }, [alexEndDate, alexStartDate]);
 
+  const formatRangeLabel = (start: string, end: string) => {
+    if (!start || !end) return "";
+    const fmt = (value: string) => {
+      const dt = new Date(`${value}T00:00:00`);
+      if (Number.isNaN(dt.getTime())) return value;
+      const month = new Intl.DateTimeFormat("es-CO", { month: "long" }).format(dt);
+      const day = String(dt.getDate()).padStart(2, "0");
+      const year = dt.getFullYear();
+      return `${month.charAt(0).toUpperCase()}${month.slice(1)} ${day} de ${year}`;
+    };
+    if (start === end) return fmt(start);
+    return `${fmt(start)} a ${fmt(end)}`;
+  };
+
+  const getMonthStart = (value: string) => {
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    return `${date.getFullYear()}-${month}-01`;
+  };
+
+  const shiftDateKey = (value: string, days: number) => {
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    date.setDate(date.getDate() + days);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const alexIncludedFields = useMemo(
     () =>
       ALEX_EXPORT_FIELDS.filter((field) =>
@@ -315,6 +364,398 @@ export default function JornadaExtendidaPage() {
     );
   };
 
+  const buildAlexTableSheet = (
+    workbook: ExcelJS.Workbook,
+    sheetName: string,
+    title: string,
+    subtitle: string,
+    rangeLabel: string,
+    rows: AlexReportRow[],
+    totals: AlexReportTotals,
+  ) => {
+    const sheet = workbook.addWorksheet(sheetName);
+    const exportColumns = [
+      { key: "sede" as const, header: "Sede", width: 22, align: "left" as const },
+      ...alexIncludedFields.map((field) => ({
+        key: field.key,
+        header: field.header,
+        width: field.width,
+        align: "right" as const,
+      })),
+    ];
+    const lastColumn = exportColumns.length;
+    const mergeRow = (rowNumber: number) => {
+      sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
+    };
+
+    sheet.columns = exportColumns.map((column) => ({
+      key: column.key,
+      width: column.width,
+    }));
+    sheet.properties.defaultRowHeight = 22;
+
+    const titleRow = sheet.addRow([title]);
+    mergeRow(titleRow.number);
+    titleRow.font = { bold: true, size: 16 };
+    titleRow.alignment = { vertical: "middle", horizontal: "left" };
+
+    const subtitleRow = sheet.addRow([subtitle]);
+    mergeRow(subtitleRow.number);
+    subtitleRow.font = { size: 11, color: { argb: "FF475569" } };
+    subtitleRow.alignment = {
+      vertical: "middle",
+      horizontal: "left",
+      wrapText: true,
+    };
+
+    const rangeRow = sheet.addRow([rangeLabel]);
+    mergeRow(rangeRow.number);
+    rangeRow.font = { bold: true, color: { argb: "FFB91C1C" } };
+    rangeRow.alignment = { vertical: "middle", horizontal: "left" };
+
+    sheet.addRow([]);
+
+    const headerRow = sheet.addRow(exportColumns.map((column) => column.header));
+    headerRow.eachCell((cell, colNumber) => {
+      const column = exportColumns[colNumber - 1];
+      cell.font = { bold: true, color: { argb: "FF0F172A" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFF1F5F9" },
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: column.align,
+      };
+    });
+
+    rows.forEach((row) => {
+      const dataRow = sheet.addRow([
+        sanitizeExcelText(row.sede),
+        ...alexIncludedFields.map((field) => formatAlexMetric(row[field.key])),
+      ]);
+      dataRow.eachCell((cell, colNumber) => {
+        cell.border = {
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: colNumber === 1 ? "left" : "right",
+        };
+      });
+    });
+
+    const totalRow = sheet.addRow([
+      "TOTAL",
+      ...alexIncludedFields.map((field) => totals[field.key]),
+    ]);
+    totalRow.eachCell((cell, colNumber) => {
+      cell.font = { bold: true, color: { argb: "FF0F172A" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFF8FAFC" },
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: colNumber === 1 ? "left" : "right",
+      };
+    });
+
+    sheet.views = [{ state: "frozen", ySplit: headerRow.number }];
+    sheet.autoFilter = {
+      from: { row: headerRow.number, column: 1 },
+      to: { row: headerRow.number, column: lastColumn },
+    };
+
+    return sheet;
+  };
+
+  const buildAlexComparisonSheet = (
+    workbook: ExcelJS.Workbook,
+    sheetName: string,
+    title: string,
+    subtitle: string,
+    periodOneLabel: string,
+    periodTwoLabel: string,
+    periodOneRows: AlexReportRow[],
+    periodTwoRows: AlexReportRow[],
+    periodOneTotals: AlexReportTotals,
+    periodTwoTotals: AlexReportTotals,
+  ) => {
+    const sheet = workbook.addWorksheet(sheetName);
+    const metricColumns = alexIncludedFields.map((field) => ({
+      key: field.key,
+      header: field.header,
+      width: field.width,
+      align: "right" as const,
+    }));
+    const metricCount = metricColumns.length;
+    const totalColumns = 1 + metricCount * 2;
+
+    const mergeRow = (rowNumber: number) => {
+      sheet.mergeCells(rowNumber, 1, rowNumber, totalColumns);
+    };
+
+    sheet.getColumn(1).width = 22;
+    metricColumns.forEach((column, index) => {
+      sheet.getColumn(2 + index).width = column.width;
+      sheet.getColumn(2 + metricCount + index).width = column.width;
+    });
+    sheet.properties.defaultRowHeight = 22;
+
+    const titleRow = sheet.addRow([title]);
+    mergeRow(titleRow.number);
+    titleRow.font = { bold: true, size: 16 };
+    titleRow.alignment = { vertical: "middle", horizontal: "left" };
+
+    const subtitleRow = sheet.addRow([subtitle]);
+    mergeRow(subtitleRow.number);
+    subtitleRow.font = { size: 11, color: { argb: "FF475569" } };
+    subtitleRow.alignment = {
+      vertical: "middle",
+      horizontal: "left",
+      wrapText: true,
+    };
+
+    sheet.addRow([]);
+
+    const labelRowNumber = 4;
+    const headerRowNumber = 5;
+
+    sheet.mergeCells(labelRowNumber, 2, labelRowNumber, 1 + metricCount);
+    sheet.mergeCells(
+      labelRowNumber,
+      2 + metricCount,
+      labelRowNumber,
+      1 + metricCount * 2,
+    );
+    const periodOneCell = sheet.getCell(labelRowNumber, 2);
+    periodOneCell.value = periodOneLabel;
+    periodOneCell.font = { bold: true, color: { argb: "FFB91C1C" } };
+    periodOneCell.alignment = { vertical: "middle", horizontal: "left" };
+    periodOneCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: PERIOD_ONE_FILL },
+    };
+
+    const periodTwoCell = sheet.getCell(labelRowNumber, 2 + metricCount);
+    periodTwoCell.value = periodTwoLabel;
+    periodTwoCell.font = { bold: true, color: { argb: "FFB91C1C" } };
+    periodTwoCell.alignment = { vertical: "middle", horizontal: "left" };
+    periodTwoCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: PERIOD_TWO_FILL },
+    };
+
+    const periodDividerCell = sheet.getCell(labelRowNumber, 1 + metricCount);
+    periodDividerCell.border = {
+      right: { style: "medium", color: { argb: "FFCBD5E1" } },
+    };
+
+    const sedeHeader = sheet.getCell(headerRowNumber, 1);
+    sedeHeader.value = "Sede";
+    sedeHeader.font = { bold: true, color: { argb: "FF0F172A" } };
+    sedeHeader.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFF1F5F9" },
+    };
+    sedeHeader.border = {
+      top: { style: "thin", color: { argb: "FFCBD5E1" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+    };
+    sedeHeader.alignment = { vertical: "middle", horizontal: "left" };
+
+    metricColumns.forEach((column, index) => {
+      const leftCell = sheet.getCell(headerRowNumber, 2 + index);
+      const rightCell = sheet.getCell(headerRowNumber, 2 + metricCount + index);
+      leftCell.value = column.header;
+      leftCell.font = { bold: true, color: { argb: "FF0F172A" } };
+      leftCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: PERIOD_ONE_FILL },
+      };
+      leftCell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
+      leftCell.alignment = {
+        vertical: "middle",
+        horizontal: column.align,
+      };
+
+      rightCell.value = column.header;
+      rightCell.font = { bold: true, color: { argb: "FF0F172A" } };
+      rightCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: PERIOD_TWO_FILL },
+      };
+      rightCell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
+      rightCell.alignment = {
+        vertical: "middle",
+        horizontal: column.align,
+      };
+      if (index === metricCount - 1) {
+        leftCell.border = {
+          ...leftCell.border,
+          right: { style: "medium", color: { argb: "FFCBD5E1" } },
+        };
+      }
+    });
+
+    const periodOneMap = new Map(periodOneRows.map((row) => [row.sede, row]));
+    const periodTwoMap = new Map(periodTwoRows.map((row) => [row.sede, row]));
+    const allSedes = Array.from(
+      new Set([
+        ...periodOneRows.map((row) => row.sede),
+        ...periodTwoRows.map((row) => row.sede),
+      ]),
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+
+    allSedes.forEach((sede, rowIndex) => {
+      const rowNumber = headerRowNumber + 1 + rowIndex;
+      const periodOneRow = periodOneMap.get(sede);
+      const periodTwoRow = periodTwoMap.get(sede);
+
+      const sedeCell = sheet.getCell(rowNumber, 1);
+      sedeCell.value = sanitizeExcelText(sede);
+      sedeCell.border = {
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+      sedeCell.alignment = { vertical: "middle", horizontal: "left" };
+
+      metricColumns.forEach((column, index) => {
+        const leftCell = sheet.getCell(rowNumber, 2 + index);
+        leftCell.value = formatAlexMetric(periodOneRow?.[column.key] ?? 0);
+        leftCell.border = {
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+        leftCell.alignment = { vertical: "middle", horizontal: "right" };
+        if (index === metricCount - 1) {
+          leftCell.border = {
+            ...leftCell.border,
+            right: { style: "medium", color: { argb: "FFCBD5E1" } },
+          };
+        }
+
+        const rightCell = sheet.getCell(rowNumber, 2 + metricCount + index);
+        rightCell.value = formatAlexMetric(periodTwoRow?.[column.key] ?? 0);
+        rightCell.border = {
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+        rightCell.alignment = { vertical: "middle", horizontal: "right" };
+      });
+    });
+
+    const totalRowNumber = headerRowNumber + 1 + allSedes.length;
+    const totalLabelCell = sheet.getCell(totalRowNumber, 1);
+    totalLabelCell.value = "TOTAL";
+    totalLabelCell.font = { bold: true, color: { argb: "FF0F172A" } };
+    totalLabelCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFF8FAFC" },
+    };
+    totalLabelCell.border = {
+      top: { style: "thin", color: { argb: "FFCBD5E1" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+    };
+    totalLabelCell.alignment = { vertical: "middle", horizontal: "left" };
+
+    metricColumns.forEach((column, index) => {
+      const leftCell = sheet.getCell(totalRowNumber, 2 + index);
+      leftCell.value = periodOneTotals[column.key];
+      leftCell.font = { bold: true, color: { argb: "FF0F172A" } };
+      leftCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: PERIOD_ONE_FILL },
+      };
+      leftCell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
+      leftCell.alignment = { vertical: "middle", horizontal: "right" };
+      if (index === metricCount - 1) {
+        leftCell.border = {
+          ...leftCell.border,
+          right: { style: "medium", color: { argb: "FFCBD5E1" } },
+        };
+      }
+
+      const rightCell = sheet.getCell(totalRowNumber, 2 + metricCount + index);
+      rightCell.value = periodTwoTotals[column.key];
+      rightCell.font = { bold: true, color: { argb: "FF0F172A" } };
+      rightCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: PERIOD_TWO_FILL },
+      };
+      rightCell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
+      rightCell.alignment = { vertical: "middle", horizontal: "right" };
+    });
+
+    sheet.views = [{ state: "frozen", ySplit: headerRowNumber }];
+    return sheet;
+  };
+
+  const openAlexCompareModal = () => {
+    if (!alexEndDate) return;
+    const previousDay = shiftDateKey(alexEndDate, -1);
+    const monthStart = getMonthStart(alexEndDate);
+    setAlexComparePeriodOne({ start: previousDay, end: previousDay });
+    setAlexComparePeriodTwo({ start: monthStart, end: alexEndDate });
+    setAlexExportError(null);
+    setIsAlexCompareModalOpen(true);
+  };
+
+  const hasInvalidRange = (range: AlexCompareRange) =>
+    !range.start || !range.end || range.start > range.end;
+
   useEffect(() => {
     if (!isAlexExportMenuOpen) return;
 
@@ -347,119 +788,15 @@ export default function JornadaExtendidaPage() {
     setAlexExportError(null);
     try {
       const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Tablero Informe de Tiempos");
-      const title = "Tablero Informe de Tiempos";
-      const subtitle =
-        "Tabla exportable con el mismo desglose visible por sede";
-      const range = alexRangeLabel || `${alexStartDate} a ${alexEndDate}`;
-      const exportColumns = [
-        { key: "sede" as const, header: "Sede", width: 22, align: "left" as const },
-        ...alexIncludedFields.map((field) => ({
-          key: field.key,
-          header: field.header,
-          width: field.width,
-          align: "right" as const,
-        })),
-      ];
-      const lastColumn = exportColumns.length;
-      const mergeRow = (rowNumber: number) => {
-        sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
-      };
-
-      sheet.columns = exportColumns.map((column) => ({
-        key: column.key,
-        width: column.width,
-      }));
-      sheet.properties.defaultRowHeight = 22;
-
-      const titleRow = sheet.addRow([title]);
-      mergeRow(titleRow.number);
-      titleRow.font = { bold: true, size: 16 };
-      titleRow.alignment = { vertical: "middle", horizontal: "left" };
-
-      const subtitleRow = sheet.addRow([subtitle]);
-      mergeRow(subtitleRow.number);
-      subtitleRow.font = { size: 11, color: { argb: "FF475569" } };
-      subtitleRow.alignment = {
-        vertical: "middle",
-        horizontal: "left",
-        wrapText: true,
-      };
-
-      const rangeRow = sheet.addRow([range]);
-      mergeRow(rangeRow.number);
-      rangeRow.font = { bold: true, color: { argb: "FFB91C1C" } };
-      rangeRow.alignment = { vertical: "middle", horizontal: "left" };
-
-      sheet.addRow([]);
-
-      const headerRow = sheet.addRow(exportColumns.map((column) => column.header));
-      headerRow.eachCell((cell, colNumber) => {
-        const column = exportColumns[colNumber - 1];
-        cell.font = { bold: true, color: { argb: "FF0F172A" } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFF1F5F9" },
-        };
-        cell.border = {
-          top: { style: "thin", color: { argb: "FFCBD5E1" } },
-          left: { style: "thin", color: { argb: "FFCBD5E1" } },
-          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
-          right: { style: "thin", color: { argb: "FFCBD5E1" } },
-        };
-        cell.alignment = {
-          vertical: "middle",
-          horizontal: column.align,
-        };
-      });
-
-      sortedAlexRows.forEach((row) => {
-        const dataRow = sheet.addRow([
-          sanitizeExcelText(row.sede),
-          ...alexIncludedFields.map((field) => formatAlexMetric(row[field.key])),
-        ]);
-        dataRow.eachCell((cell, colNumber) => {
-          cell.border = {
-            left: { style: "thin", color: { argb: "FFE2E8F0" } },
-            bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
-            right: { style: "thin", color: { argb: "FFE2E8F0" } },
-          };
-          cell.alignment = {
-            vertical: "middle",
-            horizontal: colNumber === 1 ? "left" : "right",
-          };
-        });
-      });
-
-      const totalRow = sheet.addRow([
-        "TOTAL",
-        ...alexIncludedFields.map((field) => alexTotals[field.key]),
-      ]);
-      totalRow.eachCell((cell, colNumber) => {
-        cell.font = { bold: true, color: { argb: "FF0F172A" } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFF8FAFC" },
-        };
-        cell.border = {
-          top: { style: "thin", color: { argb: "FFCBD5E1" } },
-          left: { style: "thin", color: { argb: "FFCBD5E1" } },
-          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
-          right: { style: "thin", color: { argb: "FFCBD5E1" } },
-        };
-        cell.alignment = {
-          vertical: "middle",
-          horizontal: colNumber === 1 ? "left" : "right",
-        };
-      });
-
-      sheet.views = [{ state: "frozen", ySplit: headerRow.number }];
-      sheet.autoFilter = {
-        from: { row: headerRow.number, column: 1 },
-        to: { row: headerRow.number, column: lastColumn },
-      };
+      buildAlexTableSheet(
+        workbook,
+        "Tablero Informe de Tiempos",
+        "Tablero Informe de Tiempos",
+        "Tabla exportable con el mismo desglose visible por sede",
+        alexRangeLabel || `${alexStartDate} a ${alexEndDate}`,
+        sortedAlexRows,
+        alexTotals,
+      );
 
       const buffer = await workbook.xlsx.writeBuffer();
       const url = URL.createObjectURL(
@@ -518,6 +855,82 @@ export default function JornadaExtendidaPage() {
       setAlexExportError("No se pudo exportar el JPG.");
     } finally {
       setExportingAlexJpg(false);
+    }
+  };
+
+  const fetchAlexReportRange = async (start: string, end: string) => {
+    const response = await fetch(
+      `/api/jornada-extendida/alex-report?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      { cache: "no-store" },
+    );
+    const payload = (await response.json()) as AlexReportResponse;
+    if (!response.ok) {
+      throw new Error(payload.error ?? "No se pudo cargar el reporte Alex.");
+    }
+    return {
+      rows: payload.rows ?? [],
+      totals:
+        payload.totals ?? {
+          moreThan72With2: 0,
+          moreThan92: 0,
+          oddMarks: 0,
+          absences: 0,
+        },
+    };
+  };
+
+  const handleExportAlexCompareExcel = async (
+    periodOne: AlexCompareRange,
+    periodTwo: AlexCompareRange,
+  ) => {
+    if (hasInvalidRange(periodOne) || hasInvalidRange(periodTwo)) {
+      setAlexExportError("Define dos periodos validos para comparar.");
+      return;
+    }
+
+    setExportingAlexCompareExcel(true);
+    setAlexExportError(null);
+    try {
+      const [periodOneData, periodTwoData] = await Promise.all([
+        fetchAlexReportRange(periodOne.start, periodOne.end),
+        fetchAlexReportRange(periodTwo.start, periodTwo.end),
+      ]);
+
+      const workbook = new ExcelJS.Workbook();
+      buildAlexComparisonSheet(
+        workbook,
+        "Comparacion periodos",
+        "Comparacion de periodos",
+        "Comparativo exportable por sede",
+        formatRangeLabel(periodOne.start, periodOne.end),
+        formatRangeLabel(periodTwo.start, periodTwo.end),
+        periodOneData.rows,
+        periodTwoData.rows,
+        periodOneData.totals,
+        periodTwoData.totals,
+      );
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const url = URL.createObjectURL(
+        new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download =
+        `comparacion-periodos-${periodOne.start}-${periodOne.end}-${periodTwo.start}-${periodTwo.end}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setIsAlexExportMenuOpen(false);
+      setIsAlexCompareModalOpen(false);
+    } catch (error) {
+      console.error("[jornada-extendida] Error exportando comparacion de periodos:", error);
+      setAlexExportError("No se pudo exportar la comparacion de periodos.");
+    } finally {
+      setExportingAlexCompareExcel(false);
     }
   };
 
@@ -597,7 +1010,7 @@ export default function JornadaExtendidaPage() {
           </div>
           <div className="flex flex-col gap-3 md:items-end">
             <Link
-              href="/secciones"
+              href="/horario"
               className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
             >
               Cambiar seccion
@@ -637,7 +1050,7 @@ export default function JornadaExtendidaPage() {
                       Tablero de tiempos
                     </p>
                     <h2 className="mt-1 text-lg font-bold leading-tight text-slate-900 sm:text-[1.6rem]">
-                      Laboraron mas de 7:20h con 2 marcaciones, mas de 9:20h, marcaciones impares e inasistencias
+                      + 7:20h con 2 marcaciones, + 9:20h, marc. impares e inasistencias
                     </h2>
                     {alexRangeLabel && (
                       <p className="mt-1 text-base font-bold text-red-700">{alexRangeLabel}</p>
@@ -678,14 +1091,22 @@ export default function JornadaExtendidaPage() {
                           onClick={() =>
                             setIsAlexExportMenuOpen((prev) => !prev)
                           }
-                          disabled={alexLoading || alexRows.length === 0 || exportingAlexExcel}
+                          disabled={alexLoading || alexRows.length === 0 || exportingAlexExcel || exportingAlexCompareExcel}
                           className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                         >
-                          {exportingAlexExcel
+                          {exportingAlexExcel || exportingAlexCompareExcel
                             ? "Generando Excel..."
                             : isAlexExportMenuOpen
                               ? "Cerrar Excel"
                               : "Excel tabla"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openAlexCompareModal}
+                          disabled={alexLoading || alexRows.length === 0 || exportingAlexCompareExcel}
+                          className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0 sm:ml-2 sm:w-auto"
+                        >
+                          {exportingAlexCompareExcel ? "Generando Excel..." : "Comparar periodos"}
                         </button>
                         <button
                           type="button"
@@ -755,6 +1176,132 @@ export default function JornadaExtendidaPage() {
                     La fecha inicio no puede ser mayor que la fecha fin.
                   </div>
                 )}
+                {isAlexCompareModalOpen && (
+                  <div className="mt-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                          Comparar periodos
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Define dos periodos para exportarlos en hojas separadas.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsAlexCompareModalOpen(false)}
+                        className="inline-flex min-h-10 items-center justify-center rounded-full border border-slate-200/70 bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                          Periodo 1
+                        </p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                            Desde
+                            <input
+                              type="date"
+                              value={alexComparePeriodOne.start}
+                              onChange={(e) =>
+                                setAlexComparePeriodOne((prev) => ({
+                                  ...prev,
+                                  start: e.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
+                              min={availableDates[0]}
+                              max={availableDates[availableDates.length - 1]}
+                            />
+                          </label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                            Hasta
+                            <input
+                              type="date"
+                              value={alexComparePeriodOne.end}
+                              onChange={(e) =>
+                                setAlexComparePeriodOne((prev) => ({
+                                  ...prev,
+                                  end: e.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
+                              min={availableDates[0]}
+                              max={availableDates[availableDates.length - 1]}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                          Periodo 2
+                        </p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                            Desde
+                            <input
+                              type="date"
+                              value={alexComparePeriodTwo.start}
+                              onChange={(e) =>
+                                setAlexComparePeriodTwo((prev) => ({
+                                  ...prev,
+                                  start: e.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
+                              min={availableDates[0]}
+                              max={availableDates[availableDates.length - 1]}
+                            />
+                          </label>
+                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                            Hasta
+                            <input
+                              type="date"
+                              value={alexComparePeriodTwo.end}
+                              onChange={(e) =>
+                                setAlexComparePeriodTwo((prev) => ({
+                                  ...prev,
+                                  end: e.target.value,
+                                }))
+                              }
+                              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
+                              min={availableDates[0]}
+                              max={availableDates[availableDates.length - 1]}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    {(hasInvalidRange(alexComparePeriodOne) ||
+                      hasInvalidRange(alexComparePeriodTwo)) && (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                        Cada periodo debe tener fechas validas y una fecha inicial menor o igual a la final.
+                      </div>
+                    )}
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleExportAlexCompareExcel(
+                            alexComparePeriodOne,
+                            alexComparePeriodTwo,
+                          )
+                        }
+                        disabled={
+                          exportingAlexCompareExcel ||
+                          hasInvalidRange(alexComparePeriodOne) ||
+                          hasInvalidRange(alexComparePeriodTwo)
+                        }
+                        className="inline-flex min-h-10 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {exportingAlexCompareExcel ? "Generando Excel..." : "Exportar comparacion"}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {alexError ? (
                   <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -795,7 +1342,7 @@ export default function JornadaExtendidaPage() {
                           >
                             {renderAlexSortHeader(
                               "moreThan72With2",
-                              "Más de 7:20h con 2 marcaciones",
+                              "+ 7:20h con 2 marcaciones",
                               "right",
                             )}
                           </th>
@@ -811,7 +1358,7 @@ export default function JornadaExtendidaPage() {
                           >
                             {renderAlexSortHeader(
                               "moreThan92",
-                              "Más de 9:20h",
+                              "+ 9:20h",
                               "right",
                             )}
                           </th>
@@ -827,7 +1374,7 @@ export default function JornadaExtendidaPage() {
                           >
                             {renderAlexSortHeader(
                               "oddMarks",
-                              "Marcaciones impares",
+                              "Marc. impares",
                               "right",
                             )}
                           </th>

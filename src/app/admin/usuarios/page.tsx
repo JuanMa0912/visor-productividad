@@ -119,7 +119,10 @@ const SECTION_OPTIONS = PORTAL_SECTIONS.map((section) => ({
   id: section.id,
   label: section.label,
 }));
-const SPECIAL_ROLE_OPTIONS = [{ id: "alex", label: "Alex" }];
+const SPECIAL_ROLE_OPTIONS = [
+  { id: "alex", label: "Alex" },
+  { id: "cronograma", label: "Cronograma" },
+];
 
 const formatAllowedLines = (allowedLines: string[] | null) => {
   if (!allowedLines || allowedLines.length === 0) return "Todas";
@@ -243,6 +246,19 @@ export default function AdminUsuariosPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!formOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeForm();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [formOpen]);
 
   const openCreate = () => {
     setFormState(emptyForm);
@@ -685,231 +701,241 @@ export default function AdminUsuariosPage() {
       </div>
 
       {formOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_35px_90px_-45px_rgba(15,23,42,0.6)]">
-            <div className="border-b border-slate-200/70 bg-linear-to-r from-slate-50 to-blue-50/45 px-6 py-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/45 p-2 backdrop-blur-[2px] sm:p-4"
+          onClick={closeForm}
+        >
+          <div className="flex min-h-full items-start justify-center py-2 sm:items-center sm:py-4">
+            <div
+              className="flex w-full max-w-xl max-h-[calc(100vh-1rem)] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_35px_90px_-45px_rgba(15,23,42,0.6)] sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="shrink-0 border-b border-slate-200/70 bg-linear-to-r from-slate-50 to-blue-50/45 px-4 py-4 sm:px-6 sm:py-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
                 Administración
-              </p>
-              <h2 className="mt-1 text-xl font-semibold text-slate-900">
-                {formState.id ? "Editar usuario" : "Nuevo usuario"}
-              </h2>
-            </div>
-
-            <div className="space-y-4 p-6">
-              <label className="block text-sm font-medium text-slate-700">
-                Usuario
-                <input
-                  value={formState.username}
-                  onChange={(e) =>
-                    setFormState((prev) => ({
-                      ...prev,
-                      username: e.target.value,
-                    }))
-                  }
-                  className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-slate-700">
-                  Rol
-                  <select
-                    value={formState.role}
-                    onChange={(e) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        role: e.target.value as "admin" | "user",
-                        sede: e.target.value === "admin" ? "" : prev.sede,
-                        allowedSedes: e.target.value === "admin" ? [] : prev.allowedSedes,
-                        specialRoles: e.target.value === "admin" ? [] : prev.specialRoles,
-                      }))
-                    }
-                    className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="user">Usuario</option>
-                    <option value="admin">Administrador</option>
-                  </select>
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                  Sedes permitidas {formState.role === "user" ? "(obligatoria: 1 o más)" : "(solo user)"}
-                  <div className="mt-1.5 grid max-h-28 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm sm:grid-cols-3">
-                    {[ALL_SEDES_VALUE, ...USER_SEDE_OPTIONS].map((sede) => {
-                      const checked = formState.allowedSedes.includes(sede);
-                      return (
-                        <label
-                          key={sede}
-                          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={formState.role !== "user"}
-                            onChange={() =>
-                              setFormState((prev) => {
-                                if (checked) {
-                                  return {
-                                    ...prev,
-                                    allowedSedes: prev.allowedSedes.filter((id) => id !== sede),
-                                  };
-                                }
-                                return {
-                                  ...prev,
-                                  allowedSedes: [...prev.allowedSedes, sede],
-                                };
-                              })
-                            }
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                          />
-                          <span>{sede}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700">
-                  Contraseña {formState.id ? "(opcional)" : "(mín 8)"}
-                  <input
-                    type="password"
-                    value={formState.password}
-                    onChange={(e) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        password: e.target.value,
-                      }))
-                    }
-                    className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                  Secciones permitidas (vacio = todas)
-                  <div className="mt-1.5 grid max-h-28 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm sm:grid-cols-3">
-                    {SECTION_OPTIONS.map((section) => {
-                      const checked = formState.allowedDashboards.includes(section.id);
-                      return (
-                        <label
-                          key={section.id}
-                          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={formState.role !== "user"}
-                            onChange={() =>
-                              setFormState((prev) => ({
-                                ...prev,
-                                allowedDashboards: checked
-                                  ? prev.allowedDashboards.filter((id) => id !== section.id)
-                                  : [...prev.allowedDashboards, section.id],
-                              }))
-                            }
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                          />
-                          <span>{section.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                  Roles especiales
-                  <div className="mt-1.5 grid max-h-20 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm sm:grid-cols-3">
-                    {SPECIAL_ROLE_OPTIONS.map((role) => {
-                      const checked = formState.specialRoles.includes(role.id);
-                      return (
-                        <label
-                          key={role.id}
-                          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={formState.role !== "user"}
-                            onChange={() =>
-                              setFormState((prev) => ({
-                                ...prev,
-                                specialRoles: checked
-                                  ? prev.specialRoles.filter((id) => id !== role.id)
-                                  : [...prev.specialRoles, role.id],
-                              }))
-                            }
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                          />
-                          <span>{role.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                  Lineas permitidas (vacío = todas)
-                  <div className="mt-1.5 grid max-h-32 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm sm:grid-cols-3">
-                    {DEFAULT_LINES.map((line) => {
-                      const checked = formState.allowedLines.includes(line.id);
-                      return (
-                        <label
-                          key={line.id}
-                          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={formState.role !== "user"}
-                            onChange={() =>
-                              setFormState((prev) => ({
-                                ...prev,
-                                allowedLines: checked
-                                  ? prev.allowedLines.filter((id) => id !== line.id)
-                                  : [...prev.allowedLines, line.id],
-                              }))
-                            }
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                          />
-                          <span>{line.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </label>
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-900 sm:text-xl">
+                  {formState.id ? "Editar usuario" : "Nuevo usuario"}
+                </h2>
               </div>
 
-              <label className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
-                <input
-                  type="checkbox"
-                  checked={formState.is_active}
-                  onChange={(e) =>
-                    setFormState((prev) => ({
-                      ...prev,
-                      is_active: e.target.checked,
-                    }))
-                  }
-                  className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-200"
-                />
-                Cuenta activa
-              </label>
-            </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
+                <div className="space-y-4">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Usuario
+                    <input
+                      value={formState.username}
+                      onChange={(e) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          username: e.target.value,
+                        }))
+                      }
+                      className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200/70 bg-slate-50/60 px-6 py-4">
-              <button
-                type="button"
-                onClick={closeForm}
-                className="rounded-full border border-slate-300/80 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 transition-colors hover:bg-slate-100"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-full border border-blue-300/80 bg-blue-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-[0_10px_24px_-14px_rgba(37,99,235,0.65)] transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {saving ? "Guardando..." : "Guardar"}
-              </button>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block text-sm font-medium text-slate-700">
+                      Rol
+                      <select
+                        value={formState.role}
+                        onChange={(e) =>
+                          setFormState((prev) => ({
+                            ...prev,
+                            role: e.target.value as "admin" | "user",
+                            sede: e.target.value === "admin" ? "" : prev.sede,
+                            allowedSedes: e.target.value === "admin" ? [] : prev.allowedSedes,
+                            specialRoles: e.target.value === "admin" ? [] : prev.specialRoles,
+                          }))
+                        }
+                        className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      >
+                        <option value="user">Usuario</option>
+                        <option value="admin">Administrador</option>
+                      </select>
+                    </label>
+
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Sedes permitidas {formState.role === "user" ? "(obligatoria: 1 o más)" : "(solo user)"}
+                      <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
+                        {[ALL_SEDES_VALUE, ...USER_SEDE_OPTIONS].map((sede) => {
+                          const checked = formState.allowedSedes.includes(sede);
+                          return (
+                            <label
+                              key={sede}
+                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={formState.role !== "user"}
+                                onChange={() =>
+                                  setFormState((prev) => {
+                                    if (checked) {
+                                      return {
+                                        ...prev,
+                                        allowedSedes: prev.allowedSedes.filter((id) => id !== sede),
+                                      };
+                                    }
+                                    return {
+                                      ...prev,
+                                      allowedSedes: [...prev.allowedSedes, sede],
+                                    };
+                                  })
+                                }
+                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
+                              />
+                              <span className="break-words">{sede}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </label>
+
+                    <label className="block text-sm font-medium text-slate-700">
+                      Contraseña {formState.id ? "(opcional)" : "(mín 8)"}
+                      <input
+                        type="password"
+                        value={formState.password}
+                        onChange={(e) =>
+                          setFormState((prev) => ({
+                            ...prev,
+                            password: e.target.value,
+                          }))
+                        }
+                        className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </label>
+
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Secciones permitidas (vacio = todas)
+                      <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
+                        {SECTION_OPTIONS.map((section) => {
+                          const checked = formState.allowedDashboards.includes(section.id);
+                          return (
+                            <label
+                              key={section.id}
+                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={formState.role !== "user"}
+                                onChange={() =>
+                                  setFormState((prev) => ({
+                                    ...prev,
+                                    allowedDashboards: checked
+                                      ? prev.allowedDashboards.filter((id) => id !== section.id)
+                                      : [...prev.allowedDashboards, section.id],
+                                  }))
+                                }
+                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
+                              />
+                              <span className="break-words">{section.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </label>
+
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Roles especiales
+                      <div className="mt-1.5 grid max-h-20 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
+                        {SPECIAL_ROLE_OPTIONS.map((role) => {
+                          const checked = formState.specialRoles.includes(role.id);
+                          return (
+                            <label
+                              key={role.id}
+                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={formState.role !== "user"}
+                                onChange={() =>
+                                  setFormState((prev) => ({
+                                    ...prev,
+                                    specialRoles: checked
+                                      ? prev.specialRoles.filter((id) => id !== role.id)
+                                      : [...prev.specialRoles, role.id],
+                                  }))
+                                }
+                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
+                              />
+                              <span className="break-words">{role.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </label>
+
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Lineas permitidas (vacío = todas)
+                      <div className="mt-1.5 grid max-h-32 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
+                        {DEFAULT_LINES.map((line) => {
+                          const checked = formState.allowedLines.includes(line.id);
+                          return (
+                            <label
+                              key={line.id}
+                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={formState.role !== "user"}
+                                onChange={() =>
+                                  setFormState((prev) => ({
+                                    ...prev,
+                                    allowedLines: checked
+                                      ? prev.allowedLines.filter((id) => id !== line.id)
+                                      : [...prev.allowedLines, line.id],
+                                  }))
+                                }
+                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
+                              />
+                              <span className="break-words">{line.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </label>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+                    <input
+                      type="checkbox"
+                      checked={formState.is_active}
+                      onChange={(e) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          is_active: e.target.checked,
+                        }))
+                      }
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-200"
+                    />
+                    Cuenta activa
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200/70 bg-slate-50/60 px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="rounded-full border border-slate-300/80 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 transition-colors hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-full border border-blue-300/80 bg-blue-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-[0_10px_24px_-14px_rgba(37,99,235,0.65)] transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {saving ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

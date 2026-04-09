@@ -27,7 +27,7 @@ const ALLOWED_SEDE_SET = new Set([
   ALL_SEDES_VALUE,
 ]);
 const ALLOWED_LINE_SET = new Set(ALLOWED_LINE_IDS);
-const ALLOWED_SPECIAL_ROLE_SET = new Set(["alex"]);
+const ALLOWED_SPECIAL_ROLE_SET = new Set(["alex", "cronograma"]);
 
 const resolveValidSede = (value?: string | null) => {
   const trimmed = value?.trim();

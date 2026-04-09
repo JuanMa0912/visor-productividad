@@ -4082,10 +4082,6 @@ export default function Home() {
       { key: "ventasAnterior", width: 18 },
       { key: "horasAnterior", width: 16 },
       { key: "vtaHrAnterior", width: 16 },
-      { key: "delta", width: 16 },
-      { key: "deltaHoras", width: 16 },
-      { key: "deltaVtaHr", width: 16 },
-      { key: "deltaPct", width: 14 },
     ];
     const comparisonHeader = comparisonSheet.addRow([
       "Rank",
@@ -4097,10 +4093,6 @@ export default function Home() {
       "Ventas mes anterior",
       "Horas mes anterior",
       "Vta/Hr mes anterior",
-      "Variación ventas",
-      "Variación horas",
-      "Variación Vta/Hr",
-      "Variación %",
     ]);
     applyHeaderStyle(comparisonHeader);
     sortedByCurrentSales.forEach((line, index) => {
@@ -4114,12 +4106,7 @@ export default function Home() {
         line.previousSales,
         line.previousHours,
         line.previousSalesPerHour,
-        line.salesDelta,
-        line.currentHours - line.previousHours,
-        line.currentSalesPerHour - line.previousSalesPerHour,
-        line.salesDeltaPct !== null ? line.salesDeltaPct / 100 : null,
       ]);
-      row.getCell(12).numFmt = "0.00%";
     });
 
     detailSheet.columns = [
@@ -4135,10 +4122,6 @@ export default function Home() {
       { key: "ventasAnterior", width: 18 },
       { key: "horasAnterior", width: 16 },
       { key: "vtaHrAnterior", width: 16 },
-      { key: "delta", width: 16 },
-      { key: "deltaHoras", width: 16 },
-      { key: "deltaVtaHr", width: 16 },
-      { key: "deltaPct", width: 14 },
     ];
     const detailHeader = detailSheet.addRow([
       "Rank línea",
@@ -4153,10 +4136,6 @@ export default function Home() {
       "Ventas mes anterior",
       "Horas mes anterior",
       "Vta/Hr mes anterior",
-      "Variación ventas",
-      "Variación horas",
-      "Variación Vta/Hr",
-      "Variación %",
     ]);
     applyHeaderStyle(detailHeader);
 
@@ -4200,13 +4179,8 @@ export default function Home() {
         detail.previousSales,
         detail.previousHours,
         detail.previousSalesPerHour,
-        detail.salesDelta,
-        detail.currentHours - detail.previousHours,
-        detail.currentSalesPerHour - detail.previousSalesPerHour,
-        detail.salesDeltaPct !== null ? detail.salesDeltaPct / 100 : null,
       ]);
       row.getCell(7).numFmt = "0.00%";
-      row.getCell(15).numFmt = "0.00%";
     });
 
     dailyLineSheet.columns = [
@@ -4310,9 +4284,6 @@ export default function Home() {
     comparisonSheet.getColumn(7).numFmt = '"$"#,##0';
     comparisonSheet.getColumn(8).numFmt = '#,##0.00';
     comparisonSheet.getColumn(9).numFmt = '#,##0.000';
-    comparisonSheet.getColumn(10).numFmt = '"$"#,##0';
-    comparisonSheet.getColumn(11).numFmt = '#,##0.00';
-    comparisonSheet.getColumn(12).numFmt = '#,##0.000';
     rankingSheet.getColumn(4).numFmt = '"$"#,##0';
     rankingSheet.getColumn(5).numFmt = "0.00%";
     rankingSheet.getColumn(6).numFmt = '#,##0.00';
@@ -4328,10 +4299,6 @@ export default function Home() {
     detailSheet.getColumn(10).numFmt = '"$"#,##0';
     detailSheet.getColumn(11).numFmt = '#,##0.00';
     detailSheet.getColumn(12).numFmt = '#,##0.000';
-    detailSheet.getColumn(13).numFmt = '"$"#,##0';
-    detailSheet.getColumn(14).numFmt = '#,##0.00';
-    detailSheet.getColumn(15).numFmt = '#,##0.000';
-    detailSheet.getColumn(16).numFmt = "0.00%";
     dailyLineSheet.getColumn(5).numFmt = '"$"#,##0';
     dailyLineSheet.getColumn(6).numFmt = '#,##0.00';
     dailyLineSheet.getColumn(7).numFmt = '#,##0.000';
@@ -4347,8 +4314,8 @@ export default function Home() {
     dailySedeLineSheet.views = [{ state: "frozen", ySplit: 1 }];
     allLinesSheet.autoFilter = "A1:H1";
     rankingSheet.autoFilter = "A1:K1";
-    comparisonSheet.autoFilter = "A1:M1";
-    detailSheet.autoFilter = "A1:P1";
+    comparisonSheet.autoFilter = "A1:I1";
+    detailSheet.autoFilter = "A1:L1";
     dailyLineSheet.autoFilter = "A1:G1";
     dailySedeLineSheet.autoFilter = "A1:I1";
 
