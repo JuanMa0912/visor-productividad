@@ -367,6 +367,7 @@ export default function IngresarHorariosPage() {
     Array.from({ length: 16 }, () => createEmptyRow()),
   );
   const planillaRef = useRef<HTMLDivElement | null>(null);
+  const jpgExportRef = useRef<HTMLDivElement | null>(null);
   const draftSaveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -642,14 +643,17 @@ export default function IngresarHorariosPage() {
   }, [currentUsername]);
 
   const handleExportJpg = useCallback(async () => {
-    if (!planillaRef.current) return;
+    if (!jpgExportRef.current) return;
     setExportingJpg(true);
     try {
-      const dataUrl = await toJpeg(planillaRef.current, {
+      const exportNode = jpgExportRef.current;
+      const dataUrl = await toJpeg(exportNode, {
         quality: 0.95,
         pixelRatio: 2,
         backgroundColor: "#ffffff",
         cacheBust: true,
+        width: exportNode.scrollWidth,
+        height: exportNode.scrollHeight,
       });
       const link = document.createElement("a");
       link.href = dataUrl;
@@ -698,6 +702,134 @@ export default function IngresarHorariosPage() {
         ref={planillaRef}
         className="mx-auto w-full max-w-384 rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)] print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none"
       >
+        <div className="pointer-events-none fixed -left-[100000px] top-0 opacity-0">
+          <div
+            ref={jpgExportRef}
+            className="inline-block bg-white p-1 text-slate-900"
+          >
+            <div className="border border-slate-900 px-2 py-1">
+              <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b border-slate-900 pb-1">
+                <div className="text-left text-xs font-bold tracking-wide text-slate-900">
+                  MercaTodo
+                </div>
+                <div className="text-center text-xs font-bold tracking-wide text-slate-900">
+                  MERCAMIO S.A.
+                </div>
+                <div className="text-right text-xs font-bold uppercase tracking-wide text-slate-900">
+                  Planilla De Programacion Semanal De Horarios
+                </div>
+              </div>
+              <div className="mt-1 grid grid-cols-5 gap-2 text-[10px] leading-tight">
+                <div>
+                  <span className="font-semibold">SEDE:</span> {sede || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">SECCION:</span> {seccion || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">FECHA INICIAL:</span>{" "}
+                  {fechaInicial || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">FECHA FINAL:</span>{" "}
+                  {fechaFinal || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">MES:</span> {mes || "-"}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-1 rounded-none border border-slate-900">
+              <table className="w-[88rem] table-fixed border-collapse text-[9px] leading-tight">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700">
+                    <th className="w-8 border border-slate-300 px-1 py-1.5 text-center">
+                      #
+                    </th>
+                    <th className="w-44 border border-slate-300 px-1 py-1.5 text-left">
+                      Nombre
+                    </th>
+                    {DAY_ORDER.map((day) => (
+                      <th
+                        key={`jpg-${day}`}
+                        colSpan={4}
+                        className="border border-slate-300 px-1 py-1.5 text-center uppercase"
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>{day}</span>
+                          <span className="rounded-md bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-600">
+                            {dayNumbersByKey[day] ?? "--"}
+                          </span>
+                        </div>
+                      </th>
+                    ))}
+                    <th className="w-40 border border-slate-300 px-1 py-1.5 text-left">
+                      Firma empleado
+                    </th>
+                  </tr>
+                  <tr className="bg-white text-[9px] font-semibold text-slate-500">
+                    <th className="border border-slate-300 px-1 py-1" />
+                    <th className="border border-slate-300 px-1 py-1" />
+                    {DAY_ORDER.flatMap((day) =>
+                      (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
+                        <th
+                          key={`jpg-${day}-${field}`}
+                          className="w-10 border border-slate-300 px-0.5 py-1 text-center uppercase"
+                        >
+                          {field === "he1" || field === "he2" ? "HE" : "HS"}
+                        </th>
+                      )),
+                    )}
+                    <th className="border border-slate-300 px-1 py-1" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, rowIndex) => (
+                    <tr
+                      key={`jpg-row-${rowIndex}`}
+                      className="odd:bg-white even:bg-slate-50/40"
+                    >
+                      <td className="border border-slate-300 px-1 py-1 text-center align-top text-slate-600">
+                        {rowIndex + 1}
+                      </td>
+                      <td className="border border-slate-300 px-1 py-1 align-top text-slate-900 break-words">
+                        {row.nombre || "--"}
+                      </td>
+                      {DAY_ORDER.flatMap((day) => {
+                        const dayData = row.days[day];
+                        if (dayData.conDescanso) {
+                          return [
+                            <td
+                              key={`jpg-${rowIndex}-${day}-descanso`}
+                              colSpan={4}
+                              className="border border-slate-300 bg-amber-50/60 px-1 py-1 text-center text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-700"
+                            >
+                              Descanso
+                            </td>,
+                          ];
+                        }
+
+                        return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
+                          <td
+                            key={`jpg-${rowIndex}-${day}-${field}`}
+                            className="border border-slate-300 px-0.5 py-1 text-center text-slate-700"
+                          >
+                            {formatTimeForPrint(dayData[field]) || "--"}
+                          </td>
+                        ));
+                      })}
+                      <td className="border border-slate-300 px-1 py-1 align-top text-slate-700 break-words">
+                        {row.firma || "--"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
