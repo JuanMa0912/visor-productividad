@@ -634,7 +634,7 @@ export default function JornadaExtendidaPage() {
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                   <div className="max-w-3xl">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-500">
-                      Reporte Alex
+                      Tablero de tiempos
                     </p>
                     <h2 className="mt-1 text-lg font-bold leading-tight text-slate-900 sm:text-[1.6rem]">
                       Laboraron mas de 7:20h con 2 marcaciones, mas de 9:20h, marcaciones impares e inasistencias
