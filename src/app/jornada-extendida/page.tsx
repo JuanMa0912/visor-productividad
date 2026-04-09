@@ -74,7 +74,7 @@ const canonicalizeSedeKey = (value: string) => {
 const OVERTIME_EXTRA_SEDES: Sede[] = [
   { id: "Panificadora", name: "Panificadora" },
   { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
-  { id: "Planta Desposte Pollo", name: "Planta Desposte Pollo" },
+  { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
 ];
 
 const ALEX_EXPORT_FIELDS: AlexExportField[] = [
@@ -347,8 +347,8 @@ export default function JornadaExtendidaPage() {
     setAlexExportError(null);
     try {
       const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Reporte Alex");
-      const title = "Reporte Alex";
+      const sheet = workbook.addWorksheet("Tablero Informe de Tiempos");
+      const title = "Tablero Informe de Tiempos";
       const subtitle =
         "Tabla exportable con el mismo desglose visible por sede";
       const range = alexRangeLabel || `${alexStartDate} a ${alexEndDate}`;

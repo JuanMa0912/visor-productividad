@@ -44,7 +44,7 @@ const BASE_SEDES: Sede[] = [
   { id: "CEDI-CAVASA", name: "CEDI-CAVASA" },
   { id: "Panificadora", name: "Panificadora" },
   { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
-  { id: "Planta Desposte Pollo", name: "Planta Desposte Pollo" },
+  { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
 ];
 
 const resolveVisibleSedes = (sessionUser: {

@@ -28,7 +28,7 @@ const EXTRA_SEDES = [
   "CEDI-CAVASA",
   "Panificadora",
   "Planta Desposte Mixto",
-  "Planta Desposte Pollo",
+  "Planta Desprese Pollo",
 ];
 const USER_SEDE_OPTIONS = [...BRANCH_LOCATIONS, ...EXTRA_SEDES];
 

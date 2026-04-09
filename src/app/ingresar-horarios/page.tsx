@@ -83,10 +83,13 @@ const normalizeText = (value?: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+const normalizeSedeText = (value?: string) =>
+  normalizeText(value).replace(/\bdesprese\b/g, "desposte");
+
 const matchesSede = (employeeSede: string | undefined, selectedSede: string) => {
   if (!selectedSede) return true;
-  const employeeKey = normalizeText(employeeSede ?? "");
-  const selectedKey = normalizeText(selectedSede);
+  const employeeKey = normalizeSedeText(employeeSede ?? "");
+  const selectedKey = normalizeSedeText(selectedSede);
   if (!employeeKey || !selectedKey) return false;
   return (
     employeeKey === selectedKey ||

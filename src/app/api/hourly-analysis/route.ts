@@ -82,7 +82,7 @@ const SEDE_CONFIGS = [
     aliases: ["panificadora"],
   },
   {
-    name: "Planta Desposte Pollo",
+    name: "Planta Desprese Pollo",
     centro: "997",
     empresa: "mercamio",
     attendanceNames: ["planta desprese pollo"],
