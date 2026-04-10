@@ -5,6 +5,12 @@ import {
   verifyCsrf,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import {
+  buildHorarioWorkedDateMap,
+  getPopulatedHorarioRows,
+  insertHorarioPlanillaDetalles,
+  validateHorarioPlanillaPayload,
+} from "@/lib/horario-planilla-persist";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
 type Params = {
@@ -189,9 +195,126 @@ export async function GET(_req: Request, { params }: Params) {
           createdAt: planilla.created_at ?? "",
           rows: Array.from(rowsByIndex.entries())
             .sort((a, b) => a[0] - b[0])
-            .map(([, value]) => value),
+            .map(([rowIndex, value]) => ({
+              rowIndex,
+              nombre: value.nombre,
+              firma: value.firma,
+              days: value.days,
+            })),
         },
       }),
+    );
+  } finally {
+    client.release();
+  }
+}
+
+export async function PATCH(req: Request, { params }: Params) {
+  const session = await requireAuthSession();
+  if (!session) {
+    return NextResponse.json(
+      { error: "No autorizado." },
+      { status: 401, headers: { "Cache-Control": NO_STORE_CACHE_CONTROL } },
+    );
+  }
+
+  const withSession = (response: NextResponse) => {
+    response.headers.set("Cache-Control", NO_STORE_CACHE_CONTROL);
+    return applySessionCookies(response, session);
+  };
+
+  if (!isAllowedUser(session)) {
+    return withSession(
+      NextResponse.json(
+        { error: "No tienes permisos para esta seccion." },
+        { status: 403 },
+      ),
+    );
+  }
+
+  if (!(await verifyCsrf(req))) {
+    return withSession(
+      NextResponse.json({ error: "CSRF invalido." }, { status: 403 }),
+    );
+  }
+
+  const { id } = await params;
+  const planillaId = Number(id);
+  if (!Number.isInteger(planillaId) || planillaId <= 0) {
+    return withSession(
+      NextResponse.json({ error: "Id invalido." }, { status: 400 }),
+    );
+  }
+
+  const body = (await req.json()) as Record<string, unknown>;
+  const validated = validateHorarioPlanillaPayload(body);
+  if (!validated.ok) {
+    return withSession(
+      NextResponse.json({ error: validated.error }, { status: 400 }),
+    );
+  }
+
+  const { sede, seccion, fechaInicial, fechaFinal, mes, rows } = validated;
+
+  if (getPopulatedHorarioRows(rows).length === 0) {
+    return withSession(
+      NextResponse.json(
+        { error: "Debes registrar al menos un empleado o un horario." },
+        { status: 400 },
+      ),
+    );
+  }
+
+  const workedDateMap = buildHorarioWorkedDateMap(fechaInicial, fechaFinal);
+  const client = await (await getDbPool()).connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const updateResult = await client.query(
+      `
+      UPDATE horario_planillas
+      SET
+        sede = $1,
+        seccion = $2,
+        fecha_inicial = NULLIF($3, '')::date,
+        fecha_final = NULLIF($4, '')::date,
+        mes = NULLIF($5, '')
+      WHERE id = $6
+      RETURNING id
+      `,
+      [sede, seccion, fechaInicial, fechaFinal, mes, planillaId],
+    );
+
+    if ((updateResult.rowCount ?? 0) === 0) {
+      await client.query("ROLLBACK");
+      return withSession(
+        NextResponse.json({ error: "Planilla no encontrada." }, { status: 404 }),
+      );
+    }
+
+    await client.query(
+      `DELETE FROM horario_planilla_detalles WHERE planilla_id = $1`,
+      [planillaId],
+    );
+
+    await insertHorarioPlanillaDetalles(client, planillaId, rows, workedDateMap);
+
+    await client.query("COMMIT");
+    return withSession(
+      NextResponse.json({
+        ok: true,
+        planillaId,
+      }),
+    );
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("[ingresar-horarios/forms/:id] Error actualizando planilla:", error);
+    return withSession(
+      NextResponse.json(
+        { error: "No se pudo actualizar la planilla." },
+        { status: 500 },
+      ),
     );
   } finally {
     client.release();

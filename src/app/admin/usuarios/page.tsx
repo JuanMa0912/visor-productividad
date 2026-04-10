@@ -122,6 +122,10 @@ const SECTION_OPTIONS = PORTAL_SECTIONS.map((section) => ({
 const SPECIAL_ROLE_OPTIONS = [
   { id: "alex", label: "Alex" },
   { id: "cronograma", label: "Cronograma" },
+  {
+    id: "replicar_lunes",
+    label: "Replicar lunes",
+  },
 ];
 
 const formatAllowedLines = (allowedLines: string[] | null) => {

@@ -5,51 +5,15 @@ import {
   verifyCsrf,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import {
+  buildHorarioWorkedDateMap,
+  getPopulatedHorarioRows,
+  insertHorarioPlanillaDetalles,
+  validateHorarioPlanillaPayload,
+} from "@/lib/horario-planilla-persist";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
-type DayKey =
-  | "domingo"
-  | "lunes"
-  | "martes"
-  | "miercoles"
-  | "jueves"
-  | "viernes"
-  | "sabado";
-
-type DayScheduleInput = {
-  he1?: string;
-  hs1?: string;
-  he2?: string;
-  hs2?: string;
-  conDescanso?: boolean;
-};
-
-type RowScheduleInput = {
-  nombre?: string;
-  firma?: string;
-  days?: Partial<Record<DayKey, DayScheduleInput>>;
-};
-
-const DAY_ORDER: DayKey[] = [
-  "domingo",
-  "lunes",
-  "martes",
-  "miercoles",
-  "jueves",
-  "viernes",
-  "sabado",
-];
-
 const NO_STORE_CACHE_CONTROL = "no-store, private";
-
-const isDateKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-
-const normalizeText = (value?: string) => (value ?? "").trim();
-
-const normalizeTime = (value?: string) => {
-  const trimmed = (value ?? "").trim();
-  return /^\d{2}:\d{2}$/.test(trimmed) ? `${trimmed}:00` : null;
-};
 
 const isAllowedUser = (session: Awaited<ReturnType<typeof requireAuthSession>>) => {
   if (!session) return false;
@@ -57,39 +21,6 @@ const isAllowedUser = (session: Awaited<ReturnType<typeof requireAuthSession>>) 
     session.user.role === "admin" ||
     canAccessPortalSection(session.user.allowedDashboards, "operacion")
   );
-};
-
-const buildWorkedDateMap = (start: string, end: string) => {
-  const map = new Map<DayKey, string>();
-  if (!isDateKey(start) || !isDateKey(end) || start > end) {
-    return map;
-  }
-
-  const cursor = new Date(`${start}T00:00:00`);
-  const endDate = new Date(`${end}T00:00:00`);
-  while (cursor <= endDate) {
-    const dayKey = DAY_ORDER[cursor.getDay()];
-    const year = cursor.getFullYear();
-    const month = String(cursor.getMonth() + 1).padStart(2, "0");
-    const day = String(cursor.getDate()).padStart(2, "0");
-    map.set(dayKey, `${year}-${month}-${day}`);
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return map;
-};
-
-const rowHasContent = (row: RowScheduleInput) => {
-  if (normalizeText(row.nombre) || normalizeText(row.firma)) return true;
-  return DAY_ORDER.some((dayKey) => {
-    const day = row.days?.[dayKey];
-    return Boolean(
-      day?.conDescanso ||
-      normalizeText(day?.he1) ||
-      normalizeText(day?.hs1) ||
-      normalizeText(day?.he2) ||
-      normalizeText(day?.hs2),
-    );
-  });
 };
 
 export async function GET() {
@@ -198,55 +129,18 @@ export async function POST(req: Request) {
     );
   }
 
-  const body = (await req.json()) as {
-    sede?: string;
-    seccion?: string;
-    fechaInicial?: string;
-    fechaFinal?: string;
-    mes?: string;
-    rows?: RowScheduleInput[];
-  };
+  const body = (await req.json()) as Record<string, unknown>;
 
-  const sede = normalizeText(body.sede);
-  const seccion = normalizeText(body.seccion);
-  const fechaInicial = normalizeText(body.fechaInicial);
-  const fechaFinal = normalizeText(body.fechaFinal);
-  const mes = normalizeText(body.mes);
-  const rows = Array.isArray(body.rows) ? body.rows : [];
-
-  if (!sede || !seccion) {
+  const validated = validateHorarioPlanillaPayload(body);
+  if (!validated.ok) {
     return withSession(
-      NextResponse.json(
-        { error: "Sede y seccion son obligatorias." },
-        { status: 400 },
-      ),
-    );
-  }
-  if (
-    (fechaInicial && !isDateKey(fechaInicial)) ||
-    (fechaFinal && !isDateKey(fechaFinal))
-  ) {
-    return withSession(
-      NextResponse.json(
-        { error: "Las fechas deben usar formato YYYY-MM-DD." },
-        { status: 400 },
-      ),
-    );
-  }
-  if (fechaInicial && fechaFinal && fechaInicial > fechaFinal) {
-    return withSession(
-      NextResponse.json(
-        { error: "La fecha inicial no puede ser mayor que la final." },
-        { status: 400 },
-      ),
+      NextResponse.json({ error: validated.error }, { status: 400 }),
     );
   }
 
-  const populatedRows = rows
-    .map((row, index) => ({ row, index }))
-    .filter(({ row }) => rowHasContent(row));
+  const { sede, seccion, fechaInicial, fechaFinal, mes, rows } = validated;
 
-  if (populatedRows.length === 0) {
+  if (getPopulatedHorarioRows(rows).length === 0) {
     return withSession(
       NextResponse.json(
         { error: "Debes registrar al menos un empleado o un horario." },
@@ -255,7 +149,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const workedDateMap = buildWorkedDateMap(fechaInicial, fechaFinal);
+  const workedDateMap = buildHorarioWorkedDateMap(fechaInicial, fechaFinal);
   const client = await (await getDbPool()).connect();
 
   try {
@@ -289,67 +183,7 @@ export async function POST(req: Request) {
       (planillaResult.rows?.[0] as { id?: number | string } | undefined)?.id ?? 0,
     );
 
-    for (const { row, index } of populatedRows) {
-      for (const dayKey of DAY_ORDER) {
-        const day = row.days?.[dayKey] ?? {};
-        const isRestDay = Boolean(day.conDescanso);
-        const he1 = normalizeTime(day.he1);
-        const hs1 = normalizeTime(day.hs1);
-        const he2 = normalizeTime(day.he2);
-        const hs2 = normalizeTime(day.hs2);
-        const employeeName = normalizeText(row.nombre);
-        const employeeSignature = normalizeText(row.firma);
-        const hasDayContent = Boolean(isRestDay || he1 || hs1 || he2 || hs2);
-
-        if (!employeeName && !employeeSignature && !hasDayContent) {
-          continue;
-        }
-
-        await client.query(
-          `
-          INSERT INTO horario_planilla_detalles (
-            planilla_id,
-            row_index,
-            day_key,
-            worked_date,
-            employee_name,
-            employee_signature,
-            he1,
-            hs1,
-            he2,
-            hs2,
-            is_rest_day
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            NULLIF($4, '')::date,
-            $5,
-            NULLIF($6, ''),
-            NULLIF($7, '')::time,
-            NULLIF($8, '')::time,
-            NULLIF($9, '')::time,
-            NULLIF($10, '')::time,
-            $11
-          )
-          `,
-          [
-            planillaId,
-            index,
-            dayKey,
-            workedDateMap.get(dayKey) ?? "",
-            employeeName,
-            employeeSignature,
-            he1 ?? "",
-            hs1 ?? "",
-            he2 ?? "",
-            hs2 ?? "",
-            isRestDay,
-          ],
-        );
-      }
-    }
+    await insertHorarioPlanillaDetalles(client, planillaId, rows, workedDateMap);
 
     await client.query("COMMIT");
     return withSession(

@@ -25,6 +25,8 @@ type RowSchedule = {
   nombre: string;
   firma: string;
   days: Record<DayKey, DaySchedule>;
+  /** Indice de fila en la planilla (1-16) cuando viene del API */
+  rowIndex?: number;
 };
 
 type SavedScheduleFormSummary = {
@@ -590,16 +592,29 @@ export default function HorariosGuardadosPage() {
                     <div className="text-right text-xs text-slate-500">
                       <p>Guardada por {selectedForm.createdByUsername || "--"}</p>
                       <p>{formatDateTimeLabel(selectedForm.createdAt)}</p>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteForm(selectedForm.id)}
-                        disabled={deletingPlanillaId !== null}
-                        className="mt-3 inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700 transition-all hover:border-rose-300 hover:bg-rose-100/70 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {deletingPlanillaId === selectedForm.id
-                          ? "Eliminando..."
-                          : "Eliminar planilla"}
-                      </button>
+                      <div className="mt-3 flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            router.push(
+                              `/ingresar-horarios?planilla=${selectedForm.id}`,
+                            )
+                          }
+                          className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteForm(selectedForm.id)}
+                          disabled={deletingPlanillaId !== null}
+                          className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700 transition-all hover:border-rose-300 hover:bg-rose-100/70 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingPlanillaId === selectedForm.id
+                            ? "Eliminando..."
+                            : "Eliminar planilla"}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -647,9 +662,9 @@ export default function HorariosGuardadosPage() {
                       </thead>
                       <tbody>
                         {selectedForm.rows.map((row, rowIndex) => (
-                          <tr key={`preview-row-${rowIndex}`} className="odd:bg-white even:bg-slate-50/40">
+                          <tr key={`preview-row-${row.rowIndex ?? rowIndex}`} className="odd:bg-white even:bg-slate-50/40">
                             <td className="border border-slate-200 px-2 py-1 text-center text-slate-600">
-                              {rowIndex + 1}
+                              {(typeof row.rowIndex === "number" ? row.rowIndex : rowIndex) + 1}
                             </td>
                             <td className="border border-slate-200 px-2 py-1 text-slate-900">
                               {row.nombre || "--"}
