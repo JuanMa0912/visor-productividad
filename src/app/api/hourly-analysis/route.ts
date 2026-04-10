@@ -1001,6 +1001,13 @@ const fetchHourlyData = async (
         const lastNameIdentifier = lastNameColumn
           ? quoteIdentifier(lastNameColumn)
           : null;
+        const nominaColumn =
+          attendanceColumns.find(
+            (col) => normalizeColumnName(col) === "nomina",
+          ) ?? null;
+        const nominaIdentifier = nominaColumn
+          ? quoteIdentifier(nominaColumn)
+          : null;
 
         if (
           employeeIdIdentifiers.length > 0 ||
@@ -1051,6 +1058,11 @@ const fetchHourlyData = async (
                 NULLIF(TRIM(CAST(departamento AS text)), '') AS departamento,
                 NULLIF(TRIM(CAST(cargo AS text)), '') AS cargo,
                 NULLIF(TRIM(CAST(incidencia AS text)), '') AS incidencia,
+                ${
+                  nominaIdentifier
+                    ? `NULLIF(TRIM(CAST(${nominaIdentifier} AS text)), '')`
+                    : "NULL::text"
+                } AS nomina,
                 TO_CHAR(hora_entrada, 'HH24:MI:SS') AS hora_entrada,
                 TO_CHAR(hora_intermedia1, 'HH24:MI:SS') AS hora_intermedia1,
                 TO_CHAR(hora_intermedia2, 'HH24:MI:SS') AS hora_intermedia2,
@@ -1093,6 +1105,7 @@ const fetchHourlyData = async (
                 MAX(departamento) AS departamento,
                 MAX(cargo) AS cargo,
                 MAX(incidencia) AS incidencia,
+                MAX(nomina) AS nomina,
                 MAX(hora_entrada) AS hora_entrada,
                 MAX(hora_intermedia1) AS hora_intermedia1,
                 MAX(hora_intermedia2) AS hora_intermedia2,
@@ -1109,6 +1122,7 @@ const fetchHourlyData = async (
               departamento,
               cargo,
               incidencia,
+              nomina,
               hora_entrada,
               hora_intermedia1,
               hora_intermedia2,
@@ -1136,6 +1150,7 @@ const fetchHourlyData = async (
               departamento: string;
               cargo?: string | null;
               incidencia?: string | null;
+              nomina?: string | null;
               hora_entrada?: string | null;
               hora_intermedia1?: string | null;
               hora_intermedia2?: string | null;
@@ -1193,6 +1208,7 @@ const fetchHourlyData = async (
               lineName: lineId ? lineNameById.get(lineId) ?? lineId : undefined,
               sede: typedRow.sede?.trim() || undefined,
               department: typedRow.departamento?.trim() || undefined,
+              nomina: typedRow.nomina?.trim() || undefined,
               marksCount: Number(typedRow.marks_count ?? 0),
               role,
               employeeType,

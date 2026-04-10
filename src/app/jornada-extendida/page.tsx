@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import * as ExcelJS from "exceljs";
-import { toJpeg } from "html-to-image";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -39,6 +38,7 @@ type AlexReportResponse = {
   usedRange?: { start: string; end: string } | null;
   rows?: AlexReportRow[];
   totals?: AlexReportTotals;
+  departments?: string[];
   error?: string;
 };
 
@@ -155,6 +155,8 @@ const sanitizeExcelText = (value: string) => {
 
 const PERIOD_ONE_FILL = "FFF7F0C8";
 const PERIOD_TWO_FILL = "FFE5EEF9";
+const PERIOD_ONE_BODY_FILL = "FFFFF8DC";
+const PERIOD_TWO_BODY_FILL = "FFF2F7FD";
 const ALEX_SEDE_COLUMN_WIDTH = 196;
 const ALEX_BASE_METRIC_COLUMN_WIDTH = 124;
 const ALEX_COMPARE_METRIC_COLUMN_WIDTH = 90;
@@ -172,10 +174,12 @@ export default function JornadaExtendidaPage() {
   const [alexEndDate, setAlexEndDate] = useState("");
   const [alexRows, setAlexRows] = useState<AlexReportRow[]>([]);
   const [alexTotals, setAlexTotals] = useState<AlexReportTotals>(createEmptyAlexTotals);
+  const [alexSelectedSede, setAlexSelectedSede] = useState("all");
+  const [alexSelectedDepartment, setAlexSelectedDepartment] = useState("all");
+  const [alexAvailableDepartments, setAlexAvailableDepartments] = useState<string[]>([]);
   const [alexLoading, setAlexLoading] = useState(false);
   const [alexError, setAlexError] = useState<string | null>(null);
   const [exportingAlexExcel, setExportingAlexExcel] = useState(false);
-  const [exportingAlexJpg, setExportingAlexJpg] = useState(false);
   const [isAlexExportMenuOpen, setIsAlexExportMenuOpen] = useState(false);
   const [alexSelectedFields, setAlexSelectedFields] = useState<AlexExportFieldKey[]>(
     () => ALEX_EXPORT_FIELDS.map((field) => field.key),
@@ -202,7 +206,6 @@ export default function JornadaExtendidaPage() {
     monthToDateTotals: AlexReportTotals;
   } | null>(null);
   const alexExportMenuRef = useRef<HTMLDivElement | null>(null);
-  const alexTableRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -346,6 +349,14 @@ export default function JornadaExtendidaPage() {
   const alexCurrentPeriodLabel = useMemo(
     () => alexRangeLabel || "Actual",
     [alexRangeLabel],
+  );
+  const alexSedeOptions = useMemo(
+    () =>
+      availableSedes
+        .map((sede) => sede.name?.trim())
+        .filter((value): value is string => Boolean(value))
+        .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })),
+    [availableSedes],
   );
 
   const buildAlexComparisonRows = useCallback((
@@ -679,7 +690,7 @@ export default function JornadaExtendidaPage() {
     const metricColumns = ALEX_EXPORT_FIELDS.map((field) => ({
       key: field.key,
       header: field.comparisonHeader,
-      width: field.width,
+      width: Math.max(10, Math.min(12, field.comparisonHeader.length + 1)),
       align: "right" as const,
     }));
     const metricCount = metricColumns.length;
@@ -716,7 +727,8 @@ export default function JornadaExtendidaPage() {
     const labelRowNumber = 4;
     const headerRowNumber = 5;
 
-    const sedeHeader = sheet.getCell(headerRowNumber, 1);
+    sheet.mergeCells(labelRowNumber, 1, headerRowNumber, 1);
+    const sedeHeader = sheet.getCell(labelRowNumber, 1);
     sedeHeader.value = "Sede";
     sedeHeader.font = { bold: true, color: { argb: "FF0F172A" } };
     sedeHeader.fill = {
@@ -733,60 +745,86 @@ export default function JornadaExtendidaPage() {
     sedeHeader.alignment = { vertical: "middle", horizontal: "left" };
 
     metricColumns.forEach((column, index) => {
-      const baseColumnIndex = 2 + index * 2;
-      sheet.mergeCells(
-        labelRowNumber,
-        baseColumnIndex,
-        labelRowNumber,
-        baseColumnIndex + 1,
-      );
-      const metricCell = sheet.getCell(labelRowNumber, baseColumnIndex);
-      metricCell.value = column.header;
-      metricCell.font = { bold: true, color: { argb: "FF0F172A" } };
-      metricCell.alignment = { vertical: "middle", horizontal: "center" };
-      metricCell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFFFFFFF" },
-      };
-      metricCell.border = {
-        top: { style: "thin", color: { argb: "FFCBD5E1" } },
-        left: { style: "thin", color: { argb: "FFCBD5E1" } },
-        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
-        right: { style: "thin", color: { argb: "FFCBD5E1" } },
-      };
+      const periodOneColumnIndex = 2 + index * 2;
+      const periodTwoColumnIndex = periodOneColumnIndex + 1;
 
-      const leftCell = sheet.getCell(headerRowNumber, baseColumnIndex);
-      leftCell.value = periodOneShortLabel;
-      leftCell.font = { bold: true, color: { argb: "FFDC2626" } };
-      leftCell.fill = {
+      const periodOneDateCell = sheet.getCell(labelRowNumber, periodOneColumnIndex);
+      periodOneDateCell.value = periodOneShortLabel;
+      periodOneDateCell.font = { bold: true, color: { argb: "FFDC2626" } };
+      periodOneDateCell.alignment = { vertical: "middle", horizontal: "center" };
+      periodOneDateCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: PERIOD_ONE_FILL },
       };
-      leftCell.border = {
+      periodOneDateCell.border = {
         top: { style: "thin", color: { argb: "FFCBD5E1" } },
         left: { style: "thin", color: { argb: "FFCBD5E1" } },
         bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
         right: { style: "thin", color: { argb: "FFCBD5E1" } },
       };
-      leftCell.alignment = { vertical: "middle", horizontal: "center" };
 
-      const rightCell = sheet.getCell(headerRowNumber, baseColumnIndex + 1);
-      rightCell.value = periodTwoShortLabel;
-      rightCell.font = { bold: true, color: { argb: "FFDC2626" } };
-      rightCell.fill = {
+      const periodTwoDateCell = sheet.getCell(labelRowNumber, periodTwoColumnIndex);
+      periodTwoDateCell.value = periodTwoShortLabel;
+      periodTwoDateCell.font = { bold: true, color: { argb: "FFDC2626" } };
+      periodTwoDateCell.alignment = { vertical: "middle", horizontal: "center" };
+      periodTwoDateCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: PERIOD_TWO_FILL },
       };
-      rightCell.border = {
+      periodTwoDateCell.border = {
         top: { style: "thin", color: { argb: "FFCBD5E1" } },
         left: { style: "thin", color: { argb: "FFCBD5E1" } },
         bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
         right: { style: "thin", color: { argb: "FFCBD5E1" } },
       };
-      rightCell.alignment = { vertical: "middle", horizontal: "center" };
+
+      const periodOneMetricCell = sheet.getCell(
+        headerRowNumber,
+        periodOneColumnIndex,
+      );
+      periodOneMetricCell.value = column.header;
+      periodOneMetricCell.font = { bold: true, color: { argb: "FF0F172A" } };
+      periodOneMetricCell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true,
+      };
+      periodOneMetricCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: PERIOD_ONE_FILL },
+      };
+      periodOneMetricCell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
+
+      const periodTwoMetricCell = sheet.getCell(
+        headerRowNumber,
+        periodTwoColumnIndex,
+      );
+      periodTwoMetricCell.value = column.header;
+      periodTwoMetricCell.font = { bold: true, color: { argb: "FF0F172A" } };
+      periodTwoMetricCell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true,
+      };
+      periodTwoMetricCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: PERIOD_TWO_FILL },
+      };
+      periodTwoMetricCell.border = {
+        top: { style: "thin", color: { argb: "FFCBD5E1" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      };
     });
 
     const periodOneMap = new Map(periodOneRows.map((row) => [row.sede, row]));
@@ -816,17 +854,30 @@ export default function JornadaExtendidaPage() {
       sedeCell.alignment = { vertical: "middle", horizontal: "left" };
 
       metricColumns.forEach((column, index) => {
-        const baseColumnIndex = 2 + index * 2;
-        const leftCell = sheet.getCell(rowNumber, baseColumnIndex);
+        const periodOneColumnIndex = 2 + index * 2;
+        const periodTwoColumnIndex = periodOneColumnIndex + 1;
+
+        const leftCell = sheet.getCell(rowNumber, periodOneColumnIndex);
         leftCell.value = formatAlexMetric(periodOneRow?.[column.key] ?? 0);
+        leftCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: PERIOD_ONE_BODY_FILL },
+        };
         leftCell.border = {
           left: { style: "thin", color: { argb: "FFE2E8F0" } },
           bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
           right: { style: "thin", color: { argb: "FFE2E8F0" } },
         };
         leftCell.alignment = { vertical: "middle", horizontal: "right" };
-        const rightCell = sheet.getCell(rowNumber, baseColumnIndex + 1);
+
+        const rightCell = sheet.getCell(rowNumber, periodTwoColumnIndex);
         rightCell.value = formatAlexMetric(periodTwoRow?.[column.key] ?? 0);
+        rightCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: PERIOD_TWO_BODY_FILL },
+        };
         rightCell.border = {
           left: { style: "thin", color: { argb: "FFE2E8F0" } },
           bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
@@ -854,8 +905,10 @@ export default function JornadaExtendidaPage() {
     totalLabelCell.alignment = { vertical: "middle", horizontal: "left" };
 
     metricColumns.forEach((column, index) => {
-      const baseColumnIndex = 2 + index * 2;
-      const leftCell = sheet.getCell(totalRowNumber, baseColumnIndex);
+      const periodOneColumnIndex = 2 + index * 2;
+      const periodTwoColumnIndex = periodOneColumnIndex + 1;
+
+      const leftCell = sheet.getCell(totalRowNumber, periodOneColumnIndex);
       leftCell.value = periodOneTotals[column.key];
       leftCell.font = { bold: true, color: { argb: "FF0F172A" } };
       leftCell.fill = {
@@ -871,7 +924,7 @@ export default function JornadaExtendidaPage() {
       };
       leftCell.alignment = { vertical: "middle", horizontal: "right" };
 
-      const rightCell = sheet.getCell(totalRowNumber, baseColumnIndex + 1);
+      const rightCell = sheet.getCell(totalRowNumber, periodTwoColumnIndex);
       rightCell.value = periodTwoTotals[column.key];
       rightCell.font = { bold: true, color: { argb: "FF0F172A" } };
       rightCell.fill = {
@@ -957,48 +1010,10 @@ export default function JornadaExtendidaPage() {
     }
   };
 
-  const handleExportAlexTableJpg = async () => {
-    if (!alexTableRef.current) return;
-    if (alexRows.length === 0) return;
-    const tableNode = alexTableRef.current;
-    const tableElement = tableNode.querySelector("table") as HTMLElement | null;
-    setExportingAlexJpg(true);
-    try {
-      if (!tableElement) {
-        setAlexExportError("No se pudo preparar el JPG.");
-        return;
-      }
-
-      const dataUrl = await toJpeg(tableElement, {
-        quality: 0.95,
-        pixelRatio: 2,
-        backgroundColor: "#ffffff",
-        cacheBust: true,
-        width: tableElement.scrollWidth,
-        height: tableElement.scrollHeight + 24,
-        style: {
-          overflow: "visible",
-          backgroundColor: "#ffffff",
-        },
-      });
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = `reporte-alex-${alexStartDate || "inicio"}-${alexEndDate || "fin"}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("[jornada-extendida] Error exportando JPG Alex:", error);
-      setAlexExportError("No se pudo exportar el JPG.");
-    } finally {
-      setExportingAlexJpg(false);
-    }
-  };
-
   const fetchAlexReportRange = useCallback(
     async (start: string, end: string, signal?: AbortSignal) => {
       const response = await fetch(
-        `/api/jornada-extendida/alex-report?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+        `/api/jornada-extendida/alex-report?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&sede=${encodeURIComponent(alexSelectedSede)}&department=${encodeURIComponent(alexSelectedDepartment)}`,
         { cache: "no-store", signal },
       );
       const payload = (await response.json()) as AlexReportResponse;
@@ -1010,7 +1025,7 @@ export default function JornadaExtendidaPage() {
         totals: payload.totals ?? createEmptyAlexTotals(),
       };
     },
-    [],
+    [alexSelectedDepartment, alexSelectedSede],
   );
 
   const handleExportAlexCompareExcel = async () => {
@@ -1061,6 +1076,12 @@ export default function JornadaExtendidaPage() {
       setExportingAlexCompareExcel(false);
     }
   };
+
+  useEffect(() => {
+    if (alexSelectedDepartment === "all") return;
+    if (alexAvailableDepartments.includes(alexSelectedDepartment)) return;
+    setAlexSelectedDepartment("all");
+  }, [alexAvailableDepartments, alexSelectedDepartment]);
 
   useEffect(() => {
     if (!alexCompareOpen) return;
@@ -1141,6 +1162,8 @@ export default function JornadaExtendidaPage() {
       controller.abort();
     };
   }, [
+    alexSelectedDepartment,
+    alexSelectedSede,
     alexCompareConfig,
     alexCompareOpen,
     buildAlexComparisonRows,
@@ -1159,7 +1182,7 @@ export default function JornadaExtendidaPage() {
       setAlexError(null);
       try {
         const response = await fetch(
-          `/api/jornada-extendida/alex-report?start=${encodeURIComponent(alexStartDate)}&end=${encodeURIComponent(alexEndDate)}`,
+          `/api/jornada-extendida/alex-report?start=${encodeURIComponent(alexStartDate)}&end=${encodeURIComponent(alexEndDate)}&sede=${encodeURIComponent(alexSelectedSede)}&department=${encodeURIComponent(alexSelectedDepartment)}`,
           { signal: controller.signal, cache: "no-store" },
         );
         const payload = (await response.json()) as AlexReportResponse;
@@ -1169,6 +1192,7 @@ export default function JornadaExtendidaPage() {
         if (!isMounted) return;
         setAlexRows(payload.rows ?? []);
         setAlexTotals(payload.totals ?? createEmptyAlexTotals());
+        setAlexAvailableDepartments(payload.departments ?? []);
         setAlexExportError(null);
         setIsAlexExportMenuOpen(false);
       } catch (err) {
@@ -1187,7 +1211,13 @@ export default function JornadaExtendidaPage() {
       isMounted = false;
       controller.abort();
     };
-  }, [alexEndDate, alexStartDate, canSeeAlexReport]);
+  }, [
+    alexEndDate,
+    alexSelectedDepartment,
+    alexSelectedSede,
+    alexStartDate,
+    canSeeAlexReport,
+  ]);
 
   if (!ready || isLoading) {
     return (
@@ -1263,7 +1293,7 @@ export default function JornadaExtendidaPage() {
                     )}
                   </div>
                   <div className="w-full xl:max-w-2xl">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
                         Fecha inicio
                         <input
@@ -1285,6 +1315,36 @@ export default function JornadaExtendidaPage() {
                         min={availableDates[0]}
                         max={availableDates[availableDates.length - 1]}
                         />
+                      </label>
+                      <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        Sedes
+                        <select
+                          value={alexSelectedSede}
+                          onChange={(e) => setAlexSelectedSede(e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm normal-case text-slate-900 shadow-sm"
+                        >
+                          <option value="all">Todas las sedes</option>
+                          {alexSedeOptions.map((sede) => (
+                            <option key={sede} value={sede}>
+                              {sede}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        Departamentos
+                        <select
+                          value={alexSelectedDepartment}
+                          onChange={(e) => setAlexSelectedDepartment(e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm normal-case text-slate-900 shadow-sm"
+                        >
+                          <option value="all">Todos los departamentos</option>
+                          {alexAvailableDepartments.map((department) => (
+                            <option key={department} value={department}>
+                              {department}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                     </div>
                     <div className="mt-3 flex flex-col gap-2 xl:items-end">
@@ -1398,14 +1458,6 @@ export default function JornadaExtendidaPage() {
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => void handleExportAlexTableJpg()}
-                          disabled={alexLoading || alexRows.length === 0 || exportingAlexJpg}
-                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-amber-200/70 bg-amber-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 transition-all hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-                        >
-                          {exportingAlexJpg ? "Generando JPG..." : "Exportar JPG"}
-                        </button>
                       </div>
                     </div>
                     {!alexCompareOpen && alexCompareConfig.reason && (
@@ -1441,7 +1493,6 @@ export default function JornadaExtendidaPage() {
                       </div>
                     )}
                     <div
-                      ref={alexTableRef}
                       className="mt-3 overflow-x-auto overflow-y-visible rounded-xl border border-slate-200"
                       style={{ scrollbarGutter: "stable" }}
                     >

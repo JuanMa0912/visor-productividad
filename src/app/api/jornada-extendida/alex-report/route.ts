@@ -11,6 +11,18 @@ type AlexRow = {
   absences: number;
 };
 
+type AlexResponse = {
+  usedRange: { start: string; end: string } | null;
+  rows: AlexRow[];
+  totals: {
+    moreThan72With2: number;
+    moreThan92: number;
+    oddMarks: number;
+    absences: number;
+  };
+  departments?: string[];
+};
+
 type SedeConfig = {
   name: string;
   aliases: string[];
@@ -129,6 +141,14 @@ const parseHoursValue = (value: string | number | null | undefined): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const normalizeDepartmentValue = (value: string | null | undefined) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, " ");
+
 const normalizeIncidentValue = (value: string | null | undefined) =>
   String(value ?? "")
     .normalize("NFD")
@@ -246,6 +266,14 @@ export async function GET(request: Request) {
   const dateParam = url.searchParams.get("date")?.trim() ?? "";
   const startParam = url.searchParams.get("start")?.trim() ?? "";
   const endParam = url.searchParams.get("end")?.trim() ?? "";
+  const sedeParam = url.searchParams.get("sede")?.trim() ?? "";
+  const departmentParam = url.searchParams.get("department")?.trim() ?? "";
+  const selectedSede =
+    !sedeParam || sedeParam === "all" ? null : mapSedeToCanonical(sedeParam);
+  const selectedDepartment =
+    !departmentParam || departmentParam === "all"
+      ? ""
+      : normalizeDepartmentValue(departmentParam);
   if (dateParam && !isDateKey(dateParam)) {
     return withSession(
       NextResponse.json(
@@ -295,6 +323,7 @@ export async function GET(request: Request) {
               usedRange: null,
               rows: [],
               totals: { moreThan72With2: 0, moreThan92: 0, oddMarks: 0, absences: 0 },
+              departments: [],
             },
           ),
         );
@@ -347,11 +376,17 @@ export async function GET(request: Request) {
       attendanceColumns,
       EMPLOYEE_NAME_COLUMN_CANDIDATES,
     );
+    const nominaColumn =
+      attendanceColumns.find((col) => normalizeColumnName(col) === "nomina") ??
+      null;
     const employeeIdExpr = employeeIdColumn
       ? `NULLIF(TRIM(CAST(${quoteIdentifier(employeeIdColumn)} AS text)), '')`
       : "NULL::text";
     const employeeNameExpr = employeeNameColumn
       ? `NULLIF(TRIM(CAST(${quoteIdentifier(employeeNameColumn)} AS text)), '')`
+      : "NULL::text";
+    const nominaExpr = nominaColumn
+      ? `NULLIF(TRIM(CAST(${quoteIdentifier(nominaColumn)} AS text)), '')`
       : "NULL::text";
 
     const result = await client.query(
@@ -360,8 +395,10 @@ export async function GET(request: Request) {
         SELECT
           NULLIF(TRIM(CAST(sede AS text)), '') AS raw_sede,
           fecha::date AS worked_date,
+          NULLIF(TRIM(CAST(departamento AS text)), '') AS departamento,
           COALESCE(total_laborado_horas, 0) AS total_laborado_horas,
           NULLIF(TRIM(CAST(incidencia AS text)), '') AS incidencia,
+          ${nominaExpr} AS nomina_status,
           (
             (CASE WHEN hora_entrada IS NOT NULL THEN 1 ELSE 0 END) +
             (CASE WHEN hora_intermedia1 IS NOT NULL THEN 1 ELSE 0 END) +
@@ -389,17 +426,21 @@ export async function GET(request: Request) {
           raw_sede,
           worked_date,
           employee_key,
+          MAX(departamento) AS departamento,
           COALESCE(SUM(total_laborado_horas), 0) AS total_hours,
           MAX(marks_count_row)::int AS marks_count,
-          MAX(incidencia) AS incidencia
+          MAX(incidencia) AS incidencia,
+          BOOL_OR(UPPER(COALESCE(nomina_status, '')) = 'SI NOMINA') AS has_si_nomina
         FROM raw
         GROUP BY raw_sede, worked_date, employee_key
       )
       SELECT
         raw_sede,
+        departamento,
         total_hours,
         marks_count,
-        incidencia
+        incidencia,
+        has_si_nomina
       FROM base
       `,
       [startDate, endDate],
@@ -411,25 +452,36 @@ export async function GET(request: Request) {
     REPORT_SEDES.forEach((sede) => {
       counters.set(sede, { moreThan72With2: 0, moreThan92: 0, oddMarks: 0, absences: 0 });
     });
+    const departmentOptions = new Set<string>();
 
     for (const row of result.rows ?? []) {
       const typed = row as {
         raw_sede: string | null;
+        departamento: string | null;
         total_hours: number | string | null;
         marks_count: number | null;
         incidencia: string | null;
+        has_si_nomina: boolean | null;
       };
       const sedeMapped = mapSedeToCanonical(typed.raw_sede ?? "");
       if (!sedeMapped || !counters.has(sedeMapped)) continue;
+      if (selectedSede && sedeMapped !== selectedSede) continue;
+      const departmentLabel = typed.departamento?.trim() ?? "";
+      const normalizedDepartment = normalizeDepartmentValue(departmentLabel);
+      if (departmentLabel) {
+        departmentOptions.add(departmentLabel);
+      }
+      if (selectedDepartment && normalizedDepartment !== selectedDepartment) continue;
       const totalHours = parseHoursValue(typed.total_hours);
       const marksCount = Number(typed.marks_count ?? 0);
       const incident = typed.incidencia;
+      const hasSiNomina = typed.has_si_nomina === true;
       const current = counters.get(sedeMapped)!;
 
       if (totalHours > HOURS_7_20 && totalHours <= HOURS_9_20 && marksCount === 2) {
         current.moreThan72With2 += 1;
       }
-      if (totalHours > HOURS_9_20) {
+      if (totalHours > HOURS_9_20 && hasSiNomina) {
         current.moreThan92 += 1;
       }
       if (marksCount > 0 && marksCount % 2 !== 0) {
@@ -440,13 +492,15 @@ export async function GET(request: Request) {
       }
     }
 
-    const rows: AlexRow[] = REPORT_SEDES.map((sede) => ({
-      sede,
-      moreThan72With2: counters.get(sede)?.moreThan72With2 ?? 0,
-      moreThan92: counters.get(sede)?.moreThan92 ?? 0,
-      oddMarks: counters.get(sede)?.oddMarks ?? 0,
-      absences: counters.get(sede)?.absences ?? 0,
-    }));
+    const rows: AlexRow[] = REPORT_SEDES
+      .filter((sede) => !selectedSede || sede === selectedSede)
+      .map((sede) => ({
+        sede,
+        moreThan72With2: counters.get(sede)?.moreThan72With2 ?? 0,
+        moreThan92: counters.get(sede)?.moreThan92 ?? 0,
+        oddMarks: counters.get(sede)?.oddMarks ?? 0,
+        absences: counters.get(sede)?.absences ?? 0,
+      }));
 
     const totals = rows.reduce(
       (acc, row) => ({
@@ -459,10 +513,13 @@ export async function GET(request: Request) {
     );
 
     return withSession(
-      NextResponse.json({
+      NextResponse.json<AlexResponse>({
         usedRange: { start: startDate, end: endDate },
         rows,
         totals,
+        departments: Array.from(departmentOptions).sort((a, b) =>
+          a.localeCompare(b, "es", { sensitivity: "base" }),
+        ),
       }),
     );
   } catch (error) {

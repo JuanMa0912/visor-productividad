@@ -62,6 +62,7 @@ export interface OvertimeEmployee {
   lineName?: string;
   sede?: string;
   department?: string;
+  nomina?: string;
   employeeType?: string;
   marksCount?: number;
   role?: string;

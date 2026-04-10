@@ -76,6 +76,7 @@ type OvertimeSortField =
   | "horas"
   | "marcaciones"
   | "incidencia"
+  | "nomina"
   | "departamento";
 type OvertimeSortDirection = "asc" | "desc";
 
@@ -213,6 +214,9 @@ const getOvertimeDateTimestamp = (employee: OvertimeEmployee) => {
 
 const getOvertimeIncidentValue = (employee: OvertimeEmployee) =>
   employee.incident?.trim() ?? "";
+
+const getOvertimeNominaValue = (employee: OvertimeEmployee) =>
+  employee.nomina?.trim() ?? "";
 
 const getOvertimeDepartmentValue = (employee: OvertimeEmployee) =>
   employee.department?.trim() || employee.lineName?.trim() || "";
@@ -1679,6 +1683,11 @@ export const HourlyAnalysis = ({
         getOvertimeIncidentValue(left),
         getOvertimeIncidentValue(right),
       );
+    const compareByNomina = (left: OvertimeEmployee, right: OvertimeEmployee) =>
+      compareOvertimeText(
+        getOvertimeNominaValue(left),
+        getOvertimeNominaValue(right),
+      );
     const compareByDepartment = (
       left: OvertimeEmployee,
       right: OvertimeEmployee,
@@ -1700,6 +1709,8 @@ export const HourlyAnalysis = ({
               ? compareByMarks(a, b)
               : overtimeSortField === "incidencia"
                 ? compareByIncident(a, b)
+                : overtimeSortField === "nomina"
+                  ? compareByNomina(a, b)
                 : compareByDepartment(a, b);
       if (primaryDiff !== 0) {
         return overtimeSortDirection === "asc" ? primaryDiff : -primaryDiff;
@@ -1942,6 +1953,7 @@ export const HourlyAnalysis = ({
       { header: "Sede", key: "sede", width: 20 },
       { header: "Cargo", key: "role", width: 22 },
       { header: "Incidencia", key: "incident", width: 18 },
+      { header: "Nomina", key: "nomina", width: 18 },
       { header: "Departamento", key: "department", width: 22 },
       { header: "Fecha", key: "workedDate", width: 16 },
       { header: "Hora entrada", key: "markIn", width: 16 },
@@ -1963,6 +1975,7 @@ export const HourlyAnalysis = ({
         sede: employee.sede ?? "",
         role: employee.role ?? "",
         incident: employee.incident ?? "",
+        nomina: employee.nomina ?? "",
         department: employee.department ?? employee.lineName ?? "",
         workedDate:
           employee.workedDate ??
@@ -2822,7 +2835,7 @@ export const HourlyAnalysis = ({
                       {visibleOvertimeEmployees.length}
                     </span>
                   </div>
-                  <div className="grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr] gap-1 border-b border-slate-200/70 bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  <div className="grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] gap-1 border-b border-slate-200/70 bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     <span className="text-center whitespace-nowrap">#</span>
                     <span className="text-center whitespace-nowrap">Excel</span>
                     <span className="whitespace-nowrap">Empleado</span>
@@ -2832,6 +2845,7 @@ export const HourlyAnalysis = ({
                     {renderOvertimeSortHeader("marcaciones", "Mar.", "center")}
                     <span className="whitespace-nowrap">Cargo</span>
                     {renderOvertimeSortHeader("incidencia", "Incid.")}
+                    {renderOvertimeSortHeader("nomina", "Nomina", "center")}
                     {renderOvertimeSortHeader("departamento", "Depto.", "center")}
                   </div>
                   {pagedOvertimeEmployees.map((employee, index) => {
@@ -2843,7 +2857,7 @@ export const HourlyAnalysis = ({
                     return (
                       <div
                         key={employeeKey}
-                        className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr] items-start gap-1 border-b border-slate-100 px-2 py-2 text-[12px] last:border-b-0 ${
+                        className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] items-start gap-1 border-b border-slate-100 px-2 py-2 text-[12px] last:border-b-0 ${
                           isAbsence
                             ? "bg-red-50/80"
                             : (employee.marksCount ?? 0) % 2 !== 0 ||
@@ -2889,6 +2903,9 @@ export const HourlyAnalysis = ({
                         </span>
                         <span className="text-xs font-semibold text-slate-700 leading-tight wrap-break-word">
                           {employee.incident ?? "-"}
+                        </span>
+                        <span className="text-center text-xs font-semibold text-slate-700 leading-tight wrap-break-word">
+                          {employee.nomina ?? "-"}
                         </span>
                         <span className="text-center text-xs font-semibold text-sky-700 leading-tight wrap-break-word">
                           {employee.department ?? employee.lineName ?? "-"}
