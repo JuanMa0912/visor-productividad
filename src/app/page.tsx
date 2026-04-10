@@ -4096,7 +4096,7 @@ export default function Home() {
     ]);
     applyHeaderStyle(comparisonHeader);
     sortedByCurrentSales.forEach((line, index) => {
-      const row = comparisonSheet.addRow([
+      comparisonSheet.addRow([
         index + 1,
         sanitizeExportText(line.name),
         sanitizeExportText(line.id),

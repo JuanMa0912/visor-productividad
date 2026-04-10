@@ -155,6 +155,9 @@ const sanitizeExcelText = (value: string) => {
 
 const PERIOD_ONE_FILL = "FFF7F0C8";
 const PERIOD_TWO_FILL = "FFE5EEF9";
+const ALEX_SEDE_COLUMN_WIDTH = 196;
+const ALEX_BASE_METRIC_COLUMN_WIDTH = 124;
+const ALEX_COMPARE_METRIC_COLUMN_WIDTH = 90;
 
 export default function JornadaExtendidaPage() {
   const router = useRouter();
@@ -481,6 +484,9 @@ export default function JornadaExtendidaPage() {
     ) => alexCompareRowMap.get(sede)?.[period][key] ?? 0,
     [alexCompareRowMap],
   );
+  const alexTableMinWidth = alexCompareOpen
+    ? ALEX_SEDE_COLUMN_WIDTH + ALEX_EXPORT_FIELDS.length * ALEX_COMPARE_METRIC_COLUMN_WIDTH * 2
+    : ALEX_SEDE_COLUMN_WIDTH + ALEX_EXPORT_FIELDS.length * ALEX_BASE_METRIC_COLUMN_WIDTH;
 
   const toggleAlexSelectedField = (fieldKey: AlexExportFieldKey) => {
     setAlexExportError(null);
@@ -1440,8 +1446,29 @@ export default function JornadaExtendidaPage() {
                       style={{ scrollbarGutter: "stable" }}
                     >
                       <table
-                        className={`${alexCompareOpen ? "min-w-[1080px]" : "min-w-[820px]"} w-full text-sm`}
+                        className="w-full table-fixed text-sm"
+                        style={{ minWidth: `${alexTableMinWidth}px` }}
                       >
+                        <colgroup>
+                          <col style={{ width: `${ALEX_SEDE_COLUMN_WIDTH}px` }} />
+                          {alexCompareOpen
+                            ? ALEX_EXPORT_FIELDS.flatMap((field) => [
+                                <col
+                                  key={`${field.key}-compare-day`}
+                                  style={{ width: `${ALEX_COMPARE_METRIC_COLUMN_WIDTH}px` }}
+                                />,
+                                <col
+                                  key={`${field.key}-compare-month`}
+                                  style={{ width: `${ALEX_COMPARE_METRIC_COLUMN_WIDTH}px` }}
+                                />,
+                              ])
+                            : ALEX_EXPORT_FIELDS.map((field) => (
+                                <col
+                                  key={`${field.key}-base`}
+                                  style={{ width: `${ALEX_BASE_METRIC_COLUMN_WIDTH}px` }}
+                                />
+                              ))}
+                        </colgroup>
                         <thead className="text-slate-800">
                           {alexCompareOpen ? (
                             <>
