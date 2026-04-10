@@ -3709,6 +3709,10 @@ export default function Home() {
     const borderColor = "C9D3DD";
     const lineFillColor = "EAF2F8";
     const sedeFillColor = "F8FAFC";
+    const previousMonthFillColor = "FEF3C7";
+    const previousMonthLineFillColor = "FDE68A";
+    const previousMonthSedeFillColor = "FDEFD8";
+    const previousMonthFontColor = "92400E";
 
     const applyHeaderStyle = (row: Row) => {
       row.eachCell((cell) => {
@@ -3736,7 +3740,8 @@ export default function Home() {
 
     const applyBodyBorder = (sheet: Worksheet) => {
       sheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
+        const headerRowCount = sheet.name === "Todas las lineas" ? 2 : 1;
+        if (rowNumber <= headerRowCount) return;
         row.eachCell((cell) => {
           cell.border = {
             top: { style: "thin", color: { argb: borderColor } },
@@ -3776,6 +3781,28 @@ export default function Home() {
           type: "pattern",
           pattern: "solid",
           fgColor: { argb: sedeFillColor },
+        };
+      });
+    };
+
+    const applyPreviousMonthAccent = (
+      row: Row,
+      fillColor = previousMonthFillColor,
+    ) => {
+      [4, 6, 8].forEach((columnNumber) => {
+        const cell = row.getCell(columnNumber);
+        const currentFont = cell.font ?? {};
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: fillColor },
+        };
+        cell.font = {
+          name:
+            typeof currentFont.name === "string" ? currentFont.name : "Calibri",
+          size: typeof currentFont.size === "number" ? currentFont.size : 11,
+          bold: currentFont.bold ?? false,
+          color: { argb: previousMonthFontColor },
         };
       });
     };
@@ -4032,41 +4059,84 @@ export default function Home() {
       { key: "codigo", width: 18 },
       { key: "ventasActual", width: 18 },
       { key: "ventasAnterior", width: 18 },
-      { key: "delta", width: 18 },
-      { key: "deltaPct", width: 14 },
       { key: "vtaHrActual", width: 14 },
+      { key: "vtaHrAnterior", width: 16 },
       { key: "horasActual", width: 14 },
+      { key: "horasAnterior", width: 16 },
     ];
     allLinesSheet.columns = sheetColumns;
     linesWithSedesSheet.columns = sheetColumns;
 
+    const allLinesHeaderValues = [
+      "Línea",
+      "Código",
+      "Act.",
+      "Mes ant.",
+      "Act.",
+      "Mes ant.",
+      "Act.",
+      "Mes ant.",
+    ];
+
     const headerValues = [
       "Línea",
       "Código",
-      "Ventas",
-      "Mes anterior",
-      "Variación",
-      "Variación %",
-      "Vta/Hr",
-      "Horas",
+      "Ventas actual",
+      "Ventas mes anterior",
+      "Vta/Hr actual",
+      "Vta/Hr mes anterior",
+      "Horas actual",
+      "Horas mes anterior",
     ];
-    const allLinesHeader = allLinesSheet.addRow(headerValues);
-    applyHeaderStyle(allLinesHeader);
+
+    allLinesSheet.mergeCells("C1:D1");
+    allLinesSheet.mergeCells("E1:F1");
+    allLinesSheet.mergeCells("G1:H1");
+    allLinesSheet.getCell("A1").value = "";
+    allLinesSheet.getCell("B1").value = "";
+    allLinesSheet.getCell("C1").value = "Ventas";
+    allLinesSheet.getCell("E1").value = "Vta/Hr";
+    allLinesSheet.getCell("G1").value = "Horas";
+    const allLinesGroupHeader = allLinesSheet.getRow(1);
+    const allLinesSubHeader = allLinesSheet.addRow(allLinesHeaderValues);
+    applyHeaderStyle(allLinesGroupHeader);
+    applyHeaderStyle(allLinesSubHeader);
+    applyPreviousMonthAccent(allLinesSubHeader, "DCC8A0");
     const linesWithSedesHeader = linesWithSedesSheet.addRow(headerValues);
     applyHeaderStyle(linesWithSedesHeader);
 
     sortedByCurrentSales.forEach((line) => {
-      const row = allLinesSheet.addRow([
+      const lineRow = allLinesSheet.addRow([
         sanitizeExportText(line.name),
         sanitizeExportText(line.id),
         line.currentSales,
         line.previousSales,
-        line.salesDelta,
-        line.salesDeltaPct !== null ? line.salesDeltaPct / 100 : null,
         line.currentSalesPerHour,
+        line.previousSalesPerHour,
         line.currentHours,
+        line.previousHours,
       ]);
-      row.getCell(6).numFmt = "0.00%";
+      applyLineSummaryStyle(lineRow);
+      applyPreviousMonthAccent(lineRow, previousMonthLineFillColor);
+
+      lineSedeDetails
+        .filter((detail) => detail.lineId === line.id)
+        .sort((a, b) => b.currentSales - a.currentSales)
+        .forEach((detail) => {
+          const sedeRow = allLinesSheet.addRow([
+            `   ${sanitizeExportText(detail.sedeName)}`,
+            sanitizeExportText(detail.sedeId),
+            detail.currentSales,
+            detail.previousSales,
+            detail.currentSalesPerHour,
+            detail.previousSalesPerHour,
+            detail.currentHours,
+            detail.previousHours,
+          ]);
+          sedeRow.outlineLevel = 1;
+          applySedeDetailStyle(sedeRow);
+          applyPreviousMonthAccent(sedeRow, previousMonthSedeFillColor);
+        });
     });
 
     rankingSheet.columns = [
@@ -4226,40 +4296,6 @@ export default function Home() {
         row.getCell(7).numFmt = "0.00%";
       });
 
-    sortedByCurrentSales.forEach((line) => {
-      const lineRow = linesWithSedesSheet.addRow([
-        sanitizeExportText(line.name),
-        sanitizeExportText(line.id),
-        line.currentSales,
-        line.previousSales,
-        line.salesDelta,
-        line.salesDeltaPct !== null ? line.salesDeltaPct / 100 : null,
-        line.currentSalesPerHour,
-        line.currentHours,
-      ]);
-      lineRow.getCell(6).numFmt = "0.00%";
-      applyLineSummaryStyle(lineRow);
-
-      lineSedeDetails
-        .filter((detail) => detail.lineId === line.id)
-        .sort((a, b) => b.currentSales - a.currentSales)
-        .forEach((detail) => {
-          const sedeRow = linesWithSedesSheet.addRow([
-            `   ${sanitizeExportText(detail.sedeName)}`,
-            sanitizeExportText(detail.sedeId),
-            detail.currentSales,
-            detail.previousSales,
-            detail.salesDelta,
-            detail.salesDeltaPct !== null ? detail.salesDeltaPct / 100 : null,
-            detail.currentSalesPerHour,
-            detail.currentHours,
-          ]);
-          sedeRow.getCell(6).numFmt = "0.00%";
-          sedeRow.outlineLevel = 1;
-          applySedeDetailStyle(sedeRow);
-        });
-    });
-
     dailyLineSheet.columns = [
       { key: "periodo", width: 14 },
       { key: "fecha", width: 14 },
@@ -4340,6 +4376,7 @@ export default function Home() {
     ].forEach((sheet) => {
       applyBodyBorder(sheet);
       sheet.eachRow((row, rowNumber) => {
+        if (sheet.name === "Todas las lineas" && rowNumber <= 2) return;
         if (rowNumber === 1 && sheet !== summarySheet) return;
         row.eachCell((cell) => {
           if (typeof cell.value === "number") {
@@ -4352,9 +4389,9 @@ export default function Home() {
 
     allLinesSheet.getColumn(3).numFmt = '"$"#,##0';
     allLinesSheet.getColumn(4).numFmt = '"$"#,##0';
-    allLinesSheet.getColumn(5).numFmt = '"$"#,##0';
-    allLinesSheet.getColumn(6).numFmt = "0.00%";
-    allLinesSheet.getColumn(7).numFmt = '#,##0.000';
+    allLinesSheet.getColumn(5).numFmt = '#,##0.000';
+    allLinesSheet.getColumn(6).numFmt = '#,##0.000';
+    allLinesSheet.getColumn(7).numFmt = '#,##0.00';
     allLinesSheet.getColumn(8).numFmt = '#,##0.00';
     comparisonSheet.getColumn(4).numFmt = '"$"#,##0';
     comparisonSheet.getColumn(5).numFmt = '#,##0.00';
@@ -4389,14 +4426,14 @@ export default function Home() {
     linesWithSedesSheet.getColumn(6).numFmt = "0.00%";
     linesWithSedesSheet.getColumn(7).numFmt = '#,##0.000';
     linesWithSedesSheet.getColumn(8).numFmt = '#,##0.00';
-    allLinesSheet.views = [{ state: "frozen", ySplit: 1 }];
+    allLinesSheet.views = [{ state: "frozen", ySplit: 2 }];
     rankingSheet.views = [{ state: "frozen", ySplit: 1 }];
     comparisonSheet.views = [{ state: "frozen", ySplit: 1 }];
     detailSheet.views = [{ state: "frozen", ySplit: 1 }];
     dailyLineSheet.views = [{ state: "frozen", ySplit: 1 }];
     dailySedeLineSheet.views = [{ state: "frozen", ySplit: 1 }];
     linesWithSedesSheet.views = [{ state: "frozen", ySplit: 1 }];
-    allLinesSheet.autoFilter = "A1:H1";
+    allLinesSheet.autoFilter = "A2:H2";
     rankingSheet.autoFilter = "A1:K1";
     comparisonSheet.autoFilter = "A1:I1";
     detailSheet.autoFilter = "A1:L1";
@@ -4404,10 +4441,20 @@ export default function Home() {
     dailySedeLineSheet.autoFilter = "A1:I1";
     linesWithSedesSheet.autoFilter = "A1:H1";
 
+    [
+      summarySheet,
+      rankingSheet,
+      comparisonSheet,
+      detailSheet,
+      dailyLineSheet,
+      dailySedeLineSheet,
+      linesWithSedesSheet,
+    ].forEach((sheet) => {
+      workbook.removeWorksheet(sheet.id);
+    });
+
     const safeSede = selectedScopeId.replace(/\s+/g, "-");
-    const fileName = `reporte-productividad-${safeSede}-${dateRange.start || "sin-fecha"}-${
-      dateRange.end || "sin-fecha"
-    }.xlsx`;
+    const fileName = "reporte-productividad.xlsx";
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -4651,13 +4698,10 @@ export default function Home() {
                 sanitizeExportText(detail.sedeName),
                 `$ ${formatNumber(Math.round(detail.currentSales))}`,
                 `$ ${formatNumber(Math.round(detail.previousSales))}`,
-                `$ ${formatNumber(Math.round(detail.salesDelta))}`,
-                detail.salesDeltaPct !== null
-                  ? `${detail.salesDeltaPct.toFixed(2)}%`
-                  : "-",
                 detail.currentSalesPerHour.toFixed(3),
                 detail.previousSalesPerHour.toFixed(3),
                 formatHoursAsClock(detail.currentHours),
+                formatHoursAsClock(detail.previousHours),
               ])
             : [[
                 "",
@@ -4668,22 +4712,27 @@ export default function Home() {
                 "-",
                 "-",
                 "-",
-                "-",
               ]];
 
         autoTable(doc, {
           startY: currentY,
-          head: [[
-            "#",
-            "Sede",
-            "Ventas",
-            "Mes anterior",
-            "Variación",
-            "Variación %",
-            "Vta/Hr",
-            "Vta/Hr mes ant.",
-            "Horas",
-          ]],
+          head: [
+            [
+              { content: "#", rowSpan: 2 },
+              { content: "Sede", rowSpan: 2 },
+              { content: "Ventas", colSpan: 2 },
+              { content: "Vta/Hr", colSpan: 2 },
+              { content: "Horas", colSpan: 2 },
+            ],
+            [
+              "Actual",
+              "Mes anterior",
+              "Actual",
+              "Mes anterior",
+              "Actual",
+              "Mes anterior",
+            ],
+          ],
           body: detailRows,
           theme: "grid",
           headStyles: {
@@ -4692,6 +4741,7 @@ export default function Home() {
             fontStyle: "bold",
             halign: "center",
             fontSize: 8,
+            valign: "middle",
           },
           bodyStyles: {
             fontSize: 7.5,
@@ -4703,13 +4753,12 @@ export default function Home() {
           columnStyles: {
             0: { halign: "center", cellWidth: 10 },
             1: { halign: "left", cellWidth: 42 },
-            2: { halign: "right", cellWidth: 24 },
-            3: { halign: "right", cellWidth: 24 },
-            4: { halign: "right", cellWidth: 24 },
+            2: { halign: "right", cellWidth: 23 },
+            3: { halign: "right", cellWidth: 23 },
+            4: { halign: "right", cellWidth: 18 },
             5: { halign: "right", cellWidth: 18 },
-            6: { halign: "right", cellWidth: 18 },
-            7: { halign: "right", cellWidth: 22 },
-            8: { halign: "right", cellWidth: 16 },
+            6: { halign: "right", cellWidth: 20 },
+            7: { halign: "right", cellWidth: 20 },
           },
           margin: { left: 15, right: 15 },
           styles: {

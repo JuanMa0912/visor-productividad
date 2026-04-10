@@ -526,16 +526,16 @@ export const LineComparisonTable = ({
       </div>
 
       <div className="-mx-1 mt-3 overflow-x-auto sm:mx-0 sm:mt-6">
-        <table className="w-full min-w-100 border-separate border-spacing-y-1 text-left text-xs sm:min-w-220 sm:border-spacing-y-2 sm:text-sm">
+        <table className="w-full min-w-100 border-separate border-spacing-y-1 text-center text-xs sm:min-w-220 sm:border-spacing-y-2 sm:text-sm">
           <thead>
             <tr className="text-[10px] uppercase tracking-widest text-slate-700 sm:text-xs sm:tracking-[0.2em]">
               <th className="w-6 px-1 py-1.5 sm:w-8 sm:px-2 sm:py-2"></th>
               <th className="w-8 px-1 py-1.5 sm:w-10 sm:px-2 sm:py-2"></th>
-              <th className="sticky left-0 bg-white px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
+              <th className="sticky left-0 bg-white px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
                 Linea
               </th>
-              <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
-                <div className="flex items-center gap-2">
+              <th className="px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
+                <div className="flex items-center justify-center gap-2">
                   <span>Ventas</span>
                   <button
                     type="button"
@@ -553,7 +553,7 @@ export const LineComparisonTable = ({
               </th>
               {showPreviousComparison ? (
                 <>
-                  <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
+                  <th className="px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
                     <span
                       className={`inline-flex rounded-full px-2.5 py-1 ${PREVIOUS_PERIOD_HEADER_CLASS}`}
                     >
@@ -562,8 +562,8 @@ export const LineComparisonTable = ({
                   </th>
                 </>
               ) : null}
-              <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
-                <div className="flex items-center gap-2">
+              <th className="px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
+                <div className="flex items-center justify-center gap-2">
                   <span>Vta/Hr</span>
                   <button
                     type="button"
@@ -580,7 +580,7 @@ export const LineComparisonTable = ({
                 </div>
               </th>
               {showPreviousComparison ? (
-                <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
+                <th className="px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
                   <span
                     className={`inline-flex rounded-full px-2.5 py-1 ${PREVIOUS_PERIOD_HEADER_CLASS}`}
                   >
@@ -588,8 +588,8 @@ export const LineComparisonTable = ({
                   </span>
                 </th>
               ) : null}
-              <th className="px-2 py-1.5 text-left font-semibold sm:px-4 sm:py-2">
-                <div className="flex items-center gap-2">
+              <th className="px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
+                <div className="flex items-center justify-center gap-2">
                   <span>Horas</span>
                   <button
                     type="button"
@@ -737,8 +737,8 @@ export const LineComparisonTable = ({
                         />
                       </span>
                     </td>
-                    <td className="sticky left-0 bg-inherit px-2 py-2 sm:px-4 sm:py-3">
-                      <div className="flex items-center gap-2">
+                    <td className="sticky left-0 bg-inherit px-2 py-2 text-center sm:px-4 sm:py-3">
+                      <div className="flex items-center justify-center gap-2">
                         <span className={`h-2.5 w-2.5 rounded-full ${accent.dot}`} />
                         <p className="text-xs font-semibold text-slate-900 sm:text-sm">
                           {line.name}
@@ -746,31 +746,31 @@ export const LineComparisonTable = ({
                       </div>
                       <p className="hidden text-xs text-slate-700 sm:block">{line.id}</p>
                     </td>
-                    <td className="px-2 py-2 text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
+                    <td className="px-2 py-2 text-center text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
                       {hasData ? formatCOP(totals.sales) : "-"}
                     </td>
                     {showPreviousComparison ? (
                       <>
                         <td
-                          className={`px-2 py-2 text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm ${PREVIOUS_PERIOD_CELL_CLASS}`}
+                          className={`px-2 py-2 text-center text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm ${PREVIOUS_PERIOD_CELL_CLASS}`}
                         >
                           {hasData ? formatCOP(previousTotals.sales) : "-"}
                         </td>
                       </>
                     ) : null}
-                    <td className="px-2 py-2 text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
+                    <td className="px-2 py-2 text-center text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
                       {hasData ? salesPerHour.toFixed(3) : "-"}
                     </td>
                     {showPreviousComparison ? (
                       <td
-                        className={`px-2 py-2 text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
+                        className={`px-2 py-2 text-center text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
                       >
                         {hasData && hasLaborDataForLine(line.id) && previousTotals.hours > 0
                           ? previousSalesPerHour.toFixed(3)
                           : "-"}
                       </td>
                     ) : null}
-                    <td className="px-2 py-2 text-xs text-slate-700 sm:px-4 sm:py-3 sm:text-sm">
+                    <td className="px-2 py-2 text-center text-xs text-slate-700 sm:px-4 sm:py-3 sm:text-sm">
                       {hasData ? `${formatHours(totals.hours)}h` : "0h"}
                     </td>
                   </tr>
@@ -793,7 +793,7 @@ export const LineComparisonTable = ({
                             <button
                               type="button"
                               onClick={() => handleDetailSortToggle(line.id, "sedeName")}
-                              className={`flex items-center gap-1 text-left transition-colors ${
+                              className={`flex items-center justify-center gap-1 text-center transition-colors ${
                                 detailSort.metric === "sedeName"
                                   ? "text-blue-700"
                                   : "text-slate-500 hover:text-slate-700"
@@ -810,7 +810,7 @@ export const LineComparisonTable = ({
                             <button
                               type="button"
                               onClick={() => handleDetailSortToggle(line.id, "sales")}
-                              className={`flex items-center justify-end gap-1 text-right transition-colors ${
+                              className={`flex items-center justify-center gap-1 text-center transition-colors ${
                                 detailSort.metric === "sales"
                                   ? "text-blue-700"
                                   : "text-slate-500 hover:text-slate-700"
@@ -827,7 +827,7 @@ export const LineComparisonTable = ({
                             {showPreviousComparison ? (
                               <>
                                 <span
-                                  className={`rounded-lg px-2 py-1 text-right ${PREVIOUS_PERIOD_HEADER_CLASS}`}
+                                  className={`rounded-lg px-2 py-1 text-center ${PREVIOUS_PERIOD_HEADER_CLASS}`}
                                 >
                                   Mes anterior
                                 </span>
@@ -836,7 +836,7 @@ export const LineComparisonTable = ({
                             <button
                               type="button"
                               onClick={() => handleDetailSortToggle(line.id, "salesPerHour")}
-                              className={`flex items-center justify-end gap-1 text-right transition-colors ${
+                              className={`flex items-center justify-center gap-1 text-center transition-colors ${
                                 detailSort.metric === "salesPerHour"
                                   ? "text-blue-700"
                                   : "text-slate-500 hover:text-slate-700"
@@ -853,7 +853,7 @@ export const LineComparisonTable = ({
                             </button>
                             {showPreviousComparison ? (
                               <span
-                                className={`rounded-lg px-2 py-1 text-right ${PREVIOUS_PERIOD_HEADER_CLASS}`}
+                                className={`rounded-lg px-2 py-1 text-center ${PREVIOUS_PERIOD_HEADER_CLASS}`}
                               >
                                 Vta/Hr mes anterior
                               </span>
@@ -861,7 +861,7 @@ export const LineComparisonTable = ({
                             <button
                               type="button"
                               onClick={() => handleDetailSortToggle(line.id, "hours")}
-                              className={`flex items-center justify-end gap-1 text-right transition-colors ${
+                              className={`flex items-center justify-center gap-1 text-center transition-colors ${
                                 detailSort.metric === "hours"
                                   ? "text-blue-700"
                                   : "text-slate-500 hover:text-slate-700"
@@ -895,34 +895,34 @@ export const LineComparisonTable = ({
                                     : "grid-cols-[1.8fr_1fr_1fr_1fr]"
                                 }`}
                               >
-                                <span className="font-semibold text-slate-900">
+                                <span className="text-center font-semibold text-slate-900">
                                   {detail.sedeName}
                                 </span>
-                                <span className="text-right font-semibold text-slate-900">
+                                <span className="text-center font-semibold text-slate-900">
                                   {formatCOP(detail.sales)}
                                 </span>
                                   {showPreviousComparison ? (
                                     <>
                                       <span
-                                        className={`rounded-lg px-2 py-1 text-right font-semibold ${PREVIOUS_PERIOD_CELL_CLASS}`}
+                                        className={`rounded-lg px-2 py-1 text-center font-semibold ${PREVIOUS_PERIOD_CELL_CLASS}`}
                                       >
                                         {formatCOP(previousDetail.sales)}
                                       </span>
                                     </>
                                   ) : null}
-                                <span className="text-right font-semibold text-slate-800">
+                                <span className="text-center font-semibold text-slate-800">
                                   {detail.salesPerHour.toFixed(3)}
                                 </span>
                                   {showPreviousComparison ? (
                                     <span
-                                      className={`rounded-lg px-2 py-1 text-right font-semibold ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
+                                      className={`rounded-lg px-2 py-1 text-center font-semibold ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
                                     >
                                       {hasLaborDataForLine(line.id) && previousDetail.hours > 0
                                         ? previousDetailSalesPerHour.toFixed(3)
                                         : "-"}
                                     </span>
                                   ) : null}
-                                <span className="text-right text-slate-700">
+                                <span className="text-center text-slate-700">
                                   {formatHours(detail.hours)}h
                                 </span>
                               </div>
@@ -933,30 +933,30 @@ export const LineComparisonTable = ({
                                   ? "grid-cols-[1.6fr_1fr_1fr_1fr_1fr_1fr]"
                                   : "grid-cols-[1.8fr_1fr_1fr_1fr]"
                               }`}>
-                              <span className="text-slate-800">Promedio ({selectedSedeCount} sedes)</span>
-                              <span className="text-right text-slate-900">
+                              <span className="text-center text-slate-800">Promedio ({selectedSedeCount} sedes)</span>
+                              <span className="text-center text-slate-900">
                                 {formatCOP(averageSales)}
                               </span>
                               {showPreviousComparison ? (
                                 <>
                                   <span
-                                    className={`rounded-lg px-2 py-1 text-right ${PREVIOUS_PERIOD_CELL_CLASS}`}
+                                    className={`rounded-lg px-2 py-1 text-center ${PREVIOUS_PERIOD_CELL_CLASS}`}
                                   >
                                     {formatCOP(averagePreviousSales)}
                                   </span>
                                 </>
                               ) : null}
-                              <span className="text-right text-slate-900">
+                              <span className="text-center text-slate-900">
                                 {averageSalesPerHour.toFixed(3)}
                               </span>
                               {showPreviousComparison ? (
                                 <span
-                                  className={`rounded-lg px-2 py-1 text-right ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
+                                  className={`rounded-lg px-2 py-1 text-center ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
                                 >
                                   {averagePreviousSalesPerHour.toFixed(3)}
                                 </span>
                               ) : null}
-                              <span className="text-right text-slate-800">
+                              <span className="text-center text-slate-800">
                                 {formatHours(averageHours)}h
                               </span>
                             </div>
