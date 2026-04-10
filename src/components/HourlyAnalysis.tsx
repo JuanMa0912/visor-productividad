@@ -202,6 +202,8 @@ const OVERTIME_PAGE_SIZE = 150;
 const OVERTIME_PAGE_TAB_WINDOW = 8;
 const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
 const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 29;
+const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border-2 border-slate-950";
+const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-900";
 
 const compareOvertimeText = (left: string, right: string) =>
   left.localeCompare(right, "es", { sensitivity: "base" });
@@ -2789,8 +2791,8 @@ export const HourlyAnalysis = ({
                   No hay empleados para ese filtro de horas.
                 </p>
               ) : (
-                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/70 bg-white">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 bg-slate-50/70 px-2 py-2">
+                <div className={`mt-3 overflow-hidden rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white`}>
+                  <div className={`flex flex-wrap items-center justify-between gap-2 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/70 px-2 py-2`}>
                     <div className="flex flex-wrap items-center gap-1">
                       <button
                         type="button"
@@ -2835,7 +2837,7 @@ export const HourlyAnalysis = ({
                       {visibleOvertimeEmployees.length}
                     </span>
                   </div>
-                  <div className="grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] gap-1 border-b border-slate-200/70 bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  <div className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500`}>
                     <span className="text-center whitespace-nowrap">#</span>
                     <span className="text-center whitespace-nowrap">Excel</span>
                     <span className="whitespace-nowrap">Empleado</span>
@@ -2857,7 +2859,7 @@ export const HourlyAnalysis = ({
                     return (
                       <div
                         key={employeeKey}
-                        className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] items-start gap-1 border-b border-slate-100 px-2 py-2 text-[12px] last:border-b-0 ${
+                        className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] items-start gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} px-2 py-2 text-[12px] last:border-b-0 ${
                           isAbsence
                             ? "bg-red-50/80"
                             : (employee.marksCount ?? 0) % 2 !== 0 ||

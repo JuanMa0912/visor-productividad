@@ -160,6 +160,8 @@ const PERIOD_TWO_BODY_FILL = "FFF2F7FD";
 const ALEX_SEDE_COLUMN_WIDTH = 196;
 const ALEX_BASE_METRIC_COLUMN_WIDTH = 124;
 const ALEX_COMPARE_METRIC_COLUMN_WIDTH = 90;
+const ALEX_TABLE_OUTER_BORDER_CLASS = "border-2 border-slate-950";
+const ALEX_TABLE_CELL_BORDER_CLASS = "border-2 border-slate-900";
 
 export default function JornadaExtendidaPage() {
   const router = useRouter();
@@ -1493,11 +1495,11 @@ export default function JornadaExtendidaPage() {
                       </div>
                     )}
                     <div
-                      className="mt-3 overflow-x-auto overflow-y-visible rounded-xl border border-slate-200"
+                      className={`mt-3 overflow-x-auto overflow-y-visible rounded-xl ${ALEX_TABLE_OUTER_BORDER_CLASS}`}
                       style={{ scrollbarGutter: "stable" }}
                     >
                       <table
-                        className="w-full table-fixed text-sm"
+                        className="w-full table-fixed border-collapse text-sm"
                         style={{ minWidth: `${alexTableMinWidth}px` }}
                       >
                         <colgroup>
@@ -1526,7 +1528,7 @@ export default function JornadaExtendidaPage() {
                               <tr>
                                 <th
                                   rowSpan={2}
-                                  className="sticky left-0 z-20 border-b border-r border-slate-300 bg-white px-3 py-2 text-left font-bold"
+                                  className={`sticky left-0 z-20 ${ALEX_TABLE_CELL_BORDER_CLASS} bg-white px-3 py-2 text-left font-bold`}
                                   aria-sort={
                                     alexSortField === "sede"
                                       ? alexSortDirection === "asc"
@@ -1540,7 +1542,7 @@ export default function JornadaExtendidaPage() {
                                 {ALEX_EXPORT_FIELDS.map((field) => (
                                   <th
                                     key={`${field.key}-group`}
-                                    className="border-b border-r border-slate-300 bg-white px-3 py-2 text-center font-bold"
+                                    className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-white px-3 py-2 text-center font-bold`}
                                     colSpan={2}
                                     aria-sort={
                                       alexSortField === field.key
@@ -1562,13 +1564,13 @@ export default function JornadaExtendidaPage() {
                                 {ALEX_EXPORT_FIELDS.map((field) => (
                                   <Fragment key={`${field.key}-expanded`}>
                                     <th
-                                      className="border-b border-r border-slate-300 bg-[#fde9a8] px-3 py-2 text-center font-bold text-red-600"
+                                      className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#fde9a8] px-3 py-2 text-center font-bold text-red-600`}
                                       title={alexComparePeriods?.yesterday.label}
                                     >
                                       {alexComparePeriods?.yesterday.shortLabel ?? "--"}
                                     </th>
                                     <th
-                                      className="border-b border-r border-slate-300 bg-[#c9dbef] px-3 py-2 text-center font-bold text-red-600"
+                                      className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#c9dbef] px-3 py-2 text-center font-bold text-red-600`}
                                       title={alexComparePeriods?.monthToDate.label}
                                     >
                                       {alexComparePeriods?.monthToDate.shortLabel ?? "--"}
@@ -1580,7 +1582,7 @@ export default function JornadaExtendidaPage() {
                           ) : (
                             <tr className="bg-slate-100">
                               <th
-                                className="border-b border-slate-200 px-3 py-2 text-left font-bold"
+                                className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-left font-bold`}
                                 aria-sort={
                                   alexSortField === "sede"
                                     ? alexSortDirection === "asc"
@@ -1592,7 +1594,7 @@ export default function JornadaExtendidaPage() {
                                 {renderAlexSortHeader("sede", "Sede")}
                               </th>
                               <th
-                                className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                                className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right font-bold`}
                                 aria-sort={
                                   alexSortField === "moreThan72With2"
                                     ? alexSortDirection === "asc"
@@ -1608,7 +1610,7 @@ export default function JornadaExtendidaPage() {
                                 )}
                               </th>
                               <th
-                                className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                                className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right font-bold`}
                                 aria-sort={
                                   alexSortField === "moreThan92"
                                     ? alexSortDirection === "asc"
@@ -1620,7 +1622,7 @@ export default function JornadaExtendidaPage() {
                                 {renderAlexSortHeader("moreThan92", "+ 9:20h", "right")}
                               </th>
                               <th
-                                className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                                className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right font-bold`}
                                 aria-sort={
                                   alexSortField === "oddMarks"
                                     ? alexSortDirection === "asc"
@@ -1632,7 +1634,7 @@ export default function JornadaExtendidaPage() {
                                 {renderAlexSortHeader("oddMarks", "Marc. impares", "right")}
                               </th>
                               <th
-                                className="border-b border-slate-200 px-3 py-2 text-right font-bold"
+                                className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right font-bold`}
                                 aria-sort={
                                   alexSortField === "absences"
                                     ? alexSortDirection === "asc"
@@ -1648,15 +1650,15 @@ export default function JornadaExtendidaPage() {
                         </thead>
                         <tbody>
                           {displayedAlexRows.map((row) => (
-                            <tr key={row.sede} className="border-b border-slate-100">
-                              <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-slate-900">
+                            <tr key={row.sede}>
+                              <td className={`sticky left-0 z-10 ${ALEX_TABLE_CELL_BORDER_CLASS} bg-white px-3 py-2 font-semibold text-slate-900`}>
                                 {row.sede}
                               </td>
                               {alexCompareOpen ? (
                                 <>
                                   {ALEX_EXPORT_FIELDS.map((field) => (
                                     <Fragment key={`${row.sede}-${field.key}`}>
-                                      <td className="bg-[#fff0b8] px-3 py-2 text-center text-slate-800">
+                                      <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#fff0b8] px-3 py-2 text-center text-slate-800`}>
                                         {alexCompareLoading
                                           ? "..."
                                         : formatAlexMetric(
@@ -1667,7 +1669,7 @@ export default function JornadaExtendidaPage() {
                                             ),
                                           )}
                                       </td>
-                                      <td className="bg-[#d6e5f5] px-3 py-2 text-center text-slate-800">
+                                      <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#d6e5f5] px-3 py-2 text-center text-slate-800`}>
                                         {alexCompareLoading
                                           ? "..."
                                           : formatAlexMetric(
@@ -1683,16 +1685,16 @@ export default function JornadaExtendidaPage() {
                                 </>
                               ) : (
                                 <>
-                                  <td className="px-3 py-2 text-right text-slate-800">
+                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
                                     {formatAlexMetric(row.moreThan72With2)}
                                   </td>
-                                  <td className="px-3 py-2 text-right text-slate-800">
+                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
                                     {formatAlexMetric(row.moreThan92)}
                                   </td>
-                                  <td className="px-3 py-2 text-right text-slate-800">
+                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
                                     {formatAlexMetric(row.oddMarks)}
                                   </td>
-                                  <td className="px-3 py-2 text-right text-slate-800">
+                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
                                     {formatAlexMetric(row.absences)}
                                   </td>
                                 </>
@@ -1700,19 +1702,19 @@ export default function JornadaExtendidaPage() {
                             </tr>
                           ))}
                           <tr className="bg-slate-50 font-bold text-slate-900">
-                            <td className="sticky left-0 z-10 bg-slate-50 px-3 py-2">
+                            <td className={`sticky left-0 z-10 ${ALEX_TABLE_CELL_BORDER_CLASS} bg-slate-50 px-3 py-2`}>
                               TOTAL
                             </td>
                             {alexCompareOpen ? (
                               <>
                                 {ALEX_EXPORT_FIELDS.map((field) => (
                                   <Fragment key={`totals-${field.key}`}>
-                                    <td className="bg-[#f8df8c] px-3 py-2 text-center">
+                                    <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#f8df8c] px-3 py-2 text-center`}>
                                       {alexCompareLoading
                                         ? "..."
                                         : formatAlexMetric(alexCompareTotals.yesterday[field.key])}
                                     </td>
-                                    <td className="bg-[#bdd4ec] px-3 py-2 text-center">
+                                    <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#bdd4ec] px-3 py-2 text-center`}>
                                       {alexCompareLoading
                                         ? "..."
                                         : formatAlexMetric(
@@ -1724,12 +1726,12 @@ export default function JornadaExtendidaPage() {
                               </>
                             ) : (
                               <>
-                                <td className="px-3 py-2 text-right">
+                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>
                                   {alexTotals.moreThan72With2}
                                 </td>
-                                <td className="px-3 py-2 text-right">{alexTotals.moreThan92}</td>
-                                <td className="px-3 py-2 text-right">{alexTotals.oddMarks}</td>
-                                <td className="px-3 py-2 text-right">{alexTotals.absences}</td>
+                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>{alexTotals.moreThan92}</td>
+                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>{alexTotals.oddMarks}</td>
+                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>{alexTotals.absences}</td>
                               </>
                             )}
                           </tr>

@@ -86,12 +86,15 @@ const COL_W_SIGN = "18rem";
 const SCHEDULE_TIME_INPUT_BASE =
   "schedule-time-input box-border w-full min-w-0 max-w-none rounded border border-slate-200 py-1.5 text-[12px] tabular-nums leading-none tracking-tight focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden";
 
+const SCHEDULE_OUTER_BORDER_CLASS = "border-2 border-slate-950";
+const SCHEDULE_CELL_BORDER_CLASS = "border-2 border-slate-900";
+
 /** Widths come from <colgroup>; cells only need border/padding */
 /** En print NO usar ancho fijo (p. ej. w-6): las horas desbordan y se ven sobre el borde de la celda siguiente. */
 const TIME_SLOT_TD_CLASS =
-  "border border-slate-200 px-1.5 py-1 align-middle whitespace-nowrap print:whitespace-normal print:px-0.5 print:text-center print:align-middle";
+  `${SCHEDULE_CELL_BORDER_CLASS} px-1.5 py-1 align-middle whitespace-nowrap print:whitespace-normal print:px-0.5 print:text-center print:align-middle`;
 const TIME_SLOT_TH_CLASS =
-  "border border-slate-200 px-1 py-2 text-center align-middle uppercase print:px-0.5";
+  `${SCHEDULE_CELL_BORDER_CLASS} px-1 py-2 text-center align-middle uppercase print:px-0.5`;
 
 const MONTH_OPTIONS = [
   "Enero",
@@ -266,10 +269,10 @@ const RowScheduleRow = memo(
     onDescanso,
   }: RowScheduleRowProps) => (
     <tr className="odd:bg-white even:bg-slate-50/40">
-      <td className="border border-slate-200 px-2 py-1 text-center text-slate-600">
+      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1 text-center text-slate-600`}>
         {rowIndex + 1}
       </td>
-      <td className="border border-slate-200 px-2 py-1">
+      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1`}>
         <input
           type="text"
           list={employeeListId}
@@ -289,7 +292,7 @@ const RowScheduleRow = memo(
             <td
               key={`${rowIndex}-${day}-descanso`}
               colSpan={4}
-              className="border border-slate-200 bg-amber-50/60 px-1 py-1 text-center"
+              className={`${SCHEDULE_CELL_BORDER_CLASS} bg-amber-50/60 px-1 py-1 text-center`}
             >
               <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-700">
                 <input
@@ -384,7 +387,7 @@ const RowScheduleRow = memo(
           </td>
         ));
       })}
-      <td className="h-16 border border-slate-200 px-2 py-1 align-top">
+      <td className={`h-16 ${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1 align-top`}>
         <textarea
           value={row.firma}
           onChange={(e) => onRowField(rowIndex, "firma", e.target.value)}
@@ -1156,8 +1159,8 @@ export function IngresarHorariosInner() {
             ref={jpgExportRef}
             className="inline-block bg-white p-1 text-slate-900"
           >
-            <div className="border border-slate-900 px-2 py-1">
-              <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b border-slate-900 pb-1">
+            <div className={`${SCHEDULE_OUTER_BORDER_CLASS} px-2 py-1`}>
+              <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b-2 border-slate-900 pb-1">
                 <div className="text-left text-xs font-bold tracking-wide text-slate-900">
                   MercaTodo
                 </div>
@@ -1189,21 +1192,21 @@ export function IngresarHorariosInner() {
               </div>
             </div>
 
-            <div className="mt-1 rounded-none border border-slate-900">
+            <div className={`mt-1 rounded-none ${SCHEDULE_OUTER_BORDER_CLASS}`}>
               <table className="w-[88rem] table-fixed border-collapse text-[9px] leading-tight">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700">
-                    <th className="w-8 border border-slate-300 px-1 py-1.5 text-center">
+                    <th className={`w-8 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center`}>
                       #
                     </th>
-                    <th className="w-44 border border-slate-300 px-1 py-1.5 text-left">
+                    <th className={`w-44 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}>
                       Nombre
                     </th>
                     {DAY_ORDER.map((day) => (
                       <th
                         key={`jpg-${day}`}
                         colSpan={4}
-                        className="border border-slate-300 px-1 py-1.5 text-center uppercase"
+                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center uppercase`}
                       >
                         <div className="flex items-center justify-center gap-1">
                           <span>{day}</span>
@@ -1213,24 +1216,24 @@ export function IngresarHorariosInner() {
                         </div>
                       </th>
                     ))}
-                    <th className="w-40 border border-slate-300 px-1 py-1.5 text-left">
+                    <th className={`w-40 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}>
                       Firma empleado
                     </th>
                   </tr>
                   <tr className="bg-white text-[9px] font-semibold text-slate-500">
-                    <th className="border border-slate-300 px-1 py-1" />
-                    <th className="border border-slate-300 px-1 py-1" />
+                    <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1`} />
+                    <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1`} />
                     {DAY_ORDER.flatMap((day) =>
                       (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                         <th
                           key={`jpg-${day}-${field}`}
-                          className="w-12 border border-slate-300 px-0.5 py-1 text-center uppercase"
+                          className={`w-12 ${SCHEDULE_CELL_BORDER_CLASS} px-0.5 py-1 text-center uppercase`}
                         >
                           {field === "he1" || field === "he2" ? "HE" : "HS"}
                         </th>
                       )),
                     )}
-                    <th className="border border-slate-300 px-1 py-1" />
+                    <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1`} />
                   </tr>
                 </thead>
                 <tbody>
@@ -1239,10 +1242,10 @@ export function IngresarHorariosInner() {
                       key={`jpg-row-${rowIndex}`}
                       className="odd:bg-white even:bg-slate-50/40"
                     >
-                      <td className="border border-slate-300 px-1 py-1 text-center align-top text-slate-600">
+                      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 text-center align-top text-slate-600`}>
                         {rowIndex + 1}
                       </td>
-                      <td className="border border-slate-300 px-1 py-1 align-top text-slate-900 break-words">
+                      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-900 break-words`}>
                         {row.nombre || "--"}
                       </td>
                       {DAY_ORDER.flatMap((day) => {
@@ -1252,7 +1255,7 @@ export function IngresarHorariosInner() {
                             <td
                               key={`jpg-${rowIndex}-${day}-descanso`}
                               colSpan={4}
-                              className="border border-slate-300 bg-amber-50/60 px-1 py-1 text-center text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-700"
+                              className={`${SCHEDULE_CELL_BORDER_CLASS} bg-amber-50/60 px-1 py-1 text-center text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-700`}
                             >
                               Descanso
                             </td>,
@@ -1262,13 +1265,13 @@ export function IngresarHorariosInner() {
                         return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                           <td
                             key={`jpg-${rowIndex}-${day}-${field}`}
-                            className="w-12 border border-slate-300 px-0.5 py-1 text-center text-slate-700"
+                            className={`w-12 ${SCHEDULE_CELL_BORDER_CLASS} px-0.5 py-1 text-center text-slate-700`}
                           >
                             {formatTimeForDisplay(dayData[field]) || "--"}
                           </td>
                         ));
                       })}
-                      <td className="border border-slate-300 px-1 py-1 align-top text-slate-700 break-words">
+                      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-700 break-words`}>
                         {row.firma || "--"}
                       </td>
                     </tr>
@@ -1468,8 +1471,8 @@ export function IngresarHorariosInner() {
           </div>
         )}
 
-        <div className="mt-5 hidden border border-slate-900 px-3 py-2 print:block">
-          <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b border-slate-900 pb-2">
+        <div className={`mt-5 hidden ${SCHEDULE_OUTER_BORDER_CLASS} px-3 py-2 print:block`}>
+          <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b-2 border-slate-900 pb-2">
             <div className="text-left text-xs font-bold tracking-wide text-slate-900">
               MercaTodo
             </div>
@@ -1501,7 +1504,7 @@ export function IngresarHorariosInner() {
           </div>
         </div>
 
-        <div className="mt-5 overflow-x-auto overflow-y-visible rounded-2xl border border-slate-200/80 print:overflow-visible print:rounded-none print:border-slate-900">
+        <div className={`mt-5 overflow-x-auto overflow-y-visible rounded-2xl ${SCHEDULE_OUTER_BORDER_CLASS} print:overflow-visible print:rounded-none`}>
           <table className="planilla-print-table table-fixed w-max max-w-none border-collapse text-[12px] print:min-w-0 print:w-full print:max-w-none print:text-[8px]">
             <colgroup>
               <col style={{ width: COL_W_NUM }} />
@@ -1518,17 +1521,17 @@ export function IngresarHorariosInner() {
             </colgroup>
             <thead>
               <tr className="bg-slate-100 text-slate-700">
-                <th className="border border-slate-200 px-2 py-2 text-center">
+                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center`}>
                   #
                 </th>
-                <th className="border border-slate-200 px-2 py-2 text-left print:w-35">
+                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}>
                   Nombre
                 </th>
                 {DAY_ORDER.map((day) => (
                   <th
                     key={day}
                     colSpan={4}
-                    className="border border-slate-200 px-2 py-2 text-center uppercase"
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center uppercase`}
                   >
                     <div className="flex items-center justify-center gap-2">
                       <span>{day}</span>
@@ -1538,13 +1541,13 @@ export function IngresarHorariosInner() {
                     </div>
                   </th>
                 ))}
-                <th className="border border-slate-200 px-2 py-2 text-left print:w-35">
+                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}>
                   Firma empleado
                 </th>
               </tr>
               <tr className="bg-white text-[11px] font-semibold text-slate-500">
-                <th className="border border-slate-200 px-2 py-2" />
-                <th className="border border-slate-200 px-2 py-2" />
+                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
+                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
                 {DAY_ORDER.flatMap((day) =>
                   (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                     <th
@@ -1555,7 +1558,7 @@ export function IngresarHorariosInner() {
                     </th>
                   )),
                 )}
-                <th className="border border-slate-200 px-2 py-2" />
+                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
               </tr>
             </thead>
             <tbody>
