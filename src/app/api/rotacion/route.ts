@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { canAccessRotacionBoard } from "@/lib/special-role-features";
 
 type AvailableBoundsRow = {
   min_date: string | null;
@@ -521,6 +522,14 @@ export async function GET(request: Request) {
     return withSession(
       NextResponse.json(
         { error: "No tienes permisos para esta seccion." },
+        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  if (!canAccessRotacionBoard(session.user.specialRoles, session.user.role === "admin")) {
+    return withSession(
+      NextResponse.json(
+        { error: "No tienes permisos para ver rotacion." },
         { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );

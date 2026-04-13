@@ -31,6 +31,7 @@ const ALLOWED_SPECIAL_ROLE_SET = new Set([
   "alex",
   "cronograma",
   "replicar_lunes",
+  "rotacion",
 ]);
 
 const resolveValidSede = (value?: string | null) => {

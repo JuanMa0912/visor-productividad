@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { canAccessRotacionBoard } from "@/lib/special-role-features";
 
 export default function ProductividadHubPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [canSeeRotacion, setCanSeeRotacion] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -23,7 +25,11 @@ export default function ProductividadHubPage() {
         }
         if (!response.ok) return;
         const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
+          user?: {
+            role?: string;
+            allowedDashboards?: string[] | null;
+            specialRoles?: string[] | null;
+          };
         };
         const isAdmin = payload.user?.role === "admin";
         if (
@@ -32,6 +38,11 @@ export default function ProductividadHubPage() {
         ) {
           router.replace("/secciones");
           return;
+        }
+        if (isMounted) {
+          setCanSeeRotacion(
+            canAccessRotacionBoard(payload.user?.specialRoles, isAdmin),
+          );
         }
         if (isMounted) setReady(true);
       } catch (err) {
@@ -112,22 +123,24 @@ export default function ProductividadHubPage() {
             </span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => router.push("/rotacion")}
-            className="rounded-2xl border border-orange-300/80 bg-linear-to-br from-orange-100 via-white to-amber-50 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(251,146,60,0.45)] transition-all hover:-translate-y-0.5 hover:border-orange-400"
-          >
-            <span className="inline-flex rounded-full border border-orange-300/80 bg-orange-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-800">
-              Rotacion
-            </span>
-            <span className="mt-3 block text-sm font-semibold">
-              Inventario con baja salida
-            </span>
-            <span className="mt-1 block text-xs text-slate-600">
-              Visualiza productos con baja rotacion y los items que no se estan
-              moviendo por sede.
-            </span>
-          </button>
+          {canSeeRotacion && (
+            <button
+              type="button"
+              onClick={() => router.push("/rotacion")}
+              className="rounded-2xl border border-orange-300/80 bg-linear-to-br from-orange-100 via-white to-amber-50 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(251,146,60,0.45)] transition-all hover:-translate-y-0.5 hover:border-orange-400"
+            >
+              <span className="inline-flex rounded-full border border-orange-300/80 bg-orange-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-800">
+                Rotacion
+              </span>
+              <span className="mt-3 block text-sm font-semibold">
+                Inventario con baja salida
+              </span>
+              <span className="mt-1 block text-xs text-slate-600">
+                Visualiza productos con baja rotacion y los items que no se estan
+                moviendo por sede.
+              </span>
+            </button>
+          )}
 
           <button
             type="button"

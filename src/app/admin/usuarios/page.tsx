@@ -126,6 +126,7 @@ const SPECIAL_ROLE_OPTIONS = [
     id: "replicar_lunes",
     label: "Replicar lunes",
   },
+  { id: "rotacion", label: "Rotacion" },
 ];
 
 const formatAllowedLines = (allowedLines: string[] | null) => {

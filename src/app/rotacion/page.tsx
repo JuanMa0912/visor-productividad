@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { canAccessRotacionBoard } from "@/lib/special-role-features";
 import { formatDateLabel } from "@/lib/utils";
 
 type DateRange = {
@@ -486,7 +487,11 @@ export default function RotacionPage() {
         if (!response.ok) return;
 
         const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
+          user?: {
+            role?: string;
+            allowedDashboards?: string[] | null;
+            specialRoles?: string[] | null;
+          };
         };
         const isAdmin = payload.user?.role === "admin";
         if (
@@ -494,6 +499,10 @@ export default function RotacionPage() {
           !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
         ) {
           router.replace("/secciones");
+          return;
+        }
+        if (!canAccessRotacionBoard(payload.user?.specialRoles, isAdmin)) {
+          router.replace("/productividad");
           return;
         }
 
