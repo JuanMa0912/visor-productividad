@@ -96,6 +96,8 @@ export default function VentasXItemPage() {
   const [parityLoading, setParityLoading] = useState(false);
   const [parityResult, setParityResult] = useState<ParityCheckResult | null>(null);
   const itemsDropdownRef = useRef<HTMLDivElement | null>(null);
+  /** Evita solapar dos cargas desde BD (botón + carga automática). */
+  const dbLoadInflightRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -489,6 +491,10 @@ export default function VentasXItemPage() {
       );
       return;
     }
+    if (dbLoadInflightRef.current) {
+      return;
+    }
+    dbLoadInflightRef.current = true;
     setLoadingDb(true);
     try {
       const batchSize = USE_V2_API ? 300000 : 500000;
@@ -577,6 +583,7 @@ export default function VentasXItemPage() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingDb(false);
+      dbLoadInflightRef.current = false;
     }
   };
 
@@ -642,6 +649,24 @@ export default function VentasXItemPage() {
     if (!ready) return;
     void onLoadMeta(empresasCargaSel);
   }, [ready, empresasCargaSel, onLoadMeta]);
+
+  /** Cuando el rango y las empresas a cargar están listos, dispara la carga (debounce para no duplicar al cambiar varios filtros seguidos). */
+  useEffect(() => {
+    if (!ready) return;
+    if (!dateStart || !dateEnd || empresasCargaSel.length === 0) return;
+    if (dateStart > dateEnd) return;
+    if ((dbMinDate && dateStart < dbMinDate) || (dbMaxDate && dateEnd > dbMaxDate)) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void onLoadFromDb();
+    }, 550);
+
+    return () => window.clearTimeout(timer);
+    // onLoadFromDb usa el estado actual; no lo listamos para no re-ejecutar en cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, dateStart, dateEnd, empresasCargaSel, dbMinDate, dbMaxDate]);
 
   const handleDownloadCsv = () => {
     if (tableRows.length === 0 || tableColumns.length === 0) return;
@@ -811,7 +836,12 @@ export default function VentasXItemPage() {
         </div>
 
         <div className="rounded-2xl border border-slate-200/70 bg-slate-50 p-4">
-          <p className="text-sm font-semibold text-slate-800">Carga manual desde base de datos</p>
+          <p className="text-sm font-semibold text-slate-800">
+            Carga desde base de datos
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            Al elegir fechas validas y al menos una empresa, la carga se inicia sola (puedes repetir con el boton si lo necesitas).
+          </p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
               Fecha inicio
@@ -874,13 +904,13 @@ export default function VentasXItemPage() {
               disabled={loadingDb || !dateStart || !dateEnd || empresasCargaSel.length === 0}
               className="inline-flex items-center rounded-full border border-emerald-300/80 bg-emerald-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800 transition-all hover:border-emerald-400 hover:bg-emerald-200/80 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loadingDb ? "Cargando BD..." : "Cargar rango desde BD"}
+              {loadingDb ? "Cargando BD..." : "Volver a cargar desde BD"}
             </button>
           </div>
           <p className="mt-2 text-xs text-slate-500">
             {fileName
               ? `Fuente actual: ${fileName}`
-              : "Selecciona fecha y una o varias empresas, luego carga desde BD."}
+              : "Selecciona fecha y una o varias empresas; la carga arranca sola al completar."}
           </p>
           <p className="mt-1 text-[11px] text-slate-500">
             {minDateKey && maxDateKey

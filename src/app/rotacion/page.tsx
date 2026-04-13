@@ -143,9 +143,7 @@ const normalizeDateRange = (
   if (!end) return { start, end: start };
   if (start <= end) return { start, end };
 
-  return changedField === "start"
-    ? { start, end: start }
-    : { start: end, end };
+  return changedField === "start" ? { start, end: start } : { start: end, end };
 };
 
 const countInclusiveDays = (range: DateRange) => {
@@ -187,7 +185,7 @@ const getStatusBadgeClassName = (status: RotationRow["status"]) => {
 };
 
 const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
-  "Agotado": 0,
+  Agotado: 0,
   "Futuro agotado": 1,
   "Baja rotacion": 2,
   "En seguimiento": 3,
@@ -241,10 +239,14 @@ const sortRotationRows = (
         result = left.rotation - right.rotation;
         break;
       case "effectiveDays":
-        result = compareNullableNumbers(left.effectiveDays, right.effectiveDays);
+        result = compareNullableNumbers(
+          left.effectiveDays,
+          right.effectiveDays,
+        );
         break;
       case "status":
-        result = STATUS_SORT_ORDER[left.status] - STATUS_SORT_ORDER[right.status];
+        result =
+          STATUS_SORT_ORDER[left.status] - STATUS_SORT_ORDER[right.status];
         break;
       default:
         result = 0;
@@ -252,7 +254,10 @@ const sortRotationRows = (
 
     if (result !== 0) return result * directionFactor;
 
-    const byDescription = compareRotationText(left.descripcion, right.descripcion);
+    const byDescription = compareRotationText(
+      left.descripcion,
+      right.descripcion,
+    );
     if (byDescription !== 0) return byDescription;
 
     return compareRotationText(left.item, right.item);
@@ -392,7 +397,7 @@ const FilterFieldLabel = ({
   accentClassName: string;
 }) => (
   <span
-    className={`mb-2 flex min-h-[2.75rem] items-start gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] leading-4 ${accentClassName}`}
+    className={`mb-2 flex min-h-2.75rem items-start gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] leading-4 ${accentClassName}`}
   >
     <Icon className="mt-0.5 h-4 w-4 shrink-0" />
     <span className="block">{label}</span>
@@ -410,7 +415,11 @@ const FilterSelectField = ({
   disabled = false,
 }: SelectFieldProps) => (
   <label className="block">
-    <FilterFieldLabel icon={Icon} label={label} accentClassName={accentClassName} />
+    <FilterFieldLabel
+      icon={Icon}
+      label={label}
+      accentClassName={accentClassName}
+    />
     <select
       value={value}
       disabled={disabled}
@@ -433,14 +442,18 @@ export default function RotacionPage() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedSede, setSelectedSede] = useState("");
-  const [salesThreshold, setSalesThreshold] = useState(String(MAX_SALES_THRESHOLD));
+  const [salesThreshold, setSalesThreshold] = useState(
+    String(MAX_SALES_THRESHOLD),
+  );
   const [dateRange, setDateRange] = useState<DateRange>({ start: "", end: "" });
   const [availableRange, setAvailableRange] = useState<DateRange>({
     start: "",
     end: "",
   });
   const [rows, setRows] = useState<RotationRow[]>([]);
-  const [filterCatalog, setFilterCatalog] = useState<RotationApiResponse["filters"]>({
+  const [filterCatalog, setFilterCatalog] = useState<
+    RotationApiResponse["filters"]
+  >({
     companies: [],
     sedes: [],
   });
@@ -448,13 +461,14 @@ export default function RotacionPage() {
   const deferredSalesThreshold = useDeferredValue(salesThreshold);
   const skipNextFetchRef = useRef(false);
   const hasLoadedCatalogRef = useRef(false);
-  const [tableSortField, setTableSortField] = useState<RotationSortField | null>(
-    "totalSales",
-  );
+  const [tableSortField, setTableSortField] =
+    useState<RotationSortField | null>("totalSales");
   const [tableSortDirection, setTableSortDirection] =
     useState<RotationSortDirection>("desc");
   const [pageSize, setPageSize] = useState<PageSize>(50);
-  const [pageByGroupKey, setPageByGroupKey] = useState<Record<string, number>>({});
+  const [pageByGroupKey, setPageByGroupKey] = useState<Record<string, number>>(
+    {},
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -553,7 +567,9 @@ export default function RotacionPage() {
 
         const payload = (await response.json()) as RotationApiResponse;
         if (!response.ok) {
-          throw new Error(payload.error ?? "No fue posible consultar la rotacion.");
+          throw new Error(
+            payload.error ?? "No fue posible consultar la rotacion.",
+          );
         }
 
         setRows(payload.rows ?? []);
@@ -583,7 +599,9 @@ export default function RotacionPage() {
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setRows([]);
-        setError(err instanceof Error ? err.message : "Error consultando rotacion.");
+        setError(
+          err instanceof Error ? err.message : "Error consultando rotacion.",
+        );
       } finally {
         setIsLoadingData(false);
       }
@@ -601,13 +619,23 @@ export default function RotacionPage() {
     selectedSede,
   ]);
 
-  const daysConsulted = useMemo(() => countInclusiveDays(dateRange), [dateRange]);
-  const formattedRange = useMemo(() => formatRangeLabel(dateRange), [dateRange]);
-  const parsedThreshold = salesThreshold ? Number(salesThreshold) : MAX_SALES_THRESHOLD;
+  const daysConsulted = useMemo(
+    () => countInclusiveDays(dateRange),
+    [dateRange],
+  );
+  const formattedRange = useMemo(
+    () => formatRangeLabel(dateRange),
+    [dateRange],
+  );
+  const parsedThreshold = salesThreshold
+    ? Number(salesThreshold)
+    : MAX_SALES_THRESHOLD;
   const companyOptions = useMemo(
     () =>
       [...filterCatalog.companies]
-        .sort((a, b) => formatCompanyLabel(a).localeCompare(formatCompanyLabel(b), "es"))
+        .sort((a, b) =>
+          formatCompanyLabel(a).localeCompare(formatCompanyLabel(b), "es"),
+        )
         .map((empresa) => ({
           value: empresa,
           label: formatCompanyLabel(empresa),
@@ -641,7 +669,8 @@ export default function RotacionPage() {
   }, [allSedeOptions, selectedCompany]);
 
   const selectedSedeMeta = useMemo(
-    () => allSedeOptions.find((option) => option.value === selectedSede) ?? null,
+    () =>
+      allSedeOptions.find((option) => option.value === selectedSede) ?? null,
     [allSedeOptions, selectedSede],
   );
 
@@ -662,7 +691,8 @@ export default function RotacionPage() {
       evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,
       visibleItems: rows.length,
       exhausted: rows.filter((row) => row.status === "Agotado").length,
-      futureStockout: rows.filter((row) => row.status === "Futuro agotado").length,
+      futureStockout: rows.filter((row) => row.status === "Futuro agotado")
+        .length,
     }),
     [rows],
   );
@@ -706,7 +736,11 @@ export default function RotacionPage() {
     setPageByGroupKey({});
   };
 
-  const setGroupPage = (groupKey: string, nextPage: number, totalPages: number) => {
+  const setGroupPage = (
+    groupKey: string,
+    nextPage: number,
+    totalPages: number,
+  ) => {
     const safePage = Math.max(1, Math.min(totalPages, nextPage));
     setPageByGroupKey((prev) => ({
       ...prev,
@@ -740,9 +774,10 @@ export default function RotacionPage() {
                   Rotacion
                 </h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
-                  Esta vista toma datos reales desde la base diaria para detectar
-                  productos de baja rotación, agotados y futuros agotados por sede,
-                  usando la venta acumulada del rango consultado.
+                  Esta vista toma datos reales desde la base diaria para
+                  detectar productos de baja rotación, agotados y futuros
+                  agotados por sede, usando la venta acumulada del rango
+                  consultado.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -764,7 +799,6 @@ export default function RotacionPage() {
                 </Button>
               </div>
             </div>
-
           </CardContent>
         </Card>
 
@@ -807,7 +841,9 @@ export default function RotacionPage() {
                   onChange={(value) => {
                     setSelectedSede(value);
                     if (!value) return;
-                    const nextSede = allSedeOptions.find((option) => option.value === value);
+                    const nextSede = allSedeOptions.find(
+                      (option) => option.value === value,
+                    );
                     if (nextSede) {
                       setSelectedCompany(nextSede.empresa);
                     }
@@ -837,9 +873,9 @@ export default function RotacionPage() {
                 </label>
               </div>
               <p className="text-xs leading-5 text-slate-500">
-                Solo números enteros, sin puntos ni comas. El filtro usa la venta
-                acumulada del producto dentro del rango seleccionado y se limita a
-                un máximo de 200.000.
+                Solo números enteros, sin puntos ni comas. El filtro usa la
+                venta acumulada del producto dentro del rango seleccionado y se
+                limita a un máximo de 200.000.
               </p>
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -850,8 +886,8 @@ export default function RotacionPage() {
                 <Badge className="border-sky-200 bg-sky-50 text-sky-700">
                   {selectedSede
                     ? selectedCompany
-                      ? selectedSedeMeta?.sedeName ?? selectedSede
-                      : selectedSedeMeta?.label ?? selectedSede
+                      ? (selectedSedeMeta?.sedeName ?? selectedSede)
+                      : (selectedSedeMeta?.label ?? selectedSede)
                     : "Todas las sedes"}
                 </Badge>
                 <Badge className="border-amber-200 bg-amber-50 text-amber-700">
@@ -868,8 +904,8 @@ export default function RotacionPage() {
                 Periodo de consulta
               </CardTitle>
               <CardDescription>
-                El rango se apoya en la fecha maxima disponible en la base y puedes
-                moverlo manualmente cuando necesites revisar otro corte.
+                El rango se apoya en la fecha maxima disponible en la base y
+                puedes moverlo manualmente cuando necesites revisar otro corte.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -883,7 +919,8 @@ export default function RotacionPage() {
                 </Button>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                    {daysConsulted} {daysConsulted === 1 ? "dia" : "dias"} consultados
+                    {daysConsulted} {daysConsulted === 1 ? "dia" : "dias"}{" "}
+                    consultados
                   </Badge>
                   <Badge className="border-slate-200 bg-slate-50 text-slate-700">
                     {formattedRange}
@@ -901,7 +938,9 @@ export default function RotacionPage() {
                     value={dateRange.start}
                     min={availableRange.start || undefined}
                     max={availableRange.end || undefined}
-                    onChange={(event) => handleStartDateChange(event.target.value)}
+                    onChange={(event) =>
+                      handleStartDateChange(event.target.value)
+                    }
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
                   />
                 </label>
@@ -914,7 +953,9 @@ export default function RotacionPage() {
                     value={dateRange.end}
                     min={availableRange.start || undefined}
                     max={availableRange.end || undefined}
-                    onChange={(event) => handleEndDateChange(event.target.value)}
+                    onChange={(event) =>
+                      handleEndDateChange(event.target.value)
+                    }
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
                   />
                 </label>
@@ -992,8 +1033,8 @@ export default function RotacionPage() {
                 Cargando rotacion real
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Estamos leyendo la tabla base y consolidando los items por sede para
-                el rango seleccionado.
+                Estamos leyendo la tabla base y consolidando los items por sede
+                para el rango seleccionado.
               </p>
             </CardContent>
           </Card>
@@ -1007,9 +1048,9 @@ export default function RotacionPage() {
                 Selecciona una sede para consultar
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Mantuvimos visible el catalogo de empresas y sedes, pero la tabla
-                solo carga cuando eliges una sede para evitar una consulta demasiado
-                pesada sobre toda la base.
+                Mantuvimos visible el catalogo de empresas y sedes, pero la
+                tabla solo carga cuando eliges una sede para evitar una consulta
+                demasiado pesada sobre toda la base.
               </p>
             </CardContent>
           </Card>
@@ -1023,13 +1064,13 @@ export default function RotacionPage() {
                 Sin resultados para los filtros actuales
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                No encontramos items cuya venta del período esté dentro del umbral
-                actual
-                en{" "}
+                No encontramos items cuya venta del período esté dentro del
+                umbral actual en{" "}
                 <span className="font-semibold text-slate-800">
                   rotacion_base_item_dia_sede
                 </span>
-                . Ajusta el rango o sube el tope de venta para ampliar la lectura.
+                . Ajusta el rango o sube el tope de venta para ampliar la
+                lectura.
               </p>
             </CardContent>
           </Card>
@@ -1062,13 +1103,19 @@ export default function RotacionPage() {
                 (row) => row.status === "Baja rotacion",
               ).length;
               const groupKey = `${group.empresa}-${group.sedeId}`;
-              const totalPages = Math.max(1, Math.ceil(group.rows.length / pageSize));
+              const totalPages = Math.max(
+                1,
+                Math.ceil(group.rows.length / pageSize),
+              );
               const currentPage = Math.max(
                 1,
                 Math.min(pageByGroupKey[groupKey] ?? 1, totalPages),
               );
               const startIndex = (currentPage - 1) * pageSize;
-              const paginatedRows = group.rows.slice(startIndex, startIndex + pageSize);
+              const paginatedRows = group.rows.slice(
+                startIndex,
+                startIndex + pageSize,
+              );
 
               return (
                 <Card
@@ -1127,7 +1174,9 @@ export default function RotacionPage() {
                         type="button"
                         variant="outline"
                         className="h-8 rounded-md px-3 text-xs font-semibold"
-                        onClick={() => setGroupPage(groupKey, currentPage - 1, totalPages)}
+                        onClick={() =>
+                          setGroupPage(groupKey, currentPage - 1, totalPages)
+                        }
                         disabled={currentPage <= 1}
                       >
                         Anterior
@@ -1139,7 +1188,9 @@ export default function RotacionPage() {
                         type="button"
                         variant="outline"
                         className="h-8 rounded-md px-3 text-xs font-semibold"
-                        onClick={() => setGroupPage(groupKey, currentPage + 1, totalPages)}
+                        onClick={() =>
+                          setGroupPage(groupKey, currentPage + 1, totalPages)
+                        }
                         disabled={currentPage >= totalPages}
                       >
                         Siguiente
@@ -1244,7 +1295,9 @@ export default function RotacionPage() {
                                 </p>
                                 <p className="mt-1 text-xs text-slate-500">
                                   Linea {row.linea}
-                                  {row.lineaN1Codigo ? ` | N1 ${row.lineaN1Codigo}` : ""}
+                                  {row.lineaN1Codigo
+                                    ? ` | N1 ${row.lineaN1Codigo}`
+                                    : ""}
                                   {row.unidad ? ` | ${row.unidad}` : ""}
                                 </p>
                               </div>

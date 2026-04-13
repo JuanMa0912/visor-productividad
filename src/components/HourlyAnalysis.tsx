@@ -202,8 +202,8 @@ const OVERTIME_PAGE_SIZE = 150;
 const OVERTIME_PAGE_TAB_WINDOW = 8;
 const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
 const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 29;
-const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border-2 border-slate-950";
-const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-900";
+const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";
+const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-200";
 
 const compareOvertimeText = (left: string, right: string) =>
   left.localeCompare(right, "es", { sensitivity: "base" });

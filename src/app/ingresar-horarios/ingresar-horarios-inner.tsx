@@ -79,8 +79,8 @@ const COL_W_SIGN = "18rem";
 const SCHEDULE_TIME_INPUT_BASE =
   "schedule-time-input box-border w-full min-w-0 max-w-none rounded border border-slate-200 py-1.5 text-[12px] tabular-nums leading-none tracking-tight focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden";
 
-const SCHEDULE_OUTER_BORDER_CLASS = "border border-slate-300";
-const SCHEDULE_CELL_BORDER_CLASS = "border border-slate-300";
+const SCHEDULE_OUTER_BORDER_CLASS = "border border-slate-300 print:border-slate-900";
+const SCHEDULE_CELL_BORDER_CLASS = "border border-slate-300 print:border-slate-900";
 
 /** Widths come from <colgroup>; cells only need border/padding */
 /** En print NO usar ancho fijo (p. ej. w-6): las horas desbordan y se ven sobre el borde de la celda siguiente. */
@@ -271,11 +271,11 @@ const RowScheduleRow = memo(
   }: RowScheduleRowProps) => (
     <tr className="odd:bg-white even:bg-slate-50/40">
       <td
-        className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1 text-center text-slate-600`}
+        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1.5 py-0.5 align-top text-center text-[11px] leading-tight text-slate-600`}
       >
         {rowIndex + 1}
       </td>
-      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1`}>
+      <td className={`${SCHEDULE_CELL_BORDER_CLASS} align-top px-1.5 py-0.5`}>
         <input
           type="text"
           list={employeeListId}
@@ -284,9 +284,9 @@ const RowScheduleRow = memo(
             onRowField(rowIndex, "nombre", e.target.value.trimStart())
           }
           placeholder="Escribir o seleccionar empleado"
-          className="w-full min-w-70 rounded border border-slate-200 px-2 py-1 text-[12px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
+          className="w-full min-w-70 rounded border border-slate-200 px-1.5 py-0.5 text-[11px] leading-tight focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
         />
-        <span className="hidden text-[8px] leading-tight text-slate-900 print:block">
+        <span className="hidden text-[8px] leading-tight text-slate-900 print:block print:leading-tight">
           {row.nombre}
         </span>
       </td>
@@ -354,7 +354,7 @@ const RowScheduleRow = memo(
                   }
                   className={`${SCHEDULE_TIME_INPUT_BASE} pl-5 pr-1.5`}
                 />
-                <span className="hidden w-full pl-5 text-center text-[8px] leading-none text-slate-900 print:block print:w-full print:px-0.5 print:pl-0.5 tabular-nums">
+                <span className="schedule-print-time hidden w-full pl-5 text-center text-[8px] leading-none text-slate-900 print:block print:w-full print:px-0.5 print:pl-0.5 tabular-nums">
                   {formatTimeForDisplay(dayData[field])}
                 </span>
               </div>
@@ -387,7 +387,7 @@ const RowScheduleRow = memo(
                   }
                   className={`${SCHEDULE_TIME_INPUT_BASE} px-1.5`}
                 />
-                <span className="hidden w-full text-center text-[8px] leading-none text-slate-900 print:block print:tabular-nums">
+                <span className="schedule-print-time hidden w-full text-center text-[8px] leading-none text-slate-900 print:block print:tabular-nums">
                   {formatTimeForDisplay(dayData[field])}
                 </span>
               </>
@@ -395,12 +395,12 @@ const RowScheduleRow = memo(
           </td>
         ));
       })}
-      <td className={`h-16 ${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1 align-top`}>
+      <td className={`${SCHEDULE_CELL_BORDER_CLASS} align-top px-1.5 py-0.5`}>
         <textarea
           value={row.firma}
           onChange={(e) => onRowField(rowIndex, "firma", e.target.value)}
           rows={2}
-          className="h-full min-h-14 w-full resize-none rounded border border-slate-200 px-2 py-1 text-[12px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
+          className="min-h-9 w-full resize-y rounded border border-slate-200 px-1.5 py-0.5 text-[11px] leading-snug focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
         />
         <span className="hidden text-[8px] leading-tight text-slate-900 print:block">
           {row.firma}
@@ -1700,6 +1700,13 @@ export function IngresarHorariosInner() {
               max-width: 100% !important;
               min-width: 0 !important;
               font-size: 7px !important;
+              color: #0f172a !important;
+            }
+            .planilla-print-table th,
+            .planilla-print-table td {
+              color: #0f172a !important;
+              border-color: #0f172a !important;
+              background: #ffffff !important;
             }
             /* Anchos fijos en rem obligan un ancho mínimo enorme y se corta en PDF */
             .planilla-print-table colgroup col {
@@ -1708,6 +1715,9 @@ export function IngresarHorariosInner() {
             }
             input[type="checkbox"] {
               display: none !important;
+            }
+            #planilla-print .schedule-print-time {
+              font-weight: 700 !important;
             }
           }
         `}</style>

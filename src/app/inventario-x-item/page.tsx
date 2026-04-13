@@ -470,19 +470,21 @@ export default function InventarioXItemPage() {
   const [availableDateEnd, setAvailableDateEnd] = useState("");
   const [selectedDateStartState, setSelectedDateStartState] = useState("");
   const [selectedDateEndState, setSelectedDateEndState] = useState("");
-  const [selectedCompanyState, setSelectedCompanyState] = useState("");
-  const [selectedSedeState, setSelectedSedeState] = useState("");
+  const [selectedCompanyState, setSelectedCompanyState] = useState(
+    ALL_FILTER_VALUE,
+  );
+  const [selectedSedeState, setSelectedSedeState] = useState(ALL_FILTER_VALUE);
   const [selectedLinesState, setSelectedLinesState] = useState<string[]>([]);
   const [selectedSubcategoryState, setSelectedSubcategoryState] = useState<
     "" | typeof ALL_FILTER_VALUE | InventarioSubcategoryKey
-  >("");
+  >(ALL_FILTER_VALUE);
   const [selectedItemsState, setSelectedItemsState] = useState<string[]>([]);
   const [itemSearch, setItemSearch] = useState("");
   const deferredItemSearch = useDeferredValue(itemSearch);
   const loading = loadingFilters || loadingCatalog || loadingMatrix;
   const [catalogLoadedScopeKey, setCatalogLoadedScopeKey] = useState("");
   const [lineSelectionMode, setLineSelectionMode] =
-    useState<LineSelectionMode>("unset");
+    useState<LineSelectionMode>("all");
   const [showValidation, setShowValidation] = useState(false);
   const [appliedMatrixKey, setAppliedMatrixKey] = useState("");
   const [matrixSortField, setMatrixSortField] = useState<MatrixSortField>("sede");
@@ -535,8 +537,8 @@ export default function InventarioXItemPage() {
     setRows([]);
     setMatrixRows([]);
     setSelectedLinesState([]);
-    setLineSelectionMode("unset");
-    setSelectedSubcategoryState("");
+    setLineSelectionMode("all");
+    setSelectedSubcategoryState(ALL_FILTER_VALUE);
     setSelectedItemsState([]);
     setItemSearch("");
     setCatalogLoadedScopeKey("");
@@ -549,8 +551,8 @@ export default function InventarioXItemPage() {
     setRows([]);
     setMatrixRows([]);
     setSelectedLinesState([]);
-    setLineSelectionMode("unset");
-    setSelectedSubcategoryState("");
+    setLineSelectionMode("all");
+    setSelectedSubcategoryState(ALL_FILTER_VALUE);
     setSelectedItemsState([]);
     setItemSearch("");
     setCatalogLoadedScopeKey("");
@@ -649,15 +651,19 @@ export default function InventarioXItemPage() {
         setAvailableDate(payload.meta?.availableDate ?? "");
         setAvailableDateStart(payload.meta?.availableDateStart ?? "");
         setAvailableDateEnd(payload.meta?.availableDateEnd ?? "");
-        if (payload.meta?.selectedDateStart) {
-          setSelectedDateStartState(payload.meta.selectedDateStart);
-        } else if (!selectedDateStartState && payload.meta?.availableDateEnd) {
-          setSelectedDateStartState(payload.meta.availableDateEnd);
+        const meta = payload.meta;
+        if (meta?.selectedDateStart) {
+          setSelectedDateStartState(meta.selectedDateStart);
+        } else if (!selectedDateStartState) {
+          const start =
+            meta?.availableDateStart ?? meta?.availableDateEnd ?? "";
+          if (start) setSelectedDateStartState(start);
         }
-        if (payload.meta?.selectedDateEnd) {
-          setSelectedDateEndState(payload.meta.selectedDateEnd);
-        } else if (!selectedDateEndState && payload.meta?.availableDateEnd) {
-          setSelectedDateEndState(payload.meta.availableDateEnd);
+        if (meta?.selectedDateEnd) {
+          setSelectedDateEndState(meta.selectedDateEnd);
+        } else if (!selectedDateEndState) {
+          const end = meta?.availableDateEnd ?? meta?.availableDateStart ?? "";
+          if (end) setSelectedDateEndState(end);
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -965,7 +971,7 @@ export default function InventarioXItemPage() {
   const handleCompanyChange = useCallback(
     (value: string) => {
       setSelectedCompanyState(value);
-      setSelectedSedeState("");
+      setSelectedSedeState(ALL_FILTER_VALUE);
       resetScopedData();
       setShowValidation(false);
     },
@@ -1287,12 +1293,25 @@ export default function InventarioXItemPage() {
     });
   }, [matrixRowsBySede, matrixSortDirection, matrixSortField]);
 
-  const handleBuildMatrix = useCallback(() => {
-    setShowValidation(true);
+  /** Carga la matriz cuando los filtros obligatorios estan listos (sin boton manual). */
+  useEffect(() => {
     if (!canBuildMatrix) return;
-    setAppliedMatrixKey(currentMatrixKey);
-    void loadMatrixData();
-  }, [canBuildMatrix, currentMatrixKey, loadMatrixData]);
+    if (
+      appliedMatrixKey.length > 0 &&
+      appliedMatrixKey === currentMatrixKey
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowValidation(true);
+      setAppliedMatrixKey(currentMatrixKey);
+      void loadMatrixData();
+    }, 550);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- disparo alineado con el estado de filtros
+  }, [canBuildMatrix, currentMatrixKey, appliedMatrixKey, loadMatrixData]);
 
   const handleReload = useCallback(() => {
     void loadFilterOptions();
@@ -1541,19 +1560,19 @@ export default function InventarioXItemPage() {
         ? "No encontramos lineas con inventario para ese alcance."
         : showValidation && !hasLineSelection
           ? "Selecciona una o varias lineas, o usa 'Todas las lineas'."
-          : "Este filtro es obligatorio para construir la tabla.";
+          : "Este filtro es obligatorio para cargar la matriz.";
   const subcategoryHelperText = !hasScopeSelection
     ? "Primero define empresa y sede."
     : showValidation && !hasSubcategorySelection
       ? "Selecciona una subcategoria puntual o marca 'Todas'."
-      : "Este filtro es obligatorio para construir la tabla.";
+      : "Este filtro es obligatorio para cargar la matriz.";
   const itemHelperText = !hasScopeSelection
     ? "Los items se habilitan despues de definir empresa y sede."
     : !hasLineSelection || !hasSubcategorySelection
       ? "Primero define lineas y subcategoria para habilitar la lista de items."
       : selectedItems.length > 0
         ? `${selectedItems.length} de ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items seleccionados.`
-        : `Selecciona entre 1 y ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items para construir la tabla.`;
+        : `Selecciona entre 1 y ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items para ver la matriz.`;
 
   if (!ready) {
     return (
@@ -1633,9 +1652,9 @@ export default function InventarioXItemPage() {
               </h2>
               <p className="mt-1 text-sm leading-6 text-slate-600">
                 Empresa y sede filtran el alcance; lineas y subcategoria
-                refinan la lectura; luego puedes escoger hasta{" "}
-                {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items antes de
-                construir la tabla.
+                refinan la lectura. Escoge hasta{" "}
+                {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items; al completar los
+                filtros la matriz se consulta sola.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1645,20 +1664,12 @@ export default function InventarioXItemPage() {
                   ? `${selectedItems.length} item(s) seleccionados`
                   : "Items pendientes por seleccionar"}
               </div>
-              <button
-                type="button"
-                onClick={handleBuildMatrix}
-                disabled={!canBuildMatrix || loadingMatrix}
-                className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                {loadingMatrix ? "Construyendo..." : "Construir tabla"}
-              </button>
             </div>
           </div>
 
           {showValidation && !hasRequiredFilters && (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Completa los filtros obligatorios para construir la tabla. Puedes
+              Completa los filtros obligatorios para ver la matriz. Puedes
               escoger una opcion puntual o seleccionar {"\"Todas\""} cuando
               quieras ampliar el alcance.
             </div>
@@ -1840,9 +1851,8 @@ export default function InventarioXItemPage() {
                 Selecciona empresa y sede para habilitar el resto de filtros.
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                No hacemos cargue inicial de la tabla. Primero define el
-                alcance y luego completa lineas y subcategoria para construir
-                la consulta.
+                Primero define el alcance; luego completa lineas, subcategoria e
+                items para cargar la consulta.
               </p>
             </div>
           ) : loadingCatalog ? (
@@ -1874,11 +1884,10 @@ export default function InventarioXItemPage() {
           ) : hasPendingMatrixChanges || !hasAppliedCurrentFilters ? (
             <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-12 text-center">
               <p className="text-sm font-semibold text-blue-900">
-                Los filtros ya estan listos.
+                Actualizando la matriz...
               </p>
               <p className="mt-2 text-sm leading-6 text-blue-800">
-                Pulsa {"\"Construir tabla\""} para consultar solo la
-                combinacion actual de filtros y evitar cargues innecesarios.
+                Ajustamos la consulta con los filtros que acabas de cambiar.
               </p>
             </div>
           ) : loadingMatrix ? (
@@ -1892,7 +1901,7 @@ export default function InventarioXItemPage() {
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 Ajusta empresa, sede, lineas o subcategoria para encontrar
-                referencias y construir la matriz puntual que necesitas.
+                las referencias que necesitas.
               </p>
             </div>
           ) : matrixRowsBySede.length === 0 ? (
