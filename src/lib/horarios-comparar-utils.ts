@@ -48,7 +48,7 @@ export type ComparisonRow = {
     intermedia2: number | null;
     salida: number | null;
   };
-  status: "cumplio" | "solo_plan" | "solo_marcacion" | "ninguno";
+  status: "cumplio" | "no_cumplio";
 };
 
 export function buildComparisonLookupKey(
@@ -93,6 +93,54 @@ function hasAttendanceMarks(att: AttendanceTimeFields | null | undefined): boole
   );
 }
 
+/**
+ * Tolerancia de retraso (min): diferencias mayores a este valor cuentan como No cumplio
+ * (p. ej. con 10, +11 min es No cumplio).
+ */
+export const HORARIOS_COMPARAR_TARDE_MAX_MIN = 10;
+
+function hasLateBeyondTolerance(diffMin: ComparisonRow["diffMin"]): boolean {
+  const values = [
+    diffMin.entrada,
+    diffMin.intermedia1,
+    diffMin.intermedia2,
+    diffMin.salida,
+  ];
+  for (const d of values) {
+    if (d !== null && d > HORARIOS_COMPARAR_TARDE_MAX_MIN) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function deriveHorariosCompararStatus(row: {
+  planillaId: number;
+  isRestDay: boolean;
+  attendance: ComparisonRow["attendance"];
+  diffMin: ComparisonRow["diffMin"];
+}): ComparisonRow["status"] {
+  const hasAtt = hasAttendanceMarks(row.attendance);
+
+  if (row.planillaId === 0) {
+    return hasAtt ? "cumplio" : "no_cumplio";
+  }
+
+  if (!hasAtt) {
+    return "no_cumplio";
+  }
+
+  if (row.isRestDay) {
+    return "cumplio";
+  }
+
+  if (hasLateBeyondTolerance(row.diffMin)) {
+    return "no_cumplio";
+  }
+
+  return "cumplio";
+}
+
 export function mergePlanillaWithAttendance(
   planillaRows: PlanillaCompareInput[],
   attendanceByKey: Map<string, AttendanceCompareInput>,
@@ -128,9 +176,18 @@ export function mergePlanillaWithAttendance(
             horaSalida: att.horaSalida,
           }
         : null;
-      const status: ComparisonRow["status"] = hasAttendanceMarks(attendance)
-        ? "cumplio"
-        : "solo_plan";
+      const diffMin = {
+        entrada: null,
+        intermedia1: null,
+        intermedia2: null,
+        salida: null,
+      } as const;
+      const status = deriveHorariosCompararStatus({
+        planillaId: row.planillaId,
+        isRestDay: true,
+        attendance,
+        diffMin,
+      });
       out.push({
         workedDate: row.workedDate,
         sede: sedeCanon,
@@ -140,7 +197,7 @@ export function mergePlanillaWithAttendance(
         isRestDay: true,
         plan,
         attendance,
-        diffMin: { entrada: null, intermedia1: null, intermedia2: null, salida: null },
+        diffMin: { ...diffMin },
         status,
       });
       continue;
@@ -162,9 +219,12 @@ export function mergePlanillaWithAttendance(
       salida: diffMinutes(plan.hs2, attendance?.horaSalida),
     };
 
-    const status: ComparisonRow["status"] = hasAttendanceMarks(attendance)
-      ? "cumplio"
-      : "solo_plan";
+    const status = deriveHorariosCompararStatus({
+      planillaId: row.planillaId,
+      isRestDay: false,
+      attendance,
+      diffMin,
+    });
 
     out.push({
       workedDate: row.workedDate,
@@ -189,9 +249,18 @@ export function mergePlanillaWithAttendance(
       horaIntermedia2: att.horaIntermedia2,
       horaSalida: att.horaSalida,
     };
-    const status: ComparisonRow["status"] = hasAttendanceMarks(attendance)
-      ? "solo_marcacion"
-      : "ninguno";
+    const diffMin = {
+      entrada: null,
+      intermedia1: null,
+      intermedia2: null,
+      salida: null,
+    } as const;
+    const status = deriveHorariosCompararStatus({
+      planillaId: 0,
+      isRestDay: false,
+      attendance,
+      diffMin,
+    });
     out.push({
       workedDate: att.workedDate,
       sede: sedeCanon,
@@ -201,7 +270,7 @@ export function mergePlanillaWithAttendance(
       isRestDay: false,
       plan: { he1: "", hs1: "", he2: "", hs2: "" },
       attendance,
-      diffMin: { entrada: null, intermedia1: null, intermedia2: null, salida: null },
+      diffMin: { ...diffMin },
       status,
     });
   }

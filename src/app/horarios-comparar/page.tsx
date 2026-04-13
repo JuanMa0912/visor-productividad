@@ -26,12 +26,8 @@ function statusLabel(status: ComparisonRow["status"]): string {
   switch (status) {
     case "cumplio":
       return "Cumplió";
-    case "solo_plan":
-      return "Solo plan";
-    case "solo_marcacion":
-      return "Solo marcacion";
-    case "ninguno":
-      return "—";
+    case "no_cumplio":
+      return "No cumplió";
   }
 }
 
@@ -46,7 +42,7 @@ function defaultDateRange() {
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 
-type PlanSourceFilter = "all" | "with_planilla" | "attendance_only";
+type EstadoFilter = "all" | "cumplio" | "no_cumplio";
 
 function normalizeNameForFilter(value: string): string {
   return value
@@ -70,8 +66,7 @@ export default function HorariosCompararPage() {
   const [pageSize, setPageSize] = useState<PageSize>(50);
   const [page, setPage] = useState(1);
   const [employeeNameFilter, setEmployeeNameFilter] = useState("");
-  const [planSourceFilter, setPlanSourceFilter] =
-    useState<PlanSourceFilter>("all");
+  const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("all");
 
   useEffect(() => {
     let isMounted = true;
@@ -183,32 +178,22 @@ export default function HorariosCompararPage() {
         );
       }
     }
-    if (planSourceFilter === "with_planilla") {
-      out = out.filter((r) => r.planillaId > 0);
-    } else if (planSourceFilter === "attendance_only") {
-      out = out.filter((r) => r.planillaId === 0);
+    if (estadoFilter === "cumplio") {
+      out = out.filter((r) => r.status === "cumplio");
+    } else if (estadoFilter === "no_cumplio") {
+      out = out.filter((r) => r.status === "no_cumplio");
     }
     return out;
-  }, [rows, employeeNameFilter, planSourceFilter]);
+  }, [rows, employeeNameFilter, estadoFilter]);
 
   const counts = useMemo(() => {
     let cumplio = 0;
-    let soloPlan = 0;
-    let soloMarcacion = 0;
-    let ninguno = 0;
+    let noCumplio = 0;
     for (const r of filteredRows) {
       if (r.status === "cumplio") cumplio += 1;
-      else if (r.status === "solo_plan") soloPlan += 1;
-      else if (r.status === "solo_marcacion") soloMarcacion += 1;
-      else ninguno += 1;
+      else noCumplio += 1;
     }
-    return {
-      cumplio,
-      soloPlan,
-      soloMarcacion,
-      ninguno,
-      total: filteredRows.length,
-    };
+    return { cumplio, noCumplio, total: filteredRows.length };
   }, [filteredRows]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
@@ -227,7 +212,7 @@ export default function HorariosCompararPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [employeeNameFilter, planSourceFilter]);
+  }, [employeeNameFilter, estadoFilter]);
 
   if (!ready) {
     return (
@@ -330,18 +315,18 @@ export default function HorariosCompararPage() {
             />
           </label>
           <label className="flex min-w-[min(100%,16rem)] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-            Plan
+            Estado
             <select
-              value={planSourceFilter}
+              value={estadoFilter}
               onChange={(e) =>
-                setPlanSourceFilter(e.target.value as PlanSourceFilter)
+                setEstadoFilter(e.target.value as EstadoFilter)
               }
               disabled={loading}
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 disabled:opacity-60"
             >
               <option value="all">Todos</option>
-              <option value="with_planilla">Con plan en planilla</option>
-              <option value="attendance_only">Solo asistencia (sin planilla)</option>
+              <option value="cumplio">Cumplió</option>
+              <option value="no_cumplio">No cumplió</option>
             </select>
           </label>
         </div>
@@ -360,13 +345,7 @@ export default function HorariosCompararPage() {
             Cumplió: <strong className="text-emerald-700">{counts.cumplio}</strong>
           </span>
           <span>
-            Solo plan: <strong className="text-amber-700">{counts.soloPlan}</strong>
-          </span>
-          <span>
-            Solo marcacion: <strong className="text-sky-700">{counts.soloMarcacion}</strong>
-          </span>
-          <span>
-            —: <strong className="text-slate-500">{counts.ninguno}</strong>
+            No cumplió: <strong className="text-rose-700">{counts.noCumplio}</strong>
           </span>
         </div>
 
@@ -374,7 +353,7 @@ export default function HorariosCompararPage() {
           <p className="text-sm text-slate-600">
             {filteredRows.length === 0 && rows.length > 0 ? (
               <span className="text-amber-800">
-                Ningún registro coincide con nombre o plan. Ajusta los filtros.
+                Ningún registro coincide con nombre o estado. Ajusta los filtros.
               </span>
             ) : filteredRows.length === 0 ? (
               <span className="text-slate-500">Sin filas para mostrar.</span>
@@ -493,7 +472,7 @@ export default function HorariosCompararPage() {
                     colSpan={17}
                     className="border border-amber-100 bg-amber-50/50 px-4 py-8 text-center text-sm text-amber-900"
                   >
-                    Ningún registro coincide con los filtros de nombre o plan.
+                    Ningún registro coincide con los filtros de nombre o estado.
                   </td>
                 </tr>
               ) : (
@@ -520,21 +499,15 @@ export default function HorariosCompararPage() {
                       {r.planillaId > 0 ? `#${r.planillaId}` : "—"}
                     </td>
                     <td className={`border border-slate-200 px-2 py-1.5 ${rowTint}`}>
-                      {r.status === "ninguno" ? (
-                        <span className="text-slate-400">—</span>
-                      ) : (
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                            r.status === "solo_plan"
-                              ? "bg-amber-100 text-amber-800"
-                              : r.status === "solo_marcacion"
-                                ? "bg-sky-100 text-sky-800"
-                                : "bg-emerald-100 text-emerald-800"
-                          }`}
-                        >
-                          {statusLabel(r.status)}
-                        </span>
-                      )}
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          r.status === "cumplio"
+                            ? "bg-emerald-100 text-emerald-900"
+                            : "bg-rose-100 text-rose-900"
+                        }`}
+                      >
+                        {statusLabel(r.status)}
+                      </span>
                     </td>
                     <td className="border border-sky-200/80 bg-sky-50 px-1 py-1.5 text-center text-slate-800">
                       {r.plan.he1 || "—"}
@@ -581,9 +554,11 @@ export default function HorariosCompararPage() {
         </div>
 
         <p className="mt-4 text-xs text-slate-500">
-          Diferencia = asistencia menos planilla. Hasta 59 min se muestra en minutos; desde 60 min en
-          horas y minutos (ej. +1h 5m). Positivo indica marcacion mas tarde que lo planificado en ese
-          punto. Emparejamiento por nombre normalizado, sede y fecha.
+          <strong className="text-emerald-800">Cumplió</strong>: planilla con marcaciones y todas las
+          diferencias ≤ +10 min (o anticipo); filas solo asistencia con al menos una hora.{" "}
+          <strong className="text-rose-800">No cumplió</strong>: plan en planilla sin marcaciones, o
+          alguna diferencia +11 min o mas. Diferencia = asistencia menos planilla. Emparejamiento por
+          nombre, sede y fecha.
         </p>
       </div>
     </div>
