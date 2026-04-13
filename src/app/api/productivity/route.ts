@@ -396,6 +396,7 @@ const fetchAllProductivityData = async (
   allowedLineIds: string[] = [],
 ): Promise<DailyProductivity[]> => {
   const pool = await getDbPool();
+  const client = await pool.connect();
   const dailyDataMap = new Map<string, DailyProductivity>();
   const allowedSet = new Set(allowedLineIds.map(normalizeLineId));
   const lineTables =
@@ -417,8 +418,9 @@ const fetchAllProductivityData = async (
         ORDER BY fecha, sede
       `;
 
-  const lineQueryPromises = lineTables.map(async (line) => {
-    const query = `
+  try {
+    const lineQueryPromises = lineTables.map(async (line) => {
+      const query = `
           SELECT
             fecha_dcto,
             centro_operacion,
@@ -430,25 +432,25 @@ const fetchAllProductivityData = async (
           GROUP BY fecha_dcto, centro_operacion, empresa_bd
           ORDER BY fecha_dcto, centro_operacion
         `;
-    try {
-      const result = await pool.query(query);
-      return { line, rows: result.rows ?? [] };
-    } catch (error) {
-      console.warn(
-        `No se pudo consultar la tabla ${line.table}. Se omite.`,
-        error,
-      );
-      return { line, rows: [] };
-    }
-  });
+      try {
+        const result = await client.query(query);
+        return { line, rows: result.rows ?? [] };
+      } catch (error) {
+        console.warn(
+          `No se pudo consultar la tabla ${line.table}. Se omite.`,
+          error,
+        );
+        return { line, rows: [] };
+      }
+    });
 
-  const [lineOutputs, hoursQueryResult] = await Promise.all([
-    Promise.all(lineQueryPromises),
-    pool.query(hoursQuery).catch((error) => {
-      console.warn("No se pudo consultar la tabla asistencia_horas:", error);
-      return { rows: [] as Record<string, unknown>[] };
-    }),
-  ]);
+    const [lineOutputs, hoursQueryResult] = await Promise.all([
+      Promise.all(lineQueryPromises),
+      client.query(hoursQuery).catch((error) => {
+        console.warn("No se pudo consultar la tabla asistencia_horas:", error);
+        return { rows: [] as Record<string, unknown>[] };
+      }),
+    ]);
 
   for (const { line, rows } of lineOutputs) {
     for (const row of rows) {
@@ -654,6 +656,9 @@ const fetchAllProductivityData = async (
     }
 
     return sortedResult;
+  } finally {
+    client.release();
+  }
 };
 
 /** Una sola pasada en frío si varios GET llegan sin caché (evita consultas duplicadas). */

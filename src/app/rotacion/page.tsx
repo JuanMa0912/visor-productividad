@@ -95,9 +95,11 @@ type RotationSortField =
   | "status";
 
 type RotationSortDirection = "asc" | "desc";
+type PageSize = 25 | 50 | 100;
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const MAX_SALES_THRESHOLD = 200000;
+const PAGE_SIZE_OPTIONS: PageSize[] = [25, 50, 100];
 
 const dateLabelOptions: Intl.DateTimeFormatOptions = {
   day: "2-digit",
@@ -451,6 +453,8 @@ export default function RotacionPage() {
   );
   const [tableSortDirection, setTableSortDirection] =
     useState<RotationSortDirection>("desc");
+  const [pageSize, setPageSize] = useState<PageSize>(50);
+  const [pageByGroupKey, setPageByGroupKey] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -693,6 +697,21 @@ export default function RotacionPage() {
 
     setTableSortField(field);
     setTableSortDirection(getDefaultSortDirection(field));
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    const next = Number(value) as PageSize;
+    if (!PAGE_SIZE_OPTIONS.includes(next)) return;
+    setPageSize(next);
+    setPageByGroupKey({});
+  };
+
+  const setGroupPage = (groupKey: string, nextPage: number, totalPages: number) => {
+    const safePage = Math.max(1, Math.min(totalPages, nextPage));
+    setPageByGroupKey((prev) => ({
+      ...prev,
+      [groupKey]: safePage,
+    }));
   };
 
   const shouldSelectSedeFirst = !selectedSede;
@@ -1016,6 +1035,22 @@ export default function RotacionPage() {
           </Card>
         ) : (
           <section className="grid gap-5">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Filas por pagina
+              </label>
+              <select
+                value={pageSize}
+                onChange={(event) => handlePageSizeChange(event.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
+              >
+                {PAGE_SIZE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
             {rowsBySede.map((group) => {
               const exhausted = group.rows.filter(
                 (row) => row.status === "Agotado",
@@ -1026,10 +1061,18 @@ export default function RotacionPage() {
               const lowRotation = group.rows.filter(
                 (row) => row.status === "Baja rotacion",
               ).length;
+              const groupKey = `${group.empresa}-${group.sedeId}`;
+              const totalPages = Math.max(1, Math.ceil(group.rows.length / pageSize));
+              const currentPage = Math.max(
+                1,
+                Math.min(pageByGroupKey[groupKey] ?? 1, totalPages),
+              );
+              const startIndex = (currentPage - 1) * pageSize;
+              const paginatedRows = group.rows.slice(startIndex, startIndex + pageSize);
 
               return (
                 <Card
-                  key={`${group.empresa}-${group.sedeId}`}
+                  key={groupKey}
                   className="overflow-hidden border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
                 >
                   <CardHeader className="border-b border-slate-100 bg-slate-50/70">
@@ -1063,6 +1106,46 @@ export default function RotacionPage() {
                       </div>
                     </div>
                   </CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-5 py-3 text-xs text-slate-600">
+                    <span>
+                      Mostrando{" "}
+                      <span className="font-semibold text-slate-800">
+                        {group.rows.length === 0 ? 0 : startIndex + 1}
+                      </span>{" "}
+                      a{" "}
+                      <span className="font-semibold text-slate-800">
+                        {Math.min(startIndex + pageSize, group.rows.length)}
+                      </span>{" "}
+                      de{" "}
+                      <span className="font-semibold text-slate-800">
+                        {group.rows.length}
+                      </span>{" "}
+                      items
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 rounded-md px-3 text-xs font-semibold"
+                        onClick={() => setGroupPage(groupKey, currentPage - 1, totalPages)}
+                        disabled={currentPage <= 1}
+                      >
+                        Anterior
+                      </Button>
+                      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Pagina {currentPage} de {totalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 rounded-md px-3 text-xs font-semibold"
+                        onClick={() => setGroupPage(groupKey, currentPage + 1, totalPages)}
+                        disabled={currentPage >= totalPages}
+                      >
+                        Siguiente
+                      </Button>
+                    </div>
+                  </div>
                   <CardContent className="overflow-x-auto px-0 py-0">
                     <Table className="min-w-[1180px]">
                       <TableHeader>
@@ -1149,7 +1232,7 @@ export default function RotacionPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {group.rows.map((row) => (
+                        {paginatedRows.map((row) => (
                           <TableRow key={`${group.sedeId}-${row.item}`}>
                             <TableCell className="px-4 py-3 font-semibold text-slate-900">
                               {row.item}

@@ -603,7 +603,11 @@ export async function GET(request: Request) {
     const requestedVisibleSede =
       requestedSedeId === null
         ? null
-        : visibleSedes.find((sede) => sede.sedeId === requestedSedeId) ?? null;
+        : (visibleSedes.find(
+            (sede) =>
+              sede.sedeId === requestedSedeId &&
+              (!requestedCompany || sede.empresa === requestedCompany),
+          ) ?? null);
 
     if (requestedSedeId && !requestedVisibleSede) {
       return withSession(
