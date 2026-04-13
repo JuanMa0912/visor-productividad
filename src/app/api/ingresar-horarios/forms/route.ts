@@ -11,6 +11,10 @@ import {
   insertHorarioPlanillaDetalles,
   validateHorarioPlanillaPayload,
 } from "@/lib/horario-planilla-persist";
+import {
+  isPlanillaSedeAllowedForUser,
+  toCanonicalPlanillaSede,
+} from "@/lib/planilla-sede";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
@@ -138,7 +142,28 @@ export async function POST(req: Request) {
     );
   }
 
-  const { sede, seccion, fechaInicial, fechaFinal, mes, rows } = validated;
+  const { seccion, fechaInicial, fechaFinal, mes, rows } = validated;
+
+  const canonicalSede = toCanonicalPlanillaSede(validated.sede);
+  if (!canonicalSede) {
+    return withSession(
+      NextResponse.json(
+        {
+          error:
+            "La sede no es valida. Elige una sede del listado (nombre exacto del sistema).",
+        },
+        { status: 400 },
+      ),
+    );
+  }
+  if (!isPlanillaSedeAllowedForUser(canonicalSede, session.user)) {
+    return withSession(
+      NextResponse.json(
+        { error: "No tienes permiso para guardar planillas en esa sede." },
+        { status: 403 },
+      ),
+    );
+  }
 
   if (getPopulatedHorarioRows(rows).length === 0) {
     return withSession(
@@ -169,7 +194,7 @@ export async function POST(req: Request) {
       RETURNING id
       `,
       [
-        sede,
+        canonicalSede,
         seccion,
         fechaInicial,
         fechaFinal,

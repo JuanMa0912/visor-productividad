@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { isSamePlanillaSede } from "@/lib/planilla-sede";
 import { normalizePersonNameKey } from "@/lib/normalize";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import {
@@ -43,6 +44,13 @@ const DAY_ORDER: DayKey[] = [
   "viernes",
   "sabado",
 ];
+
+/** Primer dia de la fila: ahi no se pinta separador; el resto llevan borde izquierdo mas marcado entre dias. */
+const FIRST_DAY_KEY = DAY_ORDER[0];
+
+function dayStartDividerClass(day: DayKey): string {
+  return day === FIRST_DAY_KEY ? "" : "day-group-start";
+}
 
 const EMPTY_DAY: DaySchedule = {
   he1: "",
@@ -149,22 +157,12 @@ const normalizeText = (value?: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-const normalizeSedeText = (value?: string) =>
-  normalizeText(value).replace(/\bdesprese\b/g, "desposte");
-
 const matchesSede = (
   employeeSede: string | undefined,
   selectedSede: string,
 ) => {
-  if (!selectedSede) return true;
-  const employeeKey = normalizeSedeText(employeeSede ?? "");
-  const selectedKey = normalizeSedeText(selectedSede);
-  if (!employeeKey || !selectedKey) return false;
-  return (
-    employeeKey === selectedKey ||
-    employeeKey.includes(selectedKey) ||
-    selectedKey.includes(employeeKey)
-  );
+  if (!selectedSede.trim()) return false;
+  return isSamePlanillaSede(employeeSede ?? "", selectedSede);
 };
 
 /**
@@ -297,7 +295,7 @@ const RowScheduleRow = memo(
             <td
               key={`${rowIndex}-${day}-descanso`}
               colSpan={4}
-              className={`${SCHEDULE_CELL_BORDER_CLASS} bg-amber-50/60 px-1 py-1 text-center`}
+              className={`${SCHEDULE_CELL_BORDER_CLASS} bg-amber-50/60 px-1 py-1 text-center ${dayStartDividerClass(day)}`}
             >
               <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-700">
                 <input
@@ -316,7 +314,9 @@ const RowScheduleRow = memo(
         return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
           <td
             key={`${rowIndex}-${day}-${field}`}
-            className={TIME_SLOT_TD_CLASS}
+            className={[TIME_SLOT_TD_CLASS, field === "he1" ? dayStartDividerClass(day) : ""]
+              .filter(Boolean)
+              .join(" ")}
           >
             {field === "he1" ? (
               <div className="relative min-w-0 print:static">
@@ -1226,7 +1226,7 @@ export function IngresarHorariosInner() {
                       <th
                         key={`jpg-${day}`}
                         colSpan={4}
-                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center uppercase`}
+                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center uppercase ${dayStartDividerClass(day)}`}
                       >
                         <div className="flex items-center justify-center gap-1">
                           <span>{day}</span>
@@ -1249,7 +1249,14 @@ export function IngresarHorariosInner() {
                       (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                         <th
                           key={`jpg-${day}-${field}`}
-                          className={`w-12 ${SCHEDULE_CELL_BORDER_CLASS} px-0.5 py-1 text-center uppercase`}
+                          className={[
+                            "w-12",
+                            SCHEDULE_CELL_BORDER_CLASS,
+                            "px-0.5 py-1 text-center uppercase",
+                            field === "he1" ? dayStartDividerClass(day) : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                         >
                           {field === "he1" || field === "he2" ? "HE" : "HS"}
                         </th>
@@ -1281,7 +1288,7 @@ export function IngresarHorariosInner() {
                             <td
                               key={`jpg-${rowIndex}-${day}-descanso`}
                               colSpan={4}
-                              className={`${SCHEDULE_CELL_BORDER_CLASS} bg-amber-50/60 px-1 py-1 text-center text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-700`}
+                              className={`${SCHEDULE_CELL_BORDER_CLASS} bg-amber-50/60 px-1 py-1 text-center text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-700 ${dayStartDividerClass(day)}`}
                             >
                               Descanso
                             </td>,
@@ -1292,7 +1299,14 @@ export function IngresarHorariosInner() {
                           (field) => (
                             <td
                               key={`jpg-${rowIndex}-${day}-${field}`}
-                              className={`w-12 ${SCHEDULE_CELL_BORDER_CLASS} px-0.5 py-1 text-center text-slate-700`}
+                              className={[
+                                "w-12",
+                                SCHEDULE_CELL_BORDER_CLASS,
+                                "px-0.5 py-1 text-center text-slate-700",
+                                field === "he1" ? dayStartDividerClass(day) : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
                             >
                               {formatTimeForDisplay(dayData[field]) || "--"}
                             </td>
@@ -1572,7 +1586,7 @@ export function IngresarHorariosInner() {
                   <th
                     key={day}
                     colSpan={4}
-                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center uppercase`}
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center uppercase ${dayStartDividerClass(day)}`}
                   >
                     <div className="flex items-center justify-center gap-2">
                       <span>{day}</span>
@@ -1593,7 +1607,12 @@ export function IngresarHorariosInner() {
                 <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
                 {DAY_ORDER.flatMap((day) =>
                   (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
-                    <th key={`${day}-${field}`} className={TIME_SLOT_TH_CLASS}>
+                    <th
+                      key={`${day}-${field}`}
+                      className={[TIME_SLOT_TH_CLASS, field === "he1" ? dayStartDividerClass(day) : ""]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
                       {field === "he1" || field === "he2" ? "HE" : "HS"}
                     </th>
                   )),
@@ -1662,6 +1681,11 @@ export function IngresarHorariosInner() {
           </p>
         </div>
         <style jsx global>{`
+          #planilla-print table th.day-group-start,
+          #planilla-print table td.day-group-start {
+            border-left-width: 2px;
+            border-left-color: rgb(30 41 59);
+          }
           @media print {
             @page {
               size: A4 landscape;
@@ -1707,6 +1731,12 @@ export function IngresarHorariosInner() {
               color: #0f172a !important;
               border-color: #0f172a !important;
               background: #ffffff !important;
+            }
+            /* Separador vertical entre dias (mas grueso y oscuro que HE/HS internos) */
+            #planilla-print table th.day-group-start,
+            #planilla-print table td.day-group-start {
+              border-left-width: 3px !important;
+              border-left-color: #020617 !important;
             }
             /* Anchos fijos en rem obligan un ancho mínimo enorme y se corta en PDF */
             .planilla-print-table colgroup col {

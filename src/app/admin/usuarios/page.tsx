@@ -127,6 +127,7 @@ const SPECIAL_ROLE_OPTIONS = [
     label: "Replicar lunes",
   },
   { id: "rotacion", label: "Rotacion" },
+  { id: "comparar_horarios", label: "Comparar horarios" },
 ];
 
 const formatAllowedLines = (allowedLines: string[] | null) => {
@@ -846,6 +847,10 @@ export default function AdminUsuariosPage() {
 
                     <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
                       Roles especiales
+                      <p className="mt-1 text-[11px] font-normal leading-snug text-slate-500">
+                        Los administradores tienen acceso a Rotacion y Comparar horarios sin activar esos
+                        roles; aqui solo aplica a usuarios con rol user.
+                      </p>
                       <div className="mt-1.5 grid max-h-20 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                         {SPECIAL_ROLE_OPTIONS.map((role) => {
                           const checked = formState.specialRoles.includes(role.id);

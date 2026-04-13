@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { canAccessPortalSection } from "@/lib/portal-sections";
+import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
 
 export default function HorarioHubPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [canSeeCompararHorarios, setCanSeeCompararHorarios] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -23,7 +25,11 @@ export default function HorarioHubPage() {
         }
         if (!response.ok) return;
         const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
+          user?: {
+            role?: string;
+            allowedDashboards?: string[] | null;
+            specialRoles?: string[] | null;
+          };
         };
         const isAdmin = payload.user?.role === "admin";
         if (
@@ -33,7 +39,12 @@ export default function HorarioHubPage() {
           router.replace("/secciones");
           return;
         }
-        if (isMounted) setReady(true);
+        if (isMounted) {
+          setCanSeeCompararHorarios(
+            canAccessHorariosCompararBoard(payload.user?.specialRoles, isAdmin),
+          );
+          setReady(true);
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
       }
@@ -77,7 +88,7 @@ export default function HorarioHubPage() {
           personal, novedades y turnos por sede.
         </p>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <button
             type="button"
             onClick={() => router.push("/jornada-extendida")}
@@ -94,6 +105,24 @@ export default function HorarioHubPage() {
               fecha para medir eficiencia operativa.
             </span>
           </button>
+
+          {canSeeCompararHorarios ? (
+            <button
+              type="button"
+              onClick={() => router.push("/horarios-comparar")}
+              className="rounded-2xl border border-violet-300/80 bg-linear-to-br from-violet-100 via-white to-indigo-50 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(139,92,246,0.35)] transition-all hover:-translate-y-0.5 hover:border-violet-400"
+            >
+              <span className="inline-flex rounded-full border border-violet-300/80 bg-violet-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-900">
+                Comparar
+              </span>
+              <span className="mt-3 block text-sm font-semibold">
+                Planilla vs asistencia
+              </span>
+              <span className="mt-1 block text-xs text-slate-600">
+                Compara horarios registrados en planillas con las marcaciones reales por sede y fecha.
+              </span>
+            </button>
+          ) : null}
 
           <button
             type="button"

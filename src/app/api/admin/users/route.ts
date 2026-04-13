@@ -32,6 +32,7 @@ const ALLOWED_SPECIAL_ROLE_SET = new Set([
   "cronograma",
   "replicar_lunes",
   "rotacion",
+  "comparar_horarios",
 ]);
 
 const resolveValidSede = (value?: string | null) => {

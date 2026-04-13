@@ -3,6 +3,7 @@ import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { normalizeKeySpaced } from "@/lib/normalize";
 import type { Sede } from "@/lib/constants";
+import { mapRawSedeToCanonical } from "@/lib/planilla-sede";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
@@ -191,18 +192,6 @@ const normalizeText = (value?: string | null) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-const mapToCanonicalSede = (rawSede?: string | null) => {
-  if (!rawSede) return "";
-  const normalized = canonicalizeSedeKey(normalizeText(rawSede));
-  const matched = SEDE_CONFIGS.find((cfg) =>
-    [cfg.name, ...cfg.aliases].map((alias) => canonicalizeSedeKey(normalizeText(alias))).some(
-      (alias) =>
-        normalized === alias || normalized.includes(alias) || alias.includes(normalized),
-    ),
-  );
-  return matched?.name ?? rawSede.trim();
-};
-
 const buildNormalizeSql = (columnName: string) => `
   REGEXP_REPLACE(
     LOWER(
@@ -372,7 +361,7 @@ export async function GET(request: Request) {
     const employees = (employeesResult.rows ?? [])
       .map((row) => ({
         name: (row as { employee_name?: string }).employee_name?.trim() ?? "",
-        sede: mapToCanonicalSede((row as { raw_sede?: string }).raw_sede?.trim() ?? ""),
+        sede: mapRawSedeToCanonical((row as { raw_sede?: string }).raw_sede?.trim() ?? ""),
       }))
       .filter((row) => row.name.length > 0);
 

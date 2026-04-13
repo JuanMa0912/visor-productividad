@@ -445,8 +445,8 @@ export default function HorariosGuardadosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground">
-      <div className="mx-auto w-full max-w-384 rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
+    <div className="min-h-screen overflow-x-hidden bg-slate-100 px-4 py-12 text-foreground">
+      <div className="mx-auto w-full max-w-[min(100%,96rem)] rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
@@ -518,8 +518,8 @@ export default function HorariosGuardadosPage() {
         )}
 
         {viewMode === "plantillas" ? (
-          <div className="mt-6 grid gap-4 xl:grid-cols-[360px_1fr]">
-            <section className="rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4">
+          <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
                   Plantillas
@@ -567,7 +567,7 @@ export default function HorariosGuardadosPage() {
               )}
             </section>
 
-            <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_18px_40px_-35px_rgba(15,23,42,0.4)]">
+            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_18px_40px_-35px_rgba(15,23,42,0.4)]">
               {selectedForm === null ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
                   {loadingFormId !== null
@@ -618,12 +618,12 @@ export default function HorariosGuardadosPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200/80">
-                    <table className="min-w-425 w-full border-collapse text-[12px]">
+                  <div className="mt-4 max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-2xl border border-slate-200/80 [-webkit-overflow-scrolling:touch]">
+                    <table className="w-full min-w-[2100px] border-collapse text-[12px]">
                       <thead>
                         <tr className="bg-slate-100 text-slate-700">
                           <th className="w-10 border border-slate-200 px-2 py-2 text-center">#</th>
-                          <th className="w-80 border border-slate-200 px-2 py-2 text-left">
+                          <th className="min-w-48 max-w-56 border border-slate-200 px-2 py-2 text-left">
                             Nombre
                           </th>
                           {DAY_ORDER.map((day) => (
@@ -640,7 +640,7 @@ export default function HorariosGuardadosPage() {
                               </div>
                             </th>
                           ))}
-                          <th className="w-72 border border-slate-200 px-2 py-2 text-left">
+                          <th className="min-w-40 border border-slate-200 px-2 py-2 text-left">
                             Firma empleado
                           </th>
                         </tr>
@@ -651,7 +651,7 @@ export default function HorariosGuardadosPage() {
                             (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                               <th
                                 key={`${day}-${field}`}
-                                className="w-16 border border-slate-200 px-2 py-2 text-center uppercase"
+                                className="w-14 min-w-13 border border-slate-200 px-1 py-2 text-center uppercase"
                               >
                                 {field === "he1" || field === "he2" ? "HE" : "HS"}
                               </th>
@@ -705,8 +705,8 @@ export default function HorariosGuardadosPage() {
             </section>
           </div>
         ) : (
-          <div className="mt-6 grid gap-4 xl:grid-cols-[320px_1fr]">
-            <section className="rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4">
+          <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
                 Empleados
               </p>
@@ -757,7 +757,7 @@ export default function HorariosGuardadosPage() {
               )}
             </section>
 
-            <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_18px_40px_-35px_rgba(15,23,42,0.4)]">
+            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_18px_40px_-35px_rgba(15,23,42,0.4)]">
               {selectedEmployeeName === null ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
                   Selecciona un empleado para ver su historial.
@@ -786,8 +786,8 @@ export default function HorariosGuardadosPage() {
                       No hay registros diarios para este empleado.
                     </div>
                   ) : (
-                    <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200/80">
-                      <table className="min-w-[980px] w-full border-collapse text-[12px]">
+                    <div className="mt-4 max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-2xl border border-slate-200/80 [-webkit-overflow-scrolling:touch]">
+                      <table className="w-full min-w-[980px] border-collapse text-[12px]">
                         <thead className="bg-slate-100 text-slate-700">
                           <tr>
                             <th className="border border-slate-200 px-2 py-2 text-left">Fecha</th>
