@@ -86,8 +86,8 @@ const COL_W_SIGN = "18rem";
 const SCHEDULE_TIME_INPUT_BASE =
   "schedule-time-input box-border w-full min-w-0 max-w-none rounded border border-slate-200 py-1.5 text-[12px] tabular-nums leading-none tracking-tight focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden";
 
-const SCHEDULE_OUTER_BORDER_CLASS = "border-2 border-slate-950";
-const SCHEDULE_CELL_BORDER_CLASS = "border-2 border-slate-900";
+const SCHEDULE_OUTER_BORDER_CLASS = "border border-slate-300";
+const SCHEDULE_CELL_BORDER_CLASS = "border border-slate-300";
 
 /** Widths come from <colgroup>; cells only need border/padding */
 /** En print NO usar ancho fijo (p. ej. w-6): las horas desbordan y se ven sobre el borde de la celda siguiente. */
@@ -112,6 +112,7 @@ const MONTH_OPTIONS = [
 ];
 
 const LOCAL_DRAFT_VERSION = 1;
+const INITIAL_ROW_COUNT = 16;
 
 const cloneDaySchedule = (d: DaySchedule): DaySchedule => ({
   he1: d.he1,
@@ -126,7 +127,7 @@ const parseLunesIndependence = (raw: unknown): Map<number, Set<DayKey>> => {
   if (!raw || typeof raw !== "object") return m;
   for (const [k, days] of Object.entries(raw as Record<string, unknown>)) {
     const idx = Number(k);
-    if (!Number.isInteger(idx) || idx < 0 || idx > 15) continue;
+    if (!Number.isInteger(idx) || idx < 0) continue;
     if (!Array.isArray(days)) continue;
     const set = new Set<DayKey>();
     for (const d of days) {
@@ -425,10 +426,10 @@ const getDraftStorageKey = (username: string) =>
 
 const createSafeDraftRows = (rows: unknown) => {
   if (!Array.isArray(rows)) {
-    return Array.from({ length: 16 }, () => createEmptyRow());
+    return Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow());
   }
 
-  return Array.from({ length: 16 }, (_, index) => {
+  return Array.from({ length: INITIAL_ROW_COUNT }, (_, index) => {
     const sourceRow = rows[index] as
       | {
           nombre?: string;
@@ -516,12 +517,14 @@ function mergeLoadedPlanillaRows(
     days?: RowSchedule["days"];
   }>,
 ): RowSchedule[] {
-  const base = Array.from({ length: 16 }, () => createEmptyRow());
+  const base = Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow());
   apiRows.forEach((r, i) => {
     const idx =
-      typeof r.rowIndex === "number" && r.rowIndex >= 0 && r.rowIndex < 16
+      typeof r.rowIndex === "number" &&
+      r.rowIndex >= 0 &&
+      r.rowIndex < INITIAL_ROW_COUNT
         ? r.rowIndex
-        : i < 16
+        : i < INITIAL_ROW_COUNT
           ? i
           : -1;
     if (idx < 0) return;
@@ -584,7 +587,7 @@ export function IngresarHorariosInner() {
     string | null
   >(null);
   const [rows, setRows] = useState<RowSchedule[]>(
-    Array.from({ length: 16 }, () => createEmptyRow()),
+    Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow()),
   );
   /** Si no es null, Guardar hace PATCH y actualiza esta planilla */
   const [editingPlanillaId, setEditingPlanillaId] = useState<number | null>(null);
@@ -600,6 +603,7 @@ export function IngresarHorariosInner() {
   const [lunesIndVersion, setLunesIndVersion] = useState(0);
 
   const lunesSyncActive = canLunesScheduleSync && syncLunesToRest;
+
 
   useEffect(() => {
     let isMounted = true;
@@ -1043,7 +1047,7 @@ export function IngresarHorariosInner() {
       );
 
       setEditingPlanillaId(null);
-      setRows(Array.from({ length: 16 }, () => createEmptyRow()));
+      setRows(Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow()));
       setFechaInicial("");
       setFechaFinal("");
       setMes("");
@@ -1077,6 +1081,15 @@ export function IngresarHorariosInner() {
   const handleExportPdf = () => {
     window.print();
   };
+
+  const handleAddRows = useCallback(() => {
+    setRows((prev) => {
+      return [
+        ...prev,
+        createEmptyRow(),
+      ];
+    });
+  }, []);
 
   const handleClearDraft = useCallback(() => {
     if (!currentUsername) return;
@@ -1585,6 +1598,17 @@ export function IngresarHorariosInner() {
               ))}
             </datalist>
           ))}
+        </div>
+        <div className="mt-2 flex justify-center print:hidden">
+          <button
+            type="button"
+            onClick={handleAddRows}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-violet-300 bg-violet-50 text-lg font-bold leading-none text-violet-700 transition-all hover:border-violet-400 hover:bg-violet-100"
+            title="Agregar 1 fila"
+            aria-label="Agregar 1 fila"
+          >
+            +
+          </button>
         </div>
 
         <div className="mt-4 space-y-1 text-xs text-slate-500 print:hidden">

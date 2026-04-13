@@ -1,0 +1,2 @@
+{"sessionId":"068c63","timestamp":1776085266241,"hypothesisId":"H1-H5","location":"page.tsx:useProductivityData","message":"client_fetch_productivity_with_server_header","data":{"networkMs":183.3000000002794,"jsonMs":0.2999999998137355,"status":401,"dataSource":"unknown","dailyRows":0}}
+{"sessionId":"068c63","timestamp":1776085283768,"hypothesisId":"H1-H5","location":"page.tsx:useProductivityData","message":"client_fetch_productivity_with_server_header","data":{"networkMs":22.100000000093132,"jsonMs":0.2999999998137355,"status":401,"dataSource":"unknown","dailyRows":0}}
