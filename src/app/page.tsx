@@ -215,13 +215,55 @@ const useProductivityData = () => {
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
+      const t0 =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
 
       try {
         const response = await fetch("/api/productivity", {
           signal: controller.signal,
         });
+        const t1 =
+          typeof performance !== "undefined" ? performance.now() : Date.now();
 
         const payload = (await response.json()) as ApiResponse;
+        const t2 =
+          typeof performance !== "undefined" ? performance.now() : Date.now();
+
+        // #region agent log
+        let serverTiming: Record<string, unknown> | undefined;
+        const dbgHdr = response.headers.get("x-debug-productivity");
+        if (dbgHdr) {
+          try {
+            serverTiming = JSON.parse(
+              decodeURIComponent(dbgHdr),
+            ) as Record<string, unknown>;
+          } catch {
+            serverTiming = undefined;
+          }
+        }
+        fetch("/api/debug-agent-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: "068c63",
+            hypothesisId: "H1-H5",
+            location: "page.tsx:useProductivityData",
+            message: "client_fetch_productivity_with_server_header",
+            data: {
+              networkMs: t1 - t0,
+              jsonMs: t2 - t1,
+              status: response.status,
+              dataSource:
+                response.headers.get("x-data-source") ?? "unknown",
+              dailyRows: Array.isArray(payload.dailyData)
+                ? payload.dailyData.length
+                : 0,
+              serverTiming,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
 
         if (!isMounted) return;
 

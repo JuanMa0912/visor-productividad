@@ -4,6 +4,7 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import { normalizeKeyCompact } from "@/lib/normalize";
+import { appendAgentDebugLog } from "@/lib/agent-debug-log";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -24,8 +25,40 @@ const resolveCachePath = () => {
 };
 
 const cacheFilePath = resolveCachePath();
+// #region agent log
+const agentDebugAppend = async (payload: {
+  hypothesisId: string;
+  location: string;
+  message: string;
+  data?: Record<string, unknown>;
+}) => {
+  await appendAgentDebugLog({
+    hypothesisId: payload.hypothesisId,
+    location: payload.location,
+    message: payload.message,
+    ...(payload.data !== undefined ? { data: payload.data } : {}),
+  });
+};
+// #endregion
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+/** Solo desarrollo: el cliente puede leer la cabecera y enviarla al ingest (evidencia NDJSON en workspace). */
+const attachProductivityDebugHeader = (
+  response: NextResponse,
+  meta: Record<string, string | number | boolean | null>,
+) => {
+  if (IS_PRODUCTION) return;
+  try {
+    response.headers.set(
+      "X-Debug-Productivity",
+      encodeURIComponent(JSON.stringify(meta)),
+    );
+  } catch {
+    /* ignore */
+  }
+};
+
 const debugLog = (...args: unknown[]) => {
   if (!IS_PRODUCTION) {
     console.log(...args);
@@ -95,6 +128,25 @@ const readCache = async (): Promise<DailyProductivity[] | null> => {
       return null;
     }
     return null;
+  }
+};
+
+/** Persiste dataset completo para que los siguientes GET lean readCache() sin ir a BD. */
+const writeProductivityCacheFile = async (
+  dailyData: DailyProductivity[],
+): Promise<void> => {
+  try {
+    await fs.mkdir(path.dirname(cacheFilePath), { recursive: true });
+    await fs.writeFile(
+      cacheFilePath,
+      JSON.stringify({
+        dailyData,
+        updatedAt: new Date().toISOString(),
+      }),
+      "utf-8",
+    );
+  } catch (error) {
+    console.error("[productivity] No se pudo escribir cache en disco:", error);
   }
 };
 
@@ -344,88 +396,14 @@ const fetchAllProductivityData = async (
   allowedLineIds: string[] = [],
 ): Promise<DailyProductivity[]> => {
   const pool = await getDbPool();
-  const client = await pool.connect();
-  try {
-    const dailyDataMap = new Map<string, DailyProductivity>();
-    const allowedSet = new Set(allowedLineIds.map(normalizeLineId));
-    const lineTables =
-      allowedSet.size > 0
-        ? LINE_TABLES.filter((line) => allowedSet.has(normalizeLineId(line.id)))
-        : LINE_TABLES;
+  const dailyDataMap = new Map<string, DailyProductivity>();
+  const allowedSet = new Set(allowedLineIds.map(normalizeLineId));
+  const lineTables =
+    allowedSet.size > 0
+      ? LINE_TABLES.filter((line) => allowedSet.has(normalizeLineId(line.id)))
+      : LINE_TABLES;
 
-    for (const line of lineTables) {
-      try {
-        // Consulta que agrupa por fecha, centro_operacion y empresa_bd
-        const query = `
-          SELECT
-            fecha_dcto,
-            centro_operacion,
-            empresa_bd,
-            COALESCE(SUM(total_bruto), 0) AS total_sales
-          FROM ${line.table}
-          WHERE fecha_dcto IS NOT NULL
-            AND centro_operacion IS NOT NULL
-          GROUP BY fecha_dcto, centro_operacion, empresa_bd
-          ORDER BY fecha_dcto, centro_operacion
-        `;
-
-        const result = await client.query(query);
-
-        if (!result.rows) continue;
-
-        for (const row of result.rows) {
-          const typedRow = row as {
-            fecha_dcto: string;
-            centro_operacion: string;
-            empresa_bd: string | null;
-            total_sales: string | number;
-          };
-          const fecha = formatDate(typedRow.fecha_dcto);
-          const centroOp = typedRow.centro_operacion;
-          const empresa = typedRow.empresa_bd || "";
-          const sedeKey = getSedeKey(centroOp, empresa);
-          const sedeName =
-            SEDE_NAMES[sedeKey] || `Sede ${centroOp} ${empresa}`.trim();
-          const key = `${fecha}_${sedeName}`;
-
-          // Obtener o crear el registro de DailyProductivity
-          let dailyData = dailyDataMap.get(key);
-          if (!dailyData) {
-            dailyData = {
-              date: fecha,
-              sede: sedeName,
-              lines: [],
-            };
-            dailyDataMap.set(key, dailyData);
-          }
-
-          // Buscar la línea existente o crearla
-          let lineMetric = dailyData.lines.find((l) => l.id === line.id);
-          if (!lineMetric) {
-            lineMetric = {
-              id: line.id,
-              name: line.name,
-              sales: 0,
-              hours: 0,
-              hourlyRate: 50000, // Placeholder: $50,000 COP/hora
-            };
-            dailyData.lines.push(lineMetric);
-          }
-
-          // Sumar las ventas
-          lineMetric.sales += Number(typedRow.total_sales) || 0;
-        }
-      } catch (error) {
-        console.warn(
-          `No se pudo consultar la tabla ${line.table}. Se omite.`,
-          error,
-        );
-      }
-    }
-
-    // Consultar horas de asistencia_horas
-    try {
-      const hoursQuery = `
+  const hoursQuery = `
         SELECT
           fecha,
           sede,
@@ -439,7 +417,83 @@ const fetchAllProductivityData = async (
         ORDER BY fecha, sede
       `;
 
-      const hoursResult = await client.query(hoursQuery);
+  const lineQueryPromises = lineTables.map(async (line) => {
+    const query = `
+          SELECT
+            fecha_dcto,
+            centro_operacion,
+            empresa_bd,
+            COALESCE(SUM(total_bruto), 0) AS total_sales
+          FROM ${line.table}
+          WHERE fecha_dcto IS NOT NULL
+            AND centro_operacion IS NOT NULL
+          GROUP BY fecha_dcto, centro_operacion, empresa_bd
+          ORDER BY fecha_dcto, centro_operacion
+        `;
+    try {
+      const result = await pool.query(query);
+      return { line, rows: result.rows ?? [] };
+    } catch (error) {
+      console.warn(
+        `No se pudo consultar la tabla ${line.table}. Se omite.`,
+        error,
+      );
+      return { line, rows: [] };
+    }
+  });
+
+  const [lineOutputs, hoursQueryResult] = await Promise.all([
+    Promise.all(lineQueryPromises),
+    pool.query(hoursQuery).catch((error) => {
+      console.warn("No se pudo consultar la tabla asistencia_horas:", error);
+      return { rows: [] as Record<string, unknown>[] };
+    }),
+  ]);
+
+  for (const { line, rows } of lineOutputs) {
+    for (const row of rows) {
+      const typedRow = row as {
+        fecha_dcto: string;
+        centro_operacion: string;
+        empresa_bd: string | null;
+        total_sales: string | number;
+      };
+      const fecha = formatDate(typedRow.fecha_dcto);
+      const centroOp = typedRow.centro_operacion;
+      const empresa = typedRow.empresa_bd || "";
+      const sedeKey = getSedeKey(centroOp, empresa);
+      const sedeName =
+        SEDE_NAMES[sedeKey] || `Sede ${centroOp} ${empresa}`.trim();
+      const key = `${fecha}_${sedeName}`;
+
+      let dailyData = dailyDataMap.get(key);
+      if (!dailyData) {
+        dailyData = {
+          date: fecha,
+          sede: sedeName,
+          lines: [],
+        };
+        dailyDataMap.set(key, dailyData);
+      }
+
+      let lineMetric = dailyData.lines.find((l) => l.id === line.id);
+      if (!lineMetric) {
+        lineMetric = {
+          id: line.id,
+          name: line.name,
+          sales: 0,
+          hours: 0,
+          hourlyRate: 50000, // Placeholder: $50,000 COP/hora
+        };
+        dailyData.lines.push(lineMetric);
+      }
+
+      lineMetric.sales += Number(typedRow.total_sales) || 0;
+    }
+  }
+
+  try {
+      const hoursResult = hoursQueryResult;
 
       // DEBUG: Resumen inicial
       debugLog("=== DEBUG HORAS ===");
@@ -600,9 +654,25 @@ const fetchAllProductivityData = async (
     }
 
     return sortedResult;
-  } finally {
-    client.release();
+};
+
+/** Una sola pasada en frío si varios GET llegan sin caché (evita consultas duplicadas). */
+let productivityColdInflight: Promise<DailyProductivity[]> | null = null;
+
+const runColdProductivityLoad = (): Promise<DailyProductivity[]> => {
+  if (!productivityColdInflight) {
+    productivityColdInflight = (async () => {
+      const raw = await fetchAllProductivityData([]);
+      if (raw.length > 0) {
+        await writeProductivityCacheFile(raw);
+      }
+      return raw;
+    })();
+    void productivityColdInflight.finally(() => {
+      productivityColdInflight = null;
+    });
   }
+  return productivityColdInflight;
 };
 
 export async function GET(request: Request) {
@@ -656,40 +726,93 @@ export async function GET(request: Request) {
       ),
     );
   }
+  const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const tRoute0 = Date.now();
   const cached = await readCache();
+  const tAfterReadCache = Date.now();
+  // #region agent log
+  await agentDebugAppend({
+    hypothesisId: "H2",
+    location: "productivity/route.ts:GET",
+    message: "after_readCache",
+    data: {
+      reqId,
+      cacheRows: cached?.length ?? 0,
+      cacheHit: Boolean(cached && cached.length > 0),
+      readCacheMs: tAfterReadCache - tRoute0,
+      cacheBasename: path.basename(cacheFilePath),
+    },
+  });
+  // #endregion
   if (cached && cached.length > 0) {
     // Regla de negocio: productividad por linea es global por tablero.
     const scopedCached = filterDailyDataByAllowedLines(cached, allowedLineIds);
-    return withSession(buildCacheResponse(scopedCached));
+    // #region agent log
+    await agentDebugAppend({
+      hypothesisId: "H2",
+      location: "productivity/route.ts:GET",
+      message: "response_cache_hit",
+      data: {
+        reqId,
+        scopedRows: scopedCached.length,
+        totalMs: Date.now() - tRoute0,
+      },
+    });
+    // #endregion
+    const cacheHitRes = buildCacheResponse(scopedCached);
+    attachProductivityDebugHeader(cacheHitRes, {
+      branch: "cache_hit",
+      hypothesisId: "H2",
+      reqId,
+      cacheRows: cached.length,
+      scopedRows: scopedCached.length,
+      readCacheMs: tAfterReadCache - tRoute0,
+      totalRouteMs: Date.now() - tRoute0,
+    });
+    return withSession(cacheHitRes);
   }
   try {
+    const tDb0 = Date.now();
     await testDbConnection();
-    const dailyData = filterDailyDataByAllowedLines(
-      await fetchAllProductivityData(allowedLineIds),
-      allowedLineIds,
-    );
+    const tAfterConn = Date.now();
+    /** Consultas + escritura de caché; compartido entre peticiones concurrentes sin caché. */
+    const rawDaily = await runColdProductivityLoad();
+    const tAfterCold = Date.now();
+    const testDbMs = tAfterConn - tDb0;
+    const fetchAllMs = tAfterCold - tAfterConn;
+    const coldDebugMeta = {
+      branch: "database" as const,
+      hypothesisId: "H1-H3-H5",
+      reqId,
+      readCacheMs: tAfterReadCache - tRoute0,
+      cwd: process.cwd(),
+      testDbMs,
+      fetchAllMs,
+      writeCacheMs: 0,
+      writeIncludedInFetchAllMs: true,
+      rawRows: rawDaily.length,
+      totalColdMs: tAfterCold - tRoute0,
+    };
+    // #region agent log
+    await agentDebugAppend({
+      hypothesisId: "H1-H3-H5",
+      location: "productivity/route.ts:GET",
+      message: "cold_path_timings",
+      data: {
+        reqId,
+        testDbMs,
+        fetchAllMs,
+        rawRows: rawDaily.length,
+        totalColdMs: tAfterCold - tRoute0,
+      },
+    });
+    // #endregion
+    const dailyData = filterDailyDataByAllowedLines(rawDaily, allowedLineIds);
     if (dailyData.length > 0) {
-      return withSession(
-        NextResponse.json(
-          {
-            dailyData,
-            sedes: buildSedes(dailyData),
-          },
-          {
-            headers: {
-              "Cache-Control": NO_STORE_CACHE_CONTROL,
-              "X-Data-Source": "database",
-            },
-          },
-        ),
-      );
-    }
-    return withSession(
-      NextResponse.json(
+      const dbRes = NextResponse.json(
         {
-          dailyData: [],
-          sedes: [],
-          message: "Conexión a base de datos establecida. Sin datos aún.",
+          dailyData,
+          sedes: buildSedes(dailyData),
         },
         {
           headers: {
@@ -697,8 +820,25 @@ export async function GET(request: Request) {
             "X-Data-Source": "database",
           },
         },
-      ),
+      );
+      attachProductivityDebugHeader(dbRes, coldDebugMeta);
+      return withSession(dbRes);
+    }
+    const emptyRes = NextResponse.json(
+      {
+        dailyData: [],
+        sedes: [],
+        message: "Conexión a base de datos establecida. Sin datos aún.",
+      },
+      {
+        headers: {
+          "Cache-Control": NO_STORE_CACHE_CONTROL,
+          "X-Data-Source": "database",
+        },
+      },
     );
+    attachProductivityDebugHeader(emptyRes, coldDebugMeta);
+    return withSession(emptyRes);
   } catch (error) {
     console.error("Error en endpoint de productividad:", error);
     return withSession(
