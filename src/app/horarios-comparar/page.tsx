@@ -43,6 +43,20 @@ function defaultDateRange() {
   return { start: iso(start), end: iso(end) };
 }
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
+
+type PlanSourceFilter = "all" | "with_planilla" | "attendance_only";
+
+function normalizeNameForFilter(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 export default function HorariosCompararPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -53,6 +67,11 @@ export default function HorariosCompararPage() {
   const [rows, setRows] = useState<ComparisonRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<PageSize>(50);
+  const [page, setPage] = useState(1);
+  const [employeeNameFilter, setEmployeeNameFilter] = useState("");
+  const [planSourceFilter, setPlanSourceFilter] =
+    useState<PlanSourceFilter>("all");
 
   useEffect(() => {
     let isMounted = true;
@@ -128,6 +147,7 @@ export default function HorariosCompararPage() {
         throw new Error(payload.error ?? "No se pudo cargar la comparacion.");
       }
       setRows(payload.rows ?? []);
+      setPage(1);
       if (payload.meta?.sedes) {
         setSedes(payload.meta.sedes);
         setDefaultSede(payload.meta.defaultSede ?? null);
@@ -135,6 +155,7 @@ export default function HorariosCompararPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido.");
       setRows([]);
+      setPage(1);
     } finally {
       setLoading(false);
     }
@@ -151,19 +172,62 @@ export default function HorariosCompararPage() {
     }
   }, [defaultSede, sede]);
 
+  const filteredRows = useMemo(() => {
+    let out = rows;
+    const q = employeeNameFilter.trim();
+    if (q) {
+      const needle = normalizeNameForFilter(q);
+      if (needle) {
+        out = out.filter((r) =>
+          normalizeNameForFilter(r.employeeName).includes(needle),
+        );
+      }
+    }
+    if (planSourceFilter === "with_planilla") {
+      out = out.filter((r) => r.planillaId > 0);
+    } else if (planSourceFilter === "attendance_only") {
+      out = out.filter((r) => r.planillaId === 0);
+    }
+    return out;
+  }, [rows, employeeNameFilter, planSourceFilter]);
+
   const counts = useMemo(() => {
     let cumplio = 0;
     let soloPlan = 0;
     let soloMarcacion = 0;
     let ninguno = 0;
-    for (const r of rows) {
+    for (const r of filteredRows) {
       if (r.status === "cumplio") cumplio += 1;
       else if (r.status === "solo_plan") soloPlan += 1;
       else if (r.status === "solo_marcacion") soloMarcacion += 1;
       else ninguno += 1;
     }
-    return { cumplio, soloPlan, soloMarcacion, ninguno, total: rows.length };
-  }, [rows]);
+    return {
+      cumplio,
+      soloPlan,
+      soloMarcacion,
+      ninguno,
+      total: filteredRows.length,
+    };
+  }, [filteredRows]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const pageStartIdx = (currentPage - 1) * pageSize;
+  const paginatedRows = useMemo(
+    () => filteredRows.slice(pageStartIdx, pageStartIdx + pageSize),
+    [filteredRows, pageStartIdx, pageSize],
+  );
+  const rangeFrom = filteredRows.length === 0 ? 0 : pageStartIdx + 1;
+  const rangeTo = Math.min(pageStartIdx + pageSize, filteredRows.length);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [employeeNameFilter, planSourceFilter]);
 
   if (!ready) {
     return (
@@ -252,9 +316,45 @@ export default function HorariosCompararPage() {
           </div>
         ) : null}
 
+        <div className="mt-4 flex flex-wrap items-end gap-4 rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+          <label className="flex min-w-[min(100%,14rem)] flex-1 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+            Nombre
+            <input
+              type="search"
+              value={employeeNameFilter}
+              onChange={(e) => setEmployeeNameFilter(e.target.value)}
+              placeholder="Filtrar por nombre del empleado..."
+              autoComplete="off"
+              disabled={loading}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 placeholder:text-slate-400 disabled:opacity-60"
+            />
+          </label>
+          <label className="flex min-w-[min(100%,16rem)] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+            Plan
+            <select
+              value={planSourceFilter}
+              onChange={(e) =>
+                setPlanSourceFilter(e.target.value as PlanSourceFilter)
+              }
+              disabled={loading}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 disabled:opacity-60"
+            >
+              <option value="all">Todos</option>
+              <option value="with_planilla">Con plan en planilla</option>
+              <option value="attendance_only">Solo asistencia (sin planilla)</option>
+            </select>
+          </label>
+        </div>
+
         <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
           <span>
             Registros: <strong className="text-slate-900">{counts.total}</strong>
+            {rows.length > 0 && filteredRows.length !== rows.length ? (
+              <span className="text-slate-400">
+                {" "}
+                (de {rows.length} cargados)
+              </span>
+            ) : null}
           </span>
           <span>
             Cumplió: <strong className="text-emerald-700">{counts.cumplio}</strong>
@@ -268,6 +368,75 @@ export default function HorariosCompararPage() {
           <span>
             —: <strong className="text-slate-500">{counts.ninguno}</strong>
           </span>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <p className="text-sm text-slate-600">
+            {filteredRows.length === 0 && rows.length > 0 ? (
+              <span className="text-amber-800">
+                Ningún registro coincide con nombre o plan. Ajusta los filtros.
+              </span>
+            ) : filteredRows.length === 0 ? (
+              <span className="text-slate-500">Sin filas para mostrar.</span>
+            ) : (
+              <>
+                Mostrando{" "}
+                <strong className="text-slate-900 tabular-nums">
+                  {rangeFrom}–{rangeTo}
+                </strong>{" "}
+                de <strong className="text-slate-900">{filteredRows.length}</strong>
+              </>
+            )}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Filas por pagina
+            </label>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!PAGE_SIZE_OPTIONS.includes(v as PageSize)) return;
+                setPageSize(v as PageSize);
+                setPage(1);
+              }}
+              disabled={loading}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:opacity-60"
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={
+                  loading || filteredRows.length === 0 || currentPage <= 1
+                }
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <span className="min-w-[8.5rem] text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Pagina {currentPage} de {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={
+                  loading ||
+                  filteredRows.length === 0 ||
+                  currentPage >= totalPages
+                }
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="mt-4 max-w-full overflow-x-auto rounded-2xl border border-slate-200/80">
@@ -309,12 +478,32 @@ export default function HorariosCompararPage() {
                     No hay filas en este rango. Ajusta fechas o sede.
                   </td>
                 </tr>
+              ) : rows.length === 0 && loading ? (
+                <tr>
+                  <td
+                    colSpan={17}
+                    className="border border-slate-200 px-4 py-8 text-center text-slate-500"
+                  >
+                    Cargando...
+                  </td>
+                </tr>
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={17}
+                    className="border border-amber-100 bg-amber-50/50 px-4 py-8 text-center text-sm text-amber-900"
+                  >
+                    Ningún registro coincide con los filtros de nombre o plan.
+                  </td>
+                </tr>
               ) : (
-                rows.map((r, idx) => {
-                  const rowTint = idx % 2 === 0 ? "bg-white" : "bg-slate-50/80";
+                paginatedRows.map((r, idx) => {
+                  const globalIdx = pageStartIdx + idx;
+                  const rowTint =
+                    globalIdx % 2 === 0 ? "bg-white" : "bg-slate-50/80";
                   return (
                   <tr
-                    key={`${r.workedDate}-${r.sede}-${r.employeeName}-${r.planillaId}-${idx}`}
+                    key={`${r.workedDate}-${r.sede}-${r.employeeName}-${r.planillaId}-${globalIdx}`}
                   >
                     <td
                       className={`border border-slate-200 px-2 py-1.5 whitespace-nowrap text-slate-800 ${rowTint}`}
