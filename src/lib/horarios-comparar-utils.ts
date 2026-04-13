@@ -81,9 +81,12 @@ export function diffMinutes(
   return a - p;
 }
 
-function hasAttendanceMarks(
-  att: AttendanceCompareInput | null | undefined,
-): boolean {
+type AttendanceTimeFields = Pick<
+  AttendanceCompareInput,
+  "horaEntrada" | "horaIntermedia1" | "horaIntermedia2" | "horaSalida"
+>;
+
+function hasAttendanceMarks(att: AttendanceTimeFields | null | undefined): boolean {
   if (!att) return false;
   return [att.horaEntrada, att.horaIntermedia1, att.horaIntermedia2, att.horaSalida].some(
     (v) => String(v ?? "").trim() !== "",
