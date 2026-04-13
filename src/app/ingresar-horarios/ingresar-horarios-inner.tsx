@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { normalizePersonNameKey } from "@/lib/normalize";
 import { canAccessPortalSection } from "@/lib/portal-sections";
@@ -91,10 +84,8 @@ const SCHEDULE_CELL_BORDER_CLASS = "border border-slate-300";
 
 /** Widths come from <colgroup>; cells only need border/padding */
 /** En print NO usar ancho fijo (p. ej. w-6): las horas desbordan y se ven sobre el borde de la celda siguiente. */
-const TIME_SLOT_TD_CLASS =
-  `${SCHEDULE_CELL_BORDER_CLASS} px-1.5 py-1 align-middle whitespace-nowrap print:whitespace-normal print:px-0.5 print:text-center print:align-middle`;
-const TIME_SLOT_TH_CLASS =
-  `${SCHEDULE_CELL_BORDER_CLASS} px-1 py-2 text-center align-middle uppercase print:px-0.5`;
+const TIME_SLOT_TD_CLASS = `${SCHEDULE_CELL_BORDER_CLASS} px-1.5 py-1 align-middle whitespace-nowrap print:whitespace-normal print:px-0.5 print:text-center print:align-middle`;
+const TIME_SLOT_TH_CLASS = `${SCHEDULE_CELL_BORDER_CLASS} px-1 py-2 text-center align-middle uppercase print:px-0.5`;
 
 const MONTH_OPTIONS = [
   "Enero",
@@ -161,7 +152,10 @@ const normalizeText = (value?: string) =>
 const normalizeSedeText = (value?: string) =>
   normalizeText(value).replace(/\bdesprese\b/g, "desposte");
 
-const matchesSede = (employeeSede: string | undefined, selectedSede: string) => {
+const matchesSede = (
+  employeeSede: string | undefined,
+  selectedSede: string,
+) => {
   if (!selectedSede) return true;
   const employeeKey = normalizeSedeText(employeeSede ?? "");
   const selectedKey = normalizeSedeText(selectedSede);
@@ -193,14 +187,20 @@ const sanitizeTimeTyping = (raw: string) => {
   }
   const idx = s.indexOf(":");
   if (idx === 0) {
-    let right = s.slice(idx + 1).replace(/:/g, "").slice(0, 2);
+    let right = s
+      .slice(idx + 1)
+      .replace(/:/g, "")
+      .slice(0, 2);
     if (right.length >= 1 && Number(right[0] ?? 9) > 5) right = "";
     if (right.length === 2 && Number(right) > 59) right = right.slice(0, 1);
     return right ? `:${right}`.slice(0, 5) : ":";
   }
 
   let left = s.slice(0, idx).replace(/:/g, "").slice(0, 2);
-  let right = s.slice(idx + 1).replace(/:/g, "").slice(0, 2);
+  let right = s
+    .slice(idx + 1)
+    .replace(/:/g, "")
+    .slice(0, 2);
 
   if (left.length === 2 && Number(left) > 23) {
     left = left.slice(0, 1);
@@ -270,7 +270,9 @@ const RowScheduleRow = memo(
     onDescanso,
   }: RowScheduleRowProps) => (
     <tr className="odd:bg-white even:bg-slate-50/40">
-      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1 text-center text-slate-600`}>
+      <td
+        className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1 text-center text-slate-600`}
+      >
         {rowIndex + 1}
       </td>
       <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-1`}>
@@ -278,7 +280,9 @@ const RowScheduleRow = memo(
           type="text"
           list={employeeListId}
           value={row.nombre}
-          onChange={(e) => onRowField(rowIndex, "nombre", e.target.value.trimStart())}
+          onChange={(e) =>
+            onRowField(rowIndex, "nombre", e.target.value.trimStart())
+          }
           placeholder="Escribir o seleccionar empleado"
           className="w-full min-w-70 rounded border border-slate-200 px-2 py-1 text-[12px] focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
         />
@@ -310,7 +314,10 @@ const RowScheduleRow = memo(
         }
 
         return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
-          <td key={`${rowIndex}-${day}-${field}`} className={TIME_SLOT_TD_CLASS}>
+          <td
+            key={`${rowIndex}-${day}-${field}`}
+            className={TIME_SLOT_TD_CLASS}
+          >
             {field === "he1" ? (
               <div className="relative min-w-0 print:static">
                 <input
@@ -318,7 +325,7 @@ const RowScheduleRow = memo(
                   checked={dayData.conDescanso}
                   onChange={(e) => onDescanso(rowIndex, day, e.target.checked)}
                   title="Marcar este dia como descanso para este empleado"
-                  className="absolute left-0 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 rounded border-slate-300 text-sky-600 focus:ring-sky-200 print:hidden"
+                  className="absolute left-0 top-1/2 z-1 h-3.5 w-3.5 -translate-y-1/2 rounded border-slate-300 text-sky-600 focus:ring-sky-200 print:hidden"
                 />
                 <input
                   type="text"
@@ -441,7 +448,8 @@ const createSafeDraftRows = (rows: unknown) => {
     if (!sourceRow) return createEmptyRow();
 
     const nextRow = createEmptyRow();
-    nextRow.nombre = typeof sourceRow.nombre === "string" ? sourceRow.nombre : "";
+    nextRow.nombre =
+      typeof sourceRow.nombre === "string" ? sourceRow.nombre : "";
     nextRow.firma = typeof sourceRow.firma === "string" ? sourceRow.firma : "";
 
     for (const dayKey of DAY_ORDER) {
@@ -484,7 +492,8 @@ const readScheduleDraft = (username: string) => {
       seccion: typeof parsed.seccion === "string" ? parsed.seccion : "Cajas",
       fechaInicial:
         typeof parsed.fechaInicial === "string" ? parsed.fechaInicial : "",
-      fechaFinal: typeof parsed.fechaFinal === "string" ? parsed.fechaFinal : "",
+      fechaFinal:
+        typeof parsed.fechaFinal === "string" ? parsed.fechaFinal : "",
       mes: typeof parsed.mes === "string" ? parsed.mes : "",
       rows: createSafeDraftRows(parsed.rows),
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
@@ -501,7 +510,10 @@ const readScheduleDraft = (username: string) => {
 
 const writeScheduleDraft = (username: string, draft: ScheduleDraft) => {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(getDraftStorageKey(username), JSON.stringify(draft));
+  window.localStorage.setItem(
+    getDraftStorageKey(username),
+    JSON.stringify(draft),
+  );
 };
 
 const clearScheduleDraft = (username: string) => {
@@ -517,7 +529,9 @@ function mergeLoadedPlanillaRows(
     days?: RowSchedule["days"];
   }>,
 ): RowSchedule[] {
-  const base = Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow());
+  const base = Array.from({ length: INITIAL_ROW_COUNT }, () =>
+    createEmptyRow(),
+  );
   apiRows.forEach((r, i) => {
     const idx =
       typeof r.rowIndex === "number" &&
@@ -537,22 +551,10 @@ function mergeLoadedPlanillaRows(
     for (const dk of DAY_ORDER) {
       const src = r.days?.[dk];
       base[idx].days[dk] = {
-        he1:
-          typeof src?.he1 === "string"
-            ? normalizeScheduleTime(src.he1)
-            : "",
-        hs1:
-          typeof src?.hs1 === "string"
-            ? normalizeScheduleTime(src.hs1)
-            : "",
-        he2:
-          typeof src?.he2 === "string"
-            ? normalizeScheduleTime(src.he2)
-            : "",
-        hs2:
-          typeof src?.hs2 === "string"
-            ? normalizeScheduleTime(src.hs2)
-            : "",
+        he1: typeof src?.he1 === "string" ? normalizeScheduleTime(src.he1) : "",
+        hs1: typeof src?.hs1 === "string" ? normalizeScheduleTime(src.hs1) : "",
+        he2: typeof src?.he2 === "string" ? normalizeScheduleTime(src.he2) : "",
+        hs2: typeof src?.hs2 === "string" ? normalizeScheduleTime(src.hs2) : "",
         conDescanso: Boolean(src?.conDescanso),
       };
     }
@@ -590,7 +592,9 @@ export function IngresarHorariosInner() {
     Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow()),
   );
   /** Si no es null, Guardar hace PATCH y actualiza esta planilla */
-  const [editingPlanillaId, setEditingPlanillaId] = useState<number | null>(null);
+  const [editingPlanillaId, setEditingPlanillaId] = useState<number | null>(
+    null,
+  );
   const [loadingPlanillaEdit, setLoadingPlanillaEdit] = useState(false);
   const planillaRef = useRef<HTMLDivElement | null>(null);
   const jpgExportRef = useRef<HTMLDivElement | null>(null);
@@ -603,7 +607,6 @@ export function IngresarHorariosInner() {
   const [lunesIndVersion, setLunesIndVersion] = useState(0);
 
   const lunesSyncActive = canLunesScheduleSync && syncLunesToRest;
-
 
   useEffect(() => {
     let isMounted = true;
@@ -717,11 +720,7 @@ export function IngresarHorariosInner() {
   }, [canLunesScheduleSync, syncLunesToRest]);
 
   useEffect(() => {
-    if (
-      !draftHydrated ||
-      !currentUsername ||
-      editingPlanillaId !== null
-    ) {
+    if (!draftHydrated || !currentUsername || editingPlanillaId !== null) {
       return;
     }
 
@@ -797,7 +796,9 @@ export function IngresarHorariosInner() {
         };
         if (!res.ok || !data.form) {
           if (!cancelled) {
-            setSaveError(data.error ?? "No se pudo cargar la planilla para editar.");
+            setSaveError(
+              data.error ?? "No se pudo cargar la planilla para editar.",
+            );
             setLoadingPlanillaEdit(false);
           }
           return;
@@ -836,33 +837,36 @@ export function IngresarHorariosInner() {
     };
   }, [planillaQueryIdRaw, currentUsername]);
 
-  const updateRowField = useCallback((
-    rowIndex: number,
-    field: keyof Pick<RowSchedule, "nombre" | "firma">,
-    value: string,
-  ) => {
-    if (field === "nombre") {
-      const key = normalizePersonNameKey(value);
-      if (key) {
-        const duplicate = rows.some(
-          (r, i) =>
-            i !== rowIndex && normalizePersonNameKey(r.nombre) === key,
-        );
-        if (duplicate) {
-          setEmployeeDuplicateError(
-            "Este empleado ya esta en otra fila. Quita el nombre en la otra fila o elige otro.",
+  const updateRowField = useCallback(
+    (
+      rowIndex: number,
+      field: keyof Pick<RowSchedule, "nombre" | "firma">,
+      value: string,
+    ) => {
+      if (field === "nombre") {
+        const key = normalizePersonNameKey(value);
+        if (key) {
+          const duplicate = rows.some(
+            (r, i) =>
+              i !== rowIndex && normalizePersonNameKey(r.nombre) === key,
           );
-          return;
+          if (duplicate) {
+            setEmployeeDuplicateError(
+              "Este empleado ya esta en otra fila. Quita el nombre en la otra fila o elige otro.",
+            );
+            return;
+          }
         }
+        setEmployeeDuplicateError(null);
       }
-      setEmployeeDuplicateError(null);
-    }
-    setRows((prev) =>
-      prev.map((row, idx) =>
-        idx === rowIndex ? { ...row, [field]: value } : row,
-      ),
-    );
-  }, [rows]);
+      setRows((prev) =>
+        prev.map((row, idx) =>
+          idx === rowIndex ? { ...row, [field]: value } : row,
+        ),
+      );
+    },
+    [rows],
+  );
 
   const updateRowDayField = useCallback(
     (
@@ -956,10 +960,7 @@ export function IngresarHorariosInner() {
       Array.from(
         new Set(
           employeeOptions
-            .filter(
-              (employee) =>
-                matchesSede(employee.sede, sede),
-            )
+            .filter((employee) => matchesSede(employee.sede, sede))
             .map((employee) => employee.name)
             .filter(Boolean),
         ),
@@ -1047,7 +1048,9 @@ export function IngresarHorariosInner() {
       );
 
       setEditingPlanillaId(null);
-      setRows(Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow()));
+      setRows(
+        Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow()),
+      );
       setFechaInicial("");
       setFechaFinal("");
       setMes("");
@@ -1060,7 +1063,9 @@ export function IngresarHorariosInner() {
       }
       router.replace("/ingresar-horarios");
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Error desconocido al guardar.");
+      setSaveError(
+        err instanceof Error ? err.message : "Error desconocido al guardar.",
+      );
       setSaveSuccess(null);
     } finally {
       setSavingForm(false);
@@ -1084,10 +1089,7 @@ export function IngresarHorariosInner() {
 
   const handleAddRows = useCallback(() => {
     setRows((prev) => {
-      return [
-        ...prev,
-        createEmptyRow(),
-      ];
+      return [...prev, createEmptyRow()];
     });
   }, []);
 
@@ -1189,7 +1191,8 @@ export function IngresarHorariosInner() {
                   <span className="font-semibold">SEDE:</span> {sede || "-"}
                 </div>
                 <div>
-                  <span className="font-semibold">SECCION:</span> {seccion || "-"}
+                  <span className="font-semibold">SECCION:</span>{" "}
+                  {seccion || "-"}
                 </div>
                 <div>
                   <span className="font-semibold">FECHA INICIAL:</span>{" "}
@@ -1206,13 +1209,17 @@ export function IngresarHorariosInner() {
             </div>
 
             <div className={`mt-1 rounded-none ${SCHEDULE_OUTER_BORDER_CLASS}`}>
-              <table className="w-[88rem] table-fixed border-collapse text-[9px] leading-tight">
+              <table className="w-88rem table-fixed border-collapse text-[9px] leading-tight">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700">
-                    <th className={`w-8 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center`}>
+                    <th
+                      className={`w-8 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center`}
+                    >
                       #
                     </th>
-                    <th className={`w-44 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}>
+                    <th
+                      className={`w-44 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}
+                    >
                       Nombre
                     </th>
                     {DAY_ORDER.map((day) => (
@@ -1229,7 +1236,9 @@ export function IngresarHorariosInner() {
                         </div>
                       </th>
                     ))}
-                    <th className={`w-40 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}>
+                    <th
+                      className={`w-40 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}
+                    >
                       Firma empleado
                     </th>
                   </tr>
@@ -1255,10 +1264,14 @@ export function IngresarHorariosInner() {
                       key={`jpg-row-${rowIndex}`}
                       className="odd:bg-white even:bg-slate-50/40"
                     >
-                      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 text-center align-top text-slate-600`}>
+                      <td
+                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 text-center align-top text-slate-600`}
+                      >
                         {rowIndex + 1}
                       </td>
-                      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-900 break-words`}>
+                      <td
+                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-900 wrap-break-words`}
+                      >
                         {row.nombre || "--"}
                       </td>
                       {DAY_ORDER.flatMap((day) => {
@@ -1275,16 +1288,20 @@ export function IngresarHorariosInner() {
                           ];
                         }
 
-                        return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
-                          <td
-                            key={`jpg-${rowIndex}-${day}-${field}`}
-                            className={`w-12 ${SCHEDULE_CELL_BORDER_CLASS} px-0.5 py-1 text-center text-slate-700`}
-                          >
-                            {formatTimeForDisplay(dayData[field]) || "--"}
-                          </td>
-                        ));
+                        return (["he1", "hs1", "he2", "hs2"] as const).map(
+                          (field) => (
+                            <td
+                              key={`jpg-${rowIndex}-${day}-${field}`}
+                              className={`w-12 ${SCHEDULE_CELL_BORDER_CLASS} px-0.5 py-1 text-center text-slate-700`}
+                            >
+                              {formatTimeForDisplay(dayData[field]) || "--"}
+                            </td>
+                          ),
+                        );
                       })}
-                      <td className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-700 break-words`}>
+                      <td
+                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-700 wrap-break-words`}
+                      >
                         {row.firma || "--"}
                       </td>
                     </tr>
@@ -1314,10 +1331,13 @@ export function IngresarHorariosInner() {
             {editingPlanillaId !== null && !loadingPlanillaEdit ? (
               <p className="mt-2 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
                 Editando planilla{" "}
-                <span className="font-mono font-semibold">#{editingPlanillaId}</span>.
-                Al guardar se actualiza este registro (no se crea otro). Despues
-                el formulario se vacia para cargar una planilla nueva; para volver
-                a editar esta, entra en Horarios guardados y usa Editar.
+                <span className="font-mono font-semibold">
+                  #{editingPlanillaId}
+                </span>
+                . Al guardar se actualiza este registro (no se crea otro).
+                Despues el formulario se vacia para cargar una planilla nueva;
+                para volver a editar esta, entra en Horarios guardados y usa
+                Editar.
               </p>
             ) : null}
           </div>
@@ -1484,7 +1504,9 @@ export function IngresarHorariosInner() {
           </div>
         )}
 
-        <div className={`mt-5 hidden ${SCHEDULE_OUTER_BORDER_CLASS} px-3 py-2 print:block`}>
+        <div
+          className={`mt-5 hidden ${SCHEDULE_OUTER_BORDER_CLASS} px-3 py-2 print:block`}
+        >
           <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b-2 border-slate-900 pb-2">
             <div className="text-left text-xs font-bold tracking-wide text-slate-900">
               MercaTodo
@@ -1517,7 +1539,9 @@ export function IngresarHorariosInner() {
           </div>
         </div>
 
-        <div className={`mt-5 overflow-x-auto overflow-y-visible rounded-2xl ${SCHEDULE_OUTER_BORDER_CLASS} print:overflow-visible print:rounded-none`}>
+        <div
+          className={`mt-5 overflow-x-auto overflow-y-visible rounded-2xl ${SCHEDULE_OUTER_BORDER_CLASS} print:overflow-visible print:rounded-none`}
+        >
           <table className="planilla-print-table table-fixed w-max max-w-none border-collapse text-[12px] print:min-w-0 print:w-full print:max-w-none print:text-[8px]">
             <colgroup>
               <col style={{ width: COL_W_NUM }} />
@@ -1534,10 +1558,14 @@ export function IngresarHorariosInner() {
             </colgroup>
             <thead>
               <tr className="bg-slate-100 text-slate-700">
-                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center`}>
+                <th
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center`}
+                >
                   #
                 </th>
-                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}>
+                <th
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}
+                >
                   Nombre
                 </th>
                 {DAY_ORDER.map((day) => (
@@ -1554,7 +1582,9 @@ export function IngresarHorariosInner() {
                     </div>
                   </th>
                 ))}
-                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}>
+                <th
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}
+                >
                   Firma empleado
                 </th>
               </tr>
@@ -1563,10 +1593,7 @@ export function IngresarHorariosInner() {
                 <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
                 {DAY_ORDER.flatMap((day) =>
                   (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
-                    <th
-                      key={`${day}-${field}`}
-                      className={TIME_SLOT_TH_CLASS}
-                    >
+                    <th key={`${day}-${field}`} className={TIME_SLOT_TH_CLASS}>
                       {field === "he1" || field === "he2" ? "HE" : "HS"}
                     </th>
                   )),
@@ -1589,7 +1616,10 @@ export function IngresarHorariosInner() {
             </tbody>
           </table>
           {rows.map((_, rowIndex) => (
-            <datalist key={`dl-${rowIndex}`} id={`ingresar-horarios-emp-${rowIndex}`}>
+            <datalist
+              key={`dl-${rowIndex}`}
+              id={`ingresar-horarios-emp-${rowIndex}`}
+            >
               {(employeeNamesPerRow[rowIndex] ?? []).map((employeeName) => (
                 <option
                   key={`${rowIndex}-${employeeName}`}
