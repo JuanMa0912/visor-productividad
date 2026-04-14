@@ -4,7 +4,6 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import { normalizeKeyCompact } from "@/lib/normalize";
-import { appendAgentDebugLog } from "@/lib/agent-debug-log";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -25,45 +24,7 @@ const resolveCachePath = () => {
 };
 
 const cacheFilePath = resolveCachePath();
-// #region agent log
-const agentDebugAppend = async (payload: {
-  hypothesisId: string;
-  location: string;
-  message: string;
-  data?: Record<string, unknown>;
-}) => {
-  await appendAgentDebugLog({
-    hypothesisId: payload.hypothesisId,
-    location: payload.location,
-    message: payload.message,
-    ...(payload.data !== undefined ? { data: payload.data } : {}),
-  });
-};
-// #endregion
 const NO_STORE_CACHE_CONTROL = "no-store, private";
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
-
-/** Solo desarrollo: el cliente puede leer la cabecera y enviarla al ingest (evidencia NDJSON en workspace). */
-const attachProductivityDebugHeader = (
-  response: NextResponse,
-  meta: Record<string, string | number | boolean | null>,
-) => {
-  if (IS_PRODUCTION) return;
-  try {
-    response.headers.set(
-      "X-Debug-Productivity",
-      encodeURIComponent(JSON.stringify(meta)),
-    );
-  } catch {
-    /* ignore */
-  }
-};
-
-const debugLog = (...args: unknown[]) => {
-  if (!IS_PRODUCTION) {
-    console.log(...args);
-  }
-};
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -497,19 +458,6 @@ const fetchAllProductivityData = async (
   try {
       const hoursResult = hoursQueryResult;
 
-      // DEBUG: Resumen inicial
-      debugLog("=== DEBUG HORAS ===");
-      debugLog("Claves ventas:", dailyDataMap.size);
-      debugLog(
-        "Primeras 5 claves ventas:",
-        Array.from(dailyDataMap.keys()).slice(0, 5),
-      );
-      debugLog("Filas horas:", hoursResult.rows?.length ?? 0);
-
-      let horasAsignadas = 0;
-      let filasSkipped = 0;
-      let primerFila = true;
-
       if (hoursResult.rows) {
         for (const row of hoursResult.rows) {
           const typedRow = row as {
@@ -534,34 +482,14 @@ const fetchAllProductivityData = async (
           }
           const sedeName = normalizeSedeAsistencia(typedRow.sede);
           if (HIDDEN_SEDES.has(normalizeSedeKey(sedeName))) {
-            filasSkipped++;
             continue;
           }
           const lineId = resolveLineId(typedRow.departamento);
 
-          // DEBUG: Mostrar solo las primeras 3 filas
-          if (primerFila) {
-            const hoursKey = `${fecha}_${sedeName}`;
-            const existsInVentas = dailyDataMap.has(hoursKey);
-            debugLog("Primera fila horas:", {
-              fechaRaw: typedRow.fecha,
-              fechaFormateada: fecha,
-              sedeRaw: typedRow.sede,
-              sedeNorm: sedeName,
-              hoursKey,
-              existsInVentas,
-              deptoRaw: typedRow.departamento,
-              lineId,
-            });
-            primerFila = false;
-          }
-
           if (!lineId || !sedeName) {
-            filasSkipped++;
             continue;
           }
           if (allowedSet.size > 0 && !allowedSet.has(normalizeLineId(lineId))) {
-            filasSkipped++;
             continue;
           }
 
@@ -594,27 +522,8 @@ const fetchAllProductivityData = async (
 
           const horasValue = Number(typedRow.total_hours) || 0;
           lineMetric.hours += horasValue;
-          horasAsignadas += horasValue;
         }
       }
-
-      // Obtener sedes únicas de horas
-      const sedesHoras = new Set<string>();
-      if (hoursResult.rows) {
-        for (const row of hoursResult.rows) {
-          const typedRow = row as { sede: string };
-          const sedeNorm = normalizeSedeAsistencia(typedRow.sede);
-          if (sedeNorm) sedesHoras.add(sedeNorm);
-        }
-      }
-      debugLog("Sedes únicas en horas:", Array.from(sedesHoras));
-      debugLog(
-        "Sedes únicas en ventas:",
-        Array.from(
-          new Set(Array.from(dailyDataMap.values()).map((d) => d.sede)),
-        ),
-      );
-      debugLog("Resumen:", { horasAsignadas, filasSkipped });
     } catch (error) {
       console.warn("No se pudo consultar la tabla asistencia_horas:", error);
     }
@@ -638,22 +547,6 @@ const fetchAllProductivityData = async (
     }
 
     const sortedResult = result.sort((a, b) => a.date.localeCompare(b.date));
-
-    // DEBUG: Verificar que los datos finales tienen horas
-    const sampleWithHours = sortedResult.find((d) =>
-      d.lines.some((l) => l.hours > 0),
-    );
-    if (sampleWithHours) {
-      const lineWithHours = sampleWithHours.lines.find((l) => l.hours > 0);
-      debugLog("Ejemplo con horas:", {
-        fecha: sampleWithHours.date,
-        sede: sampleWithHours.sede,
-        linea: lineWithHours?.id,
-        horas: lineWithHours?.hours,
-      });
-    } else {
-      debugLog("ADVERTENCIA: Ningún registro tiene horas > 0");
-    }
 
     return sortedResult;
   } finally {
@@ -731,87 +624,17 @@ export async function GET(request: Request) {
       ),
     );
   }
-  const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-  const tRoute0 = Date.now();
   const cached = await readCache();
-  const tAfterReadCache = Date.now();
-  // #region agent log
-  await agentDebugAppend({
-    hypothesisId: "H2",
-    location: "productivity/route.ts:GET",
-    message: "after_readCache",
-    data: {
-      reqId,
-      cacheRows: cached?.length ?? 0,
-      cacheHit: Boolean(cached && cached.length > 0),
-      readCacheMs: tAfterReadCache - tRoute0,
-      cacheBasename: path.basename(cacheFilePath),
-    },
-  });
-  // #endregion
   if (cached && cached.length > 0) {
     // Regla de negocio: productividad por linea es global por tablero.
     const scopedCached = filterDailyDataByAllowedLines(cached, allowedLineIds);
-    // #region agent log
-    await agentDebugAppend({
-      hypothesisId: "H2",
-      location: "productivity/route.ts:GET",
-      message: "response_cache_hit",
-      data: {
-        reqId,
-        scopedRows: scopedCached.length,
-        totalMs: Date.now() - tRoute0,
-      },
-    });
-    // #endregion
     const cacheHitRes = buildCacheResponse(scopedCached);
-    attachProductivityDebugHeader(cacheHitRes, {
-      branch: "cache_hit",
-      hypothesisId: "H2",
-      reqId,
-      cacheRows: cached.length,
-      scopedRows: scopedCached.length,
-      readCacheMs: tAfterReadCache - tRoute0,
-      totalRouteMs: Date.now() - tRoute0,
-    });
     return withSession(cacheHitRes);
   }
   try {
-    const tDb0 = Date.now();
     await testDbConnection();
-    const tAfterConn = Date.now();
     /** Consultas + escritura de caché; compartido entre peticiones concurrentes sin caché. */
     const rawDaily = await runColdProductivityLoad();
-    const tAfterCold = Date.now();
-    const testDbMs = tAfterConn - tDb0;
-    const fetchAllMs = tAfterCold - tAfterConn;
-    const coldDebugMeta = {
-      branch: "database" as const,
-      hypothesisId: "H1-H3-H5",
-      reqId,
-      readCacheMs: tAfterReadCache - tRoute0,
-      cwd: process.cwd(),
-      testDbMs,
-      fetchAllMs,
-      writeCacheMs: 0,
-      writeIncludedInFetchAllMs: true,
-      rawRows: rawDaily.length,
-      totalColdMs: tAfterCold - tRoute0,
-    };
-    // #region agent log
-    await agentDebugAppend({
-      hypothesisId: "H1-H3-H5",
-      location: "productivity/route.ts:GET",
-      message: "cold_path_timings",
-      data: {
-        reqId,
-        testDbMs,
-        fetchAllMs,
-        rawRows: rawDaily.length,
-        totalColdMs: tAfterCold - tRoute0,
-      },
-    });
-    // #endregion
     const dailyData = filterDailyDataByAllowedLines(rawDaily, allowedLineIds);
     if (dailyData.length > 0) {
       const dbRes = NextResponse.json(
@@ -826,7 +649,6 @@ export async function GET(request: Request) {
           },
         },
       );
-      attachProductivityDebugHeader(dbRes, coldDebugMeta);
       return withSession(dbRes);
     }
     const emptyRes = NextResponse.json(
@@ -842,7 +664,6 @@ export async function GET(request: Request) {
         },
       },
     );
-    attachProductivityDebugHeader(emptyRes, coldDebugMeta);
     return withSession(emptyRes);
   } catch (error) {
     console.error("Error en endpoint de productividad:", error);

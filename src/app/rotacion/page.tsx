@@ -1,8 +1,19 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as ExcelJS from "exceljs";
+import { toPng } from "html-to-image";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   AlertCircle,
   ArrowLeft,
@@ -92,7 +103,7 @@ type RotationSortField =
   | "inventoryUnits"
   | "inventoryValue"
   | "rotation"
-  | "effectiveDays"
+  | "lastMovementDate"
   | "status";
 
 type RotationSortDirection = "asc" | "desc";
@@ -117,11 +128,31 @@ const toDateKey = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const getCurrentMonthBounds = (baseDate?: string): DateRange => {
-  const today = baseDate ? parseDateKey(baseDate) : new Date();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1, 12);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 12);
-  return { start: toDateKey(monthStart), end: toDateKey(monthEnd) };
+const clampDateKeyToBounds = (key: string, min: string, max: string) => {
+  if (key < min) return min;
+  if (key > max) return max;
+  return key;
+};
+
+/** Fin = hoy (o tope de datos); inicio = mismo día un mes calendario atrás, acotado a datos disponibles. */
+const getRollingMonthBackRange = (
+  minAvailable: string,
+  maxAvailable: string,
+): DateRange => {
+  const todayKey = toDateKey(new Date());
+  const endKey = clampDateKeyToBounds(todayKey, minAvailable, maxAvailable);
+  const endDate = parseDateKey(endKey);
+  const startDate = new Date(endDate);
+  startDate.setMonth(startDate.getMonth() - 1);
+  let startKey = clampDateKeyToBounds(
+    toDateKey(startDate),
+    minAvailable,
+    maxAvailable,
+  );
+  if (startKey > endKey) {
+    startKey = endKey;
+  }
+  return { start: startKey, end: endKey };
 };
 
 const sanitizeNumericInput = (value: string) => value.replace(/\D/g, "");
@@ -172,17 +203,87 @@ const formatPrice = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-const getStatusBadgeClassName = (status: RotationRow["status"]) => {
-  switch (status) {
-    case "Agotado":
-      return "border-rose-200 bg-rose-50 text-rose-700";
-    case "Futuro agotado":
-      return "border-orange-200 bg-orange-50 text-orange-700";
-    case "Baja rotacion":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    default:
-      return "border-sky-200 bg-sky-50 text-sky-700";
+const buildExportFileStamp = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const h = String(now.getHours()).padStart(2, "0");
+  const min = String(now.getMinutes()).padStart(2, "0");
+  return `${y}${m}${d}_${h}${min}`;
+};
+
+/** Avoid fetch(data:...) — not reliable in all runtimes; decode inline like inventario flow. */
+const dataUrlToBlob = (dataUrl: string): Blob => {
+  const comma = dataUrl.indexOf(",");
+  if (comma === -1) {
+    throw new Error("dataUrlToBlob: invalid data URL");
   }
+  const header = dataUrl.slice(0, comma);
+  const base64 = dataUrl.slice(comma + 1);
+  const mimeMatch = /^data:([^;,]+)/.exec(header);
+  const mime = mimeMatch?.[1] ?? "image/jpeg";
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+};
+
+const WHATSAPP_TABLE_EXCLUDE = "data-whatsapp-table-exclude";
+
+const rotacionWhatsappExportFilter = (node: HTMLElement) => {
+  if (!(node instanceof Element)) return true;
+  return !node.hasAttribute(WHATSAPP_TABLE_EXCLUDE);
+};
+
+/** Ancho completo de tabla + tarjeta compacta; restaurar después de toPng (html-to-image no expone onclone en tipos). */
+const prepareRotacionWhatsappExportDom = (root: HTMLElement) => {
+  const cleanups: Array<() => void> = [];
+  root.querySelectorAll(".rotacion-whatsapp-export-card").forEach((el) => {
+    const c = el as HTMLElement;
+    const pad = c.style.padding;
+    const bs = c.style.boxShadow;
+    const gap = c.style.gap;
+    const br = c.style.borderRadius;
+    c.style.padding = "0";
+    c.style.boxShadow = "none";
+    c.style.gap = "0";
+    c.style.borderRadius = "8px";
+    cleanups.push(() => {
+      c.style.padding = pad;
+      c.style.boxShadow = bs;
+      c.style.gap = gap;
+      c.style.borderRadius = br;
+    });
+  });
+  root.querySelectorAll(".rotacion-table-capture-scroll").forEach((el) => {
+    const h = el as HTMLElement;
+    const ov = h.style.overflow;
+    const mw = h.style.maxWidth;
+    h.style.overflow = "visible";
+    h.style.maxWidth = "none";
+    cleanups.push(() => {
+      h.style.overflow = ov;
+      h.style.maxWidth = mw;
+    });
+  });
+  root.querySelectorAll("table").forEach((t) => {
+    const ht = t as HTMLElement;
+    const w = ht.style.width;
+    const minW = ht.style.minWidth;
+    ht.style.width = "max-content";
+    ht.style.minWidth = "100%";
+    cleanups.push(() => {
+      ht.style.width = w;
+      ht.style.minWidth = minW;
+    });
+  });
+  return () => {
+    for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]();
+  };
 };
 
 const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
@@ -195,11 +296,20 @@ const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
 const compareRotationText = (left: string, right: string) =>
   left.localeCompare(right, "es", { sensitivity: "base", numeric: true });
 
-const compareNullableNumbers = (left: number | null, right: number | null) => {
+const formatRotationOneDecimal = (value: number) =>
+  (Math.round(value * 10) / 10).toLocaleString("es-CO", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+
+const compareNullableIsoDateKeys = (
+  left: string | null,
+  right: string | null,
+) => {
   if (left === null && right === null) return 0;
   if (left === null) return 1;
   if (right === null) return -1;
-  return left - right;
+  return compareRotationText(left, right);
 };
 
 const getDefaultSortDirection = (
@@ -239,10 +349,10 @@ const sortRotationRows = (
       case "rotation":
         result = left.rotation - right.rotation;
         break;
-      case "effectiveDays":
-        result = compareNullableNumbers(
-          left.effectiveDays,
-          right.effectiveDays,
+      case "lastMovementDate":
+        result = compareNullableIsoDateKeys(
+          left.lastMovementDate,
+          right.lastMovementDate,
         );
         break;
       case "status":
@@ -291,15 +401,46 @@ const buildRowsBySede = (rows: RotationRow[]) => {
   return Array.from(grouped.values());
 };
 
+/** Filtros rápidos por bloque de sede (tabla). */
+type GroupRowsQuickFilter =
+  | "none"
+  | "cero_rotacion"
+  | "venta_hasta";
+
+const applyRowsQuickFilter = (
+  rows: RotationRow[],
+  filter: GroupRowsQuickFilter,
+  ventaHastaMax: number | null,
+): RotationRow[] => {
+  if (filter === "none") return rows;
+  if (filter === "cero_rotacion") {
+    return rows.filter(
+      (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+    );
+  }
+  if (filter === "venta_hasta") {
+    if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) return rows;
+    return rows.filter((row) => row.totalSales <= ventaHastaMax);
+  }
+  return rows;
+};
+
 const COMPANY_LABELS: Record<string, string> = {
   mercamio: "Mercamio",
-  mtodo: "Mercatodo",
+  mtodo: "Comercializadora",
   bogota: "Merkmios",
 };
 
 const formatCompanyLabel = (value: string) =>
   COMPANY_LABELS[value] ??
   value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+
+const formatSedeLabel = (value: string) =>
+  value
+    .replace(/^sede\s+/i, "")
+    .replace(/\bproduccion\s+producto\s+terminado\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 
 const parseSedeSelection = (value: string) => {
   if (!value) return null;
@@ -346,6 +487,17 @@ type SortableRotationHeaderProps = {
   direction: RotationSortDirection;
   onSort: (field: RotationSortField) => void;
 };
+
+const WhatsAppLogo = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden
+    {...props}
+  >
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+  </svg>
+);
 
 const SortableRotationHeader = ({
   field,
@@ -470,6 +622,22 @@ export default function RotacionPage() {
   const [pageByGroupKey, setPageByGroupKey] = useState<Record<string, number>>(
     {},
   );
+  const [rowsQuickFilterByGroup, setRowsQuickFilterByGroup] = useState<
+    Record<string, GroupRowsQuickFilter>
+  >({});
+  /** Valor aplicado al pulsar «Venta ≤» (tope de venta periodo en COP). */
+  const [ventaHastaCapByGroup, setVentaHastaCapByGroup] = useState<
+    Record<string, number | undefined>
+  >({});
+  const [ventaHastaInputByGroup, setVentaHastaInputByGroup] = useState<
+    Record<string, string>
+  >({});
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
+  const rotacionTablesExportRef = useRef<HTMLDivElement>(null);
+  const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
+  const whatsappShareLockRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -539,6 +707,7 @@ export default function RotacionPage() {
       setError(null);
 
       try {
+        const hadEmptyDateRange = !dateRange.start || !dateRange.end;
         const params = new URLSearchParams();
         const selectedSedeMeta = parseSedeSelection(selectedSede);
         const effectiveCompany = selectedSedeMeta?.empresa ?? selectedCompany;
@@ -597,8 +766,21 @@ export default function RotacionPage() {
           });
         }
 
+        const avMin = payload.meta?.availableRange?.min;
+        const avMax = payload.meta?.availableRange?.max;
         if (
+          hadEmptyDateRange &&
+          typeof avMin === "string" &&
+          avMin &&
+          typeof avMax === "string" &&
+          avMax
+        ) {
+          const rolling = getRollingMonthBackRange(avMin, avMax);
+          setDateRange(rolling);
+        } else if (
           payload.meta?.effectiveRange &&
+          payload.meta.effectiveRange.start &&
+          payload.meta.effectiveRange.end &&
           (dateRange.start !== payload.meta.effectiveRange.start ||
             dateRange.end !== payload.meta.effectiveRange.end)
         ) {
@@ -655,13 +837,17 @@ export default function RotacionPage() {
   const allSedeOptions = useMemo(
     () =>
       filterCatalog.sedes
-        .map((option) => ({
-          value: `${option.empresa}::${option.sedeId}`,
-          label: `${formatCompanyLabel(option.empresa)} - ${option.sedeName}`,
-          empresa: option.empresa,
-          sedeId: option.sedeId,
-          sedeName: option.sedeName,
-        }))
+        .map((option) => {
+          const cleanedSedeName = formatSedeLabel(option.sedeName);
+          return {
+            value: `${option.empresa}::${option.sedeId}`,
+            label: `${formatCompanyLabel(option.empresa)} - ${cleanedSedeName}`,
+            empresa: option.empresa,
+            sedeId: option.sedeId,
+            sedeName: cleanedSedeName,
+          };
+        })
+        .filter((option) => option.sedeName.length > 0)
         .sort((a, b) => a.label.localeCompare(b.label, "es")),
     [filterCatalog.sedes],
   );
@@ -699,9 +885,6 @@ export default function RotacionPage() {
     () => ({
       evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,
       visibleItems: rows.length,
-      exhausted: rows.filter((row) => row.status === "Agotado").length,
-      futureStockout: rows.filter((row) => row.status === "Futuro agotado")
-        .length,
     }),
     [rows],
   );
@@ -724,10 +907,6 @@ export default function RotacionPage() {
     );
   };
 
-  const handleCurrentMonthClick = () => {
-    setDateRange(getCurrentMonthBounds(availableRange.end || undefined));
-  };
-
   const handleTableSort = (field: RotationSortField) => {
     if (tableSortField === field) {
       setTableSortDirection((current) => (current === "asc" ? "desc" : "asc"));
@@ -745,6 +924,34 @@ export default function RotacionPage() {
     setPageByGroupKey({});
   };
 
+  const toggleGroupRowsQuickFilter = (
+    groupKey: string,
+    filter: Exclude<GroupRowsQuickFilter, "none" | "venta_hasta">,
+  ) => {
+    setRowsQuickFilterByGroup((prev) => {
+      const current = prev[groupKey] ?? "none";
+      const next: GroupRowsQuickFilter =
+        current === filter ? "none" : filter;
+      return { ...prev, [groupKey]: next };
+    });
+    setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+  };
+
+  const applyOrToggleVentaHastaFilter = (groupKey: string) => {
+    const current = rowsQuickFilterByGroup[groupKey] ?? "none";
+    if (current === "venta_hasta") {
+      setRowsQuickFilterByGroup((prev) => ({ ...prev, [groupKey]: "none" }));
+      setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+      return;
+    }
+    const raw = ventaHastaInputByGroup[groupKey] ?? "";
+    const parsed = Number(sanitizeNumericInput(raw));
+    if (Number.isNaN(parsed) || parsed < 0) return;
+    setVentaHastaCapByGroup((prev) => ({ ...prev, [groupKey]: parsed }));
+    setRowsQuickFilterByGroup((prev) => ({ ...prev, [groupKey]: "venta_hasta" }));
+    setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+  };
+
   const setGroupPage = (
     groupKey: string,
     nextPage: number,
@@ -758,6 +965,213 @@ export default function RotacionPage() {
   };
 
   const shouldSelectSedeFirst = !selectedSede;
+
+  const exportRows = useMemo(
+    () =>
+      rowsBySede.flatMap((group) => {
+        const groupKey = `${group.empresa}-${group.sedeId}`;
+        const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
+        const ventaHastaCap =
+          rowFilter === "venta_hasta"
+            ? (ventaHastaCapByGroup[groupKey] ?? null)
+            : null;
+        const filteredRows = applyRowsQuickFilter(
+          group.rows,
+          rowFilter,
+          ventaHastaCap,
+        );
+        return filteredRows.map((row) => ({
+          empresa: formatCompanyLabel(row.empresa),
+          sede: row.sedeName,
+          item: row.item,
+          descripcion: row.descripcion,
+          ventaPeriodo: row.totalSales,
+          invCierre: row.inventoryUnits,
+          unidad: row.unidad ?? "",
+          valorInventario: row.inventoryValue,
+          rotacion: formatRotationOneDecimal(row.rotation),
+          ultimoIngreso: row.lastMovementDate
+            ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
+            : "Sin fecha de ingreso",
+          estado: row.status,
+        }));
+      }),
+    [rowsBySede, rowsQuickFilterByGroup, ventaHastaCapByGroup],
+  );
+
+  const buildRotacionPdfDocument = useCallback(() => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFontSize(12);
+    doc.text("Reporte de Rotacion", 14, 12);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${new Date().toLocaleString("es-CO")}`, 14, 18);
+
+    autoTable(doc, {
+      startY: 22,
+      styles: { fontSize: 7, cellPadding: 1.8 },
+      head: [[
+        "Empresa",
+        "Sede",
+        "Item",
+        "Descripcion",
+        "Venta periodo",
+        "Inv cierre",
+        "Unidad",
+        "Valor inventario",
+        "Rotacion",
+        "Ultimo ingreso",
+        "Estado",
+      ]],
+      body: exportRows.map((row) => [
+        row.empresa,
+        row.sede,
+        row.item,
+        row.descripcion,
+        formatPrice(row.ventaPeriodo),
+        row.invCierre.toLocaleString("es-CO"),
+        row.unidad,
+        formatPrice(row.valorInventario),
+        row.rotacion,
+        row.ultimoIngreso,
+        row.estado,
+      ]),
+      margin: { left: 8, right: 8 },
+    });
+    return doc;
+  }, [exportRows]);
+
+  const handleExportExcel = async () => {
+    if (exportRows.length === 0 || isExportingExcel) return;
+    setIsExportingExcel(true);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Rotacion");
+      sheet.columns = [
+        { header: "Empresa", key: "empresa", width: 18 },
+        { header: "Sede", key: "sede", width: 24 },
+        { header: "Item", key: "item", width: 14 },
+        { header: "Descripcion", key: "descripcion", width: 46 },
+        { header: "Venta periodo", key: "ventaPeriodo", width: 16 },
+        { header: "Inv cierre", key: "invCierre", width: 12 },
+        { header: "Unidad", key: "unidad", width: 10 },
+        { header: "Valor inventario", key: "valorInventario", width: 16 },
+        { header: "Rotacion", key: "rotacion", width: 12 },
+        { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
+        { header: "Estado", key: "estado", width: 16 },
+      ];
+      sheet.addRows(exportRows);
+
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF8FAFC" },
+        };
+      });
+      sheet.getColumn("ventaPeriodo").numFmt = '"$"#,##0';
+      sheet.getColumn("valorInventario").numFmt = '"$"#,##0';
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `rotacion_${buildExportFileStamp()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  const handleExportPdf = () => {
+    if (exportRows.length === 0 || isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      buildRotacionPdfDocument().save(
+        `rotacion_${buildExportFileStamp()}.pdf`,
+      );
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  const handleWhatsAppShare = useCallback(
+    async (format: "png" | "pdf") => {
+      if (exportRows.length === 0 || whatsappShareLockRef.current) return;
+      whatsappShareLockRef.current = true;
+      setIsWhatsAppSharing(true);
+      try {
+        const stamp = buildExportFileStamp();
+        let blob: Blob;
+        let filename: string;
+        const mime =
+          format === "pdf" ? "application/pdf" : "image/png";
+
+        if (format === "pdf") {
+          blob = buildRotacionPdfDocument().output("blob");
+          filename = `rotacion_${stamp}.pdf`;
+        } else {
+          const node = rotacionTablesExportRef.current;
+          if (!node) return;
+          const restoreDom = prepareRotacionWhatsappExportDom(node);
+          let dataUrl: string;
+          try {
+            dataUrl = await toPng(node, {
+              pixelRatio: 3,
+              backgroundColor: "#ffffff",
+              cacheBust: true,
+              filter: rotacionWhatsappExportFilter,
+            });
+          } finally {
+            restoreDom();
+          }
+          blob = dataUrlToBlob(dataUrl);
+          filename = `rotacion_${stamp}.png`;
+        }
+
+        const file = new File([blob], filename, { type: mime });
+        if (
+          typeof navigator !== "undefined" &&
+          typeof navigator.share === "function" &&
+          typeof navigator.canShare === "function" &&
+          navigator.canShare({ files: [file] })
+        ) {
+          await navigator.share({
+            files: [file],
+            title: "Reporte de rotacion",
+            text: "Reporte de rotacion",
+          });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = filename;
+          document.body.appendChild(anchor);
+          anchor.click();
+          document.body.removeChild(anchor);
+          URL.revokeObjectURL(url);
+          window.open(
+            "https://web.whatsapp.com/",
+            "_blank",
+            "noopener,noreferrer",
+          );
+        }
+        whatsappDetailsRef.current?.removeAttribute("open");
+      } finally {
+        whatsappShareLockRef.current = false;
+        setIsWhatsAppSharing(false);
+      }
+    },
+    [buildRotacionPdfDocument, exportRows.length],
+  );
 
   if (!ready) {
     return (
@@ -811,7 +1225,7 @@ export default function RotacionPage() {
           </CardContent>
         </Card>
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,1fr)]">
+        <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,1fr)]">
           <Card className="border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-slate-900">
@@ -819,12 +1233,12 @@ export default function RotacionPage() {
                 Filtros principales
               </CardTitle>
               <CardDescription>
-                Selecciona empresa, sede y una venta máxima del período para
-                enfocar la lectura en productos de baja salida.
+                Selecciona empresa y sede; el umbral de venta se define en el
+                periodo de consulta.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(15rem,1.08fr)]">
+              <div className="grid gap-3 md:grid-cols-2">
                 <FilterSelectField
                   icon={Building2}
                   label="Empresa"
@@ -865,27 +1279,7 @@ export default function RotacionPage() {
                   accentClassName="text-sky-700"
                   disabled={isLoadingData && allSedeOptions.length === 0}
                 />
-                <label className="block md:col-span-2 xl:col-span-1">
-                  <FilterFieldLabel
-                    icon={Filter}
-                    label="Venta maxima del periodo"
-                    accentClassName="text-slate-500"
-                  />
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={salesThreshold}
-                    onChange={(event) => handleValueChange(event.target.value)}
-                    placeholder="Maximo 200000"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
-                  />
-                </label>
               </div>
-              <p className="text-xs leading-5 text-slate-500">
-                Solo números enteros, sin puntos ni comas. El filtro usa la
-                venta acumulada del producto dentro del rango seleccionado y se
-                limita a un máximo de 200.000.
-              </p>
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
                   {selectedCompany
@@ -913,28 +1307,20 @@ export default function RotacionPage() {
                 Periodo de consulta
               </CardTitle>
               <CardDescription>
-                El rango se apoya en la fecha maxima disponible en la base y
-                puedes moverlo manualmente cuando necesites revisar otro corte.
+                Elige primero las fechas: por defecto el periodo es desde el
+                mismo dia del mes anterior hasta hoy (dentro de los datos
+                disponibles). Luego ajusta la venta maxima del periodo.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <Button
-                  type="button"
-                  onClick={handleCurrentMonthClick}
-                  className="rounded-full bg-slate-900 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-white hover:bg-slate-800"
-                >
-                  Evaluacion mes
-                </Button>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                    {daysConsulted} {daysConsulted === 1 ? "dia" : "dias"}{" "}
-                    consultados
-                  </Badge>
-                  <Badge className="border-slate-200 bg-slate-50 text-slate-700">
-                    {formattedRange}
-                  </Badge>
-                </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge className="border-amber-200 bg-amber-50 text-amber-700">
+                  {daysConsulted} {daysConsulted === 1 ? "dia" : "dias"}{" "}
+                  consultados
+                </Badge>
+                <Badge className="border-slate-200 bg-slate-50 text-slate-700">
+                  {formattedRange}
+                </Badge>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -970,6 +1356,27 @@ export default function RotacionPage() {
                 </label>
               </div>
 
+              <label className="block">
+                <FilterFieldLabel
+                  icon={Filter}
+                  label="Venta maxima del periodo"
+                  accentClassName="text-slate-500"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={salesThreshold}
+                  onChange={(event) => handleValueChange(event.target.value)}
+                  placeholder="Maximo 200000"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
+                />
+              </label>
+              <p className="text-xs leading-5 text-slate-500">
+                Solo números enteros, sin puntos ni comas. El filtro usa la venta
+                acumulada del producto dentro del rango seleccionado y se limita
+                a un máximo de 200.000.
+              </p>
+
               {availableRange.start && availableRange.end && (
                 <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-900">
                   Datos disponibles entre{" "}
@@ -987,7 +1394,7 @@ export default function RotacionPage() {
           </Card>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-2">
           <StatCard
             icon={Store}
             label="Sedes evaluadas"
@@ -1001,20 +1408,6 @@ export default function RotacionPage() {
             value={String(visibleStats.visibleItems)}
             description="Referencias mostradas con datos reales del rango consultado."
             iconClassName="bg-sky-100 text-sky-700"
-          />
-          <StatCard
-            icon={PackageSearch}
-            label="Futuro agotado"
-            value={String(visibleStats.futureStockout)}
-            description="Items con cobertura de inventario corta frente a la venta reciente."
-            iconClassName="bg-orange-100 text-orange-700"
-          />
-          <StatCard
-            icon={PackageSearch}
-            label="Agotados"
-            value={String(visibleStats.exhausted)}
-            description="Items que ya no tienen inventario de cierre dentro del rango."
-            iconClassName="bg-rose-100 text-rose-700"
           />
         </section>
 
@@ -1086,6 +1479,77 @@ export default function RotacionPage() {
         ) : (
           <section className="grid gap-5">
             <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleExportExcel}
+                disabled={exportRows.length === 0 || isExportingExcel}
+                className="h-9 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                {isExportingExcel ? "Exportando..." : "Descargar Excel"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleExportPdf}
+                disabled={exportRows.length === 0 || isExportingPdf}
+                className="h-9 rounded-lg border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
+              >
+                {isExportingPdf ? "Exportando..." : "Descargar PDF"}
+              </Button>
+              <details
+                ref={whatsappDetailsRef}
+                className="relative group"
+              >
+                <summary
+                  className="flex h-9 list-none cursor-pointer items-center gap-2 rounded-lg border border-emerald-600 bg-[#25D366] px-3 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-[#20bd5a] [&::-webkit-details-marker]:hidden disabled:pointer-events-none disabled:opacity-50"
+                  aria-label="Enviar tabla por WhatsApp"
+                >
+                  <WhatsAppLogo className="h-5 w-5 shrink-0 text-white" />
+                  <span className="hidden sm:inline">WhatsApp</span>
+                </summary>
+                <div
+                  className="absolute right-0 z-30 mt-1 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
+                  role="menu"
+                >
+                  <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Enviar tabla como
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={
+                        exportRows.length === 0 || isWhatsAppSharing
+                      }
+                      className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                      onClick={() => void handleWhatsAppShare("png")}
+                    >
+                      Imagen (PNG)
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={
+                        exportRows.length === 0 || isWhatsAppSharing
+                      }
+                      className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                      onClick={() => void handleWhatsAppShare("pdf")}
+                    >
+                      PDF
+                    </button>
+                  </div>
+                  <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
+                    PNG: solo la tabla (alta resolución; paginación por sede). PDF:
+                    todas las filas filtradas, igual que &quot;Descargar PDF&quot;.
+                    {" "}
+                    {typeof navigator !== "undefined" &&
+                    typeof navigator.share === "function"
+                      ? "Con compartir, elige WhatsApp si aparece."
+                      : "Se descarga el archivo y se abre WhatsApp Web: adjunta el archivo (clip)."}
+                  </p>
+                </div>
+              </details>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Filas por pagina
               </label>
@@ -1101,27 +1565,48 @@ export default function RotacionPage() {
                 ))}
               </select>
             </div>
+            <div
+              ref={rotacionTablesExportRef}
+              className="grid gap-5 bg-white p-2"
+            >
             {rowsBySede.map((group) => {
-              const exhausted = group.rows.filter(
-                (row) => row.status === "Agotado",
-              ).length;
-              const futureStockout = group.rows.filter(
-                (row) => row.status === "Futuro agotado",
-              ).length;
               const lowRotation = group.rows.filter(
                 (row) => row.status === "Baja rotacion",
               ).length;
               const groupKey = `${group.empresa}-${group.sedeId}`;
+              const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
+              const ventaHastaCap =
+                rowFilter === "venta_hasta"
+                  ? (ventaHastaCapByGroup[groupKey] ?? null)
+                  : null;
+              const filteredRows = applyRowsQuickFilter(
+                group.rows,
+                rowFilter,
+                ventaHastaCap,
+              );
+              const ventaHastaInput = ventaHastaInputByGroup[groupKey] ?? "";
+              const ventaHastaDigits = sanitizeNumericInput(ventaHastaInput);
+              const ventaHastaParsedPreview = Number(ventaHastaDigits);
+              const ventaHastaPreviewCount =
+                ventaHastaDigits.length === 0 ||
+                Number.isNaN(ventaHastaParsedPreview)
+                  ? null
+                  : group.rows.filter(
+                      (row) => row.totalSales <= ventaHastaParsedPreview,
+                    ).length;
+              const ceroRotacionCount = group.rows.filter(
+                (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+              ).length;
               const totalPages = Math.max(
                 1,
-                Math.ceil(group.rows.length / pageSize),
+                Math.ceil(filteredRows.length / pageSize),
               );
               const currentPage = Math.max(
                 1,
                 Math.min(pageByGroupKey[groupKey] ?? 1, totalPages),
               );
               const startIndex = (currentPage - 1) * pageSize;
-              const paginatedRows = group.rows.slice(
+              const paginatedRows = filteredRows.slice(
                 startIndex,
                 startIndex + pageSize,
               );
@@ -1129,9 +1614,12 @@ export default function RotacionPage() {
               return (
                 <Card
                   key={groupKey}
-                  className="overflow-hidden border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
+                  className="rotacion-whatsapp-export-card overflow-hidden border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
                 >
-                  <CardHeader className="border-b border-slate-100 bg-slate-50/70">
+                  <CardHeader
+                    className="border-b border-slate-100 bg-slate-50/70"
+                    {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <CardTitle className="text-2xl font-black text-slate-900">
@@ -1147,34 +1635,99 @@ export default function RotacionPage() {
                         <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
                           {group.empresa}
                         </Badge>
-                        <Badge className="border-slate-200 bg-white text-slate-700">
-                          {group.rows.length} items
+                        <Badge
+                          className="border-slate-200 bg-white text-slate-700"
+                          title={
+                            rowFilter !== "none"
+                              ? "Items que cumplen el filtro rapido (sobre el total cargado para esta sede)"
+                              : undefined
+                          }
+                        >
+                          {rowFilter === "none"
+                            ? group.rows.length
+                            : filteredRows.length}{" "}
+                          items
                         </Badge>
                         <Badge className="border-amber-200 bg-amber-50 text-amber-700">
                           {lowRotation} baja rotacion
                         </Badge>
-                        <Badge className="border-orange-200 bg-orange-50 text-orange-700">
-                          {futureStockout} futuro agotado
-                        </Badge>
-                        <Badge className="border-rose-200 bg-rose-50 text-rose-700">
-                          {exhausted} agotado
-                        </Badge>
+                        <Button
+                          type="button"
+                          variant={
+                            rowFilter === "cero_rotacion" ? "default" : "outline"
+                          }
+                          title="Venta del periodo en cero e inventario de cierre mayor que cero"
+                          className={`h-8 rounded-full px-3 text-xs font-semibold ${
+                            rowFilter === "cero_rotacion"
+                              ? "bg-amber-600 text-white hover:bg-amber-700"
+                              : ""
+                          }`}
+                          onClick={() =>
+                            toggleGroupRowsQuickFilter(
+                              groupKey,
+                              "cero_rotacion",
+                            )
+                          }
+                        >
+                          Cero rotacion ({ceroRotacionCount})
+                        </Button>
+                        <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
+                          <Button
+                            type="button"
+                            variant={
+                              rowFilter === "venta_hasta" ? "default" : "outline"
+                            }
+                            title="Filtrar items con venta del periodo menor o igual al valor ingresado"
+                            className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
+                              rowFilter === "venta_hasta"
+                                ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                                : ""
+                            }`}
+                            onClick={() => applyOrToggleVentaHastaFilter(groupKey)}
+                          >
+                            {rowFilter === "venta_hasta" &&
+                            ventaHastaCapByGroup[groupKey] != null
+                              ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${filteredRows.length})`
+                              : ventaHastaPreviewCount != null
+                                ? `Venta ≤ (${ventaHastaPreviewCount})`
+                                : "Venta ≤"}
+                          </Button>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="COP"
+                            aria-label="Tope venta periodo para filtrar"
+                            value={ventaHastaInput}
+                            onChange={(e) =>
+                              setVentaHastaInputByGroup((prev) => ({
+                                ...prev,
+                                [groupKey]: sanitizeNumericInput(
+                                  e.target.value,
+                                ),
+                              }))
+                            }
+                            className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                          />
+                        </div>
                       </div>
                     </div>
                   </CardHeader>
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-5 py-3 text-xs text-slate-600">
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-5 py-3 text-xs text-slate-600"
+                    {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
+                  >
                     <span>
                       Mostrando{" "}
                       <span className="font-semibold text-slate-800">
-                        {group.rows.length === 0 ? 0 : startIndex + 1}
+                        {filteredRows.length === 0 ? 0 : startIndex + 1}
                       </span>{" "}
                       a{" "}
                       <span className="font-semibold text-slate-800">
-                        {Math.min(startIndex + pageSize, group.rows.length)}
+                        {Math.min(startIndex + pageSize, filteredRows.length)}
                       </span>{" "}
                       de{" "}
                       <span className="font-semibold text-slate-800">
-                        {group.rows.length}
+                        {filteredRows.length}
                       </span>{" "}
                       items
                     </span>
@@ -1206,7 +1759,7 @@ export default function RotacionPage() {
                       </Button>
                     </div>
                   </div>
-                  <CardContent className="overflow-x-auto px-0 py-0">
+                  <CardContent className="rotacion-table-capture-scroll overflow-x-auto px-0 py-0">
                     <Table className="min-w-[1180px]">
                       <TableHeader>
                         <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
@@ -1266,24 +1819,8 @@ export default function RotacionPage() {
                           </TableHead>
                           <TableHead className="px-4 py-3 whitespace-normal">
                             <SortableRotationHeader
-                              field="effectiveDays"
-                              label={
-                                <span className="flex flex-col">
-                                  <span>D.E</span>
-                                  <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                                    Dias efectivos
-                                  </span>
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="px-4 py-3">
-                            <SortableRotationHeader
-                              field="status"
-                              label="Estado"
+                              field="lastMovementDate"
+                              label="Ult. ingreso"
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
@@ -1322,28 +1859,15 @@ export default function RotacionPage() {
                               {formatPrice(row.inventoryValue)}
                             </TableCell>
                             <TableCell className="px-4 py-3 text-slate-700">
-                              {row.rotation.toFixed(2)}
+                              {formatRotationOneDecimal(row.rotation)}
                             </TableCell>
                             <TableCell className="px-4 py-3 text-slate-700 whitespace-normal">
-                              <div>
-                                <p>{row.effectiveDays ?? "-"}</p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {row.lastMovementDate
-                                    ? `Ult. ingreso ${formatDateLabel(
-                                        row.lastMovementDate,
-                                        dateLabelOptions,
-                                      )}`
-                                    : "Sin fecha de ingreso"}
-                                </p>
-                              </div>
-                            </TableCell>
-                            <TableCell className="px-4 py-3 whitespace-normal">
-                              <Badge
-                                variant="outline"
-                                className={getStatusBadgeClassName(row.status)}
-                              >
-                                {row.status}
-                              </Badge>
+                              {row.lastMovementDate
+                                ? formatDateLabel(
+                                    row.lastMovementDate,
+                                    dateLabelOptions,
+                                  )
+                                : "Sin fecha de ingreso"}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1353,6 +1877,7 @@ export default function RotacionPage() {
                 </Card>
               );
             })}
+            </div>
           </section>
         )}
       </div>

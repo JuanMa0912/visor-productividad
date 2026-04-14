@@ -109,12 +109,16 @@ const inferSedeFromUsername = (username?: string | null) => {
 
   const match = BRANCH_LOCATIONS.find((sede) => {
     const sedeKey = normalizeSedeKey(sede);
-    return sedeKey === rawKey || sedeKey.includes(rawKey) || rawKey.includes(sedeKey);
+    return (
+      sedeKey === rawKey || sedeKey.includes(rawKey) || rawKey.includes(sedeKey)
+    );
   });
   return match ?? null;
 };
 
-const lineLabelById = new Map(DEFAULT_LINES.map((line) => [line.id, line.name]));
+const lineLabelById = new Map(
+  DEFAULT_LINES.map((line) => [line.id, line.name]),
+);
 const SECTION_OPTIONS = PORTAL_SECTIONS.map((section) => ({
   id: section.id,
   label: section.label,
@@ -143,12 +147,15 @@ const formatAllowedDashboards = (allowedDashboards: string[] | null) => {
     .map((boardId) => {
       const normalizedBoardId = resolvePortalSectionId(boardId);
       return normalizedBoardId
-        ? PORTAL_SECTION_LABEL_BY_ID.get(normalizedBoardId) ?? boardId
+        ? (PORTAL_SECTION_LABEL_BY_ID.get(normalizedBoardId) ?? boardId)
         : boardId;
     })
     .join(", ");
 };
-const formatAllowedSedes = (allowedSedes: string[] | null, fallbackSede: string | null) => {
+const formatAllowedSedes = (
+  allowedSedes: string[] | null,
+  fallbackSede: string | null,
+) => {
   if (allowedSedes && allowedSedes.length > 0) {
     return allowedSedes.join(", ");
   }
@@ -186,19 +193,24 @@ export default function AdminUsuariosPage() {
     return token;
   };
 
-  const handleAuthFailure = useCallback((status: number) => {
-    if (status === 401) {
-      setError("Tu sesion expiro. Inicia sesion de nuevo para continuar.");
-      router.replace("/login");
-      return true;
-    }
-    if (status === 403) {
-      setError("Tu usuario no tiene permisos de administracion en este momento.");
-      router.replace("/secciones");
-      return true;
-    }
-    return false;
-  }, [router]);
+  const handleAuthFailure = useCallback(
+    (status: number) => {
+      if (status === 401) {
+        setError("Tu sesion expiro. Inicia sesion de nuevo para continuar.");
+        router.replace("/login");
+        return true;
+      }
+      if (status === 403) {
+        setError(
+          "Tu usuario no tiene permisos de administracion en este momento.",
+        );
+        router.replace("/secciones");
+        return true;
+      }
+      return false;
+    },
+    [router],
+  );
 
   const sortedUsers = useMemo(
     () => [...users].sort((a, b) => a.username.localeCompare(b.username, "es")),
@@ -232,7 +244,10 @@ export default function AdminUsuariosPage() {
         fetch("/api/admin/login-logs?limit=25"),
       ]);
 
-      if (handleAuthFailure(usersRes.status) || handleAuthFailure(logsRes.status)) {
+      if (
+        handleAuthFailure(usersRes.status) ||
+        handleAuthFailure(logsRes.status)
+      ) {
         return;
       }
       if (!usersRes.ok) throw new Error("No se pudieron cargar los usuarios.");
@@ -304,7 +319,9 @@ export default function AdminUsuariosPage() {
       }
 
       if (formState.role === "user" && formState.allowedSedes.length === 0) {
-        throw new Error("Debes seleccionar al menos una sede para usuarios de rol user.");
+        throw new Error(
+          "Debes seleccionar al menos una sede para usuarios de rol user.",
+        );
       }
 
       const payload = {
@@ -313,7 +330,7 @@ export default function AdminUsuariosPage() {
         sede:
           formState.role === "admin"
             ? null
-            : formState.allowedSedes[0] ?? formState.sede ?? null,
+            : (formState.allowedSedes[0] ?? formState.sede ?? null),
         allowedSedes:
           formState.role === "admin"
             ? null
@@ -578,11 +595,14 @@ export default function AdminUsuariosPage() {
                               ? "-"
                               : formatAllowedSedes(
                                   user.allowedSedes,
-                                  user.sede ?? inferSedeFromUsername(user.username),
+                                  user.sede ??
+                                    inferSedeFromUsername(user.username),
                                 )}
                           </td>
                           <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
-                            {user.role === "admin" ? "-" : formatAllowedLines(user.allowedLines)}
+                            {user.role === "admin"
+                              ? "-"
+                              : formatAllowedLines(user.allowedLines)}
                           </td>
                           <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
                             {user.role === "admin"
@@ -592,9 +612,10 @@ export default function AdminUsuariosPage() {
                           <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
                             {user.role === "admin"
                               ? "-"
-                              : (user.specialRoles && user.specialRoles.length > 0
+                              : user.specialRoles &&
+                                  user.specialRoles.length > 0
                                 ? user.specialRoles.join(", ")
-                                : "-")}
+                                : "-"}
                           </td>
                           <td className="py-3 pr-3">
                             <span
@@ -683,9 +704,12 @@ export default function AdminUsuariosPage() {
                           </div>
                           <div
                             className="text-xs text-slate-500"
-                            title={new Date(log.logged_at).toLocaleString("es-CO")}
+                            title={new Date(log.logged_at).toLocaleString(
+                              "es-CO",
+                            )}
                           >
-                            {formatRelativeTime(log.logged_at)} • {log.ip ?? "Origen auditado desconocido"}
+                            {formatRelativeTime(log.logged_at)} •{" "}
+                            {log.ip ?? "Origen auditado desconocido"}
                           </div>
                         </div>
                       </div>
@@ -718,7 +742,7 @@ export default function AdminUsuariosPage() {
             >
               <div className="shrink-0 border-b border-slate-200/70 bg-linear-to-r from-slate-50 to-blue-50/45 px-4 py-4 sm:px-6 sm:py-5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
-                Administración
+                  Administración
                 </p>
                 <h2 className="mt-1 text-lg font-semibold text-slate-900 sm:text-xl">
                   {formState.id ? "Editar usuario" : "Nuevo usuario"}
@@ -751,8 +775,14 @@ export default function AdminUsuariosPage() {
                             ...prev,
                             role: e.target.value as "admin" | "user",
                             sede: e.target.value === "admin" ? "" : prev.sede,
-                            allowedSedes: e.target.value === "admin" ? [] : prev.allowedSedes,
-                            specialRoles: e.target.value === "admin" ? [] : prev.specialRoles,
+                            allowedSedes:
+                              e.target.value === "admin"
+                                ? []
+                                : prev.allowedSedes,
+                            specialRoles:
+                              e.target.value === "admin"
+                                ? []
+                                : prev.specialRoles,
                           }))
                         }
                         className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -763,7 +793,10 @@ export default function AdminUsuariosPage() {
                     </label>
 
                     <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Sedes permitidas {formState.role === "user" ? "(obligatoria: 1 o más)" : "(solo user)"}
+                      Sedes permitidas{" "}
+                      {formState.role === "user"
+                        ? "(obligatoria: 1 o más)"
+                        : "(solo user)"}
                       <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                         {[ALL_SEDES_VALUE, ...USER_SEDE_OPTIONS].map((sede) => {
                           const checked = formState.allowedSedes.includes(sede);
@@ -781,18 +814,23 @@ export default function AdminUsuariosPage() {
                                     if (checked) {
                                       return {
                                         ...prev,
-                                        allowedSedes: prev.allowedSedes.filter((id) => id !== sede),
+                                        allowedSedes: prev.allowedSedes.filter(
+                                          (id) => id !== sede,
+                                        ),
                                       };
                                     }
                                     return {
                                       ...prev,
-                                      allowedSedes: [...prev.allowedSedes, sede],
+                                      allowedSedes: [
+                                        ...prev.allowedSedes,
+                                        sede,
+                                      ],
                                     };
                                   })
                                 }
                                 className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
                               />
-                              <span className="break-words">{sede}</span>
+                              <span className="wrap-break-words">{sede}</span>
                             </label>
                           );
                         })}
@@ -818,7 +856,9 @@ export default function AdminUsuariosPage() {
                       Secciones permitidas (vacio = todas)
                       <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                         {SECTION_OPTIONS.map((section) => {
-                          const checked = formState.allowedDashboards.includes(section.id);
+                          const checked = formState.allowedDashboards.includes(
+                            section.id,
+                          );
                           return (
                             <label
                               key={section.id}
@@ -832,13 +872,17 @@ export default function AdminUsuariosPage() {
                                   setFormState((prev) => ({
                                     ...prev,
                                     allowedDashboards: checked
-                                      ? prev.allowedDashboards.filter((id) => id !== section.id)
+                                      ? prev.allowedDashboards.filter(
+                                          (id) => id !== section.id,
+                                        )
                                       : [...prev.allowedDashboards, section.id],
                                   }))
                                 }
                                 className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
                               />
-                              <span className="break-words">{section.label}</span>
+                              <span className="wrap-break-words">
+                                {section.label}
+                              </span>
                             </label>
                           );
                         })}
@@ -848,12 +892,15 @@ export default function AdminUsuariosPage() {
                     <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
                       Roles especiales
                       <p className="mt-1 text-[11px] font-normal leading-snug text-slate-500">
-                        Los administradores tienen acceso a Rotacion y Comparar horarios sin activar esos
-                        roles; aqui solo aplica a usuarios con rol user.
+                        Los administradores tienen acceso a Rotacion y Comparar
+                        horarios sin activar esos roles; aqui solo aplica a
+                        usuarios con rol user.
                       </p>
                       <div className="mt-1.5 grid max-h-20 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                         {SPECIAL_ROLE_OPTIONS.map((role) => {
-                          const checked = formState.specialRoles.includes(role.id);
+                          const checked = formState.specialRoles.includes(
+                            role.id,
+                          );
                           return (
                             <label
                               key={role.id}
@@ -867,13 +914,17 @@ export default function AdminUsuariosPage() {
                                   setFormState((prev) => ({
                                     ...prev,
                                     specialRoles: checked
-                                      ? prev.specialRoles.filter((id) => id !== role.id)
+                                      ? prev.specialRoles.filter(
+                                          (id) => id !== role.id,
+                                        )
                                       : [...prev.specialRoles, role.id],
                                   }))
                                 }
                                 className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
                               />
-                              <span className="break-words">{role.label}</span>
+                              <span className="wrap-break-words">
+                                {role.label}
+                              </span>
                             </label>
                           );
                         })}
@@ -884,7 +935,9 @@ export default function AdminUsuariosPage() {
                       Lineas permitidas (vacío = todas)
                       <div className="mt-1.5 grid max-h-32 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                         {DEFAULT_LINES.map((line) => {
-                          const checked = formState.allowedLines.includes(line.id);
+                          const checked = formState.allowedLines.includes(
+                            line.id,
+                          );
                           return (
                             <label
                               key={line.id}
@@ -898,13 +951,17 @@ export default function AdminUsuariosPage() {
                                   setFormState((prev) => ({
                                     ...prev,
                                     allowedLines: checked
-                                      ? prev.allowedLines.filter((id) => id !== line.id)
+                                      ? prev.allowedLines.filter(
+                                          (id) => id !== line.id,
+                                        )
                                       : [...prev.allowedLines, line.id],
                                   }))
                                 }
                                 className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
                               />
-                              <span className="break-words">{line.name}</span>
+                              <span className="wrap-break-words">
+                                {line.name}
+                              </span>
                             </label>
                           );
                         })}

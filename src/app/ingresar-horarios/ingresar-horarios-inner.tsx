@@ -9,6 +9,11 @@ import {
   normalizeScheduleRowsForSave,
   normalizeScheduleTime,
 } from "@/lib/schedule-time";
+import {
+  LUNES_PRESET_BY_KEY,
+  LUNES_SCHEDULE_PRESETS,
+  type LunesSchedulePresetKey,
+} from "@/lib/lunes-schedule-presets";
 import { canUseLunesScheduleSync } from "@/lib/special-role-features";
 import { toJpeg } from "html-to-image";
 
@@ -243,6 +248,8 @@ type RowScheduleRowProps = {
   row: RowSchedule;
   rowIndex: number;
   employeeListId: string;
+  canLunesPresetPerRow: boolean;
+  lunesSyncActive: boolean;
   onRowField: (
     rowIndex: number,
     field: keyof Pick<RowSchedule, "nombre" | "firma">,
@@ -256,16 +263,46 @@ type RowScheduleRowProps = {
     options?: { isBlur?: boolean },
   ) => void;
   onDescanso: (rowIndex: number, day: DayKey, checked: boolean) => void;
+  onApplyLunesPreset: (
+    rowIndex: number,
+    presetKey: LunesSchedulePresetKey,
+  ) => void;
+  selectedLunesPreset: "" | LunesSchedulePresetKey;
+  onClearLunesPresetChoice: (rowIndex: number) => void;
 };
+
+function rowScheduleRowPropsAreEqual(
+  prev: RowScheduleRowProps,
+  next: RowScheduleRowProps,
+) {
+  return (
+    prev.row === next.row &&
+    prev.rowIndex === next.rowIndex &&
+    prev.employeeListId === next.employeeListId &&
+    prev.canLunesPresetPerRow === next.canLunesPresetPerRow &&
+    prev.lunesSyncActive === next.lunesSyncActive &&
+    prev.selectedLunesPreset === next.selectedLunesPreset &&
+    prev.onRowField === next.onRowField &&
+    prev.onRowDayField === next.onRowDayField &&
+    prev.onDescanso === next.onDescanso &&
+    prev.onApplyLunesPreset === next.onApplyLunesPreset &&
+    prev.onClearLunesPresetChoice === next.onClearLunesPresetChoice
+  );
+}
 
 const RowScheduleRow = memo(
   ({
     row,
     rowIndex,
     employeeListId,
+    canLunesPresetPerRow,
+    lunesSyncActive,
     onRowField,
     onRowDayField,
     onDescanso,
+    onApplyLunesPreset,
+    selectedLunesPreset,
+    onClearLunesPresetChoice,
   }: RowScheduleRowProps) => (
     <tr className="odd:bg-white even:bg-slate-50/40">
       <td
@@ -288,6 +325,37 @@ const RowScheduleRow = memo(
           {row.nombre}
         </span>
       </td>
+      {canLunesPresetPerRow ? (
+        <td
+          className={`${SCHEDULE_CELL_BORDER_CLASS} align-top px-1.5 py-0.5 print:hidden`}
+        >
+          <select
+            value={selectedLunesPreset}
+            disabled={!lunesSyncActive}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "") {
+                onClearLunesPresetChoice(rowIndex);
+                return;
+              }
+              if (v === "1" || v === "2" || v === "3") {
+                onApplyLunesPreset(rowIndex, v);
+              }
+            }}
+            className="w-full min-w-30 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            aria-label={`Aplicar horario predeterminado en fila ${rowIndex + 1}`}
+          >
+            <option value="">
+              {lunesSyncActive ? "Horario…" : "Activa lunes"}
+            </option>
+            {LUNES_SCHEDULE_PRESETS.map((p) => (
+              <option key={`row-${rowIndex}-preset-${p.key}`} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </td>
+      ) : null}
       {DAY_ORDER.flatMap((day) => {
         const dayData = row.days[day];
         if (dayData.conDescanso) {
@@ -408,6 +476,7 @@ const RowScheduleRow = memo(
       </td>
     </tr>
   ),
+  rowScheduleRowPropsAreEqual,
 );
 
 RowScheduleRow.displayName = "RowScheduleRow";
@@ -605,6 +674,10 @@ export function IngresarHorariosInner() {
   const [canLunesScheduleSync, setCanLunesScheduleSync] = useState(false);
   /** Solo para disparar guardado de borrador al cambiar el mapa de independencia */
   const [lunesIndVersion, setLunesIndVersion] = useState(0);
+  /** Etiqueta mostrada en el selector de plantilla por fila (solo UI). */
+  const [lunesPresetChoiceByRow, setLunesPresetChoiceByRow] = useState<
+    Record<number, LunesSchedulePresetKey>
+  >({});
 
   const lunesSyncActive = canLunesScheduleSync && syncLunesToRest;
 
@@ -720,6 +793,20 @@ export function IngresarHorariosInner() {
   }, [canLunesScheduleSync, syncLunesToRest]);
 
   useEffect(() => {
+    if (!lunesSyncActive) {
+      setLunesPresetChoiceByRow({});
+    }
+  }, [lunesSyncActive]);
+
+  const clearLunesPresetChoiceForRow = useCallback((rowIndex: number) => {
+    setLunesPresetChoiceByRow((prev) => {
+      const next = { ...prev };
+      delete next[rowIndex];
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
     if (!draftHydrated || !currentUsername || editingPlanillaId !== null) {
       return;
     }
@@ -813,6 +900,7 @@ export function IngresarHorariosInner() {
         setFechaFinal(f.fechaFinal ?? "");
         setMes(f.mes ?? "");
         setRows(mergeLoadedPlanillaRows(f.rows ?? []));
+        setLunesPresetChoiceByRow({});
         lunesIndependenceRef.current.clear();
         setSyncLunesToRest(false);
         setLunesIndVersion((n) => n + 1);
@@ -955,6 +1043,39 @@ export function IngresarHorariosInner() {
     [lunesSyncActive],
   );
 
+  const applyLunesPresetToRow = useCallback(
+    (rowIndex: number, presetKey: LunesSchedulePresetKey) => {
+      const preset = LUNES_PRESET_BY_KEY[presetKey];
+      if (!preset || !lunesSyncActive) return;
+      setRows((prev) =>
+        prev.map((row, idx) => {
+          if (idx !== rowIndex) return row;
+          const lunesDay: DaySchedule = {
+            he1: preset.he1,
+            hs1: "",
+            he2: "",
+            hs2: preset.hs2,
+            conDescanso: false,
+          };
+          let days: RowSchedule["days"] = { ...row.days, lunes: lunesDay };
+          const indep = new Set<DayKey>();
+          lunesIndependenceRef.current.set(rowIndex, indep);
+          for (const dk of DAY_ORDER) {
+            if (dk === "lunes") continue;
+            days = { ...days, [dk]: cloneDaySchedule(lunesDay) };
+          }
+          return { ...row, days };
+        }),
+      );
+      setLunesPresetChoiceByRow((prev) => ({
+        ...prev,
+        [rowIndex]: presetKey,
+      }));
+      setLunesIndVersion((n) => n + 1);
+    },
+    [lunesSyncActive],
+  );
+
   const filteredEmployeeNames = useMemo(
     () =>
       Array.from(
@@ -1058,6 +1179,7 @@ export function IngresarHorariosInner() {
       lunesIndependenceRef.current.clear();
       setLunesIndVersion((n) => n + 1);
       setEmployeeDuplicateError(null);
+      setLunesPresetChoiceByRow({});
       if (currentUsername) {
         clearScheduleDraft(currentUsername);
       }
@@ -1103,6 +1225,7 @@ export function IngresarHorariosInner() {
     lunesIndependenceRef.current.clear();
     setSyncLunesToRest(false);
     setLunesIndVersion((n) => n + 1);
+    setLunesPresetChoiceByRow({});
     setEmployeeDuplicateError(null);
     setEditingPlanillaId(null);
     router.replace("/ingresar-horarios");
@@ -1404,7 +1527,7 @@ export function IngresarHorariosInner() {
         </div>
 
         {canLunesScheduleSync ? (
-          <div className="mt-3 print:hidden">
+          <div className="mt-3 flex flex-col gap-2 print:hidden sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
             <label
               className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200/90 bg-slate-50/90 px-2.5 py-1.5 text-[12px] text-slate-600 transition-colors hover:bg-slate-50"
               title="Por fila: lo del lunes se copia al resto de los dias. Si editas otro dia, ese queda aparte. Desactivar no borra datos."
@@ -1417,6 +1540,10 @@ export function IngresarHorariosInner() {
               />
               <span className="select-none">Mismo horario que lunes</span>
             </label>
+            <span className="text-[12px] text-slate-600">
+              Usa la casilla <span className="font-semibold">Horario</span> en
+              cada fila para aplicar un predeterminado solo a ese empleado.
+            </span>
           </div>
         ) : null}
 
@@ -1560,6 +1687,7 @@ export function IngresarHorariosInner() {
             <colgroup>
               <col style={{ width: COL_W_NUM }} />
               <col style={{ width: COL_W_NAME }} />
+              {canLunesScheduleSync ? <col style={{ width: "8rem" }} /> : null}
               {DAY_ORDER.flatMap((day) =>
                 (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                   <col
@@ -1582,6 +1710,13 @@ export function IngresarHorariosInner() {
                 >
                   Nombre
                 </th>
+                {canLunesScheduleSync ? (
+                  <th
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:hidden`}
+                  >
+                    Horario
+                  </th>
+                ) : null}
                 {DAY_ORDER.map((day) => (
                   <th
                     key={day}
@@ -1605,6 +1740,9 @@ export function IngresarHorariosInner() {
               <tr className="bg-white text-[11px] font-semibold text-slate-500">
                 <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
                 <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
+                {canLunesScheduleSync ? (
+                  <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 print:hidden`} />
+                ) : null}
                 {DAY_ORDER.flatMap((day) =>
                   (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                     <th
@@ -1627,9 +1765,16 @@ export function IngresarHorariosInner() {
                   row={row}
                   rowIndex={rowIndex}
                   employeeListId={`ingresar-horarios-emp-${rowIndex}`}
+                  canLunesPresetPerRow={canLunesScheduleSync}
+                  lunesSyncActive={lunesSyncActive}
                   onRowField={updateRowField}
                   onRowDayField={updateRowDayField}
                   onDescanso={updateDescanso}
+                  onApplyLunesPreset={applyLunesPresetToRow}
+                  selectedLunesPreset={
+                    lunesPresetChoiceByRow[rowIndex] ?? ""
+                  }
+                  onClearLunesPresetChoice={clearLunesPresetChoiceForRow}
                 />
               ))}
             </tbody>

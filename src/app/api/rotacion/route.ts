@@ -98,6 +98,13 @@ const shiftDate = (dateKey: string, offsetDays: number) => {
   return date.toISOString().slice(0, 10);
 };
 
+/** Mismo día del mes anterior (p. ej. 14 abr → 14 mar), en ISO local vía UTC slice. */
+const shiftCalendarMonths = (dateKey: string, deltaMonths: number) => {
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setMonth(date.getMonth() + deltaMonths);
+  return date.toISOString().slice(0, 10);
+};
+
 const clampDateRange = ({
   start,
   end,
@@ -579,7 +586,7 @@ export async function GET(request: Request) {
     const rawEndDate = isIsoDate(requestedEnd) ? requestedEnd! : maxAvailableDate;
     const rawStartDate = isIsoDate(requestedStart)
       ? requestedStart!
-      : shiftDate(rawEndDate, -29);
+      : shiftCalendarMonths(rawEndDate, -1);
 
     const effectiveRange = clampDateRange({
       start: rawStartDate,
