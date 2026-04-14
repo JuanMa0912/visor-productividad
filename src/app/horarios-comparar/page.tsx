@@ -2,9 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import * as ExcelJS from "exceljs";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
 import type { ComparisonRow } from "@/lib/horarios-comparar-utils";
+import {
+  DEFAULT_LUNES_SCHEDULE_PRESETS,
+  planMatchesLunesPreset,
+} from "@/lib/lunes-schedule-presets";
 
 type SedeOption = { id: string; name: string };
 
@@ -39,10 +46,24 @@ function defaultDateRange() {
   return { start: iso(start), end: iso(end) };
 }
 
+const buildCompararExportStamp = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const h = String(now.getHours()).padStart(2, "0");
+  const min = String(now.getMinutes()).padStart(2, "0");
+  return `${y}${m}${d}_${h}${min}`;
+};
+
+const safeExportFileSegment = (value: string) =>
+  value.replace(/[/\\?%*:|"<>]/g, "-").trim().slice(0, 48) || "export";
+
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 
 type EstadoFilter = "all" | "cumplio" | "no_cumplio";
+const ALL_SCHEDULE_FILTER = "__all__";
 
 function normalizeNameForFilter(value: string): string {
   return value
@@ -67,6 +88,9 @@ export default function HorariosCompararPage() {
   const [page, setPage] = useState(1);
   const [employeeNameFilter, setEmployeeNameFilter] = useState("");
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("all");
+  const [scheduleFilter, setScheduleFilter] = useState<string>(ALL_SCHEDULE_FILTER);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -183,8 +207,21 @@ export default function HorariosCompararPage() {
     } else if (estadoFilter === "no_cumplio") {
       out = out.filter((r) => r.status === "no_cumplio");
     }
+    if (scheduleFilter !== ALL_SCHEDULE_FILTER) {
+      const preset = DEFAULT_LUNES_SCHEDULE_PRESETS.find(
+        (p) => p.key === scheduleFilter,
+      );
+      if (preset) {
+        out = out.filter(
+          (r) =>
+            !r.isRestDay &&
+            r.planillaId > 0 &&
+            planMatchesLunesPreset(r.plan, preset),
+        );
+      }
+    }
     return out;
-  }, [rows, employeeNameFilter, estadoFilter]);
+  }, [rows, employeeNameFilter, estadoFilter, scheduleFilter]);
 
   const counts = useMemo(() => {
     let cumplio = 0;
@@ -212,7 +249,235 @@ export default function HorariosCompararPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [employeeNameFilter, estadoFilter]);
+  }, [employeeNameFilter, estadoFilter, scheduleFilter]);
+
+  useEffect(() => {
+    if (scheduleFilter === ALL_SCHEDULE_FILTER) return;
+    const valid = DEFAULT_LUNES_SCHEDULE_PRESETS.some(
+      (p) => p.key === scheduleFilter,
+    );
+    if (!valid) setScheduleFilter(ALL_SCHEDULE_FILTER);
+  }, [scheduleFilter]);
+
+  const handleExportExcel = useCallback(async () => {
+    if (filteredRows.length === 0 || exportingExcel || loading) return;
+    setExportingExcel(true);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Comparar");
+      sheet.columns = [
+        { header: "Fecha", key: "fecha", width: 12 },
+        { header: "Sede", key: "sede", width: 22 },
+        { header: "Empleado", key: "empleado", width: 28 },
+        { header: "Planilla", key: "planilla", width: 10 },
+        { header: "Estado", key: "estado", width: 14 },
+        { header: "Plan HE1", key: "pHe1", width: 9 },
+        { header: "Plan HS1", key: "pHs1", width: 9 },
+        { header: "Plan HE2", key: "pHe2", width: 9 },
+        { header: "Plan HS2", key: "pHs2", width: 9 },
+        { header: "Asist entrada", key: "aEnt", width: 11 },
+        { header: "Asist int1", key: "aI1", width: 11 },
+        { header: "Asist int2", key: "aI2", width: 11 },
+        { header: "Asist salida", key: "aSal", width: 11 },
+        { header: "Diff entrada", key: "dEnt", width: 12 },
+        { header: "Diff int1", key: "dI1", width: 12 },
+        { header: "Diff int2", key: "dI2", width: 12 },
+        { header: "Diff salida", key: "dSal", width: 12 },
+      ];
+      for (const r of filteredRows) {
+        sheet.addRow({
+          fecha: r.workedDate,
+          sede: r.sede,
+          empleado: r.employeeName,
+          planilla: r.planillaId > 0 ? `#${r.planillaId}` : "—",
+          estado: statusLabel(r.status),
+          pHe1: r.plan.he1 || "",
+          pHs1: r.plan.hs1 || "",
+          pHe2: r.plan.he2 || "",
+          pHs2: r.plan.hs2 || "",
+          aEnt: r.attendance?.horaEntrada ?? "",
+          aI1: r.attendance?.horaIntermedia1 ?? "",
+          aI2: r.attendance?.horaIntermedia2 ?? "",
+          aSal: r.attendance?.horaSalida ?? "",
+          dEnt: formatDiff(r.diffMin.entrada),
+          dI1: formatDiff(r.diffMin.intermedia1),
+          dI2: formatDiff(r.diffMin.intermedia2),
+          dSal: formatDiff(r.diffMin.salida),
+        });
+      }
+      const headerRow = sheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF1F5F9" },
+        };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+      });
+      const planCols = [6, 7, 8, 9];
+      const attendanceCols = [10, 11, 12, 13];
+      const diffCols = [14, 15, 16, 17];
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) {
+          planCols.forEach((idx) => {
+            const c = row.getCell(idx);
+            c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F2FE" } };
+          });
+          attendanceCols.forEach((idx) => {
+            const c = row.getCell(idx);
+            c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
+          });
+          diffCols.forEach((idx) => {
+            const c = row.getCell(idx);
+            c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEDE9FE" } };
+          });
+          return;
+        }
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE2E8F0" } },
+            bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+            left: { style: "thin", color: { argb: "FFE2E8F0" } },
+            right: { style: "thin", color: { argb: "FFE2E8F0" } },
+          };
+        });
+        planCols.forEach((idx) => {
+          const c = row.getCell(idx);
+          c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F9FF" } };
+          c.alignment = { horizontal: "center" };
+        });
+        attendanceCols.forEach((idx) => {
+          const c = row.getCell(idx);
+          c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0FDF4" } };
+          c.alignment = { horizontal: "center" };
+        });
+        diffCols.forEach((idx) => {
+          const c = row.getCell(idx);
+          c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFAF5FF" } };
+          c.alignment = { horizontal: "center" };
+        });
+        const statusCell = row.getCell(5);
+        const statusValue = String(statusCell.value ?? "");
+        statusCell.font = { bold: true, color: { argb: "FF111827" } };
+        statusCell.alignment = { horizontal: "center" };
+        statusCell.fill =
+          statusValue === "Cumplió"
+            ? { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } }
+            : { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } };
+      });
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const sedeTag = safeExportFileSegment(sede || "todas");
+      a.download = `comparar-horarios_${sedeTag}_${start}_${end}_${buildCompararExportStamp()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingExcel(false);
+    }
+  }, [end, exportingExcel, filteredRows, loading, sede, start]);
+
+  const handleExportPdf = useCallback(() => {
+    if (filteredRows.length === 0 || exportingPdf || loading) return;
+    setExportingPdf(true);
+    try {
+      const doc = new jsPDF({ orientation: "landscape" });
+      doc.setFontSize(11);
+      doc.text("Comparar horarios (planilla vs asistencia)", 14, 12);
+      doc.setFontSize(8);
+      doc.text(
+        `Periodo: ${start} al ${end} | Sede: ${sede || "Todas"} | Filas: ${filteredRows.length}`,
+        14,
+        18,
+      );
+      autoTable(doc, {
+        startY: 23,
+        styles: { fontSize: 5, cellPadding: 0.8 },
+        headStyles: { fillColor: [241, 245, 249], textColor: 30, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        head: [[
+          "Fecha",
+          "Sede",
+          "Empleado",
+          "Pl.",
+          "Estado",
+          "P.HE1",
+          "P.HS1",
+          "P.HE2",
+          "P.HS2",
+          "A.Ent",
+          "A.I1",
+          "A.I2",
+          "A.Sal",
+          "D.Ent",
+          "D.I1",
+          "D.I2",
+          "D.Sal",
+        ]],
+        body: filteredRows.map((r) => [
+          r.workedDate,
+          r.sede,
+          r.employeeName,
+          r.planillaId > 0 ? String(r.planillaId) : "—",
+          statusLabel(r.status),
+          r.plan.he1 || "—",
+          r.plan.hs1 || "—",
+          r.plan.he2 || "—",
+          r.plan.hs2 || "—",
+          r.attendance?.horaEntrada || "—",
+          r.attendance?.horaIntermedia1 || "—",
+          r.attendance?.horaIntermedia2 || "—",
+          r.attendance?.horaSalida || "—",
+          formatDiff(r.diffMin.entrada),
+          formatDiff(r.diffMin.intermedia1),
+          formatDiff(r.diffMin.intermedia2),
+          formatDiff(r.diffMin.salida),
+        ]),
+        margin: { left: 6, right: 6 },
+        didParseCell: (data) => {
+          const col = data.column.index;
+          if (data.section === "head") {
+            if (col >= 5 && col <= 8) data.cell.styles.fillColor = [224, 242, 254];
+            if (col >= 9 && col <= 12) data.cell.styles.fillColor = [220, 252, 231];
+            if (col >= 13 && col <= 16) data.cell.styles.fillColor = [237, 233, 254];
+            return;
+          }
+          if (data.section !== "body") return;
+          if (col >= 5 && col <= 8) data.cell.styles.fillColor = [240, 249, 255];
+          if (col >= 9 && col <= 12) data.cell.styles.fillColor = [240, 253, 244];
+          if (col >= 13 && col <= 16) data.cell.styles.fillColor = [250, 245, 255];
+          if (col === 4) {
+            const status = String(data.cell.raw ?? "");
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.halign = "center";
+            data.cell.styles.fillColor =
+              status === "Cumplió" ? [209, 250, 229] : [254, 226, 226];
+          }
+        },
+      });
+      const sedeTag = safeExportFileSegment(sede || "todas");
+      doc.save(
+        `comparar-horarios_${sedeTag}_${start}_${end}_${buildCompararExportStamp()}.pdf`,
+      );
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [end, exportingPdf, filteredRows, loading, sede, start]);
 
   if (!ready) {
     return (
@@ -329,6 +594,22 @@ export default function HorariosCompararPage() {
               <option value="no_cumplio">No cumplió</option>
             </select>
           </label>
+          <label className="flex min-w-[min(100%,16rem)] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+            Horario predeterminado
+            <select
+              value={scheduleFilter}
+              onChange={(e) => setScheduleFilter(e.target.value)}
+              disabled={loading}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 disabled:opacity-60"
+            >
+              <option value={ALL_SCHEDULE_FILTER}>Todos</option>
+              {DEFAULT_LUNES_SCHEDULE_PRESETS.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
@@ -347,6 +628,27 @@ export default function HorariosCompararPage() {
           <span>
             No cumplió: <strong className="text-rose-700">{counts.noCumplio}</strong>
           </span>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => void handleExportExcel()}
+            disabled={
+              loading || filteredRows.length === 0 || exportingExcel
+            }
+            className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exportingExcel ? "Exportando..." : "Descargar Excel"}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={loading || filteredRows.length === 0 || exportingPdf}
+            className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exportingPdf ? "Exportando..." : "Descargar PDF"}
+          </button>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
@@ -554,11 +856,12 @@ export default function HorariosCompararPage() {
         </div>
 
         <p className="mt-4 text-xs text-slate-500">
-          <strong className="text-emerald-800">Cumplió</strong>: planilla con marcaciones y todas las
-          diferencias ≤ +10 min (o anticipo); filas solo asistencia con al menos una hora.{" "}
+          <strong className="text-emerald-800">Cumplió</strong>: planilla con marcaciones y diferencias
+          de entrada/intermedias ≤ +10 min (o anticipo), con salida hasta +120 min (horas extra);
+          filas solo asistencia con al menos una hora.{" "}
           <strong className="text-rose-800">No cumplió</strong>: plan en planilla sin marcaciones, o
-          alguna diferencia +11 min o mas. Diferencia = asistencia menos planilla. Emparejamiento por
-          nombre, sede y fecha.
+          entrada/intermedias +11 min o mas, o salida +121 min o mas. Diferencia = asistencia menos
+          planilla. Emparejamiento por nombre, sede y fecha.
         </p>
       </div>
     </div>

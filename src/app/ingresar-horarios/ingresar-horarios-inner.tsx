@@ -1,6 +1,14 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { isSamePlanillaSede } from "@/lib/planilla-sede";
 import { normalizePersonNameKey } from "@/lib/normalize";
@@ -10,8 +18,11 @@ import {
   normalizeScheduleTime,
 } from "@/lib/schedule-time";
 import {
-  LUNES_PRESET_BY_KEY,
-  LUNES_SCHEDULE_PRESETS,
+  DEFAULT_LUNES_SCHEDULE_PRESETS,
+  loadLunesPresetsFromStorage,
+  saveLunesPresetsToStorage,
+  presetsToByKey,
+  type LunesSchedulePreset,
   type LunesSchedulePresetKey,
 } from "@/lib/lunes-schedule-presets";
 import { canUseLunesScheduleSync } from "@/lib/special-role-features";
@@ -269,6 +280,8 @@ type RowScheduleRowProps = {
   ) => void;
   selectedLunesPreset: "" | LunesSchedulePresetKey;
   onClearLunesPresetChoice: (rowIndex: number) => void;
+  schedulePresets: readonly LunesSchedulePreset[];
+  presetSelectColStyle: CSSProperties;
 };
 
 function rowScheduleRowPropsAreEqual(
@@ -286,7 +299,9 @@ function rowScheduleRowPropsAreEqual(
     prev.onRowDayField === next.onRowDayField &&
     prev.onDescanso === next.onDescanso &&
     prev.onApplyLunesPreset === next.onApplyLunesPreset &&
-    prev.onClearLunesPresetChoice === next.onClearLunesPresetChoice
+    prev.onClearLunesPresetChoice === next.onClearLunesPresetChoice &&
+    prev.schedulePresets === next.schedulePresets &&
+    prev.presetSelectColStyle === next.presetSelectColStyle
   );
 }
 
@@ -303,6 +318,8 @@ const RowScheduleRow = memo(
     onApplyLunesPreset,
     selectedLunesPreset,
     onClearLunesPresetChoice,
+    schedulePresets,
+    presetSelectColStyle,
   }: RowScheduleRowProps) => (
     <tr className="odd:bg-white even:bg-slate-50/40">
       <td
@@ -328,6 +345,7 @@ const RowScheduleRow = memo(
       {canLunesPresetPerRow ? (
         <td
           className={`${SCHEDULE_CELL_BORDER_CLASS} align-top px-1.5 py-0.5 print:hidden`}
+          style={presetSelectColStyle}
         >
           <select
             value={selectedLunesPreset}
@@ -342,13 +360,13 @@ const RowScheduleRow = memo(
                 onApplyLunesPreset(rowIndex, v);
               }
             }}
-            className="w-full min-w-30 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            className="w-full max-w-none min-w-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
             aria-label={`Aplicar horario predeterminado en fila ${rowIndex + 1}`}
           >
             <option value="">
               {lunesSyncActive ? "Horario…" : "Activa lunes"}
             </option>
-            {LUNES_SCHEDULE_PRESETS.map((p) => (
+            {schedulePresets.map((p) => (
               <option key={`row-${rowIndex}-preset-${p.key}`} value={p.key}>
                 {p.label}
               </option>
@@ -678,8 +696,86 @@ export function IngresarHorariosInner() {
   const [lunesPresetChoiceByRow, setLunesPresetChoiceByRow] = useState<
     Record<number, LunesSchedulePresetKey>
   >({});
+  const [lunesPresetDefinitions, setLunesPresetDefinitions] = useState<
+    LunesSchedulePreset[]
+  >(() => [...DEFAULT_LUNES_SCHEDULE_PRESETS]);
+  const [lunesPresetsModalOpen, setLunesPresetsModalOpen] = useState(false);
 
   const lunesSyncActive = canLunesScheduleSync && syncLunesToRest;
+
+  const lunesPresetByKeyLive = useMemo(
+    () => presetsToByKey(lunesPresetDefinitions),
+    [lunesPresetDefinitions],
+  );
+
+  const lunesPresetColumnStyle = useMemo((): CSSProperties => {
+    const labelLens = lunesPresetDefinitions.map((p) => p.label.length);
+    const longestLabel = Math.max(
+      ...labelLens,
+      "Horario…".length,
+      "Activa lunes".length,
+      10,
+    );
+    const ch = longestLabel + 10;
+    return { minWidth: `${ch}ch`, width: `${ch}ch` };
+  }, [lunesPresetDefinitions]);
+
+  useEffect(() => {
+    const loaded = loadLunesPresetsFromStorage();
+    if (loaded) {
+      setLunesPresetDefinitions(loaded);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!canLunesScheduleSync) return;
+    saveLunesPresetsToStorage(lunesPresetDefinitions);
+  }, [canLunesScheduleSync, lunesPresetDefinitions]);
+
+  const updateLunesPresetField = useCallback(
+    (key: LunesSchedulePresetKey, field: "label" | "he1" | "hs2", raw: string) => {
+      setLunesPresetDefinitions((prev) =>
+        prev.map((p) => {
+          if (p.key !== key) return p;
+          const def = DEFAULT_LUNES_SCHEDULE_PRESETS.find((d) => d.key === key)!;
+          if (field === "label") {
+            const label = raw.trim() || def.label;
+            return { ...p, label };
+          }
+          const t = normalizeScheduleTime(raw);
+          return { ...p, [field]: t || p[field] };
+        }),
+      );
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!lunesPresetsModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setLunesPresetsModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lunesPresetsModalOpen]);
+
+  useEffect(() => {
+    if (!lunesPresetsModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [lunesPresetsModalOpen]);
+
+  useEffect(() => {
+    if (!canLunesScheduleSync) {
+      setLunesPresetsModalOpen(false);
+    }
+  }, [canLunesScheduleSync]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1045,7 +1141,7 @@ export function IngresarHorariosInner() {
 
   const applyLunesPresetToRow = useCallback(
     (rowIndex: number, presetKey: LunesSchedulePresetKey) => {
-      const preset = LUNES_PRESET_BY_KEY[presetKey];
+      const preset = lunesPresetByKeyLive[presetKey];
       if (!preset || !lunesSyncActive) return;
       setRows((prev) =>
         prev.map((row, idx) => {
@@ -1073,7 +1169,7 @@ export function IngresarHorariosInner() {
       }));
       setLunesIndVersion((n) => n + 1);
     },
-    [lunesSyncActive],
+    [lunesSyncActive, lunesPresetByKeyLive],
   );
 
   const filteredEmployeeNames = useMemo(
@@ -1547,6 +1643,129 @@ export function IngresarHorariosInner() {
           </div>
         ) : null}
 
+        {canLunesScheduleSync ? (
+          <>
+            <div className="mt-2 print:hidden">
+              <button
+                type="button"
+                onClick={() => setLunesPresetsModalOpen(true)}
+                className="rounded-lg border border-slate-200/90 bg-white px-3 py-2 text-left text-[12px] font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+              >
+                Horarios predeterminados
+              </button>
+            </div>
+
+            {lunesPresetsModalOpen ? (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
+                role="presentation"
+                onClick={() => setLunesPresetsModalOpen(false)}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="lunes-presets-modal-title"
+                  className="max-h-[min(90vh,40rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+                    <h2
+                      id="lunes-presets-modal-title"
+                      className="pr-2 text-base font-bold text-slate-900"
+                    >
+                      Horarios predeterminados
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => setLunesPresetsModalOpen(false)}
+                      className="shrink-0 rounded-md px-2 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                      aria-label="Cerrar"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                  <p className="mt-3 text-[11px] leading-snug text-slate-600">
+                    Tres horarios fijos. Puedes cambiar nombre y horas; se
+                    guardan en este navegador. No se pueden añadir más
+                    horarios.
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {lunesPresetDefinitions.map((p) => (
+                      <div
+                        key={p.key}
+                        className="flex flex-wrap items-end gap-2 border-b border-slate-200/70 pb-2 last:border-0 last:pb-0 sm:gap-3"
+                      >
+                        <label className="min-w-40 flex-1">
+                          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Nombre
+                          </span>
+                          <input
+                            type="text"
+                            value={p.label}
+                            onChange={(e) =>
+                              updateLunesPresetField(
+                                p.key,
+                                "label",
+                                e.target.value,
+                              )
+                            }
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-900"
+                          />
+                        </label>
+                        <label>
+                          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Entrada (1.ª HE)
+                          </span>
+                          <input
+                            type="time"
+                            value={p.he1}
+                            step={60}
+                            onChange={(e) =>
+                              updateLunesPresetField(
+                                p.key,
+                                "he1",
+                                e.target.value,
+                              )
+                            }
+                            className="w-29 rounded border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums"
+                          />
+                        </label>
+                        <label>
+                          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Salida (2.ª HS)
+                          </span>
+                          <input
+                            type="time"
+                            value={p.hs2}
+                            step={60}
+                            onChange={(e) =>
+                              updateLunesPresetField(
+                                p.key,
+                                "hs2",
+                                e.target.value,
+                              )
+                            }
+                            className="w-29 rounded border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums"
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setLunesPresetsModalOpen(false)}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-[12px] font-semibold text-slate-800 hover:bg-slate-100"
+                    >
+                      Listo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+
         <div className="mt-5 grid gap-3 md:grid-cols-5 print:hidden">
           <label className="block">
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
@@ -1687,7 +1906,9 @@ export function IngresarHorariosInner() {
             <colgroup>
               <col style={{ width: COL_W_NUM }} />
               <col style={{ width: COL_W_NAME }} />
-              {canLunesScheduleSync ? <col style={{ width: "8rem" }} /> : null}
+              {canLunesScheduleSync ? (
+                <col style={lunesPresetColumnStyle} />
+              ) : null}
               {DAY_ORDER.flatMap((day) =>
                 (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                   <col
@@ -1712,7 +1933,8 @@ export function IngresarHorariosInner() {
                 </th>
                 {canLunesScheduleSync ? (
                   <th
-                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:hidden`}
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left whitespace-nowrap print:hidden`}
+                    style={lunesPresetColumnStyle}
                   >
                     Horario
                   </th>
@@ -1741,7 +1963,10 @@ export function IngresarHorariosInner() {
                 <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
                 <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
                 {canLunesScheduleSync ? (
-                  <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 print:hidden`} />
+                  <th
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 print:hidden`}
+                    style={lunesPresetColumnStyle}
+                  />
                 ) : null}
                 {DAY_ORDER.flatMap((day) =>
                   (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
@@ -1775,6 +2000,8 @@ export function IngresarHorariosInner() {
                     lunesPresetChoiceByRow[rowIndex] ?? ""
                   }
                   onClearLunesPresetChoice={clearLunesPresetChoiceForRow}
+                  schedulePresets={lunesPresetDefinitions}
+                  presetSelectColStyle={lunesPresetColumnStyle}
                 />
               ))}
             </tbody>

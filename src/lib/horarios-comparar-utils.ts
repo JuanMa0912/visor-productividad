@@ -94,22 +94,29 @@ function hasAttendanceMarks(att: AttendanceTimeFields | null | undefined): boole
 }
 
 /**
- * Tolerancia de retraso (min): diferencias mayores a este valor cuentan como No cumplio
- * (p. ej. con 10, +11 min es No cumplio).
+ * Tolerancia de retraso (min) para entrada e intermedias.
+ * Diferencias mayores a este valor cuentan como No cumplio.
  */
 export const HORARIOS_COMPARAR_TARDE_MAX_MIN = 10;
 
+/**
+ * Tolerancia de salida tarde (horas extra permitidas).
+ * Hasta +120 min (2 horas) se considera Cumplio.
+ */
+export const HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN = 120;
+
 function hasLateBeyondTolerance(diffMin: ComparisonRow["diffMin"]): boolean {
-  const values = [
-    diffMin.entrada,
-    diffMin.intermedia1,
-    diffMin.intermedia2,
-    diffMin.salida,
-  ];
-  for (const d of values) {
+  const regularValues = [diffMin.entrada, diffMin.intermedia1, diffMin.intermedia2];
+  for (const d of regularValues) {
     if (d !== null && d > HORARIOS_COMPARAR_TARDE_MAX_MIN) {
       return true;
     }
+  }
+  if (
+    diffMin.salida !== null &&
+    diffMin.salida > HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN
+  ) {
+    return true;
   }
   return false;
 }
