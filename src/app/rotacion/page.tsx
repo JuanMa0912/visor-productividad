@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as ExcelJS from "exceljs";
-import { toPng } from "html-to-image";
+import { toJpeg, toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -234,6 +234,15 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
 
 const WHATSAPP_TABLE_EXCLUDE = "data-whatsapp-table-exclude";
 
+/** Más píxeles por lado; WhatsApp comprime mucho al enviar — conviene ir alto. */
+const getRotacionWhatsappPixelRatio = () => {
+  if (typeof window === "undefined") return 4;
+  const dpr = window.devicePixelRatio || 1;
+  return Math.min(5, Math.max(4, dpr * 2));
+};
+
+const WHATSAPP_JPEG_QUALITY = 0.98;
+
 const rotacionWhatsappExportFilter = (node: HTMLElement) => {
   if (!(node instanceof Element)) return true;
   return !node.hasAttribute(WHATSAPP_TABLE_EXCLUDE);
@@ -242,6 +251,13 @@ const rotacionWhatsappExportFilter = (node: HTMLElement) => {
 /** Ancho completo de tabla + tarjeta compacta; restaurar después de toPng (html-to-image no expone onclone en tipos). */
 const prepareRotacionWhatsappExportDom = (root: HTMLElement) => {
   const cleanups: Array<() => void> = [];
+
+  const prevZoom = root.style.zoom;
+  root.style.zoom = "1.22";
+  cleanups.push(() => {
+    root.style.zoom = prevZoom;
+  });
+
   root.querySelectorAll(".rotacion-whatsapp-export-card").forEach((el) => {
     const c = el as HTMLElement;
     const pad = c.style.padding;
@@ -993,7 +1009,6 @@ export default function RotacionPage() {
           ultimoIngreso: row.lastMovementDate
             ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
             : "Sin fecha de ingreso",
-          estado: row.status,
         }));
       }),
     [rowsBySede, rowsQuickFilterByGroup, ventaHastaCapByGroup],
@@ -1020,7 +1035,6 @@ export default function RotacionPage() {
         "Valor inventario",
         "Rotacion",
         "Ultimo ingreso",
-        "Estado",
       ]],
       body: exportRows.map((row) => [
         row.empresa,
@@ -1033,7 +1047,6 @@ export default function RotacionPage() {
         formatPrice(row.valorInventario),
         row.rotacion,
         row.ultimoIngreso,
-        row.estado,
       ]),
       margin: { left: 8, right: 8 },
     });
@@ -1057,7 +1070,6 @@ export default function RotacionPage() {
         { header: "Valor inventario", key: "valorInventario", width: 16 },
         { header: "Rotacion", key: "rotacion", width: 12 },
         { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
-        { header: "Estado", key: "estado", width: 16 },
       ];
       sheet.addRows(exportRows);
 
@@ -1104,7 +1116,7 @@ export default function RotacionPage() {
   };
 
   const handleWhatsAppShare = useCallback(
-    async (format: "png" | "pdf") => {
+    async (format: "png" | "jpeg" | "pdf") => {
       if (exportRows.length === 0 || whatsappShareLockRef.current) return;
       whatsappShareLockRef.current = true;
       setIsWhatsAppSharing(true);
@@ -1112,10 +1124,10 @@ export default function RotacionPage() {
         const stamp = buildExportFileStamp();
         let blob: Blob;
         let filename: string;
-        const mime =
-          format === "pdf" ? "application/pdf" : "image/png";
+        let mime: string;
 
         if (format === "pdf") {
+          mime = "application/pdf";
           blob = buildRotacionPdfDocument().output("blob");
           filename = `rotacion_${stamp}.pdf`;
         } else {
@@ -1123,18 +1135,32 @@ export default function RotacionPage() {
           if (!node) return;
           const restoreDom = prepareRotacionWhatsappExportDom(node);
           let dataUrl: string;
+          const pixelRatio = getRotacionWhatsappPixelRatio();
           try {
-            dataUrl = await toPng(node, {
-              pixelRatio: 3,
-              backgroundColor: "#ffffff",
-              cacheBust: true,
-              filter: rotacionWhatsappExportFilter,
-            });
+            if (format === "png") {
+              dataUrl = await toPng(node, {
+                pixelRatio,
+                backgroundColor: "#ffffff",
+                cacheBust: true,
+                filter: rotacionWhatsappExportFilter,
+              });
+              mime = "image/png";
+              filename = `rotacion_${stamp}.png`;
+            } else {
+              dataUrl = await toJpeg(node, {
+                pixelRatio,
+                quality: WHATSAPP_JPEG_QUALITY,
+                backgroundColor: "#ffffff",
+                cacheBust: true,
+                filter: rotacionWhatsappExportFilter,
+              });
+              mime = "image/jpeg";
+              filename = `rotacion_${stamp}.jpg`;
+            }
           } finally {
             restoreDom();
           }
           blob = dataUrlToBlob(dataUrl);
-          filename = `rotacion_${stamp}.png`;
         }
 
         const file = new File([blob], filename, { type: mime });
@@ -1525,7 +1551,18 @@ export default function RotacionPage() {
                       className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
                       onClick={() => void handleWhatsAppShare("png")}
                     >
-                      Imagen (PNG)
+                      Imagen PNG (sin pérdida)
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={
+                        exportRows.length === 0 || isWhatsAppSharing
+                      }
+                      className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                      onClick={() => void handleWhatsAppShare("jpeg")}
+                    >
+                      Imagen JPG (98% calidad)
                     </button>
                     <button
                       type="button"
@@ -1540,9 +1577,11 @@ export default function RotacionPage() {
                     </button>
                   </div>
                   <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
-                    PNG: solo la tabla (alta resolución; paginación por sede). PDF:
-                    todas las filas filtradas, igual que &quot;Descargar PDF&quot;.
-                    {" "}
+                    Imagen: solo la tabla (paginación por sede), captura ampliada y
+                    alta densidad de píxeles. JPG usa calidad 98%; WhatsApp puede
+                    volver a comprimir al enviar — si no se lee bien, prueba PNG o
+                    PDF. PDF: todas las filas filtradas, igual que &quot;Descargar
+                    PDF&quot;.{" "}
                     {typeof navigator !== "undefined" &&
                     typeof navigator.share === "function"
                       ? "Con compartir, elige WhatsApp si aparece."
