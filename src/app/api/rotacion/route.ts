@@ -294,9 +294,12 @@ const getRotacionAbcdConfig = async (): Promise<AbcdConfig> => {
 
     if (!row) return DEFAULT_ABCD_CONFIG;
     return normalizeAbcdConfig({
-      aUntilPercent: row.a_until_percent == null ? null : Number(row.a_until_percent),
-      bUntilPercent: row.b_until_percent == null ? null : Number(row.b_until_percent),
-      cUntilPercent: row.c_until_percent == null ? null : Number(row.c_until_percent),
+      aUntilPercent:
+        row.a_until_percent == null ? undefined : Number(row.a_until_percent),
+      bUntilPercent:
+        row.b_until_percent == null ? undefined : Number(row.b_until_percent),
+      cUntilPercent:
+        row.c_until_percent == null ? undefined : Number(row.c_until_percent),
     });
   } finally {
     client.release();
