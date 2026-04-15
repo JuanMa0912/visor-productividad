@@ -793,7 +793,7 @@ export async function GET(request: Request) {
     const visibleCompanies = Array.from(
       new Set(visibleSedes.map((sede) => sede.empresa)),
     ).sort((a, b) => a.localeCompare(b, "es"));
-    const filters = {
+    const filters: RotationFilterCatalog = {
       companies: visibleCompanies,
       sedes: visibleSedes,
       lineasN1: [],
