@@ -461,7 +461,7 @@ const queryRotationLineasN1 = async ({
       [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
     );
 
-    return (result.rows ?? [])
+    return ((result.rows ?? []) as Array<{ linea_n1_codigo: string | null }>)
       .map((row) => String(row.linea_n1_codigo ?? "__sin_n1__"))
       .filter(Boolean);
   } finally {
