@@ -111,6 +111,8 @@ type AbcdConfig = {
   bUntilPercent: number;
   cUntilPercent: number;
 };
+type AbcdCategory = "A" | "B" | "C" | "D";
+type GroupAbcdFilter = "all" | AbcdCategory;
 
 type RotationSortField =
   | "item"
@@ -351,6 +353,39 @@ const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
   const b = Math.max(a, clampPercent(raw.bUntilPercent));
   const c = Math.max(b, clampPercent(raw.cUntilPercent));
   return { aUntilPercent: a, bUntilPercent: b, cUntilPercent: c };
+};
+
+const buildAbcdCategoryByItem = (
+  rows: RotationRow[],
+  config: AbcdConfig,
+): Map<string, AbcdCategory> => {
+  const sortedRows = [...rows].sort((a, b) => b.totalSales - a.totalSales);
+  const totalSales = sortedRows.reduce(
+    (sum, row) => sum + Math.max(0, row.totalSales),
+    0,
+  );
+  let cumulativeSales = 0;
+  const categories = new Map<string, AbcdCategory>();
+
+  for (const row of sortedRows) {
+    if (totalSales <= 0) {
+      categories.set(row.item, "D");
+      continue;
+    }
+    cumulativeSales += Math.max(0, row.totalSales);
+    const cumulativePercent = (cumulativeSales / totalSales) * 100;
+    const category: AbcdCategory =
+      cumulativePercent <= config.aUntilPercent
+        ? "A"
+        : cumulativePercent <= config.bUntilPercent
+          ? "B"
+          : cumulativePercent <= config.cUntilPercent
+            ? "C"
+            : "D";
+    categories.set(row.item, category);
+  }
+
+  return categories;
 };
 
 const compareNullableIsoDateKeys = (
@@ -702,6 +737,9 @@ export default function RotacionPage() {
   >({});
   const [ventaHastaInputByGroup, setVentaHastaInputByGroup] = useState<
     Record<string, string>
+  >({});
+  const [abcdFilterByGroup, setAbcdFilterByGroup] = useState<
+    Record<string, GroupAbcdFilter>
   >({});
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -1206,6 +1244,7 @@ export default function RotacionPage() {
       rowsBySede.flatMap((group) => {
         const groupKey = `${group.empresa}-${group.sedeId}`;
         const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
+        const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
         const ventaHastaCap =
           rowFilter === "venta_hasta"
             ? (ventaHastaCapByGroup[groupKey] ?? null)
@@ -1215,7 +1254,14 @@ export default function RotacionPage() {
           rowFilter,
           ventaHastaCap,
         );
-        return filteredRows.map((row) => ({
+        const categoryByItem = buildAbcdCategoryByItem(filteredRows, abcdConfig);
+        const categoryFilteredRows =
+          categoryFilter === "all"
+            ? filteredRows
+            : filteredRows.filter(
+                (row) => categoryByItem.get(row.item) === categoryFilter,
+              );
+        return categoryFilteredRows.map((row) => ({
           empresa: formatCompanyLabel(row.empresa),
           sede: row.sedeName,
           item: row.item,
@@ -1230,7 +1276,13 @@ export default function RotacionPage() {
             : "Sin fecha de ingreso",
         }));
       }),
-    [rowsBySede, rowsQuickFilterByGroup, ventaHastaCapByGroup],
+    [
+      abcdConfig,
+      abcdFilterByGroup,
+      rowsBySede,
+      rowsQuickFilterByGroup,
+      ventaHastaCapByGroup,
+    ],
   );
 
   const buildRotacionPdfDocument = useCallback(() => {
@@ -2011,6 +2063,7 @@ export default function RotacionPage() {
               ).length;
               const groupKey = `${group.empresa}-${group.sedeId}`;
               const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
+              const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
               const ventaHastaCap =
                 rowFilter === "venta_hasta"
                   ? (ventaHastaCapByGroup[groupKey] ?? null)
@@ -2020,32 +2073,22 @@ export default function RotacionPage() {
                 rowFilter,
                 ventaHastaCap,
               );
-              const abcdRows = [...filteredRows].sort(
-                (a, b) => b.totalSales - a.totalSales,
+              const categoryByItem = buildAbcdCategoryByItem(
+                filteredRows,
+                abcdConfig,
               );
-              const totalSalesForAbcd = abcdRows.reduce(
-                (sum, row) => sum + Math.max(0, row.totalSales),
-                0,
-              );
-              let cumulativeSales = 0;
-              const categoryByItem = new Map<string, "A" | "B" | "C" | "D">();
-              for (const row of abcdRows) {
-                if (totalSalesForAbcd <= 0) {
-                  categoryByItem.set(row.item, "D");
-                  continue;
-                }
-                cumulativeSales += Math.max(0, row.totalSales);
-                const cumulativePercent = (cumulativeSales / totalSalesForAbcd) * 100;
-                const category =
-                  cumulativePercent <= abcdConfig.aUntilPercent
-                    ? "A"
-                    : cumulativePercent <= abcdConfig.bUntilPercent
-                      ? "B"
-                      : cumulativePercent <= abcdConfig.cUntilPercent
-                        ? "C"
-                        : "D";
-                categoryByItem.set(row.item, category);
-              }
+              const categoryFilteredRows =
+                categoryFilter === "all"
+                  ? filteredRows
+                  : filteredRows.filter(
+                      (row) => categoryByItem.get(row.item) === categoryFilter,
+                    );
+              const categoryFilteredLowRotation = categoryFilteredRows.filter(
+                (row) => row.status === "Baja rotacion",
+              ).length;
+              const categoryFilteredCeroRotacionCount = categoryFilteredRows.filter(
+                (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+              ).length;
               const ventaHastaInput = ventaHastaInputByGroup[groupKey] ?? "";
               const ventaHastaDigits = sanitizeNumericInput(ventaHastaInput);
               const ventaHastaParsedPreview = Number(ventaHastaDigits);
@@ -2053,27 +2096,27 @@ export default function RotacionPage() {
                 ventaHastaDigits.length === 0 ||
                 Number.isNaN(ventaHastaParsedPreview)
                   ? null
-                  : group.rows.filter(
+                  : categoryFilteredRows.filter(
                       (row) => row.totalSales <= ventaHastaParsedPreview,
                     ).length;
-              const ceroRotacionCount = group.rows.filter(
-                (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
-              ).length;
-              const totalItemsCount = filteredRows.length;
-              const totalInventoryValue = filteredRows.reduce(
+              const totalItemsCount = categoryFilteredRows.length;
+              const totalInventoryValue = categoryFilteredRows.reduce(
                 (acc, row) => acc + row.inventoryValue,
                 0,
               );
+              const ceroRotacionCount = group.rows.filter(
+                (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+              ).length;
               const totalPages = Math.max(
                 1,
-                Math.ceil(filteredRows.length / pageSize),
+                Math.ceil(categoryFilteredRows.length / pageSize),
               );
               const currentPage = Math.max(
                 1,
                 Math.min(pageByGroupKey[groupKey] ?? 1, totalPages),
               );
               const startIndex = (currentPage - 1) * pageSize;
-              const paginatedRows = filteredRows.slice(
+              const paginatedRows = categoryFilteredRows.slice(
                 startIndex,
                 startIndex + pageSize,
               );
@@ -2116,7 +2159,10 @@ export default function RotacionPage() {
                           items
                         </Badge>
                         <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                          {lowRotation} baja rotacion
+                          {categoryFilter === "all"
+                            ? lowRotation
+                            : categoryFilteredLowRotation}{" "}
+                          baja rotacion
                         </Badge>
                         <Button
                           type="button"
@@ -2136,7 +2182,11 @@ export default function RotacionPage() {
                             )
                           }
                         >
-                          Cero rotacion ({ceroRotacionCount})
+                          Cero rotacion (
+                          {categoryFilter === "all"
+                            ? ceroRotacionCount
+                            : categoryFilteredCeroRotacionCount}
+                          )
                         </Button>
                         <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
                           <Button
@@ -2154,7 +2204,7 @@ export default function RotacionPage() {
                           >
                             {rowFilter === "venta_hasta" &&
                             ventaHastaCapByGroup[groupKey] != null
-                              ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${filteredRows.length})`
+                              ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
                               : ventaHastaPreviewCount != null
                                 ? `Venta ≤ (${ventaHastaPreviewCount})`
                                 : "Venta ≤"}
@@ -2175,6 +2225,30 @@ export default function RotacionPage() {
                             }
                             className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
                           />
+                        </div>
+                        <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1">
+                          <span className="text-[11px] font-semibold text-slate-600">
+                            ABCD
+                          </span>
+                          <select
+                            value={categoryFilter}
+                            onChange={(event) => {
+                              const nextValue = event.target
+                                .value as GroupAbcdFilter;
+                              setAbcdFilterByGroup((prev) => ({
+                                ...prev,
+                                [groupKey]: nextValue,
+                              }));
+                              setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+                            }}
+                            className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-800 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                          >
+                            <option value="all">Todas</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="D">D</option>
+                          </select>
                         </div>
                         <div className="flex items-center gap-3 text-sm leading-5 text-slate-600">
                           <span className="whitespace-nowrap">
@@ -2200,15 +2274,15 @@ export default function RotacionPage() {
                     <span>
                       Mostrando{" "}
                       <span className="font-semibold text-slate-800">
-                        {filteredRows.length === 0 ? 0 : startIndex + 1}
+                        {categoryFilteredRows.length === 0 ? 0 : startIndex + 1}
                       </span>{" "}
                       a{" "}
                       <span className="font-semibold text-slate-800">
-                        {Math.min(startIndex + pageSize, filteredRows.length)}
+                        {Math.min(startIndex + pageSize, categoryFilteredRows.length)}
                       </span>{" "}
                       de{" "}
                       <span className="font-semibold text-slate-800">
-                        {filteredRows.length}
+                        {categoryFilteredRows.length}
                       </span>{" "}
                       items
                     </span>
