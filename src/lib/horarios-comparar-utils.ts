@@ -100,14 +100,29 @@ function hasAttendanceMarks(att: AttendanceTimeFields | null | undefined): boole
 export const HORARIOS_COMPARAR_TARDE_MAX_MIN = 10;
 
 /**
- * Tolerancia de salida tarde (horas extra permitidas).
- * Hasta +120 min (2 horas) se considera Cumplio.
+ * Anticipo máximo permitido en entrada (min antes de la hora planificada).
+ * Si la marcación es más temprana que esto, cuenta como No cumplio.
  */
-export const HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN = 120;
+export const HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN = 15;
+
+/**
+ * Tolerancia de salida tarde (horas extra permitidas).
+ * Hasta +150 min (2 h 30 min) se considera Cumplio.
+ */
+export const HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN = 150;
 
 function hasLateBeyondTolerance(diffMin: ComparisonRow["diffMin"]): boolean {
-  const regularValues = [diffMin.entrada, diffMin.intermedia1, diffMin.intermedia2];
-  for (const d of regularValues) {
+  if (diffMin.entrada !== null) {
+    const e = diffMin.entrada;
+    if (
+      e < -HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN ||
+      e > HORARIOS_COMPARAR_TARDE_MAX_MIN
+    ) {
+      return true;
+    }
+  }
+
+  for (const d of [diffMin.intermedia1, diffMin.intermedia2]) {
     if (d !== null && d > HORARIOS_COMPARAR_TARDE_MAX_MIN) {
       return true;
     }

@@ -856,12 +856,12 @@ export default function HorariosCompararPage() {
         </div>
 
         <p className="mt-4 text-xs text-slate-500">
-          <strong className="text-emerald-800">Cumplió</strong>: planilla con marcaciones y diferencias
-          de entrada/intermedias ≤ +10 min (o anticipo), con salida hasta +120 min (horas extra);
-          filas solo asistencia con al menos una hora.{" "}
+          <strong className="text-emerald-800">Cumplió</strong>: planilla con marcaciones;
+          entrada entre −15 min y +10 min respecto al plan, intermedias hasta +10 min, salida hasta
+          +150 min (2 h 30 min) por horas extra; filas solo asistencia con al menos una hora.{" "}
           <strong className="text-rose-800">No cumplió</strong>: plan en planilla sin marcaciones, o
-          entrada/intermedias +11 min o mas, o salida +121 min o mas. Diferencia = asistencia menos
-          planilla. Emparejamiento por nombre, sede y fecha.
+          entrada antes de −15 min o despues de +10 min, o intermedias +11 min o mas, o salida +151
+          min o mas. Diferencia = asistencia menos planilla. Emparejamiento por nombre, sede y fecha.
         </p>
       </div>
     </div>
