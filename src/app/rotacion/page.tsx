@@ -61,6 +61,7 @@ type RotationRow = {
   descripcion: string;
   unidad: string | null;
   totalSales: number;
+  totalUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
   rotation: number;
@@ -118,6 +119,7 @@ type RotationSortField =
   | "item"
   | "descripcion"
   | "totalSales"
+  | "totalUnits"
   | "inventoryUnits"
   | "inventoryValue"
   | "rotation"
@@ -348,6 +350,15 @@ const formatRotationOneDecimal = (value: number) => {
 const clampPercent = (value: number) =>
   Math.max(1, Math.min(100, Number.isFinite(value) ? value : 0));
 
+const safeNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+const normalizeRotationRows = (rows: RotationRow[]) =>
+  rows.map((row) => ({
+    ...row,
+    totalUnits: safeNumber((row as RotationRow & { totalUnits?: number }).totalUnits),
+  }));
+
 const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
   const a = clampPercent(raw.aUntilPercent);
   const b = Math.max(a, clampPercent(raw.bUntilPercent));
@@ -425,6 +436,9 @@ const sortRotationRows = (
         break;
       case "totalSales":
         result = left.totalSales - right.totalSales;
+        break;
+      case "totalUnits":
+        result = left.totalUnits - right.totalUnits;
         break;
       case "inventoryUnits":
         result = left.inventoryUnits - right.inventoryUnits;
@@ -936,7 +950,7 @@ export default function RotacionPage() {
                 rowsPayload.error ?? "No fue posible consultar la rotacion.",
               );
             }
-            setRows(rowsPayload.rows ?? []);
+            setRows(normalizeRotationRows(rowsPayload.rows ?? []));
             if (rowsPayload.meta?.abcdConfig) {
               const normalizedConfig = normalizeAbcdConfig(
                 rowsPayload.meta.abcdConfig,
@@ -1131,7 +1145,7 @@ export default function RotacionPage() {
         throw new Error(payload.error ?? "No fue posible consultar la rotacion.");
       }
 
-      setRows(payload.rows ?? []);
+      setRows(normalizeRotationRows(payload.rows ?? []));
       if (payload.meta?.abcdConfig) {
         const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
         setAbcdConfig(normalizedConfig);
@@ -2359,6 +2373,15 @@ export default function RotacionPage() {
                           </TableHead>
                           <TableHead className="px-4 py-3 whitespace-normal">
                             <SortableRotationHeader
+                              field="totalUnits"
+                              label="Unid. vendidas"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
+                            <SortableRotationHeader
                               field="inventoryValue"
                               label="Valor inventario"
                               activeField={tableSortField}
@@ -2432,6 +2455,10 @@ export default function RotacionPage() {
                             <TableCell className="px-4 py-3 text-slate-700">
                               {row.inventoryUnits.toLocaleString("es-CO")}{" "}
                               {row.unidad ?? ""}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-slate-700">
+                              {row.totalUnits.toLocaleString("es-CO")}
+                              {row.unidad ? ` ${row.unidad}` : ""}
                             </TableCell>
                             <TableCell className="px-4 py-3 text-slate-700">
                               {formatPrice(row.inventoryValue)}

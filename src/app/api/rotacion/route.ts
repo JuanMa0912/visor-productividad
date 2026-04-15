@@ -25,6 +25,7 @@ type RotationDbRow = {
   descripcion: string;
   unidad: string | null;
   total_sales: string | number | null;
+  total_units: string | number | null;
   inventory_units: string | number | null;
   inventory_value: string | number | null;
   rotation: string | number | null;
@@ -44,6 +45,7 @@ type RotationRow = {
   descripcion: string;
   unidad: string | null;
   totalSales: number;
+  totalUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
   rotation: number;
@@ -544,6 +546,7 @@ const queryRotationRows = async ({
           COALESCE(NULLIF(TRIM(descripcion), ''), COALESCE(NULLIF(TRIM(item), ''), 'Sin descripcion')) AS descripcion,
           NULLIF(TRIM(unidad), '') AS unidad,
           COALESCE(venta_sin_impuesto, 0) AS venta_sin_impuesto,
+          COALESCE(unidades_vendidas, 0) AS unidades_vendidas,
           GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) AS inventory_units,
           GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
           TO_DATE(fecha_consulta, 'YYYYMMDD') AS consulta_date,
@@ -580,6 +583,7 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           SUM(venta_sin_impuesto)::numeric AS total_sales,
+          SUM(unidades_vendidas)::numeric AS total_units,
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value,
@@ -606,14 +610,15 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           total_sales,
+          total_units,
           COALESCE(inventory_units, 0) AS inventory_units,
           COALESCE(inventory_value, 0) AS inventory_value,
           tracked_days,
           last_movement_date,
           CASE
             WHEN COALESCE(inventory_units, 0) <= 0 OR COALESCE(inventory_value, 0) <= 0 THEN 0::numeric
-            WHEN total_sales <= 0 THEN 999999::numeric
-            ELSE (COALESCE(inventory_value, 0) * $10::numeric) / NULLIF(total_sales, 0)
+            WHEN COALESCE(total_units, 0) <= 0 THEN 999999::numeric
+            ELSE (COALESCE(inventory_units, 0) * $10::numeric) / NULLIF(total_units, 0)
           END AS rotation,
           CASE
             WHEN last_movement_date IS NULL THEN NULL
@@ -633,6 +638,7 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           total_sales,
+          total_units,
           inventory_units,
           inventory_value,
           rotation,
@@ -641,10 +647,10 @@ const queryRotationRows = async ({
           effective_days,
           CASE
             WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 'Agotado'
-            WHEN total_sales > 0
+            WHEN total_units > 0
               AND tracked_days > 0
-              AND inventory_value > 0
-              AND inventory_value <= ((total_sales / tracked_days) * $8::numeric)
+              AND inventory_units > 0
+              AND inventory_units <= ((total_units / tracked_days) * $8::numeric)
               THEN 'Futuro agotado'
             WHEN COALESCE(rotation, 0) > $9 THEN 'Baja rotacion'
             ELSE 'En seguimiento'
@@ -661,6 +667,7 @@ const queryRotationRows = async ({
         descripcion,
         unidad,
         total_sales,
+        total_units,
         inventory_units,
         inventory_value,
         rotation,
@@ -701,6 +708,7 @@ const queryRotationRows = async ({
         descripcion: row.descripcion,
         unidad: row.unidad,
         totalSales: toNumber(row.total_sales),
+        totalUnits: toNumber(row.total_units),
         inventoryUnits: toNumber(row.inventory_units),
         inventoryValue: toNumber(row.inventory_value),
         rotation: toNumber(row.rotation),
