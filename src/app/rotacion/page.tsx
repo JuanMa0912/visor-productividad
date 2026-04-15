@@ -2,7 +2,6 @@
 
 import {
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -85,15 +84,32 @@ type RotationApiResponse = {
       sedeId: string;
       sedeName: string;
     }>;
+    lineasN1: string[];
   };
   meta: {
     effectiveRange: DateRange;
     availableRange: { min: string; max: string };
     sourceTable: string;
     maxSalesValue: number | null;
+    abcdConfig?: {
+      aUntilPercent: number;
+      bUntilPercent: number;
+      cUntilPercent: number;
+    };
   };
   message?: string;
   error?: string;
+};
+
+type LineaN1Option = {
+  value: string;
+  label: string;
+};
+
+type AbcdConfig = {
+  aUntilPercent: number;
+  bUntilPercent: number;
+  cUntilPercent: number;
 };
 
 type RotationSortField =
@@ -111,6 +127,12 @@ type PageSize = 25 | 50 | 100;
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const MAX_SALES_THRESHOLD = 200000;
+const NO_SALES_DI_VALUE = 999999;
+const DEFAULT_ABCD_CONFIG: AbcdConfig = {
+  aUntilPercent: 70,
+  bUntilPercent: 85,
+  cUntilPercent: 98,
+};
 const PAGE_SIZE_OPTIONS: PageSize[] = [25, 50, 100];
 
 const dateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -144,6 +166,7 @@ const getRollingMonthBackRange = (
   const endDate = parseDateKey(endKey);
   const startDate = new Date(endDate);
   startDate.setMonth(startDate.getMonth() - 1);
+  startDate.setDate(startDate.getDate() + 1);
   let startKey = clampDateKeyToBounds(
     toDateKey(startDate),
     minAvailable,
@@ -312,11 +335,23 @@ const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
 const compareRotationText = (left: string, right: string) =>
   left.localeCompare(right, "es", { sensitivity: "base", numeric: true });
 
-const formatRotationOneDecimal = (value: number) =>
-  (Math.round(value * 10) / 10).toLocaleString("es-CO", {
+const formatRotationOneDecimal = (value: number) => {
+  if (value >= NO_SALES_DI_VALUE) return "Sin venta";
+  return (Math.round(value * 10) / 10).toLocaleString("es-CO", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 1,
   });
+};
+
+const clampPercent = (value: number) =>
+  Math.max(1, Math.min(100, Number.isFinite(value) ? value : 0));
+
+const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
+  const a = clampPercent(raw.aUntilPercent);
+  const b = Math.max(a, clampPercent(raw.bUntilPercent));
+  const c = Math.max(b, clampPercent(raw.cUntilPercent));
+  return { aUntilPercent: a, bUntilPercent: b, cUntilPercent: c };
+};
 
 const compareNullableIsoDateKeys = (
   left: string | null,
@@ -363,7 +398,18 @@ const sortRotationRows = (
         result = left.inventoryValue - right.inventoryValue;
         break;
       case "rotation":
-        result = left.rotation - right.rotation;
+        if (
+          left.rotation >= NO_SALES_DI_VALUE &&
+          right.rotation >= NO_SALES_DI_VALUE
+        ) {
+          result = 0;
+        } else if (left.rotation >= NO_SALES_DI_VALUE) {
+          result = 1;
+        } else if (right.rotation >= NO_SALES_DI_VALUE) {
+          result = -1;
+        } else {
+          result = left.rotation - right.rotation;
+        }
         break;
       case "lastMovementDate":
         result = compareNullableIsoDateKeys(
@@ -608,7 +654,9 @@ const FilterSelectField = ({
 export default function RotacionPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedSede, setSelectedSede] = useState("");
   const [salesThreshold, setSalesThreshold] = useState(
@@ -620,16 +668,23 @@ export default function RotacionPage() {
     end: "",
   });
   const [rows, setRows] = useState<RotationRow[]>([]);
+  const [hasLoadedItems, setHasLoadedItems] = useState(false);
+  const [isLoadingLineCatalog, setIsLoadingLineCatalog] = useState(false);
+  const [selectedLineaN1Values, setSelectedLineaN1Values] = useState<string[]>(
+    [],
+  );
+  const [abcdConfig, setAbcdConfig] = useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
+  const [abcdDraftConfig, setAbcdDraftConfig] =
+    useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
   const [filterCatalog, setFilterCatalog] = useState<
     RotationApiResponse["filters"]
   >({
     companies: [],
     sedes: [],
+    lineasN1: [],
   });
   const [error, setError] = useState<string | null>(null);
-  const deferredSalesThreshold = useDeferredValue(salesThreshold);
   const skipNextFetchRef = useRef(false);
-  const hasLoadedCatalogRef = useRef(false);
   const [tableSortField, setTableSortField] =
     useState<RotationSortField | null>("totalSales");
   const [tableSortDirection, setTableSortDirection] =
@@ -678,6 +733,7 @@ export default function RotacionPage() {
           };
         };
         const isAdmin = payload.user?.role === "admin";
+        setIsAdmin(Boolean(isAdmin));
         if (
           !isAdmin &&
           !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
@@ -709,18 +765,14 @@ export default function RotacionPage() {
       skipNextFetchRef.current = false;
       return;
     }
-    if (!selectedSede && hasLoadedCatalogRef.current) {
-      setRows([]);
-      setError(null);
-      setIsLoadingData(false);
-      return;
-    }
 
     const controller = new AbortController();
 
-    const loadRotation = async () => {
-      setIsLoadingData(true);
+    const loadLineCatalog = async () => {
+      setIsLoadingLineCatalog(true);
       setError(null);
+      setRows([]);
+      setHasLoadedItems(false);
 
       try {
         const hadEmptyDateRange = !dateRange.start || !dateRange.end;
@@ -738,9 +790,7 @@ export default function RotacionPage() {
         if (selectedSedeMeta?.sedeId) {
           params.set("sede", selectedSedeMeta.sedeId);
         }
-        if (deferredSalesThreshold) {
-          params.set("maxSalesValue", deferredSalesThreshold);
-        }
+        params.set("catalogOnly", "1");
 
         const response = await fetch(
           `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
@@ -766,14 +816,20 @@ export default function RotacionPage() {
           );
         }
 
-        setRows(payload.rows ?? []);
         setFilterCatalog(
           payload.filters ?? {
             companies: [],
             sedes: [],
+            lineasN1: [],
           },
         );
-        hasLoadedCatalogRef.current = true;
+        const allLineasN1 = payload.filters?.lineasN1 ?? [];
+        setSelectedLineaN1Values(allLineasN1);
+        if (payload.meta?.abcdConfig) {
+          const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
+          setAbcdConfig(normalizedConfig);
+          setAbcdDraftConfig(normalizedConfig);
+        }
 
         if (payload.meta?.availableRange) {
           setAvailableRange({
@@ -803,23 +859,75 @@ export default function RotacionPage() {
           skipNextFetchRef.current = true;
           setDateRange(payload.meta.effectiveRange);
         }
+
+        if (selectedSedeMeta?.sedeId) {
+          setIsLoadingData(true);
+          try {
+            const rowsParams = new URLSearchParams();
+            if (dateRange.start && dateRange.end) {
+              rowsParams.set("start", dateRange.start);
+              rowsParams.set("end", dateRange.end);
+            }
+            if (effectiveCompany) {
+              rowsParams.set("empresa", effectiveCompany);
+            }
+            rowsParams.set("sede", selectedSedeMeta.sedeId);
+            allLineasN1.forEach((linea) => {
+              rowsParams.append("lineasN1", linea);
+            });
+
+            const rowsResponse = await fetch(
+              `/api/rotacion${rowsParams.size > 0 ? `?${rowsParams.toString()}` : ""}`,
+              {
+                signal: controller.signal,
+                cache: "no-store",
+              },
+            );
+            if (rowsResponse.status === 401) {
+              router.replace("/login");
+              return;
+            }
+            if (rowsResponse.status === 403) {
+              router.replace("/secciones");
+              return;
+            }
+
+            const rowsPayload = (await rowsResponse.json()) as RotationApiResponse;
+            if (!rowsResponse.ok) {
+              throw new Error(
+                rowsPayload.error ?? "No fue posible consultar la rotacion.",
+              );
+            }
+            setRows(rowsPayload.rows ?? []);
+            if (rowsPayload.meta?.abcdConfig) {
+              const normalizedConfig = normalizeAbcdConfig(
+                rowsPayload.meta.abcdConfig,
+              );
+              setAbcdConfig(normalizedConfig);
+              setAbcdDraftConfig(normalizedConfig);
+            }
+            setHasLoadedItems(true);
+          } finally {
+            setIsLoadingData(false);
+          }
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setRows([]);
+        setHasLoadedItems(false);
         setError(
           err instanceof Error ? err.message : "Error consultando rotacion.",
         );
       } finally {
-        setIsLoadingData(false);
+        setIsLoadingLineCatalog(false);
       }
     };
 
-    void loadRotation();
+    void loadLineCatalog();
     return () => controller.abort();
   }, [
     dateRange.end,
     dateRange.start,
-    deferredSalesThreshold,
     ready,
     router,
     selectedCompany,
@@ -885,6 +993,22 @@ export default function RotacionPage() {
     [allSedeOptions, selectedSede],
   );
 
+  const lineaN1Options = useMemo<LineaN1Option[]>(
+    () =>
+      [...filterCatalog.lineasN1]
+        .map((value) => ({
+          value,
+          label: value === "__sin_n1__" ? "Sin N1" : `N1 ${value}`,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "es")),
+    [filterCatalog.lineasN1],
+  );
+
+  const selectedLineaN1Set = useMemo(
+    () => new Set(selectedLineaN1Values),
+    [selectedLineaN1Values],
+  );
+
   useEffect(() => {
     if (!selectedSede) return;
     if (!sedeOptions.some((option) => option.value === selectedSede)) {
@@ -921,6 +1045,100 @@ export default function RotacionPage() {
     setDateRange((current) =>
       normalizeDateRange({ start: current.start, end: value }, "end"),
     );
+  };
+
+  const handleReloadRows = async () => {
+    if (!selectedSede) return;
+
+    const selectedSedeMeta = parseSedeSelection(selectedSede);
+    if (!selectedSedeMeta?.sedeId) return;
+
+    setIsLoadingData(true);
+    setError(null);
+    setHasLoadedItems(true);
+
+    try {
+      const params = new URLSearchParams();
+      const effectiveCompany = selectedSedeMeta.empresa ?? selectedCompany;
+
+      if (dateRange.start && dateRange.end) {
+        params.set("start", dateRange.start);
+        params.set("end", dateRange.end);
+      }
+      if (effectiveCompany) {
+        params.set("empresa", effectiveCompany);
+      }
+      params.set("sede", selectedSedeMeta.sedeId);
+      if (salesThreshold) {
+        params.set("maxSalesValue", salesThreshold);
+      }
+      selectedLineaN1Values.forEach((linea) => {
+        params.append("lineasN1", linea);
+      });
+
+      const response = await fetch(
+        `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
+        { cache: "no-store" },
+      );
+      if (response.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (response.status === 403) {
+        router.replace("/secciones");
+        return;
+      }
+      const payload = (await response.json()) as RotationApiResponse;
+      if (!response.ok) {
+        throw new Error(payload.error ?? "No fue posible consultar la rotacion.");
+      }
+
+      setRows(payload.rows ?? []);
+      if (payload.meta?.abcdConfig) {
+        const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
+        setAbcdConfig(normalizedConfig);
+        setAbcdDraftConfig(normalizedConfig);
+      }
+    } catch (err) {
+      setRows([]);
+      setError(err instanceof Error ? err.message : "Error consultando rotacion.");
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const handleSaveAbcdConfig = async () => {
+    if (!isAdmin || isSavingAbcdConfig) return;
+    setIsSavingAbcdConfig(true);
+    setError(null);
+    try {
+      const normalized = normalizeAbcdConfig(abcdDraftConfig);
+      const response = await fetch("/api/rotacion", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(normalized),
+      });
+      const payload = (await response.json()) as {
+        config?: AbcdConfig;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(
+          payload.error ?? "No fue posible guardar la configuracion ABCD.",
+        );
+      }
+      const saved = normalizeAbcdConfig(payload.config ?? normalized);
+      setAbcdConfig(saved);
+      setAbcdDraftConfig(saved);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Error guardando configuracion ABCD.",
+      );
+    } finally {
+      setIsSavingAbcdConfig(false);
+    }
   };
 
   const handleTableSort = (field: RotationSortField) => {
@@ -981,6 +1199,7 @@ export default function RotacionPage() {
   };
 
   const shouldSelectSedeFirst = !selectedSede;
+  const shouldReloadFirst = selectedSede && !hasLoadedItems;
 
   const exportRows = useMemo(
     () =>
@@ -1033,7 +1252,7 @@ export default function RotacionPage() {
         "Inv cierre",
         "Unidad",
         "Valor inventario",
-        "Rotacion",
+        "DI (dias inv.)",
         "Ultimo ingreso",
       ]],
       body: exportRows.map((row) => [
@@ -1068,7 +1287,7 @@ export default function RotacionPage() {
         { header: "Inv cierre", key: "invCierre", width: 12 },
         { header: "Unidad", key: "unidad", width: 10 },
         { header: "Valor inventario", key: "valorInventario", width: 16 },
-        { header: "Rotacion", key: "rotacion", width: 12 },
+        { header: "DI (dias inv.)", key: "rotacion", width: 14 },
         { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
       ];
       sheet.addRows(exportRows);
@@ -1263,7 +1482,7 @@ export default function RotacionPage() {
                 periodo de consulta.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <FilterSelectField
                   icon={Building2}
@@ -1275,12 +1494,12 @@ export default function RotacionPage() {
                     setSelectedSede("");
                   }}
                   allLabel={
-                    isLoadingData && companyOptions.length === 0
+                    isLoadingLineCatalog && companyOptions.length === 0
                       ? "Cargando empresas..."
                       : "Todas las empresas"
                   }
                   accentClassName="text-indigo-700"
-                  disabled={isLoadingData && companyOptions.length === 0}
+                  disabled={isLoadingLineCatalog && companyOptions.length === 0}
                 />
                 <FilterSelectField
                   icon={MapPin}
@@ -1298,14 +1517,170 @@ export default function RotacionPage() {
                     }
                   }}
                   allLabel={
-                    isLoadingData && allSedeOptions.length === 0
+                    isLoadingLineCatalog && allSedeOptions.length === 0
                       ? "Cargando sedes..."
                       : "Todas las sedes"
                   }
                   accentClassName="text-sky-700"
-                  disabled={isLoadingData && allSedeOptions.length === 0}
+                  disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
                 />
               </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <FilterFieldLabel
+                    icon={Filter}
+                    label="Lineas nivel 1"
+                    accentClassName="text-violet-700"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setSelectedLineaN1Values(
+                          lineaN1Options.map((option) => option.value),
+                        )
+                      }
+                      disabled={lineaN1Options.length === 0 || isLoadingLineCatalog}
+                      className="h-8 rounded-lg border-violet-200 bg-violet-50 px-2.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                    >
+                      Seleccionar todas
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedLineaN1Values([])}
+                      disabled={
+                        lineaN1Options.length === 0 ||
+                        selectedLineaN1Values.length === 0 ||
+                        isLoadingLineCatalog
+                      }
+                      className="h-8 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      Limpiar seleccion
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handleReloadRows()}
+                      disabled={!selectedSede || isLoadingData || isLoadingLineCatalog}
+                      className="h-8 rounded-lg bg-violet-700 px-3 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
+                    >
+                      {isLoadingData ? "Recargando..." : "Recargar"}
+                    </Button>
+                  </div>
+                </div>
+                <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
+                  {lineaN1Options.length === 0 ? (
+                    <p className="text-xs text-slate-500">
+                      Selecciona una sede para habilitar las lineas N1.
+                    </p>
+                  ) : (
+                    lineaN1Options.map((option) => {
+                      const isChecked = selectedLineaN1Set.has(option.value);
+                      return (
+                        <label
+                          key={option.value}
+                          className="flex items-center gap-2 text-sm text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() =>
+                              setSelectedLineaN1Values((current) =>
+                                isChecked
+                                  ? current.filter((value) => value !== option.value)
+                                  : [...current, option.value],
+                              )
+                            }
+                            className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-200"
+                          />
+                          <span className="font-medium">{option.label}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+              {isAdmin && (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-800">
+                      Clasificacion ABCD (editable)
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handleSaveAbcdConfig()}
+                      disabled={isSavingAbcdConfig}
+                      className="h-8 rounded-lg bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                    >
+                      {isSavingAbcdConfig ? "Guardando..." : "Guardar ABCD"}
+                    </Button>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <label className="text-xs font-semibold text-emerald-900">
+                      A hasta %
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={abcdDraftConfig.aUntilPercent}
+                        onChange={(event) =>
+                          setAbcdDraftConfig((prev) =>
+                            normalizeAbcdConfig({
+                              ...prev,
+                              aUntilPercent: Number(event.target.value || 0),
+                            }),
+                          )
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-emerald-900">
+                      B hasta %
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={abcdDraftConfig.bUntilPercent}
+                        onChange={(event) =>
+                          setAbcdDraftConfig((prev) =>
+                            normalizeAbcdConfig({
+                              ...prev,
+                              bUntilPercent: Number(event.target.value || 0),
+                            }),
+                          )
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-emerald-900">
+                      C hasta %
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={abcdDraftConfig.cUntilPercent}
+                        onChange={(event) =>
+                          setAbcdDraftConfig((prev) =>
+                            normalizeAbcdConfig({
+                              ...prev,
+                              cUntilPercent: Number(event.target.value || 0),
+                            }),
+                          )
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-emerald-900/90">
+                    D siempre va hasta 100%.
+                  </p>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
                   {selectedCompany
@@ -1321,6 +1696,13 @@ export default function RotacionPage() {
                 </Badge>
                 <Badge className="border-amber-200 bg-amber-50 text-amber-700">
                   Venta ≤ {formatPrice(parsedThreshold)}
+                </Badge>
+                <Badge className="border-violet-200 bg-violet-50 text-violet-700">
+                  {lineaN1Options.length === 0
+                    ? "N1 sin datos"
+                    : selectedLineaN1Values.length === lineaN1Options.length
+                      ? "Todas las lineas N1"
+                      : `${selectedLineaN1Values.length} de ${lineaN1Options.length} lineas N1`}
                 </Badge>
               </div>
             </CardContent>
@@ -1482,6 +1864,21 @@ export default function RotacionPage() {
               </p>
             </CardContent>
           </Card>
+        ) : shouldReloadFirst ? (
+          <Card className="border-dashed border-violet-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+            <CardContent className="flex flex-col items-center px-6 py-12 text-center">
+              <div className="rounded-full bg-violet-100 p-4 text-violet-700">
+                <Filter className="h-7 w-7" />
+              </div>
+              <h2 className="mt-4 text-xl font-bold text-slate-900">
+                Selecciona lineas N1 y pulsa Recargar
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                El listado de items solo se consulta cuando confirmas las lineas
+                N1 con el botón <span className="font-semibold">Recargar</span>.
+              </p>
+            </CardContent>
+          </Card>
         ) : rowsBySede.length === 0 ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
@@ -1623,6 +2020,32 @@ export default function RotacionPage() {
                 rowFilter,
                 ventaHastaCap,
               );
+              const abcdRows = [...filteredRows].sort(
+                (a, b) => b.totalSales - a.totalSales,
+              );
+              const totalSalesForAbcd = abcdRows.reduce(
+                (sum, row) => sum + Math.max(0, row.totalSales),
+                0,
+              );
+              let cumulativeSales = 0;
+              const categoryByItem = new Map<string, "A" | "B" | "C" | "D">();
+              for (const row of abcdRows) {
+                if (totalSalesForAbcd <= 0) {
+                  categoryByItem.set(row.item, "D");
+                  continue;
+                }
+                cumulativeSales += Math.max(0, row.totalSales);
+                const cumulativePercent = (cumulativeSales / totalSalesForAbcd) * 100;
+                const category =
+                  cumulativePercent <= abcdConfig.aUntilPercent
+                    ? "A"
+                    : cumulativePercent <= abcdConfig.bUntilPercent
+                      ? "B"
+                      : cumulativePercent <= abcdConfig.cUntilPercent
+                        ? "C"
+                        : "D";
+                categoryByItem.set(row.item, category);
+              }
               const ventaHastaInput = ventaHastaInputByGroup[groupKey] ?? "";
               const ventaHastaDigits = sanitizeNumericInput(ventaHastaInput);
               const ventaHastaParsedPreview = Number(ventaHastaDigits);
@@ -1636,6 +2059,11 @@ export default function RotacionPage() {
               const ceroRotacionCount = group.rows.filter(
                 (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
               ).length;
+              const totalItemsCount = filteredRows.length;
+              const totalInventoryValue = filteredRows.reduce(
+                (acc, row) => acc + row.inventoryValue,
+                0,
+              );
               const totalPages = Math.max(
                 1,
                 Math.ceil(filteredRows.length / pageSize),
@@ -1748,6 +2176,20 @@ export default function RotacionPage() {
                             className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
                           />
                         </div>
+                        <div className="flex items-center gap-3 text-sm leading-5 text-slate-600">
+                          <span className="whitespace-nowrap">
+                            Total items:{" "}
+                            <span className="font-semibold text-slate-800">
+                              {totalItemsCount.toLocaleString("es-CO")}
+                            </span>
+                          </span>
+                          <span className="whitespace-nowrap">
+                            Total inv:{" "}
+                            <span className="font-semibold text-slate-800">
+                              {formatPrice(totalInventoryValue)}
+                            </span>
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </CardHeader>
@@ -1811,6 +2253,9 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-nowrap">
+                            Categoria
+                          </TableHead>
                           <TableHead className="px-4 py-3 whitespace-normal">
                             <SortableRotationHeader
                               field="descripcion"
@@ -1850,7 +2295,7 @@ export default function RotacionPage() {
                           <TableHead className="px-4 py-3">
                             <SortableRotationHeader
                               field="rotation"
-                              label="Rotacion"
+                              label="DI (dias inv.)"
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
@@ -1872,6 +2317,26 @@ export default function RotacionPage() {
                           <TableRow key={`${group.sedeId}-${row.item}`}>
                             <TableCell className="px-4 py-3 font-semibold text-slate-900">
                               {row.item}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-center">
+                              {(() => {
+                                const category = categoryByItem.get(row.item) ?? "D";
+                                const colorClass =
+                                  category === "A"
+                                    ? "border-emerald-300 bg-emerald-200 text-emerald-900"
+                                    : category === "B"
+                                      ? "border-amber-300 bg-amber-200 text-amber-900"
+                                      : category === "C"
+                                        ? "border-orange-300 bg-orange-200 text-orange-900"
+                                        : "border-rose-300 bg-rose-200 text-rose-900";
+                                return (
+                                  <Badge
+                                    className={`min-w-8 justify-center px-2 py-0.5 text-sm font-black ${colorClass}`}
+                                  >
+                                    {category}
+                                  </Badge>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell className="px-4 py-3 whitespace-normal">
                               <div className="min-w-[24rem]">

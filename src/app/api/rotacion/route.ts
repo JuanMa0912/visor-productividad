@@ -60,10 +60,17 @@ type RotationFilterCatalog = {
     sedeId: string;
     sedeName: string;
   }>;
+  lineasN1: string[];
+};
+
+type AbcdConfig = {
+  aUntilPercent: number;
+  bUntilPercent: number;
+  cUntilPercent: number;
 };
 
 const CACHE_CONTROL = "no-store";
-const LOW_ROTATION_THRESHOLD = 0.65;
+const LOW_ROTATION_DAYS_THRESHOLD = 45;
 const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_ROTATION_RANGE_DAYS = 93;
 const MAX_SALES_THRESHOLD = 200000;
@@ -74,6 +81,11 @@ const HIDDEN_SEDE_KEYS = new Set([
   "centrodistribucioncavasa",
   "importados",
 ]);
+const DEFAULT_ABCD_CONFIG: AbcdConfig = {
+  aUntilPercent: 70,
+  bUntilPercent: 85,
+  cUntilPercent: 98,
+};
 
 let availableBoundsCache:
   | { value: AvailableBoundsRow | null; expiresAt: number }
@@ -216,6 +228,121 @@ const clampSalesThreshold = (value: number | null) => {
   return Math.max(0, Math.min(value, MAX_SALES_THRESHOLD));
 };
 
+const normalizeAbcdConfig = (
+  raw: Partial<AbcdConfig> | null | undefined,
+): AbcdConfig => {
+  const a = Number(raw?.aUntilPercent ?? DEFAULT_ABCD_CONFIG.aUntilPercent);
+  const b = Number(raw?.bUntilPercent ?? DEFAULT_ABCD_CONFIG.bUntilPercent);
+  const c = Number(raw?.cUntilPercent ?? DEFAULT_ABCD_CONFIG.cUntilPercent);
+
+  const safeA = Math.max(1, Math.min(100, Number.isFinite(a) ? a : 70));
+  const safeB = Math.max(safeA, Math.min(100, Number.isFinite(b) ? b : 85));
+  const safeC = Math.max(safeB, Math.min(100, Number.isFinite(c) ? c : 98));
+
+  return {
+    aUntilPercent: safeA,
+    bUntilPercent: safeB,
+    cUntilPercent: safeC,
+  };
+};
+
+const ensureRotacionAbcdConfigTable = async () => {
+  const client = await (await getDbPool()).connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS rotacion_abcd_config (
+        id smallint PRIMARY KEY,
+        a_until_percent numeric(5,2) NOT NULL,
+        b_until_percent numeric(5,2) NOT NULL,
+        c_until_percent numeric(5,2) NOT NULL,
+        updated_by text NULL,
+        updated_at timestamp without time zone NOT NULL DEFAULT NOW()
+      )
+    `);
+  } finally {
+    client.release();
+  }
+};
+
+const getRotacionAbcdConfig = async (): Promise<AbcdConfig> => {
+  try {
+    await ensureRotacionAbcdConfigTable();
+  } catch {
+    return DEFAULT_ABCD_CONFIG;
+  }
+
+  const client = await (await getDbPool()).connect();
+  try {
+    const result = await client.query(
+      `
+      SELECT
+        a_until_percent,
+        b_until_percent,
+        c_until_percent
+      FROM rotacion_abcd_config
+      WHERE id = 1
+      LIMIT 1
+      `,
+    );
+    const row = result.rows?.[0] as
+      | {
+          a_until_percent?: string | number | null;
+          b_until_percent?: string | number | null;
+          c_until_percent?: string | number | null;
+        }
+      | undefined;
+
+    if (!row) return DEFAULT_ABCD_CONFIG;
+    return normalizeAbcdConfig({
+      aUntilPercent: row.a_until_percent == null ? null : Number(row.a_until_percent),
+      bUntilPercent: row.b_until_percent == null ? null : Number(row.b_until_percent),
+      cUntilPercent: row.c_until_percent == null ? null : Number(row.c_until_percent),
+    });
+  } finally {
+    client.release();
+  }
+};
+
+const saveRotacionAbcdConfig = async (
+  config: AbcdConfig,
+  updatedBy: string,
+): Promise<AbcdConfig> => {
+  await ensureRotacionAbcdConfigTable();
+  const normalized = normalizeAbcdConfig(config);
+  const client = await (await getDbPool()).connect();
+  try {
+    await client.query(
+      `
+      INSERT INTO rotacion_abcd_config (
+        id,
+        a_until_percent,
+        b_until_percent,
+        c_until_percent,
+        updated_by,
+        updated_at
+      )
+      VALUES (1, $1, $2, $3, $4, NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET
+        a_until_percent = EXCLUDED.a_until_percent,
+        b_until_percent = EXCLUDED.b_until_percent,
+        c_until_percent = EXCLUDED.c_until_percent,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+      `,
+      [
+        normalized.aUntilPercent,
+        normalized.bUntilPercent,
+        normalized.cUntilPercent,
+        updatedBy,
+      ],
+    );
+    return normalized;
+  } finally {
+    client.release();
+  }
+};
+
 const getAvailableBounds = async () => {
   const now = Date.now();
   if (availableBoundsCache && availableBoundsCache.expiresAt > now) {
@@ -288,6 +415,7 @@ const getRotationFilterCatalog = async (
     const value = {
       companies,
       sedes,
+      lineasN1: [],
     };
 
     rotationFilterCatalogCache = {
@@ -302,18 +430,58 @@ const getRotationFilterCatalog = async (
   }
 };
 
+const queryRotationLineasN1 = async ({
+  startDate,
+  endDate,
+  empresa,
+  sedeId,
+}: {
+  startDate: string;
+  endDate: string;
+  empresa: string | null;
+  sedeId: string;
+}) => {
+  const client = await (await getDbPool()).connect();
+  try {
+    const result = await client.query(
+      `
+      SELECT DISTINCT
+        COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') AS linea_n1_codigo
+      FROM rotacion_base_item_dia_sede
+      WHERE fecha_consulta BETWEEN $1 AND $2
+        AND fecha_consulta ~ '^[0-9]{8}$'
+        AND item IS NOT NULL
+        AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
+        AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $4)
+      ORDER BY linea_n1_codigo ASC
+      `,
+      [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
+    );
+
+    return (result.rows ?? [])
+      .map((row) => String(row.linea_n1_codigo ?? "__sin_n1__"))
+      .filter(Boolean);
+  } finally {
+    client.release();
+  }
+};
+
 const queryRotationRows = async ({
   startDate,
   endDate,
   maxSalesValue,
   empresa,
   sedeId,
+  lineasN1,
+  periodDays,
 }: {
   startDate: string;
   endDate: string;
   maxSalesValue: number;
   empresa: string | null;
   sedeId: string | null;
+  lineasN1: string[] | null;
+  periodDays: number;
 }): Promise<RotationRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
@@ -344,6 +512,7 @@ const queryRotationRows = async ({
           AND item IS NOT NULL
           AND ($5::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $5)
           AND ($6::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $6)
+          AND ($7::text[] IS NULL OR COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') = ANY($7::text[]))
       ),
       ranked AS (
         SELECT
@@ -365,7 +534,6 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           SUM(venta_sin_impuesto)::numeric AS total_sales,
-          AVG(inventory_value)::numeric AS avg_inventory_value,
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value,
@@ -397,8 +565,9 @@ const queryRotationRows = async ({
           tracked_days,
           last_movement_date,
           CASE
-            WHEN avg_inventory_value <= 0 THEN CASE WHEN total_sales > 0 THEN 999999::numeric ELSE 0::numeric END
-            ELSE total_sales / NULLIF(avg_inventory_value, 0)
+            WHEN COALESCE(inventory_units, 0) <= 0 OR COALESCE(inventory_value, 0) <= 0 THEN 0::numeric
+            WHEN total_sales <= 0 THEN 999999::numeric
+            ELSE (COALESCE(inventory_value, 0) * $10::numeric) / NULLIF(total_sales, 0)
           END AS rotation,
           CASE
             WHEN last_movement_date IS NULL THEN NULL
@@ -429,9 +598,9 @@ const queryRotationRows = async ({
             WHEN total_sales > 0
               AND tracked_days > 0
               AND inventory_value > 0
-              AND inventory_value <= ((total_sales / tracked_days) * $7::numeric)
+              AND inventory_value <= ((total_sales / tracked_days) * $8::numeric)
               THEN 'Futuro agotado'
-            WHEN COALESCE(rotation, 0) < $8 THEN 'Baja rotacion'
+            WHEN COALESCE(rotation, 0) > $9 THEN 'Baja rotacion'
             ELSE 'En seguimiento'
           END AS status
         FROM enriched
@@ -468,8 +637,10 @@ const queryRotationRows = async ({
         maxSalesValue,
         empresa,
         sedeId,
+        lineasN1,
         FUTURE_STOCKOUT_DAYS,
-        LOW_ROTATION_THRESHOLD,
+        LOW_ROTATION_DAYS_THRESHOLD,
+        periodDays,
       ],
     );
 
@@ -544,6 +715,7 @@ export async function GET(request: Request) {
 
   try {
     const bounds = await getAvailableBounds();
+    const abcdConfig = await getRotacionAbcdConfig();
     const minAvailableDate = compactToIsoDate(bounds?.min_date ?? null);
     const maxAvailableDate = compactToIsoDate(bounds?.max_date ?? null);
 
@@ -566,6 +738,7 @@ export async function GET(request: Request) {
               availableRange: { min: "", max: "" },
               sourceTable: "rotacion_base_item_dia_sede",
               maxSalesValue: MAX_SALES_THRESHOLD,
+              abcdConfig,
             },
             message: "La tabla de rotacion no tiene datos disponibles.",
           },
@@ -579,6 +752,11 @@ export async function GET(request: Request) {
     const requestedEnd = url.searchParams.get("end");
     const requestedCompany = url.searchParams.get("empresa")?.trim() || null;
     const requestedSedeId = url.searchParams.get("sede")?.trim() || null;
+    const requestedLineasN1 = url.searchParams
+      .getAll("lineasN1")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const isCatalogOnly = url.searchParams.get("catalogOnly") === "1";
     const maxSalesValue = clampSalesThreshold(
       parsePositiveNumber(url.searchParams.get("maxSalesValue")),
     );
@@ -586,7 +764,7 @@ export async function GET(request: Request) {
     const rawEndDate = isIsoDate(requestedEnd) ? requestedEnd! : maxAvailableDate;
     const rawStartDate = isIsoDate(requestedStart)
       ? requestedStart!
-      : shiftCalendarMonths(rawEndDate, -1);
+      : shiftDate(shiftCalendarMonths(rawEndDate, -1), 1);
 
     const effectiveRange = clampDateRange({
       start: rawStartDate,
@@ -615,6 +793,7 @@ export async function GET(request: Request) {
     const filters = {
       companies: visibleCompanies,
       sedes: visibleSedes,
+      lineasN1: [],
     };
     const requestedVisibleSede =
       requestedSedeId === null
@@ -635,6 +814,15 @@ export async function GET(request: Request) {
     }
 
     const effectiveCompany = requestedVisibleSede?.empresa ?? requestedCompany;
+    const lineasN1 = requestedVisibleSede
+      ? await queryRotationLineasN1({
+          startDate: boundedRange.start,
+          endDate: boundedRange.end,
+          empresa: effectiveCompany,
+          sedeId: requestedVisibleSede.sedeId,
+        })
+      : [];
+    filters.lineasN1 = lineasN1;
 
     if (!requestedSedeId) {
       return withSession(
@@ -655,8 +843,42 @@ export async function GET(request: Request) {
               },
               sourceTable: "rotacion_base_item_dia_sede",
               maxSalesValue,
+              abcdConfig,
             },
             message: "Selecciona una sede para consultar la rotacion.",
+          },
+          {
+            headers: {
+              "Cache-Control": CACHE_CONTROL,
+              "X-Data-Source": "database",
+            },
+          },
+        ),
+      );
+    }
+
+    if (isCatalogOnly) {
+      return withSession(
+        NextResponse.json(
+          {
+            rows: [],
+            stats: {
+              evaluatedSedes: 0,
+              visibleItems: 0,
+              withoutMovement: 0,
+            },
+            filters,
+            meta: {
+              effectiveRange: boundedRange,
+              availableRange: {
+                min: minAvailableDate,
+                max: maxAvailableDate,
+              },
+              sourceTable: "rotacion_base_item_dia_sede",
+              maxSalesValue,
+              abcdConfig,
+            },
+            message: "Catalogo de lineas N1 actualizado.",
           },
           {
             headers: {
@@ -674,6 +896,15 @@ export async function GET(request: Request) {
       maxSalesValue,
       empresa: effectiveCompany,
       sedeId: requestedVisibleSede?.sedeId ?? null,
+      lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
+      periodDays: Math.max(
+        1,
+        Math.floor(
+          (new Date(`${boundedRange.end}T12:00:00`).getTime() -
+            new Date(`${boundedRange.start}T12:00:00`).getTime()) /
+            (24 * 60 * 60 * 1000),
+        ) + 1,
+      ),
     });
 
     const stats = {
@@ -696,6 +927,7 @@ export async function GET(request: Request) {
             },
             sourceTable: "rotacion_base_item_dia_sede",
             maxSalesValue,
+            abcdConfig,
           },
         },
         {
@@ -726,6 +958,7 @@ export async function GET(request: Request) {
             availableRange: { min: "", max: "" },
             sourceTable: "rotacion_base_item_dia_sede",
             maxSalesValue: MAX_SALES_THRESHOLD,
+            abcdConfig: DEFAULT_ABCD_CONFIG,
           },
           error: "No fue posible consultar la rotacion en este momento.",
         },
@@ -733,6 +966,64 @@ export async function GET(request: Request) {
           status: 500,
           headers: { "Cache-Control": CACHE_CONTROL },
         },
+      ),
+    );
+  }
+}
+
+export async function PUT(request: Request) {
+  const session = await requireAuthSession();
+  if (!session) {
+    return NextResponse.json(
+      { error: "No autorizado." },
+      { status: 401, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+
+  const withSession = (response: NextResponse) => {
+    response.cookies.set(
+      "vp_session",
+      session.token,
+      getSessionCookieOptions(session.expiresAt),
+    );
+    if (!response.headers.has("Cache-Control")) {
+      response.headers.set("Cache-Control", CACHE_CONTROL);
+    }
+    return response;
+  };
+
+  if (session.user.role !== "admin") {
+    return withSession(
+      NextResponse.json(
+        { error: "Solo administradores pueden actualizar esta configuracion." },
+        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  try {
+    const body = (await request.json()) as Partial<AbcdConfig> | null;
+    const config = normalizeAbcdConfig(body);
+    const updated = await saveRotacionAbcdConfig(
+      config,
+      session.user.username ?? "admin",
+    );
+    return withSession(
+      NextResponse.json(
+        {
+          ok: true,
+          config: updated,
+        },
+        {
+          headers: { "Cache-Control": CACHE_CONTROL },
+        },
+      ),
+    );
+  } catch {
+    return withSession(
+      NextResponse.json(
+        { error: "No fue posible guardar la configuracion ABCD." },
+        { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
   }
