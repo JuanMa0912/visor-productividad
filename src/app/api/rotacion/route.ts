@@ -72,6 +72,8 @@ type AbcdConfig = {
 const CACHE_CONTROL = "no-store";
 const LOW_ROTATION_DAYS_THRESHOLD = 45;
 const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
+const ROTATION_ABCD_CACHE_TTL_MS = 5 * 60 * 1000;
+const ROTATION_LINEAS_N1_CACHE_TTL_MS = 3 * 60 * 1000;
 const MAX_ROTATION_RANGE_DAYS = 93;
 const MAX_SALES_THRESHOLD = 200000;
 const FUTURE_STOCKOUT_DAYS = 7;
@@ -93,6 +95,11 @@ let availableBoundsCache:
 let rotationFilterCatalogCache:
   | { maxDate: string; value: RotationFilterCatalog; expiresAt: number }
   | null = null;
+let abcdConfigCache: { value: AbcdConfig; expiresAt: number } | null = null;
+const lineasN1ByRangeCache = new Map<
+  string,
+  { value: string[]; expiresAt: number }
+>();
 
 const isIsoDate = (value: string | null) =>
   Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
@@ -265,6 +272,11 @@ const ensureRotacionAbcdConfigTable = async () => {
 };
 
 const getRotacionAbcdConfig = async (): Promise<AbcdConfig> => {
+  const now = Date.now();
+  if (abcdConfigCache && abcdConfigCache.expiresAt > now) {
+    return abcdConfigCache.value;
+  }
+
   try {
     await ensureRotacionAbcdConfigTable();
   } catch {
@@ -292,8 +304,14 @@ const getRotacionAbcdConfig = async (): Promise<AbcdConfig> => {
         }
       | undefined;
 
-    if (!row) return DEFAULT_ABCD_CONFIG;
-    return normalizeAbcdConfig({
+    if (!row) {
+      abcdConfigCache = {
+        value: DEFAULT_ABCD_CONFIG,
+        expiresAt: now + ROTATION_ABCD_CACHE_TTL_MS,
+      };
+      return DEFAULT_ABCD_CONFIG;
+    }
+    const normalized = normalizeAbcdConfig({
       aUntilPercent:
         row.a_until_percent == null ? undefined : Number(row.a_until_percent),
       bUntilPercent:
@@ -301,6 +319,11 @@ const getRotacionAbcdConfig = async (): Promise<AbcdConfig> => {
       cUntilPercent:
         row.c_until_percent == null ? undefined : Number(row.c_until_percent),
     });
+    abcdConfigCache = {
+      value: normalized,
+      expiresAt: now + ROTATION_ABCD_CACHE_TTL_MS,
+    };
+    return normalized;
   } finally {
     client.release();
   }
@@ -340,6 +363,10 @@ const saveRotacionAbcdConfig = async (
         updatedBy,
       ],
     );
+    abcdConfigCache = {
+      value: normalized,
+      expiresAt: Date.now() + ROTATION_ABCD_CACHE_TTL_MS,
+    };
     return normalized;
   } finally {
     client.release();
@@ -444,6 +471,13 @@ const queryRotationLineasN1 = async ({
   empresa: string | null;
   sedeId: string;
 }) => {
+  const cacheKey = `${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
+  const now = Date.now();
+  const cached = lineasN1ByRangeCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
   const client = await (await getDbPool()).connect();
   try {
     const result = await client.query(
@@ -461,9 +495,18 @@ const queryRotationLineasN1 = async ({
       [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
     );
 
-    return ((result.rows ?? []) as Array<{ linea_n1_codigo: string | null }>)
+    const value = ((result.rows ?? []) as Array<{ linea_n1_codigo: string | null }>)
       .map((row) => String(row.linea_n1_codigo ?? "__sin_n1__"))
       .filter(Boolean);
+
+    if (lineasN1ByRangeCache.size > 500) {
+      lineasN1ByRangeCache.clear();
+    }
+    lineasN1ByRangeCache.set(cacheKey, {
+      value,
+      expiresAt: now + ROTATION_LINEAS_N1_CACHE_TTL_MS,
+    });
+    return value;
   } finally {
     client.release();
   }

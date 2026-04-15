@@ -7,7 +7,12 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
-import type { ComparisonRow } from "@/lib/horarios-comparar-utils";
+import {
+  HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN,
+  HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN,
+  HORARIOS_COMPARAR_TARDE_MAX_MIN,
+  type ComparisonRow,
+} from "@/lib/horarios-comparar-utils";
 import {
   DEFAULT_LUNES_SCHEDULE_PRESETS,
   planMatchesLunesPreset,
@@ -36,6 +41,24 @@ function statusLabel(status: ComparisonRow["status"]): string {
     case "no_cumplio":
       return "No cumplió";
   }
+}
+
+function isEntradaOutOfPolicy(diff: number | null): boolean {
+  if (diff === null) return false;
+  return (
+    diff < -HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN ||
+    diff > HORARIOS_COMPARAR_TARDE_MAX_MIN
+  );
+}
+
+function isIntermediaOutOfPolicy(diff: number | null): boolean {
+  if (diff === null) return false;
+  return diff > HORARIOS_COMPARAR_TARDE_MAX_MIN;
+}
+
+function isSalidaOutOfPolicy(diff: number | null): boolean {
+  if (diff === null) return false;
+  return diff > HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN;
 }
 
 function defaultDateRange() {
@@ -89,6 +112,9 @@ export default function HorariosCompararPage() {
   const [employeeNameFilter, setEmployeeNameFilter] = useState("");
   const [estadoFilter, setEstadoFilter] = useState<EstadoFilter>("all");
   const [scheduleFilter, setScheduleFilter] = useState<string>(ALL_SCHEDULE_FILTER);
+  const [hoveredNoCumplioKey, setHoveredNoCumplioKey] = useState<string | null>(
+    null,
+  );
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
 
@@ -535,7 +561,7 @@ export default function HorariosCompararPage() {
               className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
             />
           </label>
-          <label className="flex min-w-[12rem] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+          <label className="flex min-w-48 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
             Sede
             <select
               value={sede}
@@ -701,7 +727,7 @@ export default function HorariosCompararPage() {
               >
                 Anterior
               </button>
-              <span className="min-w-[8.5rem] text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <span className="min-w-34 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Pagina {currentPage} de {totalPages}
               </span>
               <button
@@ -780,11 +806,26 @@ export default function HorariosCompararPage() {
               ) : (
                 paginatedRows.map((r, idx) => {
                   const globalIdx = pageStartIdx + idx;
+                  const rowKey = `${r.workedDate}-${r.sede}-${r.employeeName}-${r.planillaId}-${globalIdx}`;
                   const rowTint =
                     globalIdx % 2 === 0 ? "bg-white" : "bg-slate-50/80";
+                  const highlightNoCumplioFields =
+                    r.status === "no_cumplio" && hoveredNoCumplioKey === rowKey;
+                  const highlightEntrada =
+                    highlightNoCumplioFields &&
+                    isEntradaOutOfPolicy(r.diffMin.entrada);
+                  const highlightIntermedia1 =
+                    highlightNoCumplioFields &&
+                    isIntermediaOutOfPolicy(r.diffMin.intermedia1);
+                  const highlightIntermedia2 =
+                    highlightNoCumplioFields &&
+                    isIntermediaOutOfPolicy(r.diffMin.intermedia2);
+                  const highlightSalida =
+                    highlightNoCumplioFields &&
+                    isSalidaOutOfPolicy(r.diffMin.salida);
                   return (
                   <tr
-                    key={`${r.workedDate}-${r.sede}-${r.employeeName}-${r.planillaId}-${globalIdx}`}
+                    key={rowKey}
                   >
                     <td
                       className={`border border-slate-200 px-2 py-1.5 whitespace-nowrap text-slate-800 ${rowTint}`}
@@ -807,6 +848,12 @@ export default function HorariosCompararPage() {
                             ? "bg-emerald-100 text-emerald-900"
                             : "bg-rose-100 text-rose-900"
                         }`}
+                        onMouseEnter={() => {
+                          if (r.status === "no_cumplio") setHoveredNoCumplioKey(rowKey);
+                        }}
+                        onMouseLeave={() => {
+                          if (r.status === "no_cumplio") setHoveredNoCumplioKey(null);
+                        }}
                       >
                         {statusLabel(r.status)}
                       </span>
@@ -835,16 +882,40 @@ export default function HorariosCompararPage() {
                     <td className="border border-emerald-200/80 bg-emerald-50 px-1 py-1.5 text-center text-slate-800">
                       {r.attendance?.horaSalida || "—"}
                     </td>
-                    <td className="border border-violet-200/80 bg-violet-50/90 px-1 py-1.5 text-center font-medium text-slate-800">
+                    <td
+                      className={`border px-1 py-1.5 text-center font-medium ${
+                        highlightEntrada
+                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
+                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
+                      }`}
+                    >
                       {formatDiff(r.diffMin.entrada)}
                     </td>
-                    <td className="border border-violet-200/80 bg-violet-50/90 px-1 py-1.5 text-center font-medium text-slate-800">
+                    <td
+                      className={`border px-1 py-1.5 text-center font-medium ${
+                        highlightIntermedia1
+                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
+                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
+                      }`}
+                    >
                       {formatDiff(r.diffMin.intermedia1)}
                     </td>
-                    <td className="border border-violet-200/80 bg-violet-50/90 px-1 py-1.5 text-center font-medium text-slate-800">
+                    <td
+                      className={`border px-1 py-1.5 text-center font-medium ${
+                        highlightIntermedia2
+                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
+                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
+                      }`}
+                    >
                       {formatDiff(r.diffMin.intermedia2)}
                     </td>
-                    <td className="border border-violet-200/80 bg-violet-50/90 px-1 py-1.5 text-center font-medium text-slate-800">
+                    <td
+                      className={`border px-1 py-1.5 text-center font-medium ${
+                        highlightSalida
+                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
+                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
+                      }`}
+                    >
                       {formatDiff(r.diffMin.salida)}
                     </td>
                   </tr>
