@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/portal-sections";
-import { canAccessRotacionBoard } from "@/lib/special-role-features";
+import {
+  canAccessRotacionBoard,
+  canEditRotacionAbcdConfig,
+} from "@/lib/special-role-features";
 
 type AvailableBoundsRow = {
   min_date: string | null;
@@ -30,6 +33,7 @@ type RotationDbRow = {
   inventory_value: string | number | null;
   rotation: string | number | null;
   tracked_days: number | string | null;
+  sales_effective_days: number | string | null;
   last_movement_date: string | null;
   effective_days: number | string | null;
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
@@ -50,6 +54,7 @@ type RotationRow = {
   inventoryValue: number;
   rotation: number;
   trackedDays: number;
+  salesEffectiveDays: number;
   lastMovementDate: string | null;
   effectiveDays: number | null;
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
@@ -77,7 +82,6 @@ const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
 const ROTATION_ABCD_CACHE_TTL_MS = 5 * 60 * 1000;
 const ROTATION_LINEAS_N1_CACHE_TTL_MS = 3 * 60 * 1000;
 const MAX_ROTATION_RANGE_DAYS = 93;
-const MAX_SALES_THRESHOLD = 200000;
 const FUTURE_STOCKOUT_DAYS = 7;
 const HIDDEN_SEDE_KEYS = new Set([
   "adm",
@@ -233,8 +237,8 @@ const parsePositiveNumber = (value: string | null) => {
 };
 
 const clampSalesThreshold = (value: number | null) => {
-  if (value === null) return MAX_SALES_THRESHOLD;
-  return Math.max(0, Math.min(value, MAX_SALES_THRESHOLD));
+  if (value === null) return null;
+  return Math.max(0, value);
 };
 
 const normalizeAbcdConfig = (
@@ -521,15 +525,13 @@ const queryRotationRows = async ({
   empresa,
   sedeId,
   lineasN1,
-  periodDays,
 }: {
   startDate: string;
   endDate: string;
-  maxSalesValue: number;
+  maxSalesValue: number | null;
   empresa: string | null;
   sedeId: string | null;
   lineasN1: string[] | null;
-  periodDays: number;
 }): Promise<RotationRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
@@ -587,7 +589,8 @@ const queryRotationRows = async ({
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value,
-          COUNT(*)::int AS tracked_days
+          COUNT(*)::int AS tracked_days,
+          SUM(CASE WHEN unidades_vendidas > 0 THEN 1 ELSE 0 END)::int AS sales_effective_days
         FROM ranked
         GROUP BY
           empresa,
@@ -614,18 +617,19 @@ const queryRotationRows = async ({
           COALESCE(inventory_units, 0) AS inventory_units,
           COALESCE(inventory_value, 0) AS inventory_value,
           tracked_days,
+          sales_effective_days,
           last_movement_date,
           CASE
             WHEN COALESCE(inventory_units, 0) <= 0 OR COALESCE(inventory_value, 0) <= 0 THEN 0::numeric
-            WHEN COALESCE(total_units, 0) <= 0 THEN 999999::numeric
-            ELSE (COALESCE(inventory_units, 0) * $10::numeric) / NULLIF(total_units, 0)
+            WHEN COALESCE(total_units, 0) <= 0 OR COALESCE(tracked_days, 0) <= 0 THEN 999999::numeric
+            ELSE (COALESCE(inventory_units, 0) * tracked_days::numeric) / NULLIF(total_units, 0)
           END AS rotation,
           CASE
             WHEN last_movement_date IS NULL THEN NULL
             ELSE ($3::date - last_movement_date)
           END::int AS effective_days
         FROM aggregated
-        WHERE total_sales <= $4::numeric
+        WHERE $4::numeric IS NULL OR total_sales <= $4::numeric
       ),
       classified AS (
         SELECT
@@ -643,6 +647,7 @@ const queryRotationRows = async ({
           inventory_value,
           rotation,
           tracked_days,
+          sales_effective_days,
           last_movement_date,
           effective_days,
           CASE
@@ -672,6 +677,7 @@ const queryRotationRows = async ({
         inventory_value,
         rotation,
         tracked_days,
+        sales_effective_days,
         TO_CHAR(last_movement_date, 'YYYY-MM-DD') AS last_movement_date,
         effective_days,
         status
@@ -693,7 +699,6 @@ const queryRotationRows = async ({
         lineasN1,
         FUTURE_STOCKOUT_DAYS,
         LOW_ROTATION_DAYS_THRESHOLD,
-        periodDays,
       ],
     );
 
@@ -713,6 +718,7 @@ const queryRotationRows = async ({
         inventoryValue: toNumber(row.inventory_value),
         rotation: toNumber(row.rotation),
         trackedDays: toNumber(row.tracked_days),
+        salesEffectiveDays: toNumber(row.sales_effective_days),
         lastMovementDate: row.last_movement_date,
         effectiveDays:
           row.effective_days === null || row.effective_days === undefined
@@ -791,7 +797,7 @@ export async function GET(request: Request) {
               effectiveRange: { start: "", end: "" },
               availableRange: { min: "", max: "" },
               sourceTable: "rotacion_base_item_dia_sede",
-              maxSalesValue: MAX_SALES_THRESHOLD,
+              maxSalesValue: null,
               abcdConfig,
             },
             message: "La tabla de rotacion no tiene datos disponibles.",
@@ -951,14 +957,6 @@ export async function GET(request: Request) {
       empresa: effectiveCompany,
       sedeId: requestedVisibleSede?.sedeId ?? null,
       lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
-      periodDays: Math.max(
-        1,
-        Math.floor(
-          (new Date(`${boundedRange.end}T12:00:00`).getTime() -
-            new Date(`${boundedRange.start}T12:00:00`).getTime()) /
-            (24 * 60 * 60 * 1000),
-        ) + 1,
-      ),
     });
 
     const stats = {
@@ -1011,7 +1009,7 @@ export async function GET(request: Request) {
             effectiveRange: { start: "", end: "" },
             availableRange: { min: "", max: "" },
             sourceTable: "rotacion_base_item_dia_sede",
-            maxSalesValue: MAX_SALES_THRESHOLD,
+            maxSalesValue: null,
             abcdConfig: DEFAULT_ABCD_CONFIG,
           },
           error: "No fue posible consultar la rotacion en este momento.",
@@ -1046,10 +1044,18 @@ export async function PUT(request: Request) {
     return response;
   };
 
-  if (session.user.role !== "admin") {
+  if (
+    !canEditRotacionAbcdConfig(
+      session.user.specialRoles,
+      session.user.role === "admin",
+    )
+  ) {
     return withSession(
       NextResponse.json(
-        { error: "Solo administradores pueden actualizar esta configuracion." },
+        {
+          error:
+            "No tienes permiso para actualizar esta configuracion (rol ABCD o administrador).",
+        },
         { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );

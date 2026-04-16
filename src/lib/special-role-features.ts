@@ -6,10 +6,13 @@
 export const LUNES_SCHEDULE_SYNC_SPECIAL_ROLES = ["replicar_lunes"] as const;
 export const ROTACION_SPECIAL_ROLES = ["rotacion"] as const;
 export const COMPARAR_HORARIOS_SPECIAL_ROLES = ["comparar_horarios"] as const;
+/** Editar umbrales ABCD en Rotacion (modal de configuracion). */
+export const ROTACION_ABCD_CONFIG_SPECIAL_ROLES = ["abcd"] as const;
 
 const LUNES_SYNC_SET = new Set<string>(LUNES_SCHEDULE_SYNC_SPECIAL_ROLES);
 const ROTACION_SET = new Set<string>(ROTACION_SPECIAL_ROLES);
 const COMPARAR_HORARIOS_SET = new Set<string>(COMPARAR_HORARIOS_SPECIAL_ROLES);
+const ROTACION_ABCD_CONFIG_SET = new Set<string>(ROTACION_ABCD_CONFIG_SPECIAL_ROLES);
 
 /**
  * Puede usar "Mismo horario que lunes" en Ingresar horarios.
@@ -48,4 +51,17 @@ export function canAccessHorariosCompararBoard(
   if (isAdmin) return true;
   if (!specialRoles?.length) return false;
   return specialRoles.some((r) => COMPARAR_HORARIOS_SET.has(r.trim().toLowerCase()));
+}
+
+/**
+ * Puede editar la configuracion ABCD (umbrales) en Rotacion.
+ * Los administradores lo tienen siempre; el resto necesita el rol especial `abcd`.
+ */
+export function canEditRotacionAbcdConfig(
+  specialRoles: string[] | null | undefined,
+  isAdmin = false,
+): boolean {
+  if (isAdmin) return true;
+  if (!specialRoles?.length) return false;
+  return specialRoles.some((r) => ROTACION_ABCD_CONFIG_SET.has(r.trim().toLowerCase()));
 }

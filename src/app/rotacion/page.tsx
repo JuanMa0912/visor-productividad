@@ -22,8 +22,7 @@ import {
   Filter,
   MapPin,
   PackageSearch,
-  Store,
-  TrendingDown,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,7 +42,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { canAccessPortalSection } from "@/lib/portal-sections";
-import { canAccessRotacionBoard } from "@/lib/special-role-features";
+import {
+  canAccessRotacionBoard,
+  canEditRotacionAbcdConfig,
+} from "@/lib/special-role-features";
 import { formatDateLabel } from "@/lib/utils";
 
 type DateRange = {
@@ -66,6 +68,7 @@ type RotationRow = {
   inventoryValue: number;
   rotation: number;
   trackedDays: number;
+  salesEffectiveDays: number;
   lastMovementDate: string | null;
   effectiveDays: number | null;
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
@@ -107,6 +110,8 @@ type LineaN1Option = {
   label: string;
 };
 
+type LineaN1FamilyFilter = "all" | "perecederos" | "manufacturas";
+
 type AbcdConfig = {
   aUntilPercent: number;
   bUntilPercent: number;
@@ -130,8 +135,8 @@ type RotationSortDirection = "asc" | "desc";
 type PageSize = 25 | 50 | 100;
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const MAX_SALES_THRESHOLD = 200000;
 const NO_SALES_DI_VALUE = 999999;
+const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
 const DEFAULT_ABCD_CONFIG: AbcdConfig = {
   aUntilPercent: 70,
   bUntilPercent: 85,
@@ -183,12 +188,6 @@ const getRollingMonthBackRange = (
 };
 
 const sanitizeNumericInput = (value: string) => value.replace(/\D/g, "");
-
-const sanitizeSalesThresholdInput = (value: string) => {
-  const normalized = sanitizeNumericInput(value);
-  if (!normalized) return "";
-  return String(Math.min(Number(normalized), MAX_SALES_THRESHOLD));
-};
 
 const normalizeDateRange = (
   current: DateRange,
@@ -399,6 +398,18 @@ const buildAbcdCategoryByItem = (
   return categories;
 };
 
+const countAbcdItemsByCategory = (
+  rows: RotationRow[],
+  categoryByItem: Map<string, AbcdCategory>,
+): Record<AbcdCategory, number> => {
+  const counts: Record<AbcdCategory, number> = { A: 0, B: 0, C: 0, D: 0 };
+  for (const row of rows) {
+    const cat = categoryByItem.get(row.item) ?? "D";
+    counts[cat]++;
+  }
+  return counts;
+};
+
 const compareNullableIsoDateKeys = (
   left: string | null,
   right: string | null,
@@ -560,37 +571,6 @@ const parseSedeSelection = (value: string) => {
   return { empresa, sedeId };
 };
 
-type StatCardProps = {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  description: string;
-  iconClassName: string;
-};
-
-const StatCard = ({
-  icon: Icon,
-  label,
-  value,
-  description,
-  iconClassName,
-}: StatCardProps) => (
-  <Card className="border-slate-200/80 bg-white/95 shadow-[0_22px_45px_-40px_rgba(15,23,42,0.45)]">
-    <CardContent className="flex items-start justify-between gap-4 px-5 py-5">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          {label}
-        </p>
-        <p className="mt-2 text-3xl font-black text-slate-900">{value}</p>
-        <p className="mt-2 text-sm text-slate-600">{description}</p>
-      </div>
-      <div className={`rounded-2xl p-3 ${iconClassName}`}>
-        <Icon className="h-5 w-5" />
-      </div>
-    </CardContent>
-  </Card>
-);
-
 type SortableRotationHeaderProps = {
   field: RotationSortField;
   label: React.ReactNode;
@@ -704,13 +684,14 @@ export default function RotacionPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
+  const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedSede, setSelectedSede] = useState("");
-  const [salesThreshold, setSalesThreshold] = useState(
-    String(MAX_SALES_THRESHOLD),
-  );
+  const [lineaN1FamilyFilter, setLineaN1FamilyFilter] =
+    useState<LineaN1FamilyFilter>("all");
   const [dateRange, setDateRange] = useState<DateRange>({ start: "", end: "" });
   const [availableRange, setAvailableRange] = useState<DateRange>({
     start: "",
@@ -786,6 +767,7 @@ export default function RotacionPage() {
         };
         const isAdmin = payload.user?.role === "admin";
         setIsAdmin(Boolean(isAdmin));
+        setSpecialRoles(payload.user?.specialRoles ?? null);
         if (
           !isAdmin &&
           !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
@@ -810,6 +792,11 @@ export default function RotacionPage() {
       controller.abort();
     };
   }, [router]);
+
+  const canEditAbcdConfig = useMemo(
+    () => canEditRotacionAbcdConfig(specialRoles, isAdmin),
+    [specialRoles, isAdmin],
+  );
 
   useEffect(() => {
     if (!ready) return;
@@ -994,9 +981,6 @@ export default function RotacionPage() {
     () => formatRangeLabel(dateRange),
     [dateRange],
   );
-  const parsedThreshold = salesThreshold
-    ? Number(salesThreshold)
-    : MAX_SALES_THRESHOLD;
   const companyOptions = useMemo(
     () =>
       [...filterCatalog.companies]
@@ -1048,18 +1032,29 @@ export default function RotacionPage() {
   const lineaN1Options = useMemo<LineaN1Option[]>(
     () =>
       [...filterCatalog.lineasN1]
+        .filter((value) => {
+          if (lineaN1FamilyFilter === "all") return true;
+          const isPerecedero = PERECEDEROS_LINEAS_N1.has(value);
+          return lineaN1FamilyFilter === "perecederos"
+            ? isPerecedero
+            : !isPerecedero;
+        })
         .map((value) => ({
           value,
           label: value === "__sin_n1__" ? "Sin N1" : `N1 ${value}`,
         }))
         .sort((a, b) => a.label.localeCompare(b.label, "es")),
-    [filterCatalog.lineasN1],
+    [filterCatalog.lineasN1, lineaN1FamilyFilter],
   );
 
   const selectedLineaN1Set = useMemo(
     () => new Set(selectedLineaN1Values),
     [selectedLineaN1Values],
   );
+
+  useEffect(() => {
+    setSelectedLineaN1Values(lineaN1Options.map((option) => option.value));
+  }, [lineaN1FamilyFilter, lineaN1Options]);
 
   useEffect(() => {
     if (!selectedSede) return;
@@ -1073,17 +1068,6 @@ export default function RotacionPage() {
     [rows, tableSortDirection, tableSortField],
   );
   const rowsBySede = useMemo(() => buildRowsBySede(sortedRows), [sortedRows]);
-  const visibleStats = useMemo(
-    () => ({
-      evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,
-      visibleItems: rows.length,
-    }),
-    [rows],
-  );
-
-  const handleValueChange = (value: string) => {
-    setSalesThreshold(sanitizeSalesThresholdInput(value));
-  };
 
   const handleStartDateChange = (value: string) => {
     if (!value) return;
@@ -1121,9 +1105,6 @@ export default function RotacionPage() {
         params.set("empresa", effectiveCompany);
       }
       params.set("sede", selectedSedeMeta.sedeId);
-      if (salesThreshold) {
-        params.set("maxSalesValue", salesThreshold);
-      }
       selectedLineaN1Values.forEach((linea) => {
         params.append("lineasN1", linea);
       });
@@ -1160,7 +1141,7 @@ export default function RotacionPage() {
   };
 
   const handleSaveAbcdConfig = async () => {
-    if (!isAdmin || isSavingAbcdConfig) return;
+    if (!canEditAbcdConfig || isSavingAbcdConfig) return;
     setIsSavingAbcdConfig(true);
     setError(null);
     try {
@@ -1182,6 +1163,7 @@ export default function RotacionPage() {
       const saved = normalizeAbcdConfig(payload.config ?? normalized);
       setAbcdConfig(saved);
       setAbcdDraftConfig(saved);
+      setIsAbcdModalOpen(false);
     } catch (err) {
       setError(
         err instanceof Error
@@ -1285,6 +1267,7 @@ export default function RotacionPage() {
           unidad: row.unidad ?? "",
           valorInventario: row.inventoryValue,
           rotacion: formatRotationOneDecimal(row.rotation),
+          formulaDiDetalle: `${row.trackedDays.toLocaleString("es-CO")} / ${row.salesEffectiveDays.toLocaleString("es-CO")}`,
           ultimoIngreso: row.lastMovementDate
             ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
             : "Sin fecha de ingreso",
@@ -1319,6 +1302,7 @@ export default function RotacionPage() {
         "Unidad",
         "Valor inventario",
         "DI (dias inv.)",
+        "Dia inventario efectivo / Dia venta efectivo",
         "Ultimo ingreso",
       ]],
       body: exportRows.map((row) => [
@@ -1331,6 +1315,7 @@ export default function RotacionPage() {
         row.unidad,
         formatPrice(row.valorInventario),
         row.rotacion,
+        row.formulaDiDetalle,
         row.ultimoIngreso,
       ]),
       margin: { left: 8, right: 8 },
@@ -1354,6 +1339,7 @@ export default function RotacionPage() {
         { header: "Unidad", key: "unidad", width: 10 },
         { header: "Valor inventario", key: "valorInventario", width: 16 },
         { header: "DI (dias inv.)", key: "rotacion", width: 14 },
+        { header: "Dia inventario efectivo / Dia venta efectivo", key: "formulaDiDetalle", width: 30 },
         { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
       ];
       sheet.addRows(exportRows);
@@ -1514,38 +1500,53 @@ export default function RotacionPage() {
                   consultado.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  asChild
-                  variant="outline"
-                  className="rounded-full border-slate-200 bg-white/90 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 hover:bg-slate-50"
-                >
-                  <Link href="/productividad">
-                    <ArrowLeft className="h-4 w-4" />
-                    Volver a producto
-                  </Link>
-                </Button>
-                <Button
-                  asChild
-                  className="rounded-full bg-amber-600 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-white hover:bg-amber-700"
-                >
-                  <Link href="/secciones">Cambiar seccion</Link>
-                </Button>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="rounded-full border-slate-200 bg-white/90 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 hover:bg-slate-50"
+                  >
+                    <Link href="/productividad">
+                      <ArrowLeft className="h-4 w-4" />
+                      Volver a producto
+                    </Link>
+                  </Button>
+                  <Button
+                    asChild
+                    className="rounded-full bg-amber-600 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-white hover:bg-amber-700"
+                  >
+                    <Link href="/secciones">Cambiar seccion</Link>
+                  </Button>
+                </div>
+                {canEditAbcdConfig ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full rounded-full border-emerald-300 bg-emerald-50/90 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 hover:bg-emerald-100 sm:w-auto"
+                    onClick={() => {
+                      setAbcdDraftConfig(abcdConfig);
+                      setIsAbcdModalOpen(true);
+                    }}
+                  >
+                    Configurar ABCD
+                  </Button>
+                ) : null}
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,1fr)]">
-          <Card className="border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+        <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,1fr)]">
+          <Card className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-slate-900">
                 <Filter className="h-5 w-5 text-amber-600" />
                 Filtros principales
               </CardTitle>
               <CardDescription>
-                Selecciona empresa y sede; el umbral de venta se define en el
-                periodo de consulta.
+                Selecciona empresa y sede. Para acotar por venta del periodo
+                usa el boton Venta ≤ en la tabla.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1589,6 +1590,23 @@ export default function RotacionPage() {
                   }
                   accentClassName="text-sky-700"
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <FilterSelectField
+                  icon={Filter}
+                  label="Familia de lineas"
+                  value={lineaN1FamilyFilter}
+                  options={[
+                    { value: "perecederos", label: "Perecederos" },
+                    { value: "manufacturas", label: "Manufacturas" },
+                  ]}
+                  onChange={(value) =>
+                    setLineaN1FamilyFilter(value as LineaN1FamilyFilter)
+                  }
+                  allLabel="Todas"
+                  accentClassName="text-violet-700"
+                  disabled={isLoadingLineCatalog && filterCatalog.lineasN1.length === 0}
                 />
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
@@ -1670,83 +1688,6 @@ export default function RotacionPage() {
                   )}
                 </div>
               </div>
-              {isAdmin && (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-800">
-                      Clasificacion ABCD (editable)
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void handleSaveAbcdConfig()}
-                      disabled={isSavingAbcdConfig}
-                      className="h-8 rounded-lg bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
-                    >
-                      {isSavingAbcdConfig ? "Guardando..." : "Guardar ABCD"}
-                    </Button>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-3">
-                    <label className="text-xs font-semibold text-emerald-900">
-                      A hasta %
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={abcdDraftConfig.aUntilPercent}
-                        onChange={(event) =>
-                          setAbcdDraftConfig((prev) =>
-                            normalizeAbcdConfig({
-                              ...prev,
-                              aUntilPercent: Number(event.target.value || 0),
-                            }),
-                          )
-                        }
-                        className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      />
-                    </label>
-                    <label className="text-xs font-semibold text-emerald-900">
-                      B hasta %
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={abcdDraftConfig.bUntilPercent}
-                        onChange={(event) =>
-                          setAbcdDraftConfig((prev) =>
-                            normalizeAbcdConfig({
-                              ...prev,
-                              bUntilPercent: Number(event.target.value || 0),
-                            }),
-                          )
-                        }
-                        className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      />
-                    </label>
-                    <label className="text-xs font-semibold text-emerald-900">
-                      C hasta %
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={abcdDraftConfig.cUntilPercent}
-                        onChange={(event) =>
-                          setAbcdDraftConfig((prev) =>
-                            normalizeAbcdConfig({
-                              ...prev,
-                              cUntilPercent: Number(event.target.value || 0),
-                            }),
-                          )
-                        }
-                        className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      />
-                    </label>
-                  </div>
-                  <p className="mt-2 text-xs text-emerald-900/90">
-                    D siempre va hasta 100%.
-                  </p>
-                </div>
-              )}
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
                   {selectedCompany
@@ -1760,10 +1701,14 @@ export default function RotacionPage() {
                       : (selectedSedeMeta?.label ?? selectedSede)
                     : "Todas las sedes"}
                 </Badge>
-                <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                  Venta ≤ {formatPrice(parsedThreshold)}
-                </Badge>
                 <Badge className="border-violet-200 bg-violet-50 text-violet-700">
+                  {lineaN1FamilyFilter === "all"
+                    ? "Todas las familias"
+                    : lineaN1FamilyFilter === "perecederos"
+                      ? "Perecederos"
+                      : "Manufacturas"}
+                </Badge>
+                <Badge className="border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700">
                   {lineaN1Options.length === 0
                     ? "N1 sin datos"
                     : selectedLineaN1Values.length === lineaN1Options.length
@@ -1774,7 +1719,7 @@ export default function RotacionPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+          <Card className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-slate-900">
                 <CalendarDays className="h-5 w-5 text-amber-600" />
@@ -1783,7 +1728,7 @@ export default function RotacionPage() {
               <CardDescription>
                 Elige primero las fechas: por defecto el periodo es desde el
                 mismo dia del mes anterior hasta hoy (dentro de los datos
-                disponibles). Luego ajusta la venta maxima del periodo.
+                disponibles).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1830,27 +1775,6 @@ export default function RotacionPage() {
                 </label>
               </div>
 
-              <label className="block">
-                <FilterFieldLabel
-                  icon={Filter}
-                  label="Venta maxima del periodo"
-                  accentClassName="text-slate-500"
-                />
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={salesThreshold}
-                  onChange={(event) => handleValueChange(event.target.value)}
-                  placeholder="Maximo 200000"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
-                />
-              </label>
-              <p className="text-xs leading-5 text-slate-500">
-                Solo números enteros, sin puntos ni comas. El filtro usa la venta
-                acumulada del producto dentro del rango seleccionado y se limita
-                a un máximo de 200.000.
-              </p>
-
               {availableRange.start && availableRange.end && (
                 <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-900">
                   Datos disponibles entre{" "}
@@ -1866,23 +1790,6 @@ export default function RotacionPage() {
               )}
             </CardContent>
           </Card>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2">
-          <StatCard
-            icon={Store}
-            label="Sedes evaluadas"
-            value={String(visibleStats.evaluatedSedes)}
-            description="Sedes visibles con inventario dentro de los filtros actuales."
-            iconClassName="bg-amber-100 text-amber-700"
-          />
-          <StatCard
-            icon={TrendingDown}
-            label="Items visibles"
-            value={String(visibleStats.visibleItems)}
-            description="Referencias mostradas con datos reales del rango consultado."
-            iconClassName="bg-sky-100 text-sky-700"
-          />
         </section>
 
         {error ? (
@@ -1955,13 +1862,13 @@ export default function RotacionPage() {
                 Sin resultados para los filtros actuales
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                No encontramos items cuya venta del período esté dentro del
-                umbral actual en{" "}
+                No encontramos items para los filtros actuales en{" "}
                 <span className="font-semibold text-slate-800">
                   rotacion_base_item_dia_sede
                 </span>
-                . Ajusta el rango o sube el tope de venta para ampliar la
-                lectura.
+                . Ajusta el rango de fechas o usa el boton{" "}
+                <span className="font-semibold">Venta ≤</span> en la tabla para
+                filtrar por debajo de un valor.
               </p>
             </CardContent>
           </Card>
@@ -2072,9 +1979,6 @@ export default function RotacionPage() {
               className="grid gap-5 bg-white p-2"
             >
             {rowsBySede.map((group) => {
-              const lowRotation = group.rows.filter(
-                (row) => row.status === "Baja rotacion",
-              ).length;
               const groupKey = `${group.empresa}-${group.sedeId}`;
               const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
               const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
@@ -2091,15 +1995,21 @@ export default function RotacionPage() {
                 filteredRows,
                 abcdConfig,
               );
+              const abcdCounts = countAbcdItemsByCategory(
+                filteredRows,
+                categoryByItem,
+              );
+              const categoryLineTotalItems = filteredRows.length;
+              const categoryLineTotalInv = filteredRows.reduce(
+                (acc, row) => acc + row.inventoryValue,
+                0,
+              );
               const categoryFilteredRows =
                 categoryFilter === "all"
                   ? filteredRows
                   : filteredRows.filter(
                       (row) => categoryByItem.get(row.item) === categoryFilter,
                     );
-              const categoryFilteredLowRotation = categoryFilteredRows.filter(
-                (row) => row.status === "Baja rotacion",
-              ).length;
               const categoryFilteredCeroRotacionCount = categoryFilteredRows.filter(
                 (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
               ).length;
@@ -2113,11 +2023,6 @@ export default function RotacionPage() {
                   : categoryFilteredRows.filter(
                       (row) => row.totalSales <= ventaHastaParsedPreview,
                     ).length;
-              const totalItemsCount = categoryFilteredRows.length;
-              const totalInventoryValue = categoryFilteredRows.reduce(
-                (acc, row) => acc + row.inventoryValue,
-                0,
-              );
               const ceroRotacionCount = group.rows.filter(
                 (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
               ).length;
@@ -2144,139 +2049,175 @@ export default function RotacionPage() {
                     className="border-b border-slate-100 bg-slate-50/70"
                     {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <CardTitle className="text-2xl font-black text-slate-900">
-                          {group.sedeName}
-                        </CardTitle>
-                        <CardDescription className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                          Consolidado real por sede usando ventas sin impuesto,
-                          inventario de cierre y ultimo ingreso sobre el rango
-                          seleccionado.
-                        </CardDescription>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
+                    <div className="flex flex-col gap-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Información
+                          </p>
+                          <CardTitle className="text-2xl font-black text-slate-900">
+                            {group.sedeName}
+                          </CardTitle>
+                          <CardDescription className="max-w-2xl text-sm leading-6 text-slate-600">
+                            Consolidado real por sede usando ventas sin impuesto,
+                            inventario de cierre y ultimo ingreso sobre el rango
+                            seleccionado.
+                          </CardDescription>
+                        </div>
+                        <Badge className="shrink-0 border-indigo-200 bg-indigo-50 text-indigo-700">
                           {group.empresa}
                         </Badge>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          title={
-                            rowFilter !== "none"
-                              ? "Items que cumplen el filtro rapido (sobre el total cargado para esta sede)"
-                              : undefined
-                          }
-                        >
-                          {rowFilter === "none"
-                            ? group.rows.length
-                            : filteredRows.length}{" "}
-                          items
-                        </Badge>
-                        <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                          {categoryFilter === "all"
-                            ? lowRotation
-                            : categoryFilteredLowRotation}{" "}
-                          baja rotacion
-                        </Badge>
-                        <Button
-                          type="button"
-                          variant={
-                            rowFilter === "cero_rotacion" ? "default" : "outline"
-                          }
-                          title="Venta del periodo en cero e inventario de cierre mayor que cero"
-                          className={`h-8 rounded-full px-3 text-xs font-semibold ${
-                            rowFilter === "cero_rotacion"
-                              ? "bg-amber-600 text-white hover:bg-amber-700"
-                              : ""
-                          }`}
-                          onClick={() =>
-                            toggleGroupRowsQuickFilter(
-                              groupKey,
-                              "cero_rotacion",
-                            )
-                          }
-                        >
-                          Cero rotacion (
-                          {categoryFilter === "all"
-                            ? ceroRotacionCount
-                            : categoryFilteredCeroRotacionCount}
-                          )
-                        </Button>
-                        <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
-                          <Button
-                            type="button"
-                            variant={
-                              rowFilter === "venta_hasta" ? "default" : "outline"
-                            }
-                            title="Filtrar items con venta del periodo menor o igual al valor ingresado"
-                            className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
-                              rowFilter === "venta_hasta"
-                                ? "bg-emerald-700 text-white hover:bg-emerald-800"
-                                : ""
-                            }`}
-                            onClick={() => applyOrToggleVentaHastaFilter(groupKey)}
-                          >
-                            {rowFilter === "venta_hasta" &&
-                            ventaHastaCapByGroup[groupKey] != null
-                              ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
-                              : ventaHastaPreviewCount != null
-                                ? `Venta ≤ (${ventaHastaPreviewCount})`
-                                : "Venta ≤"}
-                          </Button>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="COP"
-                            aria-label="Tope venta periodo para filtrar"
-                            value={ventaHastaInput}
-                            onChange={(e) =>
-                              setVentaHastaInputByGroup((prev) => ({
-                                ...prev,
-                                [groupKey]: sanitizeNumericInput(
-                                  e.target.value,
-                                ),
-                              }))
-                            }
-                            className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
-                          />
-                        </div>
-                        <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1">
-                          <span className="text-[11px] font-semibold text-slate-600">
-                            ABCD
-                          </span>
-                          <select
-                            value={categoryFilter}
-                            onChange={(event) => {
-                              const nextValue = event.target
-                                .value as GroupAbcdFilter;
-                              setAbcdFilterByGroup((prev) => ({
-                                ...prev,
-                                [groupKey]: nextValue,
-                              }));
-                              setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
-                            }}
-                            className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-800 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
-                          >
-                            <option value="all">Todas</option>
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                            <option value="D">D</option>
-                          </select>
-                        </div>
-                        <div className="flex items-center gap-3 text-sm leading-5 text-slate-600">
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base font-semibold leading-6 text-slate-700">
                           <span className="whitespace-nowrap">
                             Total items:{" "}
-                            <span className="font-semibold text-slate-800">
-                              {totalItemsCount.toLocaleString("es-CO")}
+                            <span className="font-black text-slate-900">
+                              {categoryLineTotalItems.toLocaleString("es-CO")}
                             </span>
                           </span>
                           <span className="whitespace-nowrap">
                             Total inv:{" "}
-                            <span className="font-semibold text-slate-800">
-                              {formatPrice(totalInventoryValue)}
+                            <span className="font-black text-slate-900">
+                              {formatPrice(categoryLineTotalInv)}
                             </span>
                           </span>
+                        </div>
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          Por categoría
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-900">
+                            A: {abcdCounts.A.toLocaleString("es-CO")}
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-900">
+                            B: {abcdCounts.B.toLocaleString("es-CO")}
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-xs font-bold text-orange-900">
+                            C: {abcdCounts.C.toLocaleString("es-CO")}
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-900">
+                            D: {abcdCounts.D.toLocaleString("es-CO")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-200/90 pt-5">
+                        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Filtros y resumen
+                        </p>
+                        <div className="flex flex-col gap-3">
+                          <Badge
+                            className="w-fit border-slate-200 bg-white text-slate-700"
+                            title={
+                              rowFilter !== "none"
+                                ? "Items que cumplen el filtro rapido (sobre el total cargado para esta sede)"
+                                : undefined
+                            }
+                          >
+                            {rowFilter === "none"
+                              ? group.rows.length
+                              : filteredRows.length}{" "}
+                            items
+                          </Badge>
+                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                            <Button
+                              type="button"
+                              variant={
+                                rowFilter === "cero_rotacion"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              title="Venta del periodo en cero e inventario de cierre mayor que cero"
+                              className={`h-8 rounded-full px-3 text-xs font-semibold ${
+                                rowFilter === "cero_rotacion"
+                                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                toggleGroupRowsQuickFilter(
+                                  groupKey,
+                                  "cero_rotacion",
+                                )
+                              }
+                            >
+                              Cero rotacion (
+                              {categoryFilter === "all"
+                                ? ceroRotacionCount
+                                : categoryFilteredCeroRotacionCount}
+                              )
+                            </Button>
+                            <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
+                              <Button
+                                type="button"
+                                variant={
+                                  rowFilter === "venta_hasta"
+                                    ? "default"
+                                    : "outline"
+                                }
+                                title="Filtrar items con venta del periodo menor o igual al valor ingresado"
+                                className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
+                                  rowFilter === "venta_hasta"
+                                    ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                                    : ""
+                                }`}
+                                onClick={() =>
+                                  applyOrToggleVentaHastaFilter(groupKey)
+                                }
+                              >
+                                {rowFilter === "venta_hasta" &&
+                                ventaHastaCapByGroup[groupKey] != null
+                                  ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
+                                  : ventaHastaPreviewCount != null
+                                    ? `Venta ≤ (${ventaHastaPreviewCount})`
+                                    : "Venta ≤"}
+                              </Button>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="COP"
+                                aria-label="Tope venta periodo para filtrar"
+                                value={ventaHastaInput}
+                                onChange={(e) =>
+                                  setVentaHastaInputByGroup((prev) => ({
+                                    ...prev,
+                                    [groupKey]: sanitizeNumericInput(
+                                      e.target.value,
+                                    ),
+                                  }))
+                                }
+                                className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1">
+                              <span className="text-[11px] font-semibold text-slate-600">
+                                ABCD
+                              </span>
+                              <select
+                                value={categoryFilter}
+                                onChange={(event) => {
+                                  const nextValue = event.target
+                                    .value as GroupAbcdFilter;
+                                  setAbcdFilterByGroup((prev) => ({
+                                    ...prev,
+                                    [groupKey]: nextValue,
+                                  }));
+                                  setPageByGroupKey((prev) => ({
+                                    ...prev,
+                                    [groupKey]: 1,
+                                  }));
+                                }}
+                                className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-800 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                              >
+                                <option value="all">Todas</option>
+                                <option value="A">A</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="D">D</option>
+                              </select>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2399,6 +2340,9 @@ export default function RotacionPage() {
                             />
                           </TableHead>
                           <TableHead className="px-4 py-3 whitespace-normal">
+                            Dia inventario efectivo / Dia venta efectivo
+                          </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
                             <SortableRotationHeader
                               field="lastMovementDate"
                               label="Ult. ingreso"
@@ -2466,6 +2410,9 @@ export default function RotacionPage() {
                             <TableCell className="px-4 py-3 text-slate-700">
                               {formatRotationOneDecimal(row.rotation)}
                             </TableCell>
+                            <TableCell className="px-4 py-3 text-xs text-slate-600 whitespace-normal">
+                              {`${row.trackedDays.toLocaleString("es-CO")} / ${row.salesEffectiveDays.toLocaleString("es-CO")}`}
+                            </TableCell>
                             <TableCell className="px-4 py-3 text-slate-700 whitespace-normal">
                               {row.lastMovementDate
                                 ? formatDateLabel(
@@ -2486,6 +2433,113 @@ export default function RotacionPage() {
           </section>
         )}
       </div>
+
+      {isAbcdModalOpen && canEditAbcdConfig ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rotacion-abcd-modal-title"
+          onClick={() => setIsAbcdModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl border border-emerald-200 bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-3 top-3 rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              onClick={() => setIsAbcdModalOpen(false)}
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h2
+              id="rotacion-abcd-modal-title"
+              className="pr-10 text-lg font-bold text-emerald-900"
+            >
+              Clasificacion ABCD
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Umbrales por venta acumulada del periodo (D llega hasta 100%).
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <label className="text-xs font-semibold text-emerald-900">
+                A hasta %
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={abcdDraftConfig.aUntilPercent}
+                  onChange={(event) =>
+                    setAbcdDraftConfig((prev) =>
+                      normalizeAbcdConfig({
+                        ...prev,
+                        aUntilPercent: Number(event.target.value || 0),
+                      }),
+                    )
+                  }
+                  className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+              <label className="text-xs font-semibold text-emerald-900">
+                B hasta %
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={abcdDraftConfig.bUntilPercent}
+                  onChange={(event) =>
+                    setAbcdDraftConfig((prev) =>
+                      normalizeAbcdConfig({
+                        ...prev,
+                        bUntilPercent: Number(event.target.value || 0),
+                      }),
+                    )
+                  }
+                  className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+              <label className="text-xs font-semibold text-emerald-900">
+                C hasta %
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={abcdDraftConfig.cUntilPercent}
+                  onChange={(event) =>
+                    setAbcdDraftConfig((prev) =>
+                      normalizeAbcdConfig({
+                        ...prev,
+                        cUntilPercent: Number(event.target.value || 0),
+                      }),
+                    )
+                  }
+                  className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+            </div>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full"
+                onClick={() => setIsAbcdModalOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="rounded-full bg-emerald-700 text-white hover:bg-emerald-800"
+                disabled={isSavingAbcdConfig}
+                onClick={() => void handleSaveAbcdConfig()}
+              >
+                {isSavingAbcdConfig ? "Guardando..." : "Guardar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

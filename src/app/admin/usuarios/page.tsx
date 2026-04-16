@@ -132,6 +132,7 @@ const SPECIAL_ROLE_OPTIONS = [
   },
   { id: "rotacion", label: "Rotacion" },
   { id: "comparar_horarios", label: "Comparar horarios" },
+  { id: "abcd", label: "ABCD" },
 ];
 
 const formatAllowedLines = (allowedLines: string[] | null) => {
@@ -894,7 +895,9 @@ export default function AdminUsuariosPage() {
                       <p className="mt-1 text-[11px] font-normal leading-snug text-slate-500">
                         Los administradores tienen acceso a Rotacion y Comparar
                         horarios sin activar esos roles; aqui solo aplica a
-                        usuarios con rol user.
+                        usuarios con rol user. El rol ABCD permite editar los
+                        umbrales de clasificacion en Rotacion (administradores
+                        tambien pueden).
                       </p>
                       <div className="mt-1.5 grid max-h-20 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                         {SPECIAL_ROLE_OPTIONS.map((role) => {
