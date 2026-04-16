@@ -108,6 +108,7 @@ type RotationApiResponse = {
 type LineaN1Option = {
   value: string;
   label: string;
+  shortName?: string;
 };
 
 type LineaN1FamilyFilter = "all" | "perecederos" | "manufacturas";
@@ -137,6 +138,56 @@ type PageSize = 25 | 50 | 100;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
+const LINEA_N1_SHORT_NAMES: Record<string, string> = {
+  "01": "Fruver",
+  "02": "Carnes rojas",
+  "03": "Pollo y aves",
+  "04": "Pescados",
+  "05": "Granos",
+  "06": "Bebidas vegetales",
+  "07": "Lacteos",
+  "08": "Aceites",
+  "09": "Nutricion",
+  "10": "Embutidos",
+  "11": "Achocolatados",
+  "12": "Huevos",
+  "13": "Sazonadores",
+  "14": "Cafe",
+  "15": "Pasabocas",
+  "16": "Blanqueadores",
+  "17": "Congelados",
+  "18": "Pastas",
+  "19": "Condimentos",
+  "20": "Bebidas",
+  "21": "Harinas",
+  "22": "Panaderia",
+  "23": "Confiteria",
+  "24": "Snacks",
+  "25": "Conservas",
+  "26": "Salsas",
+  "27": "Aseo hogar",
+  "28": "Empaques hogar",
+  "29": "Desechables",
+  "30": "Insumos internos",
+  "31": "Charcuteria",
+  "32": "No codificados",
+  "33": "Licores",
+  "34": "Antipastos",
+  "36": "Cuidado bebe",
+  "37": "Higiene oral",
+  "38": "Cuidado personal",
+  "39": "Higiene intima",
+  "40": "Cuidado capilar",
+  "41": "Papel higienico",
+  "42": "Botiquin",
+  "43": "Implementos aseo",
+  "44": "Ambientadores",
+  "45": "Mascotas",
+  "46": "Almacenamiento",
+  "47": "Ferreteria",
+  "48": "Calzado",
+  "49": "Bolsas y pequenos",
+};
 const DEFAULT_ABCD_CONFIG: AbcdConfig = {
   aUntilPercent: 70,
   bUntilPercent: 85,
@@ -1042,6 +1093,8 @@ export default function RotacionPage() {
         .map((value) => ({
           value,
           label: value === "__sin_n1__" ? "Sin N1" : `N1 ${value}`,
+          shortName:
+            value === "__sin_n1__" ? undefined : LINEA_N1_SHORT_NAMES[value],
         }))
         .sort((a, b) => a.label.localeCompare(b.label, "es")),
     [filterCatalog.lineasN1, lineaN1FamilyFilter],
@@ -1681,7 +1734,14 @@ export default function RotacionPage() {
                             }
                             className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-200"
                           />
-                          <span className="font-medium">{option.label}</span>
+                          <span className="font-medium">
+                            {option.label}
+                            {option.shortName ? (
+                              <span className="ml-1 text-[11px] font-normal text-slate-500">
+                                {option.shortName}
+                              </span>
+                            ) : null}
+                          </span>
                         </label>
                       );
                     })
