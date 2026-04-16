@@ -2200,8 +2200,16 @@ export default function RotacionPage() {
                 (acc, row) => acc + row.inventoryValue,
                 0,
               );
+              const infoTotalSales = filteredRows.reduce(
+                (acc, row) => acc + row.totalSales,
+                0,
+              );
               const selectedCategoryTotalInv = categoryFilteredRows.reduce(
                 (acc, row) => acc + row.inventoryValue,
+                0,
+              );
+              const selectedCategoryTotalSales = categoryFilteredRows.reduce(
+                (acc, row) => acc + row.totalSales,
                 0,
               );
               const selectedCategoryLabel =
@@ -2388,11 +2396,19 @@ export default function RotacionPage() {
                           </div>
                         </div>
                         {selectedCategoryLabel ? (
-                          <div className="w-full pt-1 text-sm text-slate-600">
-                            Total categoria {selectedCategoryLabel}:{" "}
-                            <span className="font-black text-slate-900">
-                              {formatPrice(selectedCategoryTotalInv)}
-                            </span>
+                          <div className="w-full space-y-1 pt-1 text-sm text-slate-600">
+                            <div>
+                              Total venta:{" "}
+                              <span className="font-black text-slate-900">
+                                {formatPrice(selectedCategoryTotalSales)}
+                              </span>
+                            </div>
+                            <div>
+                              Total categoria {selectedCategoryLabel}:{" "}
+                              <span className="font-black text-slate-900">
+                                {formatPrice(selectedCategoryTotalInv)}
+                              </span>
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -2485,6 +2501,22 @@ export default function RotacionPage() {
                               />
                             </div>
                           </div>
+                          {rowFilter !== "none" ? (
+                            <div className="w-full space-y-1 pt-2 text-sm text-slate-600">
+                              <div>
+                                Total venta:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPrice(infoTotalSales)}
+                                </span>
+                              </div>
+                              <div>
+                                Total inv:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPrice(infoTotalInv)}
+                                </span>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -2536,11 +2568,14 @@ export default function RotacionPage() {
                       </Button>
                     </div>
                   </div>
-                  <CardContent className="rotacion-table-capture-scroll overflow-x-auto px-0 py-0">
-                    <Table className="min-w-[1180px]">
+                  <CardContent className="px-0 py-0">
+                    <Table
+                      containerClassName="rotacion-table-capture-scroll isolate min-w-0 overscroll-x-contain"
+                      className="w-max min-w-full border-separate border-spacing-0 text-sm"
+                    >
                       <TableHeader>
                         <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                          <TableHead className="px-4 py-3">
+                          <TableHead className="whitespace-nowrap px-2 py-2 align-bottom">
                             <SortableRotationHeader
                               field="item"
                               label="Item"
@@ -2549,10 +2584,10 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-nowrap">
-                            Categoria
+                          <TableHead className="whitespace-nowrap px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                            Cat.
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="max-w-[11rem] px-2 py-2 align-bottom sm:max-w-[15rem] md:max-w-[18rem] lg:max-w-[22rem]">
                             <SortableRotationHeader
                               field="descripcion"
                               label="Descripcion"
@@ -2561,43 +2596,59 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="totalSales"
-                              label="Venta periodo"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Venta
+                                </span>
+                              }
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="inventoryUnits"
-                              label="Inv. cierre"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Inv.
+                                </span>
+                              }
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="totalUnits"
-                              label="Unid. vendidas"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  U. vend.
+                                </span>
+                              }
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="inventoryValue"
-                              label="Valor inventario"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  V. inv.
+                                </span>
+                              }
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="rotation"
                               label="DI"
@@ -2606,7 +2657,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="trackedDays"
                               label="DIE"
@@ -2615,7 +2666,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="salesEffectiveDays"
                               label="DVE"
@@ -2624,10 +2675,14 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="px-4 py-3 whitespace-normal">
+                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
                             <SortableRotationHeader
                               field="lastMovementDate"
-                              label="Ult. ingreso"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Ult. ingr.
+                                </span>
+                              }
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
@@ -2638,10 +2693,10 @@ export default function RotacionPage() {
                       <TableBody>
                         {paginatedRows.map((row) => (
                           <TableRow key={`${group.sedeId}-${row.item}`}>
-                            <TableCell className="px-4 py-3 font-semibold text-slate-900">
-                              {row.item}
+                            <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
+                              <span className="text-xs">{row.item}</span>
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-center">
+                            <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
                               {(() => {
                                 const category = categoryByItem.get(row.item) ?? "D";
                                 const colorClass =
@@ -2654,19 +2709,19 @@ export default function RotacionPage() {
                                         : "border-rose-300 bg-rose-200 text-rose-900";
                                 return (
                                   <Badge
-                                    className={`min-w-8 justify-center px-2 py-0.5 text-sm font-black ${colorClass}`}
+                                    className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
                                   >
                                     {category}
                                   </Badge>
                                 );
                               })()}
                             </TableCell>
-                            <TableCell className="px-4 py-3 whitespace-normal">
-                              <div className="min-w-[24rem]">
-                                <p className="font-medium text-slate-900">
+                            <TableCell className="max-w-[11rem] px-2 py-2 align-top whitespace-normal sm:max-w-[15rem] md:max-w-[18rem] lg:max-w-[22rem]">
+                              <div className="wrap-break-word">
+                                <p className="text-[13px] font-medium leading-snug text-slate-900">
                                   {row.descripcion}
                                 </p>
-                                <p className="mt-1 text-xs text-slate-500">
+                                <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
                                   Linea {row.linea}
                                   {row.lineaN1Codigo
                                     ? ` | N1 ${row.lineaN1Codigo}`
@@ -2675,30 +2730,30 @@ export default function RotacionPage() {
                                 </p>
                               </div>
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-slate-700">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                               {formatPrice(row.totalSales)}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-slate-700">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
                               {row.inventoryUnits.toLocaleString("es-CO")}{" "}
                               {row.unidad ?? ""}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-slate-700">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
                               {row.totalUnits.toLocaleString("es-CO")}
                               {row.unidad ? ` ${row.unidad}` : ""}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-slate-700">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                               {formatPrice(row.inventoryValue)}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-slate-700">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                               {formatRotationOneDecimal(row.rotation)}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-xs text-slate-600 whitespace-normal">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-600">
                               {row.trackedDays.toLocaleString("es-CO")}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-xs text-slate-600 whitespace-normal">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-600">
                               {row.salesEffectiveDays.toLocaleString("es-CO")}
                             </TableCell>
-                            <TableCell className="px-4 py-3 text-slate-700 whitespace-normal">
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
                               {row.lastMovementDate
                                 ? formatDateLabel(
                                     row.lastMovementDate,
