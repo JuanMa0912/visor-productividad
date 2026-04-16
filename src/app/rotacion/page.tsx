@@ -111,7 +111,31 @@ type LineaN1Option = {
   shortName?: string;
 };
 
-type LineaN1FamilyFilter = "all" | "perecederos" | "manufacturas";
+type LineaN1FamilyKey = "perecederos" | "manufactura" | "admon";
+
+const ALL_LINEA_N1_FAMILY_KEYS: LineaN1FamilyKey[] = [
+  "perecederos",
+  "manufactura",
+  "admon",
+];
+
+const LINEA_N1_FAMILY_LABELS: Record<LineaN1FamilyKey, string> = {
+  perecederos: "Perecederos",
+  manufactura: "Manufactura",
+  admon: "Admon",
+};
+
+const matchesLineaN1Family = (
+  value: string,
+  keys: Set<LineaN1FamilyKey>,
+): boolean => {
+  const isPerecedero = PERECEDEROS_LINEAS_N1.has(value);
+  const isAdmon = ADMON_LINEAS_N1.has(value);
+  if (keys.has("perecederos") && isPerecedero) return true;
+  if (keys.has("admon") && isAdmon) return true;
+  if (keys.has("manufactura") && !isPerecedero && !isAdmon) return true;
+  return false;
+};
 
 type AbcdConfig = {
   aUntilPercent: number;
@@ -129,6 +153,8 @@ type RotationSortField =
   | "inventoryUnits"
   | "inventoryValue"
   | "rotation"
+  | "trackedDays"
+  | "salesEffectiveDays"
   | "lastMovementDate"
   | "status";
 
@@ -138,6 +164,7 @@ type PageSize = 25 | 50 | 100;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
+const ADMON_LINEAS_N1 = new Set(["46", "47", "48", "49"]);
 const LINEA_N1_SHORT_NAMES: Record<string, string> = {
   "01": "Fruver",
   "02": "Carnes rojas",
@@ -486,6 +513,11 @@ const sortRotationRows = (
   if (!field) return rows;
 
   const directionFactor = direction === "asc" ? 1 : -1;
+  const skipExpensiveTieBreak =
+    field === "rotation" ||
+    field === "trackedDays" ||
+    field === "salesEffectiveDays";
+
   return [...rows].sort((left, right) => {
     let result = 0;
 
@@ -522,6 +554,12 @@ const sortRotationRows = (
           result = left.rotation - right.rotation;
         }
         break;
+      case "trackedDays":
+        result = left.trackedDays - right.trackedDays;
+        break;
+      case "salesEffectiveDays":
+        result = left.salesEffectiveDays - right.salesEffectiveDays;
+        break;
       case "lastMovementDate":
         result = compareNullableIsoDateKeys(
           left.lastMovementDate,
@@ -537,6 +575,7 @@ const sortRotationRows = (
     }
 
     if (result !== 0) return result * directionFactor;
+    if (skipExpensiveTieBreak) return 0;
 
     const byDescription = compareRotationText(
       left.descripcion,
@@ -578,7 +617,8 @@ const buildRowsBySede = (rows: RotationRow[]) => {
 type GroupRowsQuickFilter =
   | "none"
   | "cero_rotacion"
-  | "venta_hasta";
+  | "venta_hasta"
+  | "both";
 
 const applyRowsQuickFilter = (
   rows: RotationRow[],
@@ -593,7 +633,21 @@ const applyRowsQuickFilter = (
   }
   if (filter === "venta_hasta") {
     if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) return rows;
-    return rows.filter((row) => row.totalSales <= ventaHastaMax);
+    return rows.filter(
+      (row) => row.totalSales >= 1 && row.totalSales <= ventaHastaMax,
+    );
+  }
+  if (filter === "both") {
+    if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) {
+      return rows.filter(
+        (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+      );
+    }
+    return rows.filter((row) => {
+      const isCeroRotacion = row.totalSales <= 0 && row.inventoryUnits > 0;
+      const isVentaHasta = row.totalSales >= 1 && row.totalSales <= ventaHastaMax;
+      return isCeroRotacion || isVentaHasta;
+    });
   }
   return rows;
 };
@@ -741,8 +795,9 @@ export default function RotacionPage() {
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedSede, setSelectedSede] = useState("");
-  const [lineaN1FamilyFilter, setLineaN1FamilyFilter] =
-    useState<LineaN1FamilyFilter>("all");
+  const [lineaN1FamilyKeys, setLineaN1FamilyKeys] = useState<LineaN1FamilyKey[]>([
+    ...ALL_LINEA_N1_FAMILY_KEYS,
+  ]);
   const [dateRange, setDateRange] = useState<DateRange>({ start: "", end: "" });
   const [availableRange, setAvailableRange] = useState<DateRange>({
     start: "",
@@ -1080,15 +1135,19 @@ export default function RotacionPage() {
     [allSedeOptions, selectedSede],
   );
 
+  const lineaN1FamilyKeySet = useMemo(
+    () => new Set(lineaN1FamilyKeys),
+    [lineaN1FamilyKeys],
+  );
+
   const lineaN1Options = useMemo<LineaN1Option[]>(
     () =>
       [...filterCatalog.lineasN1]
         .filter((value) => {
-          if (lineaN1FamilyFilter === "all") return true;
-          const isPerecedero = PERECEDEROS_LINEAS_N1.has(value);
-          return lineaN1FamilyFilter === "perecederos"
-            ? isPerecedero
-            : !isPerecedero;
+          const allSelected =
+            lineaN1FamilyKeySet.size === ALL_LINEA_N1_FAMILY_KEYS.length;
+          if (allSelected || lineaN1FamilyKeySet.size === 0) return true;
+          return matchesLineaN1Family(value, lineaN1FamilyKeySet);
         })
         .map((value) => ({
           value,
@@ -1097,7 +1156,7 @@ export default function RotacionPage() {
             value === "__sin_n1__" ? undefined : LINEA_N1_SHORT_NAMES[value],
         }))
         .sort((a, b) => a.label.localeCompare(b.label, "es")),
-    [filterCatalog.lineasN1, lineaN1FamilyFilter],
+    [filterCatalog.lineasN1, lineaN1FamilyKeySet],
   );
 
   const selectedLineaN1Set = useMemo(
@@ -1107,7 +1166,7 @@ export default function RotacionPage() {
 
   useEffect(() => {
     setSelectedLineaN1Values(lineaN1Options.map((option) => option.value));
-  }, [lineaN1FamilyFilter, lineaN1Options]);
+  }, [lineaN1FamilyKeys, lineaN1Options]);
 
   useEffect(() => {
     if (!selectedSede) return;
@@ -1247,12 +1306,17 @@ export default function RotacionPage() {
 
   const toggleGroupRowsQuickFilter = (
     groupKey: string,
-    filter: Exclude<GroupRowsQuickFilter, "none" | "venta_hasta">,
+  filter: Exclude<GroupRowsQuickFilter, "none" | "venta_hasta" | "both">,
   ) => {
     setRowsQuickFilterByGroup((prev) => {
       const current = prev[groupKey] ?? "none";
-      const next: GroupRowsQuickFilter =
-        current === filter ? "none" : filter;
+    let next: GroupRowsQuickFilter = current;
+    if (filter === "cero_rotacion") {
+      if (current === "cero_rotacion") next = "none";
+      else if (current === "venta_hasta") next = "both";
+      else if (current === "both") next = "venta_hasta";
+      else next = "cero_rotacion";
+    }
       return { ...prev, [groupKey]: next };
     });
     setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
@@ -1260,16 +1324,24 @@ export default function RotacionPage() {
 
   const applyOrToggleVentaHastaFilter = (groupKey: string) => {
     const current = rowsQuickFilterByGroup[groupKey] ?? "none";
-    if (current === "venta_hasta") {
-      setRowsQuickFilterByGroup((prev) => ({ ...prev, [groupKey]: "none" }));
+  if (current === "venta_hasta" || current === "both") {
+    setRowsQuickFilterByGroup((prev) => ({
+      ...prev,
+      [groupKey]: current === "both" ? "cero_rotacion" : "none",
+    }));
       setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
       return;
     }
     const raw = ventaHastaInputByGroup[groupKey] ?? "";
-    const parsed = Number(sanitizeNumericInput(raw));
-    if (Number.isNaN(parsed) || parsed < 0) return;
+    const parsedRaw = Number(sanitizeNumericInput(raw));
+    if (Number.isNaN(parsedRaw)) return;
+    const parsed = Math.max(1, parsedRaw);
     setVentaHastaCapByGroup((prev) => ({ ...prev, [groupKey]: parsed }));
-    setRowsQuickFilterByGroup((prev) => ({ ...prev, [groupKey]: "venta_hasta" }));
+  setRowsQuickFilterByGroup((prev) => ({
+    ...prev,
+    [groupKey]:
+      current === "cero_rotacion" ? "both" : "venta_hasta",
+  }));
     setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
   };
 
@@ -1295,7 +1367,7 @@ export default function RotacionPage() {
         const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
         const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
         const ventaHastaCap =
-          rowFilter === "venta_hasta"
+          rowFilter === "venta_hasta" || rowFilter === "both"
             ? (ventaHastaCapByGroup[groupKey] ?? null)
             : null;
         const filteredRows = applyRowsQuickFilter(
@@ -1320,7 +1392,8 @@ export default function RotacionPage() {
           unidad: row.unidad ?? "",
           valorInventario: row.inventoryValue,
           rotacion: formatRotationOneDecimal(row.rotation),
-          formulaDiDetalle: `${row.trackedDays.toLocaleString("es-CO")} / ${row.salesEffectiveDays.toLocaleString("es-CO")}`,
+          diaInventarioEfectivo: row.trackedDays.toLocaleString("es-CO"),
+          diaVentaEfectivo: row.salesEffectiveDays.toLocaleString("es-CO"),
           ultimoIngreso: row.lastMovementDate
             ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
             : "Sin fecha de ingreso",
@@ -1355,7 +1428,8 @@ export default function RotacionPage() {
         "Unidad",
         "Valor inventario",
         "DI (dias inv.)",
-        "Dia inventario efectivo / Dia venta efectivo",
+        "Dia inventario efectivo",
+        "Dia venta efectivo",
         "Ultimo ingreso",
       ]],
       body: exportRows.map((row) => [
@@ -1368,7 +1442,8 @@ export default function RotacionPage() {
         row.unidad,
         formatPrice(row.valorInventario),
         row.rotacion,
-        row.formulaDiDetalle,
+        row.diaInventarioEfectivo,
+        row.diaVentaEfectivo,
         row.ultimoIngreso,
       ]),
       margin: { left: 8, right: 8 },
@@ -1392,7 +1467,8 @@ export default function RotacionPage() {
         { header: "Unidad", key: "unidad", width: 10 },
         { header: "Valor inventario", key: "valorInventario", width: 16 },
         { header: "DI (dias inv.)", key: "rotacion", width: 14 },
-        { header: "Dia inventario efectivo / Dia venta efectivo", key: "formulaDiDetalle", width: 30 },
+        { header: "Dia inventario efectivo", key: "diaInventarioEfectivo", width: 18 },
+        { header: "Dia venta efectivo", key: "diaVentaEfectivo", width: 16 },
         { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
       ];
       sheet.addRows(exportRows);
@@ -1645,22 +1721,67 @@ export default function RotacionPage() {
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
                 />
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <FilterSelectField
-                  icon={Filter}
-                  label="Familia de lineas"
-                  value={lineaN1FamilyFilter}
-                  options={[
-                    { value: "perecederos", label: "Perecederos" },
-                    { value: "manufacturas", label: "Manufacturas" },
-                  ]}
-                  onChange={(value) =>
-                    setLineaN1FamilyFilter(value as LineaN1FamilyFilter)
-                  }
-                  allLabel="Todas"
-                  accentClassName="text-violet-700"
-                  disabled={isLoadingLineCatalog && filterCatalog.lineasN1.length === 0}
-                />
+              <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <FilterFieldLabel
+                    icon={Filter}
+                    label="Familia de lineas"
+                    accentClassName="text-violet-700"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setLineaN1FamilyKeys([...ALL_LINEA_N1_FAMILY_KEYS])
+                    }
+                    disabled={
+                      isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
+                    }
+                    className="h-8 rounded-lg border-violet-200 bg-violet-50 px-2.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                  >
+                    Todas las familias
+                  </Button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+                  {ALL_LINEA_N1_FAMILY_KEYS.map((familyKey) => {
+                    const checked = lineaN1FamilyKeys.includes(familyKey);
+                    return (
+                      <label
+                        key={familyKey}
+                        className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setLineaN1FamilyKeys((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(familyKey)) {
+                                if (next.size <= 1) return prev;
+                                next.delete(familyKey);
+                              } else {
+                                next.add(familyKey);
+                              }
+                              return [...next];
+                            });
+                          }}
+                          disabled={
+                            isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
+                          }
+                          className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-200 disabled:opacity-50"
+                        />
+                        <span className="font-medium">
+                          {LINEA_N1_FAMILY_LABELS[familyKey]}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] leading-snug text-slate-500">
+                  Puedes marcar varias familias a la vez; la lista de lineas N1
+                  debajo muestra la union de las elegidas.
+                </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -1762,11 +1883,20 @@ export default function RotacionPage() {
                     : "Todas las sedes"}
                 </Badge>
                 <Badge className="border-violet-200 bg-violet-50 text-violet-700">
-                  {lineaN1FamilyFilter === "all"
+                  {lineaN1FamilyKeys.length === 0 ||
+                  lineaN1FamilyKeys.length === ALL_LINEA_N1_FAMILY_KEYS.length
                     ? "Todas las familias"
-                    : lineaN1FamilyFilter === "perecederos"
-                      ? "Perecederos"
-                      : "Manufacturas"}
+                    : lineaN1FamilyKeys.length === 1
+                      ? LINEA_N1_FAMILY_LABELS[lineaN1FamilyKeys[0]]
+                      : lineaN1FamilyKeys
+                          .slice()
+                          .sort(
+                            (a, b) =>
+                              ALL_LINEA_N1_FAMILY_KEYS.indexOf(a) -
+                              ALL_LINEA_N1_FAMILY_KEYS.indexOf(b),
+                          )
+                          .map((k) => LINEA_N1_FAMILY_LABELS[k])
+                          .join(" + ")}
                 </Badge>
                 <Badge className="border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700">
                   {lineaN1Options.length === 0
@@ -2043,7 +2173,7 @@ export default function RotacionPage() {
               const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
               const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
               const ventaHastaCap =
-                rowFilter === "venta_hasta"
+                rowFilter === "venta_hasta" || rowFilter === "both"
                   ? (ventaHastaCapByGroup[groupKey] ?? null)
                   : null;
               const filteredRows = applyRowsQuickFilter(
@@ -2059,29 +2189,45 @@ export default function RotacionPage() {
                 filteredRows,
                 categoryByItem,
               );
-              const categoryLineTotalItems = filteredRows.length;
-              const categoryLineTotalInv = filteredRows.reduce(
-                (acc, row) => acc + row.inventoryValue,
-                0,
-              );
               const categoryFilteredRows =
                 categoryFilter === "all"
                   ? filteredRows
                   : filteredRows.filter(
                       (row) => categoryByItem.get(row.item) === categoryFilter,
                     );
+              const infoTotalItems = filteredRows.length;
+              const infoTotalInv = filteredRows.reduce(
+                (acc, row) => acc + row.inventoryValue,
+                0,
+              );
+              const selectedCategoryTotalInv = categoryFilteredRows.reduce(
+                (acc, row) => acc + row.inventoryValue,
+                0,
+              );
+              const selectedCategoryLabel =
+                categoryFilter === "all" ? null : categoryFilter;
               const categoryFilteredCeroRotacionCount = categoryFilteredRows.filter(
                 (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
               ).length;
               const ventaHastaInput = ventaHastaInputByGroup[groupKey] ?? "";
               const ventaHastaDigits = sanitizeNumericInput(ventaHastaInput);
-              const ventaHastaParsedPreview = Number(ventaHastaDigits);
+              const ventaHastaParsedPreviewRaw = Number(ventaHastaDigits);
+              const ventaHastaParsedPreview = Math.max(
+                1,
+                ventaHastaParsedPreviewRaw,
+              );
               const ventaHastaPreviewCount =
                 ventaHastaDigits.length === 0 ||
-                Number.isNaN(ventaHastaParsedPreview)
+                Number.isNaN(ventaHastaParsedPreviewRaw)
                   ? null
                   : categoryFilteredRows.filter(
-                      (row) => row.totalSales <= ventaHastaParsedPreview,
+                      (row) => {
+                        const includeZero = rowFilter === "both";
+                        return includeZero
+                          ? row.totalSales <= ventaHastaParsedPreview
+                          : row.totalSales >= 1 &&
+                              row.totalSales <= ventaHastaParsedPreview;
+                      },
                     ).length;
               const ceroRotacionCount = group.rows.filter(
                 (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
@@ -2134,33 +2280,121 @@ export default function RotacionPage() {
                           <span className="whitespace-nowrap">
                             Total items:{" "}
                             <span className="font-black text-slate-900">
-                              {categoryLineTotalItems.toLocaleString("es-CO")}
+                              {infoTotalItems.toLocaleString("es-CO")}
                             </span>
                           </span>
                           <span className="whitespace-nowrap">
                             Total inv:{" "}
                             <span className="font-black text-slate-900">
-                              {formatPrice(categoryLineTotalInv)}
+                              {formatPrice(infoTotalInv)}
                             </span>
                           </span>
                         </div>
                         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Por categoría
                         </span>
-                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-900">
-                            A: {abcdCounts.A.toLocaleString("es-CO")}
-                          </span>
-                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-900">
-                            B: {abcdCounts.B.toLocaleString("es-CO")}
-                          </span>
-                          <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-xs font-bold text-orange-900">
-                            C: {abcdCounts.C.toLocaleString("es-CO")}
-                          </span>
-                          <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-900">
-                            D: {abcdCounts.D.toLocaleString("es-CO")}
-                          </span>
+                        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-semibold text-emerald-500">
+                              {abcdConfig.aUntilPercent.toFixed(0)}%
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setAbcdFilterByGroup((prev) => ({
+                                  ...prev,
+                                  [groupKey]: categoryFilter === "A" ? "all" : "A",
+                                }));
+                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+                              }}
+                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                categoryFilter === "A"
+                                  ? "border-emerald-700 bg-emerald-600 text-white shadow-md ring-2 ring-emerald-200"
+                                  : "border-emerald-300 bg-emerald-100 text-emerald-900"
+                              }`}
+                            >
+                              A: {abcdCounts.A.toLocaleString("es-CO")}
+                            </Button>
+                          </div>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-semibold text-amber-500">
+                              {(abcdConfig.bUntilPercent - abcdConfig.aUntilPercent).toFixed(0)}%
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setAbcdFilterByGroup((prev) => ({
+                                  ...prev,
+                                  [groupKey]: categoryFilter === "B" ? "all" : "B",
+                                }));
+                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+                              }}
+                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                categoryFilter === "B"
+                                  ? "border-amber-700 bg-amber-500 text-white shadow-md ring-2 ring-amber-200"
+                                  : "border-amber-300 bg-amber-100 text-amber-900"
+                              }`}
+                            >
+                              B: {abcdCounts.B.toLocaleString("es-CO")}
+                            </Button>
+                          </div>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-semibold text-orange-500">
+                              {(abcdConfig.cUntilPercent - abcdConfig.bUntilPercent).toFixed(0)}%
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setAbcdFilterByGroup((prev) => ({
+                                  ...prev,
+                                  [groupKey]: categoryFilter === "C" ? "all" : "C",
+                                }));
+                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+                              }}
+                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                categoryFilter === "C"
+                                  ? "border-orange-700 bg-orange-500 text-white shadow-md ring-2 ring-orange-200"
+                                  : "border-orange-300 bg-orange-100 text-orange-900"
+                              }`}
+                            >
+                              C: {abcdCounts.C.toLocaleString("es-CO")}
+                            </Button>
+                          </div>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-semibold text-rose-500">
+                              {(100 - abcdConfig.cUntilPercent).toFixed(0)}%
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setAbcdFilterByGroup((prev) => ({
+                                  ...prev,
+                                  [groupKey]: categoryFilter === "D" ? "all" : "D",
+                                }));
+                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+                              }}
+                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                categoryFilter === "D"
+                                  ? "border-rose-700 bg-rose-600 text-white shadow-md ring-2 ring-rose-200"
+                                  : "border-rose-300 bg-rose-100 text-rose-900"
+                              }`}
+                            >
+                              D: {abcdCounts.D.toLocaleString("es-CO")}
+                            </Button>
+                          </div>
                         </div>
+                        {selectedCategoryLabel ? (
+                          <div className="w-full pt-1 text-sm text-slate-600">
+                            Total categoria {selectedCategoryLabel}:{" "}
+                            <span className="font-black text-slate-900">
+                              {formatPrice(selectedCategoryTotalInv)}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="border-t border-slate-200/90 pt-5">
@@ -2185,13 +2419,13 @@ export default function RotacionPage() {
                             <Button
                               type="button"
                               variant={
-                                rowFilter === "cero_rotacion"
+                                rowFilter === "cero_rotacion" || rowFilter === "both"
                                   ? "default"
                                   : "outline"
                               }
                               title="Venta del periodo en cero e inventario de cierre mayor que cero"
                               className={`h-8 rounded-full px-3 text-xs font-semibold ${
-                                rowFilter === "cero_rotacion"
+                                rowFilter === "cero_rotacion" || rowFilter === "both"
                                   ? "bg-amber-600 text-white hover:bg-amber-700"
                                   : ""
                               }`}
@@ -2212,13 +2446,13 @@ export default function RotacionPage() {
                               <Button
                                 type="button"
                                 variant={
-                                  rowFilter === "venta_hasta"
+                                  rowFilter === "venta_hasta" || rowFilter === "both"
                                     ? "default"
                                     : "outline"
                                 }
                                 title="Filtrar items con venta del periodo menor o igual al valor ingresado"
                                 className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
-                                  rowFilter === "venta_hasta"
+                                  rowFilter === "venta_hasta" || rowFilter === "both"
                                     ? "bg-emerald-700 text-white hover:bg-emerald-800"
                                     : ""
                                 }`}
@@ -2226,7 +2460,7 @@ export default function RotacionPage() {
                                   applyOrToggleVentaHastaFilter(groupKey)
                                 }
                               >
-                                {rowFilter === "venta_hasta" &&
+                                {(rowFilter === "venta_hasta" || rowFilter === "both") &&
                                 ventaHastaCapByGroup[groupKey] != null
                                   ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
                                   : ventaHastaPreviewCount != null
@@ -2249,33 +2483,6 @@ export default function RotacionPage() {
                                 }
                                 className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
                               />
-                            </div>
-                            <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1">
-                              <span className="text-[11px] font-semibold text-slate-600">
-                                ABCD
-                              </span>
-                              <select
-                                value={categoryFilter}
-                                onChange={(event) => {
-                                  const nextValue = event.target
-                                    .value as GroupAbcdFilter;
-                                  setAbcdFilterByGroup((prev) => ({
-                                    ...prev,
-                                    [groupKey]: nextValue,
-                                  }));
-                                  setPageByGroupKey((prev) => ({
-                                    ...prev,
-                                    [groupKey]: 1,
-                                  }));
-                                }}
-                                className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-800 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
-                              >
-                                <option value="all">Todas</option>
-                                <option value="A">A</option>
-                                <option value="B">B</option>
-                                <option value="C">C</option>
-                                <option value="D">D</option>
-                              </select>
                             </div>
                           </div>
                         </div>
@@ -2393,14 +2600,29 @@ export default function RotacionPage() {
                           <TableHead className="px-4 py-3">
                             <SortableRotationHeader
                               field="rotation"
-                              label="DI (dias inv.)"
+                              label="DI"
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
                           <TableHead className="px-4 py-3 whitespace-normal">
-                            Dia inventario efectivo / Dia venta efectivo
+                            <SortableRotationHeader
+                              field="trackedDays"
+                              label="DIE"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="px-4 py-3 whitespace-normal">
+                            <SortableRotationHeader
+                              field="salesEffectiveDays"
+                              label="DVE"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
                           </TableHead>
                           <TableHead className="px-4 py-3 whitespace-normal">
                             <SortableRotationHeader
@@ -2471,7 +2693,10 @@ export default function RotacionPage() {
                               {formatRotationOneDecimal(row.rotation)}
                             </TableCell>
                             <TableCell className="px-4 py-3 text-xs text-slate-600 whitespace-normal">
-                              {`${row.trackedDays.toLocaleString("es-CO")} / ${row.salesEffectiveDays.toLocaleString("es-CO")}`}
+                              {row.trackedDays.toLocaleString("es-CO")}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-xs text-slate-600 whitespace-normal">
+                              {row.salesEffectiveDays.toLocaleString("es-CO")}
                             </TableCell>
                             <TableCell className="px-4 py-3 text-slate-700 whitespace-normal">
                               {row.lastMovementDate
