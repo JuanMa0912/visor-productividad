@@ -81,12 +81,9 @@ type RotationRow = {
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
 
-type RotationCategoriaLinea01FilterOption = {
-  pairKey: string;
-  categoria: string;
+type RotationCategoriaFilterOption = {
+  categoriaKey: string;
   nombreCategoria: string | null;
-  linea01: string;
-  nombreLinea01: string | null;
 };
 
 type RotationApiResponse = {
@@ -104,7 +101,8 @@ type RotationApiResponse = {
       sedeName: string;
     }>;
     lineasN1: string[];
-    categoriasLineas01: RotationCategoriaLinea01FilterOption[];
+    categorias: RotationCategoriaFilterOption[];
+    lineasN1PorCategoria: Record<string, string[]>;
   };
   meta: {
     effectiveRange: DateRange;
@@ -499,29 +497,29 @@ const normalizeRotationRows = (rows: RotationRow[]) =>
     nombreLinea01: row.nombreLinea01 ?? null,
   }));
 
-/** Pares (categoria, linea01) a enviar en query: null = sin filtro (todo el catalogo o vacio). */
-const buildCatLineQueryKeys = (
-  catalog: RotationCategoriaLinea01FilterOption[],
-  selectedPairKeys: string[],
+/** Categorias a enviar en query: null = sin filtro (todo el catalogo o vacio). */
+const buildCategoriaQueryKeys = (
+  catalog: RotationCategoriaFilterOption[],
+  selectedKeys: string[],
 ): string[] | null => {
   if (catalog.length === 0) return null;
-  const catalogSet = new Set(catalog.map((c) => c.pairKey));
-  const valid = selectedPairKeys.filter((k) => catalogSet.has(k));
+  const catalogSet = new Set(catalog.map((c) => c.categoriaKey));
+  const valid = selectedKeys.filter((k) => catalogSet.has(k));
   const isFull =
     valid.length === catalog.length &&
-    catalog.every((c) => valid.includes(c.pairKey));
+    catalog.every((c) => valid.includes(c.categoriaKey));
   if (valid.length === 0 || isFull) return null;
   return valid;
 };
 
-const appendCatLineParams = (
+const appendCategoriaParams = (
   params: URLSearchParams,
-  catalog: RotationCategoriaLinea01FilterOption[],
-  selectedPairKeys: string[],
+  catalog: RotationCategoriaFilterOption[],
+  selectedKeys: string[],
 ) => {
-  const keys = buildCatLineQueryKeys(catalog, selectedPairKeys);
+  const keys = buildCategoriaQueryKeys(catalog, selectedKeys);
   if (!keys) return;
-  keys.forEach((k) => params.append("catLinea", k));
+  keys.forEach((k) => params.append("categoria", k));
 };
 
 const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
@@ -934,9 +932,9 @@ export default function RotacionPage() {
   const [selectedLineaN1Values, setSelectedLineaN1Values] = useState<string[]>(
     [],
   );
-  const [selectedCatLinePairKeys, setSelectedCatLinePairKeys] = useState<
-    string[]
-  >([]);
+  const [selectedCategoriaKeys, setSelectedCategoriaKeys] = useState<string[]>(
+    [],
+  );
   const [abcdConfig, setAbcdConfig] = useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
   const [abcdDraftConfig, setAbcdDraftConfig] =
     useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
@@ -946,7 +944,8 @@ export default function RotacionPage() {
     companies: [],
     sedes: [],
     lineasN1: [],
-    categoriasLineas01: [],
+    categorias: [],
+    lineasN1PorCategoria: {},
   });
   const [error, setError] = useState<string | null>(null);
   const skipNextFetchRef = useRef(false);
@@ -1096,13 +1095,14 @@ export default function RotacionPage() {
             companies: [],
             sedes: [],
             lineasN1: [],
-            categoriasLineas01: [],
+            categorias: [],
+            lineasN1PorCategoria: {},
           },
         );
         const allLineasN1 = payload.filters?.lineasN1 ?? [];
-        const allCatLinePairs = payload.filters?.categoriasLineas01 ?? [];
+        const allCategorias = payload.filters?.categorias ?? [];
         setSelectedLineaN1Values(allLineasN1);
-        setSelectedCatLinePairKeys(allCatLinePairs.map((p) => p.pairKey));
+        setSelectedCategoriaKeys(allCategorias.map((c) => c.categoriaKey));
         if (payload.meta?.abcdConfig) {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
@@ -1153,10 +1153,10 @@ export default function RotacionPage() {
             allLineasN1.forEach((linea) => {
               rowsParams.append("lineasN1", linea);
             });
-            appendCatLineParams(
+            appendCategoriaParams(
               rowsParams,
-              allCatLinePairs,
-              allCatLinePairs.map((p) => p.pairKey),
+              allCategorias,
+              allCategorias.map((c) => c.categoriaKey),
             );
 
             const rowsResponse = await fetch(
@@ -1290,12 +1290,53 @@ export default function RotacionPage() {
     const fromApi = (filterCatalog.lineasN1 ?? []).map(
       normalizeLineaN1CodeForFilter,
     );
-    const deduped = Array.from(new Set(fromApi)).sort((a, b) =>
-      a.localeCompare(b, "es"),
-    );
-    if (deduped.length > 0) return deduped;
-    return lineasN1DerivedFromRows;
-  }, [filterCatalog.lineasN1, lineasN1DerivedFromRows]);
+    const byCat = filterCatalog.lineasN1PorCategoria ?? {};
+    const categories = filterCatalog.categorias ?? [];
+    const dedupeSort = (arr: string[]) =>
+      Array.from(new Set(arr.map(normalizeLineaN1CodeForFilter))).sort((a, b) =>
+        a.localeCompare(b, "es"),
+      );
+
+    if (categories.length === 0 || Object.keys(byCat).length === 0) {
+      const deduped = dedupeSort(fromApi);
+      if (deduped.length > 0) return deduped;
+      return lineasN1DerivedFromRows;
+    }
+
+    const catalogKeySet = new Set(categories.map((c) => c.categoriaKey));
+    const isFullSelection =
+      selectedCategoriaKeys.length > 0 &&
+      selectedCategoriaKeys.length === categories.length &&
+      categories.every((c) => selectedCategoriaKeys.includes(c.categoriaKey));
+
+    if (isFullSelection) {
+      const deduped = dedupeSort(fromApi);
+      if (deduped.length > 0) return deduped;
+      return lineasN1DerivedFromRows;
+    }
+
+    if (selectedCategoriaKeys.length === 0) {
+      return dedupeSort(fromApi);
+    }
+
+    const acc = new Set<string>();
+    for (const ck of selectedCategoriaKeys) {
+      if (!catalogKeySet.has(ck)) continue;
+      const list = byCat[ck];
+      if (list) {
+        for (const n of list) {
+          acc.add(normalizeLineaN1CodeForFilter(n));
+        }
+      }
+    }
+    return Array.from(acc).sort((a, b) => a.localeCompare(b, "es"));
+  }, [
+    filterCatalog.lineasN1,
+    filterCatalog.lineasN1PorCategoria,
+    filterCatalog.categorias,
+    selectedCategoriaKeys,
+    lineasN1DerivedFromRows,
+  ]);
 
   const lineaN1Options = useMemo<LineaN1Option[]>(
     () =>
@@ -1321,28 +1362,14 @@ export default function RotacionPage() {
     [selectedLineaN1Values],
   );
 
-  const categoriaLineaOptions = useMemo(
-    () => filterCatalog.categoriasLineas01 ?? [],
-    [filterCatalog.categoriasLineas01],
+  const categoriaFilterOptions = useMemo(
+    () => filterCatalog.categorias ?? [],
+    [filterCatalog.categorias],
   );
 
-  const categoriaLineasGrouped = useMemo(() => {
-    const map = new Map<string, RotationCategoriaLinea01FilterOption[]>();
-    for (const opt of categoriaLineaOptions) {
-      const list = map.get(opt.categoria) ?? [];
-      list.push(opt);
-      map.set(opt.categoria, list);
-    }
-    return Array.from(map.entries()).sort((a, b) => {
-      const la = a[1][0]?.nombreCategoria ?? a[0];
-      const lb = b[1][0]?.nombreCategoria ?? b[0];
-      return la.localeCompare(lb, "es", { sensitivity: "base", numeric: true });
-    });
-  }, [categoriaLineaOptions]);
-
-  const selectedCatLinePairKeySet = useMemo(
-    () => new Set(selectedCatLinePairKeys),
-    [selectedCatLinePairKeys],
+  const selectedCategoriaKeySet = useMemo(
+    () => new Set(selectedCategoriaKeys),
+    [selectedCategoriaKeys],
   );
 
   useEffect(() => {
@@ -1350,10 +1377,10 @@ export default function RotacionPage() {
   }, [lineaN1FamilyKeys, lineaN1Options]);
 
   useEffect(() => {
-    setSelectedCatLinePairKeys(
-      categoriaLineaOptions.map((option) => option.pairKey),
+    setSelectedCategoriaKeys(
+      categoriaFilterOptions.map((option) => option.categoriaKey),
     );
-  }, [categoriaLineaOptions]);
+  }, [categoriaFilterOptions]);
 
   useEffect(() => {
     if (!selectedSede) return;
@@ -1426,10 +1453,10 @@ export default function RotacionPage() {
       selectedLineaN1Values.forEach((linea) => {
         params.append("lineasN1", linea);
       });
-      appendCatLineParams(
+      appendCategoriaParams(
         params,
-        filterCatalog.categoriasLineas01 ?? [],
-        selectedCatLinePairKeys,
+        filterCatalog.categorias ?? [],
+        selectedCategoriaKeys,
       );
 
       const response = await fetch(
@@ -1936,7 +1963,7 @@ export default function RotacionPage() {
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <FilterFieldLabel
                     icon={PackageSearch}
-                    label="Categoria y linea 01 (destino)"
+                    label="Categoria (destino)"
                     accentClassName="text-teal-800"
                   />
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -1945,12 +1972,12 @@ export default function RotacionPage() {
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        setSelectedCatLinePairKeys(
-                          categoriaLineaOptions.map((o) => o.pairKey),
+                        setSelectedCategoriaKeys(
+                          categoriaFilterOptions.map((o) => o.categoriaKey),
                         )
                       }
                       disabled={
-                        categoriaLineaOptions.length === 0 ||
+                        categoriaFilterOptions.length === 0 ||
                         isLoadingLineCatalog
                       }
                       className="h-8 rounded-lg border-teal-200 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-100 disabled:opacity-50"
@@ -1961,10 +1988,10 @@ export default function RotacionPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setSelectedCatLinePairKeys([])}
+                      onClick={() => setSelectedCategoriaKeys([])}
                       disabled={
-                        categoriaLineaOptions.length === 0 ||
-                        selectedCatLinePairKeys.length === 0 ||
+                        categoriaFilterOptions.length === 0 ||
+                        selectedCategoriaKeys.length === 0 ||
                         isLoadingLineCatalog
                       }
                       className="h-8 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
@@ -1974,88 +2001,61 @@ export default function RotacionPage() {
                   </div>
                 </div>
                 <p className="mb-2 text-[11px] leading-snug text-slate-500">
-                  Pares categoria + linea 01 segun la base: el mismo codigo de
-                  linea en otra categoria es otro producto. Marca las combinaciones
-                  que quieras ver.
+                  Elige una o mas categorias; la lista de lineas N1 debajo muestra
+                  la union de las lineas N1 presentes en esas categorias (sin
+                  duplicar por nombre).
                 </p>
                 <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
                   {!selectedSede ? (
                     <p className="text-xs text-slate-500">
-                      Selecciona una sede para cargar categorias y lineas 01.
+                      Selecciona una sede para cargar categorias.
                     </p>
-                  ) : categoriaLineasGrouped.length === 0 ? (
+                  ) : categoriaFilterOptions.length === 0 ? (
                     <p className="text-xs text-slate-500">
                       {isLoadingLineCatalog
                         ? "Cargando categorias..."
-                        : "No hay categorias / lineas 01 en este periodo para la sede elegida."}
+                        : "No hay categorias en este periodo para la sede elegida."}
                     </p>
                   ) : (
-                    categoriaLineasGrouped.map(([catKey, opts]) => {
-                      const header =
-                        opts[0]?.nombreCategoria?.trim() ||
-                        (catKey === "__sin_cat__" ? "Sin categoria" : catKey);
-                      return (
-                        <div key={catKey} className="border-b border-teal-100 pb-2 last:border-b-0">
-                          <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-teal-900">
-                            {header}
-                            {catKey !== "__sin_cat__" ? (
-                              <span className="ml-1 font-mono text-[10px] font-semibold text-teal-600">
-                                ({catKey})
-                              </span>
-                            ) : null}
-                          </p>
-                          <div className="flex flex-col gap-1.5 pl-0.5">
-                            {[...opts]
-                              .sort((a, b) =>
-                                (a.nombreLinea01 ?? a.linea01).localeCompare(
-                                  b.nombreLinea01 ?? b.linea01,
-                                  "es",
-                                  { numeric: true, sensitivity: "base" },
-                                ),
-                              )
-                              .map((opt) => {
-                                const checked = selectedCatLinePairKeySet.has(
-                                  opt.pairKey,
-                                );
-                                const lineLabel =
-                                  opt.nombreLinea01?.trim() ||
-                                  (opt.linea01 === "__sin_l01__"
-                                    ? "Sin linea 01"
-                                    : opt.linea01);
-                                return (
-                                  <label
-                                    key={opt.pairKey}
-                                    className="flex cursor-pointer items-start gap-2 text-sm text-slate-700"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() =>
-                                        setSelectedCatLinePairKeys((cur) =>
-                                          checked
-                                            ? cur.filter((k) => k !== opt.pairKey)
-                                            : [...cur, opt.pairKey],
-                                        )
-                                      }
-                                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-200"
-                                    />
-                                    <span>
-                                      <span className="font-medium">{lineLabel}</span>
-                                      {opt.linea01 &&
-                                      opt.linea01 !== "__sin_l01__" &&
-                                      opt.nombreLinea01?.trim() ? (
-                                        <span className="ml-1 text-[11px] font-normal text-slate-500">
-                                          L01 {opt.linea01}
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                          </div>
-                        </div>
-                      );
-                    })
+                    <div className="flex flex-col gap-1.5">
+                      {categoriaFilterOptions.map((opt) => {
+                        const checked = selectedCategoriaKeySet.has(
+                          opt.categoriaKey,
+                        );
+                        const label =
+                          opt.nombreCategoria?.trim() ||
+                          (opt.categoriaKey === "__sin_cat__"
+                            ? "Sin categoria"
+                            : opt.categoriaKey);
+                        return (
+                          <label
+                            key={opt.categoriaKey}
+                            className="flex cursor-pointer items-start gap-2 text-sm text-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setSelectedCategoriaKeys((cur) =>
+                                  checked
+                                    ? cur.filter((k) => k !== opt.categoriaKey)
+                                    : [...cur, opt.categoriaKey],
+                                )
+                              }
+                              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-200"
+                            />
+                            <span>
+                              <span className="font-medium">{label}</span>
+                              {opt.categoriaKey !== "__sin_cat__" ? (
+                                <span className="ml-1 font-mono text-[11px] font-normal text-slate-500">
+                                  ({opt.categoriaKey})
+                                </span>
+                              ) : null}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
@@ -2225,6 +2225,14 @@ export default function RotacionPage() {
                       ? (selectedSedeMeta?.sedeName ?? selectedSede)
                       : (selectedSedeMeta?.label ?? selectedSede)
                     : "Todas las sedes"}
+                </Badge>
+                <Badge className="border-teal-200 bg-teal-50 text-teal-800">
+                  {categoriaFilterOptions.length === 0
+                    ? "Sin categorias"
+                    : selectedCategoriaKeys.length ===
+                        categoriaFilterOptions.length
+                      ? "Todas las categorias"
+                      : `${selectedCategoriaKeys.length} de ${categoriaFilterOptions.length} categorias`}
                 </Badge>
                 <Badge className="border-violet-200 bg-violet-50 text-violet-700">
                   {lineaN1FamilyKeys.length === 0 ||
