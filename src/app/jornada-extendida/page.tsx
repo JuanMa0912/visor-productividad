@@ -677,10 +677,7 @@ export default function JornadaExtendidaPage() {
     workbook: ExcelJS.Workbook,
     sheetName: string,
     title: string,
-    subtitle: string,
-    periodOneLabel: string,
     periodOneShortLabel: string,
-    periodTwoLabel: string,
     periodTwoShortLabel: string,
     sedeOrder: string[],
     periodOneRows: AlexReportRow[],
@@ -713,21 +710,12 @@ export default function JornadaExtendidaPage() {
     const titleRow = sheet.addRow([title]);
     mergeRow(titleRow.number);
     titleRow.font = { bold: true, size: 16 };
-    titleRow.alignment = { vertical: "middle", horizontal: "left" };
-
-    const subtitleRow = sheet.addRow([subtitle]);
-    mergeRow(subtitleRow.number);
-    subtitleRow.font = { size: 11, color: { argb: "FF475569" } };
-    subtitleRow.alignment = {
-      vertical: "middle",
-      horizontal: "left",
-      wrapText: true,
-    };
+    titleRow.alignment = { vertical: "middle", horizontal: "center" };
 
     sheet.addRow([]);
 
-    const labelRowNumber = 4;
-    const headerRowNumber = 5;
+    const labelRowNumber = 3;
+    const headerRowNumber = 4;
 
     sheet.mergeCells(labelRowNumber, 1, headerRowNumber, 1);
     const sedeHeader = sheet.getCell(labelRowNumber, 1);
@@ -944,7 +932,6 @@ export default function JornadaExtendidaPage() {
     });
 
     sheet.views = [{ state: "frozen", ySplit: headerRowNumber }];
-    subtitleRow.getCell(1).value = `${subtitle}\n${periodOneLabel}\n${periodTwoLabel}`;
     return sheet;
   };
 
@@ -1044,10 +1031,7 @@ export default function JornadaExtendidaPage() {
         workbook,
         "Comparacion periodos",
         "Comparacion de periodos",
-        "Mismo formato visible al desplegar el comparativo en tabla",
-        alexComparePeriods.yesterday.label,
         alexComparePeriods.yesterday.shortLabel,
-        alexComparePeriods.monthToDate.label,
         alexComparePeriods.monthToDate.shortLabel,
         displayedAlexRows.map((row) => row.sede),
         alexCompareRawData.yesterdayRows,
