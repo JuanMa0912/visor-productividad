@@ -63,6 +63,12 @@ type RotationRow = {
   item: string;
   descripcion: string;
   unidad: string | null;
+  bodega: string | null;
+  nombreBodega: string | null;
+  categoria: string | null;
+  nombreCategoria: string | null;
+  linea01: string | null;
+  nombreLinea01: string | null;
   totalSales: number;
   totalUnits: number;
   inventoryUnits: number;
@@ -73,6 +79,14 @@ type RotationRow = {
   lastMovementDate: string | null;
   effectiveDays: number | null;
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
+};
+
+type RotationCategoriaLinea01FilterOption = {
+  pairKey: string;
+  categoria: string;
+  nombreCategoria: string | null;
+  linea01: string;
+  nombreLinea01: string | null;
 };
 
 type RotationApiResponse = {
@@ -90,6 +104,7 @@ type RotationApiResponse = {
       sedeName: string;
     }>;
     lineasN1: string[];
+    categoriasLineas01: RotationCategoriaLinea01FilterOption[];
   };
   meta: {
     effectiveRange: DateRange;
@@ -149,6 +164,9 @@ type GroupAbcdFilter = "all" | AbcdCategory;
 
 type RotationSortField =
   | "item"
+  | "bodega"
+  | "categoria"
+  | "linea01"
   | "descripcion"
   | "totalSales"
   | "totalUnits"
@@ -167,17 +185,20 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 /** Anchos de columna (table-layout: fixed) — thead y tbody comparten la misma rejilla. */
 const ROTACION_TABLE_COL_WIDTHS = [
-  "6%",
+  "5%",
+  "7%",
+  "8%",
+  "7%",
   "3%",
-  "24%",
-  "10%",
-  "9%",
-  "10%",
-  "9%",
-  "5%",
-  "5%",
-  "5%",
   "14%",
+  "8%",
+  "8%",
+  "8%",
+  "8%",
+  "5%",
+  "5%",
+  "5%",
+  "9%",
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
@@ -452,9 +473,45 @@ const rowMatchesProductSearch = (row: RotationRow, rawQuery: string) => {
   const q = rawQuery.trim();
   if (!q) return true;
   const needle = foldForProductSearch(q);
+  const hay = [
+    row.item,
+    row.descripcion,
+    row.bodega,
+    row.nombreBodega,
+    row.categoria,
+    row.nombreCategoria,
+    row.linea01,
+    row.nombreLinea01,
+  ];
+  return hay.some(
+    (v) => v && foldForProductSearch(v).includes(needle),
+  );
+};
+
+const rotationDimSortKey = (
+  nombre: string | null,
+  codigo: string | null,
+) => (nombre ?? "").trim() || (codigo ?? "").trim() || "";
+
+const RotationDimCell = ({
+  nombre,
+  codigo,
+}: {
+  nombre: string | null;
+  codigo: string | null;
+}) => {
+  const main = (nombre ?? "").trim() || (codigo ?? "").trim() || "—";
+  const showCode =
+    Boolean((nombre ?? "").trim()) &&
+    Boolean((codigo ?? "").trim()) &&
+    (nombre ?? "").trim() !== (codigo ?? "").trim();
   return (
-    foldForProductSearch(row.item).includes(needle) ||
-    foldForProductSearch(row.descripcion).includes(needle)
+    <div className="min-w-0">
+      <p className="text-[12px] font-medium leading-snug text-slate-800">{main}</p>
+      {showCode ? (
+        <p className="mt-0.5 text-[10px] leading-snug text-slate-500">{codigo}</p>
+      ) : null}
+    </div>
   );
 };
 
@@ -476,7 +533,38 @@ const normalizeRotationRows = (rows: RotationRow[]) =>
   rows.map((row) => ({
     ...row,
     totalUnits: safeNumber((row as RotationRow & { totalUnits?: number }).totalUnits),
+    bodega: row.bodega ?? null,
+    nombreBodega: row.nombreBodega ?? null,
+    categoria: row.categoria ?? null,
+    nombreCategoria: row.nombreCategoria ?? null,
+    linea01: row.linea01 ?? null,
+    nombreLinea01: row.nombreLinea01 ?? null,
   }));
+
+/** Pares (categoria, linea01) a enviar en query: null = sin filtro (todo el catalogo o vacio). */
+const buildCatLineQueryKeys = (
+  catalog: RotationCategoriaLinea01FilterOption[],
+  selectedPairKeys: string[],
+): string[] | null => {
+  if (catalog.length === 0) return null;
+  const catalogSet = new Set(catalog.map((c) => c.pairKey));
+  const valid = selectedPairKeys.filter((k) => catalogSet.has(k));
+  const isFull =
+    valid.length === catalog.length &&
+    catalog.every((c) => valid.includes(c.pairKey));
+  if (valid.length === 0 || isFull) return null;
+  return valid;
+};
+
+const appendCatLineParams = (
+  params: URLSearchParams,
+  catalog: RotationCategoriaLinea01FilterOption[],
+  selectedPairKeys: string[],
+) => {
+  const keys = buildCatLineQueryKeys(catalog, selectedPairKeys);
+  if (!keys) return;
+  keys.forEach((k) => params.append("catLinea", k));
+};
 
 const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
   const a = clampPercent(raw.aUntilPercent);
@@ -543,7 +631,12 @@ const compareNullableIsoDateKeys = (
 const getDefaultSortDirection = (
   field: RotationSortField,
 ): RotationSortDirection =>
-  field === "item" || field === "descripcion" || field === "status"
+  field === "item" ||
+  field === "bodega" ||
+  field === "categoria" ||
+  field === "linea01" ||
+  field === "descripcion" ||
+  field === "status"
     ? "asc"
     : "desc";
 
@@ -566,6 +659,24 @@ const sortRotationRows = (
     switch (field) {
       case "item":
         result = compareRotationText(left.item, right.item);
+        break;
+      case "bodega":
+        result = compareRotationText(
+          rotationDimSortKey(left.nombreBodega, left.bodega),
+          rotationDimSortKey(right.nombreBodega, right.bodega),
+        );
+        break;
+      case "categoria":
+        result = compareRotationText(
+          rotationDimSortKey(left.nombreCategoria, left.categoria),
+          rotationDimSortKey(right.nombreCategoria, right.categoria),
+        );
+        break;
+      case "linea01":
+        result = compareRotationText(
+          rotationDimSortKey(left.nombreLinea01, left.linea01),
+          rotationDimSortKey(right.nombreLinea01, right.linea01),
+        );
         break;
       case "descripcion":
         result = compareRotationText(left.descripcion, right.descripcion);
@@ -888,6 +999,9 @@ export default function RotacionPage() {
   const [selectedLineaN1Values, setSelectedLineaN1Values] = useState<string[]>(
     [],
   );
+  const [selectedCatLinePairKeys, setSelectedCatLinePairKeys] = useState<
+    string[]
+  >([]);
   const [abcdConfig, setAbcdConfig] = useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
   const [abcdDraftConfig, setAbcdDraftConfig] =
     useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
@@ -897,6 +1011,7 @@ export default function RotacionPage() {
     companies: [],
     sedes: [],
     lineasN1: [],
+    categoriasLineas01: [],
   });
   const [error, setError] = useState<string | null>(null);
   const skipNextFetchRef = useRef(false);
@@ -1046,10 +1161,13 @@ export default function RotacionPage() {
             companies: [],
             sedes: [],
             lineasN1: [],
+            categoriasLineas01: [],
           },
         );
         const allLineasN1 = payload.filters?.lineasN1 ?? [];
+        const allCatLinePairs = payload.filters?.categoriasLineas01 ?? [];
         setSelectedLineaN1Values(allLineasN1);
+        setSelectedCatLinePairKeys(allCatLinePairs.map((p) => p.pairKey));
         if (payload.meta?.abcdConfig) {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
@@ -1100,6 +1218,11 @@ export default function RotacionPage() {
             allLineasN1.forEach((linea) => {
               rowsParams.append("lineasN1", linea);
             });
+            appendCatLineParams(
+              rowsParams,
+              allCatLinePairs,
+              allCatLinePairs.map((p) => p.pairKey),
+            );
 
             const rowsResponse = await fetch(
               `/api/rotacion${rowsParams.size > 0 ? `?${rowsParams.toString()}` : ""}`,
@@ -1263,9 +1386,39 @@ export default function RotacionPage() {
     [selectedLineaN1Values],
   );
 
+  const categoriaLineaOptions = useMemo(
+    () => filterCatalog.categoriasLineas01 ?? [],
+    [filterCatalog.categoriasLineas01],
+  );
+
+  const categoriaLineasGrouped = useMemo(() => {
+    const map = new Map<string, RotationCategoriaLinea01FilterOption[]>();
+    for (const opt of categoriaLineaOptions) {
+      const list = map.get(opt.categoria) ?? [];
+      list.push(opt);
+      map.set(opt.categoria, list);
+    }
+    return Array.from(map.entries()).sort((a, b) => {
+      const la = a[1][0]?.nombreCategoria ?? a[0];
+      const lb = b[1][0]?.nombreCategoria ?? b[0];
+      return la.localeCompare(lb, "es", { sensitivity: "base", numeric: true });
+    });
+  }, [categoriaLineaOptions]);
+
+  const selectedCatLinePairKeySet = useMemo(
+    () => new Set(selectedCatLinePairKeys),
+    [selectedCatLinePairKeys],
+  );
+
   useEffect(() => {
     setSelectedLineaN1Values(lineaN1Options.map((option) => option.value));
   }, [lineaN1FamilyKeys, lineaN1Options]);
+
+  useEffect(() => {
+    setSelectedCatLinePairKeys(
+      categoriaLineaOptions.map((option) => option.pairKey),
+    );
+  }, [categoriaLineaOptions]);
 
   useEffect(() => {
     if (!selectedSede) return;
@@ -1338,6 +1491,11 @@ export default function RotacionPage() {
       selectedLineaN1Values.forEach((linea) => {
         params.append("lineasN1", linea);
       });
+      appendCatLineParams(
+        params,
+        filterCatalog.categoriasLineas01 ?? [],
+        selectedCatLinePairKeys,
+      );
 
       const response = await fetch(
         `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
@@ -1504,6 +1662,12 @@ export default function RotacionPage() {
           empresa: formatCompanyLabel(row.empresa),
           sede: displayRotationSedeName(row.sedeName),
           item: row.item,
+          bodega: row.bodega ?? "",
+          nombreBodega: row.nombreBodega ?? "",
+          categoria: row.categoria ?? "",
+          nombreCategoria: row.nombreCategoria ?? "",
+          linea01: row.linea01 ?? "",
+          nombreLinea01: row.nombreLinea01 ?? "",
           descripcion: row.descripcion,
           ventaPeriodo: row.totalSales,
           invCierre: row.inventoryUnits,
@@ -1540,6 +1704,12 @@ export default function RotacionPage() {
         "Empresa",
         "Sede",
         "Item",
+        "Bodega",
+        "Nombre bodega",
+        "Categoria",
+        "Nombre categoria",
+        "Linea01",
+        "Nombre linea01",
         "Descripcion",
         "Venta periodo",
         "Inv cierre",
@@ -1554,6 +1724,12 @@ export default function RotacionPage() {
         row.empresa,
         row.sede,
         row.item,
+        row.bodega,
+        row.nombreBodega,
+        row.categoria,
+        row.nombreCategoria,
+        row.linea01,
+        row.nombreLinea01,
         row.descripcion,
         formatPrice(row.ventaPeriodo),
         row.invCierre.toLocaleString("es-CO"),
@@ -1579,7 +1755,13 @@ export default function RotacionPage() {
         { header: "Empresa", key: "empresa", width: 18 },
         { header: "Sede", key: "sede", width: 24 },
         { header: "Item", key: "item", width: 14 },
-        { header: "Descripcion", key: "descripcion", width: 46 },
+        { header: "Bodega", key: "bodega", width: 12 },
+        { header: "Nombre bodega", key: "nombreBodega", width: 22 },
+        { header: "Categoria", key: "categoria", width: 12 },
+        { header: "Nombre categoria", key: "nombreCategoria", width: 22 },
+        { header: "Linea01", key: "linea01", width: 12 },
+        { header: "Nombre linea01", key: "nombreLinea01", width: 22 },
+        { header: "Descripcion", key: "descripcion", width: 40 },
         { header: "Venta periodo", key: "ventaPeriodo", width: 16 },
         { header: "Inv cierre", key: "invCierre", width: 12 },
         { header: "Unidad", key: "unidad", width: 10 },
@@ -1838,6 +2020,133 @@ export default function RotacionPage() {
                   accentClassName="text-sky-700"
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
                 />
+              </div>
+              <div className="rounded-2xl border border-teal-200 bg-white px-4 py-3 shadow-sm">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <FilterFieldLabel
+                    icon={PackageSearch}
+                    label="Categoria y linea 01 (destino)"
+                    accentClassName="text-teal-800"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setSelectedCatLinePairKeys(
+                          categoriaLineaOptions.map((o) => o.pairKey),
+                        )
+                      }
+                      disabled={
+                        categoriaLineaOptions.length === 0 ||
+                        isLoadingLineCatalog
+                      }
+                      className="h-8 rounded-lg border-teal-200 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+                    >
+                      Seleccionar todas
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedCatLinePairKeys([])}
+                      disabled={
+                        categoriaLineaOptions.length === 0 ||
+                        selectedCatLinePairKeys.length === 0 ||
+                        isLoadingLineCatalog
+                      }
+                      className="h-8 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      Limpiar seleccion
+                    </Button>
+                  </div>
+                </div>
+                <p className="mb-2 text-[11px] leading-snug text-slate-500">
+                  Pares categoria + linea 01 segun la base: el mismo codigo de
+                  linea en otra categoria es otro producto. Marca las combinaciones
+                  que quieras ver.
+                </p>
+                <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                  {!selectedSede ? (
+                    <p className="text-xs text-slate-500">
+                      Selecciona una sede para cargar categorias y lineas 01.
+                    </p>
+                  ) : categoriaLineasGrouped.length === 0 ? (
+                    <p className="text-xs text-slate-500">
+                      {isLoadingLineCatalog
+                        ? "Cargando categorias..."
+                        : "No hay categorias / lineas 01 en este periodo para la sede elegida."}
+                    </p>
+                  ) : (
+                    categoriaLineasGrouped.map(([catKey, opts]) => {
+                      const header =
+                        opts[0]?.nombreCategoria?.trim() ||
+                        (catKey === "__sin_cat__" ? "Sin categoria" : catKey);
+                      return (
+                        <div key={catKey} className="border-b border-teal-100 pb-2 last:border-b-0">
+                          <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-teal-900">
+                            {header}
+                            {catKey !== "__sin_cat__" ? (
+                              <span className="ml-1 font-mono text-[10px] font-semibold text-teal-600">
+                                ({catKey})
+                              </span>
+                            ) : null}
+                          </p>
+                          <div className="flex flex-col gap-1.5 pl-0.5">
+                            {[...opts]
+                              .sort((a, b) =>
+                                (a.nombreLinea01 ?? a.linea01).localeCompare(
+                                  b.nombreLinea01 ?? b.linea01,
+                                  "es",
+                                  { numeric: true, sensitivity: "base" },
+                                ),
+                              )
+                              .map((opt) => {
+                                const checked = selectedCatLinePairKeySet.has(
+                                  opt.pairKey,
+                                );
+                                const lineLabel =
+                                  opt.nombreLinea01?.trim() ||
+                                  (opt.linea01 === "__sin_l01__"
+                                    ? "Sin linea 01"
+                                    : opt.linea01);
+                                return (
+                                  <label
+                                    key={opt.pairKey}
+                                    className="flex cursor-pointer items-start gap-2 text-sm text-slate-700"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() =>
+                                        setSelectedCatLinePairKeys((cur) =>
+                                          checked
+                                            ? cur.filter((k) => k !== opt.pairKey)
+                                            : [...cur, opt.pairKey],
+                                        )
+                                      }
+                                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-200"
+                                    />
+                                    <span>
+                                      <span className="font-medium">{lineLabel}</span>
+                                      {opt.linea01 &&
+                                      opt.linea01 !== "__sin_l01__" &&
+                                      opt.nombreLinea01?.trim() ? (
+                                        <span className="ml-1 text-[11px] font-normal text-slate-500">
+                                          L01 {opt.linea01}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
               <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2804,7 +3113,7 @@ export default function RotacionPage() {
                   <CardContent className="px-0 py-0">
                     <Table
                       containerClassName="rotacion-table-capture-scroll min-w-0 !overflow-visible"
-                      className="rotacion-sticky-table w-full min-w-[76rem] table-fixed border-collapse text-sm"
+                      className="rotacion-sticky-table w-full min-w-[104rem] table-fixed border-collapse text-sm"
                     >
                       <colgroup>
                         {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
@@ -2817,6 +3126,45 @@ export default function RotacionPage() {
                             <SortableRotationHeader
                               field="item"
                               label="Item"
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
+                            <SortableRotationHeader
+                              field="bodega"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Bodega
+                                </span>
+                              }
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
+                            <SortableRotationHeader
+                              field="categoria"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Categoria
+                                </span>
+                              }
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
+                            <SortableRotationHeader
+                              field="linea01"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Linea 01
+                                </span>
+                              }
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
@@ -2941,6 +3289,24 @@ export default function RotacionPage() {
                           <TableRow key={`${group.sedeId}-${row.item}`}>
                             <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
                               <span className="text-xs">{row.item}</span>
+                            </TableCell>
+                            <TableCell className="px-1 py-2 align-top">
+                              <RotationDimCell
+                                nombre={row.nombreBodega}
+                                codigo={row.bodega}
+                              />
+                            </TableCell>
+                            <TableCell className="px-1 py-2 align-top">
+                              <RotationDimCell
+                                nombre={row.nombreCategoria}
+                                codigo={row.categoria}
+                              />
+                            </TableCell>
+                            <TableCell className="px-1 py-2 align-top">
+                              <RotationDimCell
+                                nombre={row.nombreLinea01}
+                                codigo={row.linea01}
+                              />
                             </TableCell>
                             <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
                               {(() => {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { PoolClient } from "pg";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
+import { isHorariosOcultarCedula } from "@/lib/horarios-ocultar-cedulas";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import type {
   HourlyAnalysisData,
@@ -826,6 +827,9 @@ const fetchHourlyData = async (
         }
 
         for (const person of peopleMap.values()) {
+          if (isHorariosOcultarCedula(person.personId)) {
+            continue;
+          }
           const hourlySales = Array.from(person.hourlySales.entries())
             .sort((a, b) => a[0] - b[0])
             .map(([slotStartMinute, sales]) => ({
@@ -1164,6 +1168,9 @@ const fetchHourlyData = async (
             if (lineFilter && lineId !== lineFilter) continue;
 
             const employeeId = typedRow.employee_id?.trim() || null;
+            if (isHorariosOcultarCedula(employeeId)) {
+              continue;
+            }
             const employeeNameRaw = typedRow.employee_name?.trim() || "";
             const employeeName =
               employeeNameRaw || employeeId || "Empleado sin nombre";

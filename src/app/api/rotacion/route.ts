@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, withPoolClient } from "@/lib/db";
+import {
+  buildRotationCategoriaLineaPairKey,
+  normalizeRotationCategoriaKey,
+  normalizeRotationLinea01Key,
+} from "@/lib/rotacion-dimensions";
 
 /** Unifica codigos N1 para filtros (BD a veces devuelve "1" en vez de "01"). */
 const normalizeRotationLineaN1Code = (raw: string | null | undefined): string => {
@@ -36,6 +41,12 @@ type RotationDbRow = {
   item: string;
   descripcion: string;
   unidad: string | null;
+  bodega: string | null;
+  nombre_bodega: string | null;
+  categoria: string | null;
+  nombre_categoria: string | null;
+  linea01: string | null;
+  nombre_linea01: string | null;
   total_sales: string | number | null;
   total_units: string | number | null;
   inventory_units: string | number | null;
@@ -57,6 +68,12 @@ type RotationRow = {
   item: string;
   descripcion: string;
   unidad: string | null;
+  bodega: string | null;
+  nombreBodega: string | null;
+  categoria: string | null;
+  nombreCategoria: string | null;
+  linea01: string | null;
+  nombreLinea01: string | null;
   totalSales: number;
   totalUnits: number;
   inventoryUnits: number;
@@ -69,6 +86,14 @@ type RotationRow = {
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
 
+type RotationCategoriaLinea01Option = {
+  pairKey: string;
+  categoria: string;
+  nombreCategoria: string | null;
+  linea01: string;
+  nombreLinea01: string | null;
+};
+
 type RotationFilterCatalog = {
   companies: string[];
   sedes: Array<{
@@ -77,6 +102,7 @@ type RotationFilterCatalog = {
     sedeName: string;
   }>;
   lineasN1: string[];
+  categoriasLineas01: RotationCategoriaLinea01Option[];
 };
 
 type AbcdConfig = {
@@ -92,6 +118,22 @@ const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
 const ROTATION_CATALOG_LOOKBACK_DAYS = 45;
 const ROTATION_ABCD_CACHE_TTL_MS = 5 * 60 * 1000;
 const ROTATION_LINEAS_N1_CACHE_TTL_MS = 3 * 60 * 1000;
+const ROTACION_CATEGORIA_LINEA_CACHE_TTL_MS = 3 * 60 * 1000;
+
+/**
+ * Clave compuesta categoria + linea01 alineada con rotacion-dimensions (mismo codigo en otra categoria = otro par).
+ */
+const SQL_ROTACION_CAT_LINE_PAIR_KEY = `(
+  CASE
+    WHEN NULLIF(TRIM(categoria::text), '') IS NULL THEN '__sin_cat__'
+    ELSE TRIM(BOTH FROM categoria::text)
+  END || E'\\x1f' ||
+  CASE
+    WHEN NULLIF(TRIM(linea01::text), '') IS NULL THEN '__sin_l01__'
+    WHEN TRIM(linea01::text) ~ '^[0-9]+$' THEN LPAD(TRIM(linea01::text), 2, '0')
+    ELSE TRIM(BOTH FROM linea01::text)
+  END
+)`;
 const MAX_ROTATION_RANGE_DAYS = 93;
 const FUTURE_STOCKOUT_DAYS = 7;
 const HIDDEN_SEDE_KEYS = new Set([
@@ -116,6 +158,10 @@ let abcdConfigCache: { value: AbcdConfig; expiresAt: number } | null = null;
 const lineasN1ByRangeCache = new Map<
   string,
   { value: string[]; expiresAt: number }
+>();
+const categoriaLinea01ByRangeCache = new Map<
+  string,
+  { value: RotationCategoriaLinea01Option[]; expiresAt: number }
 >();
 
 const isIsoDate = (value: string | null) =>
@@ -195,6 +241,12 @@ const limitDateRangeWindow = (range: { start: string; end: string }) => {
 
 const toNumber = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
+
+const toOptionalTrimmedString = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const t = String(value).trim();
+  return t ? t : null;
+};
 
 const normalizeKey = (value: string) =>
   value
@@ -605,6 +657,81 @@ const queryRotationLineasN1 = async ({
   return value;
 };
 
+const queryRotationCategoriaLinea01Catalog = async ({
+  startDate,
+  endDate,
+  empresa,
+  sedeId,
+}: {
+  startDate: string;
+  endDate: string;
+  empresa: string | null;
+  sedeId: string;
+}): Promise<RotationCategoriaLinea01Option[]> => {
+  const cacheKey = `catl01|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
+  const now = Date.now();
+  const cached = categoriaLinea01ByRangeCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const value = await withPoolClient(async (client) => {
+    const result = await client.query(
+      `
+      SELECT DISTINCT
+        NULLIF(TRIM(categoria::text), '') AS categoria_raw,
+        NULLIF(TRIM(nombre_categoria::text), '') AS nombre_categoria,
+        NULLIF(TRIM(linea01::text), '') AS linea01_raw,
+        NULLIF(TRIM(nombre_linea01::text), '') AS nombre_linea01
+      FROM rotacion_base_item_dia_sede
+      WHERE fecha_consulta BETWEEN $1 AND $2
+        AND fecha_consulta ~ '^[0-9]{8}$'
+        AND item IS NOT NULL
+        AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
+        AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $4)
+      `,
+      [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
+    );
+
+    const seen = new Set<string>();
+    const rows: RotationCategoriaLinea01Option[] = [];
+    for (const raw of (result.rows ?? []) as Array<{
+      categoria_raw: string | null;
+      nombre_categoria: string | null;
+      linea01_raw: string | null;
+      nombre_linea01: string | null;
+    }>) {
+      const ck = normalizeRotationCategoriaKey(raw.categoria_raw);
+      const lk = normalizeRotationLinea01Key(raw.linea01_raw);
+      const pairKey = buildRotationCategoriaLineaPairKey(ck, lk);
+      if (seen.has(pairKey)) continue;
+      seen.add(pairKey);
+      rows.push({
+        pairKey,
+        categoria: ck,
+        nombreCategoria: toOptionalTrimmedString(raw.nombre_categoria),
+        linea01: lk,
+        nombreLinea01: toOptionalTrimmedString(raw.nombre_linea01),
+      });
+    }
+    rows.sort((a, b) => {
+      const byCat = a.categoria.localeCompare(b.categoria, "es");
+      if (byCat !== 0) return byCat;
+      return a.linea01.localeCompare(b.linea01, "es", { numeric: true });
+    });
+    return rows;
+  });
+
+  if (categoriaLinea01ByRangeCache.size > 500) {
+    categoriaLinea01ByRangeCache.clear();
+  }
+  categoriaLinea01ByRangeCache.set(cacheKey, {
+    value,
+    expiresAt: now + ROTACION_CATEGORIA_LINEA_CACHE_TTL_MS,
+  });
+  return value;
+};
+
 const isPgConnectionFailure = (err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err);
   return (
@@ -620,6 +747,7 @@ const queryRotationRows = async ({
   empresa,
   sedeId,
   lineasN1,
+  categoriaLinea01PairKeys,
 }: {
   startDate: string;
   endDate: string;
@@ -627,6 +755,7 @@ const queryRotationRows = async ({
   empresa: string | null;
   sedeId: string | null;
   lineasN1: string[] | null;
+  categoriaLinea01PairKeys: string[] | null;
 }): Promise<RotationRow[]> => {
   const fetchRows = async (): Promise<RotationRow[]> =>
     withPoolClient(async (client) => {
@@ -654,6 +783,12 @@ const queryRotationRows = async ({
             THEN TO_DATE(fecha_ultima_compra, 'YYYYMMDD')
             ELSE NULL
           END AS last_movement_date,
+          NULLIF(TRIM(COALESCE(bodega::text, '')), '') AS bodega,
+          NULLIF(TRIM(COALESCE(nombre_bodega::text, '')), '') AS nombre_bodega,
+          NULLIF(TRIM(COALESCE(categoria::text, '')), '') AS categoria,
+          NULLIF(TRIM(COALESCE(nombre_categoria::text, '')), '') AS nombre_categoria,
+          NULLIF(TRIM(COALESCE(linea01::text, '')), '') AS linea01,
+          NULLIF(TRIM(COALESCE(nombre_linea01::text, '')), '') AS nombre_linea01,
           fecha_carga
         FROM rotacion_base_item_dia_sede
         WHERE fecha_consulta BETWEEN $1 AND $2
@@ -662,6 +797,7 @@ const queryRotationRows = async ({
           AND ($5::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $5)
           AND ($6::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $6)
           AND ($7::text[] IS NULL OR COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') = ANY($7::text[]))
+          AND ($10::text[] IS NULL OR ${SQL_ROTACION_CAT_LINE_PAIR_KEY} = ANY($10::text[]))
       ),
       ranked AS (
         SELECT
@@ -687,6 +823,12 @@ const queryRotationRows = async ({
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value,
+          MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
+          MAX(CASE WHEN latest_rank = 1 THEN nombre_bodega END) AS nombre_bodega,
+          MAX(CASE WHEN latest_rank = 1 THEN categoria END) AS categoria,
+          MAX(CASE WHEN latest_rank = 1 THEN nombre_categoria END) AS nombre_categoria,
+          MAX(CASE WHEN latest_rank = 1 THEN linea01 END) AS linea01,
+          MAX(CASE WHEN latest_rank = 1 THEN nombre_linea01 END) AS nombre_linea01,
           COUNT(*)::int AS tracked_days,
           SUM(CASE WHEN unidades_vendidas > 0 THEN 1 ELSE 0 END)::int AS sales_effective_days
         FROM ranked
@@ -710,6 +852,12 @@ const queryRotationRows = async ({
           item,
           descripcion,
           unidad,
+          bodega,
+          nombre_bodega,
+          categoria,
+          nombre_categoria,
+          linea01,
+          nombre_linea01,
           total_sales,
           total_units,
           COALESCE(inventory_units, 0) AS inventory_units,
@@ -739,6 +887,12 @@ const queryRotationRows = async ({
           item,
           descripcion,
           unidad,
+          bodega,
+          nombre_bodega,
+          categoria,
+          nombre_categoria,
+          linea01,
+          nombre_linea01,
           total_sales,
           total_units,
           inventory_units,
@@ -769,6 +923,12 @@ const queryRotationRows = async ({
         item,
         descripcion,
         unidad,
+        bodega,
+        nombre_bodega,
+        categoria,
+        nombre_categoria,
+        linea01,
+        nombre_linea01,
         total_sales,
         total_units,
         inventory_units,
@@ -797,6 +957,7 @@ const queryRotationRows = async ({
         lineasN1,
         FUTURE_STOCKOUT_DAYS,
         LOW_ROTATION_DAYS_THRESHOLD,
+        categoriaLinea01PairKeys,
       ],
     );
 
@@ -810,6 +971,12 @@ const queryRotationRows = async ({
         item: row.item,
         descripcion: row.descripcion,
         unidad: row.unidad,
+        bodega: toOptionalTrimmedString(row.bodega),
+        nombreBodega: toOptionalTrimmedString(row.nombre_bodega),
+        categoria: toOptionalTrimmedString(row.categoria),
+        nombreCategoria: toOptionalTrimmedString(row.nombre_categoria),
+        linea01: toOptionalTrimmedString(row.linea01),
+        nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
         totalSales: toNumber(row.total_sales),
         totalUnits: toNumber(row.total_units),
         inventoryUnits: toNumber(row.inventory_units),
@@ -895,6 +1062,8 @@ export async function GET(request: Request) {
             filters: {
               companies: [],
               sedes: [],
+              lineasN1: [],
+              categoriasLineas01: [],
             },
             meta: {
               effectiveRange: { start: "", end: "" },
@@ -917,6 +1086,10 @@ export async function GET(request: Request) {
     const requestedSedeId = url.searchParams.get("sede")?.trim() || null;
     const requestedLineasN1 = url.searchParams
       .getAll("lineasN1")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const requestedCatLineaKeys = url.searchParams
+      .getAll("catLinea")
       .map((value) => value.trim())
       .filter(Boolean);
     const isCatalogOnly = url.searchParams.get("catalogOnly") === "1";
@@ -947,6 +1120,7 @@ export async function GET(request: Request) {
           companies: [] as string[],
           sedes: [] as RotationFilterCatalog["sedes"],
           lineasN1: [] as string[],
+          categoriasLineas01: [] as RotationCategoriaLinea01Option[],
         };
     const sedeAccess = resolveVisibleSedes(session.user, fullCatalog);
 
@@ -967,6 +1141,7 @@ export async function GET(request: Request) {
       companies: visibleCompanies,
       sedes: visibleSedes,
       lineasN1: [],
+      categoriasLineas01: [],
     };
     const requestedVisibleSede =
       requestedSedeId === null
@@ -996,6 +1171,16 @@ export async function GET(request: Request) {
         })
       : [];
     filters.lineasN1 = lineasN1;
+
+    const categoriasLineas01Catalog = requestedVisibleSede
+      ? await queryRotationCategoriaLinea01Catalog({
+          startDate: boundedRange.start,
+          endDate: boundedRange.end,
+          empresa: effectiveCompany,
+          sedeId: requestedVisibleSede.sedeId,
+        })
+      : [];
+    filters.categoriasLineas01 = categoriasLineas01Catalog;
 
     if (!requestedSedeId) {
       return withSession(
@@ -1063,6 +1248,23 @@ export async function GET(request: Request) {
       );
     }
 
+    const catalogPairKeySet = new Set(
+      categoriasLineas01Catalog.map((p) => p.pairKey),
+    );
+    const validatedCatLineKeys = requestedCatLineaKeys.filter((k) =>
+      catalogPairKeySet.has(k),
+    );
+    const isFullCatLineSelection =
+      categoriasLineas01Catalog.length > 0 &&
+      validatedCatLineKeys.length === categoriasLineas01Catalog.length &&
+      categoriasLineas01Catalog.every((p) =>
+        validatedCatLineKeys.includes(p.pairKey),
+      );
+    const categoriaLinea01PairKeysForQuery =
+      validatedCatLineKeys.length === 0 || isFullCatLineSelection
+        ? null
+        : validatedCatLineKeys;
+
     const rows = await queryRotationRows({
       startDate: boundedRange.start,
       endDate: boundedRange.end,
@@ -1070,6 +1272,7 @@ export async function GET(request: Request) {
       empresa: effectiveCompany,
       sedeId: requestedVisibleSede?.sedeId ?? null,
       lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
+      categoriaLinea01PairKeys: categoriaLinea01PairKeysForQuery,
     });
 
     const stats = {
@@ -1117,6 +1320,8 @@ export async function GET(request: Request) {
           filters: {
             companies: [],
             sedes: [],
+            lineasN1: [],
+            categoriasLineas01: [],
           },
           meta: {
             effectiveRange: { start: "", end: "" },
