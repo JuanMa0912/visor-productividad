@@ -531,7 +531,12 @@ const mapRotationCatalogRows = (
   const companies = Array.from(new Set(sedes.map((row) => row.empresa))).sort(
     (a, b) => a.localeCompare(b, "es"),
   );
-  return { companies, sedes, lineasN1: [] };
+  return {
+    companies,
+    sedes,
+    lineasN1: [],
+    categoriasLineas01: [],
+  };
 };
 
 const getRotationFilterCatalog = async (
