@@ -59,47 +59,56 @@ const resolveDbConfig = () => {
   };
 };
 
-type DbQueryResult = {
-  rows?: Array<{ total?: number | string | null }>;
-  rowCount?: number | null;
-};
+let pool: import("pg").Pool | null = null;
 
-type DbClient = {
-  query: (sql: string, params?: unknown[]) => Promise<DbQueryResult>;
-  release: () => void;
-};
-
-let pool: {
-  connect: () => Promise<DbClient>;
-} | null = null;
-
-export const getDbPool = async () => {
+export const getDbPool = async (): Promise<import("pg").Pool> => {
   if (!pool) {
     const dbConfig = resolveDbConfig();
     try {
       const { Pool } = await import("pg");
-      pool = new Pool({
+      const next = new Pool({
         host: dbConfig.host,
         port: dbConfig.port,
         database: dbConfig.database,
         user: dbConfig.user,
         password: dbConfig.password,
         options: `-c search_path=${dbConfig.schema}`,
+        keepAlive: true,
       });
+      next.on("error", (err: Error) => {
+        console.error("[db] PostgreSQL pool client error:", err.message);
+      });
+      pool = next;
     } catch {
       throw new Error(
         "No se pudo cargar el cliente de PostgreSQL. Instala la dependencia 'pg' para habilitar la conexion.",
       );
     }
   }
+  if (!pool) {
+    throw new Error("Pool de PostgreSQL no inicializado.");
+  }
   return pool;
 };
 
-export const testDbConnection = async () => {
-  const client = await (await getDbPool()).connect();
+/** Ejecuta fn con un cliente del pool y libera correctamente; si falla, descarta el cliente (no reutiliza conexion rota). */
+export const withPoolClient = async <T>(
+  fn: (client: import("pg").PoolClient) => Promise<T>,
+): Promise<T> => {
+  const poolInstance = await getDbPool();
+  const client = await poolInstance.connect();
   try {
-    await client.query("SELECT 1");
-  } finally {
+    const result = await fn(client);
     client.release();
+    return result;
+  } catch (err) {
+    client.release(err instanceof Error ? err : new Error(String(err)));
+    throw err;
   }
+};
+
+export const testDbConnection = async () => {
+  await withPoolClient(async (client) => {
+    await client.query("SELECT 1");
+  });
 };

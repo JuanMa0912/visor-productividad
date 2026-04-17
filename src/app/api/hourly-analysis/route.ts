@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { PoolClient } from "pg";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { canAccessPortalSection } from "@/lib/portal-sections";
@@ -541,10 +542,7 @@ const setCachedResponse = (key: string, data: HourlyAnalysisData) => {
   }
 };
 
-const getTableColumns = async (
-  client: Awaited<ReturnType<Awaited<ReturnType<typeof getDbPool>>["connect"]>>,
-  tableName: string,
-) => {
+const getTableColumns = async (client: PoolClient, tableName: string) => {
   const now = Date.now();
   const cached = tableColumnsCache.get(tableName);
   if (cached && cached.expiresAt > now) {

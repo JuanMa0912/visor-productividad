@@ -46,7 +46,8 @@ import {
   canAccessRotacionBoard,
   canEditRotacionAbcdConfig,
 } from "@/lib/special-role-features";
-import { formatDateLabel } from "@/lib/utils";
+import { mapRawSedeToCanonical } from "@/lib/planilla-sede";
+import { cn, formatDateLabel } from "@/lib/utils";
 
 type DateRange = {
   start: string;
@@ -129,8 +130,9 @@ const matchesLineaN1Family = (
   value: string,
   keys: Set<LineaN1FamilyKey>,
 ): boolean => {
-  const isPerecedero = PERECEDEROS_LINEAS_N1.has(value);
-  const isAdmon = ADMON_LINEAS_N1.has(value);
+  const code = normalizeLineaN1CodeForFilter(value);
+  const isPerecedero = PERECEDEROS_LINEAS_N1.has(code);
+  const isAdmon = ADMON_LINEAS_N1.has(code);
   if (keys.has("perecederos") && isPerecedero) return true;
   if (keys.has("admon") && isAdmon) return true;
   if (keys.has("manufactura") && !isPerecedero && !isAdmon) return true;
@@ -162,9 +164,33 @@ type RotationSortDirection = "asc" | "desc";
 type PageSize = 25 | 50 | 100;
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+/** Anchos de columna (table-layout: fixed) — thead y tbody comparten la misma rejilla. */
+const ROTACION_TABLE_COL_WIDTHS = [
+  "6%",
+  "3%",
+  "24%",
+  "10%",
+  "9%",
+  "10%",
+  "9%",
+  "5%",
+  "5%",
+  "5%",
+  "14%",
+] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
-const ADMON_LINEAS_N1 = new Set(["46", "47", "48", "49"]);
+const ADMON_LINEAS_N1 = new Set(["30", "46", "47", "48", "49"]);
+
+/** Misma regla que en /api/rotacion: codigos numericos a 2 cifras para alinear con familias. */
+const normalizeLineaN1CodeForFilter = (raw: string | null | undefined): string => {
+  const t = String(raw ?? "").trim();
+  if (!t) return "__sin_n1__";
+  if (t === "__sin_n1__") return t;
+  if (/^\d+$/.test(t)) return t.padStart(2, "0");
+  return t;
+};
 const LINEA_N1_SHORT_NAMES: Record<string, string> = {
   "01": "Fruver",
   "02": "Carnes rojas",
@@ -416,6 +442,22 @@ const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
 const compareRotationText = (left: string, right: string) =>
   left.localeCompare(right, "es", { sensitivity: "base", numeric: true });
 
+const foldForProductSearch = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+
+const rowMatchesProductSearch = (row: RotationRow, rawQuery: string) => {
+  const q = rawQuery.trim();
+  if (!q) return true;
+  const needle = foldForProductSearch(q);
+  return (
+    foldForProductSearch(row.item).includes(needle) ||
+    foldForProductSearch(row.descripcion).includes(needle)
+  );
+};
+
 const formatRotationOneDecimal = (value: number) => {
   if (value >= NO_SALES_DI_VALUE) return "Sin venta";
   return (Math.round(value * 10) / 10).toLocaleString("es-CO", {
@@ -599,11 +641,11 @@ const buildRowsBySede = (rows: RotationRow[]) => {
   >();
 
   rows.forEach((row) => {
-    const key = `${row.empresa}::${row.sedeId}::${row.sedeName}`;
+    const key = `${row.empresa}::${row.sedeId}`;
     const current = grouped.get(key) ?? {
       empresa: row.empresa,
       sedeId: row.sedeId,
-      sedeName: row.sedeName,
+      sedeName: displayRotationSedeName(row.sedeName),
       rows: [],
     };
     current.rows.push(row);
@@ -669,9 +711,20 @@ const formatSedeLabel = (value: string) =>
     .replace(/\s{2,}/g, " ")
     .trim();
 
+/** Nombre de sede alineado con el resto del portal (planilla-sede / admin). */
+const displayRotationSedeName = (raw: string) => {
+  const cleaned = formatSedeLabel(raw);
+  const canonical = mapRawSedeToCanonical(cleaned);
+  return (canonical || cleaned).trim();
+};
+
 const parseSedeSelection = (value: string) => {
   if (!value) return null;
-  const [empresa, sedeId] = value.split("::");
+  const sep = "::";
+  const idx = value.indexOf(sep);
+  if (idx <= 0) return null;
+  const empresa = value.slice(0, idx).trim();
+  const sedeId = value.slice(idx + sep.length).trim();
   if (!empresa || !sedeId) return null;
   return { empresa, sedeId };
 };
@@ -682,6 +735,8 @@ type SortableRotationHeaderProps = {
   activeField: RotationSortField | null;
   direction: RotationSortDirection;
   onSort: (field: RotationSortField) => void;
+  /** Encabezados numericos alineados a la derecha como las celdas (evita desfase visual). */
+  align?: "left" | "right";
 };
 
 const WhatsAppLogo = (props: React.SVGProps<SVGSVGElement>) => (
@@ -701,25 +756,37 @@ const SortableRotationHeader = ({
   activeField,
   direction,
   onSort,
+  align = "left",
 }: SortableRotationHeaderProps) => {
   const isActive = activeField === field;
+  const isRight = align === "right";
 
   return (
     <button
       type="button"
       onClick={() => onSort(field)}
-      className={`inline-flex w-full items-center gap-2 text-left transition-colors ${
-        isActive ? "text-amber-700" : "text-slate-700 hover:text-amber-700"
-      }`}
+      className={cn(
+        "inline-flex w-full min-w-0 items-center gap-1.5 transition-colors",
+        isRight ? "justify-end text-right" : "justify-start text-left",
+        isActive ? "text-amber-700" : "text-slate-700 hover:text-amber-700",
+      )}
       aria-pressed={isActive}
     >
-      <span className="block flex-1">{label}</span>
+      <span
+        className={cn(
+          "min-w-0",
+          isRight ? "shrink" : "block flex-1",
+        )}
+      >
+        {label}
+      </span>
       <ArrowUp
-        className={`h-3.5 w-3.5 shrink-0 transition-all ${
+        className={cn(
+          "h-3.5 w-3.5 shrink-0 transition-all",
           isActive
             ? `opacity-100 ${direction === "desc" ? "rotate-180" : ""}`
-            : "opacity-35"
-        }`}
+            : "opacity-35",
+        )}
       />
     </button>
   );
@@ -785,6 +852,18 @@ const FilterSelectField = ({
   </label>
 );
 
+const readRotationApiForbiddenMessage = async (
+  response: Response,
+): Promise<string> => {
+  const fallback = "No tienes permiso para ver esta informacion.";
+  try {
+    const data = (await response.json()) as { error?: string };
+    return data.error?.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 export default function RotacionPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -845,6 +924,7 @@ export default function RotacionPage() {
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
+  const [productSearchInput, setProductSearchInput] = useState("");
   const rotacionTablesExportRef = useRef<HTMLDivElement>(null);
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
@@ -950,7 +1030,7 @@ export default function RotacionPage() {
           return;
         }
         if (response.status === 403) {
-          router.replace("/secciones");
+          setError(await readRotationApiForbiddenMessage(response));
           return;
         }
 
@@ -1033,7 +1113,7 @@ export default function RotacionPage() {
               return;
             }
             if (rowsResponse.status === 403) {
-              router.replace("/secciones");
+              setError(await readRotationApiForbiddenMessage(rowsResponse));
               return;
             }
 
@@ -1104,13 +1184,13 @@ export default function RotacionPage() {
     () =>
       filterCatalog.sedes
         .map((option) => {
-          const cleanedSedeName = formatSedeLabel(option.sedeName);
+          const displaySedeName = displayRotationSedeName(option.sedeName);
           return {
             value: `${option.empresa}::${option.sedeId}`,
-            label: `${formatCompanyLabel(option.empresa)} - ${cleanedSedeName}`,
+            label: `${formatCompanyLabel(option.empresa)} - ${displaySedeName}`,
             empresa: option.empresa,
             sedeId: option.sedeId,
-            sedeName: cleanedSedeName,
+            sedeName: displaySedeName,
           };
         })
         .filter((option) => option.sedeName.length > 0)
@@ -1140,9 +1220,28 @@ export default function RotacionPage() {
     [lineaN1FamilyKeys],
   );
 
+  const lineasN1DerivedFromRows = useMemo(() => {
+    const acc = new Set<string>();
+    for (const row of rows) {
+      acc.add(normalizeLineaN1CodeForFilter(row.lineaN1Codigo));
+    }
+    return Array.from(acc).sort((a, b) => a.localeCompare(b, "es"));
+  }, [rows]);
+
+  const lineasN1ForFilterUi = useMemo(() => {
+    const fromApi = (filterCatalog.lineasN1 ?? []).map(
+      normalizeLineaN1CodeForFilter,
+    );
+    const deduped = Array.from(new Set(fromApi)).sort((a, b) =>
+      a.localeCompare(b, "es"),
+    );
+    if (deduped.length > 0) return deduped;
+    return lineasN1DerivedFromRows;
+  }, [filterCatalog.lineasN1, lineasN1DerivedFromRows]);
+
   const lineaN1Options = useMemo<LineaN1Option[]>(
     () =>
-      [...filterCatalog.lineasN1]
+      [...lineasN1ForFilterUi]
         .filter((value) => {
           const allSelected =
             lineaN1FamilyKeySet.size === ALL_LINEA_N1_FAMILY_KEYS.length;
@@ -1156,7 +1255,7 @@ export default function RotacionPage() {
             value === "__sin_n1__" ? undefined : LINEA_N1_SHORT_NAMES[value],
         }))
         .sort((a, b) => a.label.localeCompare(b.label, "es")),
-    [filterCatalog.lineasN1, lineaN1FamilyKeySet],
+    [lineasN1ForFilterUi, lineaN1FamilyKeySet],
   );
 
   const selectedLineaN1Set = useMemo(
@@ -1175,11 +1274,30 @@ export default function RotacionPage() {
     }
   }, [selectedSede, sedeOptions]);
 
+  useEffect(() => {
+    if (selectedSede) return;
+    if (isLoadingLineCatalog) return;
+    if (allSedeOptions.length !== 1) return;
+    const only = allSedeOptions[0];
+    setSelectedSede(only.value);
+    setSelectedCompany(only.empresa);
+  }, [allSedeOptions, isLoadingLineCatalog, selectedSede]);
+
   const sortedRows = useMemo(
     () => sortRotationRows(rows, tableSortField, tableSortDirection),
     [rows, tableSortDirection, tableSortField],
   );
-  const rowsBySede = useMemo(() => buildRowsBySede(sortedRows), [sortedRows]);
+  const rowsAfterProductFilter = useMemo(
+    () =>
+      sortedRows.filter((row) =>
+        rowMatchesProductSearch(row, productSearchInput),
+      ),
+    [sortedRows, productSearchInput],
+  );
+  const rowsBySede = useMemo(
+    () => buildRowsBySede(rowsAfterProductFilter),
+    [rowsAfterProductFilter],
+  );
 
   const handleStartDateChange = (value: string) => {
     if (!value) return;
@@ -1230,7 +1348,7 @@ export default function RotacionPage() {
         return;
       }
       if (response.status === 403) {
-        router.replace("/secciones");
+        setError(await readRotationApiForbiddenMessage(response));
         return;
       }
       const payload = (await response.json()) as RotationApiResponse;
@@ -1384,7 +1502,7 @@ export default function RotacionPage() {
               );
         return categoryFilteredRows.map((row) => ({
           empresa: formatCompanyLabel(row.empresa),
-          sede: row.sedeName,
+          sede: displayRotationSedeName(row.sedeName),
           item: row.item,
           descripcion: row.descripcion,
           ventaPeriodo: row.totalSales,
@@ -1833,7 +1951,13 @@ export default function RotacionPage() {
                 <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
                   {lineaN1Options.length === 0 ? (
                     <p className="text-xs text-slate-500">
-                      Selecciona una sede para habilitar las lineas N1.
+                      {!selectedSede
+                        ? "Selecciona una sede para habilitar las lineas N1."
+                        : isLoadingLineCatalog
+                          ? "Cargando lineas N1..."
+                          : hasLoadedItems && lineasN1ForFilterUi.length === 0
+                            ? "No hay lineas N1 en este periodo para la sede elegida (o todas quedaron fuera de las familias marcadas arriba)."
+                            : "No hay lineas N1 que mostrar con los filtros actuales."}
                     </p>
                   ) : (
                     lineaN1Options.map((option) => {
@@ -2042,7 +2166,7 @@ export default function RotacionPage() {
               </p>
             </CardContent>
           </Card>
-        ) : rowsBySede.length === 0 ? (
+        ) : rows.length === 0 ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
               <div className="rounded-full bg-amber-100 p-4 text-amber-700">
@@ -2064,6 +2188,65 @@ export default function RotacionPage() {
           </Card>
         ) : (
           <section className="grid gap-5">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                    Buscar por codigo o nombre de producto
+                  </span>
+                  <div className="relative">
+                    <PackageSearch
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                      aria-hidden
+                    />
+                    <input
+                      type="search"
+                      value={productSearchInput}
+                      onChange={(e) => setProductSearchInput(e.target.value)}
+                      placeholder="Ej. 12345 o leche"
+                      autoComplete="off"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-sm font-medium text-slate-900 outline-none transition focus:border-amber-300 focus:bg-white focus:ring-2 focus:ring-amber-100"
+                      aria-label="Filtrar por codigo o nombre de producto"
+                    />
+                    {productSearchInput.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => setProductSearchInput("")}
+                        className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200/80 hover:text-slate-800"
+                        aria-label="Limpiar busqueda"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                  </div>
+                </label>
+              </div>
+            </div>
+            {rowsAfterProductFilter.length === 0 ? (
+              <Card className="border-dashed border-slate-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+                <CardContent className="flex flex-col items-center px-6 py-12 text-center">
+                  <div className="rounded-full bg-slate-100 p-4 text-slate-600">
+                    <PackageSearch className="h-7 w-7" />
+                  </div>
+                  <h2 className="mt-4 text-xl font-bold text-slate-900">
+                    Ningun producto coincide con la busqueda
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                    Prueba otro codigo o fragmento del nombre. La busqueda no
+                    distingue mayusculas ni tildes.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-4 rounded-lg border-slate-300"
+                    onClick={() => setProductSearchInput("")}
+                  >
+                    Limpiar busqueda
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
                 type="button"
@@ -2212,6 +2395,23 @@ export default function RotacionPage() {
                 (acc, row) => acc + row.totalSales,
                 0,
               );
+              const selectedCategorySalesEffectiveDaysSumRaw =
+                categoryFilteredRows.reduce(
+                  (acc, row) =>
+                    acc +
+                    (Number.isFinite(row.salesEffectiveDays)
+                      ? row.salesEffectiveDays
+                      : 0),
+                  0,
+                );
+              const periodDaysCap = daysConsulted;
+              const selectedCategoryDisplaySalesEffectiveDays =
+                periodDaysCap > 0
+                  ? Math.min(
+                      Math.round(selectedCategorySalesEffectiveDaysSumRaw),
+                      periodDaysCap,
+                    )
+                  : Math.round(selectedCategorySalesEffectiveDaysSumRaw);
               const selectedCategoryLabel =
                 categoryFilter === "all" ? null : categoryFilter;
               const categoryFilteredCeroRotacionCount = categoryFilteredRows.filter(
@@ -2396,18 +2596,51 @@ export default function RotacionPage() {
                           </div>
                         </div>
                         {selectedCategoryLabel ? (
-                          <div className="w-full space-y-1 pt-1 text-sm text-slate-600">
-                            <div>
-                              Total venta:{" "}
-                              <span className="font-black text-slate-900">
-                                {formatPrice(selectedCategoryTotalSales)}
-                              </span>
+                          <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
+                            <div className="min-w-0 space-y-1">
+                              <div>
+                                Total venta:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPrice(selectedCategoryTotalSales)}
+                                </span>
+                              </div>
+                              <div>
+                                Total categoria {selectedCategoryLabel}:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPrice(selectedCategoryTotalInv)}
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              Total categoria {selectedCategoryLabel}:{" "}
-                              <span className="font-black text-slate-900">
-                                {formatPrice(selectedCategoryTotalInv)}
-                              </span>
+                            <div className="shrink-0 space-y-1 text-right">
+                              <div
+                                title={
+                                  periodDaysCap > 0
+                                    ? `Minimo entre la suma por items y los ${periodDaysCap} dias del rango consultado.`
+                                    : undefined
+                                }
+                              >
+                                {periodDaysCap > 0 ? (
+                                  <>
+                                    Dias venta efectivos (max. {periodDaysCap}{" "}
+                                    d. periodo):{" "}
+                                  </>
+                                ) : (
+                                  <>Dias venta efectivos (tope periodo): </>
+                                )}
+                                <span className="font-black text-slate-900">
+                                  {selectedCategoryDisplaySalesEffectiveDays.toLocaleString(
+                                    "es-CO",
+                                  )}
+                                </span>
+                              </div>
+                              <div title="Suma de dias con venta efectiva de cada item de la categoria (puede superar el periodo al acumular por SKU).">
+                                Suma dias venta efectivos (todos los items):{" "}
+                                <span className="font-black text-slate-900">
+                                  {Math.round(
+                                    selectedCategorySalesEffectiveDaysSumRaw,
+                                  ).toLocaleString("es-CO")}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         ) : null}
@@ -2570,12 +2803,17 @@ export default function RotacionPage() {
                   </div>
                   <CardContent className="px-0 py-0">
                     <Table
-                      containerClassName="rotacion-table-capture-scroll isolate min-w-0 !overflow-visible"
-                      className="rotacion-sticky-table w-max min-w-full border-separate border-spacing-0 text-sm"
+                      containerClassName="rotacion-table-capture-scroll min-w-0 !overflow-visible"
+                      className="rotacion-sticky-table w-full min-w-[76rem] table-fixed border-collapse text-sm"
                     >
-                      <TableHeader className="rotacion-sticky-thead">
+                      <colgroup>
+                        {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
+                          <col key={i} style={{ width: w }} />
+                        ))}
+                      </colgroup>
+                      <TableHeader>
                         <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="item"
                               label="Item"
@@ -2584,10 +2822,10 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
                             Cat.
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 max-w-[11rem] border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm sm:max-w-[15rem] md:max-w-[18rem] lg:max-w-[22rem]">
+                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="descripcion"
                               label="Descripcion"
@@ -2596,9 +2834,10 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="totalSales"
+                              align="right"
                               label={
                                 <span className="block text-[11px] leading-tight">
                                   Venta
@@ -2609,9 +2848,10 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="inventoryUnits"
+                              align="right"
                               label={
                                 <span className="block text-[11px] leading-tight">
                                   Inv.
@@ -2622,9 +2862,10 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="totalUnits"
+                              align="right"
                               label={
                                 <span className="block text-[11px] leading-tight">
                                   U. vend.
@@ -2635,9 +2876,10 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="inventoryValue"
+                              align="right"
                               label={
                                 <span className="block text-[11px] leading-tight">
                                   V. inv.
@@ -2648,36 +2890,40 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="rotation"
+                              align="right"
                               label="DI"
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="trackedDays"
+                              align="right"
                               label="DIE"
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="salesEffectiveDays"
+                              align="right"
                               label="DVE"
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="lastMovementDate"
+                              align="right"
                               label={
                                 <span className="block text-[11px] leading-tight">
                                   Ult. ingr.
@@ -2716,7 +2962,7 @@ export default function RotacionPage() {
                                 );
                               })()}
                             </TableCell>
-                            <TableCell className="max-w-[11rem] px-2 py-2 align-top whitespace-normal sm:max-w-[15rem] md:max-w-[18rem] lg:max-w-[22rem]">
+                            <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
                               <div className="wrap-break-word">
                                 <p className="text-[13px] font-medium leading-snug text-slate-900">
                                   {row.descripcion}
@@ -2744,13 +2990,13 @@ export default function RotacionPage() {
                             <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                               {formatPrice(row.inventoryValue)}
                             </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                            <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top tabular-nums text-slate-700">
                               {formatRotationOneDecimal(row.rotation)}
                             </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-600">
+                            <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
                               {row.trackedDays.toLocaleString("es-CO")}
                             </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-600">
+                            <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
                               {row.salesEffectiveDays.toLocaleString("es-CO")}
                             </TableCell>
                             <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
@@ -2770,6 +3016,8 @@ export default function RotacionPage() {
               );
             })}
             </div>
+              </>
+            )}
           </section>
         )}
       </div>

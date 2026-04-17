@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
-import { getDbPool } from "@/lib/db";
+import { getDbPool, withPoolClient } from "@/lib/db";
+
+/** Unifica codigos N1 para filtros (BD a veces devuelve "1" en vez de "01"). */
+const normalizeRotationLineaN1Code = (raw: string | null | undefined): string => {
+  const t = String(raw ?? "").trim();
+  if (!t) return "__sin_n1__";
+  if (t === "__sin_n1__") return t;
+  if (/^\d+$/.test(t)) return t.padStart(2, "0");
+  return t;
+};
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import {
   canAccessRotacionBoard,
@@ -79,6 +88,8 @@ type AbcdConfig = {
 const CACHE_CONTROL = "no-store";
 const LOW_ROTATION_DAYS_THRESHOLD = 45;
 const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Ventana hacia atras para el DISTINCT de sedes (catalogo). Corta para no escanear meses de datos ni disparar timeouts en el servidor. */
+const ROTATION_CATALOG_LOOKBACK_DAYS = 45;
 const ROTATION_ABCD_CACHE_TTL_MS = 5 * 60 * 1000;
 const ROTATION_LINEAS_N1_CACHE_TTL_MS = 3 * 60 * 1000;
 const MAX_ROTATION_RANGE_DAYS = 93;
@@ -99,7 +110,7 @@ let availableBoundsCache:
   | { value: AvailableBoundsRow | null; expiresAt: number }
   | null = null;
 let rotationFilterCatalogCache:
-  | { maxDate: string; value: RotationFilterCatalog; expiresAt: number }
+  | { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
   | null = null;
 let abcdConfigCache: { value: AbcdConfig; expiresAt: number } | null = null;
 const lineasN1ByRangeCache = new Map<
@@ -121,6 +132,27 @@ const shiftDate = (dateKey: string, offsetDays: number) => {
   const date = new Date(`${dateKey}T12:00:00`);
   date.setDate(date.getDate() + offsetDays);
   return date.toISOString().slice(0, 10);
+};
+
+/** Rango compacto YYYYMMDD para el DISTINCT de sedes: ultimos N dias o desde el minimo de tabla si es mas reciente. */
+const computeRotationCatalogCompactRange = (
+  tableMinCompact: string | null | undefined,
+  maxCompact: string,
+): { start: string; end: string } | null => {
+  if (!/^\d{8}$/.test(maxCompact)) return null;
+  const maxIso = compactToIsoDate(maxCompact);
+  if (!maxIso) return null;
+  const windowStartIso = shiftDate(maxIso, -ROTATION_CATALOG_LOOKBACK_DAYS);
+  const tableMinIso =
+    tableMinCompact && /^\d{8}$/.test(tableMinCompact)
+      ? compactToIsoDate(tableMinCompact)
+      : null;
+  const rangeStartIso =
+    tableMinIso && tableMinIso > windowStartIso ? tableMinIso : windowStartIso;
+  const start = isoToCompactDate(rangeStartIso);
+  const end = maxCompact;
+  if (start > end) return { start: end, end: end };
+  return { start, end };
 };
 
 /** Mismo día del mes anterior (p. ej. 14 abr → 14 mar), en ISO local vía UTC slice. */
@@ -172,6 +204,29 @@ const normalizeKey = (value: string) =>
     .replace(/[^a-z0-9]+/g, "")
     .trim();
 
+/** Coincide sede de catalogo con claves permitidas (exacta o por subcadena; nombres en BD suelen traer prefijos). */
+const MIN_SUBSTRING_TOKEN_LEN = 5;
+
+const catalogSedeMatchesAllowedKeys = (
+  sede: { sedeName: string; sedeId: string },
+  allowedKeys: Set<string>,
+): boolean => {
+  const nameK = normalizeKey(sede.sedeName);
+  const idK = normalizeKey(sede.sedeId);
+  for (const token of allowedKeys) {
+    if (!token) continue;
+    if (token === normalizeKey("Todas")) continue;
+    if (nameK === token || idK === token) return true;
+    if (/^\d+$/.test(token) && /^\d+$/.test(idK)) {
+      if (parseInt(token, 10) === parseInt(idK, 10)) return true;
+    }
+    if (token.length >= MIN_SUBSTRING_TOKEN_LEN) {
+      if (nameK.includes(token) || idK.includes(token)) return true;
+    }
+  }
+  return false;
+};
+
 const resolveVisibleSedes = (
   sessionUser: {
     role: "admin" | "user";
@@ -202,9 +257,11 @@ const resolveVisibleSedes = (
   }
 
   const visibleFromAllowed = catalog.sedes.filter((sede) =>
-    normalizedAllowed.has(normalizeKey(sede.sedeName)),
+    catalogSedeMatchesAllowedKeys(sede, normalizedAllowed),
   );
-  if (visibleFromAllowed.length > 0) {
+
+  /** Lista explicita en perfil: siempre autorizado; la lista puede quedar vacia si aun no hay filas en BD para esas sedes. */
+  if (rawAllowed.length > 0) {
     return {
       authorized: true,
       visibleSedes: visibleFromAllowed,
@@ -212,8 +269,10 @@ const resolveVisibleSedes = (
   }
 
   if (sessionUser.sede) {
-    const legacyVisible = catalog.sedes.filter(
-      (sede) => normalizeKey(sede.sedeName) === normalizeKey(sessionUser.sede ?? ""),
+    const legacyKey = normalizeKey(sessionUser.sede ?? "");
+    const legacySet = legacyKey ? new Set([legacyKey]) : new Set<string>();
+    const legacyVisible = catalog.sedes.filter((sede) =>
+      legacyKey ? catalogSedeMatchesAllowedKeys(sede, legacySet) : false,
     );
     if (legacyVisible.length > 0) {
       return {
@@ -407,22 +466,52 @@ const getAvailableBounds = async () => {
   }
 };
 
+const mapRotationCatalogRows = (
+  rows: RotationFilterDbRow[],
+): RotationFilterCatalog => {
+  const sedes = rows
+    .map((row) => ({
+      empresa: row.empresa,
+      sedeId: row.sede_id,
+      sedeName: row.sede_name,
+    }))
+    .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+  const companies = Array.from(new Set(sedes.map((row) => row.empresa))).sort(
+    (a, b) => a.localeCompare(b, "es"),
+  );
+  return { companies, sedes, lineasN1: [] };
+};
+
 const getRotationFilterCatalog = async (
-  maxDateCompact: string,
+  startDateCompact: string,
+  endDateCompact: string,
 ): Promise<RotationFilterCatalog> => {
   const now = Date.now();
-  if (
-    rotationFilterCatalogCache &&
-    rotationFilterCatalogCache.maxDate === maxDateCompact &&
-    rotationFilterCatalogCache.expiresAt > now
-  ) {
-    return rotationFilterCatalogCache.value;
+  const rangeKey = `${startDateCompact}|${endDateCompact}`;
+  const snapKey = `snap|${endDateCompact}`;
+  if (rotationFilterCatalogCache && rotationFilterCatalogCache.expiresAt > now) {
+    if (
+      rotationFilterCatalogCache.rangeKey === rangeKey ||
+      rotationFilterCatalogCache.rangeKey === snapKey
+    ) {
+      return rotationFilterCatalogCache.value;
+    }
   }
 
   const client = await (await getDbPool()).connect();
   try {
-    const result = await client.query(
-      `
+    const rangeSql = `
+      SELECT DISTINCT
+        COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
+        COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
+        COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
+      FROM rotacion_base_item_dia_sede
+      WHERE fecha_consulta BETWEEN $1 AND $2
+        AND fecha_consulta ~ '^[0-9]{8}$'
+        AND item IS NOT NULL
+      ORDER BY empresa ASC, sede_name ASC, sede_id ASC
+    `;
+    const snapSql = `
       SELECT DISTINCT
         COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
         COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
@@ -432,30 +521,28 @@ const getRotationFilterCatalog = async (
         AND fecha_consulta ~ '^[0-9]{8}$'
         AND item IS NOT NULL
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
-      `,
-      [maxDateCompact],
+    `;
+
+    let result: { rows?: RotationFilterDbRow[] };
+    let cacheKey = rangeKey;
+
+    try {
+      result = await client.query(rangeSql, [startDateCompact, endDateCompact]);
+    } catch (rangeErr) {
+      console.warn(
+        "[rotacion] catalogo por rango fallo (timeout o carga); usando solo ultimo dia:",
+        rangeErr instanceof Error ? rangeErr.message : rangeErr,
+      );
+      result = await client.query(snapSql, [endDateCompact]);
+      cacheKey = snapKey;
+    }
+
+    const value = mapRotationCatalogRows(
+      (result.rows ?? []) as RotationFilterDbRow[],
     );
-
-    const sedes = ((result.rows ?? []) as RotationFilterDbRow[])
-      .map((row) => ({
-        empresa: row.empresa,
-        sedeId: row.sede_id,
-        sedeName: row.sede_name,
-      }))
-      .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
-
-    const companies = Array.from(new Set(sedes.map((row) => row.empresa))).sort(
-      (a, b) => a.localeCompare(b, "es"),
-    );
-
-    const value = {
-      companies,
-      sedes,
-      lineasN1: [],
-    };
 
     rotationFilterCatalogCache = {
-      maxDate: maxDateCompact,
+      rangeKey: cacheKey,
       value,
       expiresAt: now + ROTATION_META_CACHE_TTL_MS,
     };
@@ -484,8 +571,7 @@ const queryRotationLineasN1 = async ({
     return cached.value;
   }
 
-  const client = await (await getDbPool()).connect();
-  try {
+  const value = await withPoolClient(async (client) => {
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -501,10 +587,13 @@ const queryRotationLineasN1 = async ({
       [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
     );
 
-    const value = ((result.rows ?? []) as Array<{ linea_n1_codigo: string | null }>)
-      .map((row) => String(row.linea_n1_codigo ?? "__sin_n1__"))
-      .filter(Boolean);
+    const raw = ((result.rows ?? []) as Array<{ linea_n1_codigo: string | null }>)
+      .map((row) => normalizeRotationLineaN1Code(row.linea_n1_codigo))
+      .filter((code) => Boolean(code));
+    return Array.from(new Set(raw)).sort((a, b) => a.localeCompare(b, "es"));
+  });
 
+  if (value.length > 0) {
     if (lineasN1ByRangeCache.size > 500) {
       lineasN1ByRangeCache.clear();
     }
@@ -512,10 +601,16 @@ const queryRotationLineasN1 = async ({
       value,
       expiresAt: now + ROTATION_LINEAS_N1_CACHE_TTL_MS,
     });
-    return value;
-  } finally {
-    client.release();
   }
+  return value;
+};
+
+const isPgConnectionFailure = (err: unknown) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /connection terminated unexpectedly/i.test(msg) ||
+    /ECONNRESET|EPIPE|ETIMEDOUT/i.test(msg)
+  );
 };
 
 const queryRotationRows = async ({
@@ -533,9 +628,9 @@ const queryRotationRows = async ({
   sedeId: string | null;
   lineasN1: string[] | null;
 }): Promise<RotationRow[]> => {
-  const client = await (await getDbPool()).connect();
-  try {
-    const result = await client.query(
+  const fetchRows = async (): Promise<RotationRow[]> =>
+    withPoolClient(async (client) => {
+      const result = await client.query(
       `
       WITH scoped AS (
         SELECT
@@ -730,8 +825,13 @@ const queryRotationRows = async ({
         status: row.status,
       }))
       .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
-  } finally {
-    client.release();
+    });
+
+  try {
+    return await fetchRows();
+  } catch (first) {
+    if (!isPgConnectionFailure(first)) throw first;
+    return await fetchRows();
   }
 };
 
@@ -837,7 +937,17 @@ export async function GET(request: Request) {
     });
     const boundedRange = limitDateRangeWindow(effectiveRange);
     const filterCatalogMaxDate = bounds?.max_date ?? isoToCompactDate(maxAvailableDate);
-    const fullCatalog = await getRotationFilterCatalog(filterCatalogMaxDate);
+    const catalogRange = computeRotationCatalogCompactRange(
+      bounds?.min_date,
+      filterCatalogMaxDate,
+    );
+    const fullCatalog = catalogRange
+      ? await getRotationFilterCatalog(catalogRange.start, catalogRange.end)
+      : {
+          companies: [] as string[],
+          sedes: [] as RotationFilterCatalog["sedes"],
+          lineasN1: [] as string[],
+        };
     const sedeAccess = resolveVisibleSedes(session.user, fullCatalog);
 
     if (!sedeAccess.authorized) {

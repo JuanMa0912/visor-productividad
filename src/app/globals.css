@@ -77,21 +77,25 @@
   }
 }
 
-/* Rotación: thead sticky al viewport con scroll horizontal en el contenedor. */
+/*
+ * Rotación: encabezado fijo al hacer scroll vertical.
+ * Sticky en cada <th> (no en <thead>) + table-layout:fixed + <colgroup> en page.tsx
+ * para que los anchos de columna coincidan con el tbody.
+ */
 @layer components {
   .rotacion-table-capture-scroll {
     overflow-y: visible !important;
   }
-  .rotacion-sticky-thead {
-    position: sticky;
-    top: 0;
-    z-index: 24;
-  }
   .rotacion-sticky-table thead th {
+    position: -webkit-sticky;
     position: sticky;
     top: 0;
     z-index: 25;
+    height: auto;
+    min-height: 2.5rem;
+    vertical-align: bottom;
     background-color: oklch(0.97 0.006 240 / 96%);
+    background-clip: padding-box;
   }
 }
 
