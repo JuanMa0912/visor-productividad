@@ -624,12 +624,17 @@ export async function GET(request: Request) {
       ),
     );
   }
-  const cached = await readCache();
-  if (cached && cached.length > 0) {
-    // Regla de negocio: productividad por linea es global por tablero.
-    const scopedCached = filterDailyDataByAllowedLines(cached, allowedLineIds);
-    const cacheHitRes = buildCacheResponse(scopedCached);
-    return withSession(cacheHitRes);
+  // No servir solo desde disco: el JSON en PRODUCTIVITY_CACHE_PATH se actualiza al
+  // cargar desde BD, pero si quedó desactualizado (p. ej. hay filas nuevas del día),
+  // devolverlo bloqueaba ver datos recientes sin tocar el archivo.
+  const serveFileCache =
+    process.env.PRODUCTIVITY_SERVE_FILE_CACHE?.trim() === "true";
+  if (serveFileCache) {
+    const cached = await readCache();
+    if (cached && cached.length > 0) {
+      const scopedCached = filterDailyDataByAllowedLines(cached, allowedLineIds);
+      return withSession(buildCacheResponse(scopedCached));
+    }
   }
   try {
     await testDbConnection();

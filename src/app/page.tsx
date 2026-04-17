@@ -76,13 +76,6 @@ const toDateKey = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
-const getYesterdayDateKey = () => {
-  const yesterday = new Date();
-  yesterday.setHours(0, 0, 0, 0);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return toDateKey(yesterday);
-};
-
 const dateLabelOptions: Intl.DateTimeFormatOptions = {
   day: "2-digit",
   month: "short",
@@ -2815,8 +2808,8 @@ export default function Home() {
   const [selectedSede, setSelectedSede] = useState("");
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>(() => {
-    const yesterday = getYesterdayDateKey();
-    return { start: yesterday, end: yesterday };
+    const today = toDateKey(new Date());
+    return { start: today, end: today };
   });
   const [lineFilter, setLineFilter] = useState("all");
   const [viewMode, setViewMode] = useState<
@@ -2879,6 +2872,18 @@ export default function Home() {
         }
         if (parsed.viewMode) {
           setViewMode(parsed.viewMode);
+        }
+        if (
+          parsed.dateRange &&
+          typeof parsed.dateRange.start === "string" &&
+          typeof parsed.dateRange.end === "string" &&
+          parsed.dateRange.start &&
+          parsed.dateRange.end
+        ) {
+          setDateRange({
+            start: parsed.dateRange.start,
+            end: parsed.dateRange.end,
+          });
         }
         setPrefsReady(true);
         return;
@@ -2990,9 +2995,14 @@ export default function Home() {
     () => resolveSelectedSedeIds(selectedSede, selectedCompanies, orderedSedes),
     [selectedSede, selectedCompanies, orderedSedes],
   );
+  /** Si la resolución devuelve [] (sede inválida, etc.), mismo criterio que export: todas las sedes visibles. */
+  const scopedSedeIds = useMemo(() => {
+    if (selectedSedeIds.length > 0) return selectedSedeIds;
+    return orderedSedes.map((sede) => sede.id);
+  }, [orderedSedes, selectedSedeIds]);
   const selectedSedeIdSet = useMemo(
-    () => new Set(selectedSedeIds),
-    [selectedSedeIds],
+    () => new Set(scopedSedeIds),
+    [scopedSedeIds],
   );
   const availableSedesKey = useMemo(
     () => orderedSedes.map((sede) => sede.id).join("|"),
@@ -3063,13 +3073,6 @@ export default function Home() {
       setAppliedUserDefault(true);
     }
   }, [appliedUserDefault, orderedSedes, pendingSedeKey, prefsReady]);
-
-  // Rango por defecto al cargar sesión: siempre ayer
-  useEffect(() => {
-    if (!prefsReady) return;
-    const yesterday = getYesterdayDateKey();
-    setDateRange({ start: yesterday, end: yesterday });
-  }, [prefsReady]);
 
   // Datos derivados
   const selectedSedeName = (() => {
@@ -5122,7 +5125,7 @@ export default function Home() {
                   dailyDataSet={dailyDataSet}
                   sedes={orderedSedes}
                   dateRange={dateRange}
-                  defaultSedeIds={selectedSedeIds}
+                  defaultSedeIds={scopedSedeIds}
                   hasData={hasRangeData}
                 />
               ) : (
@@ -5136,7 +5139,7 @@ export default function Home() {
                 <ChartVisualization
                   ref={chartExportRef}
                   dailyDataSet={dailyDataSet}
-                  selectedSedeIds={selectedSedeIds}
+                  selectedSedeIds={scopedSedeIds}
                   availableDates={availableDates}
                   dateRange={dateRange}
                   lines={lines}
@@ -5147,7 +5150,7 @@ export default function Home() {
               <LineTrends
                 ref={trendsExportRef}
                 dailyDataSet={dailyDataSet}
-                selectedSedeIds={selectedSedeIds}
+                selectedSedeIds={scopedSedeIds}
                 availableDates={availableDates}
                 lines={lines}
                 sedes={orderedSedes}
