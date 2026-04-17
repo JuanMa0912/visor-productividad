@@ -164,9 +164,6 @@ type GroupAbcdFilter = "all" | AbcdCategory;
 
 type RotationSortField =
   | "item"
-  | "bodega"
-  | "categoria"
-  | "linea01"
   | "descripcion"
   | "totalSales"
   | "totalUnits"
@@ -185,20 +182,17 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 /** Anchos de columna (table-layout: fixed) — thead y tbody comparten la misma rejilla. */
 const ROTACION_TABLE_COL_WIDTHS = [
-  "5%",
-  "7%",
-  "8%",
-  "7%",
+  "6%",
   "3%",
-  "14%",
-  "8%",
-  "8%",
-  "8%",
-  "8%",
-  "5%",
-  "5%",
-  "5%",
+  "24%",
+  "10%",
   "9%",
+  "10%",
+  "9%",
+  "5%",
+  "5%",
+  "5%",
+  "14%",
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
@@ -473,45 +467,9 @@ const rowMatchesProductSearch = (row: RotationRow, rawQuery: string) => {
   const q = rawQuery.trim();
   if (!q) return true;
   const needle = foldForProductSearch(q);
-  const hay = [
-    row.item,
-    row.descripcion,
-    row.bodega,
-    row.nombreBodega,
-    row.categoria,
-    row.nombreCategoria,
-    row.linea01,
-    row.nombreLinea01,
-  ];
-  return hay.some(
-    (v) => v && foldForProductSearch(v).includes(needle),
-  );
-};
-
-const rotationDimSortKey = (
-  nombre: string | null,
-  codigo: string | null,
-) => (nombre ?? "").trim() || (codigo ?? "").trim() || "";
-
-const RotationDimCell = ({
-  nombre,
-  codigo,
-}: {
-  nombre: string | null;
-  codigo: string | null;
-}) => {
-  const main = (nombre ?? "").trim() || (codigo ?? "").trim() || "—";
-  const showCode =
-    Boolean((nombre ?? "").trim()) &&
-    Boolean((codigo ?? "").trim()) &&
-    (nombre ?? "").trim() !== (codigo ?? "").trim();
   return (
-    <div className="min-w-0">
-      <p className="text-[12px] font-medium leading-snug text-slate-800">{main}</p>
-      {showCode ? (
-        <p className="mt-0.5 text-[10px] leading-snug text-slate-500">{codigo}</p>
-      ) : null}
-    </div>
+    foldForProductSearch(row.item).includes(needle) ||
+    foldForProductSearch(row.descripcion).includes(needle)
   );
 };
 
@@ -631,12 +589,7 @@ const compareNullableIsoDateKeys = (
 const getDefaultSortDirection = (
   field: RotationSortField,
 ): RotationSortDirection =>
-  field === "item" ||
-  field === "bodega" ||
-  field === "categoria" ||
-  field === "linea01" ||
-  field === "descripcion" ||
-  field === "status"
+  field === "item" || field === "descripcion" || field === "status"
     ? "asc"
     : "desc";
 
@@ -659,24 +612,6 @@ const sortRotationRows = (
     switch (field) {
       case "item":
         result = compareRotationText(left.item, right.item);
-        break;
-      case "bodega":
-        result = compareRotationText(
-          rotationDimSortKey(left.nombreBodega, left.bodega),
-          rotationDimSortKey(right.nombreBodega, right.bodega),
-        );
-        break;
-      case "categoria":
-        result = compareRotationText(
-          rotationDimSortKey(left.nombreCategoria, left.categoria),
-          rotationDimSortKey(right.nombreCategoria, right.categoria),
-        );
-        break;
-      case "linea01":
-        result = compareRotationText(
-          rotationDimSortKey(left.nombreLinea01, left.linea01),
-          rotationDimSortKey(right.nombreLinea01, right.linea01),
-        );
         break;
       case "descripcion":
         result = compareRotationText(left.descripcion, right.descripcion);
@@ -1662,12 +1597,6 @@ export default function RotacionPage() {
           empresa: formatCompanyLabel(row.empresa),
           sede: displayRotationSedeName(row.sedeName),
           item: row.item,
-          bodega: row.bodega ?? "",
-          nombreBodega: row.nombreBodega ?? "",
-          categoria: row.categoria ?? "",
-          nombreCategoria: row.nombreCategoria ?? "",
-          linea01: row.linea01 ?? "",
-          nombreLinea01: row.nombreLinea01 ?? "",
           descripcion: row.descripcion,
           ventaPeriodo: row.totalSales,
           invCierre: row.inventoryUnits,
@@ -1704,12 +1633,6 @@ export default function RotacionPage() {
         "Empresa",
         "Sede",
         "Item",
-        "Bodega",
-        "Nombre bodega",
-        "Categoria",
-        "Nombre categoria",
-        "Linea01",
-        "Nombre linea01",
         "Descripcion",
         "Venta periodo",
         "Inv cierre",
@@ -1724,12 +1647,6 @@ export default function RotacionPage() {
         row.empresa,
         row.sede,
         row.item,
-        row.bodega,
-        row.nombreBodega,
-        row.categoria,
-        row.nombreCategoria,
-        row.linea01,
-        row.nombreLinea01,
         row.descripcion,
         formatPrice(row.ventaPeriodo),
         row.invCierre.toLocaleString("es-CO"),
@@ -1755,13 +1672,7 @@ export default function RotacionPage() {
         { header: "Empresa", key: "empresa", width: 18 },
         { header: "Sede", key: "sede", width: 24 },
         { header: "Item", key: "item", width: 14 },
-        { header: "Bodega", key: "bodega", width: 12 },
-        { header: "Nombre bodega", key: "nombreBodega", width: 22 },
-        { header: "Categoria", key: "categoria", width: 12 },
-        { header: "Nombre categoria", key: "nombreCategoria", width: 22 },
-        { header: "Linea01", key: "linea01", width: 12 },
-        { header: "Nombre linea01", key: "nombreLinea01", width: 22 },
-        { header: "Descripcion", key: "descripcion", width: 40 },
+        { header: "Descripcion", key: "descripcion", width: 46 },
         { header: "Venta periodo", key: "ventaPeriodo", width: 16 },
         { header: "Inv cierre", key: "invCierre", width: 12 },
         { header: "Unidad", key: "unidad", width: 10 },
@@ -3113,7 +3024,7 @@ export default function RotacionPage() {
                   <CardContent className="px-0 py-0">
                     <Table
                       containerClassName="rotacion-table-capture-scroll min-w-0 !overflow-visible"
-                      className="rotacion-sticky-table w-full min-w-[104rem] table-fixed border-collapse text-sm"
+                      className="rotacion-sticky-table w-full min-w-[76rem] table-fixed border-collapse text-sm"
                     >
                       <colgroup>
                         {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
@@ -3126,45 +3037,6 @@ export default function RotacionPage() {
                             <SortableRotationHeader
                               field="item"
                               label="Item"
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="bodega"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Bodega
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="categoria"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Categoria
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="linea01"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Linea 01
-                                </span>
-                              }
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
@@ -3289,24 +3161,6 @@ export default function RotacionPage() {
                           <TableRow key={`${group.sedeId}-${row.item}`}>
                             <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
                               <span className="text-xs">{row.item}</span>
-                            </TableCell>
-                            <TableCell className="px-1 py-2 align-top">
-                              <RotationDimCell
-                                nombre={row.nombreBodega}
-                                codigo={row.bodega}
-                              />
-                            </TableCell>
-                            <TableCell className="px-1 py-2 align-top">
-                              <RotationDimCell
-                                nombre={row.nombreCategoria}
-                                codigo={row.categoria}
-                              />
-                            </TableCell>
-                            <TableCell className="px-1 py-2 align-top">
-                              <RotationDimCell
-                                nombre={row.nombreLinea01}
-                                codigo={row.linea01}
-                              />
                             </TableCell>
                             <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
                               {(() => {
