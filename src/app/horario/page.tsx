@@ -1,14 +1,55 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Activity, Clock, GitCompareArrows } from "lucide-react";
+import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import {
+  PortalHubHeroCard,
+  PortalHubModuleGrid,
+  PortalHubShell,
+  type HubModuleItem,
+} from "@/components/portal/hub-section-cards";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
+
+const BASE_OPERACION_MODULES: HubModuleItem[] = [
+  {
+    id: "jornada-extendida",
+    icon: Activity,
+    badge: "EJECUCION",
+    title: "Consulta operativa",
+    description:
+      "Consulta horas trabajadas, novedades y uso del personal por sede y fecha para medir eficiencia operativa.",
+    href: "/jornada-extendida",
+  },
+  {
+    id: "ingresar-horarios",
+    icon: Clock,
+    badge: "TURNOS",
+    title: "Registro de horarios",
+    description:
+      "Programa y administra horarios del personal para sostener la operacion diaria.",
+    href: "/ingresar-horarios",
+  },
+];
+
+const COMPARAR_MODULE: HubModuleItem = {
+  id: "horarios-comparar",
+  icon: GitCompareArrows,
+  badge: "COMPARAR",
+  title: "Planilla vs asistencia",
+  description:
+    "Compara horarios registrados en planillas con las marcaciones reales por sede y fecha.",
+  href: "/horarios-comparar",
+};
 
 export default function HorarioHubPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [canSeeCompararHorarios, setCanSeeCompararHorarios] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [canAccessCronograma, setCanAccessCronograma] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -31,17 +72,25 @@ export default function HorarioHubPage() {
             specialRoles?: string[] | null;
           };
         };
-        const isAdmin = payload.user?.role === "admin";
+        const userIsAdmin = payload.user?.role === "admin";
         if (
-          !isAdmin &&
+          !userIsAdmin &&
           !canAccessPortalSection(payload.user?.allowedDashboards, "operacion")
         ) {
           router.replace("/secciones");
           return;
         }
         if (isMounted) {
+          setIsAdmin(userIsAdmin);
+          setCanAccessCronograma(
+            userIsAdmin ||
+              Boolean(payload.user?.specialRoles?.includes("cronograma")),
+          );
           setCanSeeCompararHorarios(
-            canAccessHorariosCompararBoard(payload.user?.specialRoles, isAdmin),
+            canAccessHorariosCompararBoard(
+              payload.user?.specialRoles,
+              userIsAdmin,
+            ),
           );
           setReady(true);
         }
@@ -57,6 +106,11 @@ export default function HorarioHubPage() {
     };
   }, [router]);
 
+  const modules = useMemo(() => {
+    if (!canSeeCompararHorarios) return BASE_OPERACION_MODULES;
+    return [BASE_OPERACION_MODULES[0], COMPARAR_MODULE, BASE_OPERACION_MODULES[1]];
+  }, [canSeeCompararHorarios]);
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
@@ -68,80 +122,28 @@ export default function HorarioHubPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground">
-      <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-200/70 bg-white p-7 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-rose-700">
-          Operacion
-        </p>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">Ejecucion del negocio</h1>
-          <button
-            type="button"
-            onClick={() => router.push("/secciones")}
-            className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
-          >
-            Volver a secciones
-          </button>
-        </div>
-        <p className="mt-1 text-sm text-slate-600">
-          Aqui se explica como la operacion soporta el resultado: uso de horas,
-          personal, novedades y turnos por sede.
-        </p>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => router.push("/jornada-extendida")}
-            className="rounded-2xl border border-rose-300/80 bg-linear-to-br from-rose-100 via-white to-pink-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.4)] transition-all hover:-translate-y-0.5 hover:border-rose-400"
-          >
-            <span className="inline-flex rounded-full border border-rose-300/80 bg-rose-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-800">
-              Ejecucion
-            </span>
-            <span className="mt-3 block text-sm font-semibold">
-              Consulta operativa
-            </span>
-            <span className="mt-1 block text-xs text-slate-600">
-              Consulta horas trabajadas, novedades y uso del personal por sede y
-              fecha para medir eficiencia operativa.
-            </span>
-          </button>
-
-          {canSeeCompararHorarios ? (
-            <button
-              type="button"
-              onClick={() => router.push("/horarios-comparar")}
-              className="rounded-2xl border border-violet-300/80 bg-linear-to-br from-violet-100 via-white to-indigo-50 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(139,92,246,0.35)] transition-all hover:-translate-y-0.5 hover:border-violet-400"
-            >
-              <span className="inline-flex rounded-full border border-violet-300/80 bg-violet-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-900">
-                Comparar
-              </span>
-              <span className="mt-3 block text-sm font-semibold">
-                Planilla vs asistencia
-              </span>
-              <span className="mt-1 block text-xs text-slate-600">
-                Compara horarios registrados en planillas con las marcaciones reales por sede y fecha.
-              </span>
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={() => router.push("/ingresar-horarios")}
-            className="rounded-2xl border border-red-300/80 bg-linear-to-br from-red-100 via-white to-orange-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(239,68,68,0.4)] transition-all hover:-translate-y-0.5 hover:border-red-400"
-          >
-            <span className="inline-flex rounded-full border border-red-300/80 bg-red-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-red-800">
-              Turnos
-            </span>
-            <span className="mt-3 block text-sm font-semibold">
-              Registro de horarios
-            </span>
-            <span className="mt-1 block text-xs text-slate-600">
-              Programa y administra horarios del personal para sostener la
-              operacion diaria.
-            </span>
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-100 text-foreground">
+      <PortalBrandingHeader
+        canAccessCronograma={canAccessCronograma}
+        isAdmin={isAdmin}
+        onBackToSecciones={() => router.push("/secciones")}
+      />
+      <PortalHubShell>
+      <PortalHubHeroCard
+        theme="operacion"
+        icon={Activity}
+        eyebrow="Operación • Enfoque • Ejecución"
+        title="Ejecucion del negocio"
+        description="Aqui se explica como la operacion soporta el resultado: uso de horas, personal, novedades y turnos por sede."
+        moduleCount={modules.length}
+      />
+      <PortalHubModuleGrid
+        theme="operacion"
+        items={modules}
+        onNavigate={(href) => router.push(href)}
+        columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      />
+      </PortalHubShell>
     </div>
   );
 }

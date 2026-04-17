@@ -1,14 +1,70 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Boxes,
+  LineChart,
+  Percent,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
+import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import {
+  PortalHubHeroCard,
+  PortalHubModuleGrid,
+  PortalHubShell,
+  type HubModuleItem,
+} from "@/components/portal/hub-section-cards";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import { canAccessRotacionBoard } from "@/lib/special-role-features";
+
+const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
+  {
+    id: "productividad-home",
+    icon: LineChart,
+    badge: "MIX Y LINEA",
+    title: "Desempeño comercial por sede",
+    description:
+      "Revisa que lineas y sedes empujan o frenan el resultado con comparativos de venta y desempeño.",
+    href: "/",
+  },
+  {
+    id: "margenes",
+    icon: Percent,
+    badge: "MARGENES",
+    title: "Rentabilidad por linea",
+    description:
+      "Entiende el aporte de cada linea al resultado desde margen, utilidad y rentabilidad.",
+    href: "/margenes",
+  },
+  {
+    id: "prediccion-pedidos",
+    icon: Sparkles,
+    badge: "PREDICCION",
+    title: "Prediccion pedidos",
+    description:
+      "Proximamente: un tablero para anticipar necesidades de pedido por item, sede y comportamiento reciente.",
+    href: "/prediccion-pedidos",
+  },
+];
+
+const ROTACION_MODULE: HubModuleItem = {
+  id: "rotacion",
+  icon: RefreshCw,
+  badge: "ROTACION",
+  title: "Inventario con baja salida",
+  description:
+    "Visualiza productos con baja rotacion y los items que no se estan moviendo por sede.",
+  href: "/rotacion",
+};
 
 export default function ProductividadHubPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [canSeeRotacion, setCanSeeRotacion] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [canAccessCronograma, setCanAccessCronograma] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -31,20 +87,25 @@ export default function ProductividadHubPage() {
             specialRoles?: string[] | null;
           };
         };
-        const isAdmin = payload.user?.role === "admin";
+        const userIsAdmin = payload.user?.role === "admin";
         if (
-          !isAdmin &&
+          !userIsAdmin &&
           !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
         ) {
           router.replace("/secciones");
           return;
         }
         if (isMounted) {
-          setCanSeeRotacion(
-            canAccessRotacionBoard(payload.user?.specialRoles, isAdmin),
+          setIsAdmin(userIsAdmin);
+          setCanAccessCronograma(
+            userIsAdmin ||
+              Boolean(payload.user?.specialRoles?.includes("cronograma")),
           );
+          setCanSeeRotacion(
+            canAccessRotacionBoard(payload.user?.specialRoles, userIsAdmin),
+          );
+          setReady(true);
         }
-        if (isMounted) setReady(true);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
       }
@@ -57,6 +118,13 @@ export default function ProductividadHubPage() {
     };
   }, [router]);
 
+  const modules = useMemo(() => {
+    if (!canSeeRotacion) return BASE_PRODUCTO_MODULES;
+    const withRotacion = [...BASE_PRODUCTO_MODULES];
+    withRotacion.splice(2, 0, ROTACION_MODULE);
+    return withRotacion;
+  }, [canSeeRotacion]);
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
@@ -68,98 +136,28 @@ export default function ProductividadHubPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground">
-      <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-200/70 bg-white p-7 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-amber-700">
-          Producto
-        </p>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">Causa comercial del resultado</h1>
-          <button
-            type="button"
-            onClick={() => router.push("/secciones")}
-            className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
-          >
-            Volver a secciones
-          </button>
-        </div>
-        <p className="mt-1 text-sm text-slate-600">
-          Usa esta seccion para entender que lineas, productos y margenes
-          explican el resultado del negocio por sede.
-        </p>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <button
-            type="button"
-            onClick={() => router.push("/")}
-            className="rounded-2xl border border-yellow-300/80 bg-linear-to-br from-yellow-50 via-white to-amber-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.4)] transition-all hover:-translate-y-0.5 hover:border-amber-400"
-          >
-            <span className="inline-flex rounded-full border border-yellow-300/80 bg-yellow-200/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-900">
-              Mix y linea
-            </span>
-            <span className="mt-3 block text-sm font-semibold">
-              Desempeño comercial por sede
-            </span>
-            <span className="mt-1 block text-xs text-slate-600">
-              Revisa que lineas y sedes empujan o frenan el resultado con
-              comparativos de venta y desempeño.
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.push("/margenes")}
-            className="rounded-2xl border border-amber-300/80 bg-linear-to-br from-amber-100 via-white to-orange-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.45)] transition-all hover:-translate-y-0.5 hover:border-amber-400"
-          >
-            <span className="inline-flex rounded-full border border-amber-300/80 bg-amber-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-800">
-              Margenes
-            </span>
-            <span className="mt-3 block text-sm font-semibold">
-              Rentabilidad por linea
-            </span>
-            <span className="mt-1 block text-xs text-slate-600">
-              Entiende el aporte de cada linea al resultado desde margen,
-              utilidad y rentabilidad.
-            </span>
-          </button>
-
-          {canSeeRotacion && (
-            <button
-              type="button"
-              onClick={() => router.push("/rotacion")}
-              className="rounded-2xl border border-orange-300/80 bg-linear-to-br from-orange-100 via-white to-amber-50 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(251,146,60,0.45)] transition-all hover:-translate-y-0.5 hover:border-orange-400"
-            >
-              <span className="inline-flex rounded-full border border-orange-300/80 bg-orange-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-800">
-                Rotacion
-              </span>
-              <span className="mt-3 block text-sm font-semibold">
-                Inventario con baja salida
-              </span>
-              <span className="mt-1 block text-xs text-slate-600">
-                Visualiza productos con baja rotacion y los items que no se estan
-                moviendo por sede.
-              </span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => router.push("/prediccion-pedidos")}
-            className="rounded-2xl border border-amber-300/80 bg-linear-to-br from-amber-50 via-white to-yellow-100 px-5 py-5 text-left text-slate-900 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.35)] transition-all hover:-translate-y-0.5 hover:border-amber-400"
-          >
-            <span className="inline-flex rounded-full border border-amber-300/80 bg-amber-200/75 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-800">
-              Prediccion
-            </span>
-            <span className="mt-3 block text-sm font-semibold">
-              Prediccion pedidos
-            </span>
-            <span className="mt-1 block text-xs text-slate-600">
-              Proximamente: un tablero para anticipar necesidades de pedido por
-              item, sede y comportamiento reciente.
-            </span>
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-100 text-foreground">
+      <PortalBrandingHeader
+        canAccessCronograma={canAccessCronograma}
+        isAdmin={isAdmin}
+        onBackToSecciones={() => router.push("/secciones")}
+      />
+      <PortalHubShell>
+      <PortalHubHeroCard
+        theme="producto"
+        icon={Boxes}
+        eyebrow="Producto • Enfoque • Causa"
+        title="Causa comercial del resultado"
+        description="Usa esta seccion para entender que lineas, productos y margenes explican el resultado del negocio por sede."
+        moduleCount={modules.length}
+      />
+      <PortalHubModuleGrid
+        theme="producto"
+        items={modules}
+        onNavigate={(href) => router.push(href)}
+        columnsClassName="gap-4 md:grid-cols-2 xl:grid-cols-4"
+      />
+      </PortalHubShell>
     </div>
   );
 }

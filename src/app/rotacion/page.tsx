@@ -1610,8 +1610,8 @@ export default function RotacionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-8 text-foreground sm:py-10">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div className="min-h-screen bg-slate-100 px-3 py-8 text-foreground sm:px-5 sm:py-10 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[min(100%,100rem)] flex-col gap-6">
         <Card className="overflow-hidden border-amber-200/80 bg-linear-to-br from-white via-amber-50/70 to-orange-50 shadow-[0_28px_70px_-45px_rgba(245,158,11,0.55)]">
           <CardContent className="px-6 py-6 sm:px-8 sm:py-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2257,7 +2257,7 @@ export default function RotacionPage() {
               return (
                 <Card
                   key={groupKey}
-                  className="rotacion-whatsapp-export-card overflow-hidden border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
+                  className="rotacion-whatsapp-export-card border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
                 >
                   <CardHeader
                     className="border-b border-slate-100 bg-slate-50/70"
@@ -2570,12 +2570,12 @@ export default function RotacionPage() {
                   </div>
                   <CardContent className="px-0 py-0">
                     <Table
-                      containerClassName="rotacion-table-capture-scroll isolate min-w-0 overscroll-x-contain"
-                      className="w-max min-w-full border-separate border-spacing-0 text-sm"
+                      containerClassName="rotacion-table-capture-scroll isolate min-w-0 !overflow-visible"
+                      className="rotacion-sticky-table w-max min-w-full border-separate border-spacing-0 text-sm"
                     >
-                      <TableHeader>
+                      <TableHeader className="rotacion-sticky-thead">
                         <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                          <TableHead className="whitespace-nowrap px-2 py-2 align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="item"
                               label="Item"
@@ -2584,10 +2584,10 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
                             Cat.
                           </TableHead>
-                          <TableHead className="max-w-[11rem] px-2 py-2 align-bottom sm:max-w-[15rem] md:max-w-[18rem] lg:max-w-[22rem]">
+                          <TableHead className="sticky top-0 z-20 max-w-[11rem] border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm sm:max-w-[15rem] md:max-w-[18rem] lg:max-w-[22rem]">
                             <SortableRotationHeader
                               field="descripcion"
                               label="Descripcion"
@@ -2596,7 +2596,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="totalSales"
                               label={
@@ -2609,7 +2609,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="inventoryUnits"
                               label={
@@ -2622,7 +2622,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="totalUnits"
                               label={
@@ -2635,7 +2635,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="inventoryValue"
                               label={
@@ -2648,7 +2648,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="rotation"
                               label="DI"
@@ -2657,7 +2657,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="trackedDays"
                               label="DIE"
@@ -2666,7 +2666,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="salesEffectiveDays"
                               label="DVE"
@@ -2675,7 +2675,7 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
-                          <TableHead className="whitespace-nowrap px-2 py-2 text-right align-bottom">
+                          <TableHead className="sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
                               field="lastMovementDate"
                               label={

@@ -18,6 +18,10 @@ const config: Config = {
         "3xl": "calc(var(--radius) + 12px)",
         "4xl": "calc(var(--radius) + 16px)",
       },
+      boxShadow: {
+        floating:
+          "0 14px 38px -12px rgba(15, 23, 42, 0.22), 0 8px 22px -10px rgba(15, 23, 42, 0.14), 0 2px 10px -4px rgba(15, 23, 42, 0.08)",
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",

@@ -553,7 +553,10 @@ const queryRotationRows = async ({
           GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
           TO_DATE(fecha_consulta, 'YYYYMMDD') AS consulta_date,
           CASE
-            WHEN fecha_ultima_compra ~ '^[0-9]{8}$' THEN TO_DATE(fecha_ultima_compra, 'YYYYMMDD')
+            WHEN fecha_ultima_compra ~ '^[0-9]{8}$'
+              AND TO_DATE(fecha_ultima_compra, 'YYYYMMDD')
+                BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+            THEN TO_DATE(fecha_ultima_compra, 'YYYYMMDD')
             ELSE NULL
           END AS last_movement_date,
           fecha_carga

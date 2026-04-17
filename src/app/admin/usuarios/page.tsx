@@ -4,11 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Clock3,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
   LayoutGrid,
   LogOut,
   Pencil,
+  Search,
   ShieldCheck,
+  Sparkles,
   Trash2,
   UserCheck,
   UserPlus,
@@ -80,6 +84,31 @@ const emptyForm: UserFormState = {
   specialRoles: [],
   password: "",
   is_active: true,
+};
+
+const USERS_PAGE_SIZE = 10;
+const RECENT_ACCESS_LOGS_LIMIT = 6;
+const APP_VERSION_LABEL = "UAID V4.0";
+
+const AVATAR_STYLES = [
+  { bg: "bg-teal-500", text: "text-white" },
+  { bg: "bg-sky-600", text: "text-white" },
+  { bg: "bg-indigo-600", text: "text-white" },
+  { bg: "bg-fuchsia-500", text: "text-white" },
+  { bg: "bg-amber-500", text: "text-white" },
+  { bg: "bg-emerald-600", text: "text-white" },
+];
+
+const userInitials = (username: string) => {
+  const t = username.trim();
+  if (t.length <= 1) return t.toUpperCase() || "?";
+  if (t.includes(" ") || t.includes(".")) {
+    const parts = t.split(/[\s.]+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+    }
+  }
+  return t.slice(0, 2).toUpperCase();
 };
 
 const formatRelativeTime = (isoDate: string) => {
@@ -182,6 +211,10 @@ export default function AdminUsuariosPage() {
   const [formState, setFormState] = useState<UserFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "user">("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [usersPage, setUsersPage] = useState(1);
 
   const getCsrfToken = () => getCookieValue("vp_csrf");
 
@@ -224,6 +257,46 @@ export default function AdminUsuariosPage() {
     return { total, active, admins };
   }, [users]);
 
+  const newUsersThisMonth = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    return users.filter(
+      (u) => new Date(u.created_at).getTime() >= start,
+    ).length;
+  }, [users]);
+
+  const filteredTableUsers = useMemo(() => {
+    let list = sortedUsers;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((u) => u.username.toLowerCase().includes(q));
+    }
+    if (roleFilter !== "all") {
+      list = list.filter((u) => u.role === roleFilter);
+    }
+    return list;
+  }, [sortedUsers, searchQuery, roleFilter]);
+
+  const usersTotalPages = Math.max(
+    1,
+    Math.ceil(filteredTableUsers.length / USERS_PAGE_SIZE),
+  );
+
+  const paginatedTableUsers = useMemo(() => {
+    const start = (usersPage - 1) * USERS_PAGE_SIZE;
+    return filteredTableUsers.slice(start, start + USERS_PAGE_SIZE);
+  }, [filteredTableUsers, usersPage]);
+
+  useEffect(() => {
+    setUsersPage(1);
+  }, [searchQuery, roleFilter]);
+
+  useEffect(() => {
+    if (usersPage > usersTotalPages) {
+      setUsersPage(usersTotalPages);
+    }
+  }, [usersPage, usersTotalPages]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -242,7 +315,7 @@ export default function AdminUsuariosPage() {
 
       const [usersRes, logsRes] = await Promise.all([
         fetch("/api/admin/users"),
-        fetch("/api/admin/login-logs?limit=25"),
+        fetch(`/api/admin/login-logs?limit=${RECENT_ACCESS_LOGS_LIMIT}`),
       ]);
 
       if (
@@ -440,292 +513,444 @@ export default function AdminUsuariosPage() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50 px-4 py-10 text-slate-900">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-mercamio-200/40 blur-3xl" />
-        <div className="absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-sky-200/40 blur-3xl" />
-        <div className="absolute top-1/3 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full bg-slate-200/50 blur-3xl" />
-      </div>
-
-      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/60 bg-white/80 p-6 shadow-[0_24px_70px_-50px_rgba(15,23,42,0.35)] backdrop-blur">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-              Administración
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 md:text-3xl">
-              Usuarios de la aplicación
-            </h1>
-            <p className="mt-2 max-w-xl text-sm text-slate-500">
-              Gestiona roles, accesos por seccion y actividad reciente del
-              portal UAID.
-            </p>
+    <div className="min-h-screen bg-[#f7f7f8] px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[min(100%,112rem)] flex-col gap-6">
+        <header className="flex flex-col gap-6 rounded-xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+              <Sparkles className="h-5 w-5" strokeWidth={2} />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Administración <span className="text-slate-400">●</span>{" "}
+                {APP_VERSION_LABEL}
+              </p>
+              <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Usuarios de la aplicación
+              </h1>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+                Gestiona roles, accesos por sección y actividad reciente del
+                portal.
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <Link
               href="/secciones"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:-translate-y-0.5 hover:bg-slate-50"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
-              <LayoutGrid className="h-3.5 w-3.5" />
+              <LayoutGrid className="h-4 w-4 text-slate-500" />
               Ir a secciones
             </Link>
             <button
               type="button"
               onClick={openCreate}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-900/90 bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-[0_14px_30px_-16px_rgba(15,23,42,0.6)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700"
             >
-              <UserPlus className="h-3.5 w-3.5" />
+              <UserPlus className="h-4 w-4" />
               Nuevo usuario
             </button>
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:-translate-y-0.5 hover:bg-slate-50"
+              className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="h-4 w-4" />
               Cerrar sesión
             </button>
           </div>
-        </div>
+        </header>
 
         {error && (
-          <div className="rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-2 text-sm text-amber-700 shadow-[0_16px_40px_-28px_rgba(217,119,6,0.45)]">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
             Cargando usuarios...
           </div>
         ) : (
           <>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-3xl border border-blue-200/70 bg-linear-to-br from-blue-50 via-white to-cyan-50 p-5 shadow-[0_18px_60px_-40px_rgba(37,99,235,0.45)] backdrop-blur">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">
+            <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+              <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">
+                <div className="p-5 sm:p-6">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      +{newUsersThisMonth} este mes
+                    </span>
+                  </div>
+                  <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                     Total usuarios
                   </p>
-                  <Users className="h-5 w-5 text-blue-600" />
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
+                    {stats.total}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Cuentas registradas
+                  </p>
                 </div>
-                <p className="mt-3 text-4xl font-bold text-slate-900">
-                  {stats.total}
-                </p>
-                <p className="mt-2 text-xs text-slate-600">
-                  Cuentas registradas
-                </p>
-              </div>
-              <div className="rounded-3xl border border-emerald-200/70 bg-linear-to-br from-emerald-50 via-white to-lime-50 p-5 shadow-[0_18px_60px_-40px_rgba(5,150,105,0.45)] backdrop-blur">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                <div className="p-5 sm:p-6">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                      <UserCheck className="h-5 w-5" />
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50/80 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      LIVE
+                    </span>
+                  </div>
+                  <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                     Usuarios activos
                   </p>
-                  <UserCheck className="h-5 w-5 text-emerald-600" />
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
+                    {stats.active}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Con acceso habilitado
+                  </p>
                 </div>
-                <p className="mt-3 text-4xl font-bold text-slate-900">
-                  {stats.active}
-                </p>
-                <p className="mt-2 text-xs text-slate-600">
-                  Con acceso habilitado
-                </p>
-              </div>
-              <div className="rounded-3xl border border-violet-200/70 bg-linear-to-br from-violet-50 via-white to-indigo-50 p-5 shadow-[0_18px_60px_-40px_rgba(109,40,217,0.4)] backdrop-blur">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-700">
+                <div className="p-5 sm:p-6">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                      Nivel raíz
+                    </span>
+                  </div>
+                  <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                     Administradores
                   </p>
-                  <ShieldCheck className="h-5 w-5 text-violet-600" />
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
+                    {String(stats.admins).padStart(2, "0")}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Roles con permisos totales
+                  </p>
                 </div>
-                <p className="mt-3 text-4xl font-bold text-slate-900">
-                  {stats.admins}
-                </p>
-                <p className="mt-2 text-xs text-slate-600">
-                  Roles con permisos totales
-                </p>
               </div>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-              <div className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
-                    Usuarios
-                  </h2>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-                    {sortedUsers.length} registrados
-                  </span>
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+              <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+                <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-bold text-slate-900">
+                      Usuarios
+                    </h2>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                      {filteredTableUsers.length} registrados
+                    </span>
+                  </div>
+                  <div className="flex flex-1 flex-wrap items-center gap-2 sm:max-w-xl sm:justify-end">
+                    <div className="relative min-w-[200px] flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="search"
+                        placeholder="Buscar usuario..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFiltersOpen((o) => !o)}
+                      className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+                        filtersOpen || roleFilter !== "all"
+                          ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Filter className="h-4 w-4" />
+                      Filtros
+                    </button>
+                  </div>
                 </div>
-                <div className="mt-5 overflow-auto">
-                  <table className="w-full text-sm text-slate-700">
-                    <thead className="sticky top-0 z-10 bg-white">
-                      <tr className="text-left text-xs uppercase tracking-[0.14em] text-slate-500">
-                        <th className="py-2 pr-3">Usuario</th>
-                        <th className="py-2 pr-3">Rol</th>
-                        <th className="py-2 pr-3">Sede</th>
-                        <th className="py-2 pr-3">Lineas</th>
-                        <th className="py-2 pr-3">Secciones</th>
-                        <th className="py-2 pr-3">Especial</th>
-                        <th className="py-2 pr-3">Estado</th>
-                        <th className="py-2">Acciones</th>
+                {filtersOpen && (
+                  <div className="flex flex-wrap gap-2 border-b border-slate-100 bg-slate-50/50 px-4 py-3 sm:px-5">
+                    <span className="mr-1 text-xs font-medium text-slate-500">
+                      Rol:
+                    </span>
+                    {(
+                      [
+                        ["all", "Todos"],
+                        ["admin", "Admin"],
+                        ["user", "User"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setRoleFilter(value)}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                          roleFilter === value
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[860px] text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        <th className="px-4 py-3">Usuario</th>
+                        <th className="px-3 py-3">Rol</th>
+                        <th className="px-3 py-3">Sede</th>
+                        <th className="px-3 py-3">Líneas</th>
+                        <th className="px-3 py-3">Secciones</th>
+                        <th className="px-3 py-3">Especial</th>
+                        <th className="px-3 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedUsers.map((user, index) => (
-                        <tr
-                          key={user.id}
-                          className={`border-t border-slate-100 transition-colors hover:bg-slate-50/80 ${
-                            index % 2 === 0 ? "bg-white" : "bg-slate-50/35"
-                          }`}
-                        >
-                          <td className="py-3 pr-3 font-semibold text-slate-900">
-                            {user.username}
-                          </td>
-                          <td className="py-3 pr-3">
-                            <span
-                              className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold uppercase tracking-[0.15em] ${
-                                user.role === "admin"
-                                  ? "border-violet-200 bg-violet-50 text-violet-700"
-                                  : "border-slate-200 bg-white text-slate-600"
-                              }`}
-                            >
-                              {user.role}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
-                            {user.role === "admin"
-                              ? "-"
-                              : formatAllowedSedes(
-                                  user.allowedSedes,
-                                  user.sede ??
-                                    inferSedeFromUsername(user.username),
-                                )}
-                          </td>
-                          <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
-                            {user.role === "admin"
-                              ? "-"
-                              : formatAllowedLines(user.allowedLines)}
-                          </td>
-                          <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
-                            {user.role === "admin"
-                              ? "-"
-                              : formatAllowedDashboards(user.allowedDashboards)}
-                          </td>
-                          <td className="py-3 pr-3 text-xs font-semibold text-slate-700">
-                            {user.role === "admin"
-                              ? "-"
-                              : user.specialRoles &&
-                                  user.specialRoles.length > 0
-                                ? user.specialRoles.join(", ")
-                                : "-"}
-                          </td>
-                          <td className="py-3 pr-3">
-                            <span
-                              className={`inline-flex items-center gap-2 rounded-full px-2 py-1 text-xs font-semibold ${
-                                user.is_active
-                                  ? "bg-emerald-50 text-emerald-700"
-                                  : "bg-rose-50 text-rose-700"
-                              }`}
-                            >
+                      {paginatedTableUsers.map((user, index) => {
+                        const palette =
+                          AVATAR_STYLES[index % AVATAR_STYLES.length]!;
+                        return (
+                          <tr
+                            key={user.id}
+                            className="border-b border-slate-100 transition-colors hover:bg-slate-50/90"
+                          >
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${palette.bg} ${palette.text}`}
+                                >
+                                  {userInitials(user.username)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="truncate font-semibold text-slate-900">
+                                    {user.username}
+                                  </div>
+                                  <div className="truncate text-xs text-slate-500">
+                                    {user.username}@portal
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              {user.role === "admin" ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-800">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                  Admin
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                  User
+                                </span>
+                              )}
+                            </td>
+                            <td className="max-w-[140px] px-3 py-3 text-xs text-slate-600">
+                              {user.role === "admin"
+                                ? "—"
+                                : formatAllowedSedes(
+                                    user.allowedSedes,
+                                    user.sede ??
+                                      inferSedeFromUsername(user.username),
+                                  )}
+                            </td>
+                            <td className="max-w-[120px] px-3 py-3 text-xs text-slate-600">
+                              {user.role === "admin"
+                                ? "—"
+                                : formatAllowedLines(user.allowedLines)}
+                            </td>
+                            <td className="max-w-[160px] px-3 py-3 text-xs text-slate-600">
+                              {user.role === "admin"
+                                ? "—"
+                                : formatAllowedDashboards(
+                                    user.allowedDashboards,
+                                  )}
+                            </td>
+                            <td className="max-w-[120px] px-3 py-3 text-xs text-slate-600">
+                              {user.role === "admin"
+                                ? "—"
+                                : user.specialRoles &&
+                                    user.specialRoles.length > 0
+                                  ? user.specialRoles.join(", ")
+                                  : "—"}
+                            </td>
+                            <td className="px-3 py-3">
                               <span
-                                className={`h-2 w-2 rounded-full ${
+                                className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
                                   user.is_active
-                                    ? "bg-emerald-500"
-                                    : "bg-rose-500"
+                                    ? "text-emerald-600"
+                                    : "text-rose-600"
                                 }`}
-                              />
-                              {user.is_active ? "Activo" : "Inactivo"}
-                            </span>
-                          </td>
-                          <td className="py-3">
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openEdit(user)}
-                                className="inline-flex items-center gap-1 rounded-full border border-mercamio-200/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-mercamio-700 transition-colors hover:bg-mercamio-50"
                               >
-                                <Pencil className="h-3.5 w-3.5" />
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(user.id)}
-                                className="inline-flex items-center gap-1 rounded-full border border-rose-200/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-rose-700 transition-colors hover:bg-rose-50"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Borrar
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                <span
+                                  className={`h-2 w-2 rounded-full ${
+                                    user.is_active
+                                      ? "bg-emerald-500"
+                                      : "bg-rose-500"
+                                  }`}
+                                />
+                                {user.is_active ? "Activo" : "Inactivo"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="inline-flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(user)}
+                                  className="rounded-lg p-1.5 text-indigo-600 transition hover:bg-indigo-50"
+                                  title="Editar"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(user.id)}
+                                  className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  {sortedUsers.length === 0 && (
-                    <div className="py-10 text-center text-sm text-slate-500">
-                      No hay usuarios registrados todavía.
+                  {filteredTableUsers.length === 0 && (
+                    <div className="py-12 text-center text-sm text-slate-500">
+                      {sortedUsers.length === 0
+                        ? "No hay usuarios registrados todavía."
+                        : "No hay usuarios que coincidan con la búsqueda o filtros."}
                     </div>
                   )}
                 </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    <Clock3 className="h-4 w-4" />
-                    Accesos recientes
-                  </h2>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-                      Últimos {logs.length}
-                    </span>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={handleClearLogs}
-                        className="rounded-full border border-rose-200/70 bg-rose-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-rose-700 transition-colors hover:bg-rose-100"
-                      >
-                        Borrar accesos
-                      </button>
+                <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <p className="text-sm text-slate-500">
+                    {filteredTableUsers.length === 0 ? (
+                      <>Mostrando 0 de {sortedUsers.length} usuarios</>
+                    ) : (
+                      <>
+                        Mostrando{" "}
+                        {(usersPage - 1) * USERS_PAGE_SIZE + 1} a{" "}
+                        {Math.min(
+                          usersPage * USERS_PAGE_SIZE,
+                          filteredTableUsers.length,
+                        )}{" "}
+                        de {filteredTableUsers.length} usuarios
+                        {searchQuery.trim() || roleFilter !== "all"
+                          ? ` (total ${sortedUsers.length})`
+                          : ""}
+                      </>
                     )}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={usersPage <= 1}
+                      onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
+                      className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft className="mr-1 h-4 w-4" />
+                      Anterior
+                    </button>
+                    <span className="hidden text-xs text-slate-500 sm:inline">
+                      Página {usersPage} de {usersTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={usersPage >= usersTotalPages}
+                      onClick={() =>
+                        setUsersPage((p) => Math.min(usersTotalPages, p + 1))
+                      }
+                      className="inline-flex h-8 items-center rounded-lg border border-slate-900 bg-white px-3 text-xs font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Siguiente
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </button>
                   </div>
                 </div>
-                <div className="mt-5 space-y-3 text-sm text-slate-700">
-                  {logs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/85 px-3 py-3 transition-all hover:border-slate-200 hover:bg-white"
+              </div>
+
+              <aside className="flex flex-col rounded-xl border border-slate-100 bg-white shadow-sm">
+                <div className="flex items-start justify-between gap-2 border-b border-slate-100 p-4 sm:p-5">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">
+                      Accesos recientes
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Últimos {RECENT_ACCESS_LOGS_LIMIT} eventos
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleClearLogs}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xs font-semibold uppercase text-slate-600 shadow-sm">
-                          {log.username.slice(0, 2)}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-slate-900">
-                            {log.username}
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Borrar
+                    </button>
+                  )}
+                </div>
+                <div className="relative flex-1 p-4 sm:p-5">
+                  <div className="absolute bottom-6 left-[1.35rem] top-8 w-px bg-slate-200" />
+                  <ul className="relative space-y-0">
+                    {logs.map((log, logIndex) => {
+                      const lp =
+                        AVATAR_STYLES[logIndex % AVATAR_STYLES.length]!;
+                      return (
+                        <li key={log.id} className="relative pl-10 pb-6 last:pb-0">
+                          <div
+                            className={`absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold ${lp.bg} ${lp.text} ring-4 ring-white`}
+                          >
+                            {userInitials(log.username)}
                           </div>
                           <div
-                            className="text-xs text-slate-500"
-                            title={new Date(log.logged_at).toLocaleString(
-                              "es-CO",
-                            )}
+                            className={`rounded-lg border p-3 ${
+                              logIndex === 0
+                                ? "border-indigo-200 bg-indigo-50/60"
+                                : "border-slate-100 bg-slate-50/80"
+                            }`}
                           >
-                            {formatRelativeTime(log.logged_at)} •{" "}
-                            {log.ip ?? "Origen auditado desconocido"}
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="font-semibold text-slate-900">
+                                {log.username}
+                              </span>
+                              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Login
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatRelativeTime(log.logged_at)}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              {log.ip ?? "Origen auditado desconocido"}
+                            </p>
                           </div>
-                        </div>
-                      </div>
-                      <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-500">
-                        Login
-                      </span>
-                    </div>
-                  ))}
+                        </li>
+                      );
+                    })}
+                  </ul>
                   {logs.length === 0 && (
                     <p className="text-sm text-slate-500">
                       Sin accesos registrados.
                     </p>
                   )}
                 </div>
-              </div>
+                <div className="border-t border-slate-100 p-4 text-center">
+                  <span className="text-xs font-medium text-slate-400">
+                    Ver registro completo →
+                  </span>
+                </div>
+              </aside>
             </div>
           </>
         )}
@@ -1001,7 +1226,7 @@ export default function AdminUsuariosPage() {
                   type="button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="rounded-full border border-blue-300/80 bg-blue-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-[0_10px_24px_-14px_rgba(37,99,235,0.65)] transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="rounded-full border border-indigo-500/80 bg-indigo-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-[0_10px_24px_-14px_rgba(79,70,229,0.45)] transition-all hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {saving ? "Guardando..." : "Guardar"}
                 </button>

@@ -3,36 +3,83 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Activity,
+  BarChart3,
+  Boxes,
+  ChevronRight,
+  KeyRound,
+  UserCog,
+} from "lucide-react";
+import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import {
   PORTAL_SECTIONS,
   type PortalSectionId,
 } from "@/lib/portal-sections";
 
 const SECTION_STYLES: Record<
   PortalSectionId,
-  { classes: string; badgeClasses: string; focusClasses: string; ctaClasses: string }
+  {
+    radialWashClass: string;
+    topBorderClass: string;
+    eyebrowClass: string;
+    badgeClasses: string;
+    iconClasses: string;
+    chevronBtnClasses: string;
+  }
 > = {
   venta: {
-    classes:
-      "border-blue-300/80 bg-linear-to-br from-blue-100 via-white to-indigo-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.45)] hover:border-blue-400 hover:shadow-[0_22px_44px_-26px_rgba(37,99,235,0.55)]",
+    radialWashClass:
+      "bg-[radial-gradient(ellipse_120%_100%_at_50%_-25%,rgba(59,130,246,0.16),transparent_58%)]",
+    topBorderClass: "before:bg-blue-500",
+    eyebrowClass: "text-blue-600",
     badgeClasses:
-      "border-blue-300/80 bg-blue-200/75 text-blue-800",
-    focusClasses: "text-blue-950",
-    ctaClasses: "text-blue-800",
+      "border-blue-200/90 bg-blue-50/90 text-blue-700 ring-1 ring-blue-100/80",
+    iconClasses: "border-blue-100 bg-blue-50 text-blue-600",
+    chevronBtnClasses:
+      "border-blue-200/80 bg-blue-50 text-blue-600 hover:bg-blue-100/90",
   },
   producto: {
-    classes:
-      "border-amber-300/80 bg-linear-to-br from-amber-100 via-white to-yellow-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.45)] hover:border-amber-400 hover:shadow-[0_22px_44px_-26px_rgba(245,158,11,0.55)]",
-    badgeClasses: "border-amber-300/80 bg-amber-200/80 text-amber-900",
-    focusClasses: "text-amber-950",
-    ctaClasses: "text-amber-800",
+    radialWashClass:
+      "bg-[radial-gradient(ellipse_120%_100%_at_50%_-25%,rgba(245,158,11,0.16),transparent_58%)]",
+    topBorderClass: "before:bg-amber-500",
+    eyebrowClass: "text-amber-700",
+    badgeClasses:
+      "border-amber-200/90 bg-amber-50/90 text-amber-800 ring-1 ring-amber-100/80",
+    iconClasses: "border-amber-100 bg-amber-50 text-amber-600",
+    chevronBtnClasses:
+      "border-amber-200/80 bg-amber-50 text-amber-700 hover:bg-amber-100/90",
   },
   operacion: {
-    classes:
-      "border-rose-300/80 bg-linear-to-br from-rose-100 via-white to-red-100 text-slate-900 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.4)] hover:border-rose-400 hover:shadow-[0_22px_44px_-26px_rgba(244,63,94,0.5)]",
-    badgeClasses: "border-rose-300/80 bg-rose-200/75 text-rose-800",
-    focusClasses: "text-rose-950",
-    ctaClasses: "text-rose-800",
+    radialWashClass:
+      "bg-[radial-gradient(ellipse_120%_100%_at_50%_-25%,rgba(244,63,94,0.14),transparent_58%)]",
+    topBorderClass: "before:bg-rose-500",
+    eyebrowClass: "text-rose-700",
+    badgeClasses:
+      "border-rose-200/90 bg-rose-50/90 text-rose-800 ring-1 ring-rose-100/80",
+    iconClasses: "border-rose-100 bg-rose-50 text-rose-600",
+    chevronBtnClasses:
+      "border-rose-200/80 bg-rose-50 text-rose-700 hover:bg-rose-100/90",
   },
+};
+
+/** Texto ceja bajo el contador, alineado a los hubs por sección. */
+const SECTION_EYEBROW: Record<PortalSectionId, string> = {
+  venta: "Venta • Enfoque • Resultado",
+  producto: "Producto • Enfoque • Causa",
+  operacion: "Operación • Enfoque • Ejecución",
+};
+
+/** Etiqueta en la pastilla (con viñeta al inicio). */
+const SECTION_BADGE_TAG: Record<PortalSectionId, string> = {
+  venta: "VENTA",
+  producto: "PRODUCTO",
+  operacion: "OPERACIÓN",
+};
+
+const SECTION_ICONS: Record<PortalSectionId, typeof BarChart3> = {
+  venta: BarChart3,
+  producto: Boxes,
+  operacion: Activity,
 };
 
 export default function SeccionesPage() {
@@ -42,6 +89,7 @@ export default function SeccionesPage() {
   const [isSwitchingUser, setIsSwitchingUser] = useState(false);
   const [allowedDashboards, setAllowedDashboards] = useState<string[] | null>(null);
   const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
 
   const getCookieValue = (name: string) => {
     if (typeof document === "undefined") return null;
@@ -76,12 +124,14 @@ export default function SeccionesPage() {
             role?: string;
             allowedDashboards?: string[] | null;
             specialRoles?: string[] | null;
+            username?: string | null;
           };
         };
         if (!isMounted) return;
         setIsAdmin(payload.user?.role === "admin");
         setAllowedDashboards(payload.user?.allowedDashboards ?? null);
         setSpecialRoles(payload.user?.specialRoles ?? null);
+        setUsername(payload.user?.username ?? null);
         setReady(true);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -128,94 +178,85 @@ export default function SeccionesPage() {
       : PORTAL_SECTIONS.filter((section) => allowedDashboards.includes(section.id));
   const canAccessCronograma =
     isAdmin || Boolean(specialRoles?.includes("cronograma"));
+  const sectionCount = visibleSections.length;
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground">
-      <div className="mx-auto w-full max-w-5xl rounded-[28px] border border-slate-200/70 bg-white p-7 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="bg-linear-to-r from-sky-700 via-blue-700 to-slate-800 bg-clip-text text-4xl font-black tracking-tight text-transparent sm:text-5xl">
-              Portal UAID
-            </h1>
-            <p className="mt-2 text-sm font-semibold text-slate-600 sm:text-base">
-              Explora las tres dimensiones clave del negocio.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {canAccessCronograma && (
-              <button
-                type="button"
-                onClick={() =>
-                  window.open(
-                    "https://www.notion.so/Cronograma-de-Proyectos-UAID-00e49a2ceb6b83f58fc1010dd253ae67",
-                    "_blank",
-                    "noopener,noreferrer",
-                  )
-                }
-                className="inline-flex items-center rounded-full border border-sky-200/90 bg-linear-to-r from-sky-50 to-cyan-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-800 transition-all hover:border-sky-300 hover:brightness-105"
-              >
-                Cronograma
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => router.push("/admin/usuarios")}
-                className="inline-flex items-center rounded-full border border-slate-900/90 bg-linear-to-r from-slate-900 to-slate-700 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white transition-all hover:brightness-110"
-              >
-                Usuarios
-              </button>
-            )}
-          </div>
-        </div>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-[15px]">
+    <div className="min-h-screen bg-slate-100 text-foreground">
+      <PortalBrandingHeader
+        canAccessCronograma={canAccessCronograma}
+        isAdmin={isAdmin}
+      />
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 lg:px-6">
+        <p className="max-w-5xl text-sm leading-6 text-slate-600">
           El Portal UAID integra en un solo entorno la vision completa del
-          negocio a traves de tres dimensiones clave: Venta, Producto y
-          Operacion, permitiendo entender no solo el resultado, sino tambien sus
-          causas y la forma en que se ejecuta.
+          negocio a traves de tres dimensiones clave:{" "}
+          <strong className="font-semibold text-slate-800">Venta</strong>,{" "}
+          <strong className="font-semibold text-slate-800">Producto</strong> y{" "}
+          <strong className="font-semibold text-slate-800">Operacion</strong>,
+          permitiendo entender no solo el resultado, sino tambien sus causas y
+          la forma en que se ejecuta.
         </p>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {visibleSections.map((section) => {
+        <div className="grid gap-4 lg:grid-cols-3">
+          {visibleSections.map((section, index) => {
             const styles = SECTION_STYLES[section.id];
+            const Icon = SECTION_ICONS[section.id];
+            const sectionNumber = String(index + 1).padStart(2, "0");
+            const modulesCount = String(section.modules.length).padStart(2, "0");
             return (
               <button
                 key={section.id}
                 type="button"
                 onClick={() => router.push(section.href)}
-                className={`group flex min-h-[260px] w-full flex-col rounded-2xl border px-5 py-5 text-left transition-all hover:-translate-y-0.5 ${styles.classes}`}
+                className={`group relative flex min-h-[280px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 hover:-translate-y-1 hover:border-foreground/15 hover:shadow-floating ${styles.topBorderClass}`}
               >
                 <span
-                  className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${styles.badgeClasses}`}
+                  aria-hidden
+                  className={`pointer-events-none absolute inset-0 z-0 rounded-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-100 ${styles.radialWashClass}`}
+                />
+                <div className="relative z-1 flex items-start justify-between gap-3">
+                  <span
+                    className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-transform duration-500 ease-out will-change-transform group-hover:scale-105 ${styles.iconClasses}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 text-right">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                      {sectionNumber} /{" "}
+                      {String(Math.max(sectionCount, 1)).padStart(2, "0")}
+                    </p>
+                    <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                      {modulesCount} modulos
+                    </p>
+                  </div>
+                </div>
+                <p
+                  className={`relative z-1 mt-4 text-[10px] font-bold uppercase tracking-[0.22em] ${styles.eyebrowClass}`}
                 >
-                  {section.label}
-                </span>
-                <span className="mt-4 block text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Enfoque
-                </span>
-                <span className={`mt-2 block text-2xl font-black leading-tight ${styles.focusClasses}`}>
+                  {SECTION_EYEBROW[section.id]}
+                </p>
+                <p
+                  className={`relative z-1 mt-3 inline-flex w-fit max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] ${styles.badgeClasses}`}
+                >
+                  <span className="text-[0.65rem] leading-none opacity-90">•</span>
+                  {SECTION_BADGE_TAG[section.id]}
+                </p>
+                <span className="relative z-1 mt-3 block text-xl font-black leading-snug tracking-tight text-slate-900 sm:text-2xl">
                   {section.focus}
                 </span>
-                <span className="mt-3 block text-sm leading-6 text-slate-700">
+                <span className="relative z-1 mt-3 block text-sm leading-relaxed text-slate-600">
                   {section.description}
                 </span>
-                <div className="mt-auto pt-5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                    Modulos
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {section.modules.map((module) => (
-                      <span
-                        key={module}
-                        className="rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-700"
-                      >
-                        {module}
-                      </span>
-                    ))}
-                  </div>
-                  <p className={`mt-4 text-xs font-semibold uppercase tracking-[0.18em] ${styles.ctaClasses}`}>
-                    Entrar a {section.label}
-                  </p>
+                <div className="relative z-1 mt-8 flex items-center justify-between gap-3 pt-1">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                    Abrir modulo
+                  </span>
+                  <span
+                    className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${styles.chevronBtnClasses}`}
+                    aria-hidden
+                  >
+                    <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
+                  </span>
                 </div>
               </button>
             );
@@ -223,27 +264,41 @@ export default function SeccionesPage() {
         </div>
 
         {visibleSections.length === 0 && (
-          <div className="mt-6 rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             Tu usuario no tiene secciones asignadas en este momento.
           </div>
         )}
 
-        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-slate-200/70 pt-4">
-          <button
-            type="button"
-            onClick={handleSwitchUser}
-            disabled={isSwitchingUser}
-            className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSwitchingUser ? "Saliendo..." : "Cambiar usuario"}
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push("/cuenta/contrasena")}
-            className="inline-flex items-center rounded-full border border-blue-200/70 bg-blue-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700 transition-all hover:border-blue-300 hover:bg-blue-100"
-          >
-            Cambiar contrasena
-          </button>
+        <div className="rounded-2xl border border-slate-200/70 bg-white/90 shadow-[0_8px_30px_-24px_rgba(15,23,42,0.2)] backdrop-blur-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Cuenta</p>
+              <p className="text-xs text-slate-500">Ajustes rapidos de sesion.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSwitchUser}
+                disabled={isSwitchingUser}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <UserCog className="h-3.5 w-3.5" />
+                {isSwitchingUser ? "Saliendo..." : "Cambiar usuario"}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/cuenta/contrasena")}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                Cambiar contrasena
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 px-5 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <span>Sesion • {username?.toLowerCase() || "usuario"}</span>
+            <span>Ciclo {new Date().getFullYear()} . 04</span>
+          </div>
         </div>
       </div>
     </div>
