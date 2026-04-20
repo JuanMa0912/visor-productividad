@@ -945,10 +945,14 @@ export default function AdminUsuariosPage() {
                     </p>
                   )}
                 </div>
-                <div className="border-t border-slate-100 p-4 text-center">
-                  <span className="text-xs font-medium text-slate-400">
-                    Ver registro completo →
-                  </span>
+                <div className="border-t border-slate-100 p-4">
+                  <Link
+                    href="/admin/usuarios/accesos"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
+                  >
+                    Ver registro completo
+                    <span aria-hidden>→</span>
+                  </Link>
                 </div>
               </aside>
             </div>
