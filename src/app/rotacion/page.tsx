@@ -22,7 +22,6 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
-  Info,
   Loader2,
   MapPin,
   PackageSearch,
@@ -951,7 +950,6 @@ const FilterSelectField = ({
 );
 
 const ROTACION_LAST_SEDE_STORAGE_KEY = "rotacion:lastSedeSelection";
-const ROTACION_QOL_TIP_SESSION_KEY = "rotacion:qolTipDismissed";
 
 const readRotationApiForbiddenMessage = async (
   response: Response,
@@ -1045,7 +1043,6 @@ export default function RotacionPage() {
   const [productSearchInput, setProductSearchInput] = useState("");
   const [isCategoriaFilterOpen, setIsCategoriaFilterOpen] = useState(false);
   const [isFamilyFilterOpen, setIsFamilyFilterOpen] = useState(false);
-  const [showQolQuickTip, setShowQolQuickTip] = useState(false);
   const rotacionTablesExportRef = useRef<HTMLDivElement>(null);
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
@@ -1100,16 +1097,6 @@ export default function RotacionPage() {
       controller.abort();
     };
   }, [router]);
-
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem(ROTACION_QOL_TIP_SESSION_KEY) !== "1") {
-        setShowQolQuickTip(true);
-      }
-    } catch {
-      setShowQolQuickTip(true);
-    }
-  }, []);
 
   useEffect(() => {
     try {
@@ -1659,15 +1646,6 @@ export default function RotacionPage() {
     void reloadRotacionRows();
   };
 
-  const dismissQolQuickTip = () => {
-    try {
-      sessionStorage.setItem(ROTACION_QOL_TIP_SESSION_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-    setShowQolQuickTip(false);
-  };
-
   const handleSaveAbcdConfig = async () => {
     if (!canEditAbcdConfig || isSavingAbcdConfig) return;
     setIsSavingAbcdConfig(true);
@@ -2099,37 +2077,6 @@ export default function RotacionPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {showQolQuickTip ? (
-                <div
-                  role="status"
-                  className="flex flex-col gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2.5 sm:flex-row sm:items-start sm:gap-3"
-                >
-                  <Info
-                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1 space-y-1 text-sm text-amber-950">
-                    <p className="font-semibold leading-snug">Pasos rapidos</p>
-                    <p className="text-[13px] leading-relaxed text-amber-950/90">
-                      1) Elige empresa (si aplica) y{" "}
-                      <span className="font-medium">sede</span>. 2) Ajusta el
-                      periodo en la tarjeta de al lado si lo necesitas. 3)
-                      Familias, categorias y lineas N1 afinan el listado; la
-                      tabla se actualiza sola en unos instantes (o usa
-                      Actualizar ahora para forzar).
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 shrink-0 self-end rounded-lg border-amber-300 bg-white text-xs font-semibold text-amber-900 hover:bg-amber-100 sm:self-start"
-                    onClick={dismissQolQuickTip}
-                  >
-                    Entendido
-                  </Button>
-                </div>
-              ) : null}
               <div className="grid gap-3 md:grid-cols-2">
                 <FilterSelectField
                   icon={Building2}
