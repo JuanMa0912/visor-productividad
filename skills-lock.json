@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "qa": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "computedHash": "a608d889794ef7f21a5dd31d96ca502b5e6f27b466ada759a3bf9846a2e6b236"
+    }
+  }
+}

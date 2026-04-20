@@ -22,6 +22,7 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
+  Loader2,
   MapPin,
   PackageSearch,
   X,
@@ -287,13 +288,15 @@ const clampDateKeyToBounds = (key: string, min: string, max: string) => {
   return key;
 };
 
-/** Fin = hoy (o tope de datos); inicio = mismo día un mes calendario atrás, acotado a datos disponibles. */
+/** Fin = ayer (o tope de datos); inicio = mismo día un mes calendario atrás +1 día, acotado a datos disponibles. */
 const getRollingMonthBackRange = (
   minAvailable: string,
   maxAvailable: string,
 ): DateRange => {
-  const todayKey = toDateKey(new Date());
-  const endKey = clampDateKeyToBounds(todayKey, minAvailable, maxAvailable);
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayKey = toDateKey(yesterday);
+  const endKey = clampDateKeyToBounds(yesterdayKey, minAvailable, maxAvailable);
   const endDate = parseDateKey(endKey);
   const startDate = new Date(endDate);
   startDate.setMonth(startDate.getMonth() - 1);
@@ -307,6 +310,23 @@ const getRollingMonthBackRange = (
     startKey = endKey;
   }
   return { start: startKey, end: endKey };
+};
+
+const buildRotacionRowsKey = (input: {
+  start: string;
+  end: string;
+  empresa: string;
+  sedeId: string;
+  lineasN1: string[];
+  categoriaKeys: string[];
+}) => {
+  const lineas = [...input.lineasN1].sort((a, b) =>
+    a.localeCompare(b, "es"),
+  );
+  const cats = [...input.categoriaKeys].sort((a, b) =>
+    a.localeCompare(b, "es"),
+  );
+  return `${input.start}|${input.end}|${input.empresa}|${input.sedeId}|${lineas.join(",")}|${cats.join(",")}`;
 };
 
 const sanitizeNumericInput = (value: string) => value.replace(/\D/g, "");
@@ -982,6 +1002,18 @@ export default function RotacionPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const skipNextFetchRef = useRef(false);
+  const catalogLoadGenerationRef = useRef(0);
+  const rotacionRowsFetchKeyRef = useRef<string | null>(null);
+  const reloadRotacionRowsRef = useRef<
+    (
+      overrides?: {
+        lineasN1?: string[];
+        categoriaKeys?: string[];
+        categoriasCatalog?: RotationCategoriaFilterOption[];
+      },
+      options?: { signal?: AbortSignal },
+    ) => Promise<boolean>
+  >(() => Promise.resolve(false));
   const [tableSortField, setTableSortField] =
     useState<RotationSortField | null>("totalSales");
   const [tableSortDirection, setTableSortDirection] =
@@ -1068,6 +1100,142 @@ export default function RotacionPage() {
     [specialRoles, isAdmin],
   );
 
+  const reloadRotacionRows = useCallback(
+    async (
+      overrides?: {
+        lineasN1?: string[];
+        categoriaKeys?: string[];
+        categoriasCatalog?: RotationCategoriaFilterOption[];
+      },
+      options?: { signal?: AbortSignal },
+    ): Promise<boolean> => {
+      if (!selectedSede) return false;
+      const selectedSedeMeta = parseSedeSelection(selectedSede);
+      if (!selectedSedeMeta?.sedeId) return false;
+
+      const lineas = overrides?.lineasN1 ?? selectedLineaN1Values;
+      const cats = overrides?.categoriaKeys ?? selectedCategoriaKeys;
+      const categoriasForParams =
+        overrides?.categoriasCatalog ?? filterCatalog.categorias ?? [];
+
+      setIsLoadingData(true);
+      setError(null);
+      setHasLoadedItems(true);
+
+      try {
+        const params = new URLSearchParams();
+        const effectiveCompany = selectedSedeMeta.empresa ?? selectedCompany;
+
+        if (dateRange.start && dateRange.end) {
+          params.set("start", dateRange.start);
+          params.set("end", dateRange.end);
+        }
+        if (effectiveCompany) {
+          params.set("empresa", effectiveCompany);
+        }
+        params.set("sede", selectedSedeMeta.sedeId);
+        lineas.forEach((linea) => {
+          params.append("lineasN1", linea);
+        });
+        appendCategoriaParams(params, categoriasForParams, cats);
+
+        const response = await fetch(
+          `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
+          { cache: "no-store", signal: options?.signal },
+        );
+        if (response.status === 401) {
+          router.replace("/login");
+          return false;
+        }
+        if (response.status === 403) {
+          setError(await readRotationApiForbiddenMessage(response));
+          setHasLoadedItems(false);
+          return false;
+        }
+        const payload = (await response.json()) as RotationApiResponse;
+        if (!response.ok) {
+          throw new Error(
+            payload.error ?? "No fue posible consultar la rotacion.",
+          );
+        }
+
+        setRows(normalizeRotationRows(payload.rows ?? []));
+        if (payload.meta?.abcdConfig) {
+          const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
+          setAbcdConfig(normalizedConfig);
+          setAbcdDraftConfig(normalizedConfig);
+        }
+        rotacionRowsFetchKeyRef.current = buildRotacionRowsKey({
+          start: dateRange.start ?? "",
+          end: dateRange.end ?? "",
+          empresa: effectiveCompany ?? "",
+          sedeId: selectedSedeMeta.sedeId,
+          lineasN1: lineas,
+          categoriaKeys: cats,
+        });
+        return true;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return false;
+        }
+        setRows([]);
+        setHasLoadedItems(false);
+        setError(
+          err instanceof Error ? err.message : "Error consultando rotacion.",
+        );
+        return false;
+      } finally {
+        setIsLoadingData(false);
+      }
+    },
+    [
+      router,
+      selectedSede,
+      selectedCompany,
+      dateRange.start,
+      dateRange.end,
+      selectedLineaN1Values,
+      selectedCategoriaKeys,
+      filterCatalog.categorias,
+    ],
+  );
+
+  reloadRotacionRowsRef.current = reloadRotacionRows;
+
+  useEffect(() => {
+    if (!ready || isLoadingLineCatalog) return;
+    if (rotacionRowsFetchKeyRef.current === null) return;
+
+    const meta = parseSedeSelection(selectedSede);
+    if (!meta?.sedeId || !dateRange.start || !dateRange.end) return;
+
+    const key = buildRotacionRowsKey({
+      start: dateRange.start,
+      end: dateRange.end,
+      empresa: (meta.empresa ?? selectedCompany) ?? "",
+      sedeId: meta.sedeId,
+      lineasN1: selectedLineaN1Values,
+      categoriaKeys: selectedCategoriaKeys,
+    });
+
+    if (key === rotacionRowsFetchKeyRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void reloadRotacionRows();
+    }, 480);
+    return () => window.clearTimeout(timer);
+  }, [
+    ready,
+    isLoadingLineCatalog,
+    selectedSede,
+    selectedCompany,
+    dateRange.start,
+    dateRange.end,
+    selectedLineaN1Values,
+    selectedCategoriaKeys,
+    reloadRotacionRows,
+  ]);
+
   useEffect(() => {
     if (!ready) return;
     if (skipNextFetchRef.current) {
@@ -1075,13 +1243,16 @@ export default function RotacionPage() {
       return;
     }
 
-    const controller = new AbortController();
+    catalogLoadGenerationRef.current += 1;
+    const generation = catalogLoadGenerationRef.current;
+    const rowsController = new AbortController();
 
     const loadLineCatalog = async () => {
       setIsLoadingLineCatalog(true);
       setError(null);
       setRows([]);
       setHasLoadedItems(false);
+      rotacionRowsFetchKeyRef.current = null;
 
       try {
         const hadEmptyDateRange = !dateRange.start || !dateRange.end;
@@ -1104,17 +1275,22 @@ export default function RotacionPage() {
         const response = await fetch(
           `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
           {
-            signal: controller.signal,
             cache: "no-store",
           },
         );
+
+        if (generation !== catalogLoadGenerationRef.current) return;
 
         if (response.status === 401) {
           router.replace("/login");
           return;
         }
         if (response.status === 403) {
-          setError(await readRotationApiForbiddenMessage(response));
+          const forbiddenMessage = await readRotationApiForbiddenMessage(
+            response,
+          );
+          if (generation !== catalogLoadGenerationRef.current) return;
+          setError(forbiddenMessage);
           return;
         }
 
@@ -1124,6 +1300,8 @@ export default function RotacionPage() {
             payload.error ?? "No fue posible consultar la rotacion.",
           );
         }
+
+        if (generation !== catalogLoadGenerationRef.current) return;
 
         setFilterCatalog(
           payload.filters ?? {
@@ -1153,6 +1331,7 @@ export default function RotacionPage() {
 
         const avMin = payload.meta?.availableRange?.min;
         const avMax = payload.meta?.availableRange?.max;
+        if (generation !== catalogLoadGenerationRef.current) return;
         if (
           hadEmptyDateRange &&
           typeof avMin === "string" &&
@@ -1170,79 +1349,45 @@ export default function RotacionPage() {
             dateRange.end !== payload.meta.effectiveRange.end)
         ) {
           skipNextFetchRef.current = true;
+          window.setTimeout(() => {
+            if (skipNextFetchRef.current) {
+              skipNextFetchRef.current = false;
+            }
+          }, 500);
           setDateRange(payload.meta.effectiveRange);
         }
 
+        if (generation !== catalogLoadGenerationRef.current) return;
+
         if (selectedSedeMeta?.sedeId) {
-          setIsLoadingData(true);
-          try {
-            const rowsParams = new URLSearchParams();
-            if (dateRange.start && dateRange.end) {
-              rowsParams.set("start", dateRange.start);
-              rowsParams.set("end", dateRange.end);
-            }
-            if (effectiveCompany) {
-              rowsParams.set("empresa", effectiveCompany);
-            }
-            rowsParams.set("sede", selectedSedeMeta.sedeId);
-            allLineasN1.forEach((linea) => {
-              rowsParams.append("lineasN1", linea);
-            });
-            appendCategoriaParams(
-              rowsParams,
-              allCategorias,
-              allCategorias.map((c) => c.categoriaKey),
-            );
-
-            const rowsResponse = await fetch(
-              `/api/rotacion${rowsParams.size > 0 ? `?${rowsParams.toString()}` : ""}`,
-              {
-                signal: controller.signal,
-                cache: "no-store",
-              },
-            );
-            if (rowsResponse.status === 401) {
-              router.replace("/login");
-              return;
-            }
-            if (rowsResponse.status === 403) {
-              setError(await readRotationApiForbiddenMessage(rowsResponse));
-              return;
-            }
-
-            const rowsPayload = (await rowsResponse.json()) as RotationApiResponse;
-            if (!rowsResponse.ok) {
-              throw new Error(
-                rowsPayload.error ?? "No fue posible consultar la rotacion.",
-              );
-            }
-            setRows(normalizeRotationRows(rowsPayload.rows ?? []));
-            if (rowsPayload.meta?.abcdConfig) {
-              const normalizedConfig = normalizeAbcdConfig(
-                rowsPayload.meta.abcdConfig,
-              );
-              setAbcdConfig(normalizedConfig);
-              setAbcdDraftConfig(normalizedConfig);
-            }
-            setHasLoadedItems(true);
-          } finally {
-            setIsLoadingData(false);
-          }
+          await reloadRotacionRowsRef.current(
+            {
+              lineasN1: allLineasN1,
+              categoriaKeys: allCategorias.map((c) => c.categoriaKey),
+              categoriasCatalog: allCategorias,
+            },
+            { signal: rowsController.signal },
+          );
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
+        if (generation !== catalogLoadGenerationRef.current) return;
         setRows([]);
         setHasLoadedItems(false);
         setError(
           err instanceof Error ? err.message : "Error consultando rotacion.",
         );
       } finally {
-        setIsLoadingLineCatalog(false);
+        if (generation === catalogLoadGenerationRef.current) {
+          setIsLoadingLineCatalog(false);
+        }
       }
     };
 
     void loadLineCatalog();
-    return () => controller.abort();
+    return () => {
+      rowsController.abort();
+    };
   }, [
     dateRange.end,
     dateRange.start,
@@ -1463,66 +1608,8 @@ export default function RotacionPage() {
     );
   };
 
-  const handleReloadRows = async () => {
-    if (!selectedSede) return;
-
-    const selectedSedeMeta = parseSedeSelection(selectedSede);
-    if (!selectedSedeMeta?.sedeId) return;
-
-    setIsLoadingData(true);
-    setError(null);
-    setHasLoadedItems(true);
-
-    try {
-      const params = new URLSearchParams();
-      const effectiveCompany = selectedSedeMeta.empresa ?? selectedCompany;
-
-      if (dateRange.start && dateRange.end) {
-        params.set("start", dateRange.start);
-        params.set("end", dateRange.end);
-      }
-      if (effectiveCompany) {
-        params.set("empresa", effectiveCompany);
-      }
-      params.set("sede", selectedSedeMeta.sedeId);
-      selectedLineaN1Values.forEach((linea) => {
-        params.append("lineasN1", linea);
-      });
-      appendCategoriaParams(
-        params,
-        filterCatalog.categorias ?? [],
-        selectedCategoriaKeys,
-      );
-
-      const response = await fetch(
-        `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
-        { cache: "no-store" },
-      );
-      if (response.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (response.status === 403) {
-        setError(await readRotationApiForbiddenMessage(response));
-        return;
-      }
-      const payload = (await response.json()) as RotationApiResponse;
-      if (!response.ok) {
-        throw new Error(payload.error ?? "No fue posible consultar la rotacion.");
-      }
-
-      setRows(normalizeRotationRows(payload.rows ?? []));
-      if (payload.meta?.abcdConfig) {
-        const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
-        setAbcdConfig(normalizedConfig);
-        setAbcdDraftConfig(normalizedConfig);
-      }
-    } catch (err) {
-      setRows([]);
-      setError(err instanceof Error ? err.message : "Error consultando rotacion.");
-    } finally {
-      setIsLoadingData(false);
-    }
+  const handleReloadRows = () => {
+    void reloadRotacionRows();
   };
 
   const handleSaveAbcdConfig = async () => {
@@ -1631,7 +1718,8 @@ export default function RotacionPage() {
   };
 
   const shouldSelectSedeFirst = !selectedSede;
-  const shouldReloadFirst = selectedSede && !hasLoadedItems;
+  const shouldReloadFirst =
+    Boolean(selectedSede) && !hasLoadedItems && !isLoadingLineCatalog;
 
   const exportRows = useMemo(
     () =>
@@ -2256,6 +2344,14 @@ export default function RotacionPage() {
                       label="Lineas nivel 1"
                       accentClassName="text-violet-700"
                     />
+                    <p className="max-w-xl text-[11px] leading-snug text-slate-500">
+                      Al cambiar lineas N1 o categorías, la tabla se actualiza
+                      sola en unos instantes. Usa{" "}
+                      <span className="font-medium text-slate-600">
+                        Actualizar ahora
+                      </span>{" "}
+                      solo para forzar la consulta al momento.
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Button
@@ -2293,7 +2389,7 @@ export default function RotacionPage() {
                       disabled={!selectedSede || isLoadingData || isLoadingLineCatalog}
                       className="h-8 rounded-lg bg-violet-700 px-3 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
                     >
-                      {isLoadingData ? "Recargando..." : "Recargar"}
+                      {isLoadingData ? "Actualizando..." : "Actualizar ahora"}
                     </Button>
                   </div>
                 </div>
@@ -2487,8 +2583,15 @@ export default function RotacionPage() {
         ) : isLoadingData ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
-              <div className="rounded-full bg-amber-100 p-4 text-amber-700">
-                <PackageSearch className="h-7 w-7" />
+              <div
+                className="rounded-full bg-amber-100 p-4 text-amber-700"
+                aria-hidden
+              >
+                <Loader2
+                  className="h-8 w-8 animate-spin motion-reduce:animate-none"
+                  strokeWidth={2}
+                  aria-hidden
+                />
               </div>
               <h2 className="mt-4 text-xl font-bold text-slate-900">
                 Cargando rotacion real
@@ -2515,6 +2618,22 @@ export default function RotacionPage() {
               </p>
             </CardContent>
           </Card>
+        ) : isLoadingLineCatalog && selectedSede ? (
+          <Card className="border-dashed border-violet-200 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+            <CardContent className="flex flex-col items-center px-6 py-12 text-center">
+              <div className="rounded-full bg-violet-100 p-4 text-violet-700">
+                <PackageSearch className="h-7 w-7" />
+              </div>
+              <h2 className="mt-4 text-xl font-bold text-slate-900">
+                Cargando filtros de la sede
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Estamos trayendo lineas N1, categorías y el rango disponible.
+                En cuanto termine, la tabla se consultará sola con los filtros
+                seleccionados.
+              </p>
+            </CardContent>
+          </Card>
         ) : shouldReloadFirst ? (
           <Card className="border-dashed border-violet-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
@@ -2522,11 +2641,14 @@ export default function RotacionPage() {
                 <Filter className="h-7 w-7" />
               </div>
               <h2 className="mt-4 text-xl font-bold text-slate-900">
-                Selecciona lineas N1 y pulsa Recargar
+                No se pudo cargar el listado
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                El listado de items solo se consulta cuando confirmas las lineas
-                N1 con el botón <span className="font-semibold">Recargar</span>.
+                Pulsa{" "}
+                <span className="font-semibold">Actualizar ahora</span> para
+                repetir la consulta. Al cambiar lineas N1 o categorías, la tabla
+                suele actualizarse sola en unos instantes sin necesidad de ese
+                botón.
               </p>
             </CardContent>
           </Card>
