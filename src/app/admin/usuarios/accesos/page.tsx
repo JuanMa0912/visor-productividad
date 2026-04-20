@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -33,9 +39,7 @@ type LogRow = {
 
 type SortKey = "logged_at" | "username";
 
-type FilterState = { from: string; to: string; user: string };
-
-const emptyFilters = (): FilterState => ({ from: "", to: "", user: "" });
+const USER_FILTER_DEBOUNCE_MS = 400;
 
 const formatAbsoluteDateTime = (isoDate: string) =>
   new Date(isoDate).toLocaleString("es-CO", {
@@ -114,10 +118,26 @@ export default function AdminUsuariosAccesosPage() {
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<SortKey>("logged_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
-  const [filterDraft, setFilterDraft] = useState<FilterState>(emptyFilters);
-  const [filterApplied, setFilterApplied] = useState<FilterState>(emptyFilters);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [userInput, setUserInput] = useState("");
+  const [debouncedUser, setDebouncedUser] = useState("");
+  const skipUserDebouncePageReset = useRef(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const next = userInput.trim();
+      setDebouncedUser(next);
+      if (skipUserDebouncePageReset.current) {
+        skipUserDebouncePageReset.current = false;
+      } else {
+        setPage(1);
+      }
+    }, USER_FILTER_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [userInput]);
 
   const handleAuthFailure = useCallback(
     (status: number) => {
@@ -154,11 +174,9 @@ export default function AdminUsuariosAccesosPage() {
         sort: sortBy,
         order,
       });
-      const f = filterApplied;
-      if (f.from) params.set("from", f.from);
-      if (f.to) params.set("to", f.to);
-      const u = f.user.trim();
-      if (u) params.set("user", u);
+      if (dateFrom) params.set("from", dateFrom);
+      if (dateTo) params.set("to", dateTo);
+      if (debouncedUser) params.set("user", debouncedUser);
       const res = await fetch(`/api/admin/login-logs?${params.toString()}`);
       if (handleAuthFailure(res.status)) return;
       if (!res.ok) {
@@ -174,7 +192,7 @@ export default function AdminUsuariosAccesosPage() {
     } finally {
       setLoading(false);
     }
-  }, [handleAuthFailure, page, sortBy, order, filterApplied]);
+  }, [handleAuthFailure, page, sortBy, order, dateFrom, dateTo, debouncedUser]);
 
   useEffect(() => {
     void fetchLogs();
@@ -233,8 +251,8 @@ export default function AdminUsuariosAccesosPage() {
                 Registro de accesos
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-                Inicios de sesión en el portal. Filtra por rango de fechas y por
-                usuario, ordena y navega por páginas.
+                Inicios de sesión en el portal.                 Filtra por rango de fechas y por usuario (se aplican al
+                instante), ordena y navega por páginas.
               </p>
               <Link
                 href="/admin/usuarios"
@@ -271,14 +289,7 @@ export default function AdminUsuariosAccesosPage() {
         )}
 
         <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.12)]">
-          <form
-            className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setFilterApplied({ ...filterDraft });
-              setPage(1);
-            }}
-          >
+          <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
             <div className="flex flex-wrap items-center gap-2">
               <CalendarRange
                 className="h-4 w-4 shrink-0 text-indigo-600"
@@ -295,14 +306,12 @@ export default function AdminUsuariosAccesosPage() {
                 </span>
                 <input
                   type="date"
-                  value={filterDraft.from}
-                  max={filterDraft.to || undefined}
-                  onChange={(e) =>
-                    setFilterDraft((prev) => ({
-                      ...prev,
-                      from: e.target.value,
-                    }))
-                  }
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setPage(1);
+                  }}
                   className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
                 />
               </label>
@@ -312,11 +321,12 @@ export default function AdminUsuariosAccesosPage() {
                 </span>
                 <input
                   type="date"
-                  value={filterDraft.to}
-                  min={filterDraft.from || undefined}
-                  onChange={(e) =>
-                    setFilterDraft((prev) => ({ ...prev, to: e.target.value }))
-                  }
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setPage(1);
+                  }}
                   className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
                 />
               </label>
@@ -331,13 +341,8 @@ export default function AdminUsuariosAccesosPage() {
                   />
                   <input
                     type="search"
-                    value={filterDraft.user}
-                    onChange={(e) =>
-                      setFilterDraft((prev) => ({
-                        ...prev,
-                        user: e.target.value,
-                      }))
-                    }
+                    value={userInput}
+                    onChange={(e) => setUserInput(e.target.value)}
                     placeholder="Nombre de usuario…"
                     autoComplete="off"
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
@@ -346,17 +351,13 @@ export default function AdminUsuariosAccesosPage() {
               </label>
               <div className="flex flex-wrap gap-2 pb-0.5 lg:ml-auto">
                 <button
-                  type="submit"
-                  className="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700"
-                >
-                  Aplicar filtros
-                </button>
-                <button
                   type="button"
                   onClick={() => {
-                    const z = emptyFilters();
-                    setFilterDraft(z);
-                    setFilterApplied(z);
+                    setDateFrom("");
+                    setDateTo("");
+                    setUserInput("");
+                    setDebouncedUser("");
+                    skipUserDebouncePageReset.current = true;
                     setPage(1);
                   }}
                   className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
@@ -366,24 +367,19 @@ export default function AdminUsuariosAccesosPage() {
                 </button>
               </div>
             </div>
-            {(filterApplied.from ||
-              filterApplied.to ||
-              filterApplied.user.trim()) && (
+            {(dateFrom || dateTo || debouncedUser) && (
               <p className="mt-3 text-[11px] text-slate-500">
                 Activo:{" "}
                 {[
-                  filterApplied.from &&
-                    `desde ${filterApplied.from.replace(/-/g, "/")}`,
-                  filterApplied.to &&
-                    `hasta ${filterApplied.to.replace(/-/g, "/")}`,
-                  filterApplied.user.trim() &&
-                    `usuario “${filterApplied.user.trim()}”`,
+                  dateFrom && `desde ${dateFrom.replace(/-/g, "/")}`,
+                  dateTo && `hasta ${dateTo.replace(/-/g, "/")}`,
+                  debouncedUser && `usuario “${debouncedUser}”`,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
               </p>
             )}
-          </form>
+          </div>
           <div className="flex flex-col gap-3 border-b border-slate-100 bg-linear-to-r from-slate-50/90 to-indigo-50/40 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
               <h2 className="text-base font-bold text-slate-900">
