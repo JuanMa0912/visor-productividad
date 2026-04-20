@@ -69,6 +69,9 @@ const nextConfig: NextConfig = {
   reactCompiler: enableReactCompiler,
   poweredByHeader: false,
   allowedDevOrigins,
+  turbopack: {
+    root: process.cwd(),
+  },
   async headers() {
     return [
       {
@@ -80,4 +83,3 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-

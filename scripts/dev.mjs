@@ -19,8 +19,10 @@ function killStaleNextDevWindows() {
         $_.ProcessId -ne $currentPid -and
         $_.CommandLine -like "*$projectDir*" -and
         (
-          $_.CommandLine -match 'next dev' -or
-          $_.CommandLine -match 'npm-cli\\.js" run dev'
+          $_.CommandLine -match 'node_modules[\\\\/]\\.bin[\\\\/]+next\\.cmd' -or
+          $_.CommandLine -match 'next[\\\\/]dist[\\\\/]bin[\\\\/]next' -or
+          $_.CommandLine -match 'next[\\\\/]dist[\\\\/]server[\\\\/]lib[\\\\/]start-server\\.js' -or
+          $_.CommandLine -match 'npm-cli\\.js.*run dev'
         )
       } | Select-Object -ExpandProperty ProcessId
 
