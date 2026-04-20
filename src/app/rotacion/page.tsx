@@ -174,6 +174,7 @@ type RotationSortField =
   | "trackedDays"
   | "salesEffectiveDays"
   | "lastMovementDate"
+  | "lastPurchaseDate"
   | "status";
 
 type RotationSortDirection = "asc" | "desc";
@@ -386,6 +387,28 @@ const getRotacionWhatsappPixelRatio = () => {
   if (typeof window === "undefined") return 4;
   const dpr = window.devicePixelRatio || 1;
   return Math.min(5, Math.max(4, dpr * 2));
+};
+
+/** Intenta abrir WhatsApp Desktop (deep link) y, si no responde, cae a WhatsApp Web. */
+const openWhatsAppDesktopPreferred = () => {
+  if (typeof window === "undefined") return;
+  const desktopDeepLink = "whatsapp://send?text=Reporte%20de%20rotacion";
+  const webFallbackUrl = "https://web.whatsapp.com/";
+  let appOpened = false;
+
+  const onBlur = () => {
+    appOpened = true;
+  };
+
+  window.addEventListener("blur", onBlur, { once: true });
+  window.location.href = desktopDeepLink;
+
+  window.setTimeout(() => {
+    window.removeEventListener("blur", onBlur);
+    if (!appOpened) {
+      window.open(webFallbackUrl, "_blank", "noopener,noreferrer");
+    }
+  }, 1000);
 };
 
 const WHATSAPP_JPEG_QUALITY = 0.98;
@@ -654,6 +677,12 @@ const sortRotationRows = (
         result = compareNullableIsoDateKeys(
           left.lastMovementDate,
           right.lastMovementDate,
+        );
+        break;
+      case "lastPurchaseDate":
+        result = compareNullableIsoDateKeys(
+          left.lastPurchaseDate,
+          right.lastPurchaseDate,
         );
         break;
       case "status":
@@ -1619,7 +1648,8 @@ export default function RotacionPage() {
           rowFilter,
           ventaHastaCap,
         );
-        const categoryByItem = buildAbcdCategoryByItem(filteredRows, abcdConfig);
+        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
+        const categoryByItem = buildAbcdCategoryByItem(group.rows, abcdConfig);
         const categoryFilteredRows =
           categoryFilter === "all"
             ? filteredRows
@@ -1641,7 +1671,7 @@ export default function RotacionPage() {
           ultimoIngreso: row.lastMovementDate
             ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
             : "Sin fecha de ingreso",
-          fechaUltimaCompra: row.lastPurchaseDate
+          fechaUltimaVenta: row.lastPurchaseDate
             ? formatDateLabel(row.lastPurchaseDate, dateLabelOptions)
             : "Sin fecha",
         }));
@@ -1678,7 +1708,7 @@ export default function RotacionPage() {
         "Dia inventario efectivo",
         "Dia venta efectivo",
         "Ultimo ingreso",
-        "Fecha ultima compra",
+        "Fecha ultima venta",
       ]],
       body: exportRows.map((row) => [
         row.empresa,
@@ -1693,7 +1723,7 @@ export default function RotacionPage() {
         row.diaInventarioEfectivo,
         row.diaVentaEfectivo,
         row.ultimoIngreso,
-        row.fechaUltimaCompra,
+        row.fechaUltimaVenta,
       ]),
       margin: { left: 8, right: 8 },
     });
@@ -1719,7 +1749,7 @@ export default function RotacionPage() {
         { header: "Dia inventario efectivo", key: "diaInventarioEfectivo", width: 18 },
         { header: "Dia venta efectivo", key: "diaVentaEfectivo", width: 16 },
         { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
-        { header: "Fecha ultima compra", key: "fechaUltimaCompra", width: 20 },
+        { header: "Fecha ultima venta", key: "fechaUltimaVenta", width: 20 },
       ];
       sheet.addRows(exportRows);
 
@@ -1834,11 +1864,7 @@ export default function RotacionPage() {
           anchor.click();
           document.body.removeChild(anchor);
           URL.revokeObjectURL(url);
-          window.open(
-            "https://web.whatsapp.com/",
-            "_blank",
-            "noopener,noreferrer",
-          );
+          openWhatsAppDesktopPreferred();
         }
         whatsappDetailsRef.current?.removeAttribute("open");
       } finally {
@@ -2666,7 +2692,7 @@ export default function RotacionPage() {
                     {typeof navigator !== "undefined" &&
                     typeof navigator.share === "function"
                       ? "Con compartir, elige WhatsApp si aparece."
-                      : "Se descarga el archivo y se abre WhatsApp Web: adjunta el archivo (clip)."}
+                      : "Se descarga el archivo y se intenta abrir WhatsApp Desktop; si no abre, se usa WhatsApp Web (adjunta el archivo con clip)."}
                   </p>
                 </div>
               </details>
@@ -2702,12 +2728,13 @@ export default function RotacionPage() {
                 rowFilter,
                 ventaHastaCap,
               );
+              /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
               const categoryByItem = buildAbcdCategoryByItem(
-                filteredRows,
+                group.rows,
                 abcdConfig,
               );
               const abcdCounts = countAbcdItemsByCategory(
-                filteredRows,
+                group.rows,
                 categoryByItem,
               );
               const categoryFilteredRows =
@@ -3273,9 +3300,18 @@ export default function RotacionPage() {
                             />
                           </TableHead>
                           <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <span className="block text-[11px] leading-tight font-semibold uppercase tracking-wide text-slate-600">
-                              F. ult. compra
-                            </span>
+                            <SortableRotationHeader
+                              field="lastPurchaseDate"
+                              align="right"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Ult. venta
+                                </span>
+                              }
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
                           </TableHead>
                         </TableRow>
                       </TableHeader>

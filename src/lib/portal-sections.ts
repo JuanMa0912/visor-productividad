@@ -17,7 +17,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
     description:
       "Facilita una lectura rapida del desempeno comercial, tendencias y variaciones por sede, linea o producto.",
     href: "/venta",
-    modules: ["Ventas por item", "Inventario x item"],
+    modules: ["Ventas por item", "Inventario x item", "Análisis de inventario"],
   },
   {
     id: "producto",
@@ -42,6 +42,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
 const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   venta: "venta",
   "inventario-x-item": "venta",
+  "analisis-de-inventario": "venta",
   "ventas-x-item": "venta",
   producto: "producto",
   productividad: "producto",

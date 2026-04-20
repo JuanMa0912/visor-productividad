@@ -822,6 +822,9 @@ const queryRotationRows = async ({
       ranked AS (
         SELECT
           *,
+          MAX(consulta_date) OVER (
+            PARTITION BY empresa, sede_id, item
+          ) AS latest_consulta_date,
           ROW_NUMBER() OVER (
             PARTITION BY empresa, sede_id, item
             ORDER BY consulta_date DESC, fecha_carga DESC
@@ -842,8 +845,18 @@ const queryRotationRows = async ({
           SUM(unidades_vendidas)::numeric AS total_units,
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN last_purchase_date END) AS last_purchase_date,
-          MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
-          MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value,
+          SUM(
+            CASE
+              WHEN consulta_date = latest_consulta_date THEN inventory_units
+              ELSE 0
+            END
+          )::numeric AS inventory_units,
+          SUM(
+            CASE
+              WHEN consulta_date = latest_consulta_date THEN inventory_value
+              ELSE 0
+            END
+          )::numeric AS inventory_value,
           MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
           MAX(CASE WHEN latest_rank = 1 THEN nombre_bodega END) AS nombre_bodega,
           MAX(CASE WHEN latest_rank = 1 THEN categoria END) AS categoria,
