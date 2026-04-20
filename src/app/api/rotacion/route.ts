@@ -51,6 +51,7 @@ type RotationDbRow = {
   tracked_days: number | string | null;
   sales_effective_days: number | string | null;
   last_movement_date: string | null;
+  last_purchase_date: string | null;
   effective_days: number | string | null;
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
@@ -78,6 +79,7 @@ type RotationRow = {
   trackedDays: number;
   salesEffectiveDays: number;
   lastMovementDate: string | null;
+  lastPurchaseDate: string | null;
   effectiveDays: number | null;
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
@@ -796,6 +798,11 @@ const queryRotationRows = async ({
             THEN TO_DATE(fecha_ultima_compra, 'YYYYMMDD')
             ELSE NULL
           END AS last_movement_date,
+          CASE
+            WHEN fecha_ultima_compra ~ '^[0-9]{8}$'
+            THEN TO_DATE(fecha_ultima_compra, 'YYYYMMDD')
+            ELSE NULL
+          END AS last_purchase_date,
           NULLIF(TRIM(COALESCE(bodega::text, '')), '') AS bodega,
           NULLIF(TRIM(COALESCE(nombre_bodega::text, '')), '') AS nombre_bodega,
           NULLIF(TRIM(COALESCE(categoria::text, '')), '') AS categoria,
@@ -834,6 +841,7 @@ const queryRotationRows = async ({
           SUM(venta_sin_impuesto)::numeric AS total_sales,
           SUM(unidades_vendidas)::numeric AS total_units,
           MAX(last_movement_date) AS last_movement_date,
+          MAX(CASE WHEN latest_rank = 1 THEN last_purchase_date END) AS last_purchase_date,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
           MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value,
           MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
@@ -878,6 +886,7 @@ const queryRotationRows = async ({
           tracked_days,
           sales_effective_days,
           last_movement_date,
+          last_purchase_date,
           CASE
             WHEN COALESCE(inventory_units, 0) <= 0 OR COALESCE(inventory_value, 0) <= 0 THEN 0::numeric
             WHEN COALESCE(total_units, 0) <= 0 OR COALESCE(tracked_days, 0) <= 0 THEN 999999::numeric
@@ -914,6 +923,7 @@ const queryRotationRows = async ({
           tracked_days,
           sales_effective_days,
           last_movement_date,
+          last_purchase_date,
           effective_days,
           CASE
             WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 'Agotado'
@@ -950,6 +960,7 @@ const queryRotationRows = async ({
         tracked_days,
         sales_effective_days,
         TO_CHAR(last_movement_date, 'YYYY-MM-DD') AS last_movement_date,
+        TO_CHAR(last_purchase_date, 'YYYY-MM-DD') AS last_purchase_date,
         effective_days,
         status
       FROM classified
@@ -998,6 +1009,7 @@ const queryRotationRows = async ({
         trackedDays: toNumber(row.tracked_days),
         salesEffectiveDays: toNumber(row.sales_effective_days),
         lastMovementDate: row.last_movement_date,
+        lastPurchaseDate: row.last_purchase_date,
         effectiveDays:
           row.effective_days === null || row.effective_days === undefined
             ? null

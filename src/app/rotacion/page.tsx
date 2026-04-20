@@ -19,6 +19,8 @@ import {
   ArrowUp,
   Building2,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
   Filter,
   MapPin,
   PackageSearch,
@@ -77,6 +79,7 @@ type RotationRow = {
   trackedDays: number;
   salesEffectiveDays: number;
   lastMovementDate: string | null;
+  lastPurchaseDate: string | null;
   effectiveDays: number | null;
   status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
 };
@@ -182,7 +185,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const ROTACION_TABLE_COL_WIDTHS = [
   "6%",
   "3%",
-  "24%",
+  "20%",
   "10%",
   "9%",
   "10%",
@@ -190,7 +193,8 @@ const ROTACION_TABLE_COL_WIDTHS = [
   "5%",
   "5%",
   "5%",
-  "14%",
+  "9%",
+  "9%",
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
@@ -974,6 +978,8 @@ export default function RotacionPage() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
   const [productSearchInput, setProductSearchInput] = useState("");
+  const [isCategoriaFilterOpen, setIsCategoriaFilterOpen] = useState(false);
+  const [isFamilyFilterOpen, setIsFamilyFilterOpen] = useState(false);
   const rotacionTablesExportRef = useRef<HTMLDivElement>(null);
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
@@ -1635,6 +1641,9 @@ export default function RotacionPage() {
           ultimoIngreso: row.lastMovementDate
             ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
             : "Sin fecha de ingreso",
+          fechaUltimaCompra: row.lastPurchaseDate
+            ? formatDateLabel(row.lastPurchaseDate, dateLabelOptions)
+            : "Sin fecha",
         }));
       }),
     [
@@ -1669,6 +1678,7 @@ export default function RotacionPage() {
         "Dia inventario efectivo",
         "Dia venta efectivo",
         "Ultimo ingreso",
+        "Fecha ultima compra",
       ]],
       body: exportRows.map((row) => [
         row.empresa,
@@ -1683,6 +1693,7 @@ export default function RotacionPage() {
         row.diaInventarioEfectivo,
         row.diaVentaEfectivo,
         row.ultimoIngreso,
+        row.fechaUltimaCompra,
       ]),
       margin: { left: 8, right: 8 },
     });
@@ -1708,6 +1719,7 @@ export default function RotacionPage() {
         { header: "Dia inventario efectivo", key: "diaInventarioEfectivo", width: 18 },
         { header: "Dia venta efectivo", key: "diaVentaEfectivo", width: 16 },
         { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
+        { header: "Fecha ultima compra", key: "fechaUltimaCompra", width: 20 },
       ];
       sheet.addRows(exportRows);
 
@@ -1961,12 +1973,39 @@ export default function RotacionPage() {
               </div>
               <div className="rounded-2xl border border-teal-200 bg-white px-4 py-3 shadow-sm">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <FilterFieldLabel
-                    icon={PackageSearch}
-                    label="Categoria (destino)"
-                    accentClassName="text-teal-800"
-                  />
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-700">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-teal-100 text-[10px] font-bold text-teal-800">
+                        1
+                      </span>
+                      Paso 1
+                    </div>
+                    <FilterFieldLabel
+                      icon={PackageSearch}
+                      label="Categoria (destino)"
+                      accentClassName="text-teal-800"
+                    />
+                  </div>
                   <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsCategoriaFilterOpen((prev) => !prev)}
+                      className="h-8 rounded-lg border-teal-200 bg-white px-2.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-50"
+                    >
+                      {isCategoriaFilterOpen ? (
+                        <>
+                          Ocultar
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </>
+                      ) : (
+                        <>
+                          Ver categorias
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </>
+                      )}
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
@@ -2000,134 +2039,198 @@ export default function RotacionPage() {
                     </Button>
                   </div>
                 </div>
-                <p className="mb-2 text-[11px] leading-snug text-slate-500">
-                  Elige una o mas categorias; la lista de lineas N1 debajo muestra
-                  la union de las lineas N1 presentes en esas categorias (sin
-                  duplicar por nombre).
-                </p>
-                <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
-                  {!selectedSede ? (
-                    <p className="text-xs text-slate-500">
-                      Selecciona una sede para cargar categorias.
+                <div className="mb-2">
+                  <Badge className="border-teal-200 bg-teal-50 text-teal-800">
+                    {categoriaFilterOptions.length === 0
+                      ? "Sin categorias cargadas"
+                      : `${selectedCategoriaKeys.length} de ${categoriaFilterOptions.length} categorias seleccionadas`}
+                  </Badge>
+                </div>
+                {isCategoriaFilterOpen ? (
+                  <>
+                    <p className="mb-2 text-[11px] leading-snug text-slate-500">
+                      Elige una o mas categorias. Esto define que lineas N1
+                      aparecen en los siguientes pasos.
                     </p>
-                  ) : categoriaFilterOptions.length === 0 ? (
-                    <p className="text-xs text-slate-500">
-                      {isLoadingLineCatalog
-                        ? "Cargando categorias..."
-                        : "No hay categorias en este periodo para la sede elegida."}
-                    </p>
-                  ) : (
-                    <div className="flex flex-col gap-1.5">
-                      {categoriaFilterOptions.map((opt) => {
-                        const checked = selectedCategoriaKeySet.has(
-                          opt.categoriaKey,
-                        );
-                        const label =
-                          opt.nombreCategoria?.trim() ||
-                          (opt.categoriaKey === "__sin_cat__"
-                            ? "Sin categoria"
-                            : opt.categoriaKey);
+                    <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
+                      {!selectedSede ? (
+                        <p className="text-xs text-slate-500">
+                          Selecciona una sede para cargar categorias.
+                        </p>
+                      ) : categoriaFilterOptions.length === 0 ? (
+                        <p className="text-xs text-slate-500">
+                          {isLoadingLineCatalog
+                            ? "Cargando categorias..."
+                            : "No hay categorias en este periodo para la sede elegida."}
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-1.5">
+                          {categoriaFilterOptions.map((opt) => {
+                            const checked = selectedCategoriaKeySet.has(
+                              opt.categoriaKey,
+                            );
+                            const label =
+                              opt.nombreCategoria?.trim() ||
+                              (opt.categoriaKey === "__sin_cat__"
+                                ? "Sin categoria"
+                                : opt.categoriaKey);
+                            return (
+                              <label
+                                key={opt.categoriaKey}
+                                className="flex cursor-pointer items-start gap-2 text-sm text-slate-700"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedCategoriaKeys((cur) =>
+                                      checked
+                                        ? cur.filter((k) => k !== opt.categoriaKey)
+                                        : [...cur, opt.categoriaKey],
+                                    )
+                                  }
+                                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-200"
+                                />
+                                <span>
+                                  <span className="font-medium">{label}</span>
+                                  {opt.categoriaKey !== "__sin_cat__" ? (
+                                    <span className="ml-1 font-mono text-[11px] font-normal text-slate-500">
+                                      ({opt.categoriaKey})
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+              <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-800">
+                        2
+                      </span>
+                      Paso 2
+                    </div>
+                    <FilterFieldLabel
+                      icon={Filter}
+                      label="Familia de lineas"
+                      accentClassName="text-violet-700"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsFamilyFilterOpen((prev) => !prev)}
+                      className="h-8 rounded-lg border-violet-200 bg-white px-2.5 text-[11px] font-semibold text-violet-900 hover:bg-violet-50"
+                    >
+                      {isFamilyFilterOpen ? (
+                        <>
+                          Ocultar
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </>
+                      ) : (
+                        <>
+                          Ver familias
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setLineaN1FamilyKeys([...ALL_LINEA_N1_FAMILY_KEYS])
+                      }
+                      disabled={
+                        isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
+                      }
+                      className="h-8 rounded-lg border-violet-200 bg-violet-50 px-2.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                    >
+                      Todas las familias
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <Badge className="border-violet-200 bg-violet-50 text-violet-700">
+                    {lineaN1FamilyKeys.length === 0 ||
+                    lineaN1FamilyKeys.length === ALL_LINEA_N1_FAMILY_KEYS.length
+                      ? "Todas las familias activas"
+                      : `${lineaN1FamilyKeys.length} familias activas`}
+                  </Badge>
+                </div>
+                {isFamilyFilterOpen ? (
+                  <>
+                    <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+                      {ALL_LINEA_N1_FAMILY_KEYS.map((familyKey) => {
+                        const checked = lineaN1FamilyKeys.includes(familyKey);
                         return (
                           <label
-                            key={opt.categoriaKey}
-                            className="flex cursor-pointer items-start gap-2 text-sm text-slate-700"
+                            key={familyKey}
+                            className={cn(
+                              "flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 text-sm transition",
+                              checked
+                                ? "border-violet-300 bg-violet-50 text-violet-900"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                            )}
                           >
                             <input
                               type="checkbox"
                               checked={checked}
-                              onChange={() =>
-                                setSelectedCategoriaKeys((cur) =>
-                                  checked
-                                    ? cur.filter((k) => k !== opt.categoriaKey)
-                                    : [...cur, opt.categoriaKey],
-                                )
+                              onChange={() => {
+                                setLineaN1FamilyKeys((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(familyKey)) {
+                                    if (next.size <= 1) return prev;
+                                    next.delete(familyKey);
+                                  } else {
+                                    next.add(familyKey);
+                                  }
+                                  return [...next];
+                                });
+                              }}
+                              disabled={
+                                isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
                               }
-                              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-200"
+                              className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-200 disabled:opacity-50"
                             />
-                            <span>
-                              <span className="font-medium">{label}</span>
-                              {opt.categoriaKey !== "__sin_cat__" ? (
-                                <span className="ml-1 font-mono text-[11px] font-normal text-slate-500">
-                                  ({opt.categoriaKey})
-                                </span>
-                              ) : null}
+                            <span className="font-medium">
+                              {LINEA_N1_FAMILY_LABELS[familyKey]}
                             </span>
                           </label>
                         );
                       })}
                     </div>
-                  )}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <FilterFieldLabel
-                    icon={Filter}
-                    label="Familia de lineas"
-                    accentClassName="text-violet-700"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setLineaN1FamilyKeys([...ALL_LINEA_N1_FAMILY_KEYS])
-                    }
-                    disabled={
-                      isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
-                    }
-                    className="h-8 rounded-lg border-violet-200 bg-violet-50 px-2.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
-                  >
-                    Todas las familias
-                  </Button>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
-                  {ALL_LINEA_N1_FAMILY_KEYS.map((familyKey) => {
-                    const checked = lineaN1FamilyKeys.includes(familyKey);
-                    return (
-                      <label
-                        key={familyKey}
-                        className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setLineaN1FamilyKeys((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(familyKey)) {
-                                if (next.size <= 1) return prev;
-                                next.delete(familyKey);
-                              } else {
-                                next.add(familyKey);
-                              }
-                              return [...next];
-                            });
-                          }}
-                          disabled={
-                            isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
-                          }
-                          className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-200 disabled:opacity-50"
-                        />
-                        <span className="font-medium">
-                          {LINEA_N1_FAMILY_LABELS[familyKey]}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <p className="mt-2 text-[11px] leading-snug text-slate-500">
-                  Puedes marcar varias familias a la vez; la lista de lineas N1
-                  debajo muestra la union de las elegidas.
-                </p>
+                    <p className="mt-2 text-[11px] leading-snug text-slate-500">
+                      Puedes marcar varias familias a la vez; la lista de lineas
+                      N1 debajo muestra la union de las elegidas.
+                    </p>
+                  </>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <FilterFieldLabel
-                    icon={Filter}
-                    label="Lineas nivel 1"
-                    accentClassName="text-violet-700"
-                  />
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-800">
+                        3
+                      </span>
+                      Paso 3
+                    </div>
+                    <FilterFieldLabel
+                      icon={Filter}
+                      label="Lineas nivel 1"
+                      accentClassName="text-violet-700"
+                    />
+                  </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Button
                       type="button"
@@ -2167,6 +2270,13 @@ export default function RotacionPage() {
                       {isLoadingData ? "Recargando..." : "Recargar"}
                     </Button>
                   </div>
+                </div>
+                <div className="mb-2">
+                  <Badge className="border-violet-200 bg-violet-50 text-violet-700">
+                    {lineaN1Options.length === 0
+                      ? "Sin lineas N1 disponibles"
+                      : `${selectedLineaN1Values.length} de ${lineaN1Options.length} lineas N1 seleccionadas`}
+                  </Badge>
                 </div>
                 <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
                   {lineaN1Options.length === 0 ? (
@@ -3162,6 +3272,11 @@ export default function RotacionPage() {
                               onSort={handleTableSort}
                             />
                           </TableHead>
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                            <span className="block text-[11px] leading-tight font-semibold uppercase tracking-wide text-slate-600">
+                              F. ult. compra
+                            </span>
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -3234,6 +3349,14 @@ export default function RotacionPage() {
                                     dateLabelOptions,
                                   )
                                 : "Sin fecha de ingreso"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
+                              {row.lastPurchaseDate
+                                ? formatDateLabel(
+                                    row.lastPurchaseDate,
+                                    dateLabelOptions,
+                                  )
+                                : "Sin fecha"}
                             </TableCell>
                           </TableRow>
                         ))}
