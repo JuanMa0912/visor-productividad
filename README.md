@@ -12,12 +12,17 @@ Centralizar la experiencia del Portal UAID con acceso por secciones, filtros por
 
 | Modulo | Rutas UI | APIs clave | Salidas principales |
 | --- | --- | --- | --- |
-| Portal UAID | `/secciones` (`/tableros` redirige) | `/api/auth/me` | entrada central por secciones |
-| Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV, XLSX, PDF |
+| Portal UAID | `/secciones` (`/tableros` redirige a `/secciones`) | `/api/auth/me` | entrada central por secciones; cuenta y sesion en la parte superior |
+| Hub Venta UAID | `/venta` | — | acceso agrupado a ventas por item e inventario |
+| Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos; grafico multi-serie (filtros y top series); CSV, XLSX, PDF |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
-| Horario y jornada extendida | `/horario`, `/jornada-extendida`, `/ingresar-horarios` | `/api/jornada-extendida/meta`, `/api/jornada-extendida/alex-report`, `/api/hourly-analysis`, `/api/ingresar-horarios/options` | consulta operativa, reporte Alex y XLSX configurable |
-| Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, paginacion y XLSX |
-| Administracion | `/admin/usuarios`, `/cuenta/contrasena`, `/login` | `/api/auth/*`, `/api/admin/*` | login, sesiones, usuarios y permisos |
+| Rotacion | `/rotacion` | `/api/rotacion` | inventario, rotacion y margen estimado por item/sede |
+| Inventario x item | `/inventario-x-item` | `/api/inventario-x-item` | vistas y pivotes de inventario desde la base comun de rotacion |
+| Analisis de inventario | `/analisis-de-inventario` | — | exploracion complementaria inventario vs venta |
+| Prediccion pedidos | `/prediccion-pedidos` | — | modulo UI orientado a demanda (sin API REST de negocio dedicada listada aqui) |
+| Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, modo `meta`/`summary`/paginacion y XLSX |
+| Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` | `/api/jornada-extendida/meta`, `/api/jornada-extendida/alex-report`, `/api/hourly-analysis`, `/api/ingresar-horarios/options`, `/api/ingresar-horarios/forms`, `/api/horarios-comparar` | consultas operativas, reporte Alex y formularios de horarios |
+| Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/cuenta/contrasena`, `/login` | `/api/auth/*`, `/api/admin/*` | login, sesiones, usuarios y permisos |
 
 ### Experiencia UAID actual
 
@@ -30,16 +35,18 @@ Centralizar la experiencia del Portal UAID con acceso por secciones, filtros por
 
 #### Secciones iniciales del portal
 
-| Seccion | Descripcion funcional | Modulos visibles | Ruta de entrada |
+La definicion canónica de textos y modulos por seccion vive en `src/lib/portal-sections.ts`. Resumen:
+
+| Seccion | Descripcion funcional | Modulos visibles en tarjetas | Ruta de entrada del hub |
 | --- | --- | --- | --- |
-| `Venta` | Analisis detallado del comportamiento de productos y ventas por item para consulta directa. | `Ventas por item` | `/ventas-x-item` |
-| `Producto` | Seguimiento de productividad, rentabilidad y comparativos por sede para entender el desempeno del negocio. | `Productividad`, `Margenes` | `/productividad` |
-| `Operacion` | Consulta de horas trabajadas, control operativo del personal y registro de horarios. | `Horarios`, `Registro de horarios` | `/horario` |
+| `Venta` | Lectura del resultado comercial e inventario asociado. | `Ventas por item`, `Inventario x item`, `Analisis de inventario` | `/venta` |
+| `Producto` | Productividad, rentabilidad, rotacion y lecturas analiticas. | `Productividad`, `Margenes`, `Rotacion`, `Prediccion pedidos` | `/productividad` |
+| `Operacion` | Horas, personal y registro de horarios. | `Horarios`, `Registro de horarios` | `/horario` |
 
 #### Jerarquia visual documentada
 
 - En el login, `UAID` debe tener mas peso visual que `Portal de Inteligencia de Datos`.
-- En la portada de `/secciones`, `Portal UAID` es el titulo principal y `Explora las secciones del portal` queda como subtitulo.
+- En `/secciones`, el bloque **Cuenta** (cambio de usuario, contrasena, metadatos de sesion y ciclo) va **arriba** del texto introductorio y de las tarjetas de seccion; el **pie de pagina** es minimalista (version del portal y linea corta institucional).
 - El tono general buscado es institucional, claro y amigable, sin romper la estructura actual de la app.
 
 ### Stack actual
@@ -77,7 +84,9 @@ Exportaciones
 - `src/lib/db.ts`: inicializacion del pool de PostgreSQL.
 - `src/lib/constants.ts`: sedes, lineas y agrupaciones visibles.
 - `src/lib/calc.ts`: calculos de productividad y margen.
+- `src/lib/portal-sections.ts`: secciones UAID, alias de rutas legacy y comprobacion de acceso por seccion.
 - `src/lib/ventas-x-item.ts`: normalizacion y pivoteo para ventas x item.
+- `src/lib/inventario-x-item.ts`: etiquetas y pivotes para inventario x item.
 - `src/app/api/hourly-analysis/route.ts`: modulo mas cargado en transformacion, permisos y cache en memoria.
 
 ### Rasgos de implementacion
@@ -116,19 +125,19 @@ Exportaciones
 - `allowed_sedes`: controla sedes visibles; `NULL` o `Todas` equivale a acceso amplio.
 - `allowed_lines`: restringe lineas; `NULL` equivale a todas.
 - `allowed_dashboards`: columna legacy que ahora guarda secciones UAID (`venta`, `producto`, `operacion`); `NULL` equivale a todas.
-- `special_roles`: hoy incluye `alex`.
+- `special_roles`: uso principal `alex` (reporte Alex en jornada extendida); tambien `cronograma` para acceso al enlace de cronograma en cabeceras del portal cuando corresponda.
 - `sede`: campo legacy usado como fallback cuando no hay `allowed_sedes`.
 - `is_active`: habilita o bloquea el acceso.
 
-Los valores legacy de `allowed_dashboards` siguen siendo compatibles. El codigo normaliza aliases historicos como `ventas-x-item`, `productividad`, `margenes`, `horario`, `jornada-extendida` e `ingresar-horarios` hacia las secciones UAID correspondientes.
+Los valores legacy de `allowed_dashboards` siguen siendo compatibles. El mapeo de rutas y alias hacia `venta` / `producto` / `operacion` esta centralizado en `PORTAL_SECTION_ALIAS_MAP` dentro de `src/lib/portal-sections.ts` (algunas pantallas adicionalmente comprueban la seccion en codigo).
 
 ### Secciones y acceso
 
 | Permiso | Rutas / APIs asociadas |
 | --- | --- |
-| `venta` | `/secciones`, `/ventas-x-item`, `/api/ventas-x-item`, `/api/ventas-x-item/v2` |
-| `producto` | `/secciones`, `/`, `/productividad`, `/productividad/cajas`, `/margenes`, `/api/productivity`, `/api/margenes`, `/api/hourly-analysis` |
-| `operacion` | `/secciones`, `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/api/jornada-extendida/*`, `/api/ingresar-horarios/options`, `/api/hourly-analysis` |
+| `venta` | `/secciones`, `/venta`, `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/api/ventas-x-item`, `/api/ventas-x-item/v2`, `/api/inventario-x-item` |
+| `producto` | `/secciones`, `/`, `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/prediccion-pedidos`, `/api/productivity`, `/api/margenes`, `/api/hourly-analysis`, `/api/rotacion` |
+| `operacion` | `/secciones`, `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` |
 | `alex` | `special_roles` requerido para `/api/jornada-extendida/alex-report`, salvo admin |
 
 Nota operativa: la home funcional ya no se organiza por "tableros" sino por secciones UAID. El termino "tablero" queda solo como compatibilidad de ruta o de almacenamiento legacy.
@@ -179,6 +188,7 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
 | Productividad y analisis horario | `ventas_cajas`, `ventas_fruver`, `ventas_industria`, `ventas_carnes`, `ventas_pollo_pesc`, `ventas_asadero`, `asistencia_horas` |
 | Margenes | `margenes_linea_co_dia` |
 | Ventas x item | `ventas_item_diario`, `ventas_item_cargas`, `ventas_item_sede_map` |
+| Rotacion e inventario x item | `rotacion_base_item_dia_sede`, `rotacion_abcd_config` |
 
 ### Comportamiento por dominio
 
@@ -192,6 +202,9 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
   - `bucketMinutes` acepta `60`, `30`, `20`, `15` y `10`.
   - Cachea respuesta 30 segundos y columnas de `asistencia_horas` 5 minutos en memoria.
   - Reutiliza logica entre productividad y jornada extendida.
+- Vista `/` modo **Grafico** (productividad)
+  - Comparativos multi-serie de `Vta/Hr`: por defecto el grafico puede limitar las lineas dibujadas a las series con mayor promedio en el rango seleccionado; la UI ofrece **Ver todas** para mostrar todas las combinaciones sede/linea seleccionadas.
+  - Filtros de lineas y sedes del grafico incluyen busqueda textual; las exportaciones CSV/XLSX del grafico incluyen **todas** las series seleccionadas, no solo las visibles en pantalla.
 - `GET /api/margenes`
   - Agrega directamente `margenes_linea_co_dia`.
   - Aplica filtro por lineas permitidas.
@@ -200,8 +213,14 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
 - `GET /api/jornada-extendida/alex-report`
   - Usa `asistencia_horas`, requiere seccion `operacion` y rol `alex` o `admin`.
   - Limita el rango a 31 dias.
+  - La metrica etiquetada en UI como **mas de ~7h20 con 2 marcaciones** solo cuenta filas donde exista al menos una marcacion del dia con estado **SI NOMINA** (columna `nomina` detectada dinamicamente); sin ese criterio no incrementa el contador aunque coincidan horas y numero de marcas.
   - En `/jornada-extendida`, la tabla visible se exporta a Excel en cliente con el rango seleccionado, columna `Sede` fija, fila total y solo las metricas marcadas en el selector.
   - La exportacion sanea texto antes de escribir celdas para evitar formulas inesperadas en Excel.
+- `GET /api/rotacion`
+  - Agrega inventario, ventas y rotacion por item/sede desde `rotacion_base_item_dia_sede` y reglas de clasificacion; el **margen monetario** se estima en SQL a partir de ventas, unidades e inventario (no depende de una columna `utilidad_bruta` en esa vista).
+  - Permisos de acceso y edicion de configuracion ABCD pueden depender de `special_roles` ademas de la seccion `producto` (ver `src/lib/special-role-features.ts`).
+- `GET /api/inventario-x-item`
+  - Consulta principalmente `rotacion_base_item_dia_sede` para matrices y resumenes de inventario por empresa/sede/item.
 - `GET /api/ventas-x-item`
   - Lee `ventas_item_diario`.
   - Maneja `meta`, `summary`, rango por fechas, empresa, item y paginacion.
@@ -321,10 +340,10 @@ Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy
 
 Actualizar `README.md` si cambia cualquiera de estos puntos:
 
-- se agrega o elimina una seccion o modulo
+- se agrega o elimina una seccion o modulo (incluido `src/lib/portal-sections.ts` y hubs como `/venta`)
 - cambia el modelo de permisos, sesiones o headers de seguridad
 - cambian tablas, migraciones o variables de entorno
 - se introduce una integracion externa
 - cambia la estrategia de cache, exportacion o despliegue
 
-Estado de referencia: documentacion consolidada contra el codigo versionado el 2026-03-19.
+Estado de referencia: documentacion consolidada contra el codigo versionado el **2026-04-21**.
