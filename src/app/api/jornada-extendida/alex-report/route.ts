@@ -478,7 +478,12 @@ export async function GET(request: Request) {
       const hasSiNomina = typed.has_si_nomina === true;
       const current = counters.get(sedeMapped)!;
 
-      if (totalHours > HOURS_7_20 && totalHours <= HOURS_9_20 && marksCount === 2) {
+      if (
+        totalHours > HOURS_7_20 &&
+        totalHours <= HOURS_9_20 &&
+        marksCount === 2 &&
+        hasSiNomina
+      ) {
         current.moreThan72With2 += 1;
       }
       if (totalHours > HOURS_9_20 && hasSiNomina) {
