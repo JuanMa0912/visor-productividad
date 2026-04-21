@@ -10,7 +10,10 @@ import {
   KeyRound,
   UserCog,
 } from "lucide-react";
-import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import {
+  PORTAL_APP_VERSION,
+  PortalBrandingHeader,
+} from "@/components/portal/portal-branding-header";
 import {
   PORTAL_SECTIONS,
   type PortalSectionId,
@@ -187,6 +190,43 @@ export default function SeccionesPage() {
         isAdmin={isAdmin}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 lg:px-6">
+        <div className="rounded-2xl border border-slate-200/70 bg-white/90 shadow-[0_8px_30px_-24px_rgba(15,23,42,0.2)] backdrop-blur-sm">
+          <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">Cuenta</p>
+              <p className="text-xs text-slate-500">Ajustes rápidos de sesión.</p>
+              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                <span>Sesión · {username?.toLowerCase() || "usuario"}</span>
+                <span className="hidden text-slate-300 sm:inline" aria-hidden>
+                  |
+                </span>
+                <span>
+                  Ciclo {new Date().getFullYear()} · 04
+                </span>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:pt-0.5">
+              <button
+                type="button"
+                onClick={handleSwitchUser}
+                disabled={isSwitchingUser}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <UserCog className="h-3.5 w-3.5" />
+                {isSwitchingUser ? "Saliendo..." : "Cambiar usuario"}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/cuenta/contrasena")}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                Cambiar contraseña
+              </button>
+            </div>
+          </div>
+        </div>
+
         <p className="max-w-5xl text-sm leading-6 text-slate-600">
           El Portal UAID integra en un solo entorno la vision completa del
           negocio a traves de tres dimensiones clave:{" "}
@@ -269,37 +309,14 @@ export default function SeccionesPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200/70 bg-white/90 shadow-[0_8px_30px_-24px_rgba(15,23,42,0.2)] backdrop-blur-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Cuenta</p>
-              <p className="text-xs text-slate-500">Ajustes rapidos de sesion.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSwitchUser}
-                disabled={isSwitchingUser}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <UserCog className="h-3.5 w-3.5" />
-                {isSwitchingUser ? "Saliendo..." : "Cambiar usuario"}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/cuenta/contrasena")}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white"
-              >
-                <KeyRound className="h-3.5 w-3.5" />
-                Cambiar contrasena
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 px-5 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            <span>Sesion • {username?.toLowerCase() || "usuario"}</span>
-            <span>Ciclo {new Date().getFullYear()} . 04</span>
-          </div>
-        </div>
+        <footer className="mt-2 flex flex-col gap-2 border-t border-slate-200/70 pt-8 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-medium text-slate-600">
+            Portal UAID <span className="text-slate-400">{PORTAL_APP_VERSION}</span>
+          </p>
+          <p className="text-slate-400">
+            © {new Date().getFullYear()} · Herramientas internas de seguimiento
+          </p>
+        </footer>
       </div>
     </div>
   );

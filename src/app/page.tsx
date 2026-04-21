@@ -10,8 +10,10 @@ import {
   useContext,
   forwardRef,
   useImperativeHandle,
+  useDeferredValue,
 } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { animate, remove } from "animejs";
 import { LineChart } from "@mui/x-charts/LineChart";
@@ -35,7 +37,6 @@ import {
   sanitizeExportText,
 } from "@/lib/export-utils";
 import type { Row, Worksheet } from "exceljs";
-import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { LineCard } from "@/components/LineCard";
 import { LineComparisonTable } from "@/components/LineComparisonTable";
 import { TopBar } from "@/components/TopBar";
@@ -59,6 +60,17 @@ import {
 } from "@/lib/constants";
 import { normalizeKeyCompact } from "@/lib/normalize";
 import { DailyProductivity, LineMetrics } from "@/types";
+
+const HourlyAnalysis = dynamic(
+  () => import("@/components/HourlyAnalysis").then((mod) => mod.HourlyAnalysis),
+  {
+    loading: () => (
+      <div className="rounded-3xl border border-slate-200/70 bg-white p-6">
+        <p className="text-sm text-slate-600">Cargando análisis por hora...</p>
+      </div>
+    ),
+  },
+);
 
 // ============================================================================
 // UTILIDADES DE FECHA
@@ -600,23 +612,16 @@ const CustomChartTooltip = (props: ChartsTooltipProps) => (
   </ChartsTooltipContainer>
 );
 
-const MAX_CHART_DAYS = 7;
 const clampChartDateRange = (range: DateRange): DateRange => {
+  if (!range.start || !range.end) return range;
   const start = parseDateKey(range.start);
   const end = parseDateKey(range.end);
-  const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-
-  if (diffDays <= MAX_CHART_DAYS) {
-    return range;
-  }
-
-  const clamped = new Date(start);
-  clamped.setDate(clamped.getDate() + MAX_CHART_DAYS);
-  return {
-    start: range.start,
-    end: toDateKey(clamped),
-  };
+  if (start.getTime() <= end.getTime()) return range;
+  return { start: range.end, end: range.end };
 };
+
+/** Max series drawn at once by default; exports still include full selection. */
+const CHART_DISPLAY_TOP_N = 8;
 
 // ============================================================================
 
@@ -653,6 +658,9 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
     seriesId: string | number;
     dataIndex?: number;
   } | null>(null);
+  const [showAllChartSeries, setShowAllChartSeries] = useState(false);
+  const [lineLegendSearch, setLineLegendSearch] = useState("");
+  const [sedeLegendSearch, setSedeLegendSearch] = useState("");
 
   const sedeOptions = useMemo(() => sortSedesByOrder(sedes ?? []), [sedes]);
   const sedeOptionIds = useMemo(
@@ -687,7 +695,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
     );
   }, [availableDates, chartStartDate, chartEndDate]);
 
-  // Date options filtered within global range, constrained by 7-day max
+  // Date options filtered within global range
   const globalRangeDates = useMemo(
     () =>
       availableDates.filter(
@@ -710,6 +718,20 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
       })),
     [lines],
   );
+  const lineLegendQuery = lineLegendSearch.trim().toLowerCase();
+  const filteredLineOptions = useMemo(() => {
+    if (!lineLegendQuery) return lineOptions;
+    return lineOptions.filter((line) =>
+      line.name.toLowerCase().includes(lineLegendQuery),
+    );
+  }, [lineLegendQuery, lineOptions]);
+  const sedeLegendQuery = sedeLegendSearch.trim().toLowerCase();
+  const filteredSedeOptions = useMemo(() => {
+    if (!sedeLegendQuery) return sedeOptions;
+    return sedeOptions.filter((sede) =>
+      sede.name.toLowerCase().includes(sedeLegendQuery),
+    );
+  }, [sedeLegendQuery, sedeOptions]);
   const lineOptionIds = useMemo(
     () => new Set(lineOptions.map((line) => line.id)),
     [lineOptions],
@@ -737,14 +759,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
 
   const handleChartStartChange = useCallback(
     (value: string) => {
-      const start = parseDateKey(value);
-      const end = parseDateKey(chartEndDate);
-      const diffDays =
-        (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-      const nextEnd =
-        diffDays > MAX_CHART_DAYS || diffDays < 0
-          ? toDateKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + MAX_CHART_DAYS))
-          : chartEndDate;
+      const nextEnd = value > chartEndDate ? value : chartEndDate;
       setChartRangeDraft({
         sourceStart: dateRange.start,
         sourceEnd: dateRange.end,
@@ -757,14 +772,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
 
   const handleChartEndChange = useCallback(
     (value: string) => {
-      const start = parseDateKey(chartStartDate);
-      const end = parseDateKey(value);
-      const diffDays =
-        (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-      const nextStart =
-        diffDays > MAX_CHART_DAYS || diffDays < 0
-          ? toDateKey(new Date(end.getFullYear(), end.getMonth(), end.getDate() - MAX_CHART_DAYS))
-          : chartStartDate;
+      const nextStart = value < chartStartDate ? value : chartStartDate;
       setChartRangeDraft({
         sourceStart: dateRange.start,
         sourceEnd: dateRange.end,
@@ -795,27 +803,6 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
       })),
     );
   }, [effectiveSedes, lineOptions, selectedSeries, sedeNameMap]);
-  const activeClickedSeriesId = useMemo(() => {
-    if (clickedSeriesId === null) return null;
-    return seriesDefinitions.some((series) => series.id === clickedSeriesId)
-      ? clickedSeriesId
-      : null;
-  }, [clickedSeriesId, seriesDefinitions]);
-  const hoveredSeriesId = hoveredItem ? String(hoveredItem.seriesId) : null;
-
-  // Click overrides hover; when nothing clicked, hover highlighting works
-  const effectiveHighlight = useMemo(
-    () =>
-      activeClickedSeriesId != null
-        ? { seriesId: activeClickedSeriesId }
-        : hoveredItem,
-    [activeClickedSeriesId, hoveredItem],
-  );
-
-  const highlightCtx = useMemo(
-    () => ({ clicked: activeClickedSeriesId, hovered: hoveredSeriesId }),
-    [activeClickedSeriesId, hoveredSeriesId],
-  );
 
   const seriesMap = useMemo(() => {
     const map = new Map<string, number[]>();
@@ -858,16 +845,94 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
     return map;
   }, [chartDates, dailyDataSet, selectedSedeIdSet, seriesDefinitions]);
 
+  const seriesMeanVtaHr = useMemo(() => {
+    const m = new Map<string, number>();
+    seriesDefinitions.forEach((def) => {
+      const arr = seriesMap.get(def.id);
+      if (!arr?.length) {
+        m.set(def.id, 0);
+        return;
+      }
+      let sum = 0;
+      let n = 0;
+      for (const v of arr) {
+        if (typeof v === "number" && Number.isFinite(v)) {
+          sum += v;
+          n += 1;
+        }
+      }
+      m.set(def.id, n > 0 ? sum / n : 0);
+    });
+    return m;
+  }, [seriesDefinitions, seriesMap]);
+
+  const rankedSeriesDefinitions = useMemo(
+    () =>
+      [...seriesDefinitions].sort((a, b) => {
+        const mb = seriesMeanVtaHr.get(b.id) ?? 0;
+        const ma = seriesMeanVtaHr.get(a.id) ?? 0;
+        return mb - ma;
+      }),
+    [seriesDefinitions, seriesMeanVtaHr],
+  );
+
+  const chartDisplaySeriesDefinitions = useMemo(() => {
+    if (
+      seriesDefinitions.length <= CHART_DISPLAY_TOP_N ||
+      showAllChartSeries
+    ) {
+      return seriesDefinitions;
+    }
+    return rankedSeriesDefinitions.slice(0, CHART_DISPLAY_TOP_N);
+  }, [
+    rankedSeriesDefinitions,
+    seriesDefinitions,
+    showAllChartSeries,
+  ]);
+
+  useEffect(() => {
+    if (seriesDefinitions.length <= CHART_DISPLAY_TOP_N) {
+      setShowAllChartSeries(false);
+    }
+  }, [seriesDefinitions.length]);
+
+  const activeClickedSeriesId = useMemo(() => {
+    if (clickedSeriesId === null) return null;
+    if (!seriesDefinitions.some((series) => series.id === clickedSeriesId)) {
+      return null;
+    }
+    const visible = new Set(
+      chartDisplaySeriesDefinitions.map((series) => series.id),
+    );
+    return visible.has(clickedSeriesId) ? clickedSeriesId : null;
+  }, [chartDisplaySeriesDefinitions, clickedSeriesId, seriesDefinitions]);
+
+  const hoveredSeriesId = hoveredItem ? String(hoveredItem.seriesId) : null;
+
+  // Click overrides hover; when nothing clicked, hover highlighting works
+  const effectiveHighlight = useMemo(
+    () =>
+      activeClickedSeriesId != null
+        ? { seriesId: activeClickedSeriesId }
+        : hoveredItem,
+    [activeClickedSeriesId, hoveredItem],
+  );
+
+  const highlightCtx = useMemo(
+    () => ({ clicked: activeClickedSeriesId, hovered: hoveredSeriesId }),
+    [activeClickedSeriesId, hoveredSeriesId],
+  );
+
   const chartDataset = useMemo(() => {
     return chartDates.map((date, index) => {
       const row: Record<string, number | string | null> = { date };
-      seriesDefinitions.forEach((series) => {
+      chartDisplaySeriesDefinitions.forEach((series) => {
         const data = seriesMap.get(series.id);
         row[series.id] = data ? data[index] : null;
       });
       return row;
     });
-  }, [chartDates, seriesDefinitions, seriesMap]);
+  }, [chartDates, chartDisplaySeriesDefinitions, seriesMap]);
   const chartAxisLabel = useMemo(() => {
     if (chartDates.length === 0) return "";
     const first = parseDateKey(chartDates[0]);
@@ -973,7 +1038,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
 
   const chartSeries = useMemo<LineSeries[]>(
     () =>
-      seriesDefinitions.map((series) => ({
+      chartDisplaySeriesDefinitions.map((series) => ({
         type: "line",
         dataKey: series.id,
         label: series.label,
@@ -982,7 +1047,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
         valueFormatter: (value: number | null) => `${(value ?? 0).toFixed(3)}`,
         highlightScope: { highlight: "series" as const, fade: "global" as const },
       })),
-    [seriesDefinitions],
+    [chartDisplaySeriesDefinitions],
   );
 
   const handleToggleSeries = (lineId: string) => {
@@ -1031,7 +1096,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
       </div>
 
       <div className="mb-6">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-semibold text-slate-700">
             Series a graficar
           </span>
@@ -1051,29 +1116,41 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
               : "Seleccionar todas"}
           </button>
         </div>
+        <input
+          type="search"
+          value={lineLegendSearch}
+          onChange={(e) => setLineLegendSearch(e.target.value)}
+          placeholder="Buscar línea..."
+          aria-label="Buscar en series"
+          className="mb-2 w-full max-w-md rounded-lg border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-mercamio-400 focus:outline-none focus:ring-2 focus:ring-mercamio-100"
+        />
         <div className="flex flex-wrap gap-2">
-          {lineOptions.map((line) => {
-            const isSelected = selectedSeries.includes(line.id);
-            return (
-              <button
-                key={line.id}
-                type="button"
-                onClick={() => handleToggleSeries(line.id)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
-                  isSelected
-                    ? "border-mercamio-300 bg-mercamio-50 text-mercamio-700"
-                    : "border-slate-200/70 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700"
-                }`}
-              >
-                {line.name}
-              </button>
-            );
-          })}
+          {filteredLineOptions.length === 0 ? (
+            <p className="text-xs text-slate-500">Sin coincidencias.</p>
+          ) : (
+            filteredLineOptions.map((line) => {
+              const isSelected = selectedSeries.includes(line.id);
+              return (
+                <button
+                  key={line.id}
+                  type="button"
+                  onClick={() => handleToggleSeries(line.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                    isSelected
+                      ? "border-mercamio-300 bg-mercamio-50 text-mercamio-700"
+                      : "border-slate-200/70 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                  }`}
+                >
+                  {line.name}
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
       <div className="mb-6">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-semibold text-slate-700">
             Sedes a comparar
           </span>
@@ -1093,34 +1170,43 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
               : "Seleccionar todas"}
           </button>
         </div>
+        <input
+          type="search"
+          value={sedeLegendSearch}
+          onChange={(e) => setSedeLegendSearch(e.target.value)}
+          placeholder="Buscar sede..."
+          aria-label="Buscar en sedes del grafico"
+          className="mb-2 w-full max-w-md rounded-lg border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+        />
         <div className="flex flex-wrap gap-2">
-          {sedeOptions.map((sede) => {
-            const isSelected = selectedChartSedes.includes(sede.id);
-            return (
-              <button
-                key={sede.id}
-                type="button"
-                onClick={() => handleToggleSede(sede.id)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
-                  isSelected
-                    ? "border-sky-300 bg-sky-50 text-sky-700 ring-2 ring-sky-300 shadow-sm"
-                    : "border-slate-200/70 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700"
-                }`}
-              >
-                {sede.name}
-              </button>
-            );
-          })}
+          {filteredSedeOptions.length === 0 ? (
+            <p className="text-xs text-slate-500">Sin coincidencias.</p>
+          ) : (
+            filteredSedeOptions.map((sede) => {
+              const isSelected = selectedChartSedes.includes(sede.id);
+              return (
+                <button
+                  key={sede.id}
+                  type="button"
+                  onClick={() => handleToggleSede(sede.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                    isSelected
+                      ? "border-sky-300 bg-sky-50 text-sky-700 ring-2 ring-sky-300 shadow-sm"
+                      : "border-slate-200/70 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                  }`}
+                >
+                  {sede.name}
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Date range filter (max 7 days) */}
+      {/* Date range filter */}
       <div className="mb-6">
         <div className="mb-2">
-          <span className="text-xs font-semibold text-slate-700">
-            Rango de fechas{" "}
-            <span className="font-normal text-slate-400">(max 7 dias)</span>
-          </span>
+          <span className="text-xs font-semibold text-slate-700">Rango de fechas</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex flex-col gap-1">
@@ -1161,6 +1247,40 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
         </p>
       ) : (
         <HighlightContext.Provider value={highlightCtx}>
+          {seriesDefinitions.length > CHART_DISPLAY_TOP_N && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3">
+              <p className="text-xs leading-relaxed text-slate-700">
+                {showAllChartSeries ? (
+                  <>
+                    Mostrando las{" "}
+                    <span className="font-semibold text-slate-900">
+                      {seriesDefinitions.length}
+                    </span>{" "}
+                    series en el grafico. Puede verse muy denso con muchas lineas.
+                  </>
+                ) : (
+                  <>
+                    En el grafico: las{" "}
+                    <span className="font-semibold text-slate-900">
+                      {CHART_DISPLAY_TOP_N}
+                    </span>{" "}
+                    con mayor Vta/Hr promedio en este rango (
+                    {seriesDefinitions.length} combinaciones sede/línea
+                    seleccionadas). CSV y Excel siguen incluyendo todas.
+                  </>
+                )}
+              </p>
+              <button
+                type="button"
+                className="shrink-0 rounded-full border border-mercamio-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-mercamio-700 shadow-sm transition-colors hover:border-mercamio-300 hover:bg-mercamio-50"
+                onClick={() => setShowAllChartSeries((open) => !open)}
+              >
+                {showAllChartSeries
+                  ? `Solo top ${CHART_DISPLAY_TOP_N}`
+                  : "Ver todas en el grafico"}
+              </button>
+            </div>
+          )}
           <div
             className="h-85"
             onClick={() => setClickedSeriesId(null)}
@@ -3036,6 +3156,7 @@ export default function Home() {
     end: "",
   });
   const [exportError, setExportError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const chartExportRef = useRef<ViewExportHandle | null>(null);
   const trendsExportRef = useRef<ViewExportHandle | null>(null);
   const hourlyExportRef = useRef<ViewExportHandle | null>(null);
@@ -3107,13 +3228,14 @@ export default function Home() {
 
   const lines = useMemo(() => aggregateLines(rangeDailyData), [rangeDailyData]);
   const hasRangeData = rangeDailyData.length > 0;
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const filteredLines = useMemo(() => {
     let result = filterLinesByStatus(lines, lineFilter);
 
     // Aplicar búsqueda
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    if (deferredSearchQuery.trim()) {
+      const query = deferredSearchQuery.toLowerCase();
       result = result.filter(
         (line) =>
           line.name.toLowerCase().includes(query) ||
@@ -3141,7 +3263,7 @@ export default function Home() {
     });
 
     return result;
-  }, [lineFilter, lines, searchQuery, sortBy, sortOrder]);
+  }, [deferredSearchQuery, lineFilter, lines, sortBy, sortOrder]);
   const lineFilterLabels: Record<string, string> = {
     all: "Todas las líneas",
     critical: "Líneas críticas (alerta)",
@@ -4787,65 +4909,71 @@ export default function Home() {
 
   const handleExport = useCallback(
     async (format: "pdf" | "csv" | "xlsx") => {
-      if (viewMode === "cards" || viewMode === "comparison") {
-        const payload = buildExportPayload({
-          sedeIds: exportSedeIds,
-          dateRange: exportDateRange,
-        });
+      if (isExporting) return;
+      setIsExporting(true);
+      try {
+        if (viewMode === "cards" || viewMode === "comparison") {
+          const payload = buildExportPayload({
+            sedeIds: exportSedeIds,
+            dateRange: exportDateRange,
+          });
 
-        if (payload.pdfLines.length === 0) {
-          setExportError("No hay datos para el rango y sedes seleccionadas.");
+          if (payload.pdfLines.length === 0) {
+            setExportError("No hay datos para el rango y sedes seleccionadas.");
+            return;
+          }
+
+          setExportError(null);
+          if (format === "pdf") {
+            handleDownloadPdf(payload);
+          } else if (format === "csv") {
+            handleDownloadCsv(payload);
+          } else {
+            await handleDownloadXlsx(payload);
+          }
+
+          setExportModalOpen(false);
+          return;
+        }
+
+        if (format === "pdf") {
+          setExportError("El PDF solo está disponible en la vista de líneas.");
+          return;
+        }
+
+        let exported = false;
+        if (viewMode === "chart") {
+          exported =
+            format === "csv"
+              ? chartExportRef.current?.exportCsv() ?? false
+              : (await chartExportRef.current?.exportXlsx?.()) ?? false;
+        } else if (viewMode === "trends") {
+          exported =
+            format === "csv"
+              ? trendsExportRef.current?.exportCsv() ?? false
+              : (await trendsExportRef.current?.exportXlsx?.()) ?? false;
+        } else if (viewMode === "hourly") {
+          exported =
+            format === "csv"
+              ? hourlyExportRef.current?.exportCsv() ?? false
+              : (await hourlyExportRef.current?.exportXlsx?.()) ?? false;
+        } else if (viewMode === "m2") {
+          exported =
+            format === "csv"
+              ? m2ExportRef.current?.exportCsv() ?? false
+              : (await m2ExportRef.current?.exportXlsx?.()) ?? false;
+        }
+
+        if (!exported) {
+          setExportError("No hay datos para exportar en esta vista.");
           return;
         }
 
         setExportError(null);
-        if (format === "pdf") {
-          handleDownloadPdf(payload);
-        } else if (format === "csv") {
-          handleDownloadCsv(payload);
-        } else {
-          await handleDownloadXlsx(payload);
-        }
-
         setExportModalOpen(false);
-        return;
+      } finally {
+        setIsExporting(false);
       }
-
-      if (format === "pdf") {
-        setExportError("El PDF solo está disponible en la vista de líneas.");
-        return;
-      }
-
-      let exported = false;
-      if (viewMode === "chart") {
-        exported =
-          format === "csv"
-            ? chartExportRef.current?.exportCsv() ?? false
-            : (await chartExportRef.current?.exportXlsx?.()) ?? false;
-      } else if (viewMode === "trends") {
-        exported =
-          format === "csv"
-            ? trendsExportRef.current?.exportCsv() ?? false
-            : (await trendsExportRef.current?.exportXlsx?.()) ?? false;
-      } else if (viewMode === "hourly") {
-        exported =
-          format === "csv"
-            ? hourlyExportRef.current?.exportCsv() ?? false
-            : (await hourlyExportRef.current?.exportXlsx?.()) ?? false;
-      } else if (viewMode === "m2") {
-        exported =
-          format === "csv"
-            ? m2ExportRef.current?.exportCsv() ?? false
-            : (await m2ExportRef.current?.exportXlsx?.()) ?? false;
-      }
-
-      if (!exported) {
-        setExportError("No hay datos para exportar en esta vista.");
-        return;
-      }
-
-      setExportError(null);
-      setExportModalOpen(false);
     },
     [
       buildExportPayload,
@@ -4859,6 +4987,7 @@ export default function Home() {
       trendsExportRef,
       hourlyExportRef,
       m2ExportRef,
+      isExporting,
     ],
   );
 
@@ -5061,6 +5190,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setExportModalOpen(false)}
+                  disabled={isExporting}
                   className="rounded-full border border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition-colors hover:bg-slate-50"
                 >
                   Cancelar
@@ -5068,23 +5198,26 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => handleExport("pdf")}
+                  disabled={isExporting}
                   className="rounded-full border border-mercamio-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-mercamio-700 transition-all hover:border-mercamio-300 hover:bg-mercamio-50"
                 >
-                  PDF
+                  {isExporting ? "Generando..." : "PDF"}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleExport("csv")}
+                  disabled={isExporting}
                   className="rounded-full border border-mercamio-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-mercamio-700 transition-all hover:border-mercamio-300 hover:bg-mercamio-50"
                 >
-                  CSV
+                  {isExporting ? "Generando..." : "CSV"}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleExport("xlsx")}
+                  disabled={isExporting}
                   className="rounded-full border border-slate-900 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-900 transition-all hover:bg-slate-100"
                 >
-                  XLSX
+                  {isExporting ? "Generando..." : "XLSX"}
                 </button>
               </div>
             </div>

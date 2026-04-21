@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { DEFAULT_SEDES, type Sede } from "@/lib/constants";
 import { canAccessPortalSection } from "@/lib/portal-sections";
 import { normalizeKeyCompact } from "@/lib/normalize";
@@ -24,6 +24,17 @@ type ProductivityPayload = {
   sedes?: Sede[];
   error?: string;
 };
+
+const HourlyAnalysis = dynamic(
+  () => import("@/components/HourlyAnalysis").then((mod) => mod.HourlyAnalysis),
+  {
+    loading: () => (
+      <div className="rounded-3xl border border-slate-200/70 bg-white p-6">
+        <p className="text-sm text-slate-600">Cargando análisis horario...</p>
+      </div>
+    ),
+  },
+);
 
 const HIDDEN_SEDE_KEYS = new Set(
   [

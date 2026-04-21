@@ -2,6 +2,7 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { BarChart } from "@mui/x-charts/BarChart";
@@ -115,18 +116,23 @@ export default function VentasXItemPage() {
         if (!response.ok) return;
 
         const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
+          user?: {
+            role?: string;
+            allowedDashboards?: string[] | null;
+          };
         };
-        const isAdmin = payload.user?.role === "admin";
+        const userIsAdmin = payload.user?.role === "admin";
         if (
-          !isAdmin &&
+          !userIsAdmin &&
           !canAccessPortalSection(payload.user?.allowedDashboards, "venta")
         ) {
           router.replace("/secciones");
           return;
         }
 
-        if (isMounted) setReady(true);
+        if (isMounted) {
+          setReady(true);
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
       }
@@ -818,21 +824,45 @@ export default function VentasXItemPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-12 text-foreground">
-      <div className="mx-auto w-full max-w-7xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
+    <div className="min-h-screen bg-slate-100 px-4 py-8 text-foreground lg:px-6">
+      <div className="mx-auto w-full max-w-7xl">
+        <div className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
               Ventas X item
             </p>
             <h1 className="mt-1 text-2xl font-bold text-slate-900">Ventas por ítem(s) x sedes</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Consulta el comportamiento diario por empresa, sede e item con el mismo estilo visual del portal.
+            </p>
           </div>
-          <Link
-            href="/venta"
-            className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
-          >
-            Volver a venta
-          </Link>
+          <div className="flex flex-col items-start gap-2">
+            <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2">
+            <div className="flex items-center gap-3">
+              <Image
+                src="/logos/mercamio.jpeg"
+                alt="Logo Mercamio"
+                width={164}
+                height={52}
+                className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
+              />
+              <Image
+                src="/logos/mercatodo.jpeg"
+                alt="Logo Mercatodo"
+                width={164}
+                height={52}
+                className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
+              />
+            </div>
+            </div>
+            <Link
+              href="/venta"
+              className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
+            >
+              Volver a venta
+            </Link>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200/70 bg-slate-50 p-4">
@@ -1263,6 +1293,7 @@ export default function VentasXItemPage() {
             )}
           </>
         )}
+        </div>
       </div>
     </div>
   );
