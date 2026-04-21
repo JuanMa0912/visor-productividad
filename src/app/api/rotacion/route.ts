@@ -44,6 +44,7 @@ type RotationDbRow = {
   linea01: string | null;
   nombre_linea01: string | null;
   total_sales: string | number | null;
+  total_margin: string | number | null;
   total_units: string | number | null;
   inventory_units: string | number | null;
   inventory_value: string | number | null;
@@ -72,6 +73,7 @@ type RotationRow = {
   linea01: string | null;
   nombreLinea01: string | null;
   totalSales: number;
+  totalMargin: number;
   totalUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
@@ -787,6 +789,21 @@ const queryRotationRows = async ({
           COALESCE(NULLIF(TRIM(descripcion), ''), COALESCE(NULLIF(TRIM(item), ''), 'Sin descripcion')) AS descripcion,
           NULLIF(TRIM(unidad), '') AS unidad,
           COALESCE(venta_sin_impuesto, 0) AS venta_sin_impuesto,
+          CASE
+            WHEN COALESCE(unidades_vendidas, 0) <= 0 THEN 0::numeric
+            WHEN GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) > 0
+              AND GREATEST(COALESCE(valor_inventario, 0), 0) > 0
+              THEN
+                COALESCE(venta_sin_impuesto, 0) -
+                (
+                  COALESCE(unidades_vendidas, 0) *
+                  (
+                    GREATEST(COALESCE(valor_inventario, 0), 0) /
+                    NULLIF(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0), 0)
+                  )
+                )
+            ELSE 0::numeric
+          END AS margin_value,
           COALESCE(unidades_vendidas, 0) AS unidades_vendidas,
           GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) AS inventory_units,
           GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
@@ -842,6 +859,7 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           SUM(venta_sin_impuesto)::numeric AS total_sales,
+          SUM(margin_value)::numeric AS total_margin,
           SUM(unidades_vendidas)::numeric AS total_units,
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN last_purchase_date END) AS last_purchase_date,
@@ -893,6 +911,7 @@ const queryRotationRows = async ({
           linea01,
           nombre_linea01,
           total_sales,
+          total_margin,
           total_units,
           COALESCE(inventory_units, 0) AS inventory_units,
           COALESCE(inventory_value, 0) AS inventory_value,
@@ -929,6 +948,7 @@ const queryRotationRows = async ({
           linea01,
           nombre_linea01,
           total_sales,
+          total_margin,
           total_units,
           inventory_units,
           inventory_value,
@@ -966,6 +986,7 @@ const queryRotationRows = async ({
         linea01,
         nombre_linea01,
         total_sales,
+        total_margin,
         total_units,
         inventory_units,
         inventory_value,
@@ -1015,6 +1036,7 @@ const queryRotationRows = async ({
         linea01: toOptionalTrimmedString(row.linea01),
         nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
         totalSales: toNumber(row.total_sales),
+        totalMargin: toNumber(row.total_margin),
         totalUnits: toNumber(row.total_units),
         inventoryUnits: toNumber(row.inventory_units),
         inventoryValue: toNumber(row.inventory_value),

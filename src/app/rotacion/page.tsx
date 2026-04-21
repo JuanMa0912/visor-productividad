@@ -73,6 +73,7 @@ type RotationRow = {
   linea01: string | null;
   nombreLinea01: string | null;
   totalSales: number;
+  totalMargin: number;
   totalUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
@@ -168,6 +169,7 @@ type RotationSortField =
   | "item"
   | "descripcion"
   | "totalSales"
+  | "totalMargin"
   | "totalUnits"
   | "inventoryUnits"
   | "inventoryValue"
@@ -187,16 +189,18 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const ROTACION_TABLE_COL_WIDTHS = [
   "6%",
   "3%",
-  "20%",
-  "10%",
+  "18%",
   "9%",
-  "10%",
+  "9%",
+  "9%",
+  "9%",
   "9%",
   "5%",
   "5%",
   "5%",
-  "9%",
-  "9%",
+  "8%",
+  "8%",
+  "8%",
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
@@ -370,6 +374,12 @@ const formatPrice = (value: number) =>
     currency: "COP",
     maximumFractionDigits: 0,
   }).format(value);
+
+const formatPercent = (value: number) =>
+  `${value.toLocaleString("es-CO", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}%`;
 
 const buildExportFileStamp = () => {
   const now = new Date();
@@ -663,6 +673,9 @@ const sortRotationRows = (
         break;
       case "totalSales":
         result = left.totalSales - right.totalSales;
+        break;
+      case "totalMargin":
+        result = left.totalMargin - right.totalMargin;
         break;
       case "totalUnits":
         result = left.totalUnits - right.totalUnits;
@@ -2912,6 +2925,10 @@ export default function RotacionPage() {
                 (acc, row) => acc + row.totalSales,
                 0,
               );
+              const infoTotalMargin = filteredRows.reduce(
+                (acc, row) => acc + row.totalMargin,
+                0,
+              );
               const selectedCategoryTotalInv = categoryFilteredRows.reduce(
                 (acc, row) => acc + row.inventoryValue,
                 0,
@@ -2920,6 +2937,21 @@ export default function RotacionPage() {
                 (acc, row) => acc + row.totalSales,
                 0,
               );
+              const selectedCategoryTotalMargin =
+                rowFilter === "cero_rotacion"
+                  ? 0
+                  : categoryFilteredRows.reduce(
+                      (acc, row) => acc + row.totalMargin,
+                      0,
+                    );
+              const selectedCategoryMarginPct =
+                selectedCategoryTotalSales > 0
+                  ? (selectedCategoryTotalMargin / selectedCategoryTotalSales) * 100
+                  : 0;
+              const infoDisplayMargin =
+                rowFilter === "cero_rotacion" ? 0 : infoTotalMargin;
+              const infoMarginPct =
+                infoTotalSales > 0 ? (infoDisplayMargin / infoTotalSales) * 100 : 0;
               const selectedCategorySalesEffectiveDaysSumRaw =
                 categoryFilteredRows.reduce(
                   (acc, row) =>
@@ -3130,9 +3162,21 @@ export default function RotacionPage() {
                                 </span>
                               </div>
                               <div>
-                                Total categoria {selectedCategoryLabel}:{" "}
+                                Total inventario:{" "}
                                 <span className="font-black text-slate-900">
                                   {formatPrice(selectedCategoryTotalInv)}
+                                </span>
+                              </div>
+                              <div>
+                                Margen {selectedCategoryLabel}:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPrice(selectedCategoryTotalMargin)}
+                                </span>
+                              </div>
+                              <div>
+                                Margen {selectedCategoryLabel} %:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPercent(selectedCategoryMarginPct)}
                                 </span>
                               </div>
                             </div>
@@ -3273,6 +3317,18 @@ export default function RotacionPage() {
                                   {formatPrice(infoTotalInv)}
                                 </span>
                               </div>
+                              <div>
+                                Margen:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPrice(infoDisplayMargin)}
+                                </span>
+                              </div>
+                              <div>
+                                Margen %:{" "}
+                                <span className="font-black text-slate-900">
+                                  {formatPercent(infoMarginPct)}
+                                </span>
+                              </div>
                             </div>
                           ) : null}
                         </div>
@@ -3372,6 +3428,25 @@ export default function RotacionPage() {
                               direction={tableSortDirection}
                               onSort={handleTableSort}
                             />
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                            <SortableRotationHeader
+                              field="totalMargin"
+                              align="right"
+                              label={
+                                <span className="block text-[11px] leading-tight">
+                                  Margen
+                                </span>
+                              }
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                            />
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                            <span className="block text-[11px] leading-tight text-slate-700">
+                              Margen %
+                            </span>
                           </TableHead>
                           <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                             <SortableRotationHeader
@@ -3517,6 +3592,18 @@ export default function RotacionPage() {
                             </TableCell>
                             <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                               {formatPrice(row.totalSales)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                              {formatPrice(rowFilter === "cero_rotacion" ? 0 : row.totalMargin)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                              {formatPercent(
+                                row.totalSales > 0
+                                  ? (((rowFilter === "cero_rotacion" ? 0 : row.totalMargin) /
+                                      row.totalSales) *
+                                      100)
+                                  : 0,
+                              )}
                             </TableCell>
                             <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
                               {row.inventoryUnits.toLocaleString("es-CO")}{" "}
