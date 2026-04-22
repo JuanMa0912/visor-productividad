@@ -1456,12 +1456,8 @@ export default function InventarioXItemPage() {
         return compareText(left.sedeName, right.sedeName) * directionFactor;
       }
 
-      const leftValue = left.items[matrixSortField] ?? 0;
-      const rightValue = right.items[matrixSortField] ?? 0;
-      const leftInventory =
-        typeof leftValue === "number" ? leftValue : leftValue.inventoryUnits;
-      const rightInventory =
-        typeof rightValue === "number" ? rightValue : rightValue.inventoryUnits;
+      const leftInventory = left.items[matrixSortField]?.inventoryUnits ?? 0;
+      const rightInventory = right.items[matrixSortField]?.inventoryUnits ?? 0;
       if (leftInventory !== rightInventory) {
         return (leftInventory - rightInventory) * directionFactor;
       }
@@ -1601,7 +1597,7 @@ export default function InventarioXItemPage() {
 
       const body = sortedMatrixRowsBySede.map((row) => [
         row.displayName,
-        ...summaryRows.map((itemRow) => formatUnits(row.items[itemRow.item] ?? 0)),
+        ...summaryRows.map((itemRow) => formatUnits(row.items[itemRow.item]?.inventoryUnits ?? 0)),
       ]);
 
       const foot = [
