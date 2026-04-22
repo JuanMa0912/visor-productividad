@@ -7,7 +7,6 @@ import {
   LineChart,
   Percent,
   RefreshCw,
-  Sparkles,
 } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
@@ -37,15 +36,6 @@ const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
     description:
       "Entiende el aporte de cada linea al resultado desde margen, utilidad y rentabilidad.",
     href: "/margenes",
-  },
-  {
-    id: "prediccion-pedidos",
-    icon: Sparkles,
-    badge: "PREDICCION",
-    title: "Prediccion pedidos",
-    description:
-      "Proximamente: un tablero para anticipar necesidades de pedido por item, sede y comportamiento reciente.",
-    href: "/prediccion-pedidos",
   },
 ];
 

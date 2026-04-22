@@ -44,6 +44,9 @@ type InventarioSummaryRow = {
   unidad: string | null;
   inventoryUnits: number;
   inventoryValue: number;
+  totalUnits: number;
+  trackedDays: number;
+  rotationDays: number;
   companyCount: number;
   sedeCount: number;
 };
@@ -62,6 +65,9 @@ type InventarioMatrixRow = {
   unidad: string | null;
   inventoryUnits: number;
   inventoryValue: number;
+  totalUnits: number;
+  trackedDays: number;
+  rotationDays: number;
 };
 
 type InventarioFilterCatalog = {
@@ -101,10 +107,19 @@ type SelectOption = {
 type LineSelectionMode = "unset" | "all" | "specific";
 type MatrixSortDirection = "asc" | "desc";
 type MatrixSortField = "sede" | string;
+type ItemPreset = {
+  id: string;
+  name: string;
+  items: string[];
+  createdAt: number;
+};
 
 const ALL_FILTER_VALUE = "__all__";
 const ITEM_DROPDOWN_NO_SEARCH_LIMIT = 120;
 const ITEM_DROPDOWN_SEARCH_LIMIT = 250;
+const ITEM_PRESETS_STORAGE_KEY = "inventario-x-item:item-presets:v1";
+const MAX_ITEM_PRESETS = 25;
+const NO_SALES_DI_VALUE = 999999;
 
 const dateLabelOptions: Intl.DateTimeFormatOptions = {
   day: "2-digit",
@@ -127,8 +142,69 @@ const formatUnits = (value: number) =>
     maximumFractionDigits: value % 1 === 0 ? 0 : 2,
   }).format(value);
 
+const formatDi = (value: number) => {
+  if (!Number.isFinite(value)) return "Sin venta";
+  if (value >= NO_SALES_DI_VALUE) return "Sin venta";
+  return `${(Math.round(value * 10) / 10).toLocaleString("es-CO", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  })} d`;
+};
+
+type MatrixCellValue = {
+  inventoryUnits: number;
+  diDays: number;
+};
+
+const calculateDiDays = (row: Pick<InventarioSummaryRow, "inventoryUnits" | "totalUnits" | "trackedDays">) => {
+  if (row.inventoryUnits <= 0) return 0;
+  if (row.totalUnits <= 0 || row.trackedDays <= 0) return NO_SALES_DI_VALUE;
+  return (row.inventoryUnits * row.trackedDays) / row.totalUnits;
+};
+
 const buildSedeOptionValue = (empresa: string, sedeId: string) =>
   `${encodeURIComponent(empresa)}::${encodeURIComponent(sedeId)}`;
+
+const readItemPresetsFromStorage = (): ItemPreset[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ITEM_PRESETS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry): ItemPreset | null => {
+        if (!entry || typeof entry !== "object") return null;
+        const candidate = entry as Partial<ItemPreset>;
+        if (typeof candidate.id !== "string" || !candidate.id.trim()) return null;
+        if (typeof candidate.name !== "string" || !candidate.name.trim()) return null;
+        if (!Array.isArray(candidate.items)) return null;
+        return {
+          id: candidate.id,
+          name: candidate.name.trim(),
+          items: candidate.items
+            .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+            .slice(0, INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS),
+          createdAt:
+            typeof candidate.createdAt === "number" && Number.isFinite(candidate.createdAt)
+              ? candidate.createdAt
+              : Date.now(),
+        };
+      })
+      .filter((preset): preset is ItemPreset => Boolean(preset))
+      .slice(0, MAX_ITEM_PRESETS);
+  } catch {
+    return [];
+  }
+};
+
+const persistItemPresetsToStorage = (presets: ItemPreset[]) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    ITEM_PRESETS_STORAGE_KEY,
+    JSON.stringify(presets.slice(0, MAX_ITEM_PRESETS)),
+  );
+};
 
 const SelectField = ({
   icon: Icon,
@@ -490,6 +566,9 @@ export default function InventarioXItemPage() {
   const [matrixSortField, setMatrixSortField] = useState<MatrixSortField>("sede");
   const [matrixSortDirection, setMatrixSortDirection] =
     useState<MatrixSortDirection>("asc");
+  const [itemPresets, setItemPresets] = useState<ItemPreset[]>([]);
+  const [presetNameInput, setPresetNameInput] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState("");
   const matrixImageRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -532,6 +611,10 @@ export default function InventarioXItemPage() {
       controller.abort();
     };
   }, [router]);
+
+  useEffect(() => {
+    setItemPresets(readItemPresetsFromStorage());
+  }, []);
 
   const resetScopedData = useCallback(() => {
     setRows([]);
@@ -885,12 +968,18 @@ export default function InventarioXItemPage() {
       if (current) {
         current.inventoryUnits += row.inventoryUnits;
         current.inventoryValue += row.inventoryValue;
+        current.totalUnits += row.totalUnits;
+        current.trackedDays = Math.max(current.trackedDays, row.trackedDays);
+        current.rotationDays = calculateDiDays(current);
         current.companyCount = Math.max(current.companyCount, row.companyCount);
         current.sedeCount = Math.max(current.sedeCount, row.sedeCount);
         return;
       }
 
-      itemMap.set(row.item, { ...row });
+      itemMap.set(row.item, {
+        ...row,
+        rotationDays: calculateDiDays(row),
+      });
     });
 
     return Array.from(itemMap.values());
@@ -1070,6 +1159,85 @@ export default function InventarioXItemPage() {
     setError(null);
   }, []);
 
+  const handleSaveItemsPreset = useCallback(() => {
+    const name = presetNameInput.trim();
+    if (!name || selectedItems.length === 0) return;
+
+    const now = Date.now();
+    let savedPresetId = `${now}-${Math.random().toString(36).slice(2, 8)}`;
+    const newPreset: ItemPreset = {
+      id: savedPresetId,
+      name,
+      items: selectedItems.slice(0, INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS),
+      createdAt: now,
+    };
+
+    setItemPresets((current) => {
+      const sameNameIndex = current.findIndex(
+        (preset) => preset.name.toLowerCase() === name.toLowerCase(),
+      );
+      const next =
+        sameNameIndex >= 0
+          ? current.map((preset, index) =>
+              index === sameNameIndex ? { ...newPreset, id: current[sameNameIndex].id } : preset,
+            )
+          : [newPreset, ...current];
+      if (sameNameIndex >= 0) {
+        savedPresetId = current[sameNameIndex].id;
+      }
+      const bounded = next.slice(0, MAX_ITEM_PRESETS);
+      persistItemPresetsToStorage(bounded);
+      return bounded;
+    });
+
+    setSelectedPresetId(savedPresetId);
+    setPresetNameInput("");
+    setMessage(`Preset "${name}" guardado.`);
+    setError(null);
+  }, [presetNameInput, selectedItems]);
+
+  const handleApplyItemsPreset = useCallback(
+    (presetId: string) => {
+      setSelectedPresetId(presetId);
+      const preset = itemPresets.find((entry) => entry.id === presetId);
+      if (!preset) return;
+
+      const optionSet = new Set(itemOptions.map((option) => option.value));
+      const applicableItems = preset.items
+        .filter((item) => optionSet.has(item))
+        .slice(0, INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS);
+
+      setSelectedItemsState(applicableItems);
+      setAppliedMatrixKey("");
+      setItemSearch("");
+      setError(null);
+      if (applicableItems.length === 0) {
+        setMessage(
+          `El preset "${preset.name}" no tiene items disponibles con los filtros actuales.`,
+        );
+      } else if (applicableItems.length < preset.items.length) {
+        setMessage(
+          `Preset "${preset.name}" aplicado parcialmente (${applicableItems.length}/${preset.items.length} items disponibles).`,
+        );
+      } else {
+        setMessage(`Preset "${preset.name}" aplicado.`);
+      }
+    },
+    [itemOptions, itemPresets],
+  );
+
+  const handleDeleteItemsPreset = useCallback(() => {
+    if (!selectedPresetId) return;
+    setItemPresets((current) => {
+      const next = current.filter((preset) => preset.id !== selectedPresetId);
+      persistItemPresetsToStorage(next);
+      return next;
+    });
+    setSelectedPresetId("");
+    setMessage("Preset eliminado.");
+    setError(null);
+  }, [selectedPresetId]);
+
   const loadMatrixData = useCallback(
     async (signal?: AbortSignal) => {
       setLoadingMatrix(true);
@@ -1233,7 +1401,7 @@ export default function InventarioXItemPage() {
         sedeId: string;
         sedeName: string;
         displayName: string;
-        items: Record<string, number>;
+        items: Record<string, MatrixCellValue>;
       }
     >();
 
@@ -1250,7 +1418,12 @@ export default function InventarioXItemPage() {
         items: {},
       };
 
-      current.items[row.item] = (current.items[row.item] ?? 0) + row.inventoryUnits;
+      const existing = current.items[row.item];
+      const inventoryUnits = (existing?.inventoryUnits ?? 0) + row.inventoryUnits;
+      current.items[row.item] = {
+        inventoryUnits,
+        diDays: row.rotationDays,
+      };
       grouped.set(key, current);
     });
 
@@ -1285,8 +1458,12 @@ export default function InventarioXItemPage() {
 
       const leftValue = left.items[matrixSortField] ?? 0;
       const rightValue = right.items[matrixSortField] ?? 0;
-      if (leftValue !== rightValue) {
-        return (leftValue - rightValue) * directionFactor;
+      const leftInventory =
+        typeof leftValue === "number" ? leftValue : leftValue.inventoryUnits;
+      const rightInventory =
+        typeof rightValue === "number" ? rightValue : rightValue.inventoryUnits;
+      if (leftInventory !== rightInventory) {
+        return (leftInventory - rightInventory) * directionFactor;
       }
 
       return compareText(left.displayName, right.displayName) * directionFactor;
@@ -1785,6 +1962,56 @@ export default function InventarioXItemPage() {
               helperText={itemHelperText}
             />
           </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Presets de items
+            </p>
+            <div className="mt-2 grid gap-3 lg:grid-cols-[1.15fr_1fr]">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={presetNameInput}
+                  onChange={(event) => setPresetNameInput(event.target.value)}
+                  placeholder="Nombre del preset"
+                  className="min-w-56 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveItemsPreset}
+                  disabled={presetNameInput.trim().length === 0 || selectedItems.length === 0}
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Guardar busqueda
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedPresetId}
+                  onChange={(event) => handleApplyItemsPreset(event.target.value)}
+                  className="min-w-56 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Selecciona un preset</option>
+                  {itemPresets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name} ({preset.items.length} items)
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleDeleteItemsPreset}
+                  disabled={!selectedPresetId}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Guarda hasta {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items por preset para volver a consultarlos rapido.
+            </p>
+          </div>
         </div>
 
         <div className="mt-6 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.18)]">
@@ -1917,13 +2144,13 @@ export default function InventarioXItemPage() {
           ) : (
             <div className="relative mt-6 overflow-visible rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_60px_-42px_rgba(15,23,42,0.28)]">
               <div className="overflow-x-auto overflow-y-visible bg-[linear-gradient(180deg,rgba(248,250,252,0.8),rgba(255,255,255,1))]">
-                <div ref={matrixImageRef} className="min-w-max bg-white px-4 py-4">
+                <div ref={matrixImageRef} className="min-w-max bg-white px-2 py-2">
                   <table className="min-w-full border-separate border-spacing-0">
                   <thead>
                     <tr className="text-center text-sm font-black uppercase text-slate-900">
                       <th
-                        rowSpan={2}
-                        className="sticky top-0 left-0 z-30 min-w-72 rounded-tl-2xl border-b border-r border-slate-300 bg-slate-100 px-5 py-4 text-left align-middle shadow-[8px_0_16px_-14px_rgba(15,23,42,0.25)]"
+                        rowSpan={3}
+                        className="sticky top-0 left-0 z-30 min-w-56 rounded-tl-2xl border-b border-r border-slate-300 bg-slate-100 px-3 py-3 text-left align-middle shadow-[8px_0_16px_-14px_rgba(15,23,42,0.25)]"
                       >
                         <button
                           type="button"
@@ -1956,7 +2183,8 @@ export default function InventarioXItemPage() {
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-head-${row.item}`}
-                          className="sticky top-0 z-20 min-w-44 border-b border-r border-slate-300 bg-sky-100 px-4 py-4"
+                          colSpan={2}
+                          className="sticky top-0 z-20 min-w-52 border-b border-x-2 border-slate-300 bg-sky-100 px-2.5 py-2.5"
                         >
                           <button
                             type="button"
@@ -1992,11 +2220,12 @@ export default function InventarioXItemPage() {
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-subhead-${row.item}`}
-                          className="sticky top-[64px] z-20 border-b border-r border-slate-300 bg-sky-50 px-4 py-3"
+                          colSpan={2}
+                          className="sticky top-[54px] z-20 border-b border-x-2 border-slate-300 bg-sky-50 px-2.5 py-2"
                           title={row.descripcion}
                         >
                           <div
-                            className="max-w-44 overflow-hidden text-[11px] font-bold tracking-[0.06em] text-slate-600"
+                            className="max-w-36 overflow-hidden text-[10px] font-bold tracking-[0.04em] text-slate-600"
                             style={{
                               display: "-webkit-box",
                               WebkitLineClamp: 2,
@@ -2008,6 +2237,22 @@ export default function InventarioXItemPage() {
                         </th>
                       ))}
                     </tr>
+                    <tr className="text-center text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
+                      {summaryRows.flatMap((row) => [
+                        <th
+                          key={`matrix-col-inv-${row.item}`}
+                          className="sticky top-[96px] z-20 border-b border-l-2 border-r border-slate-300 bg-sky-50/90 px-2 py-1.5"
+                        >
+                          Inventario
+                        </th>,
+                        <th
+                          key={`matrix-col-di-${row.item}`}
+                          className="sticky top-[96px] z-20 border-b border-r-2 border-l border-slate-300 bg-sky-50/90 px-2 py-1.5"
+                        >
+                          DI
+                        </th>,
+                      ])}
+                    </tr>
                   </thead>
                   <tbody>
                     {sortedMatrixRowsBySede.map((row, index) => (
@@ -2016,10 +2261,10 @@ export default function InventarioXItemPage() {
                         className={index % 2 === 0 ? "bg-white" : "bg-slate-50/80"}
                       >
                         <td
-                          className="sticky left-0 z-10 border-b border-r border-slate-200 bg-inherit px-5 py-2.5 text-sm font-bold text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]"
+                          className="sticky left-0 z-10 border-b border-r border-slate-200 bg-inherit px-3 py-2 text-sm font-bold text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]"
                           title={row.displayName}
                         >
-                          <div className="max-w-72">
+                          <div className="max-w-56">
                             {multipleCompaniesInMatrix && (
                               <span className="mb-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                                 {row.empresa}
@@ -2028,40 +2273,55 @@ export default function InventarioXItemPage() {
                             <div className="truncate">{row.displayName}</div>
                           </div>
                         </td>
-                        {summaryRows.map((itemRow) => (
-                          (() => {
-                            const value = row.items[itemRow.item] ?? 0;
-                            const isZero = value === 0;
-                            return (
-                              <td
-                                key={`${row.key}-${itemRow.item}`}
-                                title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: ${formatUnits(value)}`}
-                                className={`border-b border-r border-slate-200 px-4 py-2.5 text-right text-sm font-semibold tabular-nums ${
-                                  isZero ? "text-slate-300" : "text-slate-700"
-                                }`}
-                              >
-                                {formatUnits(value)}
-                              </td>
-                            );
-                          })()
-                        ))}
+                        {summaryRows.flatMap((itemRow) => {
+                          const cellValue = row.items[itemRow.item] ?? {
+                            inventoryUnits: 0,
+                            diDays: 0,
+                          };
+                          const isZero = cellValue.inventoryUnits === 0;
+                          return [
+                            <td
+                              key={`${row.key}-${itemRow.item}-inv`}
+                              title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Inv ${formatUnits(cellValue.inventoryUnits)}`}
+                              className={`border-b border-l-2 border-r border-slate-200 px-2 py-2 text-right text-sm font-semibold tabular-nums ${
+                                isZero ? "text-slate-300" : "text-slate-700"
+                              }`}
+                            >
+                              {formatUnits(cellValue.inventoryUnits)}
+                            </td>,
+                            <td
+                              key={`${row.key}-${itemRow.item}-di`}
+                              title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: DI ${formatDi(cellValue.diDays)}`}
+                              className="border-b border-l border-r-2 border-slate-200 px-2 py-2 text-right text-xs font-semibold tabular-nums text-slate-600"
+                            >
+                              {formatDi(cellValue.diDays)}
+                            </td>,
+                          ];
+                        })}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-amber-50/90">
-                      <td className="sticky left-0 z-10 rounded-bl-2xl border-t-2 border-r border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-black uppercase tracking-[0.12em] text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]">
+                      <td className="sticky left-0 z-10 rounded-bl-2xl border-t-2 border-r border-amber-300 bg-amber-50 px-3 py-2 text-sm font-black uppercase tracking-[0.12em] text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]">
                         Total general
                       </td>
-                      {summaryRows.map((row) => (
-                        <td
-                          key={`matrix-total-${row.item}`}
-                          title={`Total ${row.item}: ${formatUnits(matrixTotalsByItem[row.item] ?? 0)}`}
-                          className="border-t-2 border-r border-amber-300 bg-amber-50 px-4 py-2.5 text-right text-sm font-black text-slate-900 tabular-nums"
-                        >
-                          {formatUnits(matrixTotalsByItem[row.item] ?? 0)}
-                        </td>
-                      ))}
+                      {summaryRows.flatMap((row) => [
+                          <td
+                            key={`matrix-total-${row.item}-inv`}
+                            title={`Total ${row.item}: ${formatUnits(matrixTotalsByItem[row.item] ?? 0)}`}
+                            className="border-t-2 border-l-2 border-r border-amber-300 bg-amber-50 px-2 py-2 text-right text-sm font-black text-slate-900 tabular-nums"
+                          >
+                            {formatUnits(matrixTotalsByItem[row.item] ?? 0)}
+                          </td>,
+                          <td
+                            key={`matrix-total-${row.item}-di`}
+                            title={`DI ${row.item}: ${formatDi(row.rotationDays)}`}
+                            className="border-t-2 border-l border-r-2 border-amber-300 bg-amber-50 px-2 py-2 text-right text-xs font-black text-slate-700 tabular-nums"
+                          >
+                            {formatDi(row.rotationDays)}
+                          </td>,
+                      ])}
                     </tr>
                   </tfoot>
                 </table>

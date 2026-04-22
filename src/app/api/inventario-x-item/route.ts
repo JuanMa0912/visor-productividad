@@ -30,6 +30,9 @@ type InventorySummaryDbRow = {
   unidad: string | null;
   inventory_units: string | number | null;
   inventory_value: string | number | null;
+  total_units: string | number | null;
+  tracked_days: string | number | null;
+  rotation_days: string | number | null;
   company_count: string | number | null;
   sede_count: string | number | null;
 };
@@ -45,6 +48,9 @@ type InventoryMatrixDbRow = {
   unidad: string | null;
   inventory_units: string | number | null;
   inventory_value: string | number | null;
+  total_units: string | number | null;
+  tracked_days: string | number | null;
+  rotation_days: string | number | null;
 };
 
 type InventorySummaryRow = {
@@ -58,6 +64,9 @@ type InventorySummaryRow = {
   unidad: string | null;
   inventoryUnits: number;
   inventoryValue: number;
+  totalUnits: number;
+  trackedDays: number;
+  rotationDays: number;
   companyCount: number;
   sedeCount: number;
 };
@@ -76,6 +85,9 @@ type InventoryMatrixRow = {
   unidad: string | null;
   inventoryUnits: number;
   inventoryValue: number;
+  totalUnits: number;
+  trackedDays: number;
+  rotationDays: number;
 };
 
 type InventoryFilterCatalog = {
@@ -241,6 +253,20 @@ const queryInventorySummaryRows = async ({
         NULLIF(TRIM(unidad), '') AS unidad,
         SUM(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0))::numeric AS inventory_units,
         SUM(GREATEST(COALESCE(valor_inventario, 0), 0))::numeric AS inventory_value,
+        SUM(COALESCE(unidades_vendidas, 0))::numeric AS total_units,
+        COUNT(*)::int AS tracked_days,
+        CASE
+          WHEN SUM(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)) <= 0
+            OR SUM(GREATEST(COALESCE(valor_inventario, 0), 0)) <= 0
+            THEN 0::numeric
+          WHEN SUM(COALESCE(unidades_vendidas, 0)) <= 0
+            THEN 999999::numeric
+          ELSE
+            (
+              SUM(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)) *
+              COUNT(*)::numeric
+            ) / NULLIF(SUM(COALESCE(unidades_vendidas, 0)), 0)
+        END AS rotation_days,
         COUNT(
           DISTINCT COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa')
         )::int AS company_count,
@@ -288,6 +314,9 @@ const queryInventorySummaryRows = async ({
         unidad: row.unidad,
         inventoryUnits: toNumber(row.inventory_units),
         inventoryValue: toNumber(row.inventory_value),
+        totalUnits: toNumber(row.total_units),
+        trackedDays: toNumber(row.tracked_days),
+        rotationDays: toNumber(row.rotation_days),
         companyCount: toNumber(row.company_count),
         sedeCount: toNumber(row.sede_count),
       };
@@ -384,7 +413,8 @@ const queryInventoryMatrixRows = async ({
           ) AS descripcion,
           NULLIF(TRIM(unidad), '') AS unidad,
           GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) AS inventory_units,
-          GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value
+          GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
+          COALESCE(unidades_vendidas, 0) AS total_units
         FROM rotacion_base_item_dia_sede
         WHERE ${whereClauses.join("\n          AND ")}
       ),
@@ -405,7 +435,14 @@ const queryInventoryMatrixRows = async ({
         descripcion,
         unidad,
         SUM(inventory_units)::numeric AS inventory_units,
-        SUM(inventory_value)::numeric AS inventory_value
+        SUM(inventory_value)::numeric AS inventory_value,
+        SUM(total_units)::numeric AS total_units,
+        COUNT(*)::int AS tracked_days,
+        CASE
+          WHEN SUM(inventory_units) <= 0 OR SUM(inventory_value) <= 0 THEN 0::numeric
+          WHEN SUM(total_units) <= 0 THEN 999999::numeric
+          ELSE (SUM(inventory_units) * COUNT(*)::numeric) / NULLIF(SUM(total_units), 0)
+        END AS rotation_days
       FROM scoped
       WHERE ${
         itemFilterParam
@@ -456,6 +493,9 @@ const queryInventoryMatrixRows = async ({
           unidad: row.unidad,
           inventoryUnits: toNumber(row.inventory_units),
           inventoryValue: toNumber(row.inventory_value),
+          totalUnits: toNumber(row.total_units),
+          trackedDays: toNumber(row.tracked_days),
+          rotationDays: toNumber(row.rotation_days),
         };
       })
       .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));

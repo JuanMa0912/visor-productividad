@@ -369,6 +369,9 @@ const formatPrice = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
+const formatPriceWithoutSixZeros = (value: number) =>
+  `$ ${Math.round(value / 1_000_000).toLocaleString("es-CO")}`;
+
 const formatPercent = (value: number) =>
   `${value.toLocaleString("es-CO", {
     minimumFractionDigits: 1,
@@ -578,6 +581,22 @@ const appendCategoriaParams = (
   const keys = buildCategoriaQueryKeys(catalog, selectedKeys);
   if (!keys) return;
   keys.forEach((k) => params.append("categoria", k));
+};
+
+const DEFAULT_CATEGORIA_DESTINO = "MERCANCIA NO FABRICADA POR LA EMPRESA";
+
+const buildDefaultCategoriaKeys = (
+  options: RotationCategoriaFilterOption[],
+): string[] => {
+  const preferred = options.filter(
+    (option) =>
+      (option.nombreCategoria ?? "").trim().toUpperCase() ===
+      DEFAULT_CATEGORIA_DESTINO,
+  );
+  if (preferred.length > 0) {
+    return preferred.map((option) => option.categoriaKey);
+  }
+  return options.map((option) => option.categoriaKey);
 };
 
 const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
@@ -987,7 +1006,7 @@ export default function RotacionPage() {
   const [selectedSede, setSelectedSede] = useState("");
   const [lineaN1FamilyKeys, setLineaN1FamilyKeys] = useState<
     LineaN1FamilyKey[]
-  >([...ALL_LINEA_N1_FAMILY_KEYS]);
+  >(["manufactura"]);
   const [dateRange, setDateRange] = useState<DateRange>({ start: "", end: "" });
   const [availableRange, setAvailableRange] = useState<DateRange>({
     start: "",
@@ -1017,6 +1036,9 @@ export default function RotacionPage() {
   const [error, setError] = useState<string | null>(null);
   const skipNextFetchRef = useRef(false);
   const catalogLoadGenerationRef = useRef(0);
+  const previousLineaN1FamilyKeysRef = useRef<string>(
+    [...["manufactura"]].sort().join("|"),
+  );
   const rotacionRowsFetchKeyRef = useRef<string | null>(null);
   const reloadRotacionRowsRef = useRef<
     (
@@ -1340,8 +1362,9 @@ export default function RotacionPage() {
         );
         const allLineasN1 = payload.filters?.lineasN1 ?? [];
         const allCategorias = payload.filters?.categorias ?? [];
+        const defaultCategoriaKeys = buildDefaultCategoriaKeys(allCategorias);
         setSelectedLineaN1Values(allLineasN1);
-        setSelectedCategoriaKeys(allCategorias.map((c) => c.categoriaKey));
+        setSelectedCategoriaKeys(defaultCategoriaKeys);
         if (payload.meta?.abcdConfig) {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
@@ -1389,7 +1412,7 @@ export default function RotacionPage() {
           await reloadRotacionRowsRef.current(
             {
               lineasN1: allLineasN1,
-              categoriaKeys: allCategorias.map((c) => c.categoriaKey),
+              categoriaKeys: defaultCategoriaKeys,
               categoriasCatalog: allCategorias,
             },
             { signal: rowsController.signal },
@@ -1579,13 +1602,22 @@ export default function RotacionPage() {
   );
 
   useEffect(() => {
-    setSelectedLineaN1Values(lineaN1Options.map((option) => option.value));
+    const optionValues = lineaN1Options.map((option) => option.value);
+    const optionSet = new Set(optionValues);
+    const familyKey = [...lineaN1FamilyKeys].sort().join("|");
+    const familyChanged = familyKey !== previousLineaN1FamilyKeysRef.current;
+    previousLineaN1FamilyKeysRef.current = familyKey;
+
+    setSelectedLineaN1Values((prev) => {
+      if (familyChanged) {
+        return optionValues;
+      }
+      return prev.filter((value) => optionSet.has(value));
+    });
   }, [lineaN1FamilyKeys, lineaN1Options]);
 
   useEffect(() => {
-    setSelectedCategoriaKeys(
-      categoriaFilterOptions.map((option) => option.categoriaKey),
-    );
+    setSelectedCategoriaKeys(buildDefaultCategoriaKeys(categoriaFilterOptions));
   }, [categoriaFilterOptions]);
 
   useEffect(() => {
@@ -3201,7 +3233,7 @@ export default function RotacionPage() {
                                     <div>
                                       Total venta:{" "}
                                       <span className="font-black text-slate-900">
-                                        {formatPrice(
+                                        {formatPriceWithoutSixZeros(
                                           selectedCategoryTotalSales,
                                         )}
                                       </span>
@@ -3209,14 +3241,16 @@ export default function RotacionPage() {
                                     <div>
                                       Total inventario:{" "}
                                       <span className="font-black text-slate-900">
-                                        {formatPrice(selectedCategoryTotalInv)}
+                                        {formatPriceWithoutSixZeros(
+                                          selectedCategoryTotalInv,
+                                        )}
                                       </span>
                                     </div>
                                     <div>
-                                      Margen {selectedCategoryLabel}:{" "}
+                                      Dias de venta:{" "}
                                       <span className="font-black text-slate-900">
-                                        {formatPrice(
-                                          selectedCategoryTotalMargin,
+                                        {formatRotationOneDecimal(
+                                          selectedCategorySalesCoverageDays,
                                         )}
                                       </span>
                                     </div>
@@ -3225,22 +3259,6 @@ export default function RotacionPage() {
                                       <span className="font-black text-slate-900">
                                         {formatPercent(
                                           selectedCategoryMarginPct,
-                                        )}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div className="shrink-0 space-y-1 text-right">
-                                    <div
-                                      title={
-                                        selectedCategoryTotalSales > 0
-                                          ? "Dias estimados de venta restante segun inventario valorizado y venta promedio diaria del periodo."
-                                          : undefined
-                                      }
-                                    >
-                                      Dias de venta:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatRotationOneDecimal(
-                                          selectedCategorySalesCoverageDays,
                                         )}
                                       </span>
                                     </div>
