@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as ExcelJS from "exceljs";
@@ -207,7 +201,9 @@ const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
 const ADMON_LINEAS_N1 = new Set(["30", "46", "47", "48", "49"]);
 
 /** Misma regla que en /api/rotacion: codigos numericos a 2 cifras para alinear con familias. */
-const normalizeLineaN1CodeForFilter = (raw: string | null | undefined): string => {
+const normalizeLineaN1CodeForFilter = (
+  raw: string | null | undefined,
+): string => {
   const t = String(raw ?? "").trim();
   if (!t) return "__sin_n1__";
   if (t === "__sin_n1__") return t;
@@ -324,9 +320,7 @@ const buildRotacionRowsKey = (input: {
   lineasN1: string[];
   categoriaKeys: string[];
 }) => {
-  const lineas = [...input.lineasN1].sort((a, b) =>
-    a.localeCompare(b, "es"),
-  );
+  const lineas = [...input.lineasN1].sort((a, b) => a.localeCompare(b, "es"));
   const cats = [...input.categoriaKeys].sort((a, b) =>
     a.localeCompare(b, "es"),
   );
@@ -513,10 +507,7 @@ const compareRotationText = (left: string, right: string) =>
   left.localeCompare(right, "es", { sensitivity: "base", numeric: true });
 
 const foldForProductSearch = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "");
+  value.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 
 const rowMatchesProductSearch = (row: RotationRow, rawQuery: string) => {
   const q = rawQuery.trim();
@@ -536,6 +527,14 @@ const formatRotationOneDecimal = (value: number) => {
   });
 };
 
+const calculateSalesCoverageDays = (
+  row: Pick<RotationRow, "inventoryValue" | "totalSales" | "trackedDays">,
+) => {
+  if (row.inventoryValue <= 0) return 0;
+  if (row.totalSales <= 0 || row.trackedDays <= 0) return NO_SALES_DI_VALUE;
+  return (row.inventoryValue * row.trackedDays) / row.totalSales;
+};
+
 const clampPercent = (value: number) =>
   Math.max(1, Math.min(100, Number.isFinite(value) ? value : 0));
 
@@ -545,7 +544,9 @@ const safeNumber = (value: unknown) =>
 const normalizeRotationRows = (rows: RotationRow[]) =>
   rows.map((row) => ({
     ...row,
-    totalUnits: safeNumber((row as RotationRow & { totalUnits?: number }).totalUnits),
+    totalUnits: safeNumber(
+      (row as RotationRow & { totalUnits?: number }).totalUnits,
+    ),
     bodega: row.bodega ?? null,
     nombreBodega: row.nombreBodega ?? null,
     categoria: row.categoria ?? null,
@@ -704,7 +705,20 @@ const sortRotationRows = (
         result = left.trackedDays - right.trackedDays;
         break;
       case "salesEffectiveDays":
-        result = left.salesEffectiveDays - right.salesEffectiveDays;
+        if (
+          calculateSalesCoverageDays(left) >= NO_SALES_DI_VALUE &&
+          calculateSalesCoverageDays(right) >= NO_SALES_DI_VALUE
+        ) {
+          result = 0;
+        } else if (calculateSalesCoverageDays(left) >= NO_SALES_DI_VALUE) {
+          result = 1;
+        } else if (calculateSalesCoverageDays(right) >= NO_SALES_DI_VALUE) {
+          result = -1;
+        } else {
+          result =
+            calculateSalesCoverageDays(left) -
+            calculateSalesCoverageDays(right);
+        }
         break;
       case "lastMovementDate":
         result = compareNullableIsoDateKeys(
@@ -766,11 +780,7 @@ const buildRowsBySede = (rows: RotationRow[]) => {
 };
 
 /** Filtros rápidos por bloque de sede (tabla). */
-type GroupRowsQuickFilter =
-  | "none"
-  | "cero_rotacion"
-  | "venta_hasta"
-  | "both";
+type GroupRowsQuickFilter = "none" | "cero_rotacion" | "venta_hasta" | "both";
 
 const applyRowsQuickFilter = (
   rows: RotationRow[],
@@ -779,9 +789,7 @@ const applyRowsQuickFilter = (
 ): RotationRow[] => {
   if (filter === "none") return rows;
   if (filter === "cero_rotacion") {
-    return rows.filter(
-      (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
-    );
+    return rows.filter((row) => row.totalSales <= 0 && row.inventoryUnits > 0);
   }
   if (filter === "venta_hasta") {
     if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) return rows;
@@ -797,7 +805,8 @@ const applyRowsQuickFilter = (
     }
     return rows.filter((row) => {
       const isCeroRotacion = row.totalSales <= 0 && row.inventoryUnits > 0;
-      const isVentaHasta = row.totalSales >= 1 && row.totalSales <= ventaHastaMax;
+      const isVentaHasta =
+        row.totalSales >= 1 && row.totalSales <= ventaHastaMax;
       return isCeroRotacion || isVentaHasta;
     });
   }
@@ -850,12 +859,7 @@ type SortableRotationHeaderProps = {
 };
 
 const WhatsAppLogo = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    aria-hidden
-    {...props}
-  >
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
   </svg>
 );
@@ -882,12 +886,7 @@ const SortableRotationHeader = ({
       )}
       aria-pressed={isActive}
     >
-      <span
-        className={cn(
-          "min-w-0",
-          isRight ? "shrink" : "block flex-1",
-        )}
-      >
+      <span className={cn("min-w-0", isRight ? "shrink" : "block flex-1")}>
         {label}
       </span>
       <ArrowUp
@@ -986,9 +985,9 @@ export default function RotacionPage() {
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedSede, setSelectedSede] = useState("");
-  const [lineaN1FamilyKeys, setLineaN1FamilyKeys] = useState<LineaN1FamilyKey[]>([
-    ...ALL_LINEA_N1_FAMILY_KEYS,
-  ]);
+  const [lineaN1FamilyKeys, setLineaN1FamilyKeys] = useState<
+    LineaN1FamilyKey[]
+  >([...ALL_LINEA_N1_FAMILY_KEYS]);
   const [dateRange, setDateRange] = useState<DateRange>({ start: "", end: "" });
   const [availableRange, setAvailableRange] = useState<DateRange>({
     start: "",
@@ -1240,7 +1239,7 @@ export default function RotacionPage() {
     const key = buildRotacionRowsKey({
       start: dateRange.start,
       end: dateRange.end,
-      empresa: (meta.empresa ?? selectedCompany) ?? "",
+      empresa: meta.empresa ?? selectedCompany ?? "",
       sedeId: meta.sedeId,
       lineasN1: selectedLineaN1Values,
       categoriaKeys: selectedCategoriaKeys,
@@ -1314,9 +1313,8 @@ export default function RotacionPage() {
           return;
         }
         if (response.status === 403) {
-          const forbiddenMessage = await readRotationApiForbiddenMessage(
-            response,
-          );
+          const forbiddenMessage =
+            await readRotationApiForbiddenMessage(response);
           if (generation !== catalogLoadGenerationRef.current) return;
           setError(forbiddenMessage);
           return;
@@ -1623,7 +1621,13 @@ export default function RotacionPage() {
     } catch {
       /* ignore */
     }
-  }, [ready, isLoadingLineCatalog, selectedSede, selectedCompany, allSedeOptions]);
+  }, [
+    ready,
+    isLoadingLineCatalog,
+    selectedSede,
+    selectedCompany,
+    allSedeOptions,
+  ]);
 
   const sortedRows = useMemo(
     () => sortRotationRows(rows, tableSortField, tableSortDirection),
@@ -1713,17 +1717,17 @@ export default function RotacionPage() {
 
   const toggleGroupRowsQuickFilter = (
     groupKey: string,
-  filter: Exclude<GroupRowsQuickFilter, "none" | "venta_hasta" | "both">,
+    filter: Exclude<GroupRowsQuickFilter, "none" | "venta_hasta" | "both">,
   ) => {
     setRowsQuickFilterByGroup((prev) => {
       const current = prev[groupKey] ?? "none";
-    let next: GroupRowsQuickFilter = current;
-    if (filter === "cero_rotacion") {
-      if (current === "cero_rotacion") next = "none";
-      else if (current === "venta_hasta") next = "both";
-      else if (current === "both") next = "venta_hasta";
-      else next = "cero_rotacion";
-    }
+      let next: GroupRowsQuickFilter = current;
+      if (filter === "cero_rotacion") {
+        if (current === "cero_rotacion") next = "none";
+        else if (current === "venta_hasta") next = "both";
+        else if (current === "both") next = "venta_hasta";
+        else next = "cero_rotacion";
+      }
       return { ...prev, [groupKey]: next };
     });
     setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
@@ -1731,11 +1735,11 @@ export default function RotacionPage() {
 
   const applyOrToggleVentaHastaFilter = (groupKey: string) => {
     const current = rowsQuickFilterByGroup[groupKey] ?? "none";
-  if (current === "venta_hasta" || current === "both") {
-    setRowsQuickFilterByGroup((prev) => ({
-      ...prev,
-      [groupKey]: current === "both" ? "cero_rotacion" : "none",
-    }));
+    if (current === "venta_hasta" || current === "both") {
+      setRowsQuickFilterByGroup((prev) => ({
+        ...prev,
+        [groupKey]: current === "both" ? "cero_rotacion" : "none",
+      }));
       setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
       return;
     }
@@ -1744,11 +1748,10 @@ export default function RotacionPage() {
     if (Number.isNaN(parsedRaw)) return;
     const parsed = Math.max(1, parsedRaw);
     setVentaHastaCapByGroup((prev) => ({ ...prev, [groupKey]: parsed }));
-  setRowsQuickFilterByGroup((prev) => ({
-    ...prev,
-    [groupKey]:
-      current === "cero_rotacion" ? "both" : "venta_hasta",
-  }));
+    setRowsQuickFilterByGroup((prev) => ({
+      ...prev,
+      [groupKey]: current === "cero_rotacion" ? "both" : "venta_hasta",
+    }));
     setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
   };
 
@@ -1802,7 +1805,9 @@ export default function RotacionPage() {
           valorInventario: row.inventoryValue,
           rotacion: formatRotationOneDecimal(row.rotation),
           diaInventarioEfectivo: row.trackedDays.toLocaleString("es-CO"),
-          diaVentaEfectivo: row.salesEffectiveDays.toLocaleString("es-CO"),
+          diaVentaEfectivo: formatRotationOneDecimal(
+            calculateSalesCoverageDays(row),
+          ),
           ultimoIngreso: row.lastMovementDate
             ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
             : "Sin fecha de ingreso",
@@ -1830,21 +1835,23 @@ export default function RotacionPage() {
     autoTable(doc, {
       startY: 22,
       styles: { fontSize: 7, cellPadding: 1.8 },
-      head: [[
-        "Empresa",
-        "Sede",
-        "Item",
-        "Descripcion",
-        "Venta periodo",
-        "Inv cierre",
-        "Unidad",
-        "Valor inventario",
-        "DI (dias inv.)",
-        "Dia inventario efectivo",
-        "Dia venta efectivo",
-        "Ultimo ingreso",
-        "Fecha ultima venta",
-      ]],
+      head: [
+        [
+          "Empresa",
+          "Sede",
+          "Item",
+          "Descripcion",
+          "Venta periodo",
+          "Inv cierre",
+          "Unidad",
+          "Valor inventario",
+          "DI (dias inv.)",
+          "Dia inventario efectivo",
+          "Dia venta efectivo",
+          "Ultimo ingreso",
+          "Fecha ultima venta",
+        ],
+      ],
       body: exportRows.map((row) => [
         row.empresa,
         row.sede,
@@ -1881,7 +1888,11 @@ export default function RotacionPage() {
         { header: "Unidad", key: "unidad", width: 10 },
         { header: "Valor inventario", key: "valorInventario", width: 16 },
         { header: "DI (dias inv.)", key: "rotacion", width: 14 },
-        { header: "Dia inventario efectivo", key: "diaInventarioEfectivo", width: 18 },
+        {
+          header: "Dia inventario efectivo",
+          key: "diaInventarioEfectivo",
+          width: 18,
+        },
         { header: "Dia venta efectivo", key: "diaVentaEfectivo", width: 16 },
         { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
         { header: "Fecha ultima venta", key: "fechaUltimaVenta", width: 20 },
@@ -1922,9 +1933,7 @@ export default function RotacionPage() {
     if (exportRows.length === 0 || isExportingPdf) return;
     setIsExportingPdf(true);
     try {
-      buildRotacionPdfDocument().save(
-        `rotacion_${buildExportFileStamp()}.pdf`,
-      );
+      buildRotacionPdfDocument().save(`rotacion_${buildExportFileStamp()}.pdf`);
     } finally {
       setIsExportingPdf(false);
     }
@@ -2085,8 +2094,8 @@ export default function RotacionPage() {
                 Filtros principales
               </CardTitle>
               <CardDescription>
-                Selecciona empresa y sede. Para acotar por venta del periodo
-                usa el boton Venta ≤ en la tabla.
+                Selecciona empresa y sede. Para acotar por venta del periodo usa
+                el boton Venta ≤ en la tabla.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -2249,7 +2258,9 @@ export default function RotacionPage() {
                                   onChange={() =>
                                     setSelectedCategoriaKeys((cur) =>
                                       checked
-                                        ? cur.filter((k) => k !== opt.categoriaKey)
+                                        ? cur.filter(
+                                            (k) => k !== opt.categoriaKey,
+                                          )
                                         : [...cur, opt.categoriaKey],
                                     )
                                   }
@@ -2315,7 +2326,8 @@ export default function RotacionPage() {
                         setLineaN1FamilyKeys([...ALL_LINEA_N1_FAMILY_KEYS])
                       }
                       disabled={
-                        isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
+                        isLoadingLineCatalog &&
+                        filterCatalog.lineasN1.length === 0
                       }
                       className="h-8 rounded-lg border-violet-200 bg-violet-50 px-2.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
                     >
@@ -2362,7 +2374,8 @@ export default function RotacionPage() {
                                 });
                               }}
                               disabled={
-                                isLoadingLineCatalog && filterCatalog.lineasN1.length === 0
+                                isLoadingLineCatalog &&
+                                filterCatalog.lineasN1.length === 0
                               }
                               className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-200 disabled:opacity-50"
                             />
@@ -2413,7 +2426,9 @@ export default function RotacionPage() {
                           lineaN1Options.map((option) => option.value),
                         )
                       }
-                      disabled={lineaN1Options.length === 0 || isLoadingLineCatalog}
+                      disabled={
+                        lineaN1Options.length === 0 || isLoadingLineCatalog
+                      }
                       className="h-8 rounded-lg border-violet-200 bg-violet-50 px-2.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
                     >
                       Seleccionar todas
@@ -2436,7 +2451,9 @@ export default function RotacionPage() {
                       type="button"
                       size="sm"
                       onClick={() => void handleReloadRows()}
-                      disabled={!selectedSede || isLoadingData || isLoadingLineCatalog}
+                      disabled={
+                        !selectedSede || isLoadingData || isLoadingLineCatalog
+                      }
                       className="h-8 rounded-lg bg-violet-700 px-3 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
                     >
                       {isLoadingData ? "Actualizando..." : "Actualizar ahora"}
@@ -2475,7 +2492,9 @@ export default function RotacionPage() {
                             onChange={() =>
                               setSelectedLineaN1Values((current) =>
                                 isChecked
-                                  ? current.filter((value) => value !== option.value)
+                                  ? current.filter(
+                                      (value) => value !== option.value,
+                                    )
                                   : [...current, option.value],
                               )
                             }
@@ -2679,8 +2698,8 @@ export default function RotacionPage() {
                 Cargando filtros de la sede
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Estamos trayendo lineas N1, categorías y el rango disponible.
-                En cuanto termine, la tabla se consultará sola con los filtros
+                Estamos trayendo lineas N1, categorías y el rango disponible. En
+                cuanto termine, la tabla se consultará sola con los filtros
                 seleccionados.
               </p>
             </CardContent>
@@ -2695,11 +2714,10 @@ export default function RotacionPage() {
                 No se pudo cargar el listado
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Pulsa{" "}
-                <span className="font-semibold">Actualizar ahora</span> para
-                repetir la consulta. Al cambiar lineas N1 o categorías, la tabla
-                suele actualizarse sola en unos instantes sin necesidad de ese
-                botón.
+                Pulsa <span className="font-semibold">Actualizar ahora</span>{" "}
+                para repetir la consulta. Al cambiar lineas N1 o categorías, la
+                tabla suele actualizarse sola en unos instantes sin necesidad de
+                ese botón.
               </p>
             </CardContent>
           </Card>
@@ -2784,872 +2802,915 @@ export default function RotacionPage() {
               </Card>
             ) : (
               <>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleExportExcel}
-                disabled={exportRows.length === 0 || isExportingExcel}
-                className="h-9 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
-              >
-                {isExportingExcel ? "Exportando..." : "Descargar Excel"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleExportPdf}
-                disabled={exportRows.length === 0 || isExportingPdf}
-                className="h-9 rounded-lg border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
-              >
-                {isExportingPdf ? "Exportando..." : "Descargar PDF"}
-              </Button>
-              <details
-                ref={whatsappDetailsRef}
-                className="relative group"
-              >
-                <summary
-                  className="flex h-9 list-none cursor-pointer items-center gap-2 rounded-lg border border-emerald-600 bg-[#25D366] px-3 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-[#20bd5a] [&::-webkit-details-marker]:hidden disabled:pointer-events-none disabled:opacity-50"
-                  aria-label="Enviar tabla por WhatsApp"
-                >
-                  <WhatsAppLogo className="h-5 w-5 shrink-0 text-white" />
-                  <span className="hidden sm:inline">WhatsApp</span>
-                </summary>
-                <div
-                  className="absolute right-0 z-30 mt-1 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
-                  role="menu"
-                >
-                  <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Enviar tabla como
-                  </p>
-                  <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={
-                        exportRows.length === 0 || isWhatsAppSharing
-                      }
-                      className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                      onClick={() => void handleWhatsAppShare("png")}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleExportExcel}
+                    disabled={exportRows.length === 0 || isExportingExcel}
+                    className="h-9 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                  >
+                    {isExportingExcel ? "Exportando..." : "Descargar Excel"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleExportPdf}
+                    disabled={exportRows.length === 0 || isExportingPdf}
+                    className="h-9 rounded-lg border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
+                  >
+                    {isExportingPdf ? "Exportando..." : "Descargar PDF"}
+                  </Button>
+                  <details ref={whatsappDetailsRef} className="relative group">
+                    <summary
+                      className="flex h-9 list-none cursor-pointer items-center gap-2 rounded-lg border border-emerald-600 bg-[#25D366] px-3 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-[#20bd5a] [&::-webkit-details-marker]:hidden disabled:pointer-events-none disabled:opacity-50"
+                      aria-label="Enviar tabla por WhatsApp"
                     >
-                      Imagen PNG (sin pérdida)
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={
-                        exportRows.length === 0 || isWhatsAppSharing
-                      }
-                      className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                      onClick={() => void handleWhatsAppShare("jpeg")}
+                      <WhatsAppLogo className="h-5 w-5 shrink-0 text-white" />
+                      <span className="hidden sm:inline">WhatsApp</span>
+                    </summary>
+                    <div
+                      className="absolute right-0 z-30 mt-1 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
+                      role="menu"
                     >
-                      Imagen JPG (98% calidad)
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={
-                        exportRows.length === 0 || isWhatsAppSharing
-                      }
-                      className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                      onClick={() => void handleWhatsAppShare("pdf")}
-                    >
-                      PDF
-                    </button>
-                  </div>
-                  <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
-                    Imagen: solo la tabla (paginación por sede), captura ampliada y
-                    alta densidad de píxeles. JPG usa calidad 98%; WhatsApp puede
-                    volver a comprimir al enviar — si no se lee bien, prueba PNG o
-                    PDF. PDF: todas las filas filtradas, igual que &quot;Descargar
-                    PDF&quot;.{" "}
-                    {typeof navigator !== "undefined" &&
-                    typeof navigator.share === "function"
-                      ? "Con compartir, elige WhatsApp si aparece."
-                      : "Se descarga el archivo y se intenta abrir WhatsApp Desktop; si no abre, se usa WhatsApp Web (adjunta el archivo con clip)."}
-                  </p>
+                      <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        Enviar tabla como
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={
+                            exportRows.length === 0 || isWhatsAppSharing
+                          }
+                          className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                          onClick={() => void handleWhatsAppShare("png")}
+                        >
+                          Imagen PNG (sin pérdida)
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={
+                            exportRows.length === 0 || isWhatsAppSharing
+                          }
+                          className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                          onClick={() => void handleWhatsAppShare("jpeg")}
+                        >
+                          Imagen JPG (98% calidad)
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={
+                            exportRows.length === 0 || isWhatsAppSharing
+                          }
+                          className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                          onClick={() => void handleWhatsAppShare("pdf")}
+                        >
+                          PDF
+                        </button>
+                      </div>
+                      <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
+                        Imagen: solo la tabla (paginación por sede), captura
+                        ampliada y alta densidad de píxeles. JPG usa calidad
+                        98%; WhatsApp puede volver a comprimir al enviar — si no
+                        se lee bien, prueba PNG o PDF. PDF: todas las filas
+                        filtradas, igual que &quot;Descargar PDF&quot;.{" "}
+                        {typeof navigator !== "undefined" &&
+                        typeof navigator.share === "function"
+                          ? "Con compartir, elige WhatsApp si aparece."
+                          : "Se descarga el archivo y se intenta abrir WhatsApp Desktop; si no abre, se usa WhatsApp Web (adjunta el archivo con clip)."}
+                      </p>
+                    </div>
+                  </details>
+                  <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Filas por pagina
+                  </label>
+                  <select
+                    value={pageSize}
+                    onChange={(event) =>
+                      handlePageSizeChange(event.target.value)
+                    }
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </details>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Filas por pagina
-              </label>
-              <select
-                value={pageSize}
-                onChange={(event) => handlePageSizeChange(event.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div
-              ref={rotacionTablesExportRef}
-              className="grid gap-5 bg-white p-2"
-            >
-            {rowsBySede.map((group) => {
-              const groupKey = `${group.empresa}-${group.sedeId}`;
-              const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
-              const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
-              const ventaHastaCap =
-                rowFilter === "venta_hasta" || rowFilter === "both"
-                  ? (ventaHastaCapByGroup[groupKey] ?? null)
-                  : null;
-              const filteredRows = applyRowsQuickFilter(
-                group.rows,
-                rowFilter,
-                ventaHastaCap,
-              );
-              /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
-              const categoryByItem = buildAbcdCategoryByItem(
-                group.rows,
-                abcdConfig,
-              );
-              const abcdCounts = countAbcdItemsByCategory(
-                group.rows,
-                categoryByItem,
-              );
-              const categoryFilteredRows =
-                categoryFilter === "all"
-                  ? filteredRows
-                  : filteredRows.filter(
-                      (row) => categoryByItem.get(row.item) === categoryFilter,
+                <div
+                  ref={rotacionTablesExportRef}
+                  className="grid gap-5 bg-white p-2"
+                >
+                  {rowsBySede.map((group) => {
+                    const groupKey = `${group.empresa}-${group.sedeId}`;
+                    const rowFilter =
+                      rowsQuickFilterByGroup[groupKey] ?? "none";
+                    const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
+                    const ventaHastaCap =
+                      rowFilter === "venta_hasta" || rowFilter === "both"
+                        ? (ventaHastaCapByGroup[groupKey] ?? null)
+                        : null;
+                    const filteredRows = applyRowsQuickFilter(
+                      group.rows,
+                      rowFilter,
+                      ventaHastaCap,
                     );
-              const infoTotalItems = filteredRows.length;
-              const infoTotalInv = filteredRows.reduce(
-                (acc, row) => acc + row.inventoryValue,
-                0,
-              );
-              const infoTotalSales = filteredRows.reduce(
-                (acc, row) => acc + row.totalSales,
-                0,
-              );
-              const infoTotalMargin = filteredRows.reduce(
-                (acc, row) => acc + row.totalMargin,
-                0,
-              );
-              const selectedCategoryTotalInv = categoryFilteredRows.reduce(
-                (acc, row) => acc + row.inventoryValue,
-                0,
-              );
-              const selectedCategoryTotalSales = categoryFilteredRows.reduce(
-                (acc, row) => acc + row.totalSales,
-                0,
-              );
-              const selectedCategoryTotalMargin =
-                rowFilter === "cero_rotacion"
-                  ? 0
-                  : categoryFilteredRows.reduce(
+                    /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
+                    const categoryByItem = buildAbcdCategoryByItem(
+                      group.rows,
+                      abcdConfig,
+                    );
+                    const abcdCounts = countAbcdItemsByCategory(
+                      group.rows,
+                      categoryByItem,
+                    );
+                    const categoryFilteredRows =
+                      categoryFilter === "all"
+                        ? filteredRows
+                        : filteredRows.filter(
+                            (row) =>
+                              categoryByItem.get(row.item) === categoryFilter,
+                          );
+                    const infoTotalItems = filteredRows.length;
+                    const infoTotalInv = filteredRows.reduce(
+                      (acc, row) => acc + row.inventoryValue,
+                      0,
+                    );
+                    const infoTotalSales = filteredRows.reduce(
+                      (acc, row) => acc + row.totalSales,
+                      0,
+                    );
+                    const infoTotalMargin = filteredRows.reduce(
                       (acc, row) => acc + row.totalMargin,
                       0,
                     );
-              const selectedCategoryMarginPct =
-                selectedCategoryTotalSales > 0
-                  ? (selectedCategoryTotalMargin / selectedCategoryTotalSales) * 100
-                  : 0;
-              const infoDisplayMargin =
-                rowFilter === "cero_rotacion" ? 0 : infoTotalMargin;
-              const infoMarginPct =
-                infoTotalSales > 0 ? (infoDisplayMargin / infoTotalSales) * 100 : 0;
-              const selectedCategorySalesEffectiveDaysSumRaw =
-                categoryFilteredRows.reduce(
-                  (acc, row) =>
-                    acc +
-                    (Number.isFinite(row.salesEffectiveDays)
-                      ? row.salesEffectiveDays
-                      : 0),
-                  0,
-                );
-              const periodDaysCap = daysConsulted;
-              const selectedCategoryDisplaySalesEffectiveDays =
-                periodDaysCap > 0
-                  ? Math.min(
-                      Math.round(selectedCategorySalesEffectiveDaysSumRaw),
-                      periodDaysCap,
-                    )
-                  : Math.round(selectedCategorySalesEffectiveDaysSumRaw);
-              const selectedCategoryLabel =
-                categoryFilter === "all" ? null : categoryFilter;
-              const categoryFilteredCeroRotacionCount = categoryFilteredRows.filter(
-                (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
-              ).length;
-              const ventaHastaInput = ventaHastaInputByGroup[groupKey] ?? "";
-              const ventaHastaDigits = sanitizeNumericInput(ventaHastaInput);
-              const ventaHastaParsedPreviewRaw = Number(ventaHastaDigits);
-              const ventaHastaParsedPreview = Math.max(
-                1,
-                ventaHastaParsedPreviewRaw,
-              );
-              const ventaHastaPreviewCount =
-                ventaHastaDigits.length === 0 ||
-                Number.isNaN(ventaHastaParsedPreviewRaw)
-                  ? null
-                  : categoryFilteredRows.filter(
-                      (row) => {
-                        const includeZero = rowFilter === "both";
-                        return includeZero
-                          ? row.totalSales <= ventaHastaParsedPreview
-                          : row.totalSales >= 1 &&
-                              row.totalSales <= ventaHastaParsedPreview;
-                      },
+                    const selectedCategoryTotalInv =
+                      categoryFilteredRows.reduce(
+                        (acc, row) => acc + row.inventoryValue,
+                        0,
+                      );
+                    const selectedCategoryTotalSales =
+                      categoryFilteredRows.reduce(
+                        (acc, row) => acc + row.totalSales,
+                        0,
+                      );
+                    const selectedCategoryTotalMargin =
+                      rowFilter === "cero_rotacion"
+                        ? 0
+                        : categoryFilteredRows.reduce(
+                            (acc, row) => acc + row.totalMargin,
+                            0,
+                          );
+                    const selectedCategoryMarginPct =
+                      selectedCategoryTotalSales > 0
+                        ? (selectedCategoryTotalMargin /
+                            selectedCategoryTotalSales) *
+                          100
+                        : 0;
+                    const infoDisplayMargin =
+                      rowFilter === "cero_rotacion" ? 0 : infoTotalMargin;
+                    const infoMarginPct =
+                      infoTotalSales > 0
+                        ? (infoDisplayMargin / infoTotalSales) * 100
+                        : 0;
+                    const selectedCategorySalesCoverageDays =
+                      selectedCategoryTotalSales > 0 && daysConsulted > 0
+                        ? (selectedCategoryTotalInv * daysConsulted) /
+                          selectedCategoryTotalSales
+                        : selectedCategoryTotalInv > 0
+                          ? NO_SALES_DI_VALUE
+                          : 0;
+                    const selectedCategoryLabel =
+                      categoryFilter === "all" ? null : categoryFilter;
+                    const categoryFilteredCeroRotacionCount =
+                      categoryFilteredRows.filter(
+                        (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+                      ).length;
+                    const ventaHastaInput =
+                      ventaHastaInputByGroup[groupKey] ?? "";
+                    const ventaHastaDigits =
+                      sanitizeNumericInput(ventaHastaInput);
+                    const ventaHastaParsedPreviewRaw = Number(ventaHastaDigits);
+                    const ventaHastaParsedPreview = Math.max(
+                      1,
+                      ventaHastaParsedPreviewRaw,
+                    );
+                    const ventaHastaPreviewCount =
+                      ventaHastaDigits.length === 0 ||
+                      Number.isNaN(ventaHastaParsedPreviewRaw)
+                        ? null
+                        : categoryFilteredRows.filter((row) => {
+                            const includeZero = rowFilter === "both";
+                            return includeZero
+                              ? row.totalSales <= ventaHastaParsedPreview
+                              : row.totalSales >= 1 &&
+                                  row.totalSales <= ventaHastaParsedPreview;
+                          }).length;
+                    const ceroRotacionCount = group.rows.filter(
+                      (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
                     ).length;
-              const ceroRotacionCount = group.rows.filter(
-                (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
-              ).length;
-              const totalPages = Math.max(
-                1,
-                Math.ceil(categoryFilteredRows.length / pageSize),
-              );
-              const currentPage = Math.max(
-                1,
-                Math.min(pageByGroupKey[groupKey] ?? 1, totalPages),
-              );
-              const startIndex = (currentPage - 1) * pageSize;
-              const paginatedRows = categoryFilteredRows.slice(
-                startIndex,
-                startIndex + pageSize,
-              );
+                    const totalPages = Math.max(
+                      1,
+                      Math.ceil(categoryFilteredRows.length / pageSize),
+                    );
+                    const currentPage = Math.max(
+                      1,
+                      Math.min(pageByGroupKey[groupKey] ?? 1, totalPages),
+                    );
+                    const startIndex = (currentPage - 1) * pageSize;
+                    const paginatedRows = categoryFilteredRows.slice(
+                      startIndex,
+                      startIndex + pageSize,
+                    );
 
-              return (
-                <Card
-                  key={groupKey}
-                  className="rotacion-whatsapp-export-card border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
-                >
-                  <CardHeader
-                    className="border-b border-slate-100 bg-slate-50/70"
-                    {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
-                  >
-                    <div className="flex flex-col gap-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                            Información
-                          </p>
-                          <CardTitle className="text-2xl font-black text-slate-900">
-                            {group.sedeName}
-                          </CardTitle>
-                          <CardDescription className="max-w-2xl text-sm leading-6 text-slate-600">
-                            Consolidado real por sede usando ventas sin impuesto,
-                            inventario de cierre y ultimo ingreso sobre el rango
-                            seleccionado.
-                          </CardDescription>
-                        </div>
-                        <Badge className="shrink-0 border-indigo-200 bg-indigo-50 text-indigo-700">
-                          {group.empresa}
-                        </Badge>
-                      </div>
+                    return (
+                      <Card
+                        key={groupKey}
+                        className="rotacion-whatsapp-export-card border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
+                      >
+                        <CardHeader
+                          className="border-b border-slate-100 bg-slate-50/70"
+                          {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
+                        >
+                          <div className="flex flex-col gap-5">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1 space-y-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                                  Información
+                                </p>
+                                <CardTitle className="text-2xl font-black text-slate-900">
+                                  {group.sedeName}
+                                </CardTitle>
+                                <CardDescription className="max-w-2xl text-sm leading-6 text-slate-600">
+                                  Consolidado real por sede usando ventas sin
+                                  impuesto, inventario de cierre y ultimo
+                                  ingreso sobre el rango seleccionado.
+                                </CardDescription>
+                              </div>
+                              <Badge className="shrink-0 border-indigo-200 bg-indigo-50 text-indigo-700">
+                                {group.empresa}
+                              </Badge>
+                            </div>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base font-semibold leading-6 text-slate-700">
-                          <span className="whitespace-nowrap">
-                            Total items:{" "}
-                            <span className="font-black text-slate-900">
-                              {infoTotalItems.toLocaleString("es-CO")}
-                            </span>
-                          </span>
-                          <span className="whitespace-nowrap">
-                            Total inv:{" "}
-                            <span className="font-black text-slate-900">
-                              {formatPrice(infoTotalInv)}
-                            </span>
-                          </span>
-                        </div>
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Por categoría
-                        </span>
-                        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-semibold text-emerald-500">
-                              {abcdConfig.aUntilPercent.toFixed(0)}%
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                setAbcdFilterByGroup((prev) => ({
-                                  ...prev,
-                                  [groupKey]: categoryFilter === "A" ? "all" : "A",
-                                }));
-                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
-                              }}
-                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                categoryFilter === "A"
-                                  ? "border-emerald-700 bg-emerald-600 text-white shadow-md ring-2 ring-emerald-200"
-                                  : "border-emerald-300 bg-emerald-100 text-emerald-900"
-                              }`}
-                            >
-                              A: {abcdCounts.A.toLocaleString("es-CO")}
-                            </Button>
-                          </div>
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-semibold text-amber-500">
-                              {(abcdConfig.bUntilPercent - abcdConfig.aUntilPercent).toFixed(0)}%
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                setAbcdFilterByGroup((prev) => ({
-                                  ...prev,
-                                  [groupKey]: categoryFilter === "B" ? "all" : "B",
-                                }));
-                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
-                              }}
-                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                categoryFilter === "B"
-                                  ? "border-amber-700 bg-amber-500 text-white shadow-md ring-2 ring-amber-200"
-                                  : "border-amber-300 bg-amber-100 text-amber-900"
-                              }`}
-                            >
-                              B: {abcdCounts.B.toLocaleString("es-CO")}
-                            </Button>
-                          </div>
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-semibold text-orange-500">
-                              {(abcdConfig.cUntilPercent - abcdConfig.bUntilPercent).toFixed(0)}%
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                setAbcdFilterByGroup((prev) => ({
-                                  ...prev,
-                                  [groupKey]: categoryFilter === "C" ? "all" : "C",
-                                }));
-                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
-                              }}
-                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                categoryFilter === "C"
-                                  ? "border-orange-700 bg-orange-500 text-white shadow-md ring-2 ring-orange-200"
-                                  : "border-orange-300 bg-orange-100 text-orange-900"
-                              }`}
-                            >
-                              C: {abcdCounts.C.toLocaleString("es-CO")}
-                            </Button>
-                          </div>
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-[10px] font-semibold text-rose-500">
-                              {(100 - abcdConfig.cUntilPercent).toFixed(0)}%
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                setAbcdFilterByGroup((prev) => ({
-                                  ...prev,
-                                  [groupKey]: categoryFilter === "D" ? "all" : "D",
-                                }));
-                                setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
-                              }}
-                              className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                categoryFilter === "D"
-                                  ? "border-rose-700 bg-rose-600 text-white shadow-md ring-2 ring-rose-200"
-                                  : "border-rose-300 bg-rose-100 text-rose-900"
-                              }`}
-                            >
-                              D: {abcdCounts.D.toLocaleString("es-CO")}
-                            </Button>
-                          </div>
-                        </div>
-                        {selectedCategoryLabel ? (
-                          <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
-                            <div className="min-w-0 space-y-1">
-                              <div>
-                                Total venta:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPrice(selectedCategoryTotalSales)}
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base font-semibold leading-6 text-slate-700">
+                                <span className="whitespace-nowrap">
+                                  Total items:{" "}
+                                  <span className="font-black text-slate-900">
+                                    {infoTotalItems.toLocaleString("es-CO")}
+                                  </span>
+                                </span>
+                                <span className="whitespace-nowrap">
+                                  Total inv:{" "}
+                                  <span className="font-black text-slate-900">
+                                    {formatPrice(infoTotalInv)}
+                                  </span>
                                 </span>
                               </div>
-                              <div>
-                                Total inventario:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPrice(selectedCategoryTotalInv)}
-                                </span>
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                Por categoría
+                              </span>
+                              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-emerald-500">
+                                    {abcdConfig.aUntilPercent.toFixed(0)}%
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAbcdFilterByGroup((prev) => ({
+                                        ...prev,
+                                        [groupKey]:
+                                          categoryFilter === "A" ? "all" : "A",
+                                      }));
+                                      setPageByGroupKey((prev) => ({
+                                        ...prev,
+                                        [groupKey]: 1,
+                                      }));
+                                    }}
+                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      categoryFilter === "A"
+                                        ? "border-emerald-700 bg-emerald-600 text-white shadow-md ring-2 ring-emerald-200"
+                                        : "border-emerald-300 bg-emerald-100 text-emerald-900"
+                                    }`}
+                                  >
+                                    A: {abcdCounts.A.toLocaleString("es-CO")}
+                                  </Button>
+                                </div>
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-amber-500">
+                                    {(
+                                      abcdConfig.bUntilPercent -
+                                      abcdConfig.aUntilPercent
+                                    ).toFixed(0)}
+                                    %
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAbcdFilterByGroup((prev) => ({
+                                        ...prev,
+                                        [groupKey]:
+                                          categoryFilter === "B" ? "all" : "B",
+                                      }));
+                                      setPageByGroupKey((prev) => ({
+                                        ...prev,
+                                        [groupKey]: 1,
+                                      }));
+                                    }}
+                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      categoryFilter === "B"
+                                        ? "border-amber-700 bg-amber-500 text-white shadow-md ring-2 ring-amber-200"
+                                        : "border-amber-300 bg-amber-100 text-amber-900"
+                                    }`}
+                                  >
+                                    B: {abcdCounts.B.toLocaleString("es-CO")}
+                                  </Button>
+                                </div>
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-orange-500">
+                                    {(
+                                      abcdConfig.cUntilPercent -
+                                      abcdConfig.bUntilPercent
+                                    ).toFixed(0)}
+                                    %
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAbcdFilterByGroup((prev) => ({
+                                        ...prev,
+                                        [groupKey]:
+                                          categoryFilter === "C" ? "all" : "C",
+                                      }));
+                                      setPageByGroupKey((prev) => ({
+                                        ...prev,
+                                        [groupKey]: 1,
+                                      }));
+                                    }}
+                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      categoryFilter === "C"
+                                        ? "border-orange-700 bg-orange-500 text-white shadow-md ring-2 ring-orange-200"
+                                        : "border-orange-300 bg-orange-100 text-orange-900"
+                                    }`}
+                                  >
+                                    C: {abcdCounts.C.toLocaleString("es-CO")}
+                                  </Button>
+                                </div>
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-rose-500">
+                                    {(100 - abcdConfig.cUntilPercent).toFixed(
+                                      0,
+                                    )}
+                                    %
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAbcdFilterByGroup((prev) => ({
+                                        ...prev,
+                                        [groupKey]:
+                                          categoryFilter === "D" ? "all" : "D",
+                                      }));
+                                      setPageByGroupKey((prev) => ({
+                                        ...prev,
+                                        [groupKey]: 1,
+                                      }));
+                                    }}
+                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      categoryFilter === "D"
+                                        ? "border-rose-700 bg-rose-600 text-white shadow-md ring-2 ring-rose-200"
+                                        : "border-rose-300 bg-rose-100 text-rose-900"
+                                    }`}
+                                  >
+                                    D: {abcdCounts.D.toLocaleString("es-CO")}
+                                  </Button>
+                                </div>
                               </div>
-                              <div>
-                                Margen {selectedCategoryLabel}:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPrice(selectedCategoryTotalMargin)}
-                                </span>
-                              </div>
-                              <div>
-                                Margen {selectedCategoryLabel} %:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPercent(selectedCategoryMarginPct)}
-                                </span>
+                              {selectedCategoryLabel ? (
+                                <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
+                                  <div className="min-w-0 space-y-1">
+                                    <div>
+                                      Total venta:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPrice(
+                                          selectedCategoryTotalSales,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Total inventario:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPrice(selectedCategoryTotalInv)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Margen {selectedCategoryLabel}:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPrice(
+                                          selectedCategoryTotalMargin,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Margen {selectedCategoryLabel} %:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPercent(
+                                          selectedCategoryMarginPct,
+                                        )}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 space-y-1 text-right">
+                                    <div
+                                      title={
+                                        selectedCategoryTotalSales > 0
+                                          ? "Dias estimados de venta restante segun inventario valorizado y venta promedio diaria del periodo."
+                                          : undefined
+                                      }
+                                    >
+                                      Dias de venta:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatRotationOneDecimal(
+                                          selectedCategorySalesCoverageDays,
+                                        )}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div className="border-t border-slate-200/90 pt-5">
+                              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                                Filtros y resumen
+                              </p>
+                              <div className="flex flex-col gap-3">
+                                <Badge
+                                  className="w-fit border-slate-200 bg-white text-slate-700"
+                                  title={
+                                    rowFilter !== "none"
+                                      ? "Items que cumplen el filtro rapido (sobre el total cargado para esta sede)"
+                                      : undefined
+                                  }
+                                >
+                                  {rowFilter === "none"
+                                    ? group.rows.length
+                                    : filteredRows.length}{" "}
+                                  items
+                                </Badge>
+                                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                                  <Button
+                                    type="button"
+                                    variant={
+                                      rowFilter === "cero_rotacion" ||
+                                      rowFilter === "both"
+                                        ? "default"
+                                        : "outline"
+                                    }
+                                    title="Venta del periodo en cero e inventario de cierre mayor que cero"
+                                    className={`h-8 rounded-full px-3 text-xs font-semibold ${
+                                      rowFilter === "cero_rotacion" ||
+                                      rowFilter === "both"
+                                        ? "bg-amber-600 text-white hover:bg-amber-700"
+                                        : ""
+                                    }`}
+                                    onClick={() =>
+                                      toggleGroupRowsQuickFilter(
+                                        groupKey,
+                                        "cero_rotacion",
+                                      )
+                                    }
+                                  >
+                                    Cero rotacion (
+                                    {categoryFilter === "all"
+                                      ? ceroRotacionCount
+                                      : categoryFilteredCeroRotacionCount}
+                                    )
+                                  </Button>
+                                  <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
+                                    <Button
+                                      type="button"
+                                      variant={
+                                        rowFilter === "venta_hasta" ||
+                                        rowFilter === "both"
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      title="Filtrar items con venta del periodo menor o igual al valor ingresado"
+                                      className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
+                                        rowFilter === "venta_hasta" ||
+                                        rowFilter === "both"
+                                          ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                                          : ""
+                                      }`}
+                                      onClick={() =>
+                                        applyOrToggleVentaHastaFilter(groupKey)
+                                      }
+                                    >
+                                      {(rowFilter === "venta_hasta" ||
+                                        rowFilter === "both") &&
+                                      ventaHastaCapByGroup[groupKey] != null
+                                        ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
+                                        : ventaHastaPreviewCount != null
+                                          ? `Venta ≤ (${ventaHastaPreviewCount})`
+                                          : "Venta ≤"}
+                                    </Button>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="COP"
+                                      aria-label="Tope venta periodo para filtrar"
+                                      value={ventaHastaInput}
+                                      onChange={(e) =>
+                                        setVentaHastaInputByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]: sanitizeNumericInput(
+                                            e.target.value,
+                                          ),
+                                        }))
+                                      }
+                                      className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                                    />
+                                  </div>
+                                </div>
+                                {rowFilter !== "none" ? (
+                                  <div className="w-full space-y-1 pt-2 text-sm text-slate-600">
+                                    <div>
+                                      Total venta:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPrice(infoTotalSales)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Total inv:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPrice(infoTotalInv)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Margen:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPrice(infoDisplayMargin)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Margen %:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPercent(infoMarginPct)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
-                            <div className="shrink-0 space-y-1 text-right">
-                              <div
-                                title={
-                                  periodDaysCap > 0
-                                    ? `Minimo entre la suma por items y los ${periodDaysCap} dias del rango consultado.`
-                                    : undefined
-                                }
-                              >
-                                {periodDaysCap > 0 ? (
-                                  <>
-                                    Dias venta efectivos (max. {periodDaysCap}{" "}
-                                    d. periodo):{" "}
-                                  </>
-                                ) : (
-                                  <>Dias venta efectivos (tope periodo): </>
-                                )}
-                                <span className="font-black text-slate-900">
-                                  {selectedCategoryDisplaySalesEffectiveDays.toLocaleString(
-                                    "es-CO",
-                                  )}
-                                </span>
-                              </div>
-                              <div title="Suma de dias con venta efectiva de cada item de la categoria (puede superar el periodo al acumular por SKU).">
-                                Suma dias venta efectivos (todos los items):{" "}
-                                <span className="font-black text-slate-900">
-                                  {Math.round(
-                                    selectedCategorySalesEffectiveDaysSumRaw,
-                                  ).toLocaleString("es-CO")}
-                                </span>
-                              </div>
-                            </div>
                           </div>
-                        ) : null}
-                      </div>
-
-                      <div className="border-t border-slate-200/90 pt-5">
-                        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                          Filtros y resumen
-                        </p>
-                        <div className="flex flex-col gap-3">
-                          <Badge
-                            className="w-fit border-slate-200 bg-white text-slate-700"
-                            title={
-                              rowFilter !== "none"
-                                ? "Items que cumplen el filtro rapido (sobre el total cargado para esta sede)"
-                                : undefined
-                            }
-                          >
-                            {rowFilter === "none"
-                              ? group.rows.length
-                              : filteredRows.length}{" "}
+                        </CardHeader>
+                        <div
+                          className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-5 py-3 text-xs text-slate-600"
+                          {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
+                        >
+                          <span>
+                            Mostrando{" "}
+                            <span className="font-semibold text-slate-800">
+                              {categoryFilteredRows.length === 0
+                                ? 0
+                                : startIndex + 1}
+                            </span>{" "}
+                            a{" "}
+                            <span className="font-semibold text-slate-800">
+                              {Math.min(
+                                startIndex + pageSize,
+                                categoryFilteredRows.length,
+                              )}
+                            </span>{" "}
+                            de{" "}
+                            <span className="font-semibold text-slate-800">
+                              {categoryFilteredRows.length}
+                            </span>{" "}
                             items
-                          </Badge>
-                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                          </span>
+                          <div className="flex items-center gap-2">
                             <Button
                               type="button"
-                              variant={
-                                rowFilter === "cero_rotacion" || rowFilter === "both"
-                                  ? "default"
-                                  : "outline"
-                              }
-                              title="Venta del periodo en cero e inventario de cierre mayor que cero"
-                              className={`h-8 rounded-full px-3 text-xs font-semibold ${
-                                rowFilter === "cero_rotacion" || rowFilter === "both"
-                                  ? "bg-amber-600 text-white hover:bg-amber-700"
-                                  : ""
-                              }`}
+                              variant="outline"
+                              className="h-8 rounded-md px-3 text-xs font-semibold"
                               onClick={() =>
-                                toggleGroupRowsQuickFilter(
+                                setGroupPage(
                                   groupKey,
-                                  "cero_rotacion",
+                                  currentPage - 1,
+                                  totalPages,
                                 )
                               }
+                              disabled={currentPage <= 1}
                             >
-                              Cero rotacion (
-                              {categoryFilter === "all"
-                                ? ceroRotacionCount
-                                : categoryFilteredCeroRotacionCount}
-                              )
+                              Anterior
                             </Button>
-                            <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
-                              <Button
-                                type="button"
-                                variant={
-                                  rowFilter === "venta_hasta" || rowFilter === "both"
-                                    ? "default"
-                                    : "outline"
-                                }
-                                title="Filtrar items con venta del periodo menor o igual al valor ingresado"
-                                className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
-                                  rowFilter === "venta_hasta" || rowFilter === "both"
-                                    ? "bg-emerald-700 text-white hover:bg-emerald-800"
-                                    : ""
-                                }`}
-                                onClick={() =>
-                                  applyOrToggleVentaHastaFilter(groupKey)
-                                }
-                              >
-                                {(rowFilter === "venta_hasta" || rowFilter === "both") &&
-                                ventaHastaCapByGroup[groupKey] != null
-                                  ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
-                                  : ventaHastaPreviewCount != null
-                                    ? `Venta ≤ (${ventaHastaPreviewCount})`
-                                    : "Venta ≤"}
-                              </Button>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                placeholder="COP"
-                                aria-label="Tope venta periodo para filtrar"
-                                value={ventaHastaInput}
-                                onChange={(e) =>
-                                  setVentaHastaInputByGroup((prev) => ({
-                                    ...prev,
-                                    [groupKey]: sanitizeNumericInput(
-                                      e.target.value,
-                                    ),
-                                  }))
-                                }
-                                className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
-                              />
-                            </div>
-                          </div>
-                          {rowFilter !== "none" ? (
-                            <div className="w-full space-y-1 pt-2 text-sm text-slate-600">
-                              <div>
-                                Total venta:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPrice(infoTotalSales)}
-                                </span>
-                              </div>
-                              <div>
-                                Total inv:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPrice(infoTotalInv)}
-                                </span>
-                              </div>
-                              <div>
-                                Margen:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPrice(infoDisplayMargin)}
-                                </span>
-                              </div>
-                              <div>
-                                Margen %:{" "}
-                                <span className="font-black text-slate-900">
-                                  {formatPercent(infoMarginPct)}
-                                </span>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <div
-                    className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-5 py-3 text-xs text-slate-600"
-                    {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
-                  >
-                    <span>
-                      Mostrando{" "}
-                      <span className="font-semibold text-slate-800">
-                        {categoryFilteredRows.length === 0 ? 0 : startIndex + 1}
-                      </span>{" "}
-                      a{" "}
-                      <span className="font-semibold text-slate-800">
-                        {Math.min(startIndex + pageSize, categoryFilteredRows.length)}
-                      </span>{" "}
-                      de{" "}
-                      <span className="font-semibold text-slate-800">
-                        {categoryFilteredRows.length}
-                      </span>{" "}
-                      items
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-8 rounded-md px-3 text-xs font-semibold"
-                        onClick={() =>
-                          setGroupPage(groupKey, currentPage - 1, totalPages)
-                        }
-                        disabled={currentPage <= 1}
-                      >
-                        Anterior
-                      </Button>
-                      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        Pagina {currentPage} de {totalPages}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-8 rounded-md px-3 text-xs font-semibold"
-                        onClick={() =>
-                          setGroupPage(groupKey, currentPage + 1, totalPages)
-                        }
-                        disabled={currentPage >= totalPages}
-                      >
-                        Siguiente
-                      </Button>
-                    </div>
-                  </div>
-                  <CardContent className="px-0 py-0">
-                    <Table
-                      containerClassName="rotacion-table-capture-scroll min-w-0 !overflow-visible"
-                      className="rotacion-sticky-table w-full min-w-[76rem] table-fixed border-collapse text-sm"
-                    >
-                      <colgroup>
-                        {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
-                          <col key={i} style={{ width: w }} />
-                        ))}
-                      </colgroup>
-                      <TableHeader>
-                        <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="item"
-                              label="Item"
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
-                            Cat.
-                          </TableHead>
-                          <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="descripcion"
-                              label="Descripcion"
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="totalSales"
-                              align="right"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Venta
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="totalMargin"
-                              align="right"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Margen
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <span className="block text-[11px] leading-tight text-slate-700">
-                              Margen %
+                            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Pagina {currentPage} de {totalPages}
                             </span>
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="inventoryUnits"
-                              align="right"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Inv.
-                                </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 rounded-md px-3 text-xs font-semibold"
+                              onClick={() =>
+                                setGroupPage(
+                                  groupKey,
+                                  currentPage + 1,
+                                  totalPages,
+                                )
                               }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="totalUnits"
-                              align="right"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  U. vend.
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="inventoryValue"
-                              align="right"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  V. inv.
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="rotation"
-                              align="right"
-                              label="DI"
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="trackedDays"
-                              align="right"
-                              label="DIE"
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="salesEffectiveDays"
-                              align="right"
-                              label="DVE"
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="lastMovementDate"
-                              align="right"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Ult. ingr.
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                            <SortableRotationHeader
-                              field="lastPurchaseDate"
-                              align="right"
-                              label={
-                                <span className="block text-[11px] leading-tight">
-                                  Ult. venta
-                                </span>
-                              }
-                              activeField={tableSortField}
-                              direction={tableSortDirection}
-                              onSort={handleTableSort}
-                            />
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginatedRows.map((row) => (
-                          <TableRow key={`${group.sedeId}-${row.item}`}>
-                            <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
-                              <span className="text-xs">{row.item}</span>
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
-                              {(() => {
-                                const category = categoryByItem.get(row.item) ?? "D";
-                                const colorClass =
-                                  category === "A"
-                                    ? "border-emerald-300 bg-emerald-200 text-emerald-900"
-                                    : category === "B"
-                                      ? "border-amber-300 bg-amber-200 text-amber-900"
-                                      : category === "C"
-                                        ? "border-orange-300 bg-orange-200 text-orange-900"
-                                        : "border-rose-300 bg-rose-200 text-rose-900";
-                                return (
-                                  <Badge
-                                    className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
-                                  >
-                                    {category}
-                                  </Badge>
-                                );
-                              })()}
-                            </TableCell>
-                            <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
-                              <div className="wrap-break-word">
-                                <p className="text-[13px] font-medium leading-snug text-slate-900">
-                                  {row.descripcion}
-                                </p>
-                                <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
-                                  Linea {row.linea}
-                                  {row.lineaN1Codigo
-                                    ? ` | N1 ${row.lineaN1Codigo}`
-                                    : ""}
-                                  {row.unidad ? ` | ${row.unidad}` : ""}
-                                </p>
-                              </div>
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                              {formatPrice(row.totalSales)}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                              {formatPrice(rowFilter === "cero_rotacion" ? 0 : row.totalMargin)}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                              {formatPercent(
-                                row.totalSales > 0
-                                  ? (((rowFilter === "cero_rotacion" ? 0 : row.totalMargin) /
-                                      row.totalSales) *
-                                      100)
-                                  : 0,
-                              )}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
-                              {row.inventoryUnits.toLocaleString("es-CO")}{" "}
-                              {row.unidad ?? ""}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
-                              {row.totalUnits.toLocaleString("es-CO")}
-                              {row.unidad ? ` ${row.unidad}` : ""}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                              {formatPrice(row.inventoryValue)}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top tabular-nums text-slate-700">
-                              {formatRotationOneDecimal(row.rotation)}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
-                              {row.trackedDays.toLocaleString("es-CO")}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
-                              {row.salesEffectiveDays.toLocaleString("es-CO")}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
-                              {row.lastMovementDate
-                                ? formatDateLabel(
-                                    row.lastMovementDate,
-                                    dateLabelOptions,
-                                  )
-                                : "Sin fecha de ingreso"}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
-                              {row.lastPurchaseDate
-                                ? formatDateLabel(
-                                    row.lastPurchaseDate,
-                                    dateLabelOptions,
-                                  )
-                                : "Sin fecha"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              );
-            })}
-            </div>
+                              disabled={currentPage >= totalPages}
+                            >
+                              Siguiente
+                            </Button>
+                          </div>
+                        </div>
+                        <CardContent className="px-0 py-0">
+                          <Table
+                            containerClassName="rotacion-table-capture-scroll min-w-0 overflow-x-auto overscroll-x-contain"
+                            className="rotacion-sticky-table w-full min-w-[76rem] table-fixed border-collapse text-sm"
+                          >
+                            <colgroup>
+                              {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
+                                <col key={i} style={{ width: w }} />
+                              ))}
+                            </colgroup>
+                            <TableHeader>
+                              <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="item"
+                                    label="Item"
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                                  Cat.
+                                </TableHead>
+                                <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="descripcion"
+                                    label="Descripcion"
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="totalSales"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        Venta
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="totalMargin"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        Margen
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <span className="block text-[11px] leading-tight text-slate-700">
+                                    Margen %
+                                  </span>
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="inventoryUnits"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        Inv.
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="totalUnits"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        U. vend.
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="inventoryValue"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        V. inv.
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="rotation"
+                                    align="right"
+                                    label="DI"
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="trackedDays"
+                                    align="right"
+                                    label="DIE"
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="salesEffectiveDays"
+                                    align="right"
+                                    label="DVE"
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="lastMovementDate"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        Ult. ingr.
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="lastPurchaseDate"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                  Ult.compra
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {paginatedRows.map((row) => (
+                                <TableRow key={`${group.sedeId}-${row.item}`}>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
+                                    <span className="text-xs">{row.item}</span>
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
+                                    {(() => {
+                                      const category =
+                                        categoryByItem.get(row.item) ?? "D";
+                                      const colorClass =
+                                        category === "A"
+                                          ? "border-emerald-300 bg-emerald-200 text-emerald-900"
+                                          : category === "B"
+                                            ? "border-amber-300 bg-amber-200 text-amber-900"
+                                            : category === "C"
+                                              ? "border-orange-300 bg-orange-200 text-orange-900"
+                                              : "border-rose-300 bg-rose-200 text-rose-900";
+                                      return (
+                                        <Badge
+                                          className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
+                                        >
+                                          {category}
+                                        </Badge>
+                                      );
+                                    })()}
+                                  </TableCell>
+                                  <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
+                                    <div className="wrap-break-word">
+                                      <p className="text-[13px] font-medium leading-snug text-slate-900">
+                                        {row.descripcion}
+                                      </p>
+                                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                                        Linea {row.linea}
+                                        {row.lineaN1Codigo
+                                          ? ` | N1 ${row.lineaN1Codigo}`
+                                          : ""}
+                                        {row.unidad ? ` | ${row.unidad}` : ""}
+                                      </p>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                    {formatPrice(row.totalSales)}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                    {formatPrice(
+                                      rowFilter === "cero_rotacion"
+                                        ? 0
+                                        : row.totalMargin,
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                    {formatPercent(
+                                      row.totalSales > 0
+                                        ? ((rowFilter === "cero_rotacion"
+                                            ? 0
+                                            : row.totalMargin) /
+                                            row.totalSales) *
+                                            100
+                                        : 0,
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
+                                    {row.inventoryUnits.toLocaleString("es-CO")}{" "}
+                                    {row.unidad ?? ""}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
+                                    {row.totalUnits.toLocaleString("es-CO")}
+                                    {row.unidad ? ` ${row.unidad}` : ""}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                    {formatPrice(row.inventoryValue)}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top tabular-nums text-slate-700">
+                                    {formatRotationOneDecimal(row.rotation)}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
+                                    {row.trackedDays.toLocaleString("es-CO")}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
+                                    {formatRotationOneDecimal(
+                                      calculateSalesCoverageDays(row),
+                                    )}
+                                  </TableCell>
+                            <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                    {row.lastMovementDate
+                                      ? formatDateLabel(
+                                          row.lastMovementDate,
+                                          dateLabelOptions,
+                                        )
+                                      : "Sin fecha de ingreso"}
+                                  </TableCell>
+                            <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                    {row.lastPurchaseDate
+                                      ? formatDateLabel(
+                                          row.lastPurchaseDate,
+                                          dateLabelOptions,
+                                        )
+                                      : "Sin fecha"}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
               </>
             )}
           </section>
