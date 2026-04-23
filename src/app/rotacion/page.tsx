@@ -315,16 +315,18 @@ const getRollingMonthBackRange = (
 const buildRotacionRowsKey = (input: {
   start: string;
   end: string;
-  empresa: string;
-  sedeId: string;
+  empresas: string[];
+  sedeIds: string[];
   lineasN1: string[];
   categoriaKeys: string[];
 }) => {
+  const empresas = [...input.empresas].sort((a, b) => a.localeCompare(b, "es"));
+  const sedeIds = [...input.sedeIds].sort((a, b) => a.localeCompare(b, "es"));
   const lineas = [...input.lineasN1].sort((a, b) => a.localeCompare(b, "es"));
   const cats = [...input.categoriaKeys].sort((a, b) =>
     a.localeCompare(b, "es"),
   );
-  return `${input.start}|${input.end}|${input.empresa}|${input.sedeId}|${lineas.join(",")}|${cats.join(",")}`;
+  return `${input.start}|${input.end}|${empresas.join(",")}|${sedeIds.join(",")}|${lineas.join(",")}|${cats.join(",")}`;
 };
 
 const sanitizeNumericInput = (value: string) => value.replace(/\D/g, "");
@@ -798,6 +800,67 @@ const buildRowsBySede = (rows: RotationRow[]) => {
   return Array.from(grouped.values());
 };
 
+const buildConsolidatedRowsBySelection = (
+  rows: RotationRow[],
+  selectedGroupCount: number,
+) => {
+  const statusRank: Record<RotationRow["status"], number> = {
+    Agotado: 4,
+    "Futuro agotado": 3,
+    "Baja rotacion": 2,
+    "En seguimiento": 1,
+  };
+  const byItem = new Map<string, RotationRow>();
+  rows.forEach((row) => {
+    const key = row.item.trim().toUpperCase();
+    const current = byItem.get(key);
+    if (!current) {
+      byItem.set(key, { ...row });
+      return;
+    }
+    current.totalSales += row.totalSales;
+    current.totalMargin += row.totalMargin;
+    current.totalUnits += row.totalUnits;
+    current.inventoryUnits += row.inventoryUnits;
+    current.inventoryValue += row.inventoryValue;
+    current.trackedDays = Math.max(current.trackedDays, row.trackedDays);
+    current.salesEffectiveDays = Math.max(
+      current.salesEffectiveDays,
+      row.salesEffectiveDays,
+    );
+    current.lastMovementDate =
+      !current.lastMovementDate || (row.lastMovementDate ?? "") > current.lastMovementDate
+        ? row.lastMovementDate
+        : current.lastMovementDate;
+    current.lastPurchaseDate =
+      !current.lastPurchaseDate || (row.lastPurchaseDate ?? "") > current.lastPurchaseDate
+        ? row.lastPurchaseDate
+        : current.lastPurchaseDate;
+    current.rotation =
+      current.inventoryUnits <= 0 || current.inventoryValue <= 0
+        ? 0
+        : current.totalUnits <= 0 || current.trackedDays <= 0
+          ? NO_SALES_DI_VALUE
+          : (current.inventoryUnits * current.trackedDays) / current.totalUnits;
+    current.status =
+      statusRank[row.status] > statusRank[current.status]
+        ? row.status
+        : current.status;
+  });
+
+  return [
+    {
+      empresa: "Consolidado",
+      sedeId: "__multi__",
+      sedeName:
+        selectedGroupCount > 1
+          ? `Sedes seleccionadas (${selectedGroupCount})`
+          : "Sede seleccionada",
+      rows: Array.from(byItem.values()),
+    },
+  ];
+};
+
 /** Filtros rápidos por bloque de sede (tabla). */
 type GroupRowsQuickFilter = "none" | "cero_rotacion" | "venta_hasta" | "both";
 
@@ -856,16 +919,22 @@ const displayRotationSedeName = (raw: string) => {
   return (canonical || cleaned).trim();
 };
 
-const parseSedeSelection = (value: string) => {
-  if (!value) return null;
-  const sep = "::";
-  const idx = value.indexOf(sep);
-  if (idx <= 0) return null;
-  const empresa = value.slice(0, idx).trim();
-  const sedeId = value.slice(idx + sep.length).trim();
-  if (!empresa || !sedeId) return null;
-  return { empresa, sedeId };
-};
+const mapRotationSedeOptions = (
+  sedes: RotationApiResponse["filters"]["sedes"],
+) =>
+  sedes
+    .map((option) => {
+      const displaySedeName = displayRotationSedeName(option.sedeName);
+      return {
+        value: `${option.empresa}::${option.sedeId}`,
+        label: `${formatCompanyLabel(option.empresa)} - ${displaySedeName}`,
+        empresa: option.empresa,
+        sedeId: option.sedeId,
+        sedeName: displaySedeName,
+      };
+    })
+    .filter((option) => option.sedeName.length > 0)
+    .sort((a, b) => a.label.localeCompare(b.label, "es"));
 
 type SortableRotationHeaderProps = {
   field: RotationSortField;
@@ -923,10 +992,10 @@ const SortableRotationHeader = ({
 type SelectFieldProps = {
   icon: React.ElementType;
   label: string;
-  value: string;
+  values: string[];
   options: Array<{ value: string; label: string }>;
-  onChange: (value: string) => void;
-  allLabel: string;
+  onChange: (values: string[]) => void;
+  helperText: string;
   accentClassName: string;
   disabled?: boolean;
 };
@@ -951,34 +1020,76 @@ const FilterFieldLabel = ({
 const FilterSelectField = ({
   icon: Icon,
   label,
-  value,
+  values,
   options,
   onChange,
-  allLabel,
+  helperText,
   accentClassName,
   disabled = false,
-}: SelectFieldProps) => (
-  <label className="block">
+}: SelectFieldProps) => {
+  const valueSet = new Set(values);
+  const allSelected = options.length > 0 && values.length === options.length;
+  return (
+    <div className="block">
     <FilterFieldLabel
       icon={Icon}
       label={label}
       accentClassName={accentClassName}
     />
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-    >
-      <option value="">{allLabel}</option>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  </label>
-);
+    <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || allSelected}
+          onClick={() => onChange(options.map((option) => option.value))}
+          className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
+        >
+          Seleccionar todas
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || values.length === 0}
+          onClick={() => onChange([])}
+          className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
+        >
+          Limpiar
+        </Button>
+      </div>
+      <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+        {options.map((option) => {
+          const checked = valueSet.has(option.value);
+          return (
+            <label
+              key={option.value}
+              className="flex items-start gap-2 text-sm text-slate-700"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={() =>
+                  onChange(
+                    checked
+                      ? values.filter((value) => value !== option.value)
+                      : [...values, option.value],
+                  )
+                }
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-200"
+              />
+              <span className="leading-5">{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+    <p className="mt-1 text-[11px] text-slate-500">{helperText}</p>
+    </div>
+  );
+};
 
 const ROTACION_LAST_SEDE_STORAGE_KEY = "rotacion:lastSedeSelection";
 
@@ -1002,8 +1113,8 @@ export default function RotacionPage() {
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
-  const [selectedCompany, setSelectedCompany] = useState("");
-  const [selectedSede, setSelectedSede] = useState("");
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
   const [lineaN1FamilyKeys, setLineaN1FamilyKeys] = useState<
     LineaN1FamilyKey[]
   >(["manufactura"]);
@@ -1024,6 +1135,9 @@ export default function RotacionPage() {
   const [abcdConfig, setAbcdConfig] = useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
   const [abcdDraftConfig, setAbcdDraftConfig] =
     useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
+  const [abcdSaveScope, setAbcdSaveScope] = useState<"global" | "sede">(
+    "global",
+  );
   const [filterCatalog, setFilterCatalog] = useState<
     RotationApiResponse["filters"]
   >({
@@ -1081,6 +1195,11 @@ export default function RotacionPage() {
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
   const skipSedeRestoreRef = useRef(false);
+  const selectedCompanySet = useMemo(
+    () => new Set(selectedCompanies),
+    [selectedCompanies],
+  );
+  const selectedSedeSet = useMemo(() => new Set(selectedSedes), [selectedSedes]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1134,15 +1253,18 @@ export default function RotacionPage() {
 
   useEffect(() => {
     try {
-      if (selectedSede) {
-        localStorage.setItem(ROTACION_LAST_SEDE_STORAGE_KEY, selectedSede);
+      if (selectedSedes.length > 0) {
+        localStorage.setItem(
+          ROTACION_LAST_SEDE_STORAGE_KEY,
+          JSON.stringify(selectedSedes),
+        );
       } else {
         localStorage.removeItem(ROTACION_LAST_SEDE_STORAGE_KEY);
       }
     } catch {
       /* ignore quota / private mode */
     }
-  }, [selectedSede]);
+  }, [selectedSedes]);
 
   const canEditAbcdConfig = useMemo(
     () => canEditRotacionAbcdConfig(specialRoles, isAdmin),
@@ -1158,9 +1280,19 @@ export default function RotacionPage() {
       },
       options?: { signal?: AbortSignal },
     ): Promise<boolean> => {
-      if (!selectedSede) return false;
-      const selectedSedeMeta = parseSedeSelection(selectedSede);
-      if (!selectedSedeMeta?.sedeId) return false;
+      const allSedeOptionsForQuery = mapRotationSedeOptions(filterCatalog.sedes);
+      const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
+        selectedSedeSet.has(option.value),
+      );
+      const targetSedeSelectionsForQuery =
+        selectedSedeMetasForQuery.length > 0
+          ? selectedSedeMetasForQuery
+          : selectedCompanySet.size > 0
+            ? allSedeOptionsForQuery.filter((option) =>
+                selectedCompanySet.has(option.empresa),
+              )
+            : [];
+      if (targetSedeSelectionsForQuery.length === 0) return false;
 
       const lineas = overrides?.lineasN1 ?? selectedLineaN1Values;
       const cats = overrides?.categoriaKeys ?? selectedCategoriaKeys;
@@ -1172,53 +1304,65 @@ export default function RotacionPage() {
       setHasLoadedItems(true);
 
       try {
-        const params = new URLSearchParams();
-        const effectiveCompany = selectedSedeMeta.empresa ?? selectedCompany;
-
-        if (dateRange.start && dateRange.end) {
-          params.set("start", dateRange.start);
-          params.set("end", dateRange.end);
-        }
-        if (effectiveCompany) {
-          params.set("empresa", effectiveCompany);
-        }
-        params.set("sede", selectedSedeMeta.sedeId);
-        lineas.forEach((linea) => {
-          params.append("lineasN1", linea);
-        });
-        appendCategoriaParams(params, categoriasForParams, cats);
-
-        const response = await fetch(
-          `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
-          { cache: "no-store", signal: options?.signal },
+        const responses = await Promise.all(
+          targetSedeSelectionsForQuery.map(async (sedeMeta) => {
+            const params = new URLSearchParams();
+            if (dateRange.start && dateRange.end) {
+              params.set("start", dateRange.start);
+              params.set("end", dateRange.end);
+            }
+            params.set("empresa", sedeMeta.empresa);
+            params.set("sede", sedeMeta.sedeId);
+            lineas.forEach((linea) => {
+              params.append("lineasN1", linea);
+            });
+            appendCategoriaParams(params, categoriasForParams, cats);
+            const response = await fetch(
+              `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
+              { cache: "no-store", signal: options?.signal },
+            );
+            return { response, sedeMeta };
+          }),
         );
-        if (response.status === 401) {
-          router.replace("/login");
-          return false;
-        }
-        if (response.status === 403) {
-          setError(await readRotationApiForbiddenMessage(response));
-          setHasLoadedItems(false);
-          return false;
-        }
-        const payload = (await response.json()) as RotationApiResponse;
-        if (!response.ok) {
-          throw new Error(
-            payload.error ?? "No fue posible consultar la rotacion.",
-          );
+
+        const allRows: RotationRow[] = [];
+        let latestConfig: AbcdConfig | null = null;
+        for (const { response } of responses) {
+          if (response.status === 401) {
+            router.replace("/login");
+            return false;
+          }
+          if (response.status === 403) {
+            setError(await readRotationApiForbiddenMessage(response));
+            setHasLoadedItems(false);
+            return false;
+          }
+          const payload = (await response.json()) as RotationApiResponse;
+          if (!response.ok) {
+            throw new Error(
+              payload.error ?? "No fue posible consultar la rotacion.",
+            );
+          }
+          allRows.push(...(payload.rows ?? []));
+          if (
+            targetSedeSelectionsForQuery.length === 1 &&
+            payload.meta?.abcdConfig
+          ) {
+            latestConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
+          }
         }
 
-        setRows(normalizeRotationRows(payload.rows ?? []));
-        if (payload.meta?.abcdConfig) {
-          const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
+        setRows(normalizeRotationRows(allRows));
+        if (latestConfig) {
+          const normalizedConfig = latestConfig;
           setAbcdConfig(normalizedConfig);
           setAbcdDraftConfig(normalizedConfig);
         }
         rotacionRowsFetchKeyRef.current = buildRotacionRowsKey({
           start: dateRange.start ?? "",
           end: dateRange.end ?? "",
-          empresa: effectiveCompany ?? "",
-          sedeId: selectedSedeMeta.sedeId,
+          empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
+          sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
           lineasN1: lineas,
           categoriaKeys: cats,
         });
@@ -1239,8 +1383,9 @@ export default function RotacionPage() {
     },
     [
       router,
-      selectedSede,
-      selectedCompany,
+      filterCatalog.sedes,
+      selectedCompanySet,
+      selectedSedeSet,
       dateRange.start,
       dateRange.end,
       selectedLineaN1Values,
@@ -1254,15 +1399,31 @@ export default function RotacionPage() {
   useEffect(() => {
     if (!ready || isLoadingLineCatalog) return;
     if (rotacionRowsFetchKeyRef.current === null) return;
+    const allSedeOptionsForQuery = mapRotationSedeOptions(filterCatalog.sedes);
+    const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
+      selectedSedeSet.has(option.value),
+    );
+    const targetSedeSelectionsForQuery =
+      selectedSedeMetasForQuery.length > 0
+        ? selectedSedeMetasForQuery
+        : selectedCompanySet.size > 0
+          ? allSedeOptionsForQuery.filter((option) =>
+              selectedCompanySet.has(option.empresa),
+            )
+          : [];
 
-    const meta = parseSedeSelection(selectedSede);
-    if (!meta?.sedeId || !dateRange.start || !dateRange.end) return;
+    if (
+      targetSedeSelectionsForQuery.length === 0 ||
+      !dateRange.start ||
+      !dateRange.end
+    )
+      return;
 
     const key = buildRotacionRowsKey({
       start: dateRange.start,
       end: dateRange.end,
-      empresa: meta.empresa ?? selectedCompany ?? "",
-      sedeId: meta.sedeId,
+      empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
+      sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
       lineasN1: selectedLineaN1Values,
       categoriaKeys: selectedCategoriaKeys,
     });
@@ -1276,8 +1437,9 @@ export default function RotacionPage() {
   }, [
     ready,
     isLoadingLineCatalog,
-    selectedSede,
-    selectedCompany,
+    filterCatalog.sedes,
+    selectedCompanySet,
+    selectedSedeSet,
     dateRange.start,
     dateRange.end,
     selectedLineaN1Values,
@@ -1306,18 +1468,10 @@ export default function RotacionPage() {
       try {
         const hadEmptyDateRange = !dateRange.start || !dateRange.end;
         const params = new URLSearchParams();
-        const selectedSedeMeta = parseSedeSelection(selectedSede);
-        const effectiveCompany = selectedSedeMeta?.empresa ?? selectedCompany;
 
         if (dateRange.start && dateRange.end) {
           params.set("start", dateRange.start);
           params.set("end", dateRange.end);
-        }
-        if (effectiveCompany) {
-          params.set("empresa", effectiveCompany);
-        }
-        if (selectedSedeMeta?.sedeId) {
-          params.set("sede", selectedSedeMeta.sedeId);
         }
         params.set("catalogOnly", "1");
 
@@ -1351,17 +1505,92 @@ export default function RotacionPage() {
 
         if (generation !== catalogLoadGenerationRef.current) return;
 
-        setFilterCatalog(
+        const baseFilters =
           payload.filters ?? {
             companies: [],
             sedes: [],
             lineasN1: [],
             categorias: [],
             lineasN1PorCategoria: {},
-          },
+          };
+        let allLineasN1 = baseFilters.lineasN1 ?? [];
+        let allCategorias = baseFilters.categorias ?? [];
+        let allLineasN1PorCategoria = baseFilters.lineasN1PorCategoria ?? {};
+        const allSedeOptionsForQuery = mapRotationSedeOptions(baseFilters.sedes);
+        const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
+          selectedSedeSet.has(option.value),
         );
-        const allLineasN1 = payload.filters?.lineasN1 ?? [];
-        const allCategorias = payload.filters?.categorias ?? [];
+        const targetSedeSelectionsForQuery =
+          selectedSedeMetasForQuery.length > 0
+            ? selectedSedeMetasForQuery
+            : selectedCompanySet.size > 0
+              ? allSedeOptionsForQuery.filter((option) =>
+                  selectedCompanySet.has(option.empresa),
+                )
+              : [];
+
+        if (targetSedeSelectionsForQuery.length > 0) {
+          const catalogResponses = await Promise.all(
+            targetSedeSelectionsForQuery.map(async (sedeMeta) => {
+              const sedeParams = new URLSearchParams();
+              if (dateRange.start && dateRange.end) {
+                sedeParams.set("start", dateRange.start);
+                sedeParams.set("end", dateRange.end);
+              }
+              sedeParams.set("empresa", sedeMeta.empresa);
+              sedeParams.set("sede", sedeMeta.sedeId);
+              sedeParams.set("catalogOnly", "1");
+              const response = await fetch(
+                `/api/rotacion?${sedeParams.toString()}`,
+                { cache: "no-store" },
+              );
+              if (response.status === 401) {
+                router.replace("/login");
+                return null;
+              }
+              if (!response.ok) return null;
+              return (await response.json()) as RotationApiResponse;
+            }),
+          );
+
+          const lineasSet = new Set<string>();
+          const categoriaMap = new Map<string, RotationCategoriaFilterOption>();
+          const byCategoriaSet = new Map<string, Set<string>>();
+          for (const catalogPayload of catalogResponses) {
+            if (!catalogPayload) continue;
+            for (const linea of catalogPayload.filters?.lineasN1 ?? []) {
+              lineasSet.add(linea);
+            }
+            for (const categoria of catalogPayload.filters?.categorias ?? []) {
+              categoriaMap.set(categoria.categoriaKey, categoria);
+            }
+            const byCat = catalogPayload.filters?.lineasN1PorCategoria ?? {};
+            for (const [categoriaKey, lineas] of Object.entries(byCat)) {
+              const current = byCategoriaSet.get(categoriaKey) ?? new Set<string>();
+              for (const linea of lineas ?? []) current.add(linea);
+              byCategoriaSet.set(categoriaKey, current);
+            }
+          }
+          allLineasN1 = Array.from(lineasSet).sort((a, b) =>
+            a.localeCompare(b, "es"),
+          );
+          allCategorias = Array.from(categoriaMap.values()).sort((a, b) =>
+            a.categoriaKey.localeCompare(b.categoriaKey, "es"),
+          );
+          allLineasN1PorCategoria = {};
+          for (const [categoriaKey, lineas] of byCategoriaSet.entries()) {
+            allLineasN1PorCategoria[categoriaKey] = Array.from(lineas).sort(
+              (a, b) => a.localeCompare(b, "es"),
+            );
+          }
+        }
+
+        setFilterCatalog({
+          ...baseFilters,
+          lineasN1: allLineasN1,
+          categorias: allCategorias,
+          lineasN1PorCategoria: allLineasN1PorCategoria,
+        });
         const defaultCategoriaKeys = buildDefaultCategoriaKeys(allCategorias);
         setSelectedLineaN1Values(allLineasN1);
         setSelectedCategoriaKeys(defaultCategoriaKeys);
@@ -1408,7 +1637,7 @@ export default function RotacionPage() {
 
         if (generation !== catalogLoadGenerationRef.current) return;
 
-        if (selectedSedeMeta?.sedeId) {
+        if (targetSedeSelectionsForQuery.length > 0) {
           await reloadRotacionRowsRef.current(
             {
               lineasN1: allLineasN1,
@@ -1442,8 +1671,10 @@ export default function RotacionPage() {
     dateRange.start,
     ready,
     router,
-    selectedCompany,
-    selectedSede,
+    selectedCompanies,
+    selectedSedes,
+    selectedCompanySet,
+    selectedSedeSet,
   ]);
 
   const daysConsulted = useMemo(
@@ -1486,20 +1717,29 @@ export default function RotacionPage() {
   );
 
   const sedeOptions = useMemo(() => {
-    const scopedOptions = selectedCompany
-      ? allSedeOptions.filter((option) => option.empresa === selectedCompany)
-      : allSedeOptions;
+    const scopedOptions =
+      selectedCompanySet.size > 0
+        ? allSedeOptions.filter((option) => selectedCompanySet.has(option.empresa))
+        : allSedeOptions;
 
     return scopedOptions.map((option) => ({
       value: option.value,
-      label: selectedCompany ? option.sedeName : option.label,
+      label: selectedCompanySet.size === 1 ? option.sedeName : option.label,
     }));
-  }, [allSedeOptions, selectedCompany]);
+  }, [allSedeOptions, selectedCompanySet]);
 
-  const selectedSedeMeta = useMemo(
-    () =>
-      allSedeOptions.find((option) => option.value === selectedSede) ?? null,
-    [allSedeOptions, selectedSede],
+  const selectedSedeMetas = useMemo(
+    () => allSedeOptions.filter((option) => selectedSedeSet.has(option.value)),
+    [allSedeOptions, selectedSedeSet],
+  );
+  const targetSedeSelections = useMemo(() => {
+    if (selectedSedeMetas.length > 0) return selectedSedeMetas;
+    if (selectedCompanySet.size === 0) return [];
+    return allSedeOptions.filter((option) => selectedCompanySet.has(option.empresa));
+  }, [allSedeOptions, selectedCompanySet, selectedSedeMetas]);
+  const singleSelectedSedeTarget = useMemo(
+    () => (targetSedeSelections.length === 1 ? targetSedeSelections[0] : null),
+    [targetSedeSelections],
   );
 
   const lineaN1FamilyKeySet = useMemo(
@@ -1621,43 +1861,60 @@ export default function RotacionPage() {
   }, [categoriaFilterOptions]);
 
   useEffect(() => {
-    if (!selectedSede) return;
-    if (!sedeOptions.some((option) => option.value === selectedSede)) {
-      setSelectedSede("");
-    }
-  }, [selectedSede, sedeOptions]);
+    const validSedeValues = new Set(sedeOptions.map((option) => option.value));
+    setSelectedSedes((current) => {
+      const next = current.filter((value) => validSedeValues.has(value));
+      if (
+        next.length === current.length &&
+        next.every((value, idx) => value === current[idx])
+      ) {
+        return current;
+      }
+      return next;
+    });
+  }, [sedeOptions]);
 
   useEffect(() => {
-    if (selectedSede) return;
+    if (selectedSedes.length > 0) return;
     if (isLoadingLineCatalog) return;
     if (allSedeOptions.length !== 1) return;
     const only = allSedeOptions[0];
-    setSelectedSede(only.value);
-    setSelectedCompany(only.empresa);
-  }, [allSedeOptions, isLoadingLineCatalog, selectedSede]);
+    setSelectedSedes([only.value]);
+    setSelectedCompanies([only.empresa]);
+  }, [allSedeOptions, isLoadingLineCatalog, selectedSedes.length]);
 
   useEffect(() => {
     if (!ready || isLoadingLineCatalog) return;
-    if (selectedSede) return;
+    if (selectedSedes.length > 0) return;
     if (skipSedeRestoreRef.current) return;
     if (allSedeOptions.length < 2) return;
 
     try {
       const raw = localStorage.getItem(ROTACION_LAST_SEDE_STORAGE_KEY);
       if (!raw) return;
-      const match = allSedeOptions.find((option) => option.value === raw);
-      if (!match) return;
-      if (selectedCompany && match.empresa !== selectedCompany) return;
-      setSelectedSede(match.value);
-      setSelectedCompany(match.empresa);
+      const parsed = JSON.parse(raw) as string[];
+      const restored = Array.isArray(parsed)
+        ? parsed.filter((value) =>
+            allSedeOptions.some((option) => option.value === value),
+          )
+        : [];
+      if (restored.length === 0) return;
+      setSelectedSedes(restored);
+      const restoredCompanies = Array.from(
+        new Set(
+          allSedeOptions
+            .filter((option) => restored.includes(option.value))
+            .map((option) => option.empresa),
+        ),
+      );
+      setSelectedCompanies(restoredCompanies);
     } catch {
       /* ignore */
     }
   }, [
     ready,
     isLoadingLineCatalog,
-    selectedSede,
-    selectedCompany,
+    selectedSedes,
     allSedeOptions,
   ]);
 
@@ -1673,8 +1930,14 @@ export default function RotacionPage() {
     [sortedRows, productSearchInput],
   );
   const rowsBySede = useMemo(
-    () => buildRowsBySede(rowsAfterProductFilter),
-    [rowsAfterProductFilter],
+    () =>
+      targetSedeSelections.length > 1
+        ? buildConsolidatedRowsBySelection(
+            rowsAfterProductFilter,
+            targetSedeSelections.length,
+          )
+        : buildRowsBySede(rowsAfterProductFilter),
+    [rowsAfterProductFilter, targetSedeSelections.length],
   );
 
   const handleStartDateChange = (value: string) => {
@@ -1697,6 +1960,12 @@ export default function RotacionPage() {
 
   const handleSaveAbcdConfig = async () => {
     if (!canEditAbcdConfig || isSavingAbcdConfig) return;
+    if (abcdSaveScope === "sede" && !singleSelectedSedeTarget) {
+      setError(
+        "Para guardar por sede selecciona una sola sede en los filtros principales.",
+      );
+      return;
+    }
     setIsSavingAbcdConfig(true);
     setError(null);
     try {
@@ -1704,7 +1973,18 @@ export default function RotacionPage() {
       const response = await fetch("/api/rotacion", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(normalized),
+        body: JSON.stringify({
+          ...normalized,
+          saveScope: abcdSaveScope,
+          empresa:
+            abcdSaveScope === "sede"
+              ? (singleSelectedSedeTarget?.empresa ?? "")
+              : undefined,
+          sedeId:
+            abcdSaveScope === "sede"
+              ? (singleSelectedSedeTarget?.sedeId ?? "")
+              : undefined,
+        }),
       });
       const payload = (await response.json()) as {
         config?: AbcdConfig;
@@ -1799,9 +2079,9 @@ export default function RotacionPage() {
     }));
   };
 
-  const shouldSelectSedeFirst = !selectedSede;
+  const shouldSelectSedeFirst = targetSedeSelections.length === 0;
   const shouldReloadFirst =
-    Boolean(selectedSede) && !hasLoadedItems && !isLoadingLineCatalog;
+    targetSedeSelections.length > 0 && !hasLoadedItems && !isLoadingLineCatalog;
 
   const exportRows = useMemo(
     () =>
@@ -2107,6 +2387,7 @@ export default function RotacionPage() {
                     className="w-full rounded-full border-emerald-300 bg-emerald-50/90 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 hover:bg-emerald-100 sm:w-auto"
                     onClick={() => {
                       setAbcdDraftConfig(abcdConfig);
+                      setAbcdSaveScope("global");
                       setIsAbcdModalOpen(true);
                     }}
                   >
@@ -2126,8 +2407,9 @@ export default function RotacionPage() {
                 Filtros principales
               </CardTitle>
               <CardDescription>
-                Selecciona empresa y sede. Para acotar por venta del periodo usa
-                el boton Venta ≤ en la tabla.
+                Puedes elegir varias empresas y varias sedes para evaluarlas en
+                conjunto. Para acotar por venta del periodo usa el boton Venta ≤
+                en la tabla.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -2135,16 +2417,25 @@ export default function RotacionPage() {
                 <FilterSelectField
                   icon={Building2}
                   label="Empresa"
-                  value={selectedCompany}
+                  values={selectedCompanies}
                   options={companyOptions}
-                  onChange={(value) => {
-                    setSelectedCompany(value);
-                    setSelectedSede("");
+                  onChange={(values) => {
+                    setSelectedCompanies(values);
+                    if (values.length === 0) return;
+                    const allowed = new Set(values);
+                    setSelectedSedes((current) =>
+                      current.filter((sedeValue) => {
+                        const match = allSedeOptions.find(
+                          (option) => option.value === sedeValue,
+                        );
+                        return match ? allowed.has(match.empresa) : false;
+                      }),
+                    );
                   }}
-                  allLabel={
+                  helperText={
                     isLoadingLineCatalog && companyOptions.length === 0
                       ? "Cargando empresas..."
-                      : "Todas las empresas"
+                      : "Marca una o varias empresas."
                   }
                   accentClassName="text-indigo-700"
                   disabled={isLoadingLineCatalog && companyOptions.length === 0}
@@ -2152,25 +2443,25 @@ export default function RotacionPage() {
                 <FilterSelectField
                   icon={MapPin}
                   label="Sede"
-                  value={selectedSede}
+                  values={selectedSedes}
                   options={sedeOptions}
-                  onChange={(value) => {
-                    if (!value) {
-                      skipSedeRestoreRef.current = true;
-                    }
-                    setSelectedSede(value);
-                    if (!value) return;
-                    const nextSede = allSedeOptions.find(
-                      (option) => option.value === value,
+                  onChange={(values) => {
+                    if (values.length === 0) skipSedeRestoreRef.current = true;
+                    setSelectedSedes(values);
+                    if (values.length === 0) return;
+                    const nextCompanies = Array.from(
+                      new Set(
+                        allSedeOptions
+                          .filter((option) => values.includes(option.value))
+                          .map((option) => option.empresa),
+                      ),
                     );
-                    if (nextSede) {
-                      setSelectedCompany(nextSede.empresa);
-                    }
+                    setSelectedCompanies(nextCompanies);
                   }}
-                  allLabel={
+                  helperText={
                     isLoadingLineCatalog && allSedeOptions.length === 0
                       ? "Cargando sedes..."
-                      : "Todas las sedes"
+                      : "Marca una o varias sedes."
                   }
                   accentClassName="text-sky-700"
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
@@ -2258,9 +2549,9 @@ export default function RotacionPage() {
                       aparecen en los siguientes pasos.
                     </p>
                     <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
-                      {!selectedSede ? (
+                      {targetSedeSelections.length === 0 ? (
                         <p className="text-xs text-slate-500">
-                          Selecciona una sede para cargar categorias.
+                          Selecciona al menos una empresa o sede para cargar categorias.
                         </p>
                       ) : categoriaFilterOptions.length === 0 ? (
                         <p className="text-xs text-slate-500">
@@ -2484,7 +2775,9 @@ export default function RotacionPage() {
                       size="sm"
                       onClick={() => void handleReloadRows()}
                       disabled={
-                        !selectedSede || isLoadingData || isLoadingLineCatalog
+                        targetSedeSelections.length === 0 ||
+                        isLoadingData ||
+                        isLoadingLineCatalog
                       }
                       className="h-8 rounded-lg bg-violet-700 px-3 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
                     >
@@ -2502,8 +2795,8 @@ export default function RotacionPage() {
                 <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
                   {lineaN1Options.length === 0 ? (
                     <p className="text-xs text-slate-500">
-                      {!selectedSede
-                        ? "Selecciona una sede para habilitar las lineas N1."
+                      {targetSedeSelections.length === 0
+                        ? "Selecciona al menos una empresa o sede para habilitar las lineas N1."
                         : isLoadingLineCatalog
                           ? "Cargando lineas N1..."
                           : hasLoadedItems && lineasN1ForFilterUi.length === 0
@@ -2548,15 +2841,13 @@ export default function RotacionPage() {
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                 <Badge className="border-indigo-200 bg-indigo-50 text-indigo-700">
-                  {selectedCompany
-                    ? formatCompanyLabel(selectedCompany)
+                  {selectedCompanies.length > 0
+                    ? `${selectedCompanies.length} empresa(s)`
                     : "Todas las empresas"}
                 </Badge>
                 <Badge className="border-sky-200 bg-sky-50 text-sky-700">
-                  {selectedSede
-                    ? selectedCompany
-                      ? (selectedSedeMeta?.sedeName ?? selectedSede)
-                      : (selectedSedeMeta?.label ?? selectedSede)
+                  {selectedSedes.length > 0
+                    ? `${selectedSedes.length} sede(s)`
                     : "Todas las sedes"}
                 </Badge>
                 <Badge className="border-teal-200 bg-teal-50 text-teal-800">
@@ -2711,7 +3002,7 @@ export default function RotacionPage() {
                 <MapPin className="h-7 w-7" />
               </div>
               <h2 className="mt-4 text-xl font-bold text-slate-900">
-                Selecciona una sede para consultar
+                Selecciona empresa o sede para consultar
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Mantuvimos visible el catalogo de empresas y sedes, pero la
@@ -2720,14 +3011,14 @@ export default function RotacionPage() {
               </p>
             </CardContent>
           </Card>
-        ) : isLoadingLineCatalog && selectedSede ? (
+        ) : isLoadingLineCatalog && targetSedeSelections.length > 0 ? (
           <Card className="border-dashed border-violet-200 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
               <div className="rounded-full bg-violet-100 p-4 text-violet-700">
                 <PackageSearch className="h-7 w-7" />
               </div>
               <h2 className="mt-4 text-xl font-bold text-slate-900">
-                Cargando filtros de la sede
+                Cargando filtros de la seleccion
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Estamos trayendo lineas N1, categorías y el rango disponible. En
@@ -3078,9 +3369,9 @@ export default function RotacionPage() {
                                   {group.sedeName}
                                 </CardTitle>
                                 <CardDescription className="max-w-2xl text-sm leading-6 text-slate-600">
-                                  Consolidado real por sede usando ventas sin
-                                  impuesto, inventario de cierre y ultimo
-                                  ingreso sobre el rango seleccionado.
+                                  {targetSedeSelections.length > 1
+                                    ? "Consolidado real de las sedes seleccionadas usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."
+                                    : "Consolidado real por sede usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."}
                                 </CardDescription>
                               </div>
                               <Badge className="shrink-0 border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -3764,6 +4055,37 @@ export default function RotacionPage() {
             <p className="mt-1 text-sm text-slate-600">
               Umbrales por venta acumulada del periodo (D llega hasta 100%).
             </p>
+            <div className="mt-4 space-y-2 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3">
+              <p className="text-xs font-semibold text-emerald-900">
+                Guardar configuracion para:
+              </p>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="abcd-save-scope"
+                  checked={abcdSaveScope === "global"}
+                  onChange={() => setAbcdSaveScope("global")}
+                  className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-200"
+                />
+                <span>Todas las sedes</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="abcd-save-scope"
+                  checked={abcdSaveScope === "sede"}
+                  onChange={() => setAbcdSaveScope("sede")}
+                  disabled={!singleSelectedSedeTarget}
+                  className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-200 disabled:opacity-50"
+                />
+                <span>
+                  Solo esta sede
+                  {singleSelectedSedeTarget
+                    ? ` (${singleSelectedSedeTarget.sedeName})`
+                    : " (selecciona una sola sede)"}
+                </span>
+              </label>
+            </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <label className="text-xs font-semibold text-emerald-900">
                 A hasta %
@@ -3832,7 +4154,10 @@ export default function RotacionPage() {
               <Button
                 type="button"
                 className="rounded-full bg-emerald-700 text-white hover:bg-emerald-800"
-                disabled={isSavingAbcdConfig}
+                disabled={
+                  isSavingAbcdConfig ||
+                  (abcdSaveScope === "sede" && !singleSelectedSedeTarget)
+                }
                 onClick={() => void handleSaveAbcdConfig()}
               >
                 {isSavingAbcdConfig ? "Guardando..." : "Guardar"}

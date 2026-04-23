@@ -151,6 +151,10 @@ let rotationFilterCatalogCache:
   | { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
   | null = null;
 let abcdConfigCache: { value: AbcdConfig; expiresAt: number } | null = null;
+const abcdConfigBySedeCache = new Map<
+  string,
+  { value: AbcdConfig; expiresAt: number }
+>();
 const lineasN1ByRangeCache = new Map<
   string,
   { value: string[]; expiresAt: number }
@@ -384,6 +388,29 @@ const ensureRotacionAbcdConfigTable = async () => {
   }
 };
 
+const ensureRotacionAbcdConfigBySedeTable = async () => {
+  const client = await (await getDbPool()).connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS rotacion_abcd_config_sede (
+        empresa text NOT NULL,
+        sede_id text NOT NULL,
+        a_until_percent numeric(5,2) NOT NULL,
+        b_until_percent numeric(5,2) NOT NULL,
+        c_until_percent numeric(5,2) NOT NULL,
+        updated_by text NULL,
+        updated_at timestamp without time zone NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (empresa, sede_id)
+      )
+    `);
+  } finally {
+    client.release();
+  }
+};
+
+const buildSedeConfigCacheKey = (empresa: string, sedeId: string) =>
+  `${empresa}::${sedeId}`;
+
 const getRotacionAbcdConfig = async (): Promise<AbcdConfig> => {
   const now = Date.now();
   if (abcdConfigCache && abcdConfigCache.expiresAt > now) {
@@ -480,6 +507,122 @@ const saveRotacionAbcdConfig = async (
       value: normalized,
       expiresAt: Date.now() + ROTATION_ABCD_CACHE_TTL_MS,
     };
+    return normalized;
+  } finally {
+    client.release();
+  }
+};
+
+const getRotacionAbcdConfigForSede = async (
+  empresa: string,
+  sedeId: string,
+): Promise<AbcdConfig | null> => {
+  const cacheKey = buildSedeConfigCacheKey(empresa, sedeId);
+  const cached = abcdConfigBySedeCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  await ensureRotacionAbcdConfigBySedeTable();
+  const client = await (await getDbPool()).connect();
+  try {
+    const result = await client.query(
+      `
+      SELECT
+        a_until_percent,
+        b_until_percent,
+        c_until_percent
+      FROM rotacion_abcd_config_sede
+      WHERE empresa = $1
+        AND sede_id = $2
+      LIMIT 1
+      `,
+      [empresa, sedeId],
+    );
+    const row = result.rows?.[0] as
+      | {
+          a_until_percent?: string | number | null;
+          b_until_percent?: string | number | null;
+          c_until_percent?: string | number | null;
+        }
+      | undefined;
+    if (!row) return null;
+    const normalized = normalizeAbcdConfig({
+      aUntilPercent:
+        row.a_until_percent == null ? undefined : Number(row.a_until_percent),
+      bUntilPercent:
+        row.b_until_percent == null ? undefined : Number(row.b_until_percent),
+      cUntilPercent:
+        row.c_until_percent == null ? undefined : Number(row.c_until_percent),
+    });
+    abcdConfigBySedeCache.set(cacheKey, {
+      value: normalized,
+      expiresAt: now + ROTATION_ABCD_CACHE_TTL_MS,
+    });
+    return normalized;
+  } finally {
+    client.release();
+  }
+};
+
+const getRotacionAbcdConfigForScope = async (
+  empresa: string | null,
+  sedeId: string | null,
+): Promise<AbcdConfig> => {
+  if (!empresa || !sedeId) return getRotacionAbcdConfig();
+  try {
+    const scoped = await getRotacionAbcdConfigForSede(empresa, sedeId);
+    if (scoped) return scoped;
+  } catch {
+    /* fallback global */
+  }
+  return getRotacionAbcdConfig();
+};
+
+const saveRotacionAbcdConfigForSede = async (
+  config: AbcdConfig,
+  updatedBy: string,
+  empresa: string,
+  sedeId: string,
+): Promise<AbcdConfig> => {
+  await ensureRotacionAbcdConfigBySedeTable();
+  const normalized = normalizeAbcdConfig(config);
+  const client = await (await getDbPool()).connect();
+  try {
+    await client.query(
+      `
+      INSERT INTO rotacion_abcd_config_sede (
+        empresa,
+        sede_id,
+        a_until_percent,
+        b_until_percent,
+        c_until_percent,
+        updated_by,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      ON CONFLICT (empresa, sede_id)
+      DO UPDATE SET
+        a_until_percent = EXCLUDED.a_until_percent,
+        b_until_percent = EXCLUDED.b_until_percent,
+        c_until_percent = EXCLUDED.c_until_percent,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+      `,
+      [
+        empresa,
+        sedeId,
+        normalized.aUntilPercent,
+        normalized.bUntilPercent,
+        normalized.cUntilPercent,
+        updatedBy,
+      ],
+    );
+    abcdConfigBySedeCache.set(buildSedeConfigCacheKey(empresa, sedeId), {
+      value: normalized,
+      expiresAt: Date.now() + ROTATION_ABCD_CACHE_TTL_MS,
+    });
     return normalized;
   } finally {
     client.release();
@@ -1225,6 +1368,10 @@ export async function GET(request: Request) {
     }
 
     const effectiveCompany = requestedVisibleSede?.empresa ?? requestedCompany;
+    const scopedAbcdConfig = await getRotacionAbcdConfigForScope(
+      requestedVisibleSede?.empresa ?? null,
+      requestedVisibleSede?.sedeId ?? null,
+    );
     const lineasN1 = requestedVisibleSede
       ? await queryRotationLineasN1({
           startDate: boundedRange.start,
@@ -1265,7 +1412,7 @@ export async function GET(request: Request) {
               },
               sourceTable: "rotacion_base_item_dia_sede",
               maxSalesValue,
-              abcdConfig,
+              abcdConfig: scopedAbcdConfig,
             },
             message: "Selecciona una sede para consultar la rotacion.",
           },
@@ -1298,7 +1445,7 @@ export async function GET(request: Request) {
               },
               sourceTable: "rotacion_base_item_dia_sede",
               maxSalesValue,
-              abcdConfig,
+              abcdConfig: scopedAbcdConfig,
             },
             message: "Catalogo de lineas N1 actualizado.",
           },
@@ -1359,7 +1506,7 @@ export async function GET(request: Request) {
             },
             sourceTable: "rotacion_base_item_dia_sede",
             maxSalesValue,
-            abcdConfig,
+            abcdConfig: scopedAbcdConfig,
           },
         },
         {
@@ -1445,12 +1592,35 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const body = (await request.json()) as Partial<AbcdConfig> | null;
+    const body = (await request.json()) as
+      | (Partial<AbcdConfig> & {
+          saveScope?: "global" | "sede";
+          empresa?: string | null;
+          sedeId?: string | null;
+        })
+      | null;
     const config = normalizeAbcdConfig(body);
-    const updated = await saveRotacionAbcdConfig(
-      config,
-      session.user.username ?? "admin",
-    );
+    const saveScope = body?.saveScope === "sede" ? "sede" : "global";
+    const empresa = (body?.empresa ?? "").trim();
+    const sedeId = (body?.sedeId ?? "").trim();
+    if (saveScope === "sede" && (!empresa || !sedeId)) {
+      return withSession(
+        NextResponse.json(
+          { error: "Para guardar por sede debes enviar empresa y sedeId." },
+          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+    const updated =
+      saveScope === "sede"
+        ? await saveRotacionAbcdConfigForSede(
+            config,
+            session.user.username ?? "admin",
+            empresa,
+            sedeId,
+          )
+        : await saveRotacionAbcdConfig(config, session.user.username ?? "admin");
+
     return withSession(
       NextResponse.json(
         {
