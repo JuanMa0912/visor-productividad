@@ -104,6 +104,8 @@ type RotationFilterCatalog = {
     sedeName: string;
   }>;
   lineasN1: string[];
+  /** Nombre legible por codigo N1 normalizado (misma clave que en filtros). */
+  lineasN1Nombres: Record<string, string>;
   categorias: RotationCategoriaOption[];
   lineasN1PorCategoria: Record<string, string[]>;
 };
@@ -130,6 +132,14 @@ const SQL_ROTACION_CATEGORIA_KEY = `(
     ELSE TRIM(BOTH FROM categoria::text)
   END
 )`;
+const SQL_ROTACION_ALLOWED_CATEGORIA = `(
+  NOT (
+    ${SQL_ROTACION_CATEGORIA_KEY} = ANY(ARRAY['3', 'V']::text[])
+    OR UPPER(TRIM(COALESCE(nombre_categoria::text, ''))) = ANY(
+      ARRAY['PRODUCTO TERMINADO', 'SERVICIOS DE VENTA']::text[]
+    )
+  )
+)`;
 const MAX_ROTATION_RANGE_DAYS = 93;
 const FUTURE_STOCKOUT_DAYS = 7;
 const HIDDEN_SEDE_KEYS = new Set([
@@ -155,10 +165,16 @@ const abcdConfigBySedeCache = new Map<
   string,
   { value: AbcdConfig; expiresAt: number }
 >();
+type RotationLineasN1Slice = {
+  codes: string[];
+  nombres: Record<string, string>;
+};
+
 const lineasN1ByRangeCache = new Map<
   string,
-  { value: string[]; expiresAt: number }
+  { value: RotationLineasN1Slice; expiresAt: number }
 >();
+
 const categoriaBundleByRangeCache = new Map<
   string,
   { value: RotationCategoriaBundle; expiresAt: number }
@@ -246,6 +262,29 @@ const toOptionalTrimmedString = (value: unknown): string | null => {
   if (value === null || value === undefined) return null;
   const t = String(value).trim();
   return t ? t : null;
+};
+
+const pickLongerTrimmedName = (
+  left: string | null | undefined,
+  right: string | null | undefined,
+): string | null => {
+  const a = toOptionalTrimmedString(left);
+  const b = toOptionalTrimmedString(right);
+  if (!a) return b;
+  if (!b) return a;
+  return a.length >= b.length ? a : b;
+};
+
+const mergeLineaN1NombreRecords = (
+  base: Record<string, string>,
+  incoming: Record<string, string>,
+): Record<string, string> => {
+  const out = { ...base };
+  for (const [code, name] of Object.entries(incoming)) {
+    const prev = out[code];
+    if (!prev || name.length > prev.length) out[code] = name;
+  }
+  return out;
 };
 
 const normalizeKey = (value: string) =>
@@ -674,6 +713,7 @@ const mapRotationCatalogRows = (
     companies,
     sedes,
     lineasN1: [],
+    lineasN1Nombres: {},
     categorias: [],
     lineasN1PorCategoria: {},
   };
@@ -772,25 +812,46 @@ const queryRotationLineasN1 = async ({
     const result = await client.query(
       `
       SELECT DISTINCT
-        COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') AS linea_n1_codigo
+        COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') AS linea_n1_raw,
+        NULLIF(TRIM(COALESCE(linea::text, '')), '') AS linea,
+        NULLIF(TRIM(COALESCE(nombre_linea01::text, '')), '') AS nombre_linea01
       FROM rotacion_base_item_dia_sede
       WHERE fecha_consulta BETWEEN $1 AND $2
         AND fecha_consulta ~ '^[0-9]{8}$'
         AND item IS NOT NULL
+        AND ${SQL_ROTACION_ALLOWED_CATEGORIA}
         AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
         AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $4)
-      ORDER BY linea_n1_codigo ASC
+      ORDER BY linea_n1_raw ASC
       `,
       [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
     );
 
-    const raw = ((result.rows ?? []) as Array<{ linea_n1_codigo: string | null }>)
-      .map((row) => normalizeRotationLineaN1Code(row.linea_n1_codigo))
-      .filter((code) => Boolean(code));
-    return Array.from(new Set(raw)).sort((a, b) => a.localeCompare(b, "es"));
+    const codeSet = new Set<string>();
+    const nombreByCode = new Map<string, string>();
+    for (const raw of (result.rows ?? []) as Array<{
+      linea_n1_raw: string | null;
+      linea: string | null;
+      nombre_linea01: string | null;
+    }>) {
+      const code = normalizeRotationLineaN1Code(raw.linea_n1_raw);
+      codeSet.add(code);
+      const lineaLabel = toOptionalTrimmedString(raw.linea);
+      const n01 = toOptionalTrimmedString(raw.nombre_linea01);
+      const best =
+        lineaLabel && lineaLabel.toLowerCase() !== "sin linea"
+          ? pickLongerTrimmedName(lineaLabel, n01)
+          : n01;
+      if (!best) continue;
+      const prev = nombreByCode.get(code);
+      if (!prev || best.length > prev.length) nombreByCode.set(code, best);
+    }
+    const codes = Array.from(codeSet).sort((a, b) => a.localeCompare(b, "es"));
+    const nombres = Object.fromEntries(nombreByCode);
+    return { codes, nombres } satisfies RotationLineasN1Slice;
   });
 
-  if (value.length > 0) {
+  if (value.codes.length > 0) {
     if (lineasN1ByRangeCache.size > 500) {
       lineasN1ByRangeCache.clear();
     }
@@ -831,6 +892,7 @@ const queryRotationCategoriaBundle = async ({
       WHERE fecha_consulta BETWEEN $1 AND $2
         AND fecha_consulta ~ '^[0-9]{8}$'
         AND item IS NOT NULL
+        AND ${SQL_ROTACION_ALLOWED_CATEGORIA}
         AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
         AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $4)
       `,
@@ -974,6 +1036,7 @@ const queryRotationRows = async ({
         WHERE fecha_consulta BETWEEN $1 AND $2
           AND fecha_consulta ~ '^[0-9]{8}$'
           AND item IS NOT NULL
+          AND ${SQL_ROTACION_ALLOWED_CATEGORIA}
           AND ($5::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $5)
           AND ($6::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $6)
           AND ($7::text[] IS NULL OR COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') = ANY($7::text[]))
@@ -1266,6 +1329,7 @@ export async function GET(request: Request) {
               companies: [],
               sedes: [],
               lineasN1: [],
+              lineasN1Nombres: {},
               categorias: [],
               lineasN1PorCategoria: {},
             },
@@ -1288,6 +1352,10 @@ export async function GET(request: Request) {
     const requestedEnd = url.searchParams.get("end");
     const requestedCompany = url.searchParams.get("empresa")?.trim() || null;
     const requestedSedeId = url.searchParams.get("sede")?.trim() || null;
+    const requestedSedeScopesRaw = url.searchParams
+      .getAll("sedeScope")
+      .map((value) => value.trim())
+      .filter(Boolean);
     const requestedLineasN1 = url.searchParams
       .getAll("lineasN1")
       .map((value) => value.trim())
@@ -1324,6 +1392,7 @@ export async function GET(request: Request) {
           companies: [] as string[],
           sedes: [] as RotationFilterCatalog["sedes"],
           lineasN1: [] as string[],
+          lineasN1Nombres: {} as Record<string, string>,
           categorias: [] as RotationCategoriaOption[],
           lineasN1PorCategoria: {} as Record<string, string[]>,
         };
@@ -1346,6 +1415,7 @@ export async function GET(request: Request) {
       companies: visibleCompanies,
       sedes: visibleSedes,
       lineasN1: [],
+      lineasN1Nombres: {},
       categorias: [],
       lineasN1PorCategoria: {},
     };
@@ -1367,33 +1437,89 @@ export async function GET(request: Request) {
       );
     }
 
-    const effectiveCompany = requestedVisibleSede?.empresa ?? requestedCompany;
+    const requestedVisibleSedesFromScope = requestedSedeScopesRaw
+      .map((scope) => {
+        const idx = scope.indexOf("::");
+        if (idx <= 0) return null;
+        const empresa = scope.slice(0, idx).trim();
+        const sedeId = scope.slice(idx + 2).trim();
+        if (!empresa || !sedeId) return null;
+        return (
+          visibleSedes.find(
+            (sede) => sede.empresa === empresa && sede.sedeId === sedeId,
+          ) ?? null
+        );
+      })
+      .filter(Boolean) as RotationFilterCatalog["sedes"];
+
+    const selectedVisibleSedes =
+      requestedVisibleSedesFromScope.length > 0
+        ? requestedVisibleSedesFromScope
+        : requestedVisibleSede
+          ? [requestedVisibleSede]
+          : [];
     const scopedAbcdConfig = await getRotacionAbcdConfigForScope(
-      requestedVisibleSede?.empresa ?? null,
-      requestedVisibleSede?.sedeId ?? null,
+      selectedVisibleSedes.length === 1 ? selectedVisibleSedes[0].empresa : null,
+      selectedVisibleSedes.length === 1 ? selectedVisibleSedes[0].sedeId : null,
     );
-    const lineasN1 = requestedVisibleSede
-      ? await queryRotationLineasN1({
-          startDate: boundedRange.start,
-          endDate: boundedRange.end,
-          empresa: effectiveCompany,
-          sedeId: requestedVisibleSede.sedeId,
-        })
-      : [];
-    filters.lineasN1 = lineasN1;
 
-    const categoriaBundle = requestedVisibleSede
-      ? await queryRotationCategoriaBundle({
-          startDate: boundedRange.start,
-          endDate: boundedRange.end,
-          empresa: effectiveCompany,
-          sedeId: requestedVisibleSede.sedeId,
-        })
-      : { categorias: [] as RotationCategoriaOption[], lineasN1PorCategoria: {} };
-    filters.categorias = categoriaBundle.categorias;
-    filters.lineasN1PorCategoria = categoriaBundle.lineasN1PorCategoria;
+    if (selectedVisibleSedes.length === 0 && requestedSedeScopesRaw.length > 0) {
+      return withSession(
+        NextResponse.json(
+          { error: "Las sedes solicitadas no estan autorizadas." },
+          { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
 
-    if (!requestedSedeId) {
+    const lineasSet = new Set<string>();
+    let lineasN1NombresAcc: Record<string, string> = {};
+    const categoriaMap = new Map<string, RotationCategoriaOption>();
+    const lineasByCategoriaSet = new Map<string, Set<string>>();
+    for (const sede of selectedVisibleSedes) {
+      const lineasSede = await queryRotationLineasN1({
+        startDate: boundedRange.start,
+        endDate: boundedRange.end,
+        empresa: sede.empresa,
+        sedeId: sede.sedeId,
+      });
+      for (const linea of lineasSede.codes) lineasSet.add(linea);
+      lineasN1NombresAcc = mergeLineaN1NombreRecords(
+        lineasN1NombresAcc,
+        lineasSede.nombres,
+      );
+      const bundle = await queryRotationCategoriaBundle({
+        startDate: boundedRange.start,
+        endDate: boundedRange.end,
+        empresa: sede.empresa,
+        sedeId: sede.sedeId,
+      });
+      for (const categoria of bundle.categorias) {
+        categoriaMap.set(categoria.categoriaKey, categoria);
+      }
+      for (const [categoriaKey, lineas] of Object.entries(
+        bundle.lineasN1PorCategoria,
+      )) {
+        const current = lineasByCategoriaSet.get(categoriaKey) ?? new Set<string>();
+        for (const linea of lineas) current.add(linea);
+        lineasByCategoriaSet.set(categoriaKey, current);
+      }
+    }
+    filters.lineasN1 = Array.from(lineasSet).sort((a, b) =>
+      a.localeCompare(b, "es"),
+    );
+    filters.lineasN1Nombres = lineasN1NombresAcc;
+    filters.categorias = Array.from(categoriaMap.values()).sort((a, b) =>
+      a.categoriaKey.localeCompare(b.categoriaKey, "es"),
+    );
+    filters.lineasN1PorCategoria = {};
+    for (const [categoriaKey, lineas] of lineasByCategoriaSet.entries()) {
+      filters.lineasN1PorCategoria[categoriaKey] = Array.from(lineas).sort((a, b) =>
+        a.localeCompare(b, "es"),
+      );
+    }
+
+    if (selectedVisibleSedes.length === 0) {
       return withSession(
         NextResponse.json(
           {
@@ -1460,15 +1586,15 @@ export async function GET(request: Request) {
     }
 
     const catalogCategoriaKeySet = new Set(
-      categoriaBundle.categorias.map((c) => c.categoriaKey),
+      filters.categorias.map((c) => c.categoriaKey),
     );
     const validatedCategoriaKeys = requestedCategoriaKeys.filter((k) =>
       catalogCategoriaKeySet.has(k),
     );
     const isFullCategoriaSelection =
-      categoriaBundle.categorias.length > 0 &&
-      validatedCategoriaKeys.length === categoriaBundle.categorias.length &&
-      categoriaBundle.categorias.every((c) =>
+      filters.categorias.length > 0 &&
+      validatedCategoriaKeys.length === filters.categorias.length &&
+      filters.categorias.every((c) =>
         validatedCategoriaKeys.includes(c.categoriaKey),
       );
     const categoriaKeysForQuery =
@@ -1476,15 +1602,20 @@ export async function GET(request: Request) {
         ? null
         : validatedCategoriaKeys;
 
-    const rows = await queryRotationRows({
-      startDate: boundedRange.start,
-      endDate: boundedRange.end,
-      maxSalesValue,
-      empresa: effectiveCompany,
-      sedeId: requestedVisibleSede?.sedeId ?? null,
-      lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
-      categoriaKeys: categoriaKeysForQuery,
-    });
+    const rowsBySede = await Promise.all(
+      selectedVisibleSedes.map((sede) =>
+        queryRotationRows({
+          startDate: boundedRange.start,
+          endDate: boundedRange.end,
+          maxSalesValue,
+          empresa: sede.empresa,
+          sedeId: sede.sedeId,
+          lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
+          categoriaKeys: categoriaKeysForQuery,
+        }),
+      ),
+    );
+    const rows = rowsBySede.flat();
 
     const stats = {
       evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,
@@ -1532,6 +1663,7 @@ export async function GET(request: Request) {
             companies: [],
             sedes: [],
             lineasN1: [],
+            lineasN1Nombres: {},
             categorias: [],
             lineasN1PorCategoria: {},
           },

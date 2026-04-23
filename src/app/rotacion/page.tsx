@@ -100,6 +100,8 @@ type RotationApiResponse = {
       sedeName: string;
     }>;
     lineasN1: string[];
+    /** Nombre legible por codigo N1 (desde API / BD). */
+    lineasN1Nombres?: Record<string, string>;
     categorias: RotationCategoriaFilterOption[];
     lineasN1PorCategoria: Record<string, string[]>;
   };
@@ -129,18 +131,16 @@ type LineaN1Option = {
   shortName?: string;
 };
 
-type LineaN1FamilyKey = "perecederos" | "manufactura" | "admon";
+type LineaN1FamilyKey = "perecederos" | "manufactura";
 
 const ALL_LINEA_N1_FAMILY_KEYS: LineaN1FamilyKey[] = [
   "perecederos",
   "manufactura",
-  "admon",
 ];
 
 const LINEA_N1_FAMILY_LABELS: Record<LineaN1FamilyKey, string> = {
   perecederos: "Perecederos",
   manufactura: "Manufactura",
-  admon: "Admon",
 };
 
 const matchesLineaN1Family = (
@@ -149,10 +149,8 @@ const matchesLineaN1Family = (
 ): boolean => {
   const code = normalizeLineaN1CodeForFilter(value);
   const isPerecedero = PERECEDEROS_LINEAS_N1.has(code);
-  const isAdmon = ADMON_LINEAS_N1.has(code);
   if (keys.has("perecederos") && isPerecedero) return true;
-  if (keys.has("admon") && isAdmon) return true;
-  if (keys.has("manufactura") && !isPerecedero && !isAdmon) return true;
+  if (keys.has("manufactura") && !isPerecedero) return true;
   return false;
 };
 
@@ -188,24 +186,58 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const ROTACION_TABLE_COL_WIDTHS = [
   "6%",
   "3%",
-  "18%",
-  "9%",
-  "9%",
-  "9%",
-  "9%",
-  "9%",
-  "5%",
-  "5%",
-  "5%",
+  "20%",
+  "8%",
+  "8%",
+  "7%",
   "8%",
   "8%",
   "8%",
+  "7%",
+  "6%",
+  "5%",
+  "6%",
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
-const ADMON_LINEAS_N1 = new Set(["30", "46", "47", "48", "49"]);
 
 /** Misma regla que en /api/rotacion: codigos numericos a 2 cifras para alinear con familias. */
+const mergeRotationLineaN1NombreMaps = (
+  base: Record<string, string> | undefined,
+  extra: Record<string, string> | undefined,
+): Record<string, string> => {
+  const out = { ...(base ?? {}) };
+  for (const [code, name] of Object.entries(extra ?? {})) {
+    const prev = out[code];
+    if (!prev || name.length > prev.length) out[code] = name;
+  }
+  return out;
+};
+
+const bestLineaDisplayFromRow = (row: RotationRow): string | null => {
+  const linea = row.linea?.trim();
+  const n01 = row.nombreLinea01?.trim();
+  const safeLinea =
+    linea && linea.toLowerCase() !== "sin linea" ? linea : null;
+  if (!safeLinea) return n01 && n01.length > 0 ? n01 : null;
+  if (!n01) return safeLinea;
+  return safeLinea.length >= n01.length ? safeLinea : n01;
+};
+
+/** Orden del filtro N1: numericos por valor (01, 2, 14), alfanumericos al final por etiqueta. */
+const compareLineaN1FilterCodes = (a: string, b: string): number => {
+  if (a === "__sin_n1__" && b === "__sin_n1__") return 0;
+  if (a === "__sin_n1__") return 1;
+  if (b === "__sin_n1__") return -1;
+  const aNum = /^\d+$/.test(a) ? Number.parseInt(a, 10) : Number.NaN;
+  const bNum = /^\d+$/.test(b) ? Number.parseInt(b, 10) : Number.NaN;
+  const aIsNum = Number.isFinite(aNum);
+  const bIsNum = Number.isFinite(bNum);
+  if (aIsNum && bIsNum && aNum !== bNum) return aNum - bNum;
+  if (aIsNum !== bIsNum) return aIsNum ? -1 : 1;
+  return a.localeCompare(b, "es", { sensitivity: "base", numeric: true });
+};
+
 const normalizeLineaN1CodeForFilter = (
   raw: string | null | undefined,
 ): string => {
@@ -1191,6 +1223,7 @@ export default function RotacionPage() {
     companies: [],
     sedes: [],
     lineasN1: [],
+    lineasN1Nombres: {},
     categorias: [],
     lineasN1PorCategoria: {},
   });
@@ -1362,57 +1395,39 @@ export default function RotacionPage() {
       setHasLoadedItems(true);
 
       try {
-        const responses = await Promise.all(
-          targetSedeSelectionsForQuery.map(async (sedeMeta) => {
-            const params = new URLSearchParams();
-            if (dateRange.start && dateRange.end) {
-              params.set("start", dateRange.start);
-              params.set("end", dateRange.end);
-            }
-            params.set("empresa", sedeMeta.empresa);
-            params.set("sede", sedeMeta.sedeId);
-            lineasKeyValues.forEach((linea) => {
-              params.append("lineasN1", linea);
-            });
-            appendCategoriaParams(params, categoriasForParams, cats);
-            const response = await fetch(
-              `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
-              { cache: "no-store", signal: options?.signal },
-            );
-            return { response, sedeMeta };
-          }),
+        const params = new URLSearchParams();
+        if (dateRange.start && dateRange.end) {
+          params.set("start", dateRange.start);
+          params.set("end", dateRange.end);
+        }
+        targetSedeSelectionsForQuery.forEach((sedeMeta) => {
+          params.append("sedeScope", `${sedeMeta.empresa}::${sedeMeta.sedeId}`);
+        });
+        lineasKeyValues.forEach((linea) => {
+          params.append("lineasN1", linea);
+        });
+        appendCategoriaParams(params, categoriasForParams, cats);
+        const response = await fetch(
+          `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
+          { cache: "no-store", signal: options?.signal },
         );
-
-        const allRows: RotationRow[] = [];
-        let latestConfig: AbcdConfig | null = null;
-        for (const { response } of responses) {
-          if (response.status === 401) {
-            router.replace("/login");
-            return false;
-          }
-          if (response.status === 403) {
-            setError(await readRotationApiForbiddenMessage(response));
-            setHasLoadedItems(false);
-            return false;
-          }
-          const payload = (await response.json()) as RotationApiResponse;
-          if (!response.ok) {
-            throw new Error(
-              payload.error ?? "No fue posible consultar la rotacion.",
-            );
-          }
-          allRows.push(...(payload.rows ?? []));
-          if (
-            targetSedeSelectionsForQuery.length === 1 &&
-            payload.meta?.abcdConfig
-          ) {
-            latestConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
-          }
+        if (response.status === 401) {
+          router.replace("/login");
+          return false;
+        }
+        if (response.status === 403) {
+          setError(await readRotationApiForbiddenMessage(response));
+          setHasLoadedItems(false);
+          return false;
+        }
+        const payload = (await response.json()) as RotationApiResponse;
+        if (!response.ok) {
+          throw new Error(payload.error ?? "No fue posible consultar la rotacion.");
         }
 
-        setRows(normalizeRotationRows(allRows));
-        if (latestConfig) {
-          const normalizedConfig = latestConfig;
+        setRows(normalizeRotationRows(payload.rows ?? []));
+        if (targetSedeSelectionsForQuery.length === 1 && payload.meta?.abcdConfig) {
+          const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
           setAbcdDraftConfig(normalizedConfig);
         }
@@ -1604,12 +1619,17 @@ export default function RotacionPage() {
             companies: [],
             sedes: [],
             lineasN1: [],
+            lineasN1Nombres: {},
             categorias: [],
             lineasN1PorCategoria: {},
           };
         let allLineasN1 = baseFilters.lineasN1 ?? [];
         let allCategorias = baseFilters.categorias ?? [];
         let allLineasN1PorCategoria = baseFilters.lineasN1PorCategoria ?? {};
+        let allLineasN1Nombres = mergeRotationLineaN1NombreMaps(
+          undefined,
+          baseFilters.lineasN1Nombres,
+        );
         const allSedeOptionsForQuery = mapRotationSedeOptions(baseFilters.sedes);
         const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
           selectedSedeSet.has(option.value),
@@ -1624,83 +1644,70 @@ export default function RotacionPage() {
               : [];
 
         if (targetSedeSelectionsForQuery.length > 0) {
-          const catalogResponses = await Promise.all(
-            targetSedeSelectionsForQuery.map(async (sedeMeta) => {
-              const sedeCatalogCacheKey = `${rangeKey}|${sedeMeta.empresa}|${sedeMeta.sedeId}`;
-              const cached = readCatalogCache(
-                catalogBySedeCacheRef.current,
-                sedeCatalogCacheKey,
-              );
-              if (cached) {
-                return {
-                  rows: [],
-                  stats: {
-                    evaluatedSedes: 0,
-                    visibleItems: 0,
-                    withoutMovement: 0,
-                  },
-                  filters: cached.filters,
-                  meta: cached.meta,
-                } as RotationApiResponse;
-              }
-              const sedeParams = new URLSearchParams();
-              if (dateRange.start && dateRange.end) {
-                sedeParams.set("start", dateRange.start);
-                sedeParams.set("end", dateRange.end);
-              }
-              sedeParams.set("empresa", sedeMeta.empresa);
-              sedeParams.set("sede", sedeMeta.sedeId);
-              sedeParams.set("catalogOnly", "1");
-              const response = await fetch(
-                `/api/rotacion?${sedeParams.toString()}`,
-                { cache: "no-store" },
-              );
-              if (response.status === 401) {
-                router.replace("/login");
-                return null;
-              }
-              if (!response.ok) return null;
-              const sedePayload = (await response.json()) as RotationApiResponse;
-              writeCatalogCache(
-                catalogBySedeCacheRef.current,
-                sedeCatalogCacheKey,
-                {
-                  filters: sedePayload.filters,
-                  meta: sedePayload.meta,
-                },
-              );
-              return sedePayload;
-            }),
+          const comboKey = `${rangeKey}|${targetSedeSelectionsForQuery
+            .map((s) => `${s.empresa}::${s.sedeId}`)
+            .sort((a, b) => a.localeCompare(b, "es"))
+            .join(",")}`;
+          const cachedCombo = readCatalogCache(
+            catalogBySedeCacheRef.current,
+            comboKey,
           );
-
-          const lineasSet = new Set<string>();
-          const categoriaMap = new Map<string, RotationCategoriaFilterOption>();
-          const byCategoriaSet = new Map<string, Set<string>>();
-          for (const catalogPayload of catalogResponses) {
-            if (!catalogPayload) continue;
-            for (const linea of catalogPayload.filters?.lineasN1 ?? []) {
-              lineasSet.add(linea);
+          let comboPayload: RotationApiResponse | null = null;
+          if (cachedCombo) {
+            comboPayload = {
+              rows: [],
+              stats: { evaluatedSedes: 0, visibleItems: 0, withoutMovement: 0 },
+              filters: cachedCombo.filters,
+              meta:
+                cachedCombo.meta ?? {
+                  effectiveRange: {
+                    start: dateRange.start || "",
+                    end: dateRange.end || "",
+                  },
+                  availableRange: { min: "", max: "" },
+                  sourceTable: "rotacion_base_item_dia_sede",
+                  maxSalesValue: null,
+                  abcdConfig: DEFAULT_ABCD_CONFIG,
+                },
+            };
+          } else {
+            const comboParams = new URLSearchParams();
+            if (dateRange.start && dateRange.end) {
+              comboParams.set("start", dateRange.start);
+              comboParams.set("end", dateRange.end);
             }
-            for (const categoria of catalogPayload.filters?.categorias ?? []) {
-              categoriaMap.set(categoria.categoriaKey, categoria);
+            comboParams.set("catalogOnly", "1");
+            targetSedeSelectionsForQuery.forEach((sedeMeta) => {
+              comboParams.append(
+                "sedeScope",
+                `${sedeMeta.empresa}::${sedeMeta.sedeId}`,
+              );
+            });
+            const comboResponse = await fetch(
+              `/api/rotacion?${comboParams.toString()}`,
+              { cache: "no-store" },
+            );
+            if (comboResponse.status === 401) {
+              router.replace("/login");
+              return;
             }
-            const byCat = catalogPayload.filters?.lineasN1PorCategoria ?? {};
-            for (const [categoriaKey, lineas] of Object.entries(byCat)) {
-              const current = byCategoriaSet.get(categoriaKey) ?? new Set<string>();
-              for (const linea of lineas ?? []) current.add(linea);
-              byCategoriaSet.set(categoriaKey, current);
+            if (comboResponse.ok) {
+              comboPayload = (await comboResponse.json()) as RotationApiResponse;
+              writeCatalogCache(catalogBySedeCacheRef.current, comboKey, {
+                filters: comboPayload.filters,
+                meta: comboPayload.meta,
+              });
             }
           }
-          allLineasN1 = Array.from(lineasSet).sort((a, b) =>
-            a.localeCompare(b, "es"),
-          );
-          allCategorias = Array.from(categoriaMap.values()).sort((a, b) =>
-            a.categoriaKey.localeCompare(b.categoriaKey, "es"),
-          );
-          allLineasN1PorCategoria = {};
-          for (const [categoriaKey, lineas] of byCategoriaSet.entries()) {
-            allLineasN1PorCategoria[categoriaKey] = Array.from(lineas).sort(
-              (a, b) => a.localeCompare(b, "es"),
+
+          if (comboPayload) {
+            allLineasN1 = comboPayload.filters?.lineasN1 ?? [];
+            allCategorias = comboPayload.filters?.categorias ?? [];
+            allLineasN1PorCategoria =
+              comboPayload.filters?.lineasN1PorCategoria ?? {};
+            allLineasN1Nombres = mergeRotationLineaN1NombreMaps(
+              allLineasN1Nombres,
+              comboPayload.filters?.lineasN1Nombres,
             );
           }
         }
@@ -1710,6 +1717,7 @@ export default function RotacionPage() {
           lineasN1: allLineasN1,
           categorias: allCategorias,
           lineasN1PorCategoria: allLineasN1PorCategoria,
+          lineasN1Nombres: allLineasN1Nombres,
         });
         const defaultCategoriaKeys = buildDefaultCategoriaKeys(allCategorias);
         setSelectedLineaN1Values(allLineasN1);
@@ -1835,7 +1843,18 @@ export default function RotacionPage() {
           };
         })
         .filter((option) => option.sedeName.length > 0)
-        .sort((a, b) => a.label.localeCompare(b.label, "es")),
+        .sort((a, b) => {
+          const parseN1 = (value: string) => {
+            if (/^\d+$/.test(value)) return Number.parseInt(value, 10);
+            return Number.POSITIVE_INFINITY;
+          };
+          const aN1 = parseN1(a.value);
+          const bN1 = parseN1(b.value);
+          if (aN1 !== bN1) return aN1 - bN1;
+          if (a.value === "__sin_n1__") return 1;
+          if (b.value === "__sin_n1__") return -1;
+          return a.label.localeCompare(b.label, "es");
+        }),
     [filterCatalog.sedes],
   );
 
@@ -1930,6 +1949,21 @@ export default function RotacionPage() {
     lineasN1DerivedFromRows,
   ]);
 
+  const lineasN1NombreMap = useMemo(() => {
+    const out = mergeRotationLineaN1NombreMaps(
+      undefined,
+      filterCatalog.lineasN1Nombres,
+    );
+    for (const row of rows) {
+      const code = normalizeLineaN1CodeForFilter(row.lineaN1Codigo);
+      const cand = bestLineaDisplayFromRow(row);
+      if (!cand) continue;
+      const prev = out[code];
+      if (!prev || cand.length > prev.length) out[code] = cand;
+    }
+    return out;
+  }, [filterCatalog.lineasN1Nombres, rows]);
+
   const lineaN1Options = useMemo<LineaN1Option[]>(
     () =>
       [...lineasN1ForFilterUi]
@@ -1939,14 +1973,28 @@ export default function RotacionPage() {
           if (allSelected || lineaN1FamilyKeySet.size === 0) return true;
           return matchesLineaN1Family(value, lineaN1FamilyKeySet);
         })
-        .map((value) => ({
-          value,
-          label: value === "__sin_n1__" ? "Sin N1" : `N1 ${value}`,
-          shortName:
-            value === "__sin_n1__" ? undefined : LINEA_N1_SHORT_NAMES[value],
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label, "es")),
-    [lineasN1ForFilterUi, lineaN1FamilyKeySet],
+        .map((value) => {
+          if (value === "__sin_n1__") {
+            return { value, label: "Sin N1" as const };
+          }
+          const dbNombre = lineasN1NombreMap[value]?.trim();
+          const shortFallback = LINEA_N1_SHORT_NAMES[value];
+          const label =
+            dbNombre && dbNombre.length > 0
+              ? `${dbNombre} (N1 ${value})`
+              : shortFallback
+                ? `${shortFallback} (N1 ${value})`
+                : `N1 ${value}`;
+          const shortName =
+            dbNombre && dbNombre.length > 0 ? undefined : shortFallback;
+          return { value, label, shortName };
+        })
+        .sort((a, b) => {
+          const byCode = compareLineaN1FilterCodes(a.value, b.value);
+          if (byCode !== 0) return byCode;
+          return a.label.localeCompare(b.label, "es");
+        }),
+    [lineasN1ForFilterUi, lineaN1FamilyKeySet, lineasN1NombreMap],
   );
 
   const selectedLineaN1Set = useMemo(
@@ -3526,8 +3574,9 @@ export default function RotacionPage() {
                               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                                 Por categoría
                               </span>
-                              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
-                                <div className="flex flex-col items-center gap-1">
+                              <div className="flex min-w-0 flex-1 items-start gap-3">
+                                <div className="flex flex-wrap items-end gap-2">
+                                  <div className="flex flex-col items-center gap-1">
                                   <span className="text-[10px] font-semibold text-emerald-500">
                                     {abcdConfig.aUntilPercent.toFixed(0)}%
                                   </span>
@@ -3553,8 +3602,8 @@ export default function RotacionPage() {
                                   >
                                     A: {abcdCounts.A.toLocaleString("es-CO")}
                                   </Button>
-                                </div>
-                                <div className="flex flex-col items-center gap-1">
+                                  </div>
+                                  <div className="flex flex-col items-center gap-1">
                                   <span className="text-[10px] font-semibold text-amber-500">
                                     {(
                                       abcdConfig.bUntilPercent -
@@ -3584,8 +3633,8 @@ export default function RotacionPage() {
                                   >
                                     B: {abcdCounts.B.toLocaleString("es-CO")}
                                   </Button>
-                                </div>
-                                <div className="flex flex-col items-center gap-1">
+                                  </div>
+                                  <div className="flex flex-col items-center gap-1">
                                   <span className="text-[10px] font-semibold text-orange-500">
                                     {(
                                       abcdConfig.cUntilPercent -
@@ -3615,8 +3664,8 @@ export default function RotacionPage() {
                                   >
                                     C: {abcdCounts.C.toLocaleString("es-CO")}
                                   </Button>
-                                </div>
-                                <div className="flex flex-col items-center gap-1">
+                                  </div>
+                                  <div className="flex flex-col items-center gap-1">
                                   <span className="text-[10px] font-semibold text-rose-500">
                                     {(100 - abcdConfig.cUntilPercent).toFixed(
                                       0,
@@ -3645,7 +3694,34 @@ export default function RotacionPage() {
                                   >
                                     D: {abcdCounts.D.toLocaleString("es-CO")}
                                   </Button>
+                                  </div>
                                 </div>
+                                {rowFilter === "none" ? (
+                                  <div className="ml-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+                                    <div className="space-y-1">
+                                      <div className="whitespace-nowrap">
+                                        Total venta:{" "}
+                                        <span className="font-black text-slate-900">
+                                          {formatPriceWithoutSixZeros(infoTotalSales)}
+                                        </span>
+                                      </div>
+                                      <div className="whitespace-nowrap">
+                                        Margen de venta %:{" "}
+                                        <span className="font-black text-slate-900">
+                                          {formatPercent(infoMarginPct)}
+                                        </span>
+                                      </div>
+                                      <div className="whitespace-nowrap">
+                                        Dias de inventario:{" "}
+                                        <span className="font-black text-slate-900">
+                                          {formatRotationOneDecimal(
+                                            infoSalesCoverageDays,
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                               {selectedCategoryLabel ? (
                                 <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
@@ -3679,32 +3755,6 @@ export default function RotacionPage() {
                                       <span className="font-black text-slate-900">
                                         {formatPercent(
                                           selectedCategoryMarginPct,
-                                        )}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : null}
-                              {rowFilter === "none" ? (
-                                <div className="w-full border-t border-slate-200/80 pt-2 text-sm text-slate-600">
-                                  <div className="space-y-1">
-                                    <div className="whitespace-nowrap">
-                                      Total venta:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatPriceWithoutSixZeros(infoTotalSales)}
-                                      </span>
-                                    </div>
-                                    <div className="whitespace-nowrap">
-                                      Margen de venta %:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatPercent(infoMarginPct)}
-                                      </span>
-                                    </div>
-                                    <div className="whitespace-nowrap">
-                                      Dias de inventario:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatRotationOneDecimal(
-                                          infoSalesCoverageDays,
                                         )}
                                       </span>
                                     </div>
@@ -3901,7 +3951,7 @@ export default function RotacionPage() {
                         <CardContent className="px-0 py-0">
                           <Table
                             containerClassName="rotacion-table-capture-scroll min-w-0 overflow-x-auto overscroll-x-contain"
-                            className="rotacion-sticky-table w-full min-w-[76rem] table-fixed border-collapse text-sm"
+                            className="rotacion-sticky-table w-full min-w-[72rem] table-fixed border-collapse text-sm"
                           >
                             <colgroup>
                               {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
@@ -4050,20 +4100,6 @@ export default function RotacionPage() {
                                     onSort={handleTableSort}
                                   />
                                 </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="lastPurchaseDate"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                  Ult.venta
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -4157,14 +4193,6 @@ export default function RotacionPage() {
                                           dateLabelOptions,
                                         )
                                       : "Sin fecha de ingreso"}
-                                  </TableCell>
-                            <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
-                                    {row.lastPurchaseDate
-                                      ? formatDateLabel(
-                                          row.lastPurchaseDate,
-                                          dateLabelOptions,
-                                        )
-                                      : "Sin fecha"}
                                   </TableCell>
                                 </TableRow>
                               ))}
