@@ -3247,7 +3247,7 @@ export default function RotacionPage() {
                                       </span>
                                     </div>
                                     <div>
-                                      Dias de venta:{" "}
+                                      Dias de inventario:{" "}
                                       <span className="font-black text-slate-900">
                                         {formatRotationOneDecimal(
                                           selectedCategorySalesCoverageDays,
