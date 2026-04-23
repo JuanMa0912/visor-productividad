@@ -186,17 +186,16 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const ROTACION_TABLE_COL_WIDTHS = [
   "6%",
   "3%",
-  "20%",
-  "8%",
-  "8%",
-  "7%",
+  "21%",
   "8%",
   "8%",
   "8%",
+  "8%",
+  "9%",
   "7%",
   "6%",
   "5%",
-  "6%",
+  "11%",
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
@@ -2283,6 +2282,13 @@ export default function RotacionPage() {
           item: row.item,
           descripcion: row.descripcion,
           ventaPeriodo: row.totalSales,
+          margenPorcentaje: formatPercent(
+            row.totalSales > 0
+              ? ((rowFilter === "cero_rotacion" ? 0 : row.totalMargin) /
+                  row.totalSales) *
+                  100
+              : 0,
+          ),
           invCierre: row.inventoryUnits,
           unidad: row.unidad ?? "",
           valorInventario: row.inventoryValue,
@@ -2325,6 +2331,7 @@ export default function RotacionPage() {
           "Item",
           "Descripcion",
           "Venta periodo",
+          "Margen %",
           "Inv cierre",
           "Unidad",
           "Valor inventario",
@@ -2341,6 +2348,7 @@ export default function RotacionPage() {
         row.item,
         row.descripcion,
         formatPrice(row.ventaPeriodo),
+        row.margenPorcentaje,
         row.invCierre.toLocaleString("es-CO"),
         row.unidad,
         formatPrice(row.valorInventario),
@@ -2367,6 +2375,7 @@ export default function RotacionPage() {
         { header: "Item", key: "item", width: 14 },
         { header: "Descripcion", key: "descripcion", width: 46 },
         { header: "Venta periodo", key: "ventaPeriodo", width: 16 },
+        { header: "Margen %", key: "margenPorcentaje", width: 12 },
         { header: "Inv cierre", key: "invCierre", width: 12 },
         { header: "Unidad", key: "unidad", width: 10 },
         { header: "Valor inventario", key: "valorInventario", width: 16 },
@@ -3871,12 +3880,6 @@ export default function RotacionPage() {
                                       </span>
                                     </div>
                                     <div>
-                                      Margen:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatPrice(infoDisplayMargin)}
-                                      </span>
-                                    </div>
-                                    <div>
                                       Margen %:{" "}
                                       <span className="font-black text-slate-900">
                                         {formatPercent(infoMarginPct)}
@@ -3988,20 +3991,6 @@ export default function RotacionPage() {
                                     label={
                                       <span className="block text-[11px] leading-tight">
                                         Venta
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="totalMargin"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        Margen
                                       </span>
                                     }
                                     activeField={tableSortField}
@@ -4145,13 +4134,6 @@ export default function RotacionPage() {
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                                     {formatPrice(row.totalSales)}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                                    {formatPrice(
-                                      rowFilter === "cero_rotacion"
-                                        ? 0
-                                        : row.totalMargin,
-                                    )}
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                                     {formatPercent(
