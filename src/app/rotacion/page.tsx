@@ -118,6 +118,11 @@ type RotationApiResponse = {
   error?: string;
 };
 
+type RotationCatalogSnapshot = {
+  filters: RotationApiResponse["filters"];
+  meta?: RotationApiResponse["meta"];
+};
+
 type LineaN1Option = {
   value: string;
   label: string;
@@ -583,6 +588,47 @@ const appendCategoriaParams = (
   const keys = buildCategoriaQueryKeys(catalog, selectedKeys);
   if (!keys) return;
   keys.forEach((k) => params.append("categoria", k));
+};
+
+/** Lineas N1 a enviar en query: null = sin filtro (todo el catalogo o vacio). */
+const buildLineasN1QueryValues = (
+  catalog: string[],
+  selectedValues: string[],
+): string[] | null => {
+  if (catalog.length === 0) {
+    return selectedValues.length > 0 ? selectedValues : null;
+  }
+  const catalogSet = new Set(catalog);
+  const valid = selectedValues.filter((value) => catalogSet.has(value));
+  const isFull =
+    valid.length === catalog.length && catalog.every((value) => valid.includes(value));
+  if (valid.length === 0 || isFull) return null;
+  return valid;
+};
+
+const readCatalogCache = (
+  cache: Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>,
+  key: string,
+): RotationCatalogSnapshot | null => {
+  const cached = cache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+  return cached.value;
+};
+
+const writeCatalogCache = (
+  cache: Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>,
+  key: string,
+  value: RotationCatalogSnapshot,
+) => {
+  if (cache.size > 120) cache.clear();
+  cache.set(key, {
+    value,
+    expiresAt: Date.now() + ROTACION_FRONT_CATALOG_CACHE_TTL_MS,
+  });
 };
 
 const DEFAULT_CATEGORIA_DESTINO = "MERCANCIA NO FABRICADA POR LA EMPRESA";
@@ -1092,6 +1138,7 @@ const FilterSelectField = ({
 };
 
 const ROTACION_LAST_SEDE_STORAGE_KEY = "rotacion:lastSedeSelection";
+const ROTACION_FRONT_CATALOG_CACHE_TTL_MS = 3 * 60 * 1000;
 
 const readRotationApiForbiddenMessage = async (
   response: Response,
@@ -1195,6 +1242,12 @@ export default function RotacionPage() {
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
   const skipSedeRestoreRef = useRef(false);
+  const catalogBaseCacheRef = useRef<
+    Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>
+  >(new Map());
+  const catalogBySedeCacheRef = useRef<
+    Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>
+  >(new Map());
   const selectedCompanySet = useMemo(
     () => new Set(selectedCompanies),
     [selectedCompanies],
@@ -1298,6 +1351,11 @@ export default function RotacionPage() {
       const cats = overrides?.categoriaKeys ?? selectedCategoriaKeys;
       const categoriasForParams =
         overrides?.categoriasCatalog ?? filterCatalog.categorias ?? [];
+      const lineasForParams = buildLineasN1QueryValues(
+        filterCatalog.lineasN1 ?? [],
+        lineas,
+      );
+      const lineasKeyValues = lineasForParams ?? [];
 
       setIsLoadingData(true);
       setError(null);
@@ -1313,7 +1371,7 @@ export default function RotacionPage() {
             }
             params.set("empresa", sedeMeta.empresa);
             params.set("sede", sedeMeta.sedeId);
-            lineas.forEach((linea) => {
+            lineasKeyValues.forEach((linea) => {
               params.append("lineasN1", linea);
             });
             appendCategoriaParams(params, categoriasForParams, cats);
@@ -1363,7 +1421,7 @@ export default function RotacionPage() {
           end: dateRange.end ?? "",
           empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
           sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
-          lineasN1: lineas,
+          lineasN1: lineasKeyValues,
           categoriaKeys: cats,
         });
         return true;
@@ -1390,6 +1448,7 @@ export default function RotacionPage() {
       dateRange.end,
       selectedLineaN1Values,
       selectedCategoriaKeys,
+      filterCatalog.lineasN1,
       filterCatalog.categorias,
     ],
   );
@@ -1424,7 +1483,11 @@ export default function RotacionPage() {
       end: dateRange.end,
       empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
       sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
-      lineasN1: selectedLineaN1Values,
+      lineasN1:
+        buildLineasN1QueryValues(
+          filterCatalog.lineasN1 ?? [],
+          selectedLineaN1Values,
+        ) ?? [],
       categoriaKeys: selectedCategoriaKeys,
     });
 
@@ -1438,6 +1501,7 @@ export default function RotacionPage() {
     ready,
     isLoadingLineCatalog,
     filterCatalog.sedes,
+    filterCatalog.lineasN1,
     selectedCompanySet,
     selectedSedeSet,
     dateRange.start,
@@ -1467,6 +1531,7 @@ export default function RotacionPage() {
 
       try {
         const hadEmptyDateRange = !dateRange.start || !dateRange.end;
+        const rangeKey = `${dateRange.start || ""}|${dateRange.end || ""}`;
         const params = new URLSearchParams();
 
         if (dateRange.start && dateRange.end) {
@@ -1475,32 +1540,61 @@ export default function RotacionPage() {
         }
         params.set("catalogOnly", "1");
 
-        const response = await fetch(
-          `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
-          {
-            cache: "no-store",
-          },
+        const baseCatalogCacheKey = `base|${rangeKey}`;
+        const payloadFromCache = readCatalogCache(
+          catalogBaseCacheRef.current,
+          baseCatalogCacheKey,
         );
-
-        if (generation !== catalogLoadGenerationRef.current) return;
-
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (response.status === 403) {
-          const forbiddenMessage =
-            await readRotationApiForbiddenMessage(response);
-          if (generation !== catalogLoadGenerationRef.current) return;
-          setError(forbiddenMessage);
-          return;
-        }
-
-        const payload = (await response.json()) as RotationApiResponse;
-        if (!response.ok) {
-          throw new Error(
-            payload.error ?? "No fue posible consultar la rotacion.",
+        let payload: RotationApiResponse;
+        if (payloadFromCache) {
+          payload = {
+            rows: [],
+            stats: { evaluatedSedes: 0, visibleItems: 0, withoutMovement: 0 },
+            filters: payloadFromCache.filters,
+            meta:
+              payloadFromCache.meta ?? {
+                effectiveRange: {
+                  start: dateRange.start || "",
+                  end: dateRange.end || "",
+                },
+                availableRange: { min: "", max: "" },
+                sourceTable: "rotacion_base_item_dia_sede",
+                maxSalesValue: null,
+                abcdConfig: DEFAULT_ABCD_CONFIG,
+              },
+          };
+        } else {
+          const response = await fetch(
+            `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
+            {
+              cache: "no-store",
+            },
           );
+
+          if (generation !== catalogLoadGenerationRef.current) return;
+
+          if (response.status === 401) {
+            router.replace("/login");
+            return;
+          }
+          if (response.status === 403) {
+            const forbiddenMessage =
+              await readRotationApiForbiddenMessage(response);
+            if (generation !== catalogLoadGenerationRef.current) return;
+            setError(forbiddenMessage);
+            return;
+          }
+
+          payload = (await response.json()) as RotationApiResponse;
+          if (!response.ok) {
+            throw new Error(
+              payload.error ?? "No fue posible consultar la rotacion.",
+            );
+          }
+          writeCatalogCache(catalogBaseCacheRef.current, baseCatalogCacheKey, {
+            filters: payload.filters,
+            meta: payload.meta,
+          });
         }
 
         if (generation !== catalogLoadGenerationRef.current) return;
@@ -1532,6 +1626,23 @@ export default function RotacionPage() {
         if (targetSedeSelectionsForQuery.length > 0) {
           const catalogResponses = await Promise.all(
             targetSedeSelectionsForQuery.map(async (sedeMeta) => {
+              const sedeCatalogCacheKey = `${rangeKey}|${sedeMeta.empresa}|${sedeMeta.sedeId}`;
+              const cached = readCatalogCache(
+                catalogBySedeCacheRef.current,
+                sedeCatalogCacheKey,
+              );
+              if (cached) {
+                return {
+                  rows: [],
+                  stats: {
+                    evaluatedSedes: 0,
+                    visibleItems: 0,
+                    withoutMovement: 0,
+                  },
+                  filters: cached.filters,
+                  meta: cached.meta,
+                } as RotationApiResponse;
+              }
               const sedeParams = new URLSearchParams();
               if (dateRange.start && dateRange.end) {
                 sedeParams.set("start", dateRange.start);
@@ -1549,7 +1660,16 @@ export default function RotacionPage() {
                 return null;
               }
               if (!response.ok) return null;
-              return (await response.json()) as RotationApiResponse;
+              const sedePayload = (await response.json()) as RotationApiResponse;
+              writeCatalogCache(
+                catalogBySedeCacheRef.current,
+                sedeCatalogCacheKey,
+                {
+                  filters: sedePayload.filters,
+                  meta: sedePayload.meta,
+                },
+              );
+              return sedePayload;
             }),
           );
 
@@ -1662,8 +1782,11 @@ export default function RotacionPage() {
       }
     };
 
-    void loadLineCatalog();
+    const timer = window.setTimeout(() => {
+      void loadLineCatalog();
+    }, 220);
     return () => {
+      window.clearTimeout(timer);
       rowsController.abort();
     };
   }, [
@@ -3300,6 +3423,12 @@ export default function RotacionPage() {
                       infoTotalSales > 0
                         ? (infoDisplayMargin / infoTotalSales) * 100
                         : 0;
+                    const infoSalesCoverageDays =
+                      infoTotalSales > 0 && daysConsulted > 0
+                        ? (infoTotalInv * daysConsulted) / infoTotalSales
+                        : infoTotalInv > 0
+                          ? NO_SALES_DI_VALUE
+                          : 0;
                     const selectedCategorySalesCoverageDays =
                       selectedCategoryTotalSales > 0 && daysConsulted > 0
                         ? (selectedCategoryTotalInv * daysConsulted) /
@@ -3550,6 +3679,32 @@ export default function RotacionPage() {
                                       <span className="font-black text-slate-900">
                                         {formatPercent(
                                           selectedCategoryMarginPct,
+                                        )}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+                              {rowFilter === "none" ? (
+                                <div className="w-full border-t border-slate-200/80 pt-2 text-sm text-slate-600">
+                                  <div className="space-y-1">
+                                    <div className="whitespace-nowrap">
+                                      Total venta:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPriceWithoutSixZeros(infoTotalSales)}
+                                      </span>
+                                    </div>
+                                    <div className="whitespace-nowrap">
+                                      Margen de venta %:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatPercent(infoMarginPct)}
+                                      </span>
+                                    </div>
+                                    <div className="whitespace-nowrap">
+                                      Dias de inventario:{" "}
+                                      <span className="font-black text-slate-900">
+                                        {formatRotationOneDecimal(
+                                          infoSalesCoverageDays,
                                         )}
                                       </span>
                                     </div>
