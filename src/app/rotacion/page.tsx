@@ -3099,7 +3099,7 @@ export default function RotacionPage() {
                                 <span className="whitespace-nowrap">
                                   Total inv:{" "}
                                   <span className="font-black text-slate-900">
-                                    {formatPrice(infoTotalInv)}
+                                    {formatPriceWithoutSixZeros(infoTotalInv)}
                                   </span>
                                 </span>
                               </div>
@@ -3371,7 +3371,7 @@ export default function RotacionPage() {
                                     <div>
                                       Total inv:{" "}
                                       <span className="font-black text-slate-900">
-                                        {formatPrice(infoTotalInv)}
+                                        {formatPriceWithoutSixZeros(infoTotalInv)}
                                       </span>
                                     </div>
                                     <div>
@@ -3610,7 +3610,7 @@ export default function RotacionPage() {
                                     align="right"
                                     label={
                                       <span className="block text-[11px] leading-tight">
-                                  Ult.compra
+                                  Ult.venta
                                       </span>
                                     }
                                     activeField={tableSortField}
