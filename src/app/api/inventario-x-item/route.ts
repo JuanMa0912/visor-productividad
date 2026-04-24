@@ -120,6 +120,11 @@ const HIDDEN_SEDE_KEYS = new Set([
 let dateRangeCache:
   | { value: { min: string | null; max: string | null }; expiresAt: number }
   | null = null;
+let inventoryDateColumnCache:
+  | "fecha_consulta"
+  | "fecha"
+  | "fecha_carga"
+  | null = null;
 let filterCatalogCache:
   | { dateKey: string; value: InventoryFilterCatalog; expiresAt: number }
   | null = null;
@@ -145,6 +150,55 @@ const isoToCompactDate = (value: string | null) => {
 const toNumber = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
 
+type InventoryQueryClient = {
+  query: (
+    queryText: string,
+    values?: unknown[],
+  ) => Promise<{ rows?: Array<Record<string, unknown>> }>;
+};
+
+const resolveInventoryDateColumn = async (
+  client: InventoryQueryClient,
+): Promise<"fecha_consulta" | "fecha" | "fecha_carga"> => {
+  if (inventoryDateColumnCache) return inventoryDateColumnCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('fecha_consulta', 'fecha', 'fecha_carga')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("fecha_consulta")) {
+    inventoryDateColumnCache = "fecha_consulta";
+    return inventoryDateColumnCache;
+  }
+  if (columns.has("fecha")) {
+    inventoryDateColumnCache = "fecha";
+    return inventoryDateColumnCache;
+  }
+  if (columns.has("fecha_carga")) {
+    inventoryDateColumnCache = "fecha_carga";
+    return inventoryDateColumnCache;
+  }
+  throw new Error(
+    "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_consulta, fecha o fecha_carga).",
+  );
+};
+
+const buildCompactDateRangeSql = (
+  column: "fecha_consulta" | "fecha" | "fecha_carga",
+  startParam = "$1",
+  endParam = "$2",
+) =>
+  column === "fecha_carga"
+    ? `TO_CHAR(${column}::date, 'YYYYMMDD') BETWEEN ${startParam} AND ${endParam}`
+    : `${column} BETWEEN ${startParam} AND ${endParam}
+        AND ${column} ~ '^[0-9]{8}$'`;
+
 const getAvailableDateRange = async () => {
   const now = Date.now();
   if (dateRangeCache && dateRangeCache.expiresAt > now) {
@@ -153,13 +207,18 @@ const getAvailableDateRange = async () => {
 
   const client = await (await getDbPool()).connect();
   try {
+    const dateColumn = await resolveInventoryDateColumn(client);
     const result = await client.query(
       `
       SELECT
-        MIN(fecha_consulta) AS min_date,
-        MAX(fecha_consulta) AS max_date
+        MIN(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
+        MAX(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${
+        dateColumn === "fecha_carga"
+          ? `${dateColumn} IS NOT NULL`
+          : `${dateColumn} ~ '^[0-9]{8}$'`
+      }
       `,
     );
 
@@ -193,6 +252,7 @@ const getInventoryFilterCatalog = async (
 
   const client = await (await getDbPool()).connect();
   try {
+    const dateColumn = await resolveInventoryDateColumn(client);
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -200,8 +260,7 @@ const getInventoryFilterCatalog = async (
         COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
         COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta BETWEEN $1 AND $2
-        AND fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND item IS NOT NULL
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
       `,
@@ -243,6 +302,7 @@ const queryInventorySummaryRows = async ({
 }): Promise<InventorySummaryRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
+    const dateColumn = await resolveInventoryDateColumn(client);
     const result = await client.query(
       `
       SELECT
@@ -277,8 +337,7 @@ const queryInventorySummaryRows = async ({
           DISTINCT COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede')
         )::int AS sede_count
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta BETWEEN $1 AND $2
-        AND fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND item IS NOT NULL
         AND ($3::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $3)
         AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $4)
@@ -346,6 +405,7 @@ const queryInventoryMatrixRows = async ({
 }): Promise<InventoryMatrixRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
+    const dateColumn = await resolveInventoryDateColumn(client);
     const params: Array<string | string[] | null> = [
       dateRangeCompact.start,
       dateRangeCompact.end,
@@ -354,8 +414,7 @@ const queryInventoryMatrixRows = async ({
     ];
 
     const whereClauses = [
-      "fecha_consulta BETWEEN $1 AND $2",
-      "fecha_consulta ~ '^[0-9]{8}$'",
+      buildCompactDateRangeSql(dateColumn),
       "item IS NOT NULL",
       "($3::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $3)",
       "($4::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $4)",
