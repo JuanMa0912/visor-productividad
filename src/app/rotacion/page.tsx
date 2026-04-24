@@ -189,16 +189,18 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const ROTACION_TABLE_COL_WIDTHS = [
   "6%",
   "3%",
-  "21%",
+  "20%",
   "8%",
-  "8%",
-  "8%",
-  "8%",
-  "9%",
   "7%",
+  "7%",
+  "7%",
+  "8%",
+  "8%",
   "6%",
   "5%",
-  "11%",
+  "5%",
+  "9%",
+  "9%",
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
@@ -3925,7 +3927,7 @@ export default function RotacionPage() {
                         <CardContent className="px-0 py-0">
                           <Table
                             containerClassName="rotacion-table-capture-scroll min-w-0 overflow-x-auto overscroll-x-contain"
-                            className="rotacion-sticky-table w-full min-w-[72rem] table-fixed border-collapse text-sm"
+                            className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm"
                           >
                             <colgroup>
                               {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
@@ -4048,6 +4050,20 @@ export default function RotacionPage() {
                                 </TableHead>
                                 <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                                   <SortableRotationHeader
+                                    field="lastPurchaseDate"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        Ult. venta
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
                                     field="lastMovementDate"
                                     align="right"
                                     label={
@@ -4133,7 +4149,15 @@ export default function RotacionPage() {
                                   <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
                                     {row.salesEffectiveDays.toLocaleString("es-CO")}
                                   </TableCell>
-                            <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                  <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                    {row.lastPurchaseDate
+                                      ? formatDateLabel(
+                                          row.lastPurchaseDate,
+                                          dateLabelOptions,
+                                        )
+                                      : "Sin fecha de venta"}
+                                  </TableCell>
+                                  <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
                                     {row.lastMovementDate
                                       ? formatDateLabel(
                                           row.lastMovementDate,
