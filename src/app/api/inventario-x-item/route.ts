@@ -126,6 +126,9 @@ let inventoryDateColumnCache:
   | "fecha"
   | "fecha_carga"
   | null = null;
+let inventoryUnitsSoldExprCache: string | null = null;
+let inventoryClosingUnitsExprCache: string | null = null;
+let inventoryValueExprCache: string | null = null;
 let filterCatalogCache:
   | { dateKey: string; value: InventoryFilterCatalog; expiresAt: number }
   | null = null;
@@ -194,12 +197,113 @@ const resolveInventoryDateColumn = async (
   );
 };
 
+const resolveInventoryUnitsSoldExpr = async (
+  client: InventoryQueryClient,
+): Promise<string> => {
+  if (inventoryUnitsSoldExprCache) return inventoryUnitsSoldExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('unidades_vendidas_dia', 'unidades_vendidas', 'cantidad_vendida', 'unidades')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("unidades_vendidas_dia")) {
+    inventoryUnitsSoldExprCache = "COALESCE(unidades_vendidas_dia, 0)";
+    return inventoryUnitsSoldExprCache;
+  }
+  if (columns.has("unidades_vendidas")) {
+    inventoryUnitsSoldExprCache = "COALESCE(unidades_vendidas, 0)";
+    return inventoryUnitsSoldExprCache;
+  }
+  if (columns.has("cantidad_vendida")) {
+    inventoryUnitsSoldExprCache = "COALESCE(cantidad_vendida, 0)";
+    return inventoryUnitsSoldExprCache;
+  }
+  if (columns.has("unidades")) {
+    inventoryUnitsSoldExprCache = "COALESCE(unidades, 0)";
+    return inventoryUnitsSoldExprCache;
+  }
+  inventoryUnitsSoldExprCache = "0::numeric";
+  return inventoryUnitsSoldExprCache;
+};
+
+const resolveInventoryClosingUnitsExpr = async (
+  client: InventoryQueryClient,
+): Promise<string> => {
+  if (inventoryClosingUnitsExprCache) return inventoryClosingUnitsExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('inventario_cierre', 'inv_cierre_dia_ayer', 'inventario_unidades', 'inv_cierre')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("inventario_cierre")) {
+    inventoryClosingUnitsExprCache = "GREATEST(COALESCE(inventario_cierre, 0), 0)";
+    return inventoryClosingUnitsExprCache;
+  }
+  if (columns.has("inv_cierre_dia_ayer")) {
+    inventoryClosingUnitsExprCache = "GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)";
+    return inventoryClosingUnitsExprCache;
+  }
+  if (columns.has("inventario_unidades")) {
+    inventoryClosingUnitsExprCache = "GREATEST(COALESCE(inventario_unidades, 0), 0)";
+    return inventoryClosingUnitsExprCache;
+  }
+  if (columns.has("inv_cierre")) {
+    inventoryClosingUnitsExprCache = "GREATEST(COALESCE(inv_cierre, 0), 0)";
+    return inventoryClosingUnitsExprCache;
+  }
+  inventoryClosingUnitsExprCache = "0::numeric";
+  return inventoryClosingUnitsExprCache;
+};
+
+const resolveInventoryValueExpr = async (
+  client: InventoryQueryClient,
+): Promise<string> => {
+  if (inventoryValueExprCache) return inventoryValueExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('valor_inventario', 'inventario_valor', 'valor_inv')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("valor_inventario")) {
+    inventoryValueExprCache = "GREATEST(COALESCE(valor_inventario, 0), 0)";
+    return inventoryValueExprCache;
+  }
+  if (columns.has("inventario_valor")) {
+    inventoryValueExprCache = "GREATEST(COALESCE(inventario_valor, 0), 0)";
+    return inventoryValueExprCache;
+  }
+  if (columns.has("valor_inv")) {
+    inventoryValueExprCache = "GREATEST(COALESCE(valor_inv, 0), 0)";
+    return inventoryValueExprCache;
+  }
+  inventoryValueExprCache = "0::numeric";
+  return inventoryValueExprCache;
+};
+
 const buildCompactDateRangeSql = (
   column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
   startParam = "$1",
   endParam = "$2",
 ) =>
-  column === "fecha_carga"
+  column === "fecha_carga" || column === "fecha_dia"
     ? `TO_CHAR(${column}::date, 'YYYYMMDD') BETWEEN ${startParam} AND ${endParam}`
     : `${column} BETWEEN ${startParam} AND ${endParam}
         AND ${column} ~ '^[0-9]{8}$'`;
@@ -213,14 +317,17 @@ const getAvailableDateRange = async () => {
   const client = await (await getDbPool()).connect();
   try {
     const dateColumn = await resolveInventoryDateColumn(client);
+    const unitsSoldExpr = await resolveInventoryUnitsSoldExpr(client);
+    const closingUnitsExpr = await resolveInventoryClosingUnitsExpr(client);
+    const inventoryValueExpr = await resolveInventoryValueExpr(client);
     const result = await client.query(
       `
       SELECT
-        MIN(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
-        MAX(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
+        MIN(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
+        MAX(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
       FROM rotacion_base_item_dia_sede
       WHERE ${
-        dateColumn === "fecha_carga"
+        dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
           ? `${dateColumn} IS NOT NULL`
           : `${dateColumn} ~ '^[0-9]{8}$'`
       }
@@ -319,21 +426,21 @@ const queryInventorySummaryRows = async ({
           COALESCE(NULLIF(TRIM(item), ''), 'Sin descripcion')
         ) AS descripcion,
         NULLIF(TRIM(unidad), '') AS unidad,
-        SUM(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0))::numeric AS inventory_units,
-        SUM(GREATEST(COALESCE(valor_inventario, 0), 0))::numeric AS inventory_value,
-        SUM(COALESCE(unidades_vendidas, 0))::numeric AS total_units,
+        SUM(${closingUnitsExpr})::numeric AS inventory_units,
+        SUM(${inventoryValueExpr})::numeric AS inventory_value,
+        SUM(${unitsSoldExpr})::numeric AS total_units,
         COUNT(*)::int AS tracked_days,
         CASE
-          WHEN SUM(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)) <= 0
-            OR SUM(GREATEST(COALESCE(valor_inventario, 0), 0)) <= 0
+          WHEN SUM(${closingUnitsExpr}) <= 0
+            OR SUM(${inventoryValueExpr}) <= 0
             THEN 0::numeric
-          WHEN SUM(COALESCE(unidades_vendidas, 0)) <= 0
+          WHEN SUM(${unitsSoldExpr}) <= 0
             THEN 999999::numeric
           ELSE
             (
-              SUM(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)) *
+              SUM(${closingUnitsExpr}) *
               COUNT(*)::numeric
-            ) / NULLIF(SUM(COALESCE(unidades_vendidas, 0)), 0)
+            ) / NULLIF(SUM(${unitsSoldExpr}), 0)
         END AS rotation_days,
         COUNT(
           DISTINCT COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa')
@@ -353,8 +460,8 @@ const queryInventorySummaryRows = async ({
         descripcion,
         unidad
       HAVING
-        SUM(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)) > 0
-        OR SUM(GREATEST(COALESCE(valor_inventario, 0), 0)) > 0
+        SUM(${closingUnitsExpr}) > 0
+        OR SUM(${inventoryValueExpr}) > 0
       ORDER BY
         inventory_value DESC,
         item ASC
@@ -411,6 +518,9 @@ const queryInventoryMatrixRows = async ({
   const client = await (await getDbPool()).connect();
   try {
     const dateColumn = await resolveInventoryDateColumn(client);
+    const unitsSoldExpr = await resolveInventoryUnitsSoldExpr(client);
+    const closingUnitsExpr = await resolveInventoryClosingUnitsExpr(client);
+    const inventoryValueExpr = await resolveInventoryValueExpr(client);
     const params: Array<string | string[] | null> = [
       dateRangeCompact.start,
       dateRangeCompact.end,
@@ -479,9 +589,9 @@ const queryInventoryMatrixRows = async ({
             COALESCE(NULLIF(TRIM(item), ''), 'Sin descripcion')
           ) AS descripcion,
           NULLIF(TRIM(unidad), '') AS unidad,
-          GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) AS inventory_units,
-          GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
-          COALESCE(unidades_vendidas, 0) AS total_units
+          ${closingUnitsExpr} AS inventory_units,
+          ${inventoryValueExpr} AS inventory_value,
+          ${unitsSoldExpr} AS total_units
         FROM rotacion_base_item_dia_sede
         WHERE ${whereClauses.join("\n          AND ")}
       ),

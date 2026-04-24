@@ -166,6 +166,13 @@ let rotationDateColumnCache:
   | "fecha"
   | "fecha_carga"
   | null = null;
+let rotationN1CodeExprCache: string | null = null;
+let rotationSalesExprCache: string | null = null;
+let rotationUnitsSoldExprCache: string | null = null;
+let rotationClosingUnitsExprCache: string | null = null;
+let rotationInventoryValueExprCache: string | null = null;
+let rotationLastSaleDateExprCache: string | null = null;
+let rotationLastEntryDateExprCache: string | null = null;
 let rotationFilterCatalogCache:
   | { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
   | null = null;
@@ -689,11 +696,11 @@ const getAvailableBounds = async () => {
     const result = await client.query(
       `
       SELECT
-        MIN(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
-        MAX(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
+        MIN(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
+        MAX(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
       FROM rotacion_base_item_dia_sede
       WHERE ${
-        dateColumn === "fecha_carga"
+        dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
           ? `${dateColumn} IS NOT NULL`
           : `${dateColumn} ~ '^[0-9]{8}$'`
       }
@@ -753,12 +760,237 @@ const resolveRotationDateColumn = async (
   );
 };
 
+const resolveRotationN1CodeExpr = async (
+  client: RotationQueryClient,
+): Promise<string> => {
+  if (rotationN1CodeExprCache) return rotationN1CodeExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('linea_n1_codigo', 'linea_nivel_1_codigo', 'linea01')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("linea_n1_codigo")) {
+    rotationN1CodeExprCache = "NULLIF(TRIM(linea_n1_codigo), '')";
+    return rotationN1CodeExprCache;
+  }
+  if (columns.has("linea_nivel_1_codigo")) {
+    rotationN1CodeExprCache = "NULLIF(TRIM(linea_nivel_1_codigo), '')";
+    return rotationN1CodeExprCache;
+  }
+  if (columns.has("linea01")) {
+    rotationN1CodeExprCache = "NULLIF(TRIM(linea01::text), '')";
+    return rotationN1CodeExprCache;
+  }
+  rotationN1CodeExprCache = "NULL::text";
+  return rotationN1CodeExprCache;
+};
+
+const resolveRotationSalesExpr = async (
+  client: RotationQueryClient,
+): Promise<string> => {
+  if (rotationSalesExprCache) return rotationSalesExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('venta_sin_impuesto_dia', 'venta_sin_impuesto', 'venta_sin_iva', 'venta_neta', 'venta')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("venta_sin_impuesto_dia")) {
+    rotationSalesExprCache = "COALESCE(venta_sin_impuesto_dia, 0)";
+    return rotationSalesExprCache;
+  }
+  if (columns.has("venta_sin_impuesto")) {
+    rotationSalesExprCache = "COALESCE(venta_sin_impuesto, 0)";
+    return rotationSalesExprCache;
+  }
+  if (columns.has("venta_sin_iva")) {
+    rotationSalesExprCache = "COALESCE(venta_sin_iva, 0)";
+    return rotationSalesExprCache;
+  }
+  if (columns.has("venta_neta")) {
+    rotationSalesExprCache = "COALESCE(venta_neta, 0)";
+    return rotationSalesExprCache;
+  }
+  if (columns.has("venta")) {
+    rotationSalesExprCache = "COALESCE(venta, 0)";
+    return rotationSalesExprCache;
+  }
+  rotationSalesExprCache = "0::numeric";
+  return rotationSalesExprCache;
+};
+
+const resolveRotationUnitsSoldExpr = async (
+  client: RotationQueryClient,
+): Promise<string> => {
+  if (rotationUnitsSoldExprCache) return rotationUnitsSoldExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('unidades_vendidas_dia', 'unidades_vendidas', 'cantidad_vendida', 'unidades')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("unidades_vendidas_dia")) {
+    rotationUnitsSoldExprCache = "COALESCE(unidades_vendidas_dia, 0)";
+    return rotationUnitsSoldExprCache;
+  }
+  if (columns.has("unidades_vendidas")) {
+    rotationUnitsSoldExprCache = "COALESCE(unidades_vendidas, 0)";
+    return rotationUnitsSoldExprCache;
+  }
+  if (columns.has("cantidad_vendida")) {
+    rotationUnitsSoldExprCache = "COALESCE(cantidad_vendida, 0)";
+    return rotationUnitsSoldExprCache;
+  }
+  if (columns.has("unidades")) {
+    rotationUnitsSoldExprCache = "COALESCE(unidades, 0)";
+    return rotationUnitsSoldExprCache;
+  }
+  rotationUnitsSoldExprCache = "0::numeric";
+  return rotationUnitsSoldExprCache;
+};
+
+const resolveRotationClosingUnitsExpr = async (
+  client: RotationQueryClient,
+): Promise<string> => {
+  if (rotationClosingUnitsExprCache) return rotationClosingUnitsExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('inventario_cierre', 'inv_cierre_dia_ayer', 'inventario_unidades', 'inv_cierre')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("inventario_cierre")) {
+    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inventario_cierre, 0), 0)";
+    return rotationClosingUnitsExprCache;
+  }
+  if (columns.has("inv_cierre_dia_ayer")) {
+    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)";
+    return rotationClosingUnitsExprCache;
+  }
+  if (columns.has("inventario_unidades")) {
+    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inventario_unidades, 0), 0)";
+    return rotationClosingUnitsExprCache;
+  }
+  if (columns.has("inv_cierre")) {
+    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inv_cierre, 0), 0)";
+    return rotationClosingUnitsExprCache;
+  }
+  rotationClosingUnitsExprCache = "0::numeric";
+  return rotationClosingUnitsExprCache;
+};
+
+const resolveRotationInventoryValueExpr = async (
+  client: RotationQueryClient,
+): Promise<string> => {
+  if (rotationInventoryValueExprCache) return rotationInventoryValueExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('valor_inventario', 'inventario_valor', 'valor_inv')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("valor_inventario")) {
+    rotationInventoryValueExprCache = "GREATEST(COALESCE(valor_inventario, 0), 0)";
+    return rotationInventoryValueExprCache;
+  }
+  if (columns.has("inventario_valor")) {
+    rotationInventoryValueExprCache = "GREATEST(COALESCE(inventario_valor, 0), 0)";
+    return rotationInventoryValueExprCache;
+  }
+  if (columns.has("valor_inv")) {
+    rotationInventoryValueExprCache = "GREATEST(COALESCE(valor_inv, 0), 0)";
+    return rotationInventoryValueExprCache;
+  }
+  rotationInventoryValueExprCache = "0::numeric";
+  return rotationInventoryValueExprCache;
+};
+
+const resolveRotationLastSaleDateExpr = async (
+  client: RotationQueryClient,
+): Promise<string> => {
+  if (rotationLastSaleDateExprCache) return rotationLastSaleDateExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name = 'fecha_ultima_venta'
+    `,
+  );
+  const row = result.rows?.[0];
+  if (!row) {
+    rotationLastSaleDateExprCache = "NULL::date";
+    return rotationLastSaleDateExprCache;
+  }
+  const dataType = String(row.data_type ?? "").toLowerCase();
+  if (dataType === "date" || dataType.includes("timestamp")) {
+    rotationLastSaleDateExprCache = "fecha_ultima_venta::date";
+    return rotationLastSaleDateExprCache;
+  }
+  rotationLastSaleDateExprCache =
+    "CASE WHEN fecha_ultima_venta ~ '^[0-9]{8}$' THEN TO_DATE(fecha_ultima_venta, 'YYYYMMDD') ELSE NULL END";
+  return rotationLastSaleDateExprCache;
+};
+
+const resolveRotationLastEntryDateExpr = async (
+  client: RotationQueryClient,
+): Promise<string> => {
+  if (rotationLastEntryDateExprCache) return rotationLastEntryDateExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name = 'fecha_ultima_entrada'
+    `,
+  );
+  const row = result.rows?.[0];
+  if (!row) {
+    rotationLastEntryDateExprCache = "NULL::date";
+    return rotationLastEntryDateExprCache;
+  }
+  const dataType = String(row.data_type ?? "").toLowerCase();
+  if (dataType === "date" || dataType.includes("timestamp")) {
+    rotationLastEntryDateExprCache = "fecha_ultima_entrada::date";
+    return rotationLastEntryDateExprCache;
+  }
+  rotationLastEntryDateExprCache =
+    "CASE WHEN fecha_ultima_entrada ~ '^[0-9]{8}$' THEN TO_DATE(fecha_ultima_entrada, 'YYYYMMDD') ELSE NULL END";
+  return rotationLastEntryDateExprCache;
+};
+
 const buildCompactDateRangeSql = (
   column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
   startParam = "$1",
   endParam = "$2",
 ) =>
-  column === "fecha_carga"
+  column === "fecha_carga" || column === "fecha_dia"
     ? `TO_CHAR(${column}::date, 'YYYYMMDD') BETWEEN ${startParam} AND ${endParam}`
     : `${column} BETWEEN ${startParam} AND ${endParam}
         AND ${column} ~ '^[0-9]{8}$'`;
@@ -767,7 +999,7 @@ const buildCompactDateEqualsSql = (
   column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
   param = "$1",
 ) =>
-  column === "fecha_carga"
+  column === "fecha_carga" || column === "fecha_dia"
     ? `TO_CHAR(${column}::date, 'YYYYMMDD') = ${param}`
     : `${column} = ${param}
         AND ${column} ~ '^[0-9]{8}$'`;
@@ -775,7 +1007,9 @@ const buildCompactDateEqualsSql = (
 const buildConsultaDateSql = (
   column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
 ) =>
-  column === "fecha_carga" ? `${column}::date` : `TO_DATE(${column}, 'YYYYMMDD')`;
+  column === "fecha_carga" || column === "fecha_dia"
+    ? `${column}::date`
+    : `TO_DATE(${column}, 'YYYYMMDD')`;
 
 const mapRotationCatalogRows = (
   rows: RotationFilterDbRow[],
@@ -890,10 +1124,11 @@ const queryRotationLineasN1 = async ({
 
   const value = await withPoolClient(async (client) => {
     const dateColumn = await resolveRotationDateColumn(client);
+    const n1CodeExpr = await resolveRotationN1CodeExpr(client);
     const result = await client.query(
       `
       SELECT DISTINCT
-        COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') AS linea_n1_raw,
+        COALESCE(${n1CodeExpr}, '__sin_n1__') AS linea_n1_raw,
         NULLIF(TRIM(COALESCE(linea::text, '')), '') AS linea,
         NULLIF(TRIM(COALESCE(nombre_linea01::text, '')), '') AS nombre_linea01
       FROM rotacion_base_item_dia_sede
@@ -963,12 +1198,13 @@ const queryRotationCategoriaBundle = async ({
 
   const value = await withPoolClient(async (client) => {
     const dateColumn = await resolveRotationDateColumn(client);
+    const n1CodeExpr = await resolveRotationN1CodeExpr(client);
     const result = await client.query(
       `
       SELECT DISTINCT
         ${SQL_ROTACION_CATEGORIA_KEY} AS categoria_key,
         NULLIF(TRIM(nombre_categoria::text), '') AS nombre_categoria,
-        COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') AS linea_n1_raw
+        COALESCE(${n1CodeExpr}, '__sin_n1__') AS linea_n1_raw
       FROM rotacion_base_item_dia_sede
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND item IS NOT NULL
@@ -1062,6 +1298,13 @@ const queryRotationRows = async ({
   const fetchRows = async (): Promise<RotationRow[]> =>
     withPoolClient(async (client) => {
       const dateColumn = await resolveRotationDateColumn(client);
+      const n1CodeExpr = await resolveRotationN1CodeExpr(client);
+      const salesExpr = await resolveRotationSalesExpr(client);
+      const unitsSoldExpr = await resolveRotationUnitsSoldExpr(client);
+      const closingUnitsExpr = await resolveRotationClosingUnitsExpr(client);
+      const inventoryValueExpr = await resolveRotationInventoryValueExpr(client);
+      const lastSaleDateExpr = await resolveRotationLastSaleDateExpr(client);
+      const lastEntryDateExpr = await resolveRotationLastEntryDateExpr(client);
       const result = await client.query(
       `
       WITH scoped AS (
@@ -1070,28 +1313,24 @@ const queryRotationRows = async ({
           COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
           COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name,
           COALESCE(NULLIF(TRIM(linea), ''), 'Sin linea') AS linea,
-          NULLIF(TRIM(linea_n1_codigo), '') AS linea_n1_codigo,
+          ${n1CodeExpr} AS linea_n1_codigo,
           COALESCE(NULLIF(TRIM(item), ''), 'sin_item') AS item,
           COALESCE(NULLIF(TRIM(descripcion), ''), COALESCE(NULLIF(TRIM(item), ''), 'Sin descripcion')) AS descripcion,
           NULLIF(TRIM(unidad), '') AS unidad,
-          COALESCE(venta_sin_impuesto, 0) AS venta_sin_impuesto,
-          GREATEST(COALESCE(valor_inventario, 0), 0) AS margin_value,
-          COALESCE(unidades_vendidas, 0) AS unidades_vendidas,
-          GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) AS inventory_units,
-          GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
+          ${salesExpr} AS venta_sin_impuesto,
+          ${inventoryValueExpr} AS margin_value,
+          ${unitsSoldExpr} AS unidades_vendidas,
+          ${closingUnitsExpr} AS inventory_units,
+          ${inventoryValueExpr} AS inventory_value,
           ${buildConsultaDateSql(dateColumn)} AS consulta_date,
           CASE
-            WHEN fecha_ultima_venta ~ '^[0-9]{8}$'
-              AND TO_DATE(fecha_ultima_venta, 'YYYYMMDD')
-                BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
-            THEN TO_DATE(fecha_ultima_venta, 'YYYYMMDD')
+            WHEN (${lastEntryDateExpr}) BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+            THEN (${lastEntryDateExpr})
+            WHEN (${lastSaleDateExpr}) BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+            THEN (${lastSaleDateExpr})
             ELSE NULL
           END AS last_movement_date,
-          CASE
-            WHEN fecha_ultima_venta ~ '^[0-9]{8}$'
-            THEN TO_DATE(fecha_ultima_venta, 'YYYYMMDD')
-            ELSE NULL
-          END AS last_purchase_date,
+          (${lastSaleDateExpr}) AS last_purchase_date,
           NULLIF(TRIM(COALESCE(bodega::text, '')), '') AS bodega,
           NULLIF(TRIM(COALESCE(nombre_bodega::text, '')), '') AS nombre_bodega,
           NULLIF(TRIM(COALESCE(categoria::text, '')), '') AS categoria,
@@ -1105,7 +1344,7 @@ const queryRotationRows = async ({
           AND ${SQL_ROTACION_ALLOWED_CATEGORIA}
           AND ($5::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $5)
           AND ($6::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $6)
-          AND ($7::text[] IS NULL OR COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') = ANY($7::text[]))
+          AND ($7::text[] IS NULL OR COALESCE(${n1CodeExpr}, '__sin_n1__') = ANY($7::text[]))
           AND ($10::text[] IS NULL OR ${SQL_ROTACION_CATEGORIA_KEY} = ANY($10::text[]))
       ),
       ranked AS (
