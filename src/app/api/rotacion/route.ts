@@ -160,6 +160,8 @@ const DEFAULT_ABCD_CONFIG: AbcdConfig = {
 let availableBoundsCache:
   | { value: AvailableBoundsRow | null; expiresAt: number }
   | null = null;
+let rotationDateColumnCache: "fecha_consulta" | "fecha" | "fecha_carga" | null =
+  null;
 let rotationFilterCatalogCache:
   | { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
   | null = null;
@@ -679,13 +681,18 @@ const getAvailableBounds = async () => {
 
   const client = await (await getDbPool()).connect();
   try {
+    const dateColumn = await resolveRotationDateColumn(client);
     const result = await client.query(
       `
       SELECT
-        MIN(fecha_consulta) AS min_date,
-        MAX(fecha_consulta) AS max_date
+        MIN(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
+        MAX(${dateColumn === "fecha_carga" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${
+        dateColumn === "fecha_carga"
+          ? `${dateColumn} IS NOT NULL`
+          : `${dateColumn} ~ '^[0-9]{8}$'`
+      }
       `,
     );
     const value = (result.rows?.[0] as AvailableBoundsRow | undefined) ?? null;
@@ -698,6 +705,69 @@ const getAvailableBounds = async () => {
     client.release();
   }
 };
+
+type RotationQueryClient = {
+  query: (
+    queryText: string,
+    values?: unknown[],
+  ) => Promise<{ rows?: Array<Record<string, unknown>> }>;
+};
+
+const resolveRotationDateColumn = async (
+  client: RotationQueryClient,
+): Promise<"fecha_consulta" | "fecha" | "fecha_carga"> => {
+  if (rotationDateColumnCache) return rotationDateColumnCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('fecha_consulta', 'fecha', 'fecha_carga')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("fecha_consulta")) {
+    rotationDateColumnCache = "fecha_consulta";
+    return rotationDateColumnCache;
+  }
+  if (columns.has("fecha")) {
+    rotationDateColumnCache = "fecha";
+    return rotationDateColumnCache;
+  }
+  if (columns.has("fecha_carga")) {
+    rotationDateColumnCache = "fecha_carga";
+    return rotationDateColumnCache;
+  }
+  throw new Error(
+    "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_consulta, fecha o fecha_carga).",
+  );
+};
+
+const buildCompactDateRangeSql = (
+  column: "fecha_consulta" | "fecha" | "fecha_carga",
+  startParam = "$1",
+  endParam = "$2",
+) =>
+  column === "fecha_carga"
+    ? `TO_CHAR(${column}::date, 'YYYYMMDD') BETWEEN ${startParam} AND ${endParam}`
+    : `${column} BETWEEN ${startParam} AND ${endParam}
+        AND ${column} ~ '^[0-9]{8}$'`;
+
+const buildCompactDateEqualsSql = (
+  column: "fecha_consulta" | "fecha" | "fecha_carga",
+  param = "$1",
+) =>
+  column === "fecha_carga"
+    ? `TO_CHAR(${column}::date, 'YYYYMMDD') = ${param}`
+    : `${column} = ${param}
+        AND ${column} ~ '^[0-9]{8}$'`;
+
+const buildConsultaDateSql = (
+  column: "fecha_consulta" | "fecha" | "fecha_carga",
+) =>
+  column === "fecha_carga" ? `${column}::date` : `TO_DATE(${column}, 'YYYYMMDD')`;
 
 const mapRotationCatalogRows = (
   rows: RotationFilterDbRow[],
@@ -740,14 +810,14 @@ const getRotationFilterCatalog = async (
 
   const client = await (await getDbPool()).connect();
   try {
+    const dateColumn = await resolveRotationDateColumn(client);
     const rangeSql = `
       SELECT DISTINCT
         COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
         COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
         COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta BETWEEN $1 AND $2
-        AND fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND item IS NOT NULL
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
     `;
@@ -757,8 +827,7 @@ const getRotationFilterCatalog = async (
         COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
         COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta = $1
-        AND fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${buildCompactDateEqualsSql(dateColumn)}
         AND item IS NOT NULL
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
     `;
@@ -812,6 +881,7 @@ const queryRotationLineasN1 = async ({
   }
 
   const value = await withPoolClient(async (client) => {
+    const dateColumn = await resolveRotationDateColumn(client);
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -819,8 +889,7 @@ const queryRotationLineasN1 = async ({
         NULLIF(TRIM(COALESCE(linea::text, '')), '') AS linea,
         NULLIF(TRIM(COALESCE(nombre_linea01::text, '')), '') AS nombre_linea01
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta BETWEEN $1 AND $2
-        AND fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND item IS NOT NULL
         AND ${SQL_ROTACION_ALLOWED_CATEGORIA}
         AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
@@ -885,6 +954,7 @@ const queryRotationCategoriaBundle = async ({
   }
 
   const value = await withPoolClient(async (client) => {
+    const dateColumn = await resolveRotationDateColumn(client);
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -892,8 +962,7 @@ const queryRotationCategoriaBundle = async ({
         NULLIF(TRIM(nombre_categoria::text), '') AS nombre_categoria,
         COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') AS linea_n1_raw
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta BETWEEN $1 AND $2
-        AND fecha_consulta ~ '^[0-9]{8}$'
+      WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND item IS NOT NULL
         AND ${SQL_ROTACION_ALLOWED_CATEGORIA}
         AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
@@ -984,6 +1053,7 @@ const queryRotationRows = async ({
 }): Promise<RotationRow[]> => {
   const fetchRows = async (): Promise<RotationRow[]> =>
     withPoolClient(async (client) => {
+      const dateColumn = await resolveRotationDateColumn(client);
       const result = await client.query(
       `
       WITH scoped AS (
@@ -997,25 +1067,11 @@ const queryRotationRows = async ({
           COALESCE(NULLIF(TRIM(descripcion), ''), COALESCE(NULLIF(TRIM(item), ''), 'Sin descripcion')) AS descripcion,
           NULLIF(TRIM(unidad), '') AS unidad,
           COALESCE(venta_sin_impuesto, 0) AS venta_sin_impuesto,
-          CASE
-            WHEN COALESCE(unidades_vendidas, 0) <= 0 THEN 0::numeric
-            WHEN GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) > 0
-              AND GREATEST(COALESCE(valor_inventario, 0), 0) > 0
-              THEN
-                COALESCE(venta_sin_impuesto, 0) -
-                (
-                  COALESCE(unidades_vendidas, 0) *
-                  (
-                    GREATEST(COALESCE(valor_inventario, 0), 0) /
-                    NULLIF(GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0), 0)
-                  )
-                )
-            ELSE 0::numeric
-          END AS margin_value,
+          GREATEST(COALESCE(valor_inventario, 0), 0) AS margin_value,
           COALESCE(unidades_vendidas, 0) AS unidades_vendidas,
           GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) AS inventory_units,
           GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
-          TO_DATE(fecha_consulta, 'YYYYMMDD') AS consulta_date,
+          ${buildConsultaDateSql(dateColumn)} AS consulta_date,
           CASE
             WHEN fecha_ultima_venta ~ '^[0-9]{8}$'
               AND TO_DATE(fecha_ultima_venta, 'YYYYMMDD')
@@ -1036,8 +1092,7 @@ const queryRotationRows = async ({
           NULLIF(TRIM(COALESCE(nombre_linea01::text, '')), '') AS nombre_linea01,
           fecha_carga
         FROM rotacion_base_item_dia_sede
-        WHERE fecha_consulta BETWEEN $1 AND $2
-          AND fecha_consulta ~ '^[0-9]{8}$'
+        WHERE ${buildCompactDateRangeSql(dateColumn)}
           AND item IS NOT NULL
           AND ${SQL_ROTACION_ALLOWED_CATEGORIA}
           AND ($5::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $5)
@@ -1068,7 +1123,12 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           SUM(venta_sin_impuesto)::numeric AS total_sales,
-          SUM(margin_value)::numeric AS total_margin,
+          SUM(
+            CASE
+              WHEN consulta_date = latest_consulta_date THEN margin_value
+              ELSE 0
+            END
+          )::numeric AS total_margin,
           SUM(unidades_vendidas)::numeric AS total_units,
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN last_purchase_date END) AS last_purchase_date,

@@ -571,14 +571,6 @@ const formatRotationOneDecimal = (value: number) => {
   });
 };
 
-const calculateSalesCoverageDays = (
-  row: Pick<RotationRow, "inventoryValue" | "totalSales" | "trackedDays">,
-) => {
-  if (row.inventoryValue <= 0) return 0;
-  if (row.totalSales <= 0 || row.trackedDays <= 0) return NO_SALES_DI_VALUE;
-  return (row.inventoryValue * row.trackedDays) / row.totalSales;
-};
-
 const clampPercent = (value: number) =>
   Math.max(1, Math.min(100, Number.isFinite(value) ? value : 0));
 
@@ -789,37 +781,25 @@ const sortRotationRows = (
         result = left.inventoryValue - right.inventoryValue;
         break;
       case "rotation":
-        if (
-          left.rotation >= NO_SALES_DI_VALUE &&
-          right.rotation >= NO_SALES_DI_VALUE
-        ) {
-          result = 0;
-        } else if (left.rotation >= NO_SALES_DI_VALUE) {
-          result = 1;
-        } else if (right.rotation >= NO_SALES_DI_VALUE) {
-          result = -1;
-        } else {
-          result = left.rotation - right.rotation;
+        {
+          const leftNoSales = left.rotation >= NO_SALES_DI_VALUE;
+          const rightNoSales = right.rotation >= NO_SALES_DI_VALUE;
+          if (leftNoSales !== rightNoSales) {
+            // "Sin venta" siempre se envia al final, sin importar asc/desc.
+            return leftNoSales ? 1 : -1;
+          }
+          if (leftNoSales && rightNoSales) {
+            result = 0;
+          } else {
+            result = left.rotation - right.rotation;
+          }
         }
         break;
       case "trackedDays":
         result = left.trackedDays - right.trackedDays;
         break;
       case "salesEffectiveDays":
-        if (
-          calculateSalesCoverageDays(left) >= NO_SALES_DI_VALUE &&
-          calculateSalesCoverageDays(right) >= NO_SALES_DI_VALUE
-        ) {
-          result = 0;
-        } else if (calculateSalesCoverageDays(left) >= NO_SALES_DI_VALUE) {
-          result = 1;
-        } else if (calculateSalesCoverageDays(right) >= NO_SALES_DI_VALUE) {
-          result = -1;
-        } else {
-          result =
-            calculateSalesCoverageDays(left) -
-            calculateSalesCoverageDays(right);
-        }
+        result = left.salesEffectiveDays - right.salesEffectiveDays;
         break;
       case "lastMovementDate":
         result = compareNullableIsoDateKeys(
@@ -1988,9 +1968,9 @@ export default function RotacionPage() {
           const shortFallback = LINEA_N1_SHORT_NAMES[value];
           const label =
             dbNombre && dbNombre.length > 0
-              ? `${dbNombre} (N1 ${value})`
+              ? `N1 ${value} - ${dbNombre}`
               : shortFallback
-                ? `${shortFallback} (N1 ${value})`
+                ? `N1 ${value} - ${shortFallback}`
                 : `N1 ${value}`;
           const shortName =
             dbNombre && dbNombre.length > 0 ? undefined : shortFallback;
@@ -2292,9 +2272,7 @@ export default function RotacionPage() {
           ventaPeriodo: row.totalSales,
           margenPorcentaje: formatPercent(
             row.totalSales > 0
-              ? ((rowFilter === "cero_rotacion" ? 0 : row.totalMargin) /
-                  row.totalSales) *
-                  100
+              ? (row.totalMargin / row.totalSales) * 100
               : 0,
           ),
           invCierre: row.inventoryUnits,
@@ -2302,9 +2280,7 @@ export default function RotacionPage() {
           valorInventario: row.inventoryValue,
           rotacion: formatRotationOneDecimal(row.rotation),
           diaInventarioEfectivo: row.trackedDays.toLocaleString("es-CO"),
-          diaVentaEfectivo: formatRotationOneDecimal(
-            calculateSalesCoverageDays(row),
-          ),
+          diaVentaEfectivo: row.salesEffectiveDays.toLocaleString("es-CO"),
           ultimoIngreso: row.lastMovementDate
             ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
             : "Sin fecha de ingreso",
@@ -3455,10 +3431,6 @@ export default function RotacionPage() {
                       (acc, row) => acc + row.totalSales,
                       0,
                     );
-                    const infoTotalMargin = filteredRows.reduce(
-                      (acc, row) => acc + row.totalMargin,
-                      0,
-                    );
                     const selectedCategoryTotalInv =
                       categoryFilteredRows.reduce(
                         (acc, row) => acc + row.inventoryValue,
@@ -3469,24 +3441,15 @@ export default function RotacionPage() {
                         (acc, row) => acc + row.totalSales,
                         0,
                       );
-                    const selectedCategoryTotalMargin =
-                      rowFilter === "cero_rotacion"
-                        ? 0
-                        : categoryFilteredRows.reduce(
-                            (acc, row) => acc + row.totalMargin,
-                            0,
-                          );
                     const selectedCategoryMarginPct =
                       selectedCategoryTotalSales > 0
-                        ? (selectedCategoryTotalMargin /
+                        ? (selectedCategoryTotalInv /
                             selectedCategoryTotalSales) *
                           100
                         : 0;
-                    const infoDisplayMargin =
-                      rowFilter === "cero_rotacion" ? 0 : infoTotalMargin;
                     const infoMarginPct =
                       infoTotalSales > 0
-                        ? (infoDisplayMargin / infoTotalSales) * 100
+                        ? (infoTotalInv / infoTotalSales) * 100
                         : 0;
                     const infoSalesCoverageDays =
                       infoTotalSales > 0 && daysConsulted > 0
@@ -4146,11 +4109,7 @@ export default function RotacionPage() {
                                   <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                                     {formatPercent(
                                       row.totalSales > 0
-                                        ? ((rowFilter === "cero_rotacion"
-                                            ? 0
-                                            : row.totalMargin) /
-                                            row.totalSales) *
-                                            100
+                                        ? (row.totalMargin / row.totalSales) * 100
                                         : 0,
                                     )}
                                   </TableCell>
@@ -4172,9 +4131,7 @@ export default function RotacionPage() {
                                     {row.trackedDays.toLocaleString("es-CO")}
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
-                                    {formatRotationOneDecimal(
-                                      calculateSalesCoverageDays(row),
-                                    )}
+                                    {row.salesEffectiveDays.toLocaleString("es-CO")}
                                   </TableCell>
                             <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
                                     {row.lastMovementDate
