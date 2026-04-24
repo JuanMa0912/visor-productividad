@@ -21,6 +21,7 @@ import {
   Check,
   Database,
   Filter,
+  Loader2,
   MapPin,
   PackageSearch,
   Search,
@@ -334,6 +335,21 @@ const MultiSelectField = ({
   const limitReached =
     maxSelected !== undefined && maxSelected > 0 && values.length >= maxSelected;
 
+  const selectionCountLabel =
+    allSelected
+      ? "Todas"
+      : values.length > 0
+        ? maxSelected
+          ? `${values.length}/${maxSelected}`
+          : `${values.length}`
+        : maxSelected
+          ? `0/${maxSelected}`
+          : null;
+
+  /** Con busqueda y sin seleccion: no mostramos fila inferior (solo Buscar + contadores; la lista abre al foco en Buscar). */
+  const hideSearchableSelectionRow =
+    Boolean(searchable && onSearchChange) && !allSelected && selectedOptions.length === 0;
+
   const toggleValue = (value: string) => {
     if (values.includes(value)) {
       onChange(values.filter((item) => item !== value));
@@ -350,102 +366,164 @@ const MultiSelectField = ({
         {label}
       </span>
 
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        disabled={disabled}
-        className={`flex w-full items-start justify-between gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 shadow-sm transition-all focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${
-          invalid
-            ? "border-red-300 hover:border-red-400 focus:border-red-300 focus:ring-red-100"
-            : "border-slate-200/70 hover:border-slate-300 focus:border-blue-300 focus:ring-blue-100"
-        }`}
-      >
-        <span className="min-w-0 flex-1">
-          {allSelected ? (
-            <span className="block truncate">{allLabel ?? emptyLabel}</span>
-          ) : selectedOptions.length > 0 ? (
-            <span className="flex flex-wrap gap-1.5">
-              {selectedPreview.map((option) => (
-                <span
-                  key={option.key ?? option.value}
-                  className="max-w-full rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
-                  title={option.label}
-                >
-                  <span className="block truncate">{option.label}</span>
-                </span>
-              ))}
-              {remainingSelectedCount > 0 && (
-                <span className="group/summary relative inline-flex">
-                  <span
-                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
-                    title={hiddenSelectedOptions.map((option) => option.label).join("\n")}
-                  >
-                    +{remainingSelectedCount}
-                  </span>
-                  <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-30 hidden w-max max-w-72 -translate-x-1/2 rounded-2xl border border-slate-200/80 bg-slate-950/95 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.6)] group-hover/summary:block">
-                    {hiddenSelectedOptions.map((option) => (
+      {searchable && onSearchChange ? (
+        <div
+          className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow focus-within:shadow-md ${
+            invalid
+              ? "border-red-300 ring-1 ring-red-100"
+              : "border-slate-200/70 focus-within:border-blue-200 focus-within:ring-2 focus-within:ring-blue-100/80"
+          }`}
+        >
+          <label className="flex items-center gap-2 bg-slate-50/90 px-3 py-2 transition-colors focus-within:bg-white">
+            <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <input
+              type="text"
+              value={searchValue}
+              onChange={(event) => onSearchChange(event.target.value)}
+              onFocus={() => {
+                if (!disabled) setOpen(true);
+              }}
+              placeholder="Buscar..."
+              disabled={disabled}
+              className="min-h-0 w-full bg-transparent py-0.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+          <div
+            className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-100 px-3 py-1 ${
+              hideSearchableSelectionRow ? "rounded-b-2xl pb-2" : ""
+            }`}
+          >
+            <span className="text-[10px] font-medium tabular-nums text-slate-500">
+              {renderedOptions.length} de {totalResultsCount ?? options.length}{" "}
+              resultados
+            </span>
+            {truncatedResults ? (
+              <span className="text-[10px] leading-tight text-amber-800">
+                Lista parcial: escribe mas para acotar.
+              </span>
+            ) : null}
+          </div>
+          {!hideSearchableSelectionRow ? (
+            <button
+              type="button"
+              onClick={() => setOpen((current) => !current)}
+              disabled={disabled}
+              className="flex w-full items-start justify-between gap-2 border-t border-slate-100 bg-white px-3 py-2 text-left text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50/80 focus:outline-none focus-visible:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="min-w-0 flex-1">
+                {allSelected ? (
+                  <span className="block truncate">{allLabel ?? emptyLabel}</span>
+                ) : selectedOptions.length > 0 ? (
+                  <span className="flex flex-wrap gap-1.5">
+                    {selectedPreview.map((option) => (
                       <span
                         key={option.key ?? option.value}
-                        className="block whitespace-normal"
+                        className="max-w-full rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                        title={option.label}
                       >
-                        {option.label}
+                        <span className="block truncate">{option.label}</span>
                       </span>
                     ))}
+                    {remainingSelectedCount > 0 && (
+                      <span className="group/summary relative inline-flex">
+                        <span
+                          className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
+                          title={hiddenSelectedOptions.map((option) => option.label).join("\n")}
+                        >
+                          +{remainingSelectedCount}
+                        </span>
+                        <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-30 hidden w-max max-w-72 -translate-x-1/2 rounded-2xl border border-slate-200/80 bg-slate-950/95 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.6)] group-hover/summary:block">
+                          {hiddenSelectedOptions.map((option) => (
+                            <span
+                              key={option.key ?? option.value}
+                              className="block whitespace-normal"
+                            >
+                              {option.label}
+                            </span>
+                          ))}
+                        </span>
+                      </span>
+                    )}
                   </span>
+                ) : (
+                  <span className="block truncate text-slate-500">{emptyLabel}</span>
+                )}
+              </span>
+              {selectionCountLabel ? (
+                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {selectionCountLabel}
                 </span>
-              )}
+              ) : null}
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          disabled={disabled}
+          className={`flex w-full items-start justify-between gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 shadow-sm transition-all focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+            invalid
+              ? "border-red-300 hover:border-red-400 focus:border-red-300 focus:ring-red-100"
+              : "border-slate-200/70 hover:border-slate-300 focus:border-blue-300 focus:ring-blue-100"
+          }`}
+        >
+          <span className="min-w-0 flex-1">
+            {allSelected ? (
+              <span className="block truncate">{allLabel ?? emptyLabel}</span>
+            ) : selectedOptions.length > 0 ? (
+              <span className="flex flex-wrap gap-1.5">
+                {selectedPreview.map((option) => (
+                  <span
+                    key={option.key ?? option.value}
+                    className="max-w-full rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                    title={option.label}
+                  >
+                    <span className="block truncate">{option.label}</span>
+                  </span>
+                ))}
+                {remainingSelectedCount > 0 && (
+                  <span className="group/summary relative inline-flex">
+                    <span
+                      className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
+                      title={hiddenSelectedOptions.map((option) => option.label).join("\n")}
+                    >
+                      +{remainingSelectedCount}
+                    </span>
+                    <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-30 hidden w-max max-w-72 -translate-x-1/2 rounded-2xl border border-slate-200/80 bg-slate-950/95 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.6)] group-hover/summary:block">
+                      {hiddenSelectedOptions.map((option) => (
+                        <span
+                          key={option.key ?? option.value}
+                          className="block whitespace-normal"
+                        >
+                          {option.label}
+                        </span>
+                      ))}
+                    </span>
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="block truncate text-slate-500">{emptyLabel}</span>
+            )}
+          </span>
+          {selectionCountLabel ? (
+            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {selectionCountLabel}
             </span>
-          ) : (
-            <span className="block truncate text-slate-500">{emptyLabel}</span>
-          )}
-        </span>
-        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-          {allSelected
-            ? "Todas"
-            : values.length > 0
-            ? maxSelected
-              ? `${values.length}/${maxSelected}`
-              : `${values.length}`
-            : "Todas"}
-        </span>
-      </button>
+          ) : null}
+        </button>
+      )}
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-2 w-full rounded-2xl border border-slate-200/80 bg-white p-2 shadow-[0_22px_60px_-32px_rgba(15,23,42,0.35)]">
-          {searchable && onSearchChange && (
-            <label className="mb-2 flex items-center gap-2 rounded-xl border border-slate-200/70 bg-slate-50 px-3 py-2">
-              <Search className="h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchValue}
-                onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Buscar..."
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-              />
-            </label>
-          )}
-
-          {searchable && (
-            <div className="mb-2 flex items-center justify-between px-1 text-[11px] text-slate-500">
-              <span>
-                {renderedOptions.length} de {totalResultsCount ?? options.length} resultados
-              </span>
-            </div>
-          )}
-
-          {truncatedResults && (
-            <p className="mb-2 px-2 text-[11px] text-amber-700">
-              Mostrando una parte de resultados. Escribe mas para acotar.
-            </p>
-          )}
-
+        <div className="absolute left-0 top-full z-30 mt-0.5 w-full rounded-b-2xl rounded-t-lg border border-slate-200/90 bg-white p-1.5 shadow-[0_16px_40px_-24px_rgba(15,23,42,0.35)]">
           {(onSelectAll || onClearSelection) && (
-            <div className="mb-2 flex flex-wrap gap-2 px-1">
+            <div className="mb-1 flex flex-wrap gap-1 border-b border-slate-100 px-1 pb-1">
               {onSelectAll && (
                 <button
                   type="button"
                   onClick={onSelectAll}
-                  className="rounded-xl px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-blue-700 transition-colors hover:bg-blue-50"
+                  className="rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700 transition-colors hover:bg-blue-50"
                 >
                   {selectAllLabel ?? allLabel ?? emptyLabel}
                 </button>
@@ -454,7 +532,7 @@ const MultiSelectField = ({
                 <button
                   type="button"
                   onClick={onClearSelection}
-                  className="rounded-xl px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 transition-colors hover:bg-slate-50"
+                  className="rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 transition-colors hover:bg-slate-50"
                 >
                   {clearLabel ?? "Limpiar filtro"}
                 </button>
@@ -462,7 +540,7 @@ const MultiSelectField = ({
             </div>
           )}
 
-          <div className="max-h-72 space-y-1 overflow-auto pr-1">
+          <div className="max-h-60 space-y-0.5 overflow-auto pr-0.5 sm:max-h-72">
             {renderedOptions.length === 0 ? (
               <p className="px-3 py-4 text-sm text-slate-500">
                 No hay opciones disponibles para este filtro.
@@ -477,7 +555,7 @@ const MultiSelectField = ({
                     type="button"
                     onClick={() => toggleValue(option.value)}
                     disabled={disabledOption}
-                    className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors ${
+                    className={`flex w-full items-start justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
                       disabledOption
                         ? "cursor-not-allowed opacity-50"
                         : "hover:bg-slate-50"
@@ -517,7 +595,7 @@ const MultiSelectField = ({
       )}
       {helperText ? (
         <p
-          className={`mt-2 text-xs leading-5 ${
+          className={`mt-1.5 text-xs leading-snug ${
             invalid ? "text-red-600" : "text-slate-500"
           }`}
         >
@@ -1755,14 +1833,25 @@ export default function InventarioXItemPage() {
     : !hasLineSelection || !hasSubcategorySelection
       ? "Primero define lineas y subcategoria para habilitar la lista de items."
       : selectedItems.length > 0
-        ? `${selectedItems.length} de ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items seleccionados.`
-        : `Selecciona entre 1 y ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items para ver la matriz.`;
+        ? `Toca la zona de chips para abrir el listado y cambiar la seleccion (maximo ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS}).`
+        : `Haz clic o foco en Buscar para abrir el listado; elige entre 1 y ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items.`;
 
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
-        <div className="mx-auto w-full max-w-6xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando seccion...</p>
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-center gap-4 rounded-3xl border border-slate-200/70 bg-white p-10 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+          <div
+            className="rounded-full bg-blue-100 p-4 text-blue-700"
+            aria-hidden
+          >
+            <Loader2
+              className="h-8 w-8 animate-spin motion-reduce:animate-none"
+              strokeWidth={2}
+            />
+          </div>
+          <p className="text-center text-sm font-medium text-slate-700">
+            Cargando seccion...
+          </p>
         </div>
       </div>
     );
@@ -1856,6 +1945,23 @@ export default function InventarioXItemPage() {
               Completa los filtros obligatorios para ver la matriz. Puedes
               escoger una opcion puntual o seleccionar {"\"Todas\""} cuando
               quieras ampliar el alcance.
+            </div>
+          )}
+
+          {loadingFilters && (
+            <div
+              className="mt-4 flex items-center gap-3 rounded-2xl border border-blue-200/80 bg-blue-50/90 px-4 py-3 text-sm text-blue-900"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2
+                className="h-5 w-5 shrink-0 animate-spin text-blue-700 motion-reduce:animate-none"
+                strokeWidth={2}
+                aria-hidden
+              />
+              <span className="font-medium">
+                Actualizando fechas y opciones de filtro...
+              </span>
             </div>
           )}
 
@@ -2090,9 +2196,24 @@ export default function InventarioXItemPage() {
               </p>
             </div>
           ) : loadingCatalog ? (
-            <div className="mt-6 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-12 text-center text-sm text-slate-600">
-              Consultando lineas e items disponibles para el alcance
-              seleccionado...
+            <div
+              className="mt-6 flex flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-12 text-center"
+              role="status"
+              aria-live="polite"
+            >
+              <div
+                className="rounded-full bg-slate-200/80 p-3 text-slate-700"
+                aria-hidden
+              >
+                <Loader2
+                  className="h-8 w-8 animate-spin motion-reduce:animate-none"
+                  strokeWidth={2}
+                />
+              </div>
+              <p className="max-w-md text-sm text-slate-600">
+                Consultando lineas e items disponibles para el alcance
+                seleccionado...
+              </p>
             </div>
           ) : !hasLineOptions ? (
             <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-12 text-center">
@@ -2116,17 +2237,47 @@ export default function InventarioXItemPage() {
               </p>
             </div>
           ) : hasPendingMatrixChanges || !hasAppliedCurrentFilters ? (
-            <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-12 text-center">
-              <p className="text-sm font-semibold text-blue-900">
-                Actualizando la matriz...
-              </p>
-              <p className="mt-2 text-sm leading-6 text-blue-800">
-                Ajustamos la consulta con los filtros que acabas de cambiar.
-              </p>
+            <div
+              className="mt-6 flex flex-col items-center justify-center gap-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-12 text-center"
+              role="status"
+              aria-live="polite"
+            >
+              <div
+                className="rounded-full bg-blue-100 p-3 text-blue-700"
+                aria-hidden
+              >
+                <Loader2
+                  className="h-7 w-7 animate-spin motion-reduce:animate-none"
+                  strokeWidth={2}
+                />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-blue-900">
+                  Actualizando la matriz...
+                </p>
+                <p className="mt-2 text-sm leading-6 text-blue-800">
+                  Ajustamos la consulta con los filtros que acabas de cambiar.
+                </p>
+              </div>
             </div>
           ) : loadingMatrix ? (
-            <div className="mt-6 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-12 text-center text-sm text-slate-600">
-              Construyendo matriz de existencias...
+            <div
+              className="mt-6 flex flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-12 text-center"
+              role="status"
+              aria-live="polite"
+            >
+              <div
+                className="rounded-full bg-slate-200/80 p-3 text-slate-700"
+                aria-hidden
+              >
+                <Loader2
+                  className="h-8 w-8 animate-spin motion-reduce:animate-none"
+                  strokeWidth={2}
+                />
+              </div>
+              <p className="max-w-md text-sm text-slate-600">
+                Construyendo matriz de existencias...
+              </p>
             </div>
           ) : summaryRows.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-12 text-center">

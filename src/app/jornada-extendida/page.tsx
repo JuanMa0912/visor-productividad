@@ -1,7 +1,14 @@
 ﻿"use client";
 
 import * as ExcelJS from "exceljs";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -139,7 +146,9 @@ const createEmptyAlexComparisonTotals = (): AlexComparisonTotals => ({
   monthToDate: createEmptyAlexTotals(),
 });
 
-const toAlexTotalsSnapshot = (row?: Partial<AlexReportRow> | null): AlexReportTotals => ({
+const toAlexTotalsSnapshot = (
+  row?: Partial<AlexReportRow> | null,
+): AlexReportTotals => ({
   moreThan72With2: row?.moreThan72With2 ?? 0,
   moreThan92: row?.moreThan92 ?? 0,
   oddMarks: row?.oddMarks ?? 0,
@@ -175,26 +184,35 @@ export default function JornadaExtendidaPage() {
   const [alexStartDate, setAlexStartDate] = useState("");
   const [alexEndDate, setAlexEndDate] = useState("");
   const [alexRows, setAlexRows] = useState<AlexReportRow[]>([]);
-  const [alexTotals, setAlexTotals] = useState<AlexReportTotals>(createEmptyAlexTotals);
+  const [alexTotals, setAlexTotals] = useState<AlexReportTotals>(
+    createEmptyAlexTotals,
+  );
   const [alexSelectedSede, setAlexSelectedSede] = useState("all");
   const [alexSelectedDepartment, setAlexSelectedDepartment] = useState("all");
-  const [alexAvailableDepartments, setAlexAvailableDepartments] = useState<string[]>([]);
+  const [alexAvailableDepartments, setAlexAvailableDepartments] = useState<
+    string[]
+  >([]);
   const [alexLoading, setAlexLoading] = useState(false);
   const [alexError, setAlexError] = useState<string | null>(null);
   const [exportingAlexExcel, setExportingAlexExcel] = useState(false);
   const [isAlexExportMenuOpen, setIsAlexExportMenuOpen] = useState(false);
-  const [alexSelectedFields, setAlexSelectedFields] = useState<AlexExportFieldKey[]>(
-    () => ALEX_EXPORT_FIELDS.map((field) => field.key),
+  const [alexSelectedFields, setAlexSelectedFields] = useState<
+    AlexExportFieldKey[]
+  >(() => ALEX_EXPORT_FIELDS.map((field) => field.key));
+  const [alexSortField, setAlexSortField] = useState<AlexSortField | null>(
+    null,
   );
-  const [alexSortField, setAlexSortField] = useState<AlexSortField | null>(null);
   const [alexSortDirection, setAlexSortDirection] =
     useState<AlexSortDirection>("desc");
   const [alexExportError, setAlexExportError] = useState<string | null>(null);
-  const [exportingAlexCompareExcel, setExportingAlexCompareExcel] = useState(false);
+  const [exportingAlexCompareExcel, setExportingAlexCompareExcel] =
+    useState(false);
   const [alexCompareOpen, setAlexCompareOpen] = useState(false);
   const [alexCompareLoading, setAlexCompareLoading] = useState(false);
   const [alexCompareError, setAlexCompareError] = useState<string | null>(null);
-  const [alexCompareRows, setAlexCompareRows] = useState<AlexComparisonRow[]>([]);
+  const [alexCompareRows, setAlexCompareRows] = useState<AlexComparisonRow[]>(
+    [],
+  );
   const [alexCompareTotals, setAlexCompareTotals] =
     useState<AlexComparisonTotals>(createEmptyAlexComparisonTotals);
   const [alexComparePeriods, setAlexComparePeriods] = useState<{
@@ -240,7 +258,9 @@ export default function JornadaExtendidaPage() {
 
         const dates = Array.from(new Set(payload.dates ?? [])).sort();
         const resolvedSedes =
-          payload.sedes && payload.sedes.length > 0 ? payload.sedes : DEFAULT_SEDES;
+          payload.sedes && payload.sedes.length > 0
+            ? payload.sedes
+            : DEFAULT_SEDES;
         const forcedSedeKey = payload.defaultSede
           ? canonicalizeSedeKey(payload.defaultSede)
           : null;
@@ -251,21 +271,24 @@ export default function JornadaExtendidaPage() {
               return idKey === forcedSedeKey || nameKey === forcedSedeKey;
             })
           : null;
-        const visibleSedes = forcedSede && resolvedSedes.length === 1
-          ? [forcedSede]
-          : Array.from(
-              new Map(
-                [...resolvedSedes, ...OVERTIME_EXTRA_SEDES].map((sede) => [
-                  canonicalizeSedeKey(sede.name || sede.id),
-                  sede,
-                ]),
-              ).values(),
-            );
+        const visibleSedes =
+          forcedSede && resolvedSedes.length === 1
+            ? [forcedSede]
+            : Array.from(
+                new Map(
+                  [...resolvedSedes, ...OVERTIME_EXTRA_SEDES].map((sede) => [
+                    canonicalizeSedeKey(sede.name || sede.id),
+                    sede,
+                  ]),
+                ).values(),
+              );
 
         setAvailableDates(dates);
         setAvailableSedes(visibleSedes);
         setDefaultSede(
-          forcedSede && resolvedSedes.length === 1 ? forcedSede.name : undefined,
+          forcedSede && resolvedSedes.length === 1
+            ? forcedSede.name
+            : undefined,
         );
         setCanSeeAlexReport(Boolean(payload.canSeeAlexReport));
         const latest = dates[dates.length - 1] ?? "";
@@ -292,7 +315,10 @@ export default function JornadaExtendidaPage() {
   }, [router]);
 
   const defaultDate = useMemo(
-    () => (availableDates.length > 0 ? availableDates[availableDates.length - 1] : ""),
+    () =>
+      availableDates.length > 0
+        ? availableDates[availableDates.length - 1]
+        : "",
     [availableDates],
   );
   const alexRangeLabel = useMemo(() => {
@@ -300,7 +326,9 @@ export default function JornadaExtendidaPage() {
     const fmt = (value: string) => {
       const dt = new Date(`${value}T00:00:00`);
       if (Number.isNaN(dt.getTime())) return value;
-      const month = new Intl.DateTimeFormat("es-CO", { month: "long" }).format(dt);
+      const month = new Intl.DateTimeFormat("es-CO", { month: "long" }).format(
+        dt,
+      );
       const day = String(dt.getDate()).padStart(2, "0");
       const year = dt.getFullYear();
       return `${month.charAt(0).toUpperCase()}${month.slice(1)} ${day} de ${year}`;
@@ -314,7 +342,9 @@ export default function JornadaExtendidaPage() {
     const fmt = (value: string) => {
       const dt = new Date(`${value}T00:00:00`);
       if (Number.isNaN(dt.getTime())) return value;
-      const month = new Intl.DateTimeFormat("es-CO", { month: "long" }).format(dt);
+      const month = new Intl.DateTimeFormat("es-CO", { month: "long" }).format(
+        dt,
+      );
       const day = String(dt.getDate()).padStart(2, "0");
       const year = dt.getFullYear();
       return `${month.charAt(0).toUpperCase()}${month.slice(1)} ${day} de ${year}`;
@@ -361,27 +391,29 @@ export default function JornadaExtendidaPage() {
     [availableSedes],
   );
 
-  const buildAlexComparisonRows = useCallback((
-    yesterdayRows: AlexReportRow[],
-    monthToDateRows: AlexReportRow[],
-  ) => {
-    const yesterdayMap = new Map(yesterdayRows.map((row) => [row.sede, row]));
-    const monthToDateMap = new Map(monthToDateRows.map((row) => [row.sede, row]));
-    return Array.from(
-      new Set([
-        ...yesterdayRows.map((row) => row.sede),
-        ...monthToDateRows.map((row) => row.sede),
-      ]),
-    )
-      .sort((left, right) =>
-        left.localeCompare(right, "es", { sensitivity: "base" }),
+  const buildAlexComparisonRows = useCallback(
+    (yesterdayRows: AlexReportRow[], monthToDateRows: AlexReportRow[]) => {
+      const yesterdayMap = new Map(yesterdayRows.map((row) => [row.sede, row]));
+      const monthToDateMap = new Map(
+        monthToDateRows.map((row) => [row.sede, row]),
+      );
+      return Array.from(
+        new Set([
+          ...yesterdayRows.map((row) => row.sede),
+          ...monthToDateRows.map((row) => row.sede),
+        ]),
       )
-      .map((sede) => ({
-        sede,
-        yesterday: toAlexTotalsSnapshot(yesterdayMap.get(sede)),
-        monthToDate: toAlexTotalsSnapshot(monthToDateMap.get(sede)),
-      }));
-  }, []);
+        .sort((left, right) =>
+          left.localeCompare(right, "es", { sensitivity: "base" }),
+        )
+        .map((sede) => ({
+          sede,
+          yesterday: toAlexTotalsSnapshot(yesterdayMap.get(sede)),
+          monthToDate: toAlexTotalsSnapshot(monthToDateMap.get(sede)),
+        }));
+    },
+    [],
+  );
 
   const alexCompareConfig = useMemo(() => {
     const minAvailableDate = availableDates[0] ?? "";
@@ -419,7 +451,8 @@ export default function JornadaExtendidaPage() {
     if (!alexStartDate || alexStartDate > alexEndDate) {
       return {
         canCompare: false,
-        reason: "Define un periodo actual valido para construir el comparativo.",
+        reason:
+          "Define un periodo actual valido para construir el comparativo.",
         periods,
       };
     }
@@ -479,7 +512,10 @@ export default function JornadaExtendidaPage() {
 
     const currentRowsBySede = new Map(alexRows.map((row) => [row.sede, row]));
     const mergedRows = Array.from(
-      new Set([...alexRows.map((row) => row.sede), ...alexCompareRows.map((row) => row.sede)]),
+      new Set([
+        ...alexRows.map((row) => row.sede),
+        ...alexCompareRows.map((row) => row.sede),
+      ]),
     ).map((sede) => ({
       sede,
       ...createEmptyAlexTotals(),
@@ -487,7 +523,13 @@ export default function JornadaExtendidaPage() {
     }));
 
     return sortAlexRows(mergedRows);
-  }, [alexCompareOpen, alexCompareRows, alexRows, sortAlexRows, sortedAlexRows]);
+  }, [
+    alexCompareOpen,
+    alexCompareRows,
+    alexRows,
+    sortAlexRows,
+    sortedAlexRows,
+  ]);
 
   const getAlexCompareMetricValue = useCallback(
     (
@@ -498,8 +540,10 @@ export default function JornadaExtendidaPage() {
     [alexCompareRowMap],
   );
   const alexTableMinWidth = alexCompareOpen
-    ? ALEX_SEDE_COLUMN_WIDTH + ALEX_EXPORT_FIELDS.length * ALEX_COMPARE_METRIC_COLUMN_WIDTH * 2
-    : ALEX_SEDE_COLUMN_WIDTH + ALEX_EXPORT_FIELDS.length * ALEX_BASE_METRIC_COLUMN_WIDTH;
+    ? ALEX_SEDE_COLUMN_WIDTH +
+      ALEX_EXPORT_FIELDS.length * ALEX_COMPARE_METRIC_COLUMN_WIDTH * 2
+    : ALEX_SEDE_COLUMN_WIDTH +
+      ALEX_EXPORT_FIELDS.length * ALEX_BASE_METRIC_COLUMN_WIDTH;
 
   const toggleAlexSelectedField = (fieldKey: AlexExportFieldKey) => {
     setAlexExportError(null);
@@ -533,7 +577,7 @@ export default function JornadaExtendidaPage() {
             ? "justify-end text-right"
             : align === "center"
               ? "justify-center text-center"
-            : "justify-start text-left"
+              : "justify-start text-left"
         } ${isActive ? "text-red-700" : "text-slate-800 hover:text-red-700"}`}
         aria-pressed={isActive}
       >
@@ -562,7 +606,12 @@ export default function JornadaExtendidaPage() {
   ) => {
     const sheet = workbook.addWorksheet(sheetName);
     const exportColumns = [
-      { key: "sede" as const, header: "Sede", width: 22, align: "left" as const },
+      {
+        key: "sede" as const,
+        header: "Sede",
+        width: 22,
+        align: "left" as const,
+      },
       ...alexIncludedFields.map((field) => ({
         key: field.key,
         header: field.header,
@@ -602,7 +651,9 @@ export default function JornadaExtendidaPage() {
 
     sheet.addRow([]);
 
-    const headerRow = sheet.addRow(exportColumns.map((column) => column.header));
+    const headerRow = sheet.addRow(
+      exportColumns.map((column) => column.header),
+    );
     headerRow.eachCell((cell, colNumber) => {
       const column = exportColumns[colNumber - 1];
       cell.font = { bold: true, color: { argb: "FF0F172A" } };
@@ -738,10 +789,16 @@ export default function JornadaExtendidaPage() {
       const periodOneColumnIndex = 2 + index * 2;
       const periodTwoColumnIndex = periodOneColumnIndex + 1;
 
-      const periodOneDateCell = sheet.getCell(labelRowNumber, periodOneColumnIndex);
+      const periodOneDateCell = sheet.getCell(
+        labelRowNumber,
+        periodOneColumnIndex,
+      );
       periodOneDateCell.value = periodOneShortLabel;
       periodOneDateCell.font = { bold: true, color: { argb: "FFDC2626" } };
-      periodOneDateCell.alignment = { vertical: "middle", horizontal: "center" };
+      periodOneDateCell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+      };
       periodOneDateCell.fill = {
         type: "pattern",
         pattern: "solid",
@@ -754,10 +811,16 @@ export default function JornadaExtendidaPage() {
         right: { style: "thin", color: { argb: "FFCBD5E1" } },
       };
 
-      const periodTwoDateCell = sheet.getCell(labelRowNumber, periodTwoColumnIndex);
+      const periodTwoDateCell = sheet.getCell(
+        labelRowNumber,
+        periodTwoColumnIndex,
+      );
       periodTwoDateCell.value = periodTwoShortLabel;
       periodTwoDateCell.font = { bold: true, color: { argb: "FFDC2626" } };
-      periodTwoDateCell.alignment = { vertical: "middle", horizontal: "center" };
+      periodTwoDateCell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+      };
       periodTwoDateCell.fill = {
         type: "pattern",
         pattern: "solid",
@@ -1019,7 +1082,9 @@ export default function JornadaExtendidaPage() {
 
   const handleExportAlexCompareExcel = async () => {
     if (!alexComparePeriods || !alexCompareRawData) {
-      setAlexCompareError("Primero genera el comparativo visual para exportarlo.");
+      setAlexCompareError(
+        "Primero genera el comparativo visual para exportarlo.",
+      );
       return;
     }
 
@@ -1048,15 +1113,17 @@ export default function JornadaExtendidaPage() {
       );
       const link = document.createElement("a");
       link.href = url;
-      link.download =
-        `comparacion-periodos-${alexComparePeriods.yesterday.start}-${alexComparePeriods.monthToDate.start}-${alexComparePeriods.monthToDate.end}.xlsx`;
+      link.download = `comparacion-periodos-${alexComparePeriods.yesterday.start}-${alexComparePeriods.monthToDate.start}-${alexComparePeriods.monthToDate.end}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       setIsAlexExportMenuOpen(false);
     } catch (error) {
-      console.error("[jornada-extendida] Error exportando comparacion de periodos:", error);
+      console.error(
+        "[jornada-extendida] Error exportando comparacion de periodos:",
+        error,
+      );
       setAlexCompareError("No se pudo exportar la comparacion de periodos.");
     } finally {
       setExportingAlexCompareExcel(false);
@@ -1123,9 +1190,13 @@ export default function JornadaExtendidaPage() {
           monthToDateTotals: monthToDateData.totals,
         });
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         if (!isMounted) return;
-        console.error("[jornada-extendida] Error cargando comparacion visual:", error);
+        console.error(
+          "[jornada-extendida] Error cargando comparacion visual:",
+          error,
+        );
         setAlexCompareRows([]);
         setAlexCompareTotals(createEmptyAlexComparisonTotals());
         setAlexCompareRawData(null);
@@ -1173,7 +1244,9 @@ export default function JornadaExtendidaPage() {
         );
         const payload = (await response.json()) as AlexReportResponse;
         if (!response.ok) {
-          throw new Error(payload.error ?? "No se pudo cargar el reporte Alex.");
+          throw new Error(
+            payload.error ?? "No se pudo cargar el reporte Alex.",
+          );
         }
         if (!isMounted) return;
         setAlexRows(payload.rows ?? []);
@@ -1272,10 +1345,13 @@ export default function JornadaExtendidaPage() {
                       Tablero de tiempos
                     </p>
                     <h2 className="mt-1 text-lg font-bold leading-tight text-slate-900 sm:text-[1.6rem]">
-                      + 7:20h con 2 marcaciones, + 9:20h, marc. impares e inasistencias
+                      + 7:20h con 2 marcaciones, + 9:20h, marc. impares e
+                      inasistencias
                     </h2>
                     {alexRangeLabel && (
-                      <p className="mt-1 text-base font-bold text-red-700">{alexRangeLabel}</p>
+                      <p className="mt-1 text-base font-bold text-red-700">
+                        {alexRangeLabel}
+                      </p>
                     )}
                   </div>
                   <div className="w-full xl:max-w-2xl">
@@ -1285,10 +1361,10 @@ export default function JornadaExtendidaPage() {
                         <input
                           type="date"
                           value={alexStartDate}
-                        onChange={(e) => setAlexStartDate(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
-                        min={availableDates[0]}
-                        max={availableDates[availableDates.length - 1]}
+                          onChange={(e) => setAlexStartDate(e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
+                          min={availableDates[0]}
+                          max={availableDates[availableDates.length - 1]}
                         />
                       </label>
                       <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
@@ -1296,10 +1372,10 @@ export default function JornadaExtendidaPage() {
                         <input
                           type="date"
                           value={alexEndDate}
-                        onChange={(e) => setAlexEndDate(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
-                        min={availableDates[0]}
-                        max={availableDates[availableDates.length - 1]}
+                          onChange={(e) => setAlexEndDate(e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm"
+                          min={availableDates[0]}
+                          max={availableDates[availableDates.length - 1]}
                         />
                       </label>
                       <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
@@ -1321,7 +1397,9 @@ export default function JornadaExtendidaPage() {
                         Departamentos
                         <select
                           value={alexSelectedDepartment}
-                          onChange={(e) => setAlexSelectedDepartment(e.target.value)}
+                          onChange={(e) =>
+                            setAlexSelectedDepartment(e.target.value)
+                          }
                           className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm normal-case text-slate-900 shadow-sm"
                         >
                           <option value="all">Todos los departamentos</option>
@@ -1344,7 +1422,12 @@ export default function JornadaExtendidaPage() {
                             onClick={() =>
                               setIsAlexExportMenuOpen((prev) => !prev)
                             }
-                            disabled={alexLoading || alexRows.length === 0 || exportingAlexExcel || exportingAlexCompareExcel}
+                            disabled={
+                              alexLoading ||
+                              alexRows.length === 0 ||
+                              exportingAlexExcel ||
+                              exportingAlexCompareExcel
+                            }
                             className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                           >
                             {exportingAlexExcel || exportingAlexCompareExcel
@@ -1360,17 +1443,21 @@ export default function JornadaExtendidaPage() {
                                   Columnas a incluir
                                 </p>
                                 <p className="text-xs text-slate-500">
-                                  {alexSelectedFields.length === ALEX_EXPORT_FIELDS.length
+                                  {alexSelectedFields.length ===
+                                  ALEX_EXPORT_FIELDS.length
                                     ? "Sede + todas las métricas"
                                     : `Sede + ${alexIncludedFields.length} columna(s)`}
                                 </p>
                               </div>
                               <p className="mt-2 text-xs text-slate-500">
-                                Deja marcadas solo las métricas que quieres exportar.
+                                Deja marcadas solo las métricas que quieres
+                                exportar.
                               </p>
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {ALEX_EXPORT_FIELDS.map((field) => {
-                                  const selected = alexSelectedFields.includes(field.key);
+                                  const selected = alexSelectedFields.includes(
+                                    field.key,
+                                  );
                                   return (
                                     <label
                                       key={field.key}
@@ -1379,7 +1466,9 @@ export default function JornadaExtendidaPage() {
                                       <input
                                         type="checkbox"
                                         checked={selected}
-                                        onChange={() => toggleAlexSelectedField(field.key)}
+                                        onChange={() =>
+                                          toggleAlexSelectedField(field.key)
+                                        }
                                         className="h-4 w-4 rounded border-slate-300 text-slate-900"
                                       />
                                       <span>{field.toggleLabel}</span>
@@ -1395,11 +1484,15 @@ export default function JornadaExtendidaPage() {
                               <div className="mt-3 flex justify-end">
                                 <button
                                   type="button"
-                                  onClick={() => void handleExportAlexTableExcel()}
+                                  onClick={() =>
+                                    void handleExportAlexTableExcel()
+                                  }
                                   disabled={exportingAlexExcel}
                                   className="inline-flex min-h-10 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {exportingAlexExcel ? "Generando Excel..." : "Exportar Excel"}
+                                  {exportingAlexExcel
+                                    ? "Generando Excel..."
+                                    : "Exportar Excel"}
                                 </button>
                               </div>
                             </div>
@@ -1424,12 +1517,16 @@ export default function JornadaExtendidaPage() {
                                 : "border-emerald-200/70 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100"
                             }`}
                           >
-                            {alexCompareOpen ? "Ocultar comparativo" : "Comparar periodos"}
+                            {alexCompareOpen
+                              ? "Ocultar comparativo"
+                              : "Comparar periodos"}
                           </button>
                           {alexCompareOpen && (
                             <button
                               type="button"
-                              onClick={() => void handleExportAlexCompareExcel()}
+                              onClick={() =>
+                                void handleExportAlexCompareExcel()
+                              }
                               disabled={
                                 alexCompareLoading ||
                                 exportingAlexCompareExcel ||
@@ -1443,7 +1540,6 @@ export default function JornadaExtendidaPage() {
                             </button>
                           )}
                         </div>
-
                       </div>
                     </div>
                     {!alexCompareOpen && alexCompareConfig.reason && (
@@ -1464,7 +1560,9 @@ export default function JornadaExtendidaPage() {
                     {alexError}
                   </div>
                 ) : alexLoading ? (
-                  <p className="mt-3 text-sm text-slate-600">Cargando reporte Alex...</p>
+                  <p className="mt-3 text-sm text-slate-600">
+                    Cargando reporte Alex...
+                  </p>
                 ) : (
                   <>
                     {alexCompareOpen && alexCompareError && (
@@ -1474,7 +1572,9 @@ export default function JornadaExtendidaPage() {
                     )}
                     {alexCompareOpen && alexComparePeriods && (
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                        {alexComparePeriods.yesterday.title}: {alexComparePeriods.yesterday.label} | {alexComparePeriods.monthToDate.title}:{" "}
+                        {alexComparePeriods.yesterday.title}:{" "}
+                        {alexComparePeriods.yesterday.label} |{" "}
+                        {alexComparePeriods.monthToDate.title}:{" "}
                         {alexComparePeriods.monthToDate.label}
                       </div>
                     )}
@@ -1487,22 +1587,30 @@ export default function JornadaExtendidaPage() {
                         style={{ minWidth: `${alexTableMinWidth}px` }}
                       >
                         <colgroup>
-                          <col style={{ width: `${ALEX_SEDE_COLUMN_WIDTH}px` }} />
+                          <col
+                            style={{ width: `${ALEX_SEDE_COLUMN_WIDTH}px` }}
+                          />
                           {alexCompareOpen
                             ? ALEX_EXPORT_FIELDS.flatMap((field) => [
                                 <col
                                   key={`${field.key}-compare-day`}
-                                  style={{ width: `${ALEX_COMPARE_METRIC_COLUMN_WIDTH}px` }}
+                                  style={{
+                                    width: `${ALEX_COMPARE_METRIC_COLUMN_WIDTH}px`,
+                                  }}
                                 />,
                                 <col
                                   key={`${field.key}-compare-month`}
-                                  style={{ width: `${ALEX_COMPARE_METRIC_COLUMN_WIDTH}px` }}
+                                  style={{
+                                    width: `${ALEX_COMPARE_METRIC_COLUMN_WIDTH}px`,
+                                  }}
                                 />,
                               ])
                             : ALEX_EXPORT_FIELDS.map((field) => (
                                 <col
                                   key={`${field.key}-base`}
-                                  style={{ width: `${ALEX_BASE_METRIC_COLUMN_WIDTH}px` }}
+                                  style={{
+                                    width: `${ALEX_BASE_METRIC_COLUMN_WIDTH}px`,
+                                  }}
                                 />
                               ))}
                         </colgroup>
@@ -1549,15 +1657,21 @@ export default function JornadaExtendidaPage() {
                                   <Fragment key={`${field.key}-expanded`}>
                                     <th
                                       className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#fde9a8] px-3 py-2 text-center font-bold text-red-600`}
-                                      title={alexComparePeriods?.yesterday.label}
+                                      title={
+                                        alexComparePeriods?.yesterday.label
+                                      }
                                     >
-                                      {alexComparePeriods?.yesterday.shortLabel ?? "--"}
+                                      {alexComparePeriods?.yesterday
+                                        .shortLabel ?? "--"}
                                     </th>
                                     <th
                                       className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#c9dbef] px-3 py-2 text-center font-bold text-red-600`}
-                                      title={alexComparePeriods?.monthToDate.label}
+                                      title={
+                                        alexComparePeriods?.monthToDate.label
+                                      }
                                     >
-                                      {alexComparePeriods?.monthToDate.shortLabel ?? "--"}
+                                      {alexComparePeriods?.monthToDate
+                                        .shortLabel ?? "--"}
                                     </th>
                                   </Fragment>
                                 ))}
@@ -1603,7 +1717,11 @@ export default function JornadaExtendidaPage() {
                                     : "none"
                                 }
                               >
-                                {renderAlexSortHeader("moreThan92", "+ 9:20h", "right")}
+                                {renderAlexSortHeader(
+                                  "moreThan92",
+                                  "+ 9:20h",
+                                  "right",
+                                )}
                               </th>
                               <th
                                 className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right font-bold`}
@@ -1615,7 +1733,11 @@ export default function JornadaExtendidaPage() {
                                     : "none"
                                 }
                               >
-                                {renderAlexSortHeader("oddMarks", "Marc. impares", "right")}
+                                {renderAlexSortHeader(
+                                  "oddMarks",
+                                  "Marc. impares",
+                                  "right",
+                                )}
                               </th>
                               <th
                                 className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right font-bold`}
@@ -1627,7 +1749,11 @@ export default function JornadaExtendidaPage() {
                                     : "none"
                                 }
                               >
-                                {renderAlexSortHeader("absences", "Inasistencias", "right")}
+                                {renderAlexSortHeader(
+                                  "absences",
+                                  "Inasistencias",
+                                  "right",
+                                )}
                               </th>
                             </tr>
                           )}
@@ -1635,25 +1761,31 @@ export default function JornadaExtendidaPage() {
                         <tbody>
                           {displayedAlexRows.map((row) => (
                             <tr key={row.sede}>
-                              <td className={`sticky left-0 z-10 ${ALEX_TABLE_CELL_BORDER_CLASS} bg-white px-3 py-2 font-semibold text-slate-900`}>
+                              <td
+                                className={`sticky left-0 z-10 ${ALEX_TABLE_CELL_BORDER_CLASS} bg-white px-3 py-2 font-semibold text-slate-900`}
+                              >
                                 {row.sede}
                               </td>
                               {alexCompareOpen ? (
                                 <>
                                   {ALEX_EXPORT_FIELDS.map((field) => (
                                     <Fragment key={`${row.sede}-${field.key}`}>
-                                      <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#fff0b8] px-3 py-2 text-center text-slate-800`}>
+                                      <td
+                                        className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#fff0b8] px-3 py-2 text-center text-slate-800`}
+                                      >
                                         {alexCompareLoading
                                           ? "..."
-                                        : formatAlexMetric(
-                                            getAlexCompareMetricValue(
-                                              row.sede,
-                                              "yesterday",
-                                              field.key,
-                                            ),
-                                          )}
+                                          : formatAlexMetric(
+                                              getAlexCompareMetricValue(
+                                                row.sede,
+                                                "yesterday",
+                                                field.key,
+                                              ),
+                                            )}
                                       </td>
-                                      <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#d6e5f5] px-3 py-2 text-center text-slate-800`}>
+                                      <td
+                                        className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#d6e5f5] px-3 py-2 text-center text-slate-800`}
+                                      >
                                         {alexCompareLoading
                                           ? "..."
                                           : formatAlexMetric(
@@ -1669,16 +1801,24 @@ export default function JornadaExtendidaPage() {
                                 </>
                               ) : (
                                 <>
-                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
+                                  <td
+                                    className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}
+                                  >
                                     {formatAlexMetric(row.moreThan72With2)}
                                   </td>
-                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
+                                  <td
+                                    className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}
+                                  >
                                     {formatAlexMetric(row.moreThan92)}
                                   </td>
-                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
+                                  <td
+                                    className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}
+                                  >
                                     {formatAlexMetric(row.oddMarks)}
                                   </td>
-                                  <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}>
+                                  <td
+                                    className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right text-slate-800`}
+                                  >
                                     {formatAlexMetric(row.absences)}
                                   </td>
                                 </>
@@ -1686,23 +1826,35 @@ export default function JornadaExtendidaPage() {
                             </tr>
                           ))}
                           <tr className="bg-slate-50 font-bold text-slate-900">
-                            <td className={`sticky left-0 z-10 ${ALEX_TABLE_CELL_BORDER_CLASS} bg-slate-50 px-3 py-2`}>
+                            <td
+                              className={`sticky left-0 z-10 ${ALEX_TABLE_CELL_BORDER_CLASS} bg-slate-50 px-3 py-2`}
+                            >
                               TOTAL
                             </td>
                             {alexCompareOpen ? (
                               <>
                                 {ALEX_EXPORT_FIELDS.map((field) => (
                                   <Fragment key={`totals-${field.key}`}>
-                                    <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#f8df8c] px-3 py-2 text-center`}>
-                                      {alexCompareLoading
-                                        ? "..."
-                                        : formatAlexMetric(alexCompareTotals.yesterday[field.key])}
-                                    </td>
-                                    <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#bdd4ec] px-3 py-2 text-center`}>
+                                    <td
+                                      className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#f8df8c] px-3 py-2 text-center`}
+                                    >
                                       {alexCompareLoading
                                         ? "..."
                                         : formatAlexMetric(
-                                            alexCompareTotals.monthToDate[field.key],
+                                            alexCompareTotals.yesterday[
+                                              field.key
+                                            ],
+                                          )}
+                                    </td>
+                                    <td
+                                      className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#bdd4ec] px-3 py-2 text-center`}
+                                    >
+                                      {alexCompareLoading
+                                        ? "..."
+                                        : formatAlexMetric(
+                                            alexCompareTotals.monthToDate[
+                                              field.key
+                                            ],
                                           )}
                                     </td>
                                   </Fragment>
@@ -1710,12 +1862,26 @@ export default function JornadaExtendidaPage() {
                               </>
                             ) : (
                               <>
-                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>
+                                <td
+                                  className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}
+                                >
                                   {alexTotals.moreThan72With2}
                                 </td>
-                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>{alexTotals.moreThan92}</td>
-                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>{alexTotals.oddMarks}</td>
-                                <td className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}>{alexTotals.absences}</td>
+                                <td
+                                  className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}
+                                >
+                                  {alexTotals.moreThan92}
+                                </td>
+                                <td
+                                  className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}
+                                >
+                                  {alexTotals.oddMarks}
+                                </td>
+                                <td
+                                  className={`${ALEX_TABLE_CELL_BORDER_CLASS} px-3 py-2 text-right`}
+                                >
+                                  {alexTotals.absences}
+                                </td>
                               </>
                             )}
                           </tr>
@@ -1727,23 +1893,23 @@ export default function JornadaExtendidaPage() {
               </div>
             )}
 
-              <HourlyAnalysis
-                availableDates={availableDates}
-                availableSedes={availableSedes}
-                defaultDate={defaultDate}
-                defaultSede={defaultSede}
-                sections={["overtime"]}
-                defaultSection="overtime"
-                showTimeFilters={false}
-                showTopDateFilter={false}
-                showTopLineFilter={false}
-                showSedeFilters={false}
-                showDepartmentFilterInOvertime
-                enableOvertimeDateRange
-                alexConsistencyMode={canSeeAlexReport}
-                alexTotalsOverride={canSeeAlexReport ? alexTotals : undefined}
-                dashboardContext="jornada-extendida"
-              />
+            <HourlyAnalysis
+              availableDates={availableDates}
+              availableSedes={availableSedes}
+              defaultDate={defaultDate}
+              defaultSede={defaultSede}
+              sections={["overtime"]}
+              defaultSection="overtime"
+              showTimeFilters={false}
+              showTopDateFilter={false}
+              showTopLineFilter={false}
+              showSedeFilters={false}
+              showDepartmentFilterInOvertime
+              enableOvertimeDateRange
+              alexConsistencyMode={canSeeAlexReport}
+              alexTotalsOverride={canSeeAlexReport ? alexTotals : undefined}
+              dashboardContext="jornada-extendida"
+            />
           </>
         )}
       </div>
