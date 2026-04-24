@@ -129,6 +129,7 @@ let inventoryDateColumnCache:
 let inventoryUnitsSoldExprCache: string | null = null;
 let inventoryClosingUnitsExprCache: string | null = null;
 let inventoryValueExprCache: string | null = null;
+let inventoryN1CodeExprCache: string | null = null;
 let filterCatalogCache:
   | { dateKey: string; value: InventoryFilterCatalog; expiresAt: number }
   | null = null;
@@ -298,6 +299,37 @@ const resolveInventoryValueExpr = async (
   return inventoryValueExprCache;
 };
 
+const resolveInventoryN1CodeExpr = async (
+  client: InventoryQueryClient,
+): Promise<string> => {
+  if (inventoryN1CodeExprCache) return inventoryN1CodeExprCache;
+  const result = await client.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'rotacion_base_item_dia_sede'
+      AND column_name IN ('linea_nivel_1_codigo', 'linea_n1_codigo', 'linea01')
+    `,
+  );
+  const columns = new Set(
+    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
+  );
+  if (columns.has("linea_nivel_1_codigo")) {
+    inventoryN1CodeExprCache = "NULLIF(TRIM(linea_nivel_1_codigo), '')";
+    return inventoryN1CodeExprCache;
+  }
+  if (columns.has("linea_n1_codigo")) {
+    inventoryN1CodeExprCache = "NULLIF(TRIM(linea_n1_codigo), '')";
+    return inventoryN1CodeExprCache;
+  }
+  if (columns.has("linea01")) {
+    inventoryN1CodeExprCache = "NULLIF(TRIM(linea01::text), '')";
+    return inventoryN1CodeExprCache;
+  }
+  inventoryN1CodeExprCache = "NULL::text";
+  return inventoryN1CodeExprCache;
+};
+
 const buildCompactDateRangeSql = (
   column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
   startParam = "$1",
@@ -317,9 +349,6 @@ const getAvailableDateRange = async () => {
   const client = await (await getDbPool()).connect();
   try {
     const dateColumn = await resolveInventoryDateColumn(client);
-    const unitsSoldExpr = await resolveInventoryUnitsSoldExpr(client);
-    const closingUnitsExpr = await resolveInventoryClosingUnitsExpr(client);
-    const inventoryValueExpr = await resolveInventoryValueExpr(client);
     const result = await client.query(
       `
       SELECT
@@ -365,6 +394,9 @@ const getInventoryFilterCatalog = async (
   const client = await (await getDbPool()).connect();
   try {
     const dateColumn = await resolveInventoryDateColumn(client);
+    const unitsSoldExpr = await resolveInventoryUnitsSoldExpr(client);
+    const closingUnitsExpr = await resolveInventoryClosingUnitsExpr(client);
+    const inventoryValueExpr = await resolveInventoryValueExpr(client);
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -415,11 +447,15 @@ const queryInventorySummaryRows = async ({
   const client = await (await getDbPool()).connect();
   try {
     const dateColumn = await resolveInventoryDateColumn(client);
+    const unitsSoldExpr = await resolveInventoryUnitsSoldExpr(client);
+    const closingUnitsExpr = await resolveInventoryClosingUnitsExpr(client);
+    const inventoryValueExpr = await resolveInventoryValueExpr(client);
+    const n1CodeExpr = await resolveInventoryN1CodeExpr(client);
     const result = await client.query(
       `
       SELECT
         COALESCE(NULLIF(TRIM(linea), ''), 'Sin linea') AS linea,
-        NULLIF(TRIM(linea_n1_codigo), '') AS linea_n1_codigo,
+        ${n1CodeExpr} AS linea_n1_codigo,
         COALESCE(NULLIF(TRIM(item), ''), 'sin_item') AS item,
         COALESCE(
           NULLIF(TRIM(descripcion), ''),
@@ -455,7 +491,7 @@ const queryInventorySummaryRows = async ({
         AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $4)
       GROUP BY
         linea,
-        linea_n1_codigo,
+        ${n1CodeExpr},
         item,
         descripcion,
         unidad
@@ -521,6 +557,7 @@ const queryInventoryMatrixRows = async ({
     const unitsSoldExpr = await resolveInventoryUnitsSoldExpr(client);
     const closingUnitsExpr = await resolveInventoryClosingUnitsExpr(client);
     const inventoryValueExpr = await resolveInventoryValueExpr(client);
+    const n1CodeExpr = await resolveInventoryN1CodeExpr(client);
     const params: Array<string | string[] | null> = [
       dateRangeCompact.start,
       dateRangeCompact.end,
@@ -537,11 +574,11 @@ const queryInventoryMatrixRows = async ({
 
     if (subcategory === "perecederos") {
       whereClauses.push(
-        "COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), 'sin_codigo') IN ('01', '02', '03', '04', '12')",
+        `COALESCE(${n1CodeExpr}, 'sin_codigo') IN ('01', '02', '03', '04', '12')`,
       );
     } else if (subcategory === "manufacturas") {
       whereClauses.push(
-        "COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), 'sin_codigo') NOT IN ('01', '02', '03', '04', '12')",
+        `COALESCE(${n1CodeExpr}, 'sin_codigo') NOT IN ('01', '02', '03', '04', '12')`,
       );
     }
 
@@ -555,13 +592,13 @@ const queryInventoryMatrixRows = async ({
           const lineCodeParam = params.length;
           return `(
             LOWER(COALESCE(NULLIF(TRIM(linea), ''), 'sin linea')) = $${lineNameParam}
-            AND COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), 'sin_codigo') = $${lineCodeParam}
+            AND COALESCE(${n1CodeExpr}, 'sin_codigo') = $${lineCodeParam}
           )`;
         }
 
         return `(
           LOWER(COALESCE(NULLIF(TRIM(linea), ''), 'sin linea')) = $${lineNameParam}
-          AND NULLIF(TRIM(linea_n1_codigo), '') IS NULL
+          AND ${n1CodeExpr} IS NULL
         )`;
       });
 
@@ -582,7 +619,7 @@ const queryInventoryMatrixRows = async ({
           COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
           COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name,
           COALESCE(NULLIF(TRIM(linea), ''), 'Sin linea') AS linea,
-          NULLIF(TRIM(linea_n1_codigo), '') AS linea_n1_codigo,
+          ${n1CodeExpr} AS linea_n1_codigo,
           COALESCE(NULLIF(TRIM(item), ''), 'sin_item') AS item,
           COALESCE(
             NULLIF(TRIM(descripcion), ''),
