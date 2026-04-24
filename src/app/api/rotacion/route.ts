@@ -160,8 +160,12 @@ const DEFAULT_ABCD_CONFIG: AbcdConfig = {
 let availableBoundsCache:
   | { value: AvailableBoundsRow | null; expiresAt: number }
   | null = null;
-let rotationDateColumnCache: "fecha_consulta" | "fecha" | "fecha_carga" | null =
-  null;
+let rotationDateColumnCache:
+  | "fecha_dia"
+  | "fecha_consulta"
+  | "fecha"
+  | "fecha_carga"
+  | null = null;
 let rotationFilterCatalogCache:
   | { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
   | null = null;
@@ -715,19 +719,23 @@ type RotationQueryClient = {
 
 const resolveRotationDateColumn = async (
   client: RotationQueryClient,
-): Promise<"fecha_consulta" | "fecha" | "fecha_carga"> => {
+): Promise<"fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga"> => {
   if (rotationDateColumnCache) return rotationDateColumnCache;
   const result = await client.query(
     `
     SELECT column_name
     FROM information_schema.columns
     WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('fecha_consulta', 'fecha', 'fecha_carga')
+      AND column_name IN ('fecha_dia', 'fecha_consulta', 'fecha', 'fecha_carga')
     `,
   );
   const columns = new Set(
     (result.rows ?? []).map((row) => String(row.column_name ?? "")),
   );
+  if (columns.has("fecha_dia")) {
+    rotationDateColumnCache = "fecha_dia";
+    return rotationDateColumnCache;
+  }
   if (columns.has("fecha_consulta")) {
     rotationDateColumnCache = "fecha_consulta";
     return rotationDateColumnCache;
@@ -741,12 +749,12 @@ const resolveRotationDateColumn = async (
     return rotationDateColumnCache;
   }
   throw new Error(
-    "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_consulta, fecha o fecha_carga).",
+    "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_dia, fecha_consulta, fecha o fecha_carga).",
   );
 };
 
 const buildCompactDateRangeSql = (
-  column: "fecha_consulta" | "fecha" | "fecha_carga",
+  column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
   startParam = "$1",
   endParam = "$2",
 ) =>
@@ -756,7 +764,7 @@ const buildCompactDateRangeSql = (
         AND ${column} ~ '^[0-9]{8}$'`;
 
 const buildCompactDateEqualsSql = (
-  column: "fecha_consulta" | "fecha" | "fecha_carga",
+  column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
   param = "$1",
 ) =>
   column === "fecha_carga"
@@ -765,7 +773,7 @@ const buildCompactDateEqualsSql = (
         AND ${column} ~ '^[0-9]{8}$'`;
 
 const buildConsultaDateSql = (
-  column: "fecha_consulta" | "fecha" | "fecha_carga",
+  column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
 ) =>
   column === "fecha_carga" ? `${column}::date` : `TO_DATE(${column}, 'YYYYMMDD')`;
 

@@ -121,6 +121,7 @@ let dateRangeCache:
   | { value: { min: string | null; max: string | null }; expiresAt: number }
   | null = null;
 let inventoryDateColumnCache:
+  | "fecha_dia"
   | "fecha_consulta"
   | "fecha"
   | "fecha_carga"
@@ -159,19 +160,23 @@ type InventoryQueryClient = {
 
 const resolveInventoryDateColumn = async (
   client: InventoryQueryClient,
-): Promise<"fecha_consulta" | "fecha" | "fecha_carga"> => {
+): Promise<"fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga"> => {
   if (inventoryDateColumnCache) return inventoryDateColumnCache;
   const result = await client.query(
     `
     SELECT column_name
     FROM information_schema.columns
     WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('fecha_consulta', 'fecha', 'fecha_carga')
+      AND column_name IN ('fecha_dia', 'fecha_consulta', 'fecha', 'fecha_carga')
     `,
   );
   const columns = new Set(
     (result.rows ?? []).map((row) => String(row.column_name ?? "")),
   );
+  if (columns.has("fecha_dia")) {
+    inventoryDateColumnCache = "fecha_dia";
+    return inventoryDateColumnCache;
+  }
   if (columns.has("fecha_consulta")) {
     inventoryDateColumnCache = "fecha_consulta";
     return inventoryDateColumnCache;
@@ -185,12 +190,12 @@ const resolveInventoryDateColumn = async (
     return inventoryDateColumnCache;
   }
   throw new Error(
-    "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_consulta, fecha o fecha_carga).",
+    "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_dia, fecha_consulta, fecha o fecha_carga).",
   );
 };
 
 const buildCompactDateRangeSql = (
-  column: "fecha_consulta" | "fecha" | "fecha_carga",
+  column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
   startParam = "$1",
   endParam = "$2",
 ) =>
