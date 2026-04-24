@@ -13,6 +13,7 @@ import {
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
+  resolvePortalSubsectionId,
 } from "@/lib/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
 
@@ -119,10 +120,14 @@ export default function HorarioHubPage() {
     return [BASE_OPERACION_MODULES[0], COMPARAR_MODULE, BASE_OPERACION_MODULES[1]];
   }, [canSeeCompararHorarios]);
   const visibleModules = useMemo(
-    () =>
-      modules.filter((module) =>
-        isAdmin ? true : canAccessPortalSubsection(allowedSubdashboards, module.id),
-      ),
+    () => {
+      return modules.filter((module) => {
+        if (isAdmin) return true;
+        const subId = resolvePortalSubsectionId(module.id);
+        if (!subId) return false;
+        return canAccessPortalSubsection(allowedSubdashboards, subId);
+      });
+    },
     [allowedSubdashboards, isAdmin, modules],
   );
 
