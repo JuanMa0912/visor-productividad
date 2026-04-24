@@ -7,7 +7,10 @@ import { useRouter } from "next/navigation";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { BarChart } from "@mui/x-charts/BarChart";
 import * as ExcelJS from "exceljs";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import {
   buildDailyTableAllRange,
   buildNumericPivotRange,
@@ -119,12 +122,17 @@ export default function VentasXItemPage() {
           user?: {
             role?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
           };
         };
         const userIsAdmin = payload.user?.role === "admin";
         if (
           !userIsAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "venta")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "venta") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "ventas-x-item",
+            ))
         ) {
           router.replace("/secciones");
           return;

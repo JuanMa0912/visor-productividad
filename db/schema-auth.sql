@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS app_users (
   role text NOT NULL CHECK (role IN ('admin', 'user')),
   sede text,
   allowed_lines text[],
+  allowed_subdashboards text[],
   special_roles text[],
   is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),

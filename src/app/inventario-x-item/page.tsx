@@ -30,7 +30,10 @@ import {
   INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS,
   type InventarioSubcategoryKey,
 } from "@/lib/inventario-x-item";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import { formatDateLabel } from "@/lib/utils";
 
 type InventarioSummaryRow = {
@@ -588,12 +591,20 @@ export default function InventarioXItemPage() {
         if (!response.ok) return;
 
         const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
+          user?: {
+            role?: string;
+            allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
+          };
         };
         const isAdmin = payload.user?.role === "admin";
         if (
           !isAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "venta")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "venta") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "inventario-x-item",
+            ))
         ) {
           router.replace("/secciones");
           return;

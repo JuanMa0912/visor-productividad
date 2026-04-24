@@ -30,7 +30,10 @@ import { ChartsLabelMark } from "@mui/x-charts/ChartsLabel";
 import type { XAxis, YAxis } from "@mui/x-charts/models";
 import type { LineSeries } from "@mui/x-charts/LineChart";
 import type { MarkPlotProps, LinePlotProps } from "@mui/x-charts/LineChart";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import {
   escapeCsvValue,
   formatPdfDate,
@@ -3609,13 +3612,18 @@ export default function Home() {
             username?: string;
             allowedLines?: string[] | null;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
           };
         };
         if (!isMounted) return;
         const isUserAdmin = payload.user?.role === "admin";
         if (
           !isUserAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "producto") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "mix-y-linea",
+            ))
         ) {
           router.replace("/secciones");
           return;

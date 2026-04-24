@@ -15,7 +15,11 @@ import {
   PortalHubShell,
   type HubModuleItem,
 } from "@/components/portal/hub-section-cards";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+  resolvePortalSubsectionId,
+} from "@/lib/portal-sections";
 import { canAccessRotacionBoard } from "@/lib/special-role-features";
 
 const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
@@ -55,6 +59,9 @@ export default function ProductividadHubPage() {
   const [canSeeRotacion, setCanSeeRotacion] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [canAccessCronograma, setCanAccessCronograma] = useState(false);
+  const [allowedSubdashboards, setAllowedSubdashboards] = useState<
+    string[] | null
+  >(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -74,6 +81,7 @@ export default function ProductividadHubPage() {
           user?: {
             role?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
           };
         };
@@ -87,6 +95,7 @@ export default function ProductividadHubPage() {
         }
         if (isMounted) {
           setIsAdmin(userIsAdmin);
+          setAllowedSubdashboards(payload.user?.allowedSubdashboards ?? null);
           setCanAccessCronograma(
             userIsAdmin ||
               Boolean(payload.user?.specialRoles?.includes("cronograma")),
@@ -114,6 +123,22 @@ export default function ProductividadHubPage() {
     withRotacion.splice(2, 0, ROTACION_MODULE);
     return withRotacion;
   }, [canSeeRotacion]);
+  const visibleModules = useMemo(
+    () =>
+      modules.filter((module) => {
+        if (isAdmin) return true;
+        const subId = resolvePortalSubsectionId(module.id);
+        if (!subId) return false;
+        return canAccessPortalSubsection(allowedSubdashboards, subId);
+      }),
+    [allowedSubdashboards, isAdmin, modules],
+  );
+
+  useEffect(() => {
+    if (ready && visibleModules.length === 0) {
+      router.replace("/secciones");
+    }
+  }, [ready, router, visibleModules.length]);
 
   if (!ready) {
     return (
@@ -139,11 +164,11 @@ export default function ProductividadHubPage() {
         eyebrow="Producto • Enfoque • Causa"
         title="Causa comercial del resultado"
         description="Usa esta seccion para entender que lineas, productos y margenes explican el resultado del negocio por sede."
-        moduleCount={modules.length}
+        moduleCount={visibleModules.length}
       />
       <PortalHubModuleGrid
         theme="producto"
-        items={modules}
+        items={visibleModules}
         onNavigate={(href) => router.push(href)}
         columnsClassName="gap-4 md:grid-cols-2 xl:grid-cols-4"
       />

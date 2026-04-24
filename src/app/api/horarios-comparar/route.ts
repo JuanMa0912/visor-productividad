@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import type { Sede } from "@/lib/constants";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
 import { normalizeKeySpaced } from "@/lib/normalize";
 import {
@@ -247,7 +250,11 @@ export async function GET(request: Request) {
   const isAdmin = session.user.role === "admin";
   if (
     !isAdmin &&
-    !canAccessPortalSection(session.user.allowedDashboards, "operacion")
+    (!canAccessPortalSection(session.user.allowedDashboards, "operacion") ||
+      !canAccessPortalSubsection(
+        session.user.allowedSubdashboards,
+        "planilla-vs-asistencia",
+      ))
   ) {
     return withSession(
       NextResponse.json(

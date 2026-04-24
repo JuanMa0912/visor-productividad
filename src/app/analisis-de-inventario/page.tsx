@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PieChart } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 
 export default function AnalisisDeInventarioPage() {
   const router = useRouter();
@@ -31,13 +34,18 @@ export default function AnalisisDeInventarioPage() {
           user?: {
             role?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
           };
         };
         const userIsAdmin = payload.user?.role === "admin";
         if (
           !userIsAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "venta")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "venta") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "analisis-de-inventario",
+            ))
         ) {
           router.replace("/secciones");
           return;

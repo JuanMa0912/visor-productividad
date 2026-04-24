@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import * as ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
 import {
   HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN,
@@ -136,13 +139,18 @@ export default function HorariosCompararPage() {
           user?: {
             role?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
           };
         };
         const isAdmin = payload.user?.role === "admin";
         if (
           !isAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "operacion")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "operacion") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "planilla-vs-asistencia",
+            ))
         ) {
           router.replace("/secciones");
           return;

@@ -12,7 +12,10 @@ import {
 } from "@/lib/constants";
 import { normalizeKeyCompact } from "@/lib/normalize";
 import { formatCOP } from "@/lib/calc";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 
 type DateRange = {
   start: string;
@@ -239,13 +242,18 @@ export default function MargenesPage() {
             username?: string;
             allowedLines?: string[] | null;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
           };
         };
         if (!isMounted) return;
         const isUserAdmin = payload.user?.role === "admin";
         if (
           !isUserAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "producto") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "margenes",
+            ))
         ) {
           router.replace("/secciones");
           return;

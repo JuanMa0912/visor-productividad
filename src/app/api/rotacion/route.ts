@@ -11,7 +11,10 @@ const normalizeRotationLineaN1Code = (raw: string | null | undefined): string =>
   if (/^\d+$/.test(t)) return t.padStart(2, "0");
   return t;
 };
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import {
   canAccessRotacionBoard,
   canEditRotacionAbcdConfig,
@@ -1291,7 +1294,8 @@ export async function GET(request: Request) {
 
   if (
     session.user.role !== "admin" &&
-    !canAccessPortalSection(session.user.allowedDashboards, "producto")
+    (!canAccessPortalSection(session.user.allowedDashboards, "producto") ||
+      !canAccessPortalSubsection(session.user.allowedSubdashboards, "rotacion"))
   ) {
     return withSession(
       NextResponse.json(

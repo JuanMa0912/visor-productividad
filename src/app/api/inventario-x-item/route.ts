@@ -9,7 +9,10 @@ import {
   parseInventarioLineKey,
   type InventarioSubcategoryKey,
 } from "@/lib/inventario-x-item";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 
 type DateRangeRow = {
   min_date: string | null;
@@ -527,7 +530,11 @@ export async function GET(request: Request) {
 
   if (
     session.user.role !== "admin" &&
-    !canAccessPortalSection(session.user.allowedDashboards, "venta")
+    (!canAccessPortalSection(session.user.allowedDashboards, "venta") ||
+      !canAccessPortalSubsection(
+        session.user.allowedSubdashboards,
+        "inventario-x-item",
+      ))
   ) {
     return withSession(
       NextResponse.json(

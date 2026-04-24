@@ -1,4 +1,14 @@
 export type PortalSectionId = "venta" | "producto" | "operacion";
+export type PortalSubsectionId =
+  | "ventas-x-item"
+  | "inventario-x-item"
+  | "analisis-de-inventario"
+  | "mix-y-linea"
+  | "margenes"
+  | "rotacion"
+  | "consulta-operativa"
+  | "planilla-vs-asistencia"
+  | "registro-de-horarios";
 
 export type PortalSectionDefinition = {
   id: PortalSectionId;
@@ -39,6 +49,19 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
   },
 ];
 
+export const PORTAL_SUBSECTIONS_BY_SECTION: Record<
+  PortalSectionId,
+  PortalSubsectionId[]
+> = {
+  venta: ["ventas-x-item", "inventario-x-item", "analisis-de-inventario"],
+  producto: ["mix-y-linea", "margenes", "rotacion"],
+  operacion: [
+    "consulta-operativa",
+    "planilla-vs-asistencia",
+    "registro-de-horarios",
+  ],
+};
+
 const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   venta: "venta",
   "inventario-x-item": "venta",
@@ -59,6 +82,26 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   "horarios-guardados": "operacion",
 };
 
+const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
+  "ventas-x-item": "ventas-x-item",
+  ventas: "ventas-x-item",
+  "inventario-x-item": "inventario-x-item",
+  "analisis-de-inventario": "analisis-de-inventario",
+  "mix-y-linea": "mix-y-linea",
+  "productividad-home": "mix-y-linea",
+  productividad: "mix-y-linea",
+  "margenes-operativos": "margenes",
+  margenes: "margenes",
+  rotacion: "rotacion",
+  "consulta-operativa": "consulta-operativa",
+  "jornada-extendida": "consulta-operativa",
+  "planilla-vs-asistencia": "planilla-vs-asistencia",
+  "horarios-comparar": "planilla-vs-asistencia",
+  "registro-de-horarios": "registro-de-horarios",
+  "ingresar-horarios": "registro-de-horarios",
+  "horarios-guardados": "registro-de-horarios",
+};
+
 const normalizePortalSectionToken = (value?: string | null) =>
   (value ?? "")
     .trim()
@@ -68,6 +111,11 @@ const normalizePortalSectionToken = (value?: string | null) =>
 
 export const resolvePortalSectionId = (value?: string | null): PortalSectionId | null =>
   PORTAL_SECTION_ALIAS_MAP[normalizePortalSectionToken(value)] ?? null;
+
+export const resolvePortalSubsectionId = (
+  value?: string | null,
+): PortalSubsectionId | null =>
+  PORTAL_SUBSECTION_ALIAS_MAP[normalizePortalSectionToken(value)] ?? null;
 
 export const normalizeAllowedPortalSections = (
   value: unknown,
@@ -85,6 +133,21 @@ export const normalizeAllowedPortalSections = (
   );
 };
 
+export const normalizeAllowedPortalSubsections = (
+  value: unknown,
+): PortalSubsectionId[] | null => {
+  if (!Array.isArray(value)) return null;
+  return Array.from(
+    new Set(
+      value
+        .map((entry) =>
+          typeof entry === "string" ? resolvePortalSubsectionId(entry) : null,
+        )
+        .filter((entry): entry is PortalSubsectionId => entry !== null),
+    ),
+  );
+};
+
 export const canAccessPortalSection = (
   allowedSections: unknown,
   requiredSection: PortalSectionId,
@@ -92,6 +155,15 @@ export const canAccessPortalSection = (
   const normalized = normalizeAllowedPortalSections(allowedSections);
   if (normalized === null) return true;
   return normalized.includes(requiredSection);
+};
+
+export const canAccessPortalSubsection = (
+  allowedSubsections: unknown,
+  requiredSubsection: PortalSubsectionId,
+) => {
+  const normalized = normalizeAllowedPortalSubsections(allowedSubsections);
+  if (normalized === null) return true;
+  return normalized.includes(requiredSubsection);
 };
 
 export const PORTAL_SECTION_LABEL_BY_ID = new Map(

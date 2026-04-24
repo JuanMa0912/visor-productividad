@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import {
   buildDateNotFoundError,
   getVentasXItemDateAvailability,
@@ -92,7 +95,11 @@ export async function GET(request: Request) {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
-    !canAccessPortalSection(allowedDashboards, "venta")
+    (!canAccessPortalSection(allowedDashboards, "venta") ||
+      !canAccessPortalSubsection(
+        session.user.allowedSubdashboards,
+        "ventas-x-item",
+      ))
   ) {
     return withSession(
       NextResponse.json(

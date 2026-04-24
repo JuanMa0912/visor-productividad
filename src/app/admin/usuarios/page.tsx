@@ -20,8 +20,10 @@ import {
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/constants";
 import {
+  PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTION_LABEL_BY_ID,
   PORTAL_SECTIONS,
+  resolvePortalSubsectionId,
   resolvePortalSectionId,
 } from "@/lib/portal-sections";
 import { normalizeKeySpaced } from "@/lib/normalize";
@@ -44,6 +46,7 @@ type UserRow = {
   allowedSedes: string[] | null;
   allowedLines: string[] | null;
   allowedDashboards: string[] | null;
+  allowedSubdashboards: string[] | null;
   specialRoles: string[] | null;
   is_active: boolean;
   created_at: string;
@@ -69,6 +72,7 @@ type UserFormState = {
   allowedSedes: string[];
   allowedLines: string[];
   allowedDashboards: string[];
+  allowedSubdashboards: string[];
   specialRoles: string[];
   password: string;
   is_active: boolean;
@@ -81,6 +85,7 @@ const emptyForm: UserFormState = {
   allowedSedes: [],
   allowedLines: [],
   allowedDashboards: [],
+  allowedSubdashboards: [],
   specialRoles: [],
   password: "",
   is_active: true,
@@ -152,6 +157,17 @@ const SECTION_OPTIONS = PORTAL_SECTIONS.map((section) => ({
   id: section.id,
   label: section.label,
 }));
+const SUBSECTION_LABELS: Record<string, string> = {
+  "ventas-x-item": "Ventas por item",
+  "inventario-x-item": "Inventario x item",
+  "analisis-de-inventario": "Analisis de inventario",
+  "mix-y-linea": "Mix y linea",
+  margenes: "Margenes",
+  rotacion: "Rotacion",
+  "consulta-operativa": "Consulta operativa",
+  "planilla-vs-asistencia": "Planilla vs asistencia",
+  "registro-de-horarios": "Registro de horarios",
+};
 const SPECIAL_ROLE_OPTIONS = [
   { id: "alex", label: "Alex" },
   { id: "cronograma", label: "Cronograma" },
@@ -179,6 +195,16 @@ const formatAllowedDashboards = (allowedDashboards: string[] | null) => {
       return normalizedBoardId
         ? (PORTAL_SECTION_LABEL_BY_ID.get(normalizedBoardId) ?? boardId)
         : boardId;
+    })
+    .join(", ");
+};
+const formatAllowedSubdashboards = (allowedSubdashboards: string[] | null) => {
+  if (allowedSubdashboards === null) return "Todos";
+  if (allowedSubdashboards.length === 0) return "Sin subtableros";
+  return allowedSubdashboards
+    .map((subId) => {
+      const normalizedSubId = resolvePortalSubsectionId(subId);
+      return normalizedSubId ? (SUBSECTION_LABELS[normalizedSubId] ?? subId) : subId;
     })
     .join(", ");
 };
@@ -369,6 +395,7 @@ export default function AdminUsuariosPage() {
       allowedSedes: user.allowedSedes ?? (user.sede ? [user.sede] : []),
       allowedLines: user.allowedLines ?? [],
       allowedDashboards: user.allowedDashboards ?? [],
+      allowedSubdashboards: user.allowedSubdashboards ?? [],
       specialRoles: user.specialRoles ?? [],
       password: "",
       is_active: user.is_active,
@@ -422,6 +449,12 @@ export default function AdminUsuariosPage() {
             ? null
             : formState.allowedDashboards.length > 0
               ? formState.allowedDashboards
+              : null,
+        allowedSubdashboards:
+          formState.role === "admin"
+            ? null
+            : formState.allowedSubdashboards.length > 0
+              ? formState.allowedSubdashboards
               : null,
         specialRoles:
           formState.role === "admin"
@@ -708,6 +741,7 @@ export default function AdminUsuariosPage() {
                         <th className="px-3 py-3">Sede</th>
                         <th className="px-3 py-3">Líneas</th>
                         <th className="px-3 py-3">Secciones</th>
+                        <th className="px-3 py-3">Subtableros</th>
                         <th className="px-3 py-3">Especial</th>
                         <th className="px-3 py-3">Estado</th>
                         <th className="px-4 py-3 text-right">Acciones</th>
@@ -771,6 +805,13 @@ export default function AdminUsuariosPage() {
                                 ? "—"
                                 : formatAllowedDashboards(
                                     user.allowedDashboards,
+                                  )}
+                            </td>
+                            <td className="max-w-[220px] px-3 py-3 text-xs text-slate-600">
+                              {user.role === "admin"
+                                ? "—"
+                                : formatAllowedSubdashboards(
+                                    user.allowedSubdashboards,
                                   )}
                             </td>
                             <td className="max-w-[120px] px-3 py-3 text-xs text-slate-600">
@@ -1013,6 +1054,10 @@ export default function AdminUsuariosPage() {
                               e.target.value === "admin"
                                 ? []
                                 : prev.specialRoles,
+                            allowedSubdashboards:
+                              e.target.value === "admin"
+                                ? []
+                                : prev.allowedSubdashboards,
                           }))
                         }
                         className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -1116,6 +1161,52 @@ export default function AdminUsuariosPage() {
                             </label>
                           );
                         })}
+                      </div>
+                    </label>
+
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Subtableros permitidos (vacio = todos)
+                      <div className="mt-1.5 space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm">
+                        {PORTAL_SECTIONS.map((section) => (
+                          <div key={section.id}>
+                            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                              {section.label}
+                            </p>
+                            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3">
+                              {PORTAL_SUBSECTIONS_BY_SECTION[section.id].map((subId) => {
+                                const checked = formState.allowedSubdashboards.includes(
+                                  subId,
+                                );
+                                return (
+                                  <label
+                                    key={subId}
+                                    className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={formState.role !== "user"}
+                                      onChange={() =>
+                                        setFormState((prev) => ({
+                                          ...prev,
+                                          allowedSubdashboards: checked
+                                            ? prev.allowedSubdashboards.filter(
+                                                (id) => id !== subId,
+                                              )
+                                            : [...prev.allowedSubdashboards, subId],
+                                        }))
+                                      }
+                                      className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
+                                    />
+                                    <span className="wrap-break-words">
+                                      {SUBSECTION_LABELS[subId] ?? subId}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </label>
 

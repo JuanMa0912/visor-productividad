@@ -10,7 +10,10 @@ import {
   PortalHubShell,
   type HubModuleItem,
 } from "@/components/portal/hub-section-cards";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
 
 const BASE_OPERACION_MODULES: HubModuleItem[] = [
@@ -50,6 +53,9 @@ export default function HorarioHubPage() {
   const [canSeeCompararHorarios, setCanSeeCompararHorarios] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [canAccessCronograma, setCanAccessCronograma] = useState(false);
+  const [allowedSubdashboards, setAllowedSubdashboards] = useState<
+    string[] | null
+  >(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -69,6 +75,7 @@ export default function HorarioHubPage() {
           user?: {
             role?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
           };
         };
@@ -82,6 +89,7 @@ export default function HorarioHubPage() {
         }
         if (isMounted) {
           setIsAdmin(userIsAdmin);
+          setAllowedSubdashboards(payload.user?.allowedSubdashboards ?? null);
           setCanAccessCronograma(
             userIsAdmin ||
               Boolean(payload.user?.specialRoles?.includes("cronograma")),
@@ -110,6 +118,19 @@ export default function HorarioHubPage() {
     if (!canSeeCompararHorarios) return BASE_OPERACION_MODULES;
     return [BASE_OPERACION_MODULES[0], COMPARAR_MODULE, BASE_OPERACION_MODULES[1]];
   }, [canSeeCompararHorarios]);
+  const visibleModules = useMemo(
+    () =>
+      modules.filter((module) =>
+        isAdmin ? true : canAccessPortalSubsection(allowedSubdashboards, module.id),
+      ),
+    [allowedSubdashboards, isAdmin, modules],
+  );
+
+  useEffect(() => {
+    if (ready && visibleModules.length === 0) {
+      router.replace("/secciones");
+    }
+  }, [ready, router, visibleModules.length]);
 
   if (!ready) {
     return (
@@ -135,11 +156,11 @@ export default function HorarioHubPage() {
         eyebrow="Operación • Enfoque • Ejecución"
         title="Ejecucion del negocio"
         description="Aqui se explica como la operacion soporta el resultado: uso de horas, personal, novedades y turnos por sede."
-        moduleCount={modules.length}
+        moduleCount={visibleModules.length}
       />
       <PortalHubModuleGrid
         theme="operacion"
-        items={modules}
+        items={visibleModules}
         onNavigate={(href) => router.push(href)}
         columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
       />

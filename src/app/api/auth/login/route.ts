@@ -7,7 +7,10 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
-import { normalizeAllowedPortalSections } from "@/lib/portal-sections";
+import {
+  normalizeAllowedPortalSections,
+  normalizeAllowedPortalSubsections,
+} from "@/lib/portal-sections";
 
 const FAILED_LOGIN_WINDOW_MS = 15 * 60_000;
 const FAILED_LOGIN_MAX_PER_IP = 10;
@@ -117,6 +120,7 @@ export async function POST(req: Request) {
           to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
           to_jsonb(u)->'allowed_lines' AS "allowedLines",
           to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
+          to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
           to_jsonb(u)->'special_roles' AS "specialRoles",
           u.is_active,
           u.password_hash
@@ -143,11 +147,15 @@ export async function POST(req: Request) {
         allowedSedes: string[] | null;
         allowedLines: string[] | null;
         allowedDashboards: string[] | null;
+        allowedSubdashboards: string[] | null;
         specialRoles: string[] | null;
         is_active: boolean;
         password_hash: string;
       };
       const allowedDashboards = normalizeAllowedPortalSections(user.allowedDashboards);
+      const allowedSubdashboards = normalizeAllowedPortalSubsections(
+        user.allowedSubdashboards,
+      );
 
       if (!user.is_active) {
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
@@ -196,6 +204,7 @@ export async function POST(req: Request) {
           allowedSedes: user.allowedSedes,
           allowedLines: user.allowedLines,
           allowedDashboards,
+          allowedSubdashboards,
           specialRoles: user.specialRoles,
         },
       });

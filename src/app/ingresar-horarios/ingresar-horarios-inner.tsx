@@ -12,7 +12,10 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { isSamePlanillaSede } from "@/lib/planilla-sede";
 import { normalizePersonNameKey } from "@/lib/normalize";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import {
   normalizeScheduleRowsForSave,
   normalizeScheduleTime,
@@ -796,6 +799,7 @@ export function IngresarHorariosInner() {
             role?: string;
             username?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
           };
         };
@@ -807,7 +811,11 @@ export function IngresarHorariosInner() {
         setCanLunesScheduleSync(canSync);
         if (
           !isAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "operacion")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "operacion") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "registro-de-horarios",
+            ))
         ) {
           router.replace("/secciones");
           return;

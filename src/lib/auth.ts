@@ -4,7 +4,10 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { normalizeAllowedPortalSections } from "@/lib/portal-sections";
+import {
+  normalizeAllowedPortalSections,
+  normalizeAllowedPortalSubsections,
+} from "@/lib/portal-sections";
 
 export type AuthUser = {
   id: string;
@@ -14,6 +17,7 @@ export type AuthUser = {
   allowedSedes: string[] | null;
   allowedLines: string[] | null;
   allowedDashboards: string[] | null;
+  allowedSubdashboards: string[] | null;
   specialRoles: string[] | null;
   is_active: boolean;
   last_login_at: string | null;
@@ -267,6 +271,7 @@ export const getUserSession = async (): Promise<
         to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
         to_jsonb(u)->'allowed_lines' AS "allowedLines",
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
+        to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
         to_jsonb(u)->'special_roles' AS "specialRoles",
         u.is_active,
         u.last_login_at,
@@ -285,6 +290,9 @@ export const getUserSession = async (): Promise<
     if (!result.rows || result.rows.length === 0) return null;
     const user = result.rows[0] as AuthUser;
     user.allowedDashboards = normalizeAllowedPortalSections(user.allowedDashboards);
+    user.allowedSubdashboards = normalizeAllowedPortalSubsections(
+      user.allowedSubdashboards,
+    );
     const expiresAt = getSessionExpiry();
     await refreshSession(tokenHash, expiresAt);
     return { user, token, expiresAt };

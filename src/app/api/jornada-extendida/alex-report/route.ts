@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 
 type AlexRow = {
   sede: string;
@@ -244,7 +247,11 @@ export async function GET(request: Request) {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     !isAdmin &&
-    !canAccessPortalSection(allowedDashboards, "operacion")
+    (!canAccessPortalSection(allowedDashboards, "operacion") ||
+      !canAccessPortalSubsection(
+        session.user.allowedSubdashboards,
+        "consulta-operativa",
+      ))
   ) {
     return withSession(
       NextResponse.json(

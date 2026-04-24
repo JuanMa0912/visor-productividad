@@ -3,7 +3,10 @@ import type { PoolClient } from "pg";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { isHorariosOcultarCedula } from "@/lib/horarios-ocultar-cedulas";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import type {
   HourlyAnalysisData,
   HourlyLineSales,
@@ -1341,7 +1344,17 @@ export async function GET(request: Request) {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
-    !canAccessPortalSection(allowedDashboards, requiredSection)
+    (!canAccessPortalSection(allowedDashboards, requiredSection) ||
+      (dashboardContext === "jornada-extendida" &&
+        !canAccessPortalSubsection(
+          session.user.allowedSubdashboards,
+          "consulta-operativa",
+        )) ||
+      (dashboardContext === "productividad" &&
+        !canAccessPortalSubsection(
+          session.user.allowedSubdashboards,
+          "mix-y-linea",
+        )))
   ) {
     return withSession(
       NextResponse.json(

@@ -4,7 +4,10 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { normalizeKeySpaced } from "@/lib/normalize";
 import type { Sede } from "@/lib/constants";
 import { mapRawSedeToCanonical } from "@/lib/planilla-sede";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
@@ -232,7 +235,11 @@ export async function GET(request: Request) {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     !isAdmin &&
-    !canAccessPortalSection(allowedDashboards, "operacion")
+    (!canAccessPortalSection(allowedDashboards, "operacion") ||
+      !canAccessPortalSubsection(
+        session.user.allowedSubdashboards,
+        "registro-de-horarios",
+      ))
   ) {
     return withSession(
       NextResponse.json(

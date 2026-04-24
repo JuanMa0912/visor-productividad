@@ -10,7 +10,11 @@ import {
   PortalHubShell,
   type HubModuleItem,
 } from "@/components/portal/hub-section-cards";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+  resolvePortalSubsectionId,
+} from "@/lib/portal-sections";
 
 const VENTA_MODULES: HubModuleItem[] = [
   {
@@ -47,6 +51,7 @@ export default function VentaHubPage() {
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [canAccessCronograma, setCanAccessCronograma] = useState(false);
+  const [visibleModules, setVisibleModules] = useState<HubModuleItem[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -66,6 +71,7 @@ export default function VentaHubPage() {
           user?: {
             role?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
           };
         };
@@ -78,11 +84,26 @@ export default function VentaHubPage() {
           return;
         }
         if (isMounted) {
+          const allowedSubdashboards = payload.user?.allowedSubdashboards;
           setIsAdmin(userIsAdmin);
           setCanAccessCronograma(
             userIsAdmin ||
               Boolean(payload.user?.specialRoles?.includes("cronograma")),
           );
+          const nextVisibleModules = VENTA_MODULES.filter((module) =>
+            userIsAdmin
+              ? true
+              : (() => {
+                  const subId = resolvePortalSubsectionId(module.id);
+                  if (!subId) return false;
+                  return canAccessPortalSubsection(allowedSubdashboards, subId);
+                })(),
+          );
+          if (nextVisibleModules.length === 0) {
+            router.replace("/secciones");
+            return;
+          }
+          setVisibleModules(nextVisibleModules);
           setReady(true);
         }
       } catch (err) {
@@ -121,11 +142,11 @@ export default function VentaHubPage() {
         eyebrow="Venta • Enfoque • Resultado"
         title="Resultado comercial del negocio"
         description="Usa esta seccion para leer el desempeno comercial, seguir tendencias por sede e ingresar a los modulos que explican la venta por item."
-        moduleCount={VENTA_MODULES.length}
+        moduleCount={visibleModules.length}
       />
       <PortalHubModuleGrid
         theme="venta"
-        items={VENTA_MODULES}
+        items={visibleModules}
         onNavigate={(href) => router.push(href)}
         columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
       />

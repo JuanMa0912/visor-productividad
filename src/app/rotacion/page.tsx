@@ -38,7 +38,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/portal-sections";
 import {
   canAccessRotacionBoard,
   canEditRotacionAbcdConfig,
@@ -1305,6 +1308,7 @@ export default function RotacionPage() {
           user?: {
             role?: string;
             allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
           };
         };
@@ -1313,7 +1317,11 @@ export default function RotacionPage() {
         setSpecialRoles(payload.user?.specialRoles ?? null);
         if (
           !isAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "producto") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "rotacion",
+            ))
         ) {
           router.replace("/secciones");
           return;

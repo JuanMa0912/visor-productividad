@@ -9,7 +9,9 @@ import {
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/constants";
 import {
   normalizeAllowedPortalSections,
+  normalizeAllowedPortalSubsections,
   resolvePortalSectionId,
+  resolvePortalSubsectionId,
 } from "@/lib/portal-sections";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -81,6 +83,21 @@ const hasAllowedDashboardsColumn = async (client: {
     FROM information_schema.columns
     WHERE table_name = 'app_users'
       AND column_name = 'allowed_dashboards'
+    LIMIT 1
+    `,
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const hasAllowedSubdashboardsColumn = async (client: {
+  query: (queryText: string) => Promise<{ rows?: unknown[] }>;
+}) => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'app_users'
+      AND column_name = 'allowed_subdashboards'
     LIMIT 1
     `,
   );
@@ -179,6 +196,40 @@ const resolveValidAllowedDashboards = (value: unknown) => {
   return { ok: true as const, value: normalized };
 };
 
+const resolveValidAllowedSubdashboards = (value: unknown) => {
+  if (value === undefined || value === null) {
+    return { ok: true as const, value: null as string[] | null };
+  }
+  if (!Array.isArray(value)) {
+    return {
+      ok: false as const,
+      error: "Los subtableros permitidos no son validos.",
+    };
+  }
+
+  const hasMeaningfulEntries = value.some(
+    (entry) => typeof entry === "string" && entry.trim(),
+  );
+  const normalized = normalizeAllowedPortalSubsections(value) ?? [];
+  if (!hasMeaningfulEntries || normalized.length === 0) {
+    return { ok: true as const, value: null as string[] | null };
+  }
+
+  const invalid = value.filter(
+    (entry) =>
+      typeof entry === "string" &&
+      entry.trim() &&
+      !resolvePortalSubsectionId(entry),
+  );
+  if (invalid.length > 0) {
+    return {
+      ok: false as const,
+      error: "Hay subtableros no validos en la seleccion.",
+    };
+  }
+  return { ok: true as const, value: normalized };
+};
+
 const resolveValidAllowedSedes = (value: unknown) => {
   if (value === undefined || value === null) {
     return { ok: true as const, value: null as string[] | null };
@@ -273,6 +324,7 @@ export async function GET(req: Request) {
         to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
         to_jsonb(u)->'allowed_lines' AS "allowedLines",
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
+        to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
         to_jsonb(u)->'special_roles' AS "specialRoles",
         u.is_active,
         u.created_at,
@@ -286,10 +338,14 @@ export async function GET(req: Request) {
     const users = (result.rows ?? []).map((row) => {
       const user = row as {
         allowedDashboards?: string[] | null;
+        allowedSubdashboards?: string[] | null;
       };
       return {
         ...user,
         allowedDashboards: normalizeAllowedPortalSections(user.allowedDashboards),
+        allowedSubdashboards: normalizeAllowedPortalSubsections(
+          user.allowedSubdashboards,
+        ),
       };
     });
     return withSession(NextResponse.json({ users }));
@@ -334,6 +390,7 @@ export async function POST(req: Request) {
     allowedSedes?: string[] | null;
     allowedLines?: string[] | null;
     allowedDashboards?: string[] | null;
+    allowedSubdashboards?: string[] | null;
     specialRoles?: string[] | null;
   };
 
@@ -344,6 +401,9 @@ export async function POST(req: Request) {
   const allowedSedesResult = resolveValidAllowedSedes(body.allowedSedes);
   const allowedLinesResult = resolveValidAllowedLines(body.allowedLines);
   const allowedDashboardsResult = resolveValidAllowedDashboards(body.allowedDashboards);
+  const allowedSubdashboardsResult = resolveValidAllowedSubdashboards(
+    body.allowedSubdashboards,
+  );
   const specialRolesResult = resolveValidSpecialRoles(body.specialRoles);
 
   if (!username || password.length < 8) {
@@ -388,6 +448,12 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (!allowedSubdashboardsResult.ok) {
+    return NextResponse.json(
+      { error: allowedSubdashboardsResult.error },
+      { status: 400 },
+    );
+  }
 
   const passwordHash = await hashPassword(password);
   const client = await (await getDbPool()).connect();
@@ -396,7 +462,17 @@ export async function POST(req: Request) {
     const allowedSedesEnabled = await hasAllowedSedesColumn(client);
     const allowedLinesEnabled = await hasAllowedLinesColumn(client);
     const allowedDashboardsEnabled = await hasAllowedDashboardsColumn(client);
+    const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
+    if (!allowedSubdashboardsEnabled && body.allowedSubdashboards !== undefined) {
+      return NextResponse.json(
+        {
+          error:
+            "Falta aplicar migracion de subtableros permitidos en app_users.",
+        },
+        { status: 400 },
+      );
+    }
     if (!specialRolesEnabled && body.specialRoles !== undefined) {
       return NextResponse.json(
         {
@@ -413,6 +489,8 @@ export async function POST(req: Request) {
       role === "admin" ? null : allowedSedes?.[0] ?? sede ?? null;
     const allowedLines = role === "admin" ? null : allowedLinesResult.value;
     const allowedDashboards = role === "admin" ? null : allowedDashboardsResult.value;
+    const allowedSubdashboards =
+      role === "admin" ? null : allowedSubdashboardsResult.value;
     const specialRoles = role === "admin" ? null : specialRolesResult.value;
 
     if (!sedeEnabled && role === "user") {
@@ -432,17 +510,17 @@ export async function POST(req: Request) {
         ? specialRolesEnabled
           ? await client.query(
               `
-              INSERT INTO app_users (username, password_hash, role, sede, allowed_sedes, allowed_lines, allowed_dashboards, special_roles)
-              VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
-              RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", special_roles AS "specialRoles", is_active, created_at, updated_at
+              INSERT INTO app_users (username, password_hash, role, sede, allowed_sedes, allowed_lines, allowed_dashboards, allowed_subdashboards, special_roles)
+              VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+              RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", allowed_subdashboards AS "allowedSubdashboards", special_roles AS "specialRoles", is_active, created_at, updated_at
               `,
-              [username, passwordHash, role, effectiveSedeForLegacy, allowedSedesJson, allowedLines, allowedDashboards, specialRoles],
+              [username, passwordHash, role, effectiveSedeForLegacy, allowedSedesJson, allowedLines, allowedDashboards, allowedSubdashboardsEnabled ? allowedSubdashboards : null, specialRoles],
             )
           : await client.query(
               `
               INSERT INTO app_users (username, password_hash, role, sede, allowed_sedes, allowed_lines, allowed_dashboards)
               VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
-              RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", NULL::text[] AS "specialRoles", is_active, created_at, updated_at
+              RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", NULL::text[] AS "allowedSubdashboards", NULL::text[] AS "specialRoles", is_active, created_at, updated_at
               `,
               [username, passwordHash, role, effectiveSedeForLegacy, allowedSedesJson, allowedLines, allowedDashboards],
             )
@@ -451,7 +529,7 @@ export async function POST(req: Request) {
               `
               INSERT INTO app_users (username, password_hash, role, sede)
               VALUES ($1, $2, $3, $4)
-              RETURNING id, username, role, sede, NULL::jsonb AS "allowedSedes", NULL::jsonb AS "allowedLines", NULL::jsonb AS "allowedDashboards", NULL::text[] AS "specialRoles", is_active, created_at, updated_at
+              RETURNING id, username, role, sede, NULL::jsonb AS "allowedSedes", NULL::jsonb AS "allowedLines", NULL::jsonb AS "allowedDashboards", NULL::text[] AS "allowedSubdashboards", NULL::text[] AS "specialRoles", is_active, created_at, updated_at
               `,
               [username, passwordHash, role, effectiveSedeForLegacy],
             )
@@ -459,17 +537,24 @@ export async function POST(req: Request) {
               `
               INSERT INTO app_users (username, password_hash, role)
               VALUES ($1, $2, $3)
-              RETURNING id, username, role, NULL::text AS sede, NULL::jsonb AS "allowedSedes", NULL::jsonb AS "allowedLines", NULL::jsonb AS "allowedDashboards", NULL::text[] AS "specialRoles", is_active, created_at, updated_at
+              RETURNING id, username, role, NULL::text AS sede, NULL::jsonb AS "allowedSedes", NULL::jsonb AS "allowedLines", NULL::jsonb AS "allowedDashboards", NULL::text[] AS "allowedSubdashboards", NULL::text[] AS "specialRoles", is_active, created_at, updated_at
               `,
               [username, passwordHash, role],
             );
     const user =
       result.rows && result.rows[0]
         ? {
-            ...(result.rows[0] as { allowedDashboards?: string[] | null }),
+            ...(result.rows[0] as {
+              allowedDashboards?: string[] | null;
+              allowedSubdashboards?: string[] | null;
+            }),
             allowedDashboards: normalizeAllowedPortalSections(
               (result.rows[0] as { allowedDashboards?: string[] | null })
                 .allowedDashboards,
+            ),
+            allowedSubdashboards: normalizeAllowedPortalSubsections(
+              (result.rows[0] as { allowedSubdashboards?: string[] | null })
+                .allowedSubdashboards,
             ),
           }
         : null;
