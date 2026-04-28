@@ -879,25 +879,22 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
     [seriesDefinitions, seriesMeanVtaHr],
   );
 
+  const canShowAllChartSeries =
+    seriesDefinitions.length > CHART_DISPLAY_TOP_N;
+  const effectiveShowAllChartSeries =
+    canShowAllChartSeries && showAllChartSeries;
+
   const chartDisplaySeriesDefinitions = useMemo(() => {
-    if (
-      seriesDefinitions.length <= CHART_DISPLAY_TOP_N ||
-      showAllChartSeries
-    ) {
+    if (!canShowAllChartSeries || effectiveShowAllChartSeries) {
       return seriesDefinitions;
     }
     return rankedSeriesDefinitions.slice(0, CHART_DISPLAY_TOP_N);
   }, [
+    canShowAllChartSeries,
+    effectiveShowAllChartSeries,
     rankedSeriesDefinitions,
     seriesDefinitions,
-    showAllChartSeries,
   ]);
-
-  useEffect(() => {
-    if (seriesDefinitions.length <= CHART_DISPLAY_TOP_N) {
-      setShowAllChartSeries(false);
-    }
-  }, [seriesDefinitions.length]);
 
   const activeClickedSeriesId = useMemo(() => {
     if (clickedSeriesId === null) return null;
@@ -1250,10 +1247,10 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
         </p>
       ) : (
         <HighlightContext.Provider value={highlightCtx}>
-          {seriesDefinitions.length > CHART_DISPLAY_TOP_N && (
+          {canShowAllChartSeries && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-3">
               <p className="text-xs leading-relaxed text-slate-700">
-                {showAllChartSeries ? (
+                {effectiveShowAllChartSeries ? (
                   <>
                     Mostrando las{" "}
                     <span className="font-semibold text-slate-900">
@@ -1278,7 +1275,7 @@ const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizationProps>
                 className="shrink-0 rounded-full border border-mercamio-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-mercamio-700 shadow-sm transition-colors hover:border-mercamio-300 hover:bg-mercamio-50"
                 onClick={() => setShowAllChartSeries((open) => !open)}
               >
-                {showAllChartSeries
+                {effectiveShowAllChartSeries
                   ? `Solo top ${CHART_DISPLAY_TOP_N}`
                   : "Ver todas en el grafico"}
               </button>

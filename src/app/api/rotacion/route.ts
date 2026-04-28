@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, withPoolClient } from "@/lib/db";
+import {
+  resolveRotacionBaseSqlFields,
+  type RotacionBaseDateColumn,
+} from "@/lib/rotacion-base-fields";
 import { normalizeRotationCategoriaKey } from "@/lib/rotacion-dimensions";
 
 /** Unifica codigos N1 para filtros (BD a veces devuelve "1" en vez de "01"). */
@@ -145,22 +149,6 @@ const DEFAULT_ABCD_CONFIG: AbcdConfig = {
 let availableBoundsCache:
   | { value: AvailableBoundsRow | null; expiresAt: number }
   | null = null;
-let rotationDateColumnCache:
-  | "fecha_dia"
-  | "fecha_consulta"
-  | "fecha"
-  | "fecha_carga"
-  | null = null;
-let rotationN1CodeExprCache: string | null = null;
-let rotationLineExprCache: string | null = null;
-let rotationCategoriaCodeExprCache: string | null = null;
-let rotationLineaNameExprCache: string | null = null;
-let rotationSalesExprCache: string | null = null;
-let rotationUnitsSoldExprCache: string | null = null;
-let rotationClosingUnitsExprCache: string | null = null;
-let rotationInventoryValueExprCache: string | null = null;
-let rotationLastSaleDateExprCache: string | null = null;
-let rotationLastEntryDateExprCache: string | null = null;
 let rotationFilterCatalogCache:
   | { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
   | null = null;
@@ -680,7 +668,7 @@ const getAvailableBounds = async () => {
 
   const client = await (await getDbPool()).connect();
   try {
-    const dateColumn = await resolveRotationDateColumn(client);
+    const { dateColumn } = await resolveRotacionBaseSqlFields(client);
     const result = await client.query(
       `
       SELECT
@@ -705,383 +693,27 @@ const getAvailableBounds = async () => {
   }
 };
 
-type RotationQueryClient = {
-  query: (
-    queryText: string,
-    values?: unknown[],
-  ) => Promise<{ rows?: Array<Record<string, unknown>> }>;
-};
-
-const resolveRotationDateColumn = async (
-  client: RotationQueryClient,
-): Promise<"fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga"> => {
-  if (rotationDateColumnCache) return rotationDateColumnCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('fecha_dia', 'fecha_consulta', 'fecha', 'fecha_carga')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("fecha_dia")) {
-    rotationDateColumnCache = "fecha_dia";
-    return rotationDateColumnCache;
-  }
-  if (columns.has("fecha_consulta")) {
-    rotationDateColumnCache = "fecha_consulta";
-    return rotationDateColumnCache;
-  }
-  if (columns.has("fecha")) {
-    rotationDateColumnCache = "fecha";
-    return rotationDateColumnCache;
-  }
-  if (columns.has("fecha_carga")) {
-    rotationDateColumnCache = "fecha_carga";
-    return rotationDateColumnCache;
-  }
-  throw new Error(
-    "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_dia, fecha_consulta, fecha o fecha_carga).",
-  );
-};
-
-const resolveRotationN1CodeExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationN1CodeExprCache) return rotationN1CodeExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('linea_n1_codigo', 'linea_nivel_1_codigo', 'linea01')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("linea_n1_codigo")) {
-    rotationN1CodeExprCache = "NULLIF(TRIM(linea_n1_codigo), '')";
-    return rotationN1CodeExprCache;
-  }
-  if (columns.has("linea_nivel_1_codigo")) {
-    rotationN1CodeExprCache = "NULLIF(TRIM(linea_nivel_1_codigo), '')";
-    return rotationN1CodeExprCache;
-  }
-  if (columns.has("linea01")) {
-    rotationN1CodeExprCache = "NULLIF(TRIM(linea01::text), '')";
-    return rotationN1CodeExprCache;
-  }
-  rotationN1CodeExprCache = "NULL::text";
-  return rotationN1CodeExprCache;
-};
-
-const resolveRotationLineExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationLineExprCache) return rotationLineExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('linea', 'nombre_linea_nivel_1', 'linea_nivel_3_codigo', 'linea_nivel_1_codigo')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  const candidates: string[] = [];
-  if (columns.has("linea")) candidates.push("NULLIF(TRIM(linea::text), '')");
-  if (columns.has("nombre_linea_nivel_1")) {
-    candidates.push("NULLIF(TRIM(nombre_linea_nivel_1::text), '')");
-  }
-  if (columns.has("linea_nivel_3_codigo")) {
-    candidates.push("NULLIF(TRIM(linea_nivel_3_codigo::text), '')");
-  }
-  if (columns.has("linea_nivel_1_codigo")) {
-    candidates.push("NULLIF(TRIM(linea_nivel_1_codigo::text), '')");
-  }
-  rotationLineExprCache =
-    candidates.length > 0
-      ? `COALESCE(${candidates.join(", ")}, 'Sin linea')`
-      : "'Sin linea'";
-  return rotationLineExprCache;
-};
-
-const resolveRotationLineaNameExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationLineaNameExprCache) return rotationLineaNameExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('nombre_linea01', 'nombre_linea_nivel_1')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("nombre_linea01")) {
-    rotationLineaNameExprCache = "NULLIF(TRIM(COALESCE(nombre_linea01::text, '')), '')";
-    return rotationLineaNameExprCache;
-  }
-  if (columns.has("nombre_linea_nivel_1")) {
-    rotationLineaNameExprCache =
-      "NULLIF(TRIM(COALESCE(nombre_linea_nivel_1::text, '')), '')";
-    return rotationLineaNameExprCache;
-  }
-  rotationLineaNameExprCache = "NULL::text";
-  return rotationLineaNameExprCache;
-};
-
-const resolveRotationCategoriaCodeExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationCategoriaCodeExprCache) return rotationCategoriaCodeExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('categoria_codigo', 'categoria')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("categoria_codigo")) {
-    rotationCategoriaCodeExprCache = "NULLIF(TRIM(categoria_codigo::text), '')";
-    return rotationCategoriaCodeExprCache;
-  }
-  if (columns.has("categoria")) {
-    rotationCategoriaCodeExprCache = "NULLIF(TRIM(categoria::text), '')";
-    return rotationCategoriaCodeExprCache;
-  }
-  rotationCategoriaCodeExprCache = "NULL::text";
-  return rotationCategoriaCodeExprCache;
-};
-
-const resolveRotationSalesExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationSalesExprCache) return rotationSalesExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('venta_sin_impuesto_dia', 'venta_sin_impuesto', 'venta_sin_iva', 'venta_neta', 'venta')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("venta_sin_impuesto_dia")) {
-    rotationSalesExprCache = "COALESCE(venta_sin_impuesto_dia, 0)";
-    return rotationSalesExprCache;
-  }
-  if (columns.has("venta_sin_impuesto")) {
-    rotationSalesExprCache = "COALESCE(venta_sin_impuesto, 0)";
-    return rotationSalesExprCache;
-  }
-  if (columns.has("venta_sin_iva")) {
-    rotationSalesExprCache = "COALESCE(venta_sin_iva, 0)";
-    return rotationSalesExprCache;
-  }
-  if (columns.has("venta_neta")) {
-    rotationSalesExprCache = "COALESCE(venta_neta, 0)";
-    return rotationSalesExprCache;
-  }
-  if (columns.has("venta")) {
-    rotationSalesExprCache = "COALESCE(venta, 0)";
-    return rotationSalesExprCache;
-  }
-  rotationSalesExprCache = "0::numeric";
-  return rotationSalesExprCache;
-};
-
-const resolveRotationUnitsSoldExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationUnitsSoldExprCache) return rotationUnitsSoldExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('unidades_vendidas_dia', 'unidades_vendidas', 'cantidad_vendida', 'unidades')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("unidades_vendidas_dia")) {
-    rotationUnitsSoldExprCache = "COALESCE(unidades_vendidas_dia, 0)";
-    return rotationUnitsSoldExprCache;
-  }
-  if (columns.has("unidades_vendidas")) {
-    rotationUnitsSoldExprCache = "COALESCE(unidades_vendidas, 0)";
-    return rotationUnitsSoldExprCache;
-  }
-  if (columns.has("cantidad_vendida")) {
-    rotationUnitsSoldExprCache = "COALESCE(cantidad_vendida, 0)";
-    return rotationUnitsSoldExprCache;
-  }
-  if (columns.has("unidades")) {
-    rotationUnitsSoldExprCache = "COALESCE(unidades, 0)";
-    return rotationUnitsSoldExprCache;
-  }
-  rotationUnitsSoldExprCache = "0::numeric";
-  return rotationUnitsSoldExprCache;
-};
-
-const resolveRotationClosingUnitsExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationClosingUnitsExprCache) return rotationClosingUnitsExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('inventario_cierre', 'inv_cierre_dia_ayer', 'inventario_unidades', 'inv_cierre')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("inventario_cierre")) {
-    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inventario_cierre, 0), 0)";
-    return rotationClosingUnitsExprCache;
-  }
-  if (columns.has("inv_cierre_dia_ayer")) {
-    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)";
-    return rotationClosingUnitsExprCache;
-  }
-  if (columns.has("inventario_unidades")) {
-    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inventario_unidades, 0), 0)";
-    return rotationClosingUnitsExprCache;
-  }
-  if (columns.has("inv_cierre")) {
-    rotationClosingUnitsExprCache = "GREATEST(COALESCE(inv_cierre, 0), 0)";
-    return rotationClosingUnitsExprCache;
-  }
-  rotationClosingUnitsExprCache = "0::numeric";
-  return rotationClosingUnitsExprCache;
-};
-
-const resolveRotationInventoryValueExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationInventoryValueExprCache) return rotationInventoryValueExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name IN ('valor_inventario', 'inventario_valor', 'valor_inv')
-    `,
-  );
-  const columns = new Set(
-    (result.rows ?? []).map((row) => String(row.column_name ?? "")),
-  );
-  if (columns.has("valor_inventario")) {
-    rotationInventoryValueExprCache = "GREATEST(COALESCE(valor_inventario, 0), 0)";
-    return rotationInventoryValueExprCache;
-  }
-  if (columns.has("inventario_valor")) {
-    rotationInventoryValueExprCache = "GREATEST(COALESCE(inventario_valor, 0), 0)";
-    return rotationInventoryValueExprCache;
-  }
-  if (columns.has("valor_inv")) {
-    rotationInventoryValueExprCache = "GREATEST(COALESCE(valor_inv, 0), 0)";
-    return rotationInventoryValueExprCache;
-  }
-  rotationInventoryValueExprCache = "0::numeric";
-  return rotationInventoryValueExprCache;
-};
-
-const resolveRotationLastSaleDateExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationLastSaleDateExprCache) return rotationLastSaleDateExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name, data_type
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name = 'fecha_ultima_venta'
-    `,
-  );
-  const row = result.rows?.[0];
-  if (!row) {
-    rotationLastSaleDateExprCache = "NULL::date";
-    return rotationLastSaleDateExprCache;
-  }
-  const dataType = String(row.data_type ?? "").toLowerCase();
-  if (dataType === "date" || dataType.includes("timestamp")) {
-    rotationLastSaleDateExprCache = "fecha_ultima_venta::date";
-    return rotationLastSaleDateExprCache;
-  }
-  rotationLastSaleDateExprCache =
-    "CASE WHEN fecha_ultima_venta ~ '^[0-9]{8}$' THEN TO_DATE(fecha_ultima_venta, 'YYYYMMDD') ELSE NULL END";
-  return rotationLastSaleDateExprCache;
-};
-
-const resolveRotationLastEntryDateExpr = async (
-  client: RotationQueryClient,
-): Promise<string> => {
-  if (rotationLastEntryDateExprCache) return rotationLastEntryDateExprCache;
-  const result = await client.query(
-    `
-    SELECT column_name, data_type
-    FROM information_schema.columns
-    WHERE table_name = 'rotacion_base_item_dia_sede'
-      AND column_name = 'fecha_ultima_entrada'
-    `,
-  );
-  const row = result.rows?.[0];
-  if (!row) {
-    rotationLastEntryDateExprCache = "NULL::date";
-    return rotationLastEntryDateExprCache;
-  }
-  const dataType = String(row.data_type ?? "").toLowerCase();
-  if (dataType === "date" || dataType.includes("timestamp")) {
-    rotationLastEntryDateExprCache = "fecha_ultima_entrada::date";
-    return rotationLastEntryDateExprCache;
-  }
-  rotationLastEntryDateExprCache =
-    "CASE WHEN fecha_ultima_entrada ~ '^[0-9]{8}$' THEN TO_DATE(fecha_ultima_entrada, 'YYYYMMDD') ELSE NULL END";
-  return rotationLastEntryDateExprCache;
-};
-
 const buildCompactDateRangeSql = (
-  column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
+  column: RotacionBaseDateColumn,
   startParam = "$1",
   endParam = "$2",
 ) =>
   column === "fecha_carga" || column === "fecha_dia"
-    ? `TO_CHAR(${column}::date, 'YYYYMMDD') BETWEEN ${startParam} AND ${endParam}`
+    ? `${column}::date BETWEEN TO_DATE(${startParam}::text, 'YYYYMMDD') AND TO_DATE(${endParam}::text, 'YYYYMMDD')`
     : `${column} BETWEEN ${startParam} AND ${endParam}
         AND ${column} ~ '^[0-9]{8}$'`;
 
 const buildCompactDateEqualsSql = (
-  column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
+  column: RotacionBaseDateColumn,
   param = "$1",
 ) =>
   column === "fecha_carga" || column === "fecha_dia"
-    ? `TO_CHAR(${column}::date, 'YYYYMMDD') = ${param}`
+    ? `${column}::date = TO_DATE(${param}::text, 'YYYYMMDD')`
     : `${column} = ${param}
         AND ${column} ~ '^[0-9]{8}$'`;
 
 const buildConsultaDateSql = (
-  column: "fecha_dia" | "fecha_consulta" | "fecha" | "fecha_carga",
+  column: RotacionBaseDateColumn,
 ) =>
   column === "fecha_carga" || column === "fecha_dia"
     ? `${column}::date`
@@ -1128,25 +760,26 @@ const getRotationFilterCatalog = async (
 
   const client = await (await getDbPool()).connect();
   try {
-    const dateColumn = await resolveRotationDateColumn(client);
+    const fields = await resolveRotacionBaseSqlFields(client);
+    const dateColumn = fields.dateColumn;
     const rangeSql = `
       SELECT DISTINCT
-        COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
-        COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
-        COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
+        ${fields.empresaExpr} AS empresa,
+        ${fields.sedeIdExpr} AS sede_id,
+        ${fields.sedeNameExpr} AS sede_name
       FROM rotacion_base_item_dia_sede
       WHERE ${buildCompactDateRangeSql(dateColumn)}
-        AND item IS NOT NULL
+        AND ${fields.itemPresentCondition}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
     `;
     const snapSql = `
       SELECT DISTINCT
-        COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
-        COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
-        COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name
+        ${fields.empresaExpr} AS empresa,
+        ${fields.sedeIdExpr} AS sede_id,
+        ${fields.sedeNameExpr} AS sede_name
       FROM rotacion_base_item_dia_sede
       WHERE ${buildCompactDateEqualsSql(dateColumn)}
-        AND item IS NOT NULL
+        AND ${fields.itemPresentCondition}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
     `;
 
@@ -1199,32 +832,20 @@ const queryRotationLineasN1 = async ({
   }
 
   const value = await withPoolClient(async (client) => {
-    const dateColumn = await resolveRotationDateColumn(client);
-    const n1CodeExpr = await resolveRotationN1CodeExpr(client);
-    const lineExpr = await resolveRotationLineExpr(client);
-    const lineaNameExpr = await resolveRotationLineaNameExpr(client);
-    const categoriaCodeExpr = await resolveRotationCategoriaCodeExpr(client);
-    const categoriaKeyExpr = `(CASE WHEN ${categoriaCodeExpr} IS NULL THEN '__sin_cat__' ELSE ${categoriaCodeExpr} END)`;
-    const allowedCategoriaExpr = `(
-      NOT (
-        ${categoriaKeyExpr} = ANY(ARRAY['3', 'V']::text[])
-        OR UPPER(TRIM(COALESCE(nombre_categoria::text, ''))) = ANY(
-          ARRAY['PRODUCTO TERMINADO', 'SERVICIOS DE VENTA']::text[]
-        )
-      )
-    )`;
+    const fields = await resolveRotacionBaseSqlFields(client);
+    const dateColumn = fields.dateColumn;
     const result = await client.query(
       `
       SELECT DISTINCT
-        COALESCE(${n1CodeExpr}, '__sin_n1__') AS linea_n1_raw,
-        ${lineExpr} AS linea,
-        ${lineaNameExpr} AS nombre_linea01
+        COALESCE(${fields.n1CodeExpr}, '__sin_n1__') AS linea_n1_raw,
+        ${fields.lineNullableExpr} AS linea,
+        ${fields.nombreLinea01Expr} AS nombre_linea01
       FROM rotacion_base_item_dia_sede
       WHERE ${buildCompactDateRangeSql(dateColumn)}
-        AND item IS NOT NULL
-        AND ${allowedCategoriaExpr}
-        AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
-        AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $4)
+        AND ${fields.itemPresentCondition}
+        AND ${fields.allowedCategoriaExpr}
+        AND ${fields.sedeIdExpr} = $3
+        AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
       ORDER BY linea_n1_raw ASC
       `,
       [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
@@ -1285,30 +906,20 @@ const queryRotationCategoriaBundle = async ({
   }
 
   const value = await withPoolClient(async (client) => {
-    const dateColumn = await resolveRotationDateColumn(client);
-    const n1CodeExpr = await resolveRotationN1CodeExpr(client);
-    const categoriaCodeExpr = await resolveRotationCategoriaCodeExpr(client);
-    const categoriaKeyExpr = `(CASE WHEN ${categoriaCodeExpr} IS NULL THEN '__sin_cat__' ELSE ${categoriaCodeExpr} END)`;
-    const allowedCategoriaExpr = `(
-      NOT (
-        ${categoriaKeyExpr} = ANY(ARRAY['3', 'V']::text[])
-        OR UPPER(TRIM(COALESCE(nombre_categoria::text, ''))) = ANY(
-          ARRAY['PRODUCTO TERMINADO', 'SERVICIOS DE VENTA']::text[]
-        )
-      )
-    )`;
+    const fields = await resolveRotacionBaseSqlFields(client);
+    const dateColumn = fields.dateColumn;
     const result = await client.query(
       `
       SELECT DISTINCT
-        ${categoriaKeyExpr} AS categoria_key,
-        NULLIF(TRIM(nombre_categoria::text), '') AS nombre_categoria,
-        COALESCE(${n1CodeExpr}, '__sin_n1__') AS linea_n1_raw
+        ${fields.categoriaKeyExpr} AS categoria_key,
+        ${fields.categoriaNameExpr} AS nombre_categoria,
+        COALESCE(${fields.n1CodeExpr}, '__sin_n1__') AS linea_n1_raw
       FROM rotacion_base_item_dia_sede
       WHERE ${buildCompactDateRangeSql(dateColumn)}
-        AND item IS NOT NULL
-        AND ${allowedCategoriaExpr}
-        AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
-        AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $4)
+        AND ${fields.itemPresentCondition}
+        AND ${fields.allowedCategoriaExpr}
+        AND ${fields.sedeIdExpr} = $3
+        AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
       `,
       [isoToCompactDate(startDate), isoToCompactDate(endDate), sedeId, empresa],
     );
@@ -1395,67 +1006,49 @@ const queryRotationRows = async ({
 }): Promise<RotationRow[]> => {
   const fetchRows = async (): Promise<RotationRow[]> =>
     withPoolClient(async (client) => {
-      const dateColumn = await resolveRotationDateColumn(client);
-      const n1CodeExpr = await resolveRotationN1CodeExpr(client);
-      const lineExpr = await resolveRotationLineExpr(client);
-      const lineaNameExpr = await resolveRotationLineaNameExpr(client);
-      const categoriaCodeExpr = await resolveRotationCategoriaCodeExpr(client);
-      const salesExpr = await resolveRotationSalesExpr(client);
-      const unitsSoldExpr = await resolveRotationUnitsSoldExpr(client);
-      const closingUnitsExpr = await resolveRotationClosingUnitsExpr(client);
-      const inventoryValueExpr = await resolveRotationInventoryValueExpr(client);
-      const lastSaleDateExpr = await resolveRotationLastSaleDateExpr(client);
-      const lastEntryDateExpr = await resolveRotationLastEntryDateExpr(client);
-      const categoriaKeyExpr = `(CASE WHEN ${categoriaCodeExpr} IS NULL THEN '__sin_cat__' ELSE ${categoriaCodeExpr} END)`;
-      const allowedCategoriaExpr = `(
-        NOT (
-          ${categoriaKeyExpr} = ANY(ARRAY['3', 'V']::text[])
-          OR UPPER(TRIM(COALESCE(nombre_categoria::text, ''))) = ANY(
-            ARRAY['PRODUCTO TERMINADO', 'SERVICIOS DE VENTA']::text[]
-          )
-        )
-      )`;
+      const fields = await resolveRotacionBaseSqlFields(client);
+      const dateColumn = fields.dateColumn;
       const result = await client.query(
       `
       WITH scoped AS (
         SELECT
-          COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
-          COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
-          COALESCE(NULLIF(TRIM(nombre_sede), ''), NULLIF(TRIM(sede), ''), 'Sin sede') AS sede_name,
-          ${lineExpr} AS linea,
-          ${n1CodeExpr} AS linea_n1_codigo,
-          COALESCE(NULLIF(TRIM(item), ''), 'sin_item') AS item,
-          COALESCE(NULLIF(TRIM(descripcion), ''), COALESCE(NULLIF(TRIM(item), ''), 'Sin descripcion')) AS descripcion,
-          NULLIF(TRIM(unidad), '') AS unidad,
-          ${salesExpr} AS venta_sin_impuesto,
-          ${inventoryValueExpr} AS margin_value,
-          ${unitsSoldExpr} AS unidades_vendidas,
-          ${closingUnitsExpr} AS inventory_units,
-          ${inventoryValueExpr} AS inventory_value,
+          ${fields.empresaExpr} AS empresa,
+          ${fields.sedeIdExpr} AS sede_id,
+          ${fields.sedeNameExpr} AS sede_name,
+          ${fields.lineExpr} AS linea,
+          ${fields.n1CodeExpr} AS linea_n1_codigo,
+          ${fields.itemExpr} AS item,
+          ${fields.descriptionExpr} AS descripcion,
+          ${fields.unitExpr} AS unidad,
+          ${fields.salesExpr} AS venta_sin_impuesto,
+          ${fields.marginExpr} AS margin_value,
+          ${fields.unitsSoldExpr} AS unidades_vendidas,
+          ${fields.closingUnitsExpr} AS inventory_units,
+          ${fields.inventoryValueExpr} AS inventory_value,
           ${buildConsultaDateSql(dateColumn)} AS consulta_date,
           CASE
-            WHEN (${lastEntryDateExpr}) BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
-            THEN (${lastEntryDateExpr})
-            WHEN (${lastSaleDateExpr}) BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
-            THEN (${lastSaleDateExpr})
+            WHEN (${fields.lastEntryDateExpr}) BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+            THEN (${fields.lastEntryDateExpr})
+            WHEN (${fields.lastSaleDateExpr}) BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+            THEN (${fields.lastSaleDateExpr})
             ELSE NULL
           END AS last_movement_date,
-          (${lastSaleDateExpr}) AS last_purchase_date,
-          NULLIF(TRIM(COALESCE(bodega::text, '')), '') AS bodega,
-          NULLIF(TRIM(COALESCE(nombre_bodega::text, '')), '') AS nombre_bodega,
-          ${categoriaCodeExpr} AS categoria,
-          NULLIF(TRIM(COALESCE(nombre_categoria::text, '')), '') AS nombre_categoria,
-          ${n1CodeExpr} AS linea01,
-          ${lineaNameExpr} AS nombre_linea01,
-          fecha_carga
+          (${fields.lastSaleDateExpr}) AS last_purchase_date,
+          ${fields.bodegaExpr} AS bodega,
+          ${fields.nombreBodegaExpr} AS nombre_bodega,
+          ${fields.categoriaExpr} AS categoria,
+          ${fields.categoriaNameExpr} AS nombre_categoria,
+          ${fields.linea01Expr} AS linea01,
+          ${fields.nombreLinea01Expr} AS nombre_linea01,
+          ${fields.loadTimestampExpr} AS carga_ts
         FROM rotacion_base_item_dia_sede
         WHERE ${buildCompactDateRangeSql(dateColumn)}
-          AND item IS NOT NULL
-          AND ${allowedCategoriaExpr}
-          AND ($5::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $5)
-          AND ($6::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $6)
-          AND ($7::text[] IS NULL OR COALESCE(${n1CodeExpr}, '__sin_n1__') = ANY($7::text[]))
-          AND ($10::text[] IS NULL OR ${categoriaKeyExpr} = ANY($10::text[]))
+          AND ${fields.itemPresentCondition}
+          AND ${fields.allowedCategoriaExpr}
+          AND ($5::text IS NULL OR ${fields.empresaExpr} = $5)
+          AND ($6::text IS NULL OR ${fields.sedeIdExpr} = $6)
+          AND ($7::text[] IS NULL OR COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = ANY($7::text[]))
+          AND ($10::text[] IS NULL OR ${fields.categoriaKeyExpr} = ANY($10::text[]))
       ),
       ranked AS (
         SELECT
@@ -1465,7 +1058,7 @@ const queryRotationRows = async ({
           ) AS latest_consulta_date,
           ROW_NUMBER() OVER (
             PARTITION BY empresa, sede_id, item
-            ORDER BY consulta_date DESC, fecha_carga DESC
+            ORDER BY consulta_date DESC, carga_ts DESC NULLS LAST
           ) AS latest_rank
         FROM scoped
       ),
