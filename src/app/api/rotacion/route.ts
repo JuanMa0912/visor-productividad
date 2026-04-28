@@ -989,6 +989,31 @@ const isPgConnectionFailure = (err: unknown) => {
   );
 };
 
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  if (items.length === 0) return [];
+  const safeLimit = Math.max(1, Math.min(limit, items.length));
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const runWorker = async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= items.length) return;
+      results[currentIndex] = await worker(items[currentIndex]);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: safeLimit }, () => runWorker()),
+  );
+  return results;
+};
+
 const queryRotationRows = async ({
   startDate,
   endDate,
@@ -1153,13 +1178,7 @@ const queryRotationRows = async ({
             ELSE ($3::date - last_movement_date)
           END::int AS effective_days
         FROM aggregated
-        WHERE ($4::numeric IS NULL OR total_sales <= $4::numeric)
-          AND NOT (
-            COALESCE(total_sales, 0) = 0
-            AND COALESCE(inventory_units, 0) = 0
-            AND COALESCE(total_units, 0) = 0
-            AND COALESCE(inventory_value, 0) = 0
-          )
+        WHERE $4::numeric IS NULL OR total_sales <= $4::numeric
       ),
       classified AS (
         SELECT
@@ -1504,24 +1523,33 @@ export async function GET(request: Request) {
     let lineasN1NombresAcc: Record<string, string> = {};
     const categoriaMap = new Map<string, RotationCategoriaOption>();
     const lineasByCategoriaSet = new Map<string, Set<string>>();
-    for (const sede of selectedVisibleSedes) {
-      const lineasSede = await queryRotationLineasN1({
-        startDate: boundedRange.start,
-        endDate: boundedRange.end,
-        empresa: sede.empresa,
-        sedeId: sede.sedeId,
-      });
+    const catalogsPerSede = await mapWithConcurrency(
+      selectedVisibleSedes,
+      4,
+      async (sede) => {
+        const [lineasSede, bundle] = await Promise.all([
+          queryRotationLineasN1({
+            startDate: boundedRange.start,
+            endDate: boundedRange.end,
+            empresa: sede.empresa,
+            sedeId: sede.sedeId,
+          }),
+          queryRotationCategoriaBundle({
+            startDate: boundedRange.start,
+            endDate: boundedRange.end,
+            empresa: sede.empresa,
+            sedeId: sede.sedeId,
+          }),
+        ]);
+        return { lineasSede, bundle };
+      },
+    );
+    for (const { lineasSede, bundle } of catalogsPerSede) {
       for (const linea of lineasSede.codes) lineasSet.add(linea);
       lineasN1NombresAcc = mergeLineaN1NombreRecords(
         lineasN1NombresAcc,
         lineasSede.nombres,
       );
-      const bundle = await queryRotationCategoriaBundle({
-        startDate: boundedRange.start,
-        endDate: boundedRange.end,
-        empresa: sede.empresa,
-        sedeId: sede.sedeId,
-      });
       for (const categoria of bundle.categorias) {
         categoriaMap.set(categoria.categoriaKey, categoria);
       }
@@ -1630,8 +1658,10 @@ export async function GET(request: Request) {
         ? null
         : validatedCategoriaKeys;
 
-    const rowsBySede = await Promise.all(
-      selectedVisibleSedes.map((sede) =>
+    const rowsBySede = await mapWithConcurrency(
+      selectedVisibleSedes,
+      3,
+      (sede) =>
         queryRotationRows({
           startDate: boundedRange.start,
           endDate: boundedRange.end,
@@ -1641,7 +1671,6 @@ export async function GET(request: Request) {
           lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
           categoriaKeys: categoriaKeysForQuery,
         }),
-      ),
     );
     const rows = rowsBySede.flat();
 
