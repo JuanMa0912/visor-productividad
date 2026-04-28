@@ -217,7 +217,7 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
   - En `/jornada-extendida`, la tabla visible se exporta a Excel en cliente con el rango seleccionado, columna `Sede` fija, fila total y solo las metricas marcadas en el selector.
   - La exportacion sanea texto antes de escribir celdas para evitar formulas inesperadas en Excel.
 - `GET /api/rotacion`
-  - Agrega inventario, ventas y rotacion por item/sede desde `rotacion_base_item_dia_sede` y reglas de clasificacion; el **margen monetario** se estima en SQL a partir de ventas, unidades e inventario (no depende de una columna `utilidad_bruta` en esa vista).
+  - Agrega inventario, ventas y rotacion por item/sede desde `rotacion_base_item_dia_sede` y reglas de clasificacion; el **margen monetario** usa `venta_sin_impuesto - total_costo` cuando la tabla expone el esquema actual.
   - Permisos de acceso y edicion de configuracion ABCD pueden depender de `special_roles` ademas de la seccion `producto` (ver `src/lib/special-role-features.ts`).
 - `GET /api/inventario-x-item`
   - Consulta principalmente `rotacion_base_item_dia_sede` para matrices y resumenes de inventario por empresa/sede/item.

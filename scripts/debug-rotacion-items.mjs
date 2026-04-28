@@ -31,36 +31,36 @@ const items = ["020303", "064745", "013234"];
 const sql = `
 WITH scoped AS (
   SELECT
-    fecha_consulta,
+    fecha_dia,
     TRIM(COALESCE(empresa::text, '')) AS empresa,
     TRIM(COALESCE(sede::text, '')) AS sede,
     TRIM(COALESCE(nombre_sede::text, '')) AS nombre_sede,
-    TRIM(COALESCE(item::text, '')) AS item,
-    inv_cierre_dia_ayer,
-    valor_inventario,
-    unidades_vendidas,
+    TRIM(COALESCE(id_item::text, '')) AS item,
+    can_disponible_foto AS inventario_unidades,
+    (COALESCE(can_disponible_foto, 0) * COALESCE(costo_uni_inventario, 0)) AS valor_inventario,
+    cantidad_vendida AS unidades_vendidas,
     venta_sin_impuesto,
-    TRIM(COALESCE(bodega::text, '')) AS bodega,
-    TRIM(COALESCE(nombre_bodega::text, '')) AS nombre_bodega,
-    TRIM(COALESCE(linea::text, '')) AS linea,
-    TRIM(COALESCE(linea_n1_codigo::text, '')) AS linea_n1_codigo,
-    fecha_carga
+    TRIM(COALESCE(bodega_local::text, '')) AS bodega,
+    NULL::text AS nombre_bodega,
+    TRIM(COALESCE(nombre_linea_nivel_1::text, '')) AS linea,
+    TRIM(COALESCE(id_linea_nivel_1::text, '')) AS linea_n1_codigo,
+    COALESCE(fecha_actualizacion, fecha_carga) AS carga_ts
   FROM rotacion_base_item_dia_sede
-  WHERE TRIM(COALESCE(item::text, '')) = ANY($1::text[])
-    AND fecha_consulta ~ '^[0-9]{8}$'
+  WHERE TRIM(COALESCE(id_item::text, '')) = ANY($1::text[])
+    AND fecha_dia IS NOT NULL
 ),
 by_item AS (
-  SELECT item, MAX(fecha_consulta) AS ultima_fecha
+  SELECT item, MAX(fecha_dia) AS ultima_fecha
   FROM scoped
   GROUP BY item
 )
 SELECT
-  s.fecha_consulta,
+  s.fecha_dia,
   s.empresa,
   s.sede,
   s.nombre_sede,
   s.item,
-  s.inv_cierre_dia_ayer,
+  s.inventario_unidades,
   s.valor_inventario,
   s.unidades_vendidas,
   s.venta_sin_impuesto,
@@ -68,10 +68,10 @@ SELECT
   s.nombre_bodega,
   s.linea,
   s.linea_n1_codigo,
-  s.fecha_carga
+  s.carga_ts
 FROM scoped s
-JOIN by_item u ON u.item = s.item AND u.ultima_fecha = s.fecha_consulta
-ORDER BY s.item, s.sede, s.empresa, s.bodega NULLS LAST, s.linea, s.fecha_carga DESC;
+JOIN by_item u ON u.item = s.item AND u.ultima_fecha = s.fecha_dia
+ORDER BY s.item, s.sede, s.empresa, s.bodega NULLS LAST, s.linea, s.carga_ts DESC;
 `;
 
 async function main() {
@@ -93,7 +93,7 @@ async function main() {
   try {
     const { rows } = await client.query(sql, [items]);
     console.log(
-      `Filas en ultima fecha_consulta por item (cualquier sede). Total: ${rows.length}\n`,
+      `Filas en ultima fecha_dia por item (cualquier sede). Total: ${rows.length}\n`,
     );
     for (const r of rows) {
       console.log(JSON.stringify(r));
@@ -102,22 +102,22 @@ async function main() {
     const sumSql = `
       WITH scoped AS (
         SELECT
-          fecha_consulta,
+          fecha_dia,
           TRIM(COALESCE(empresa::text, '')) AS empresa,
           TRIM(COALESCE(sede::text, '')) AS sede,
-          TRIM(COALESCE(item::text, '')) AS item,
-          GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0)::numeric AS inv_u,
-          GREATEST(COALESCE(valor_inventario, 0), 0)::numeric AS val_inv,
-          TRIM(COALESCE(linea::text, '')) AS linea,
-          TRIM(COALESCE(linea_n1_codigo::text, '')) AS linea_n1_codigo
+          TRIM(COALESCE(id_item::text, '')) AS item,
+          GREATEST(COALESCE(can_disponible_foto, 0), 0)::numeric AS inv_u,
+          GREATEST(COALESCE(can_disponible_foto, 0) * COALESCE(costo_uni_inventario, 0), 0)::numeric AS val_inv,
+          TRIM(COALESCE(nombre_linea_nivel_1::text, '')) AS linea,
+          TRIM(COALESCE(id_linea_nivel_1::text, '')) AS linea_n1_codigo
         FROM rotacion_base_item_dia_sede
-        WHERE TRIM(COALESCE(item::text, '')) = ANY($1::text[])
-          AND fecha_consulta ~ '^[0-9]{8}$'
+        WHERE TRIM(COALESCE(id_item::text, '')) = ANY($1::text[])
+          AND fecha_dia IS NOT NULL
       ),
       ranked AS (
         SELECT
           *,
-          MAX(to_date(fecha_consulta, 'YYYYMMDD')) OVER (PARTITION BY empresa, sede, item) AS latest_consulta_date
+          MAX(fecha_dia::date) OVER (PARTITION BY empresa, sede, item) AS latest_consulta_date
         FROM scoped
       )
       SELECT
@@ -127,9 +127,9 @@ async function main() {
         linea,
         linea_n1_codigo,
         latest_consulta_date::date AS ultima_fecha,
-        SUM(CASE WHEN to_date(fecha_consulta, 'YYYYMMDD') = latest_consulta_date THEN inv_u ELSE 0 END)::numeric AS sum_inv,
-        SUM(CASE WHEN to_date(fecha_consulta, 'YYYYMMDD') = latest_consulta_date THEN val_inv ELSE 0 END)::numeric AS sum_valor,
-        COUNT(*) FILTER (WHERE to_date(fecha_consulta, 'YYYYMMDD') = latest_consulta_date)::int AS filas_en_ultima_fecha
+        SUM(CASE WHEN fecha_dia::date = latest_consulta_date THEN inv_u ELSE 0 END)::numeric AS sum_inv,
+        SUM(CASE WHEN fecha_dia::date = latest_consulta_date THEN val_inv ELSE 0 END)::numeric AS sum_valor,
+        COUNT(*) FILTER (WHERE fecha_dia::date = latest_consulta_date)::int AS filas_en_ultima_fecha
       FROM ranked
       GROUP BY empresa, sede, item, linea, linea_n1_codigo, latest_consulta_date
       ORDER BY item, sede;

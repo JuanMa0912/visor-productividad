@@ -48,10 +48,10 @@ const run = async () => {
       SELECT
         COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
         COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede,
-        MIN(fecha_consulta) AS minf,
-        MAX(fecha_consulta) AS maxf
+        MIN(TO_CHAR(fecha_dia::date, 'YYYYMMDD')) AS minf,
+        MAX(TO_CHAR(fecha_dia::date, 'YYYYMMDD')) AS maxf
       FROM rotacion_base_item_dia_sede
-      WHERE fecha_consulta ~ '^[0-9]{8}$'
+      WHERE fecha_dia IS NOT NULL
       GROUP BY 1,2
       ORDER BY COUNT(*) DESC
       LIMIT 1
@@ -72,9 +72,8 @@ const run = async () => {
             COALESCE(NULLIF(TRIM(sede),''),'sin_sede') AS sede_id,
             COALESCE(NULLIF(TRIM(nombre_sede),''), NULLIF(TRIM(sede),''), 'Sin sede') AS sede_name
           FROM rotacion_base_item_dia_sede
-          WHERE fecha_consulta BETWEEN $1 AND $2
-            AND fecha_consulta ~ '^[0-9]{8}$'
-            AND item IS NOT NULL
+          WHERE fecha_dia::date BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+            AND id_item IS NOT NULL
           ORDER BY empresa ASC, sede_name ASC, sede_id ASC
         `,
         params: [minf, maxf],
@@ -83,11 +82,10 @@ const run = async () => {
         name: "catalogOnly_por_sede_lineasN1",
         sql: `
           SELECT DISTINCT
-            COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__') AS linea_n1_codigo
+            COALESCE(NULLIF(TRIM(id_linea_nivel_1::text), ''), '__sin_n1__') AS linea_n1_codigo
           FROM rotacion_base_item_dia_sede
-          WHERE fecha_consulta BETWEEN $1 AND $2
-            AND fecha_consulta ~ '^[0-9]{8}$'
-            AND item IS NOT NULL
+          WHERE fecha_dia::date BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+            AND id_item IS NOT NULL
             AND COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $3
             AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $4)
           ORDER BY linea_n1_codigo ASC
@@ -101,17 +99,16 @@ const run = async () => {
             SELECT
               COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') AS empresa,
               COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') AS sede_id,
-              COALESCE(NULLIF(TRIM(item), ''), 'sin_item') AS item,
+              COALESCE(NULLIF(TRIM(id_item::text), ''), 'sin_item') AS item,
               COALESCE(venta_sin_impuesto, 0) AS venta_sin_impuesto,
-              COALESCE(unidades_vendidas, 0) AS unidades_vendidas,
-              GREATEST(COALESCE(inv_cierre_dia_ayer, 0), 0) AS inventory_units,
-              GREATEST(COALESCE(valor_inventario, 0), 0) AS inventory_value,
-              TO_DATE(fecha_consulta, 'YYYYMMDD') AS consulta_date,
-              fecha_carga
+              COALESCE(cantidad_vendida, 0) AS unidades_vendidas,
+              GREATEST(COALESCE(can_disponible_foto, 0), 0) AS inventory_units,
+              GREATEST(COALESCE(can_disponible_foto, 0) * COALESCE(costo_uni_inventario, 0), 0) AS inventory_value,
+              fecha_dia::date AS consulta_date,
+              COALESCE(fecha_actualizacion, fecha_carga) AS carga_ts
             FROM rotacion_base_item_dia_sede
-            WHERE fecha_consulta BETWEEN $1 AND $2
-              AND fecha_consulta ~ '^[0-9]{8}$'
-              AND item IS NOT NULL
+            WHERE fecha_dia::date BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+              AND id_item IS NOT NULL
               AND ($3::text IS NULL OR COALESCE(NULLIF(TRIM(empresa), ''), 'sin_empresa') = $3)
               AND ($4::text IS NULL OR COALESCE(NULLIF(TRIM(sede), ''), 'sin_sede') = $4)
           ),
@@ -119,7 +116,7 @@ const run = async () => {
             SELECT
               *,
               MAX(consulta_date) OVER (PARTITION BY empresa, sede_id, item) AS latest_consulta_date,
-              ROW_NUMBER() OVER (PARTITION BY empresa, sede_id, item ORDER BY consulta_date DESC, fecha_carga DESC) AS latest_rank
+              ROW_NUMBER() OVER (PARTITION BY empresa, sede_id, item ORDER BY consulta_date DESC, carga_ts DESC NULLS LAST) AS latest_rank
             FROM scoped
           ),
           aggregated AS (
