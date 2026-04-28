@@ -70,6 +70,7 @@ type RotationRow = {
   linea01: string | null;
   nombreLinea01: string | null;
   totalSales: number;
+  totalCost: number;
   totalMargin: number;
   totalUnits: number;
   inventoryUnits: number;
@@ -169,6 +170,7 @@ type RotationSortField =
   | "item"
   | "descripcion"
   | "totalSales"
+  | "totalCost"
   | "totalMargin"
   | "totalUnits"
   | "inventoryUnits"
@@ -189,16 +191,16 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const ROTACION_TABLE_COL_WIDTHS = [
   "6%",
   "3%",
-  "20%",
-  "8%",
-  "7%",
-  "7%",
-  "7%",
+  "16%",
   "8%",
   "8%",
   "6%",
+  "7%",
+  "7%",
+  "8%",
   "5%",
-  "5%",
+  "4%",
+  "4%",
   "9%",
   "9%",
 ] as const;
@@ -727,14 +729,59 @@ const countAbcdItemsByCategory = (
   return counts;
 };
 
+type AbcdSummaryRow = {
+  categoria: AbcdCategory;
+  totalSales: number;
+  itemCount: number;
+  totalMargin: number;
+  marginPct: number;
+};
+
+const buildAbcdSummaryRows = (
+  rows: RotationRow[],
+  categoryByItem: Map<string, AbcdCategory>,
+): AbcdSummaryRow[] => {
+  const byCategory: Record<
+    AbcdCategory,
+    { totalSales: number; totalMargin: number; items: Set<string> }
+  > = {
+    A: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    B: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    C: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    D: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+  };
+
+  for (const row of rows) {
+    const categoria = categoryByItem.get(row.item) ?? "D";
+    byCategory[categoria].totalSales += row.totalSales;
+    byCategory[categoria].totalMargin += row.totalMargin;
+    byCategory[categoria].items.add(row.item);
+  }
+
+  const order: AbcdCategory[] = ["A", "B", "C", "D"];
+  return order.map((categoria) => {
+    const totalSales = byCategory[categoria].totalSales;
+    const totalMargin = byCategory[categoria].totalMargin;
+    return {
+      categoria,
+      totalSales,
+      totalMargin,
+      itemCount: byCategory[categoria].items.size,
+      marginPct: totalSales > 0 ? (totalMargin / totalSales) * 100 : 0,
+    };
+  });
+};
+
 const compareNullableIsoDateKeys = (
   left: string | null,
   right: string | null,
+  direction: RotationSortDirection,
 ) => {
   if (left === null && right === null) return 0;
   if (left === null) return 1;
   if (right === null) return -1;
-  return compareRotationText(left, right);
+  const base = compareRotationText(left, right);
+  return direction === "asc" ? base : -base;
 };
 
 const getDefaultSortDirection = (
@@ -769,6 +816,9 @@ const sortRotationRows = (
         break;
       case "totalSales":
         result = left.totalSales - right.totalSales;
+        break;
+      case "totalCost":
+        result = left.totalCost - right.totalCost;
         break;
       case "totalMargin":
         result = left.totalMargin - right.totalMargin;
@@ -807,12 +857,14 @@ const sortRotationRows = (
         result = compareNullableIsoDateKeys(
           left.lastMovementDate,
           right.lastMovementDate,
+          direction,
         );
         break;
       case "lastPurchaseDate":
         result = compareNullableIsoDateKeys(
           left.lastPurchaseDate,
           right.lastPurchaseDate,
+          direction,
         );
         break;
       case "status":
@@ -823,7 +875,12 @@ const sortRotationRows = (
         result = 0;
     }
 
-    if (result !== 0) return result * directionFactor;
+    if (result !== 0) {
+      if (field === "lastMovementDate" || field === "lastPurchaseDate") {
+        return result;
+      }
+      return result * directionFactor;
+    }
     if (skipExpensiveTieBreak) return 0;
 
     const byDescription = compareRotationText(
@@ -881,6 +938,7 @@ const buildConsolidatedRowsBySelection = (
       return;
     }
     current.totalSales += row.totalSales;
+    current.totalCost += row.totalCost;
     current.totalMargin += row.totalMargin;
     current.totalUnits += row.totalUnits;
     current.inventoryUnits += row.inventoryUnits;
@@ -3466,6 +3524,24 @@ export default function RotacionPage() {
                         : selectedCategoryTotalInv > 0
                           ? NO_SALES_DI_VALUE
                           : 0;
+                    const abcdSummaryRows = buildAbcdSummaryRows(
+                      filteredRows,
+                      categoryByItem,
+                    );
+                    const abcdSummaryTotals = abcdSummaryRows.reduce(
+                      (acc, row) => ({
+                        totalSales: acc.totalSales + row.totalSales,
+                        totalMargin: acc.totalMargin + row.totalMargin,
+                        itemCount: acc.itemCount + row.itemCount,
+                      }),
+                      { totalSales: 0, totalMargin: 0, itemCount: 0 },
+                    );
+                    const abcdSummaryTotalMarginPct =
+                      abcdSummaryTotals.totalSales > 0
+                        ? (abcdSummaryTotals.totalMargin /
+                            abcdSummaryTotals.totalSales) *
+                          100
+                        : 0;
                     const selectedCategoryLabel =
                       categoryFilter === "all" ? null : categoryFilter;
                     const categoryFilteredCeroRotacionCount =
@@ -3743,6 +3819,62 @@ export default function RotacionPage() {
                                   </div>
                                 </div>
                               ) : null}
+                              {isAdmin ? (
+                                <div className="w-full rounded-xl border border-slate-200 bg-white/90 p-3">
+                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                    Resumen AxD
+                                  </p>
+                                  <div className="overflow-x-auto">
+                                    <table className="min-w-96 border-collapse text-sm text-slate-700">
+                                      <thead>
+                                        <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                          <th className="px-2 py-1 text-left">Clase</th>
+                                          <th className="px-2 py-1 text-right">$ VTA</th>
+                                          <th className="px-2 py-1 text-right"># ITEM</th>
+                                          <th className="px-2 py-1 text-right">Margen</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {abcdSummaryRows.map((row) => (
+                                          <tr
+                                            key={`axd-${groupKey}-${row.categoria}`}
+                                            className="border-b border-slate-100 last:border-b-0"
+                                          >
+                                            <td className="px-2 py-1.5 font-semibold text-slate-800">
+                                              {row.categoria}:
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">
+                                              {formatPriceWithoutSixZeros(row.totalSales)}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">
+                                              {row.itemCount.toLocaleString("es-CO")}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">
+                                              {formatPercent(row.marginPct)}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                        <tr className="bg-slate-50/90 font-semibold text-slate-900">
+                                          <td className="px-2 py-1.5">Totales</td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums">
+                                            {formatPriceWithoutSixZeros(
+                                              abcdSummaryTotals.totalSales,
+                                            )}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums">
+                                            {abcdSummaryTotals.itemCount.toLocaleString(
+                                              "es-CO",
+                                            )}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums">
+                                            {formatPercent(abcdSummaryTotalMarginPct)}
+                                          </td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
 
                             <div className="border-t border-slate-200/90 pt-5">
@@ -3972,6 +4104,20 @@ export default function RotacionPage() {
                                   />
                                 </TableHead>
                                 <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
+                                    field="totalCost"
+                                    align="right"
+                                    label={
+                                      <span className="block text-[11px] leading-tight">
+                                        Costo
+                                      </span>
+                                    }
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                                   <span className="block text-[11px] leading-tight text-slate-700">
                                     Margen %
                                   </span>
@@ -4121,6 +4267,9 @@ export default function RotacionPage() {
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                                     {formatPrice(row.totalSales)}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                    {formatPrice(row.totalCost)}
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                                     {formatPercent(

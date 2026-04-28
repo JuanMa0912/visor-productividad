@@ -51,6 +51,7 @@ type RotationDbRow = {
   linea01: string | null;
   nombre_linea01: string | null;
   total_sales: string | number | null;
+  total_cost: string | number | null;
   total_margin: string | number | null;
   total_units: string | number | null;
   inventory_units: string | number | null;
@@ -80,6 +81,7 @@ type RotationRow = {
   linea01: string | null;
   nombreLinea01: string | null;
   totalSales: number;
+  totalCost: number;
   totalMargin: number;
   totalUnits: number;
   inventoryUnits: number;
@@ -1021,6 +1023,7 @@ const queryRotationRows = async ({
           ${fields.descriptionExpr} AS descripcion,
           ${fields.unitExpr} AS unidad,
           ${fields.salesExpr} AS venta_sin_impuesto,
+          ${fields.costOfSalesExpr} AS cost_value,
           ${fields.marginExpr} AS margin_value,
           ${fields.unitsSoldExpr} AS unidades_vendidas,
           ${fields.closingUnitsExpr} AS inventory_units,
@@ -1073,10 +1076,11 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           SUM(venta_sin_impuesto)::numeric AS total_sales,
+          SUM(cost_value)::numeric AS total_cost,
           SUM(margin_value)::numeric AS total_margin,
           SUM(unidades_vendidas)::numeric AS total_units,
           MAX(last_movement_date) AS last_movement_date,
-          MAX(CASE WHEN latest_rank = 1 THEN last_purchase_date END) AS last_purchase_date,
+          MAX(last_purchase_date) AS last_purchase_date,
           SUM(
             CASE
               WHEN consulta_date = latest_consulta_date THEN inventory_units
@@ -1095,8 +1099,13 @@ const queryRotationRows = async ({
           MAX(CASE WHEN latest_rank = 1 THEN nombre_categoria END) AS nombre_categoria,
           MAX(CASE WHEN latest_rank = 1 THEN linea01 END) AS linea01,
           MAX(CASE WHEN latest_rank = 1 THEN nombre_linea01 END) AS nombre_linea01,
-          COUNT(*)::int AS tracked_days,
-          SUM(CASE WHEN unidades_vendidas > 0 THEN 1 ELSE 0 END)::int AS sales_effective_days
+          COUNT(DISTINCT consulta_date)::int AS tracked_days,
+          COUNT(
+            DISTINCT CASE
+              WHEN unidades_vendidas > 0 THEN consulta_date
+              ELSE NULL
+            END
+          )::int AS sales_effective_days
         FROM ranked
         GROUP BY
           empresa,
@@ -1125,6 +1134,7 @@ const queryRotationRows = async ({
           linea01,
           nombre_linea01,
           total_sales,
+          total_cost,
           total_margin,
           total_units,
           COALESCE(inventory_units, 0) AS inventory_units,
@@ -1143,7 +1153,13 @@ const queryRotationRows = async ({
             ELSE ($3::date - last_movement_date)
           END::int AS effective_days
         FROM aggregated
-        WHERE $4::numeric IS NULL OR total_sales <= $4::numeric
+        WHERE ($4::numeric IS NULL OR total_sales <= $4::numeric)
+          AND NOT (
+            COALESCE(total_sales, 0) = 0
+            AND COALESCE(inventory_units, 0) = 0
+            AND COALESCE(total_units, 0) = 0
+            AND COALESCE(inventory_value, 0) = 0
+          )
       ),
       classified AS (
         SELECT
@@ -1162,6 +1178,7 @@ const queryRotationRows = async ({
           linea01,
           nombre_linea01,
           total_sales,
+          total_cost,
           total_margin,
           total_units,
           inventory_units,
@@ -1200,6 +1217,7 @@ const queryRotationRows = async ({
         linea01,
         nombre_linea01,
         total_sales,
+        total_cost,
         total_margin,
         total_units,
         inventory_units,
@@ -1250,6 +1268,7 @@ const queryRotationRows = async ({
         linea01: toOptionalTrimmedString(row.linea01),
         nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
         totalSales: toNumber(row.total_sales),
+        totalCost: toNumber(row.total_cost),
         totalMargin: toNumber(row.total_margin),
         totalUnits: toNumber(row.total_units),
         inventoryUnits: toNumber(row.inventory_units),

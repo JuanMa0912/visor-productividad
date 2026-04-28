@@ -28,6 +28,7 @@ export type RotacionBaseSqlFields = {
   descriptionExpr: string;
   unitExpr: string;
   salesExpr: string;
+  costOfSalesExpr: string;
   marginExpr: string;
   unitsSoldExpr: string;
   closingUnitsExpr: string;
@@ -257,18 +258,24 @@ export const resolveRotacionBaseSqlFields = async (
   }
 
   const salesExpr = numericExpr(columns, [
-    "venta_sin_impuesto",
     "venta_sin_impuesto_dia",
+    "venta_sin_impuesto",
     "venta_sin_iva",
     "venta_neta",
     "venta",
   ]);
   const unitsSoldExpr = numericExpr(columns, [
-    "cantidad_vendida",
     "unidades_vendidas_dia",
+    "cantidad_vendida",
     "unidades_vendidas",
     "unidades",
   ]);
+  const totalCostColumn = pickColumn(columns, [
+    "total_costo",
+    "costo_total",
+    "costo_venta_total",
+  ]);
+  const totalCostExpr = numericColumnExpr(columns, totalCostColumn);
   const avgUnitCostAtSaleColumn = pickColumn(columns, [
     "costo_promedio_venta",
     "costo_promedio_unitario_venta",
@@ -280,6 +287,11 @@ export const resolveRotacionBaseSqlFields = async (
     "costo_unitario",
   ]);
   const avgUnitCostAtSaleExpr = numericColumnExpr(columns, avgUnitCostAtSaleColumn);
+  const costOfSalesExpr = totalCostColumn
+    ? `ROUND((${totalCostExpr})::numeric, 2)`
+    : avgUnitCostAtSaleColumn
+      ? `ROUND(((${unitsSoldExpr}) * (${avgUnitCostAtSaleExpr}))::numeric, 2)`
+      : "0::numeric";
   const closingUnitsExpr = `GREATEST(${numericExpr(columns, [
     "can_disponible_foto",
     "inventario_cierre",
@@ -339,6 +351,7 @@ export const resolveRotacionBaseSqlFields = async (
     ),
     unitExpr: nullableTextExpr(columns, ["id_unidad", "unidad"]),
     salesExpr,
+    costOfSalesExpr,
     // Margen del periodo por fila bajo regla de kardex (promedio ponderado):
     // costo total venta = unidades vendidas * costo promedio unitario vigente.
     marginExpr: avgUnitCostAtSaleColumn
