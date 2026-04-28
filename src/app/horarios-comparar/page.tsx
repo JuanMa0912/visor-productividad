@@ -1,10 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  RefreshCw,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -513,10 +525,37 @@ export default function HorariosCompararPage() {
     }
   }, [end, exportingPdf, filteredRows, loading, sede, start]);
 
+  const Kpi = ({
+    label,
+    value,
+    tone = "default",
+  }: {
+    label: string;
+    value: string;
+    tone?: "default" | "good" | "bad";
+  }) => {
+    const toneClass =
+      tone === "good"
+        ? "bg-emerald-100/80 text-emerald-800"
+        : tone === "bad"
+          ? "bg-rose-100/80 text-rose-800"
+          : "bg-slate-100 text-slate-900";
+    return (
+      <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 shadow-xs">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          {label}
+        </span>
+        <span className={`rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold ${toneClass}`}>
+          {value}
+        </span>
+      </div>
+    );
+  };
+
   if (!ready) {
     return (
-      <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
-        <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+      <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground antialiased">
+        <div className="mx-auto w-full max-w-2xl rounded-2xl border border-border/70 bg-card p-6 shadow-xs">
           <p className="text-sm text-slate-600">Cargando...</p>
         </div>
       </div>
@@ -524,425 +563,441 @@ export default function HorariosCompararPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-slate-100 px-4 py-12 text-foreground">
-      <div className="mx-auto w-full max-w-[min(100%,96rem)] rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-rose-700">
-              Operacion
-            </p>
-            <h1 className="mt-2 text-2xl font-bold text-slate-900">
-              Comparar horarios
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600">
-              Cruza lo registrado en planillas (ingresar horarios) con las marcaciones reales en
-              asistencia: entrada, intermedias y salida.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => router.push("/horario")}
-              className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
-            >
-              Volver a Horario
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-            Desde
-            <input
-              type="date"
-              value={start}
-              onChange={(e) => setRange((r) => ({ ...r, start: e.target.value }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-            Hasta
-            <input
-              type="date"
-              value={end}
-              onChange={(e) => setRange((r) => ({ ...r, end: e.target.value }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
-            />
-          </label>
-          <label className="flex min-w-48 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-            Sede
-            <select
-              value={sede}
-              onChange={(e) => setSede(e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
-            >
-              <option value="">Todas (visibles)</option>
-              {sedes.map((s) => (
-                <option key={s.id} value={s.name}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => void loadComparison()}
-            disabled={loading}
-            className="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Cargando..." : "Actualizar"}
-          </button>
-        </div>
-
-        {error ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="mt-4 flex flex-wrap items-end gap-4 rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3">
-          <label className="flex min-w-[min(100%,14rem)] flex-1 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-            Nombre
-            <input
-              type="search"
-              value={employeeNameFilter}
-              onChange={(e) => setEmployeeNameFilter(e.target.value)}
-              placeholder="Filtrar por nombre del empleado..."
-              autoComplete="off"
-              disabled={loading}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 placeholder:text-slate-400 disabled:opacity-60"
-            />
-          </label>
-          <label className="flex min-w-[min(100%,16rem)] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-            Estado
-            <select
-              value={estadoFilter}
-              onChange={(e) =>
-                setEstadoFilter(e.target.value as EstadoFilter)
-              }
-              disabled={loading}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 disabled:opacity-60"
-            >
-              <option value="all">Todos</option>
-              <option value="cumplio">Cumplió</option>
-              <option value="no_cumplio">No cumplió</option>
-            </select>
-          </label>
-          <label className="flex min-w-[min(100%,16rem)] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-            Horario predeterminado
-            <select
-              value={scheduleFilter}
-              onChange={(e) => setScheduleFilter(e.target.value)}
-              disabled={loading}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 disabled:opacity-60"
-            >
-              <option value={ALL_SCHEDULE_FILTER}>Todos</option>
-              {DEFAULT_LUNES_SCHEDULE_PRESETS.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
-          <span>
-            Registros: <strong className="text-slate-900">{counts.total}</strong>
-            {rows.length > 0 && filteredRows.length !== rows.length ? (
-              <span className="text-slate-400">
-                {" "}
-                (de {rows.length} cargados)
-              </span>
-            ) : null}
-          </span>
-          <span>
-            Cumplió: <strong className="text-emerald-700">{counts.cumplio}</strong>
-          </span>
-          <span>
-            No cumplió: <strong className="text-rose-700">{counts.noCumplio}</strong>
-          </span>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => void handleExportExcel()}
-            disabled={
-              loading || filteredRows.length === 0 || exportingExcel
-            }
-            className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {exportingExcel ? "Exportando..." : "Descargar Excel"}
-          </button>
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            disabled={loading || filteredRows.length === 0 || exportingPdf}
-            className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {exportingPdf ? "Exportando..." : "Descargar PDF"}
-          </button>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <p className="text-sm text-slate-600">
-            {filteredRows.length === 0 && rows.length > 0 ? (
-              <span className="text-amber-800">
-                Ningún registro coincide con nombre o estado. Ajusta los filtros.
-              </span>
-            ) : filteredRows.length === 0 ? (
-              <span className="text-slate-500">Sin filas para mostrar.</span>
-            ) : (
-              <>
-                Mostrando{" "}
-                <strong className="text-slate-900 tabular-nums">
-                  {rangeFrom}–{rangeTo}
-                </strong>{" "}
-                de <strong className="text-slate-900">{filteredRows.length}</strong>
-              </>
-            )}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Filas por pagina
-            </label>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (!PAGE_SIZE_OPTIONS.includes(v as PageSize)) return;
-                setPageSize(v as PageSize);
-                setPage(1);
-              }}
-              disabled={loading}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:opacity-60"
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={
-                  loading || filteredRows.length === 0 || currentPage <= 1
-                }
-                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Anterior
-              </button>
-              <span className="min-w-34 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Pagina {currentPage} de {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={
-                  loading ||
-                  filteredRows.length === 0 ||
-                  currentPage >= totalPages
-                }
-                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Siguiente
-              </button>
+    <div className="min-h-screen bg-slate-100 text-foreground antialiased">
+      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-3.5 lg:px-8">
+          <Link href="/portal" className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-linear-to-br from-indigo-600 to-indigo-700 shadow-elevated">
+              <Sparkles className="h-4.5 w-4.5 text-white" />
             </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Operación · UAID
+              </span>
+              <span className="font-display text-[15px] font-semibold leading-tight tracking-tight text-foreground">
+                Comparar horarios
+              </span>
+            </div>
+          </Link>
+          <button
+            type="button"
+            onClick={() => router.push("/horario")}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground shadow-xs transition-all hover:border-foreground/20 hover:shadow-soft"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Volver a Horario
+          </button>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1400px] px-6 py-8 lg:px-8 lg:py-10">
+        <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs">
+          <div className="h-[3px] w-full bg-rose-600" />
+          <div className="space-y-6 p-5 lg:p-6">
+            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-700">
+                  Operación
+                </span>
+                <h1 className="font-display text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+                  Comparar horarios
+                </h1>
+                <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
+                  Cruza lo registrado en planillas con las marcaciones reales de asistencia: entrada,
+                  intermedias y salida.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleExportExcel()}
+                  disabled={loading || filteredRows.length === 0 || exportingExcel}
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/40 bg-emerald-100/60 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-800 transition-all hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  Excel
+                  <Download className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  disabled={loading || filteredRows.length === 0 || exportingPdf}
+                  className="inline-flex items-center gap-2 rounded-lg border border-rose-300/40 bg-rose-100/60 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-800 transition-all hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  PDF
+                  <Download className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4 lg:grid-cols-[140px_140px_1fr_auto] lg:items-end">
+              <label className="space-y-1.5">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Desde
+                </span>
+                <input
+                  type="date"
+                  value={start}
+                  onChange={(e) => setRange((r) => ({ ...r, start: e.target.value }))}
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 font-mono text-[12px] font-semibold shadow-xs"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Hasta
+                </span>
+                <input
+                  type="date"
+                  value={end}
+                  onChange={(e) => setRange((r) => ({ ...r, end: e.target.value }))}
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 font-mono text-[12px] font-semibold shadow-xs"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Sede
+                </span>
+                <select
+                  value={sede}
+                  onChange={(e) => setSede(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-[12px] shadow-xs"
+                >
+                  <option value="">Todas visibles</option>
+                  {sedes.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => void loadComparison()}
+                disabled={loading}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-elevated transition-all hover:-translate-y-0.5 hover:shadow-floating disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                {loading ? "Cargando..." : "Actualizar"}
+              </button>
+
+              <label className="space-y-1.5 lg:col-span-2">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Nombre
+                </span>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    value={employeeNameFilter}
+                    onChange={(e) => setEmployeeNameFilter(e.target.value)}
+                    placeholder="Filtrar por nombre del empleado..."
+                    autoComplete="off"
+                    disabled={loading}
+                    className="h-10 w-full rounded-lg border border-input bg-card py-2 pl-9 pr-3 text-[12px] shadow-xs placeholder:text-slate-400 disabled:opacity-60"
+                  />
+                </div>
+              </label>
+              <label className="space-y-1.5">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Estado
+                </span>
+                <select
+                  value={estadoFilter}
+                  onChange={(e) => setEstadoFilter(e.target.value as EstadoFilter)}
+                  disabled={loading}
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-[12px] shadow-xs disabled:opacity-60"
+                >
+                  <option value="all">Todos</option>
+                  <option value="cumplio">Cumplió</option>
+                  <option value="no_cumplio">No cumplió</option>
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Horario predeterminado
+                </span>
+                <select
+                  value={scheduleFilter}
+                  onChange={(e) => setScheduleFilter(e.target.value)}
+                  disabled={loading}
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-[12px] shadow-xs disabled:opacity-60"
+                >
+                  <option value={ALL_SCHEDULE_FILTER}>Todos</option>
+                  {DEFAULT_LUNES_SCHEDULE_PRESETS.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {error ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col justify-between gap-4 border-y border-border/60 py-4 lg:flex-row lg:items-center">
+              <div className="flex flex-wrap gap-2">
+                <Kpi
+                  label="Registros"
+                  value={counts.total.toLocaleString("es-CO")}
+                />
+                <Kpi
+                  label="Cumplió"
+                  value={counts.cumplio.toLocaleString("es-CO")}
+                  tone="good"
+                />
+                <Kpi
+                  label="No cumplió"
+                  value={counts.noCumplio.toLocaleString("es-CO")}
+                  tone="bad"
+                />
+              </div>
+              <div className="flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <span>Filas por página</span>
+                <div className="relative">
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (!PAGE_SIZE_OPTIONS.includes(v as PageSize)) return;
+                      setPageSize(v as PageSize);
+                      setPage(1);
+                    }}
+                    disabled={loading}
+                    className="inline-flex h-9 appearance-none items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 pr-8 font-mono text-[12px] text-foreground shadow-xs disabled:opacity-60"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                </div>
+                <span>
+                  Página {currentPage} de {totalPages}
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-border/70 shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="min-w-[1180px] border-collapse text-left text-[11px]">
+                  <thead className="sticky top-[73px] z-30 bg-white shadow-xs">
+                    <tr className="border-b border-border/70">
+                      <th className="bg-white px-3 py-3 font-semibold text-foreground">Fecha</th>
+                      <th className="bg-white px-3 py-3 font-semibold text-foreground">Sede</th>
+                      <th className="bg-white px-3 py-3 font-semibold text-foreground">Empleado</th>
+                      <th className="bg-white px-3 py-3 font-semibold text-foreground">Planilla</th>
+                      <th className="bg-white px-3 py-3 font-semibold text-foreground">Estado</th>
+                      <th colSpan={4} className="bg-sky-100 px-3 py-3 text-center font-semibold text-sky-700">
+                        Plan
+                      </th>
+                      <th colSpan={4} className="bg-emerald-100 px-3 py-3 text-center font-semibold text-emerald-700">
+                        Asistencia
+                      </th>
+                      <th colSpan={4} className="bg-slate-100 px-3 py-3 text-center font-semibold text-slate-600">
+                        Diferencia
+                      </th>
+                    </tr>
+                    <tr className="border-b border-border/70 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                      <th className="bg-slate-50 px-3 py-2" />
+                      <th className="bg-slate-50 px-3 py-2" />
+                      <th className="bg-slate-50 px-3 py-2" />
+                      <th className="bg-slate-50 px-3 py-2" />
+                      <th className="bg-slate-50 px-3 py-2" />
+                      <th className="bg-sky-50 px-3 py-2 text-center">HE1</th>
+                      <th className="bg-sky-50 px-3 py-2 text-center">HS1</th>
+                      <th className="bg-sky-50 px-3 py-2 text-center">HE2</th>
+                      <th className="bg-sky-50 px-3 py-2 text-center">HS2</th>
+                      <th className="bg-emerald-50 px-3 py-2 text-center">Ent</th>
+                      <th className="bg-emerald-50 px-3 py-2 text-center">Int1</th>
+                      <th className="bg-emerald-50 px-3 py-2 text-center">Int2</th>
+                      <th className="bg-emerald-50 px-3 py-2 text-center">Sal</th>
+                      <th className="bg-slate-100 px-3 py-2 text-center">D1</th>
+                      <th className="bg-slate-100 px-3 py-2 text-center">D2</th>
+                      <th className="bg-slate-100 px-3 py-2 text-center">D3</th>
+                      <th className="bg-slate-100 px-3 py-2 text-center">D4</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.length === 0 && !loading ? (
+                      <tr>
+                        <td colSpan={17} className="px-4 py-10 text-center text-slate-500">
+                          No hay filas en este rango. Ajusta fechas o sede.
+                        </td>
+                      </tr>
+                    ) : rows.length === 0 && loading ? (
+                      <tr>
+                        <td colSpan={17} className="px-4 py-10 text-center text-slate-500">
+                          Cargando...
+                        </td>
+                      </tr>
+                    ) : filteredRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={17}
+                          className="bg-amber-50/50 px-4 py-10 text-center text-sm text-amber-900"
+                        >
+                          Ningún registro coincide con los filtros de nombre o estado.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedRows.map((r, idx) => {
+                        const globalIdx = pageStartIdx + idx;
+                        const rowKey = `${r.workedDate}-${r.sede}-${r.employeeName}-${r.planillaId}-${globalIdx}`;
+                        const highlightNoCumplioFields =
+                          r.status === "no_cumplio" && hoveredNoCumplioKey === rowKey;
+                        const highlightEntrada =
+                          highlightNoCumplioFields && isEntradaOutOfPolicy(r.diffMin.entrada);
+                        const highlightIntermedia1 =
+                          highlightNoCumplioFields &&
+                          isIntermediaOutOfPolicy(r.diffMin.intermedia1);
+                        const highlightIntermedia2 =
+                          highlightNoCumplioFields &&
+                          isIntermediaOutOfPolicy(r.diffMin.intermedia2);
+                        const highlightSalida =
+                          highlightNoCumplioFields && isSalidaOutOfPolicy(r.diffMin.salida);
+                        return (
+                          <tr
+                            key={rowKey}
+                            className="border-b border-border/60 bg-card transition-colors hover:bg-muted/30"
+                          >
+                            <td className="px-3 py-2.5 font-mono text-slate-700">{r.workedDate}</td>
+                            <td className="px-3 py-2.5 text-slate-700">{r.sede}</td>
+                            <td className="px-3 py-2.5 font-semibold uppercase tracking-[0.02em] text-slate-900">
+                              {r.employeeName}
+                            </td>
+                            <td className="px-3 py-2.5 font-mono text-slate-600">
+                              {r.planillaId > 0 ? `#${r.planillaId}` : "—"}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span
+                                className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] ${
+                                  r.status === "cumplio"
+                                    ? "bg-emerald-100/80 text-emerald-800"
+                                    : "bg-rose-100/80 text-rose-800"
+                                }`}
+                                onMouseEnter={() => {
+                                  if (r.status === "no_cumplio") setHoveredNoCumplioKey(rowKey);
+                                }}
+                                onMouseLeave={() => {
+                                  if (r.status === "no_cumplio") setHoveredNoCumplioKey(null);
+                                }}
+                              >
+                                {statusLabel(r.status)}
+                              </span>
+                            </td>
+                            <td className="bg-sky-50/70 px-3 py-2.5 text-center font-mono">{r.plan.he1 || "—"}</td>
+                            <td className="bg-sky-50/70 px-3 py-2.5 text-center font-mono">{r.plan.hs1 || "—"}</td>
+                            <td className="bg-sky-50/70 px-3 py-2.5 text-center font-mono">{r.plan.he2 || "—"}</td>
+                            <td className="bg-sky-50/70 px-3 py-2.5 text-center font-mono">{r.plan.hs2 || "—"}</td>
+                            <td className="bg-emerald-50 px-3 py-2.5 text-center font-mono">{r.attendance?.horaEntrada || "—"}</td>
+                            <td className="bg-emerald-50 px-3 py-2.5 text-center font-mono">{r.attendance?.horaIntermedia1 || "—"}</td>
+                            <td className="bg-emerald-50 px-3 py-2.5 text-center font-mono">{r.attendance?.horaIntermedia2 || "—"}</td>
+                            <td className="bg-emerald-50 px-3 py-2.5 text-center font-mono">{r.attendance?.horaSalida || "—"}</td>
+                            <td
+                              className={`relative bg-slate-100/80 px-3 py-2.5 text-center font-mono ${
+                                highlightEntrada
+                                  ? "font-extrabold text-slate-900"
+                                  : ""
+                              }`}
+                            >
+                              <span className="relative z-10">{formatDiff(r.diffMin.entrada)}</span>
+                              {highlightEntrada ? (
+                                <span className="pointer-events-none absolute inset-x-2 bottom-1 h-1.5 rounded-full bg-rose-500/75" />
+                              ) : null}
+                            </td>
+                            <td
+                              className={`relative bg-slate-100/80 px-3 py-2.5 text-center font-mono ${
+                                highlightIntermedia1
+                                  ? "font-extrabold text-slate-900"
+                                  : ""
+                              }`}
+                            >
+                              <span className="relative z-10">
+                                {formatDiff(r.diffMin.intermedia1)}
+                              </span>
+                              {highlightIntermedia1 ? (
+                                <span className="pointer-events-none absolute inset-x-2 bottom-1 h-1.5 rounded-full bg-rose-500/75" />
+                              ) : null}
+                            </td>
+                            <td
+                              className={`relative bg-slate-100/80 px-3 py-2.5 text-center font-mono ${
+                                highlightIntermedia2
+                                  ? "font-extrabold text-slate-900"
+                                  : ""
+                              }`}
+                            >
+                              <span className="relative z-10">
+                                {formatDiff(r.diffMin.intermedia2)}
+                              </span>
+                              {highlightIntermedia2 ? (
+                                <span className="pointer-events-none absolute inset-x-2 bottom-1 h-1.5 rounded-full bg-rose-500/75" />
+                              ) : null}
+                            </td>
+                            <td
+                              className={`relative bg-slate-100/80 px-3 py-2.5 text-center font-mono ${
+                                highlightSalida
+                                  ? "font-extrabold text-slate-900"
+                                  : ""
+                              }`}
+                            >
+                              <span className="relative z-10">{formatDiff(r.diffMin.salida)}</span>
+                              {highlightSalida ? (
+                                <span className="pointer-events-none absolute inset-x-2 bottom-1 h-1.5 rounded-full bg-rose-500/75" />
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <span>
+                Mostrando {rangeFrom}–{rangeTo} de {filteredRows.length.toLocaleString("es-CO")}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={loading || filteredRows.length === 0 || currentPage <= 1}
+                  className="rounded-lg border border-border bg-muted px-3 py-2 text-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={loading || filteredRows.length === 0 || currentPage >= totalPages}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-2 text-foreground shadow-xs transition-all hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Siguiente
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              <strong className="text-emerald-800">Cumplió</strong>: planilla con marcaciones;
+              entrada entre −15 min y +10 min respecto al plan, intermedias hasta +10 min, salida
+              hasta +150 min (2 h 30 min) por horas extra; filas solo asistencia con al menos una
+              hora. <strong className="text-rose-800">No cumplió</strong>: plan en planilla sin
+              marcaciones, o entrada antes de −15 min o después de +10 min, o intermedias +11 min o
+              más, o salida +151 min o más. Diferencia = asistencia menos planilla. Emparejamiento por
+              nombre, sede y fecha.
+            </p>
           </div>
-        </div>
-
-        <div className="mt-4 max-w-full overflow-x-auto rounded-2xl border border-slate-200/80">
-          <table className="w-full min-w-[1200px] border-collapse text-left text-[12px]">
-            <thead>
-              <tr className="text-slate-800">
-                <th className="border border-slate-200 bg-slate-100 px-2 py-2">Fecha</th>
-                <th className="border border-slate-200 bg-slate-100 px-2 py-2">Sede</th>
-                <th className="border border-slate-200 bg-slate-100 px-2 py-2">Empleado</th>
-                <th className="border border-slate-200 bg-slate-100 px-2 py-2">Planilla</th>
-                <th className="border border-slate-200 bg-slate-100 px-2 py-2">Estado</th>
-                <th
-                  className="border border-sky-200 bg-sky-200/90 px-2 py-2 text-center text-sky-950"
-                  colSpan={4}
-                >
-                  Plan (HE1 / HS1 / HE2 / HS2)
-                </th>
-                <th
-                  className="border border-emerald-200 bg-emerald-200/90 px-2 py-2 text-center text-emerald-950"
-                  colSpan={4}
-                >
-                  Asistencia (Ent / Int1 / Int2 / Sal)
-                </th>
-                <th
-                  className="border border-violet-200 bg-violet-100 px-2 py-2 text-center text-violet-950"
-                  colSpan={4}
-                >
-                  Diferencia
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && !loading ? (
-                <tr>
-                  <td
-                    colSpan={17}
-                    className="border border-slate-200 px-4 py-8 text-center text-slate-500"
-                  >
-                    No hay filas en este rango. Ajusta fechas o sede.
-                  </td>
-                </tr>
-              ) : rows.length === 0 && loading ? (
-                <tr>
-                  <td
-                    colSpan={17}
-                    className="border border-slate-200 px-4 py-8 text-center text-slate-500"
-                  >
-                    Cargando...
-                  </td>
-                </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={17}
-                    className="border border-amber-100 bg-amber-50/50 px-4 py-8 text-center text-sm text-amber-900"
-                  >
-                    Ningún registro coincide con los filtros de nombre o estado.
-                  </td>
-                </tr>
-              ) : (
-                paginatedRows.map((r, idx) => {
-                  const globalIdx = pageStartIdx + idx;
-                  const rowKey = `${r.workedDate}-${r.sede}-${r.employeeName}-${r.planillaId}-${globalIdx}`;
-                  const rowTint =
-                    globalIdx % 2 === 0 ? "bg-white" : "bg-slate-50/80";
-                  const highlightNoCumplioFields =
-                    r.status === "no_cumplio" && hoveredNoCumplioKey === rowKey;
-                  const highlightEntrada =
-                    highlightNoCumplioFields &&
-                    isEntradaOutOfPolicy(r.diffMin.entrada);
-                  const highlightIntermedia1 =
-                    highlightNoCumplioFields &&
-                    isIntermediaOutOfPolicy(r.diffMin.intermedia1);
-                  const highlightIntermedia2 =
-                    highlightNoCumplioFields &&
-                    isIntermediaOutOfPolicy(r.diffMin.intermedia2);
-                  const highlightSalida =
-                    highlightNoCumplioFields &&
-                    isSalidaOutOfPolicy(r.diffMin.salida);
-                  return (
-                  <tr
-                    key={rowKey}
-                  >
-                    <td
-                      className={`border border-slate-200 px-2 py-1.5 whitespace-nowrap text-slate-800 ${rowTint}`}
-                    >
-                      {r.workedDate}
-                    </td>
-                    <td className={`border border-slate-200 px-2 py-1.5 text-slate-800 ${rowTint}`}>
-                      {r.sede}
-                    </td>
-                    <td className={`border border-slate-200 px-2 py-1.5 text-slate-900 ${rowTint}`}>
-                      {r.employeeName}
-                    </td>
-                    <td className={`border border-slate-200 px-2 py-1.5 text-slate-600 ${rowTint}`}>
-                      {r.planillaId > 0 ? `#${r.planillaId}` : "—"}
-                    </td>
-                    <td className={`border border-slate-200 px-2 py-1.5 ${rowTint}`}>
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                          r.status === "cumplio"
-                            ? "bg-emerald-100 text-emerald-900"
-                            : "bg-rose-100 text-rose-900"
-                        }`}
-                        onMouseEnter={() => {
-                          if (r.status === "no_cumplio") setHoveredNoCumplioKey(rowKey);
-                        }}
-                        onMouseLeave={() => {
-                          if (r.status === "no_cumplio") setHoveredNoCumplioKey(null);
-                        }}
-                      >
-                        {statusLabel(r.status)}
-                      </span>
-                    </td>
-                    <td className="border border-sky-200/80 bg-sky-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.plan.he1 || "—"}
-                    </td>
-                    <td className="border border-sky-200/80 bg-sky-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.plan.hs1 || "—"}
-                    </td>
-                    <td className="border border-sky-200/80 bg-sky-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.plan.he2 || "—"}
-                    </td>
-                    <td className="border border-sky-200/80 bg-sky-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.plan.hs2 || "—"}
-                    </td>
-                    <td className="border border-emerald-200/80 bg-emerald-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.attendance?.horaEntrada || "—"}
-                    </td>
-                    <td className="border border-emerald-200/80 bg-emerald-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.attendance?.horaIntermedia1 || "—"}
-                    </td>
-                    <td className="border border-emerald-200/80 bg-emerald-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.attendance?.horaIntermedia2 || "—"}
-                    </td>
-                    <td className="border border-emerald-200/80 bg-emerald-50 px-1 py-1.5 text-center text-slate-800">
-                      {r.attendance?.horaSalida || "—"}
-                    </td>
-                    <td
-                      className={`border px-1 py-1.5 text-center font-medium ${
-                        highlightEntrada
-                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
-                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
-                      }`}
-                    >
-                      {formatDiff(r.diffMin.entrada)}
-                    </td>
-                    <td
-                      className={`border px-1 py-1.5 text-center font-medium ${
-                        highlightIntermedia1
-                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
-                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
-                      }`}
-                    >
-                      {formatDiff(r.diffMin.intermedia1)}
-                    </td>
-                    <td
-                      className={`border px-1 py-1.5 text-center font-medium ${
-                        highlightIntermedia2
-                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
-                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
-                      }`}
-                    >
-                      {formatDiff(r.diffMin.intermedia2)}
-                    </td>
-                    <td
-                      className={`border px-1 py-1.5 text-center font-medium ${
-                        highlightSalida
-                          ? "border-rose-500 bg-rose-300 text-rose-950 font-extrabold ring-2 ring-rose-500/60"
-                          : "border-violet-200/80 bg-violet-50/90 text-slate-800"
-                      }`}
-                    >
-                      {formatDiff(r.diffMin.salida)}
-                    </td>
-                  </tr>
-                );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <p className="mt-4 text-xs text-slate-500">
-          <strong className="text-emerald-800">Cumplió</strong>: planilla con marcaciones;
-          entrada entre −15 min y +10 min respecto al plan, intermedias hasta +10 min, salida hasta
-          +150 min (2 h 30 min) por horas extra; filas solo asistencia con al menos una hora.{" "}
-          <strong className="text-rose-800">No cumplió</strong>: plan en planilla sin marcaciones, o
-          entrada antes de −15 min o despues de +10 min, o intermedias +11 min o mas, o salida +151
-          min o mas. Diferencia = asistencia menos planilla. Emparejamiento por nombre, sede y fecha.
-        </p>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }

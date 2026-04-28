@@ -254,13 +254,22 @@ export default function AdminUsuariosAccesosPage() {
                 Inicios de sesión en el portal.                 Filtra por rango de fechas y por usuario (se aplican al
                 instante), ordena y navega por páginas.
               </p>
-              <Link
-                href="/admin/usuarios"
-                className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden />
-                Volver a usuarios
-              </Link>
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                <Link
+                  href="/admin/usuarios"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-sky-200/80 bg-sky-50/70 px-3.5 text-sm font-semibold text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden />
+                  Volver a usuarios
+                </Link>
+                <Link
+                  href="/admin/usuarios/accesos/pormes"
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 to-emerald-100/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:from-emerald-100 hover:to-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+                >
+                  Ver accesos por mes
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -466,10 +475,16 @@ export default function AdminUsuariosAccesosPage() {
                             {log.username}
                           </span>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                        <td
+                          suppressHydrationWarning
+                          className="whitespace-nowrap px-4 py-3 text-slate-700"
+                        >
                           {formatAbsoluteDateTime(log.logged_at)}
                         </td>
-                        <td className="hidden whitespace-nowrap px-4 py-3 text-xs text-slate-500 md:table-cell">
+                        <td
+                          suppressHydrationWarning
+                          className="hidden whitespace-nowrap px-4 py-3 text-xs text-slate-500 md:table-cell"
+                        >
                           {formatRelativeTime(log.logged_at)}
                         </td>
                         <td className="px-4 py-3 font-mono text-xs text-slate-600">
@@ -563,6 +578,7 @@ export default function AdminUsuariosAccesosPage() {
             </div>
           ) : null}
         </section>
+
       </div>
     </div>
   );

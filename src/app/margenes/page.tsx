@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
+import {
+  ArrowLeft,
+  CalendarDays,
+  ChevronDown,
+  Download,
+  RefreshCw,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import {
   DEFAULT_SEDES,
   SEDE_GROUPS,
@@ -178,6 +188,7 @@ const toMonthBounds = (dateKey: string) => {
 };
 
 export default function MargenesPage() {
+  const LINE_PAGE_SIZE = 25;
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [authLoaded, setAuthLoaded] = useState(false);
@@ -196,7 +207,11 @@ export default function MargenesPage() {
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
   const [lineSortBy, setLineSortBy] = useState<"day" | "month">("day");
   const [lineSortOrder, setLineSortOrder] = useState<"desc" | "asc">("desc");
+  const [linePage, setLinePage] = useState(1);
+  const [showSedeTable, setShowSedeTable] = useState(false);
+  const [showLineTable, setShowLineTable] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({ start: "", end: "" });
+  const [quickSearch, setQuickSearch] = useState("");
 
   const prefsKey = useMemo(
     () => `vp_margenes_prefs_${username ?? "default"}`,
@@ -616,405 +631,553 @@ export default function MargenesPage() {
     });
   }, [lineSortBy, lineSortOrder, marginsByLine.dayMap, marginsByLine.monthMap, visibleLineItems]);
 
+  const quickSearchNeedle = quickSearch.trim().toLowerCase();
+  const displayedSedes = useMemo(() => {
+    if (!quickSearchNeedle) return filteredSedes;
+    return filteredSedes.filter((sede) => sede.name.toLowerCase().includes(quickSearchNeedle));
+  }, [filteredSedes, quickSearchNeedle]);
+  const displayedLineItems = useMemo(() => {
+    if (!quickSearchNeedle) return sortedVisibleLineItems;
+    return sortedVisibleLineItems.filter((line) => {
+      const lineName = line.name.toLowerCase();
+      const lineId = line.id.toLowerCase();
+      return lineName.includes(quickSearchNeedle) || lineId.includes(quickSearchNeedle);
+    });
+  }, [quickSearchNeedle, sortedVisibleLineItems]);
+  const totalLinePages = Math.max(1, Math.ceil(displayedLineItems.length / LINE_PAGE_SIZE));
+  const currentLinePage = Math.min(Math.max(1, linePage), totalLinePages);
+  const linePageStart = (currentLinePage - 1) * LINE_PAGE_SIZE;
+  const paginatedLineItems = useMemo(
+    () => displayedLineItems.slice(linePageStart, linePageStart + LINE_PAGE_SIZE),
+    [displayedLineItems, linePageStart],
+  );
+  const lineRangeFrom = displayedLineItems.length === 0 ? 0 : linePageStart + 1;
+  const lineRangeTo = Math.min(linePageStart + LINE_PAGE_SIZE, displayedLineItems.length);
+
+  useEffect(() => {
+    setLinePage(1);
+  }, [lineSortBy, lineSortOrder, quickSearchNeedle, selectedLineIds, selectedSede, selectedCompanies]);
+
+  useEffect(() => {
+    if (linePage > totalLinePages) setLinePage(totalLinePages);
+  }, [linePage, totalLinePages]);
+
   if (!ready) {
     return (
-      <div className="min-h-screen bg-background px-4 py-10 text-foreground">
-        <div className="mx-auto w-full max-w-md rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Cargando modulo...</p>
+      <div className="min-h-screen bg-background px-4 py-10 text-foreground antialiased">
+        <div className="mx-auto w-full max-w-md rounded-2xl border border-border/70 bg-card p-6 shadow-xs">
+          <p className="text-sm text-muted-foreground">Cargando módulo...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.18),transparent_55%),linear-gradient(180deg,#f8fafc,#eef2f7)] px-4 py-10 text-foreground">
-      <div className="mx-auto w-full max-w-7xl rounded-[30px] border border-slate-200/70 bg-white p-8 shadow-[0_30px_80px_-55px_rgba(15,23,42,0.45)]">
-        <div className="rounded-3xl border border-slate-200/70 bg-slate-50/70 p-6">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-500">
-                Modulo margenes
-              </p>
-              <h1 className="mt-2 bg-linear-to-r from-blue-700 via-indigo-700 to-amber-700 bg-clip-text text-2xl font-semibold text-transparent">
-                Margenes por sede y linea
-              </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Datos reales de venta, costo, utilidad y porcentaje de margen.
-              </p>
+    <div className="min-h-screen bg-background text-foreground antialiased">
+      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-3 lg:px-8">
+          <Link href="/portal" className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-violet-500 shadow-elevated">
+              <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-
-            <div className="w-full max-w-md rounded-2xl border border-blue-100/80 bg-linear-to-r from-blue-50/65 via-white to-sky-50/65 px-4 py-3 shadow-[0_16px_34px_-28px_rgba(37,99,235,0.35)]">
-              <div className="flex items-center justify-center gap-4 sm:gap-5">
-                <Image
-                  src="/logos/mercamio.jpeg"
-                  alt="Logo MercaMio"
-                  width={220}
-                  height={70}
-                  className="h-12 w-auto sm:h-14"
-                  priority
-                />
-                <Image
-                  src="/logos/mercatodo.jpeg"
-                  alt="Logo MercaTodo"
-                  width={220}
-                  height={70}
-                  className="h-12 w-auto sm:h-14"
-                  priority
-                />
-              </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Producto · UAID
+              </span>
+              <span className="font-display text-[15px] font-semibold leading-tight tracking-tight text-foreground">
+                Márgenes
+              </span>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.35)]">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-500">
-                Rango de fechas
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <label className="text-xs font-semibold text-slate-600">
-                  Desde
-                  <input
-                    type="date"
-                    value={dateRange.start}
-                    onChange={(e) =>
-                      setDateRange((prev) => ({
-                        start: e.target.value,
-                        end: e.target.value > prev.end ? e.target.value : prev.end,
-                      }))
-                    }
-                    className="ml-2 rounded-full border border-slate-200/70 bg-white px-3 py-1.5 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-                <label className="text-xs font-semibold text-slate-600">
-                  Hasta
-                  <input
-                    type="date"
-                    value={dateRange.end}
-                    onChange={(e) =>
-                      setDateRange((prev) => ({
-                        start: e.target.value < prev.start ? e.target.value : prev.start,
-                        end: e.target.value,
-                      }))
-                    }
-                    className="ml-2 rounded-full border border-slate-200/70 bg-white px-3 py-1.5 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
-                </label>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => router.push("/secciones")}
-              className="inline-flex h-fit items-center justify-center rounded-full border border-slate-200/70 bg-white px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100"
-            >
-              Cambiar seccion
-            </button>
-          </div>
-
-          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.25)]">
-            <label className="text-xs font-semibold text-slate-600">
-              Empresa (max 2)
-              <select
-                value=""
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (!value) return;
-                  setSelectedCompanies((prev) => {
-                    const next = prev.includes(value) ? prev : [...prev, value];
-                    return next.slice(0, 2);
-                  });
-                  setSelectedSede("");
-                }}
-                className="ml-2 rounded-full border border-slate-200/70 bg-white px-3 py-1.5 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              >
-                <option value="">Seleccionar empresa</option>
-                {companyOptions.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="flex flex-wrap gap-2">
-              {selectedCompanies.map((companyId) => {
-                const label =
-                  companyOptions.find((company) => company.id === companyId)?.name ??
-                  companyId;
-                return (
-                  <button
-                    key={companyId}
-                    type="button"
-                    onClick={() =>
-                      setSelectedCompanies((prev) =>
-                        prev.filter((id) => id !== companyId),
-                      )
-                    }
-                    className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300"
-                  >
-                    {label} x
-                  </button>
-                );
-              })}
-            </div>
-
-            <label className="text-xs font-semibold text-slate-600">
-              Sede
-              <select
-                value={selectedSede}
-                onChange={(e) => {
-                  setSelectedSede(e.target.value);
-                  if (e.target.value) setSelectedCompanies([]);
-                }}
-                className="ml-2 rounded-full border border-slate-200/70 bg-white px-3 py-1.5 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              >
-                <option value="">Todas las sedes</option>
-                {orderedSedes.map((sede) => (
-                  <option key={sede.id} value={sede.id}>
-                    {sede.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-xs font-semibold text-slate-600">
-              Linea
-              <select
-                value=""
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (!value) return;
-                  setSelectedLineIds((prev) =>
-                    prev.includes(value) ? prev : [...prev, value],
-                  );
-                }}
-                className="ml-2 rounded-full border border-slate-200/70 bg-white px-3 py-1.5 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              >
-                <option value="">Todas las lineas</option>
-                {orderedLineItems.map((line) => (
-                  <option key={line.id} value={line.id}>
-                    {line.name} ({line.id})
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="flex flex-wrap gap-2">
-              {selectedLineIds.map((lineId) => {
-                const label =
-                  orderedLineItems.find((line) => line.id === lineId)?.name ?? lineId;
-                return (
-                  <button
-                    key={lineId}
-                    type="button"
-                    onClick={() =>
-                      setSelectedLineIds((prev) => prev.filter((id) => id !== lineId))
-                    }
-                    className="rounded-full border border-sky-200/80 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800 transition-all hover:border-sky-300"
-                  >
-                    {label} ({lineId}) x
-                  </button>
-                );
-              })}
-              {selectedLineIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedLineIds([])}
-                  className="rounded-full border border-slate-200/70 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-all hover:border-slate-300"
-                >
-                  Limpiar lineas
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-2 text-sm text-amber-700">
-            {error}
-          </div>
-        )}
-
-        {isLoading && (
-          <p className="mt-6 text-sm text-slate-600">Cargando datos...</p>
-        )}
-
-        {!isLoading && selectedDay && (
-          <>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Venta rango
-                </p>
-                <p className="mt-2 text-lg font-semibold text-slate-900">
-                  {formatCurrency(rangeTotals.sales)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Costo rango
-                </p>
-                <p className="mt-2 text-lg font-semibold text-slate-900">
-                  {formatCurrency(rangeTotals.cost)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Utilidad rango
-                </p>
-                <p className="mt-2 text-lg font-semibold text-slate-900">
-                  {formatCurrency(rangeTotals.profit)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Margen rango
-                </p>
-                <p
-                  className={`mt-2 text-lg font-semibold ${getMarginToneClass(getMarginRatio(rangeTotals))}`}
-                >
-                  {formatMarginPct(rangeTotals)}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-8 overflow-x-auto rounded-2xl border border-slate-200/70 bg-white shadow-[0_18px_40px_-34px_rgba(15,23,42,0.25)]">
-              <table className="min-w-full text-sm text-slate-700">
-                <thead className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Sede</th>
-                    <th className="px-4 py-3 text-right font-semibold">% dia</th>
-                    <th className="px-4 py-3 text-right font-semibold">% mes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredSedes.map((sede, index) => {
-                    const dayTotals = marginsBySede.dayMap.get(sede.id) ?? EMPTY_TOTALS;
-                    const monthTotals = marginsBySede.monthMap.get(sede.id) ?? EMPTY_TOTALS;
-                    return (
-                      <tr
-                        key={sede.id}
-                        className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}
-                      >
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          {sede.name}
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right font-semibold ${getMarginToneClass(getMarginRatio(dayTotals))}`}
-                        >
-                          {formatMarginPct(dayTotals)}
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right font-semibold ${getMarginToneClass(getMarginRatio(monthTotals))}`}
-                        >
-                          {formatMarginPct(monthTotals)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="border-t border-slate-200 bg-slate-100/80">
-                    <td className="px-4 py-3 font-semibold text-slate-900">
-                      Total seleccionadas
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right font-semibold ${getMarginToneClass(getMarginRatio(marginsBySede.totalDay))}`}
-                    >
-                      {formatMarginPct(marginsBySede.totalDay)}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right font-semibold ${getMarginToneClass(getMarginRatio(marginsBySede.totalMonth))}`}
-                    >
-                      {formatMarginPct(marginsBySede.totalMonth)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-8 overflow-x-auto rounded-2xl border border-slate-200/70 bg-white shadow-[0_18px_40px_-34px_rgba(15,23,42,0.25)]">
-              <div className="flex flex-wrap items-center justify-end gap-2 border-b border-slate-200/70 px-4 py-3">
-                <label className="text-xs font-semibold text-slate-600">
-                  Ordenar por
-                  <select
-                    value={lineSortBy}
-                    onChange={(e) => setLineSortBy(e.target.value as "day" | "month")}
-                    className="ml-2 rounded-full border border-slate-200/70 bg-white px-3 py-1 text-xs text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  >
-                    <option value="day">% dia</option>
-                    <option value="month">% mes</option>
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setLineSortOrder((prev) => (prev === "desc" ? "asc" : "desc"))
-                  }
-                  className="rounded-full border border-slate-200/70 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300"
-                >
-                  {lineSortOrder === "desc" ? "Mayor a menor" : "Menor a mayor"}
-                </button>
-              </div>
-              <table className="min-w-full text-sm text-slate-700">
-                <thead className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Linea</th>
-                    <th className="px-4 py-3 text-right font-semibold">% dia</th>
-                    <th className="px-4 py-3 text-right font-semibold">% mes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {sortedVisibleLineItems.length === 0 && (
-                    <tr>
-                      <td className="px-4 py-5 text-center text-sm text-slate-500" colSpan={3}>
-                        No hay lineas para el filtro seleccionado.
-                      </td>
-                    </tr>
-                  )}
-                  {sortedVisibleLineItems.map((line, index) => {
-                    const dayTotals = marginsByLine.dayMap.get(line.id) ?? EMPTY_TOTALS;
-                    const monthTotals = marginsByLine.monthMap.get(line.id) ?? EMPTY_TOTALS;
-                    return (
-                      <tr
-                        key={line.id}
-                        className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}
-                      >
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          <div className="flex flex-col">
-                            <span>{line.name}</span>
-                            <span className="font-mono text-sm font-semibold text-slate-600">
-                              {line.id}
-                            </span>
-                          </div>
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right font-semibold ${getMarginToneClass(getMarginRatio(dayTotals))}`}
-                        >
-                          {formatMarginPct(dayTotals)}
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right font-semibold ${getMarginToneClass(getMarginRatio(monthTotals))}`}
-                        >
-                          {formatMarginPct(monthTotals)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {!isLoading && !selectedDay && (
-          <p className="mt-6 text-sm text-slate-600">No hay datos disponibles.</p>
-        )}
-
-        <div className="mt-8">
+          </Link>
           <button
             type="button"
             onClick={() => router.push("/secciones")}
-            className="w-full rounded-full border border-slate-200/70 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition-all hover:border-slate-300 hover:text-slate-900"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground shadow-xs transition-all hover:border-foreground/20 hover:shadow-soft"
           >
-            Volver a secciones
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Volver a producto
           </button>
         </div>
-      </div>
+      </header>
+
+      <main className="mx-auto max-w-[1400px] px-6 py-8 lg:px-8 lg:py-10">
+        <section className="overflow-hidden rounded-2xl border border-foreground/15 bg-card shadow-xs">
+          <div className="h-[3px] w-full bg-foreground" />
+          <div className="space-y-6 p-5 lg:p-6">
+            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+                  Módulo márgenes
+                </span>
+                <h1 className="font-display text-[34px] font-semibold leading-tight tracking-tight text-foreground">
+                  Márgenes por sede y línea
+                </h1>
+                <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
+                  Lectura operativa de venta, costo, utilidad y porcentaje de margen por ubicación y categoría comercial.
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/70 bg-muted/20 p-2">
+                <div className="rounded-xl border border-border/70 bg-card px-4 py-2 shadow-soft">
+                  <Image
+                    src="/logos/mercatodo.jpeg"
+                    alt="Logo MercaTodo"
+                    width={130}
+                    height={40}
+                    className="h-8 w-auto"
+                    priority
+                  />
+                </div>
+                <div className="rounded-xl border border-border/70 bg-card px-4 py-2 shadow-soft">
+                  <Image
+                    src="/logos/mercamio.jpeg"
+                    alt="Logo MercaMio"
+                    width={130}
+                    height={40}
+                    className="h-8 w-auto"
+                    priority
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+              <div className="grid gap-3 lg:grid-cols-[140px_140px_1fr_180px_180px_auto] lg:items-end">
+                <label className="space-y-1.5">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Desde
+                  </span>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={dateRange.start}
+                      onChange={(e) =>
+                        setDateRange((prev) => ({
+                          start: e.target.value,
+                          end: e.target.value > prev.end ? e.target.value : prev.end,
+                        }))
+                      }
+                      className="h-10 w-full rounded-lg border border-input bg-card px-3 pr-9 font-mono text-[12px] font-semibold shadow-xs"
+                    />
+                    <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </label>
+                <label className="space-y-1.5">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Hasta
+                  </span>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={dateRange.end}
+                      onChange={(e) =>
+                        setDateRange((prev) => ({
+                          start: e.target.value < prev.start ? e.target.value : prev.start,
+                          end: e.target.value,
+                        }))
+                      }
+                      className="h-10 w-full rounded-lg border border-input bg-card px-3 pr-9 font-mono text-[12px] font-semibold shadow-xs"
+                    />
+                    <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </label>
+
+                <label className="space-y-1.5">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Empresa
+                  </span>
+                  <div className="relative">
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        setSelectedCompanies((prev) => {
+                          const next = prev.includes(value) ? prev : [...prev, value];
+                          return next.slice(0, 2);
+                        });
+                        setSelectedSede("");
+                      }}
+                      className="h-10 w-full appearance-none rounded-lg border border-input bg-card px-3 pr-9 text-[12px] shadow-xs"
+                    >
+                      <option value="">Seleccionar empresa</option>
+                      {companyOptions.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </label>
+
+                <label className="space-y-1.5">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Sede
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={selectedSede}
+                      onChange={(e) => {
+                        setSelectedSede(e.target.value);
+                        if (e.target.value) setSelectedCompanies([]);
+                      }}
+                      className="h-10 w-full appearance-none rounded-lg border border-input bg-card px-3 pr-9 text-[12px] shadow-xs"
+                    >
+                      <option value="">Todas las sedes</option>
+                      {orderedSedes.map((sede) => (
+                        <option key={sede.id} value={sede.id}>
+                          {sede.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </label>
+
+                <label className="space-y-1.5">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Línea
+                  </span>
+                  <div className="relative">
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        setSelectedLineIds((prev) =>
+                          prev.includes(value) ? prev : [...prev, value],
+                        );
+                      }}
+                      className="h-10 w-full appearance-none rounded-lg border border-input bg-card px-3 pr-9 text-[12px] shadow-xs"
+                    >
+                      <option value="">Todas las líneas</option>
+                      {orderedLineItems.map((line) => (
+                        <option key={line.id} value={line.id}>
+                          {line.name} ({line.id})
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => router.refresh()}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-foreground px-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-background shadow-elevated transition-all hover:-translate-y-0.5 hover:shadow-floating"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Actualizar
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[220px] flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="search"
+                    value={quickSearch}
+                    onChange={(e) => setQuickSearch(e.target.value)}
+                    placeholder="Buscar sede o línea..."
+                    className="h-10 w-full rounded-lg border border-input bg-card py-2 pl-9 pr-3 text-[12px] shadow-xs placeholder:text-muted-foreground"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push("/secciones")}
+                  className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-3.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground shadow-xs transition-all hover:shadow-soft"
+                >
+                  Cambiar sección
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-positive/30 bg-positive/10 px-3.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-positive shadow-xs transition-all hover:shadow-soft"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Exportar
+                </button>
+              </div>
+
+              {(selectedCompanies.length > 0 || selectedLineIds.length > 0) && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedCompanies.map((companyId) => {
+                    const label =
+                      companyOptions.find((company) => company.id === companyId)?.name ??
+                      companyId;
+                    return (
+                      <button
+                        key={companyId}
+                        type="button"
+                        onClick={() =>
+                          setSelectedCompanies((prev) => prev.filter((id) => id !== companyId))
+                        }
+                        className="rounded-full border border-border bg-card px-3 py-1 text-[11px] font-semibold text-foreground shadow-xs"
+                      >
+                        {label} ×
+                      </button>
+                    );
+                  })}
+                  {selectedLineIds.map((lineId) => {
+                    const label =
+                      orderedLineItems.find((line) => line.id === lineId)?.name ?? lineId;
+                    return (
+                      <button
+                        key={lineId}
+                        type="button"
+                        onClick={() =>
+                          setSelectedLineIds((prev) => prev.filter((id) => id !== lineId))
+                        }
+                        className="rounded-full border border-border bg-card px-3 py-1 text-[11px] font-semibold text-foreground shadow-xs"
+                      >
+                        {label} ({lineId}) ×
+                      </button>
+                    );
+                  })}
+                  {selectedLineIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLineIds([])}
+                      className="rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-semibold text-muted-foreground"
+                    >
+                      Limpiar líneas
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            {isLoading && (
+              <p className="text-sm text-muted-foreground">Cargando datos...</p>
+            )}
+
+            {!isLoading && selectedDay && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-border/70 bg-card p-4 shadow-xs">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Venta rango
+                    </p>
+                    <p className="mt-2 font-mono text-2xl font-semibold text-foreground">
+                      {formatCurrency(rangeTotals.sales)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-4 shadow-xs">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Costo rango
+                    </p>
+                    <p className="mt-2 font-mono text-2xl font-semibold text-foreground">
+                      {formatCurrency(rangeTotals.cost)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-4 shadow-xs">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Utilidad rango
+                    </p>
+                    <p className="mt-2 font-mono text-2xl font-semibold text-foreground">
+                      {formatCurrency(rangeTotals.profit)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-4 shadow-xs">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Margen rango
+                    </p>
+                    <p className="mt-2 font-mono text-2xl font-semibold text-foreground">
+                      {formatMarginPct(rangeTotals)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4">
+                  <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-card px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Resultado por sede</p>
+                        <p className="text-xs text-muted-foreground">Ranking por margen diario y mensual</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowSedeTable((prev) => !prev)}
+                        className="rounded-lg border border-border bg-card px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground shadow-xs"
+                      >
+                        {showSedeTable ? "Ocultar" : "Ver tabla"}
+                      </button>
+                    </div>
+                    {showSedeTable ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-[820px] text-sm">
+                          <thead className="sticky top-0 z-10 bg-card">
+                            <tr className="border-b border-border/70 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                              <th className="px-4 py-3 text-left font-semibold">Sede</th>
+                              <th className="px-4 py-3 text-right font-semibold">Venta</th>
+                              <th className="px-4 py-3 text-right font-semibold">Costo</th>
+                              <th className="px-4 py-3 text-right font-semibold">Utilidad</th>
+                              <th className="px-4 py-3 text-right font-semibold">% día</th>
+                              <th className="px-4 py-3 text-right font-semibold">% mes</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/60">
+                            {displayedSedes.map((sede) => {
+                              const dayTotals = marginsBySede.dayMap.get(sede.id) ?? EMPTY_TOTALS;
+                              const monthTotals = marginsBySede.monthMap.get(sede.id) ?? EMPTY_TOTALS;
+                              return (
+                                <tr key={sede.id} className="transition-colors hover:bg-muted/30">
+                                  <td className="px-4 py-3 font-semibold text-foreground">{sede.name}</td>
+                                  <td className="px-4 py-3 text-right font-mono">{formatCurrency(dayTotals.sales)}</td>
+                                  <td className="px-4 py-3 text-right font-mono">{formatCurrency(dayTotals.cost)}</td>
+                                  <td className="px-4 py-3 text-right font-mono">{formatCurrency(dayTotals.profit)}</td>
+                                  <td className="px-4 py-3 text-right font-mono text-primary">{formatMarginPct(dayTotals)}</td>
+                                  <td className="bg-muted/40 px-4 py-3 text-right font-mono">{formatMarginPct(monthTotals)}</td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="border-t border-border bg-muted/40">
+                              <td className="px-4 py-3 font-semibold text-foreground">Total seleccionadas</td>
+                              <td className="px-4 py-3 text-right font-mono">{formatCurrency(marginsBySede.totalDay.sales)}</td>
+                              <td className="px-4 py-3 text-right font-mono">{formatCurrency(marginsBySede.totalDay.cost)}</td>
+                              <td className="px-4 py-3 text-right font-mono">{formatCurrency(marginsBySede.totalDay.profit)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-primary">{formatMarginPct(marginsBySede.totalDay)}</td>
+                              <td className="bg-muted/60 px-4 py-3 text-right font-mono">{formatMarginPct(marginsBySede.totalMonth)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="px-4 py-5 text-sm text-muted-foreground">
+                        Presiona "Ver tabla" para mostrar los resultados por sede.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-card px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Resultado por línea</p>
+                        <p className="text-xs text-muted-foreground">Categorías ordenadas por rentabilidad</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                          <select
+                            value={lineSortBy}
+                            onChange={(e) => setLineSortBy(e.target.value as "day" | "month")}
+                            className="rounded-lg border border-border bg-card px-3 py-2 text-[11px] font-semibold text-foreground shadow-xs"
+                          >
+                            <option value="day">% día</option>
+                            <option value="month">% mes</option>
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setLineSortOrder((prev) => (prev === "desc" ? "asc" : "desc"))}
+                          className="rounded-lg border border-border bg-card px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground shadow-xs"
+                        >
+                          {lineSortOrder === "desc" ? "Mayor a menor" : "Menor a mayor"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowLineTable((prev) => !prev)}
+                          className="rounded-lg border border-border bg-card px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground shadow-xs"
+                        >
+                          {showLineTable ? "Ocultar" : "Ver tabla"}
+                        </button>
+                      </div>
+                    </div>
+                    {showLineTable ? (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-[860px] text-sm">
+                            <thead className="sticky top-0 z-10 bg-card">
+                              <tr className="border-b border-border/70 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                                <th className="px-4 py-3 text-left font-semibold">Línea</th>
+                                <th className="px-4 py-3 text-right font-semibold">Venta</th>
+                                <th className="px-4 py-3 text-right font-semibold">Costo</th>
+                                <th className="px-4 py-3 text-right font-semibold">Utilidad</th>
+                                <th className="px-4 py-3 text-right font-semibold">% día</th>
+                                <th className="px-4 py-3 text-right font-semibold">% mes</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/60">
+                              {displayedLineItems.length === 0 && (
+                                <tr>
+                                  <td className="px-4 py-5 text-center text-sm text-muted-foreground" colSpan={6}>
+                                    No hay líneas para el filtro seleccionado.
+                                  </td>
+                                </tr>
+                              )}
+                              {paginatedLineItems.map((line) => {
+                                const dayTotals = marginsByLine.dayMap.get(line.id) ?? EMPTY_TOTALS;
+                                const monthTotals = marginsByLine.monthMap.get(line.id) ?? EMPTY_TOTALS;
+                                return (
+                                  <tr key={line.id} className="transition-colors hover:bg-muted/30">
+                                    <td className="px-4 py-3 font-semibold text-foreground">
+                                      <div className="flex flex-col">
+                                        <span>{line.name}</span>
+                                        <span className="font-mono text-xs text-muted-foreground">{line.id}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-mono">{formatCurrency(dayTotals.sales)}</td>
+                                    <td className="px-4 py-3 text-right font-mono">{formatCurrency(dayTotals.cost)}</td>
+                                    <td className="px-4 py-3 text-right font-mono">{formatCurrency(dayTotals.profit)}</td>
+                                    <td className="px-4 py-3 text-right font-mono text-primary">{formatMarginPct(dayTotals)}</td>
+                                    <td className="bg-muted/40 px-4 py-3 text-right font-mono">{formatMarginPct(monthTotals)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {displayedLineItems.length > 0 && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            <span>
+                              Mostrando {lineRangeFrom}-{lineRangeTo} de {displayedLineItems.length}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setLinePage((prev) => Math.max(1, prev - 1))}
+                                disabled={currentLinePage <= 1}
+                                className="rounded-lg border border-border bg-muted px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Anterior
+                              </button>
+                              <span>
+                                Página {currentLinePage} de {totalLinePages}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setLinePage((prev) => Math.min(totalLinePages, prev + 1))
+                                }
+                                disabled={currentLinePage >= totalLinePages}
+                                className="rounded-lg border border-border bg-card px-3 py-1.5 shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Siguiente
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="px-4 py-5 text-sm text-muted-foreground">
+                        Presiona "Ver tabla" para mostrar los resultados por línea.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!isLoading && !selectedDay && (
+              <p className="text-sm text-muted-foreground">No hay datos disponibles.</p>
+            )}
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

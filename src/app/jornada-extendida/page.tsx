@@ -1437,7 +1437,7 @@ export default function JornadaExtendidaPage() {
                                 : "Excel tabla"}
                           </button>
                           {isAlexExportMenuOpen && (
-                            <div className="mt-2 w-full rounded-2xl border border-slate-200/70 bg-white p-3 shadow-[0_20px_50px_-35px_rgba(15,23,42,0.35)] sm:absolute sm:right-0 sm:z-10 sm:w-[30rem]">
+                            <div className="mt-2 w-full rounded-2xl border border-slate-200/70 bg-white p-3 shadow-[0_20px_50px_-35px_rgba(15,23,42,0.35)] sm:absolute sm:right-0 sm:z-10 sm:w-120">
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
                                   Columnas a incluir

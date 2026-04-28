@@ -33,6 +33,14 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 50), 1), 300);
   const offset = Math.max(Number(searchParams.get("offset") ?? 0), 0);
 
+  const summaryMode = searchParams.get("summary") ?? "";
+  const monthRaw = (searchParams.get("month") ?? "").trim();
+  const monthMatch = monthRaw.match(/^(\d{4})-(\d{2})$/);
+  const monthFilter =
+    monthMatch && Number(monthMatch[2]) >= 1 && Number(monthMatch[2]) <= 12
+      ? monthRaw
+      : null;
+
   const sortRaw = searchParams.get("sort") ?? "logged_at";
   const orderRaw = searchParams.get("order") ?? "desc";
   const sortBy =
@@ -96,6 +104,70 @@ export async function GET(req: Request) {
       conds.push(`u.username ILIKE $${i} ESCAPE '\\'`);
       params.push(userPattern);
       i += 1;
+    }
+
+    const effectiveMonth =
+      monthFilter ??
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Bogota",
+        year: "numeric",
+        month: "2-digit",
+      }).format(new Date());
+    const [monthYear, monthNumber] = effectiveMonth.split("-");
+    const nextMonthDate = new Date(
+      Date.UTC(Number(monthYear), Number(monthNumber), 1),
+    );
+    const nextMonth = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+    }).format(nextMonthDate);
+
+    if (summaryMode === "monthly_days") {
+      const summaryConds = [...conds];
+      const summaryParams = [...params];
+      let summaryParamIdx = i;
+      summaryConds.push(
+        `(l.logged_at AT TIME ZONE 'America/Bogota')::date >= $${summaryParamIdx}::date`,
+      );
+      summaryParams.push(`${effectiveMonth}-01`);
+      summaryParamIdx += 1;
+      summaryConds.push(
+        `(l.logged_at AT TIME ZONE 'America/Bogota')::date < $${summaryParamIdx}::date`,
+      );
+      summaryParams.push(`${nextMonth}-01`);
+
+      const summaryWhereSql = summaryConds.length
+        ? `WHERE ${summaryConds.join(" AND ")}`
+        : "";
+      const summaryResult = await client.query<{
+        user_id: string;
+        username: string;
+        days_count: number;
+      }>(
+        `
+        SELECT
+          u.id as user_id,
+          u.username,
+          LEAST(
+            31,
+            COUNT(DISTINCT (l.logged_at AT TIME ZONE 'America/Bogota')::date)
+          )::int AS days_count
+        FROM app_user_login_logs l
+        JOIN app_users u ON u.id = l.user_id
+        ${summaryWhereSql}
+        GROUP BY u.id, u.username
+        ORDER BY days_count DESC, u.username ASC
+        `,
+        summaryParams,
+      );
+
+      return withSession(
+        NextResponse.json({
+          month: effectiveMonth,
+          users: summaryResult.rows ?? [],
+        }),
+      );
     }
 
     const whereSql = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
