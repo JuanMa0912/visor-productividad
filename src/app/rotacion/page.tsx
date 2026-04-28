@@ -1311,7 +1311,6 @@ export default function RotacionPage() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
   const [productSearchInput, setProductSearchInput] = useState("");
-  const [isCategoriaFilterOpen, setIsCategoriaFilterOpen] = useState(false);
   const [isFamilyFilterOpen, setIsFamilyFilterOpen] = useState(false);
   const rotacionTablesExportRef = useRef<HTMLDivElement>(null);
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
@@ -2054,10 +2053,6 @@ export default function RotacionPage() {
     [filterCatalog.categorias],
   );
 
-  const selectedCategoriaKeySet = useMemo(
-    () => new Set(selectedCategoriaKeys),
-    [selectedCategoriaKeys],
-  );
 
   useEffect(() => {
     const optionValues = lineaN1Options.map((option) => option.value);
@@ -2690,145 +2685,6 @@ export default function RotacionPage() {
                   accentClassName="text-sky-700"
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
                 />
-              </div>
-              <div className="rounded-2xl border border-teal-200 bg-white px-4 py-3 shadow-sm">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-700">
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-teal-100 text-[10px] font-bold text-teal-800">
-                        1
-                      </span>
-                      Paso 1
-                    </div>
-                    <FilterFieldLabel
-                      icon={PackageSearch}
-                      label="Categoria (destino)"
-                      accentClassName="text-teal-800"
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsCategoriaFilterOpen((prev) => !prev)}
-                      className="h-8 rounded-lg border-teal-200 bg-white px-2.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-50"
-                    >
-                      {isCategoriaFilterOpen ? (
-                        <>
-                          Ocultar
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        </>
-                      ) : (
-                        <>
-                          Ver categorias
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setSelectedCategoriaKeys(
-                          categoriaFilterOptions.map((o) => o.categoriaKey),
-                        )
-                      }
-                      disabled={
-                        categoriaFilterOptions.length === 0 ||
-                        isLoadingLineCatalog
-                      }
-                      className="h-8 rounded-lg border-teal-200 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-900 hover:bg-teal-100 disabled:opacity-50"
-                    >
-                      Seleccionar todas
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedCategoriaKeys([])}
-                      disabled={
-                        categoriaFilterOptions.length === 0 ||
-                        selectedCategoriaKeys.length === 0 ||
-                        isLoadingLineCatalog
-                      }
-                      className="h-8 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                    >
-                      Limpiar seleccion
-                    </Button>
-                  </div>
-                </div>
-                <div className="mb-2">
-                  <Badge className="border-teal-200 bg-teal-50 text-teal-800">
-                    {categoriaFilterOptions.length === 0
-                      ? "Sin categorias cargadas"
-                      : `${selectedCategoriaKeys.length} de ${categoriaFilterOptions.length} categorias seleccionadas`}
-                  </Badge>
-                </div>
-                {isCategoriaFilterOpen ? (
-                  <>
-                    <p className="mb-2 text-[11px] leading-snug text-slate-500">
-                      Elige una o mas categorias. Esto define que lineas N1
-                      aparecen en los siguientes pasos.
-                    </p>
-                    <div className="max-h-48 space-y-3 overflow-y-auto pr-1">
-                      {targetSedeSelections.length === 0 ? (
-                        <p className="text-xs text-slate-500">
-                          Selecciona al menos una empresa o sede para cargar categorias.
-                        </p>
-                      ) : categoriaFilterOptions.length === 0 ? (
-                        <p className="text-xs text-slate-500">
-                          {isLoadingLineCatalog
-                            ? "Cargando categorias..."
-                            : "No hay categorias en este periodo para la sede elegida."}
-                        </p>
-                      ) : (
-                        <div className="flex flex-col gap-1.5">
-                          {categoriaFilterOptions.map((opt) => {
-                            const checked = selectedCategoriaKeySet.has(
-                              opt.categoriaKey,
-                            );
-                            const label =
-                              opt.nombreCategoria?.trim() ||
-                              (opt.categoriaKey === "__sin_cat__"
-                                ? "Sin categoria"
-                                : opt.categoriaKey);
-                            return (
-                              <label
-                                key={opt.categoriaKey}
-                                className="flex cursor-pointer items-start gap-2 text-sm text-slate-700"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() =>
-                                    setSelectedCategoriaKeys((cur) =>
-                                      checked
-                                        ? cur.filter(
-                                            (k) => k !== opt.categoriaKey,
-                                          )
-                                        : [...cur, opt.categoriaKey],
-                                    )
-                                  }
-                                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-200"
-                                />
-                                <span>
-                                  <span className="font-medium">{label}</span>
-                                  {opt.categoriaKey !== "__sin_cat__" ? (
-                                    <span className="ml-1 font-mono text-[11px] font-normal text-slate-500">
-                                      ({opt.categoriaKey})
-                                    </span>
-                                  ) : null}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : null}
               </div>
               <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -3487,8 +3343,20 @@ export default function RotacionPage() {
                       (acc, row) => acc + row.inventoryValue,
                       0,
                     );
+                    const infoTotalInvUnits = filteredRows.reduce(
+                      (acc, row) => acc + row.inventoryUnits,
+                      0,
+                    );
                     const infoTotalSales = filteredRows.reduce(
                       (acc, row) => acc + row.totalSales,
+                      0,
+                    );
+                    const infoTotalUnits = filteredRows.reduce(
+                      (acc, row) => acc + row.totalUnits,
+                      0,
+                    );
+                    const infoTotalMargin = filteredRows.reduce(
+                      (acc, row) => acc + row.totalMargin,
                       0,
                     );
                     const selectedCategoryTotalInv =
@@ -3496,32 +3364,47 @@ export default function RotacionPage() {
                         (acc, row) => acc + row.inventoryValue,
                         0,
                       );
+                    const selectedCategoryTotalInvUnits =
+                      categoryFilteredRows.reduce(
+                        (acc, row) => acc + row.inventoryUnits,
+                        0,
+                      );
                     const selectedCategoryTotalSales =
                       categoryFilteredRows.reduce(
                         (acc, row) => acc + row.totalSales,
                         0,
                       );
+                    const selectedCategoryTotalUnits =
+                      categoryFilteredRows.reduce(
+                        (acc, row) => acc + row.totalUnits,
+                        0,
+                      );
+                    const selectedCategoryTotalMargin =
+                      categoryFilteredRows.reduce(
+                        (acc, row) => acc + row.totalMargin,
+                        0,
+                      );
                     const selectedCategoryMarginPct =
                       selectedCategoryTotalSales > 0
-                        ? (selectedCategoryTotalInv /
+                        ? (selectedCategoryTotalMargin /
                             selectedCategoryTotalSales) *
                           100
                         : 0;
                     const infoMarginPct =
                       infoTotalSales > 0
-                        ? (infoTotalInv / infoTotalSales) * 100
+                        ? (infoTotalMargin / infoTotalSales) * 100
                         : 0;
                     const infoSalesCoverageDays =
-                      infoTotalSales > 0 && daysConsulted > 0
-                        ? (infoTotalInv * daysConsulted) / infoTotalSales
-                        : infoTotalInv > 0
+                      infoTotalUnits > 0 && daysConsulted > 0
+                        ? (infoTotalInvUnits * daysConsulted) / infoTotalUnits
+                        : infoTotalInvUnits > 0
                           ? NO_SALES_DI_VALUE
                           : 0;
                     const selectedCategorySalesCoverageDays =
-                      selectedCategoryTotalSales > 0 && daysConsulted > 0
-                        ? (selectedCategoryTotalInv * daysConsulted) /
-                          selectedCategoryTotalSales
-                        : selectedCategoryTotalInv > 0
+                      selectedCategoryTotalUnits > 0 && daysConsulted > 0
+                        ? (selectedCategoryTotalInvUnits * daysConsulted) /
+                          selectedCategoryTotalUnits
+                        : selectedCategoryTotalInvUnits > 0
                           ? NO_SALES_DI_VALUE
                           : 0;
                     const abcdSummaryRows = buildAbcdSummaryRows(
