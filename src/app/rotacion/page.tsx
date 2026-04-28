@@ -3512,7 +3512,7 @@ export default function RotacionPage() {
                     return (
                       <Card
                         key={groupKey}
-                        className="rotacion-whatsapp-export-card border-slate-200/80 bg-white shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
+                        className="rotacion-whatsapp-export-card gap-0 overflow-hidden border-slate-200/80 bg-white py-0 shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
                       >
                         <CardHeader
                           className="border-b border-slate-100 bg-slate-50/70"

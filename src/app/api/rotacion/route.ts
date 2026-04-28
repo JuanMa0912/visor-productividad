@@ -1073,12 +1073,7 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           SUM(venta_sin_impuesto)::numeric AS total_sales,
-          SUM(
-            CASE
-              WHEN consulta_date = latest_consulta_date THEN margin_value
-              ELSE 0
-            END
-          )::numeric AS total_margin,
+          SUM(margin_value)::numeric AS total_margin,
           SUM(unidades_vendidas)::numeric AS total_units,
           MAX(last_movement_date) AS last_movement_date,
           MAX(CASE WHEN latest_rank = 1 THEN last_purchase_date END) AS last_purchase_date,

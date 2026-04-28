@@ -263,7 +263,23 @@ export const resolveRotacionBaseSqlFields = async (
     "venta_neta",
     "venta",
   ]);
-  const totalCostExpr = numericExpr(columns, ["total_costo"]);
+  const unitsSoldExpr = numericExpr(columns, [
+    "cantidad_vendida",
+    "unidades_vendidas_dia",
+    "unidades_vendidas",
+    "unidades",
+  ]);
+  const avgUnitCostAtSaleColumn = pickColumn(columns, [
+    "costo_promedio_venta",
+    "costo_promedio_unitario_venta",
+    "costo_promedio_unitario",
+    "costo_uni_promedio",
+    "costo_unitario_promedio",
+    "costo_promedio",
+    "costo_uni_inventario",
+    "costo_unitario",
+  ]);
+  const avgUnitCostAtSaleExpr = numericColumnExpr(columns, avgUnitCostAtSaleColumn);
   const closingUnitsExpr = `GREATEST(${numericExpr(columns, [
     "can_disponible_foto",
     "inventario_cierre",
@@ -323,15 +339,12 @@ export const resolveRotacionBaseSqlFields = async (
     ),
     unitExpr: nullableTextExpr(columns, ["id_unidad", "unidad"]),
     salesExpr,
-    marginExpr: columns.has("total_costo")
-      ? `((${salesExpr}) - (${totalCostExpr}))`
+    // Margen del periodo por fila bajo regla de kardex (promedio ponderado):
+    // costo total venta = unidades vendidas * costo promedio unitario vigente.
+    marginExpr: avgUnitCostAtSaleColumn
+      ? `ROUND(((${salesExpr}) - ((${unitsSoldExpr}) * (${avgUnitCostAtSaleExpr})))::numeric, 2)`
       : "0::numeric",
-    unitsSoldExpr: numericExpr(columns, [
-      "cantidad_vendida",
-      "unidades_vendidas_dia",
-      "unidades_vendidas",
-      "unidades",
-    ]),
+    unitsSoldExpr,
     closingUnitsExpr,
     inventoryValueExpr,
     lastSaleDateExpr: coalesceDateExpr(columns, [
