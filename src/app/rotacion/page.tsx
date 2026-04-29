@@ -3294,40 +3294,6 @@ export default function RotacionPage() {
           </Card>
         ) : (
           <section className="grid gap-5">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <label className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                    Buscar por codigo o nombre de producto
-                  </span>
-                  <div className="relative">
-                    <PackageSearch
-                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                      aria-hidden
-                    />
-                    <input
-                      type="search"
-                      value={productSearchInput}
-                      onChange={(e) => setProductSearchInput(e.target.value)}
-                      placeholder="Ej. 12345 o leche"
-                      autoComplete="off"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-sm font-medium text-slate-900 outline-none transition focus:border-amber-300 focus:bg-white focus:ring-2 focus:ring-amber-100"
-                      aria-label="Filtrar por codigo o nombre de producto"
-                    />
-                    {productSearchInput.trim() ? (
-                      <button
-                        type="button"
-                        onClick={() => setProductSearchInput("")}
-                        className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200/80 hover:text-slate-800"
-                        aria-label="Limpiar busqueda"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    ) : null}
-                  </div>
-                </label>
-              </div>
-            </div>
             {rowsAfterProductFilter.length === 0 ? (
               <Card className="border-dashed border-slate-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
                 <CardContent className="flex flex-col items-center px-6 py-12 text-center">
@@ -3957,6 +3923,40 @@ export default function RotacionPage() {
                                       : categoryFilteredCeroRotacionCount}
                                     )
                                   </Button>
+                                  <label className="order-last mt-1 flex basis-full flex-col gap-1">
+                                    <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                      Buscar producto
+                                    </span>
+                                    <div className="relative">
+                                      <PackageSearch
+                                        className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                                        aria-hidden
+                                      />
+                                      <input
+                                        type="search"
+                                        value={productSearchInput}
+                                        onChange={(e) =>
+                                          setProductSearchInput(e.target.value)
+                                        }
+                                        placeholder="Codigo o nombre"
+                                        autoComplete="off"
+                                        className="h-8 w-full rounded-full border border-slate-200 bg-slate-50 py-1.5 pl-9 pr-9 text-xs font-medium text-slate-900 outline-none transition focus:border-amber-300 focus:bg-white focus:ring-1 focus:ring-amber-100"
+                                        aria-label="Filtrar por codigo o nombre de producto"
+                                      />
+                                      {productSearchInput.trim() ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setProductSearchInput("")
+                                          }
+                                          className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200/80 hover:text-slate-800"
+                                          aria-label="Limpiar busqueda"
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </label>
                                   <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
                                     <Button
                                       type="button"
