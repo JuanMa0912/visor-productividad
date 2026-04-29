@@ -204,6 +204,23 @@ const ROTACION_TABLE_COL_WIDTHS = [
   "9%",
   "9%",
 ] as const;
+const ROTACION_FLOATING_HEADER_TOP_PX = 0;
+const ROTACION_FLOATING_HEADER_COLUMNS = [
+  { label: "Item", align: "left" as const, field: "item" as const },
+  { label: "Cat.", align: "center" as const },
+  { label: "Descripcion", align: "left" as const, field: "descripcion" as const },
+  { label: "Venta", align: "right" as const, field: "totalSales" as const },
+  { label: "Costo", align: "right" as const, field: "totalCost" as const },
+  { label: "Margen %", align: "right" as const },
+  { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
+  { label: "U. vend.", align: "right" as const, field: "totalUnits" as const },
+  { label: "V. inv.", align: "right" as const, field: "inventoryValue" as const },
+  { label: "DIC", align: "right" as const, field: "rotation" as const },
+  { label: "DIE", align: "right" as const, field: "trackedDays" as const },
+  { label: "DVE", align: "right" as const, field: "salesEffectiveDays" as const },
+  { label: "Ult. venta", align: "right" as const, field: "lastPurchaseDate" as const },
+  { label: "Ult. ingr.", align: "right" as const, field: "lastMovementDate" as const },
+] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
 
@@ -1088,13 +1105,15 @@ const SortableRotationHeader = ({
       type="button"
       onClick={() => onSort(field)}
       className={cn(
-        "inline-flex w-full min-w-0 items-center gap-1.5 transition-colors",
-        isRight ? "justify-end text-right" : "justify-start text-left",
+        "grid w-full min-w-0 items-center gap-x-2 transition-colors",
+        isRight
+          ? "grid-cols-[minmax(0,1fr)_auto] justify-items-end text-right"
+          : "grid-cols-[minmax(0,1fr)_auto] justify-items-start text-left",
         isActive ? "text-amber-700" : "text-slate-700 hover:text-amber-700",
       )}
       aria-pressed={isActive}
     >
-      <span className={cn("min-w-0", isRight ? "shrink" : "block flex-1")}>
+      <span className={cn("min-w-0 leading-tight", isRight ? "justify-self-end" : "justify-self-start")}>
         {label}
       </span>
       <ArrowUp
@@ -1312,7 +1331,14 @@ export default function RotacionPage() {
   const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
   const [productSearchInput, setProductSearchInput] = useState("");
   const [isFamilyFilterOpen, setIsFamilyFilterOpen] = useState(false);
+  const [floatingHeaderState, setFloatingHeaderState] = useState<{
+    groupKey: string;
+    left: number;
+    width: number;
+    scrollLeft: number;
+  } | null>(null);
   const rotacionTablesExportRef = useRef<HTMLDivElement>(null);
+  const tableHostByGroupRef = useRef<Record<string, HTMLDivElement | null>>({});
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
   const skipSedeRestoreRef = useRef(false);
@@ -2142,6 +2168,23 @@ export default function RotacionPage() {
       ),
     [sortedRows, productSearchInput],
   );
+  const baseRowsBySede = useMemo(
+    () =>
+      targetSedeSelections.length > 1
+        ? buildConsolidatedRowsBySelection(sortedRows, targetSedeSelections.length)
+        : buildRowsBySede(sortedRows),
+    [sortedRows, targetSedeSelections.length],
+  );
+  const baseRowsBySedeByKey = useMemo(
+    () =>
+      new Map(
+        baseRowsBySede.map((group) => [
+          `${group.empresa}-${group.sedeId}`,
+          group.rows,
+        ]),
+      ),
+    [baseRowsBySede],
+  );
   const rowsBySede = useMemo(
     () =>
       targetSedeSelections.length > 1
@@ -2152,6 +2195,105 @@ export default function RotacionPage() {
         : buildRowsBySede(rowsAfterProductFilter),
     [rowsAfterProductFilter, targetSedeSelections.length],
   );
+  const rowsBySedeKeys = useMemo(
+    () => rowsBySede.map((group) => `${group.empresa}-${group.sedeId}`),
+    [rowsBySede],
+  );
+
+  const setTableHostRef = useCallback(
+    (groupKey: string, node: HTMLDivElement | null) => {
+      tableHostByGroupRef.current[groupKey] = node;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let rafId = 0;
+    const boundTop = ROTACION_FLOATING_HEADER_TOP_PX;
+
+    const updateFloatingHeader = () => {
+      let next: {
+        groupKey: string;
+        left: number;
+        width: number;
+        scrollLeft: number;
+      } | null = null;
+
+      for (const groupKey of rowsBySedeKeys) {
+        const host = tableHostByGroupRef.current[groupKey];
+        if (!host) continue;
+        const container = host.querySelector(
+          '[data-slot="table-container"]',
+        ) as HTMLDivElement | null;
+        const table = host.querySelector("table") as HTMLTableElement | null;
+        const thead = host.querySelector("thead") as HTMLTableSectionElement | null;
+        if (!container || !table || !thead) continue;
+
+        const theadRect = thead.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        const theadHeight = Math.max(theadRect.height, 36);
+        const inRange =
+          theadRect.top <= boundTop && tableRect.bottom > boundTop + theadHeight;
+        if (!inRange) continue;
+
+        const left = Math.max(8, tableRect.left);
+        const maxWidth = Math.max(240, window.innerWidth - left - 8);
+        next = {
+          groupKey,
+          left,
+          width: Math.min(tableRect.width, maxWidth),
+          scrollLeft: container.scrollLeft,
+        };
+        break;
+      }
+
+      setFloatingHeaderState((prev) => {
+        if (!prev && !next) return prev;
+        if (!prev || !next) return next;
+        if (
+          prev.groupKey === next.groupKey &&
+          Math.abs(prev.left - next.left) < 0.5 &&
+          Math.abs(prev.width - next.width) < 0.5 &&
+          Math.abs(prev.scrollLeft - next.scrollLeft) < 0.5
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        updateFloatingHeader();
+      });
+    };
+
+    const containers = rowsBySedeKeys
+      .map((groupKey) =>
+        tableHostByGroupRef.current[groupKey]?.querySelector(
+          '[data-slot="table-container"]',
+        ),
+      )
+      .filter((node): node is HTMLDivElement => node instanceof HTMLDivElement);
+
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    containers.forEach((container) =>
+      container.addEventListener("scroll", scheduleUpdate, { passive: true }),
+    );
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      containers.forEach((container) =>
+        container.removeEventListener("scroll", scheduleUpdate),
+      );
+    };
+  }, [rowsBySedeKeys]);
 
   const handleStartDateChange = (value: string) => {
     if (!value) return;
@@ -2312,7 +2454,12 @@ export default function RotacionPage() {
           ventaHastaCap,
         );
         /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
-        const categoryByItem = buildAbcdCategoryByItem(group.rows, abcdConfig);
+        const sourceRowsForAbcd =
+          baseRowsBySedeByKey.get(groupKey) ?? group.rows;
+        const categoryByItem = buildAbcdCategoryByItem(
+          sourceRowsForAbcd,
+          abcdConfig,
+        );
         const categoryFilteredRows =
           categoryFilter === "all"
             ? filteredRows
@@ -2347,6 +2494,7 @@ export default function RotacionPage() {
     [
       abcdConfig,
       abcdFilterByGroup,
+      baseRowsBySedeByKey,
       rowsBySede,
       rowsQuickFilterByGroup,
       ventaHastaCapByGroup,
@@ -3323,12 +3471,14 @@ export default function RotacionPage() {
                       ventaHastaCap,
                     );
                     /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
+                    const sourceRowsForAbcd =
+                      baseRowsBySedeByKey.get(groupKey) ?? group.rows;
                     const categoryByItem = buildAbcdCategoryByItem(
-                      group.rows,
+                      sourceRowsForAbcd,
                       abcdConfig,
                     );
                     const abcdCounts = countAbcdItemsByCategory(
-                      group.rows,
+                      sourceRowsForAbcd,
                       categoryByItem,
                     );
                     const categoryFilteredRows =
@@ -3408,7 +3558,7 @@ export default function RotacionPage() {
                           ? NO_SALES_DI_VALUE
                           : 0;
                     const abcdSummaryRows = buildAbcdSummaryRows(
-                      filteredRows,
+                      sourceRowsForAbcd,
                       categoryByItem,
                     );
                     const abcdSummaryTotals = abcdSummaryRows.reduce(
@@ -3471,7 +3621,7 @@ export default function RotacionPage() {
                     return (
                       <Card
                         key={groupKey}
-                        className="rotacion-whatsapp-export-card gap-0 overflow-hidden border-slate-200/80 bg-white py-0 shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
+                        className="rotacion-whatsapp-export-card gap-0 overflow-visible border-slate-200/80 bg-white py-0 shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
                       >
                         <CardHeader
                           className="border-b border-slate-100 bg-slate-50/70"
@@ -3940,8 +4090,9 @@ export default function RotacionPage() {
                           </div>
                         </div>
                         <CardContent className="px-0 py-0">
-                          <Table
-                            containerClassName="rotacion-table-capture-scroll min-w-0 overflow-x-auto overscroll-x-contain"
+                          <div ref={(node) => setTableHostRef(groupKey, node)}>
+                            <Table
+                            containerClassName="rotacion-table-capture-scroll min-w-0 overscroll-x-contain"
                             className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm"
                           >
                             <colgroup>
@@ -4051,7 +4202,7 @@ export default function RotacionPage() {
                                   <SortableRotationHeader
                                     field="rotation"
                                     align="right"
-                                    label="DI"
+                                    label="DIC"
                                     activeField={tableSortField}
                                     direction={tableSortDirection}
                                     onSort={handleTableSort}
@@ -4200,7 +4351,8 @@ export default function RotacionPage() {
                                 </TableRow>
                               ))}
                             </TableBody>
-                          </Table>
+                            </Table>
+                          </div>
                         </CardContent>
                       </Card>
                     );
@@ -4211,6 +4363,63 @@ export default function RotacionPage() {
           </section>
         )}
       </div>
+
+      {floatingHeaderState ? (
+        <div
+          className="fixed z-40"
+          style={{
+            top: ROTACION_FLOATING_HEADER_TOP_PX,
+            left: floatingHeaderState.left,
+            width: floatingHeaderState.width,
+          }}
+        >
+          <div className="pointer-events-auto overflow-hidden rounded-t-lg border border-slate-200 bg-white shadow-[0_12px_28px_-20px_rgba(15,23,42,0.7)]">
+            <div
+              style={{
+                transform: `translateX(-${floatingHeaderState.scrollLeft}px)`,
+              }}
+            >
+              <table className="w-full min-w-7xl table-fixed border-collapse text-sm">
+                <colgroup>
+                  {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
+                    <col key={`floating-col-${i}`} style={{ width: w }} />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr className="bg-slate-50/95">
+                    {ROTACION_FLOATING_HEADER_COLUMNS.map((col, i) => (
+                      <th
+                        key={`floating-header-${i}`}
+                        className={cn(
+                          "border-b border-slate-200 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700",
+                          col.align === "right"
+                            ? "text-right"
+                            : col.align === "center"
+                              ? "text-center"
+                              : "text-left",
+                        )}
+                      >
+                        {"field" in col ? (
+                          <SortableRotationHeader
+                            field={col.field}
+                            label={col.label}
+                            activeField={tableSortField}
+                            direction={tableSortDirection}
+                            onSort={handleTableSort}
+                            align={col.align === "right" ? "right" : "left"}
+                          />
+                        ) : (
+                          col.label
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isAbcdModalOpen && canEditAbcdConfig ? (
         <div
