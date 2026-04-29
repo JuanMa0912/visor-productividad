@@ -340,7 +340,12 @@ export async function PATCH(req: Request, { params }: Params) {
     const allowedDashboardsEnabled = await hasAllowedDashboardsColumn(client);
     const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
-    if (!allowedSubdashboardsEnabled && body.allowedSubdashboards !== undefined) {
+    const wantsAllowedSubdashboardsUpdate =
+      body.allowedSubdashboards !== undefined &&
+      body.allowedSubdashboards !== null &&
+      (!Array.isArray(body.allowedSubdashboards) ||
+        body.allowedSubdashboards.length > 0);
+    if (!allowedSubdashboardsEnabled && wantsAllowedSubdashboardsUpdate) {
       return NextResponse.json(
         {
           error:
@@ -349,7 +354,11 @@ export async function PATCH(req: Request, { params }: Params) {
         { status: 400 },
       );
     }
-    if (!specialRolesEnabled && body.specialRoles !== undefined) {
+    const wantsSpecialRolesUpdate =
+      body.specialRoles !== undefined &&
+      body.specialRoles !== null &&
+      (!Array.isArray(body.specialRoles) || body.specialRoles.length > 0);
+    if (!specialRolesEnabled && wantsSpecialRolesUpdate) {
       return NextResponse.json(
         {
           error:

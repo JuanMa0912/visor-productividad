@@ -254,12 +254,12 @@ const getInventoryFilterCatalog = async (
 
 const queryInventorySummaryRows = async ({
   dateRangeCompact,
-  empresa,
-  sedeId,
+  empresas,
+  sedes,
 }: {
   dateRangeCompact: { start: string; end: string };
-  empresa: string | null;
-  sedeId: string | null;
+  empresas: string[];
+  sedes: string[];
 }): Promise<InventorySummaryRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
@@ -298,8 +298,8 @@ const queryInventorySummaryRows = async ({
       FROM rotacion_base_item_dia_sede
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
-        AND ($3::text IS NULL OR ${fields.empresaExpr} = $3)
-        AND ($4::text IS NULL OR ${fields.sedeIdExpr} = $4)
+        AND ($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))
+        AND ($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))
       GROUP BY
         ${fields.lineExpr},
         ${fields.n1CodeExpr},
@@ -313,7 +313,12 @@ const queryInventorySummaryRows = async ({
         inventory_value DESC,
         item ASC
       `,
-      [dateRangeCompact.start, dateRangeCompact.end, empresa, sedeId],
+      [
+        dateRangeCompact.start,
+        dateRangeCompact.end,
+        empresas.length > 0 ? empresas : null,
+        sedes.length > 0 ? sedes : null,
+      ],
     );
 
     return ((result.rows ?? []) as InventorySummaryDbRow[]).map((row) => {
@@ -349,15 +354,15 @@ const queryInventorySummaryRows = async ({
 
 const queryInventoryMatrixRows = async ({
   dateRangeCompact,
-  empresa,
-  sedeId,
+  empresas,
+  sedes,
   lines,
   subcategory,
   items,
 }: {
   dateRangeCompact: { start: string; end: string };
-  empresa: string | null;
-  sedeId: string | null;
+  empresas: string[];
+  sedes: string[];
   lines: InventoryLineFilter[];
   subcategory: InventarioSubcategoryKey | null;
   items: string[];
@@ -369,15 +374,15 @@ const queryInventoryMatrixRows = async ({
     const params: Array<string | string[] | null> = [
       dateRangeCompact.start,
       dateRangeCompact.end,
-      empresa,
-      sedeId,
+      empresas.length > 0 ? empresas : null,
+      sedes.length > 0 ? sedes : null,
     ];
 
     const whereClauses = [
       buildCompactDateRangeSql(dateColumn),
       fields.itemPresentCondition,
-      `($3::text IS NULL OR ${fields.empresaExpr} = $3)`,
-      `($4::text IS NULL OR ${fields.sedeIdExpr} = $4)`,
+      `($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))`,
+      `($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))`,
     ];
 
     if (subcategory === "perecederos") {
@@ -618,8 +623,22 @@ export async function GET(request: Request) {
     }
     const selectedDateStart = compactToIsoDate(dateStartCompact) ?? availableDateEnd;
     const selectedDateEnd = compactToIsoDate(dateEndCompact) ?? availableDateEnd;
-    const requestedCompany = url.searchParams.get("empresa")?.trim() || null;
-    const requestedSede = url.searchParams.get("sede")?.trim() || null;
+    const requestedCompanies = Array.from(
+      new Set(
+        url.searchParams
+          .getAll("empresa")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    );
+    const requestedSedes = Array.from(
+      new Set(
+        url.searchParams
+          .getAll("sede")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    );
     const requestedSubcategory = url.searchParams.get("subcategory");
     const subcategory =
       requestedSubcategory === "perecederos" ||
@@ -658,15 +677,15 @@ export async function GET(request: Request) {
         ? Promise.resolve<InventorySummaryRow[]>([])
         : queryInventorySummaryRows({
             dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
-            empresa: requestedCompany,
-            sedeId: requestedSede,
+            empresas: requestedCompanies,
+            sedes: requestedSedes,
           }),
       mode === "catalog" || mode === "filters"
         ? Promise.resolve<InventoryMatrixRow[]>([])
         : queryInventoryMatrixRows({
             dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
-            empresa: requestedCompany,
-            sedeId: requestedSede,
+            empresas: requestedCompanies,
+            sedes: requestedSedes,
             lines,
             subcategory,
             items,
@@ -686,8 +705,9 @@ export async function GET(request: Request) {
             selectedDateStart,
             selectedDateEnd,
             sourceTable: INVENTARIO_X_ITEM_SOURCE_TABLE,
-            selectedCompany: requestedCompany,
-            selectedSede: requestedSede,
+            selectedCompany:
+              requestedCompanies.length === 1 ? requestedCompanies[0] : null,
+            selectedSede: requestedSedes.length === 1 ? requestedSedes[0] : null,
           },
         },
         {

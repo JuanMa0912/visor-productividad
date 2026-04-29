@@ -169,6 +169,21 @@ const calculateDiDays = (row: Pick<InventarioSummaryRow, "inventoryUnits" | "tot
 const buildSedeOptionValue = (empresa: string, sedeId: string) =>
   `${encodeURIComponent(empresa)}::${encodeURIComponent(sedeId)}`;
 
+const parseSedeOptionValue = (
+  value: string,
+): { empresa: string; sedeId: string } | null => {
+  const [empresaPart, sedePart] = value.split("::");
+  if (!empresaPart || !sedePart) return null;
+  try {
+    return {
+      empresa: decodeURIComponent(empresaPart),
+      sedeId: decodeURIComponent(sedePart),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const readItemPresetsFromStorage = (): ItemPreset[] => {
   if (typeof window === "undefined") return [];
   try {
@@ -360,55 +375,114 @@ const MultiSelectField = ({
   };
 
   return (
-    <div className="relative block" ref={menuRef}>
+    <div className="block" ref={menuRef}>
       <span className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
         <Icon className="h-3.5 w-3.5 text-blue-600" />
         {label}
       </span>
 
-      {searchable && onSearchChange ? (
-        <div
-          className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow focus-within:shadow-md ${
-            invalid
-              ? "border-red-300 ring-1 ring-red-100"
-              : "border-slate-200/70 focus-within:border-blue-200 focus-within:ring-2 focus-within:ring-blue-100/80"
-          }`}
-        >
-          <label className="flex items-center gap-2 bg-slate-50/90 px-3 py-2 transition-colors focus-within:bg-white">
-            <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <input
-              type="text"
-              value={searchValue}
-              onChange={(event) => onSearchChange(event.target.value)}
-              onFocus={() => {
-                if (!disabled) setOpen(true);
-              }}
-              placeholder="Buscar..."
-              disabled={disabled}
-              className="min-h-0 w-full bg-transparent py-0.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </label>
+      <div className="relative">
+        {searchable && onSearchChange ? (
           <div
-            className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-100 px-3 py-1 ${
-              hideSearchableSelectionRow ? "rounded-b-2xl pb-2" : ""
+            className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow focus-within:shadow-md ${
+              invalid
+                ? "border-red-300 ring-1 ring-red-100"
+                : "border-slate-200/70 focus-within:border-blue-200 focus-within:ring-2 focus-within:ring-blue-100/80"
             }`}
           >
-            <span className="text-[10px] font-medium tabular-nums text-slate-500">
-              {renderedOptions.length} de {totalResultsCount ?? options.length}{" "}
-              resultados
-            </span>
-            {truncatedResults ? (
-              <span className="text-[10px] leading-tight text-amber-800">
-                Lista parcial: escribe mas para acotar.
+            <label className="flex items-center gap-2 bg-slate-50/90 px-3 py-2 transition-colors focus-within:bg-white">
+              <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <input
+                type="text"
+                value={searchValue}
+                onChange={(event) => onSearchChange(event.target.value)}
+                onFocus={() => {
+                  if (!disabled) setOpen(true);
+                }}
+                placeholder="Buscar..."
+                disabled={disabled}
+                className="min-h-0 w-full bg-transparent py-0.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </label>
+            <div
+              className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-100 px-3 py-1 ${
+                hideSearchableSelectionRow ? "rounded-b-2xl pb-2" : ""
+              }`}
+            >
+              <span className="text-[10px] font-medium tabular-nums text-slate-500">
+                {renderedOptions.length} de {totalResultsCount ?? options.length}{" "}
+                resultados
               </span>
+              {truncatedResults ? (
+                <span className="text-[10px] leading-tight text-amber-800">
+                  Lista parcial: escribe mas para acotar.
+                </span>
+              ) : null}
+            </div>
+            {!hideSearchableSelectionRow ? (
+              <button
+                type="button"
+                onClick={() => setOpen((current) => !current)}
+                disabled={disabled}
+                className="flex w-full items-start justify-between gap-2 border-t border-slate-100 bg-white px-3 py-2 text-left text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50/80 focus:outline-none focus-visible:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="min-w-0 flex-1">
+                  {allSelected ? (
+                    <span className="block truncate">{allLabel ?? emptyLabel}</span>
+                  ) : selectedOptions.length > 0 ? (
+                    <span className="flex flex-wrap gap-1.5">
+                      {selectedPreview.map((option) => (
+                        <span
+                          key={option.key ?? option.value}
+                          className="max-w-full rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                          title={option.label}
+                        >
+                          <span className="block truncate">{option.label}</span>
+                        </span>
+                      ))}
+                      {remainingSelectedCount > 0 && (
+                        <span className="group/summary relative inline-flex">
+                          <span
+                            className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
+                            title={hiddenSelectedOptions.map((option) => option.label).join("\n")}
+                          >
+                            +{remainingSelectedCount}
+                          </span>
+                          <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-30 hidden w-max max-w-72 -translate-x-1/2 rounded-2xl border border-slate-200/80 bg-slate-950/95 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.6)] group-hover/summary:block">
+                            {hiddenSelectedOptions.map((option) => (
+                              <span
+                                key={option.key ?? option.value}
+                                className="block whitespace-normal"
+                              >
+                                {option.label}
+                              </span>
+                            ))}
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="block truncate text-slate-500">{emptyLabel}</span>
+                  )}
+                </span>
+                {selectionCountLabel ? (
+                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    {selectionCountLabel}
+                  </span>
+                ) : null}
+              </button>
             ) : null}
           </div>
-          {!hideSearchableSelectionRow ? (
-            <button
+        ) : (
+          <button
               type="button"
               onClick={() => setOpen((current) => !current)}
               disabled={disabled}
-              className="flex w-full items-start justify-between gap-2 border-t border-slate-100 bg-white px-3 py-2 text-left text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50/80 focus:outline-none focus-visible:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`flex w-full items-start justify-between gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 shadow-sm transition-all focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                invalid
+                  ? "border-red-300 hover:border-red-400 focus:border-red-300 focus:ring-red-100"
+                  : "border-slate-200/70 hover:border-slate-300 focus:border-blue-300 focus:ring-blue-100"
+              }`}
             >
               <span className="min-w-0 flex-1">
                 {allSelected ? (
@@ -455,144 +529,87 @@ const MultiSelectField = ({
                 </span>
               ) : null}
             </button>
-          ) : null}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen((current) => !current)}
-          disabled={disabled}
-          className={`flex w-full items-start justify-between gap-3 rounded-2xl border bg-white px-4 py-3 text-left text-sm font-medium text-slate-900 shadow-sm transition-all focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${
-            invalid
-              ? "border-red-300 hover:border-red-400 focus:border-red-300 focus:ring-red-100"
-              : "border-slate-200/70 hover:border-slate-300 focus:border-blue-300 focus:ring-blue-100"
-          }`}
-        >
-          <span className="min-w-0 flex-1">
-            {allSelected ? (
-              <span className="block truncate">{allLabel ?? emptyLabel}</span>
-            ) : selectedOptions.length > 0 ? (
-              <span className="flex flex-wrap gap-1.5">
-                {selectedPreview.map((option) => (
-                  <span
-                    key={option.key ?? option.value}
-                    className="max-w-full rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
-                    title={option.label}
-                  >
-                    <span className="block truncate">{option.label}</span>
-                  </span>
-                ))}
-                {remainingSelectedCount > 0 && (
-                  <span className="group/summary relative inline-flex">
-                    <span
-                      className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700"
-                      title={hiddenSelectedOptions.map((option) => option.label).join("\n")}
-                    >
-                      +{remainingSelectedCount}
-                    </span>
-                    <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.5rem)] z-30 hidden w-max max-w-72 -translate-x-1/2 rounded-2xl border border-slate-200/80 bg-slate-950/95 px-3 py-2 text-left text-[11px] font-medium leading-5 text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.6)] group-hover/summary:block">
-                      {hiddenSelectedOptions.map((option) => (
-                        <span
-                          key={option.key ?? option.value}
-                          className="block whitespace-normal"
-                        >
-                          {option.label}
-                        </span>
-                      ))}
-                    </span>
-                  </span>
-                )}
-              </span>
-            ) : (
-              <span className="block truncate text-slate-500">{emptyLabel}</span>
-            )}
-          </span>
-          {selectionCountLabel ? (
-            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              {selectionCountLabel}
-            </span>
-          ) : null}
-        </button>
-      )}
+        )}
 
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-0.5 w-full rounded-b-2xl rounded-t-lg border border-slate-200/90 bg-white p-1.5 shadow-[0_16px_40px_-24px_rgba(15,23,42,0.35)]">
-          {(onSelectAll || onClearSelection) && (
-            <div className="mb-1 flex flex-wrap gap-1 border-b border-slate-100 px-1 pb-1">
-              {onSelectAll && (
-                <button
-                  type="button"
-                  onClick={onSelectAll}
-                  className="rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700 transition-colors hover:bg-blue-50"
-                >
-                  {selectAllLabel ?? allLabel ?? emptyLabel}
-                </button>
-              )}
-              {onClearSelection && (
-                <button
-                  type="button"
-                  onClick={onClearSelection}
-                  className="rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 transition-colors hover:bg-slate-50"
-                >
-                  {clearLabel ?? "Limpiar filtro"}
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="max-h-60 space-y-0.5 overflow-auto pr-0.5 sm:max-h-72">
-            {renderedOptions.length === 0 ? (
-              <p className="px-3 py-4 text-sm text-slate-500">
-                No hay opciones disponibles para este filtro.
-              </p>
-            ) : (
-              renderedOptions.map((option) => {
-                const checked = values.includes(option.value);
-                const disabledOption = !checked && Boolean(limitReached);
-                return (
+        {open && (
+          <div className="absolute left-0 top-full z-30 mt-0.5 w-full rounded-b-2xl rounded-t-lg border border-slate-200/90 bg-white p-1.5 shadow-[0_16px_40px_-24px_rgba(15,23,42,0.35)]">
+            {(onSelectAll || onClearSelection) && (
+              <div className="mb-1 flex flex-wrap gap-1 border-b border-slate-100 px-1 pb-1">
+                {onSelectAll && (
                   <button
-                    key={option.key ?? option.value}
                     type="button"
-                    onClick={() => toggleValue(option.value)}
-                    disabled={disabledOption}
-                    className={`flex w-full items-start justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
-                      disabledOption
-                        ? "cursor-not-allowed opacity-50"
-                        : "hover:bg-slate-50"
-                    }`}
+                    onClick={onSelectAll}
+                    className="rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700 transition-colors hover:bg-blue-50"
                   >
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">
-                        {option.label}
-                      </p>
-                      {option.hint && (
-                        <p className="mt-0.5 text-xs leading-5 text-slate-500">
-                          {option.hint}
-                        </p>
-                      )}
-                    </div>
-                    <span
-                      className={`mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                        checked
-                          ? "border-blue-500 bg-blue-500 text-white"
-                          : "border-slate-300 bg-white text-transparent"
+                    {selectAllLabel ?? allLabel ?? emptyLabel}
+                  </button>
+                )}
+                {onClearSelection && (
+                  <button
+                    type="button"
+                    onClick={onClearSelection}
+                    className="rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 transition-colors hover:bg-slate-50"
+                  >
+                    {clearLabel ?? "Limpiar filtro"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="max-h-60 space-y-0.5 overflow-auto pr-0.5 sm:max-h-72">
+              {renderedOptions.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-slate-500">
+                  No hay opciones disponibles para este filtro.
+                </p>
+              ) : (
+                renderedOptions.map((option) => {
+                  const checked = values.includes(option.value);
+                  const disabledOption = !checked && Boolean(limitReached);
+                  return (
+                    <button
+                      key={option.key ?? option.value}
+                      type="button"
+                      onClick={() => toggleValue(option.value)}
+                      disabled={disabledOption}
+                      className={`flex w-full items-start justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
+                        disabledOption
+                          ? "cursor-not-allowed opacity-50"
+                          : "hover:bg-slate-50"
                       }`}
                     >
-                      <Check className="h-3 w-3" />
-                    </span>
-                  </button>
-                );
-              })
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">
+                          {option.label}
+                        </p>
+                        {option.hint && (
+                          <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                            {option.hint}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                          checked
+                            ? "border-blue-500 bg-blue-500 text-white"
+                            : "border-slate-300 bg-white text-transparent"
+                        }`}
+                      >
+                        <Check className="h-3 w-3" />
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {maxSelected && limitReached && (
+              <p className="mt-2 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-600">
+                Maximo {maxSelected} seleccionados
+              </p>
             )}
           </div>
-
-          {maxSelected && limitReached && (
-            <p className="mt-2 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-600">
-              Maximo {maxSelected} seleccionados
-            </p>
-          )}
-        </div>
-      )}
+        )}
+      </div>
       {helperText ? (
         <p
           className={`mt-1.5 text-xs leading-snug ${
@@ -627,10 +644,8 @@ export default function InventarioXItemPage() {
   const [availableDateEnd, setAvailableDateEnd] = useState("");
   const [selectedDateStartState, setSelectedDateStartState] = useState("");
   const [selectedDateEndState, setSelectedDateEndState] = useState("");
-  const [selectedCompanyState, setSelectedCompanyState] = useState(
-    ALL_FILTER_VALUE,
-  );
-  const [selectedSedeState, setSelectedSedeState] = useState(ALL_FILTER_VALUE);
+  const [selectedCompanyState, setSelectedCompanyState] = useState<string[]>([]);
+  const [selectedSedeState, setSelectedSedeState] = useState<string[]>([]);
   const [selectedLinesState, setSelectedLinesState] = useState<string[]>([]);
   const [selectedSubcategoryState, setSelectedSubcategoryState] = useState<
     "" | typeof ALL_FILTER_VALUE | InventarioSubcategoryKey
@@ -733,54 +748,51 @@ export default function InventarioXItemPage() {
     setMessage(null);
   }, []);
 
-  const selectedCompanyFilter =
-    selectedCompanyState === ALL_FILTER_VALUE ? "" : selectedCompanyState;
-
   const availableSedeOptions = useMemo(
     () =>
-      selectedCompanyFilter
-        ? filters.sedes.filter((sede) => sede.empresa === selectedCompanyFilter)
+      selectedCompanyState.length > 0
+        ? filters.sedes.filter((sede) =>
+            selectedCompanyState.includes(sede.empresa),
+          )
         : filters.sedes,
-    [filters.sedes, selectedCompanyFilter],
+    [filters.sedes, selectedCompanyState],
   );
 
   const selectedSede = useMemo(
     () => {
-      if (selectedSedeState === ALL_FILTER_VALUE) return ALL_FILTER_VALUE;
-      return (
-      availableSedeOptions.some(
-        (sede) =>
-          buildSedeOptionValue(sede.empresa, sede.sedeId) === selectedSedeState,
-      )
-        ? selectedSedeState
-        : ""
+      const optionSet = new Set(
+        availableSedeOptions.map((sede) =>
+          buildSedeOptionValue(sede.empresa, sede.sedeId),
+        ),
       );
+      return selectedSedeState.filter((value) => optionSet.has(value));
     },
     [availableSedeOptions, selectedSedeState],
   );
-
-  const selectedSedeOption = useMemo(() => {
-    if (!selectedSede || selectedSede === ALL_FILTER_VALUE) return null;
-    return (
-      availableSedeOptions.find(
-        (sede) => buildSedeOptionValue(sede.empresa, sede.sedeId) === selectedSede,
-      ) ?? null
-    );
-  }, [availableSedeOptions, selectedSede]);
-
-  const selectedSedeId =
-    selectedSede === ALL_FILTER_VALUE ? "" : selectedSedeOption?.sedeId ?? "";
-  const effectiveCompany =
-    selectedCompanyFilter || selectedSedeOption?.empresa || "";
+  const selectedSedeIds = useMemo(
+    () =>
+      selectedSede
+        .map((value) => parseSedeOptionValue(value)?.sedeId ?? null)
+        .filter((value): value is string => Boolean(value)),
+    [selectedSede],
+  );
+  const effectiveCompanies = useMemo(
+    () =>
+      selectedCompanyState.length > 0 ? selectedCompanyState : filters.companies,
+    [filters.companies, selectedCompanyState],
+  );
   const selectedDateStart = selectedDateStartState;
   const selectedDateEnd = selectedDateEndState || selectedDateStartState;
-  const catalogScopeKey = `${effectiveCompany}::${selectedSedeId}::${selectedDateStart}::${selectedDateEnd}`;
+  const catalogScopeKey = `${effectiveCompanies.slice().sort().join(",")}::${selectedSede
+    .slice()
+    .sort()
+    .join(",")}::${selectedDateStart}::${selectedDateEnd}`;
   const selectedSubcategory =
     selectedSubcategoryState === ALL_FILTER_VALUE
       ? "all"
       : selectedSubcategoryState;
-  const hasCompanySelection = selectedCompanyState !== "";
-  const hasSedeSelection = selectedSede !== "";
+  const hasCompanySelection = selectedCompanyState.length > 0;
+  const hasSedeSelection = selectedSede.length > 0;
   const hasScopeSelection = hasCompanySelection && hasSedeSelection;
 
   const loadFilterOptions = useCallback(
@@ -864,8 +876,8 @@ export default function InventarioXItemPage() {
       try {
         const params = new URLSearchParams();
         params.set("mode", "catalog");
-        if (effectiveCompany) params.set("empresa", effectiveCompany);
-        if (selectedSedeId) params.set("sede", selectedSedeId);
+        effectiveCompanies.forEach((company) => params.append("empresa", company));
+        selectedSedeIds.forEach((sedeId) => params.append("sede", sedeId));
         if (selectedDateStart) params.set("dateStart", selectedDateStart);
         if (selectedDateEnd) params.set("dateEnd", selectedDateEnd);
 
@@ -917,9 +929,9 @@ export default function InventarioXItemPage() {
     },
     [
       catalogScopeKey,
-      effectiveCompany,
+      effectiveCompanies,
       router,
-      selectedSedeId,
+      selectedSedeIds,
       selectedDateEnd,
       selectedDateStart,
     ],
@@ -940,37 +952,25 @@ export default function InventarioXItemPage() {
   }, [hasScopeSelection, loadCatalogData, ready]);
 
   const companyOptions = useMemo<SelectOption[]>(
-    () => [
-      {
-        value: ALL_FILTER_VALUE,
-        label: "Todas las empresas",
-        key: ALL_FILTER_VALUE,
-      },
-      ...filters.companies.map((company) => ({
+    () =>
+      filters.companies.map((company) => ({
         value: company,
         label: company.toUpperCase(),
         key: `company-${company}`,
       })),
-    ],
     [filters.companies],
   );
 
   const sedeOptions = useMemo<SelectOption[]>(
-    () => [
-      {
-        value: ALL_FILTER_VALUE,
-        label: "Todas las sedes",
-        key: ALL_FILTER_VALUE,
-      },
-      ...availableSedeOptions.map((sede) => ({
+    () =>
+      availableSedeOptions.map((sede) => ({
         value: buildSedeOptionValue(sede.empresa, sede.sedeId),
-        label: selectedCompanyFilter
+        label: selectedCompanyState.length > 0
           ? sede.sedeName
           : `${sede.sedeName} (${sede.empresa.toUpperCase()})`,
         key: buildSedeOptionValue(sede.empresa, sede.sedeId),
       })),
-    ],
-    [availableSedeOptions, selectedCompanyFilter],
+    [availableSedeOptions, selectedCompanyState],
   );
 
   const lineOptions = useMemo<SelectOption[]>(() => {
@@ -1147,9 +1147,15 @@ export default function InventarioXItemPage() {
   );
 
   const handleCompanyChange = useCallback(
-    (value: string) => {
-      setSelectedCompanyState(value);
-      setSelectedSedeState(ALL_FILTER_VALUE);
+    (values: string[]) => {
+      setSelectedCompanyState(values);
+      const allowed = new Set(values);
+      setSelectedSedeState((current) =>
+        current.filter((value) => {
+          const parsed = parseSedeOptionValue(value);
+          return parsed ? allowed.has(parsed.empresa) : false;
+        }),
+      );
       resetScopedData();
       setShowValidation(false);
     },
@@ -1181,8 +1187,8 @@ export default function InventarioXItemPage() {
   );
 
   const handleSedeChange = useCallback(
-    (value: string) => {
-      setSelectedSedeState(value);
+    (values: string[]) => {
+      setSelectedSedeState(values);
       resetScopedData();
       setShowValidation(false);
     },
@@ -1336,8 +1342,8 @@ export default function InventarioXItemPage() {
       try {
         const params = new URLSearchParams();
         params.set("mode", "table");
-        if (effectiveCompany) params.set("empresa", effectiveCompany);
-        if (selectedSedeId) params.set("sede", selectedSedeId);
+        effectiveCompanies.forEach((company) => params.append("empresa", company));
+        selectedSedeIds.forEach((sedeId) => params.append("sede", sedeId));
         if (selectedDateStart) params.set("dateStart", selectedDateStart);
         if (selectedDateEnd) params.set("dateEnd", selectedDateEnd);
         if (selectedSubcategory && selectedSubcategory !== "all") {
@@ -1391,10 +1397,10 @@ export default function InventarioXItemPage() {
     },
     [
       router,
-      effectiveCompany,
+      effectiveCompanies,
       selectedItems,
       selectedLines,
-      selectedSedeId,
+      selectedSedeIds,
       selectedSubcategory,
       selectedDateEnd,
       selectedDateStart,
@@ -1414,16 +1420,32 @@ export default function InventarioXItemPage() {
       .filter((row): row is InventarioSummaryRow => Boolean(row));
   }, [rowsByItem, selectedItems]);
 
-  const selectedSedeLabel = useMemo(
-    () => (selectedSedeOption ? selectedSedeOption.sedeName : "Todas"),
-    [selectedSedeOption],
-  );
+  const selectedSedeLabel = useMemo(() => {
+    if (selectedSede.length === 0) return "Todas";
+    if (selectedSede.length === 1) {
+      const only = selectedSede[0];
+      const opt = availableSedeOptions.find(
+        (sede) => buildSedeOptionValue(sede.empresa, sede.sedeId) === only,
+      );
+      return opt?.sedeName ?? "1 sede";
+    }
+    return `${selectedSede.length} sedes`;
+  }, [availableSedeOptions, selectedSede]);
+  const effectiveCompanyLabel =
+    selectedCompanyState.length === 0
+      ? "Todas"
+      : selectedCompanyState.length === 1
+        ? selectedCompanyState[0].toUpperCase()
+        : `${selectedCompanyState.length} empresas`;
 
   const currentMatrixKey = useMemo(
     () =>
       JSON.stringify({
-        empresa: effectiveCompany || ALL_FILTER_VALUE,
-        sede: selectedSedeId || ALL_FILTER_VALUE,
+        empresas:
+          selectedCompanyState.length > 0
+            ? selectedCompanyState
+            : [ALL_FILTER_VALUE],
+        sedes: selectedSede.length > 0 ? selectedSede : [ALL_FILTER_VALUE],
         dateStart: selectedDateStart || "",
         dateEnd: selectedDateEnd || "",
         lines: selectedLines,
@@ -1431,12 +1453,12 @@ export default function InventarioXItemPage() {
         items: selectedItems,
       }),
     [
-      effectiveCompany,
+      selectedCompanyState,
       selectedDateEnd,
       selectedDateStart,
       selectedItems,
       selectedLines,
-      selectedSedeId,
+      selectedSede,
       selectedSubcategory,
     ],
   );
@@ -1479,7 +1501,7 @@ export default function InventarioXItemPage() {
 
   const matrixRowsBySede = useMemo(() => {
     const multipleCompanies =
-      !effectiveCompany &&
+      selectedCompanyState.length !== 1 &&
       new Set(filteredMatrixRows.map((row) => row.empresa)).size > 1;
 
     const grouped = new Map<
@@ -1521,7 +1543,7 @@ export default function InventarioXItemPage() {
       if (byCompany !== 0) return byCompany;
       return compareText(left.sedeName, right.sedeName);
     });
-  }, [effectiveCompany, filteredMatrixRows]);
+  }, [filteredMatrixRows, selectedCompanyState.length]);
 
   const matrixTotalsByItem = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -1642,9 +1664,7 @@ export default function InventarioXItemPage() {
 
       const pageWidth = doc.internal.pageSize.getWidth();
       const title = "Inventario por item";
-      const scopeLabel = `Empresa: ${
-        effectiveCompany ? effectiveCompany.toUpperCase() : "TODAS"
-      } | Sede: ${selectedSedeLabel}`;
+      const scopeLabel = `Empresa: ${effectiveCompanyLabel} | Sede: ${selectedSedeLabel}`;
       const filtersLabel = `Lineas: ${
         lineSelectionMode === "all" ? "TODAS" : selectedLines.length
       } | Subcategoria: ${
@@ -1750,14 +1770,19 @@ export default function InventarioXItemPage() {
         },
       });
 
-      const safeCompany = effectiveCompany ? effectiveCompany.toLowerCase() : "todas";
+      const safeCompany =
+        selectedCompanyState.length === 1
+          ? selectedCompanyState[0].toLowerCase()
+          : selectedCompanyState.length > 1
+            ? "multiples-empresas"
+            : "todas";
       const safeSede = selectedSedeLabel.toLowerCase().replace(/\s+/g, "-");
       doc.save(`inventario-x-item-${safeCompany}-${safeSede}.pdf`);
     } finally {
       setExportingPdf(false);
     }
   }, [
-    effectiveCompany,
+    effectiveCompanyLabel,
     lineSelectionMode,
     matrixTotalsByItem,
     selectedLines.length,
@@ -1784,7 +1809,12 @@ export default function InventarioXItemPage() {
       });
 
       const link = document.createElement("a");
-      const safeCompany = effectiveCompany ? effectiveCompany.toLowerCase() : "todas";
+      const safeCompany =
+        selectedCompanyState.length === 1
+          ? selectedCompanyState[0].toLowerCase()
+          : selectedCompanyState.length > 1
+            ? "multiples-empresas"
+            : "todas";
       const safeSede = selectedSedeLabel.toLowerCase().replace(/\s+/g, "-");
       link.href = dataUrl;
       link.download = `inventario-x-item-${safeCompany}-${safeSede}.jpg`;
@@ -1794,7 +1824,7 @@ export default function InventarioXItemPage() {
     } finally {
       setExportingJpg(false);
     }
-  }, [effectiveCompany, selectedSedeLabel, sortedMatrixRowsBySede.length, summaryRows.length]);
+  }, [selectedCompanyState, selectedSedeLabel, sortedMatrixRowsBySede.length, summaryRows.length]);
 
   const subcategoryOptions = useMemo<SelectOption[]>(
     () => [
@@ -1806,14 +1836,14 @@ export default function InventarioXItemPage() {
   );
   const companyHelperText =
     showValidation && !hasCompanySelection
-      ? "Selecciona una empresa puntual o marca 'Todas las empresas'."
-      : "Este filtro es obligatorio para habilitar el alcance.";
+      ? "Selecciona una o varias empresas."
+      : "Puedes seleccionar multiples empresas.";
   const sedeHelperText =
     !hasCompanySelection && !hasSedeSelection
-      ? "Selecciona una empresa primero y luego define una sede o 'Todas las sedes'."
+      ? "Selecciona una o varias empresas primero y luego define sedes."
       : showValidation && !hasSedeSelection
-        ? "Selecciona una sede puntual o marca 'Todas las sedes'."
-        : "Este filtro es obligatorio para habilitar lineas e items.";
+        ? "Selecciona una o varias sedes."
+        : "Puedes seleccionar multiples sedes.";
   const lineHelperText = !hasScopeSelection
     ? "Primero define empresa y sede."
     : loadingCatalog
@@ -1999,24 +2029,38 @@ export default function InventarioXItemPage() {
           </div>
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr_1.2fr_1fr_1.5fr]">
-            <SelectField
+            <MultiSelectField
               icon={Building2}
               label="Empresa"
-              value={selectedCompanyState}
+              values={selectedCompanyState}
               options={companyOptions}
               onChange={handleCompanyChange}
-              emptyLabel="Selecciona empresa"
+              emptyLabel="Selecciona empresas"
+              allLabel="Todas las empresas"
+              selectAllLabel="Seleccionar todas"
+              onSelectAll={() => handleCompanyChange(filters.companies)}
+              onClearSelection={() => handleCompanyChange([])}
               disabled={loadingFilters}
               invalid={showValidation && !hasCompanySelection}
               helperText={companyHelperText}
             />
-            <SelectField
+            <MultiSelectField
               icon={MapPin}
               label="Sede"
-              value={selectedSede}
+              values={selectedSede}
               options={sedeOptions}
               onChange={handleSedeChange}
-              emptyLabel="Selecciona sede"
+              emptyLabel="Selecciona sedes"
+              allLabel="Todas las sedes"
+              selectAllLabel="Seleccionar todas"
+              onSelectAll={() =>
+                handleSedeChange(
+                  availableSedeOptions.map((sede) =>
+                    buildSedeOptionValue(sede.empresa, sede.sedeId),
+                  ),
+                )
+              }
+              onClearSelection={() => handleSedeChange([])}
               disabled={loadingFilters || !hasCompanySelection}
               invalid={showValidation && !hasSedeSelection}
               helperText={sedeHelperText}
@@ -2143,7 +2187,7 @@ export default function InventarioXItemPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
               <span className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1">
-                Empresa: {effectiveCompany ? effectiveCompany.toUpperCase() : "Todas"}
+                Empresa: {effectiveCompanyLabel}
               </span>
               <span className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1">
                 Sede: {selectedSedeLabel}
@@ -2188,7 +2232,7 @@ export default function InventarioXItemPage() {
           {!hasScopeSelection ? (
             <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-12 text-center">
               <p className="text-sm font-semibold text-slate-900">
-                Selecciona empresa y sede para habilitar el resto de filtros.
+                Selecciona al menos una empresa y una sede para habilitar el resto de filtros.
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 Primero define el alcance; luego completa lineas, subcategoria e
