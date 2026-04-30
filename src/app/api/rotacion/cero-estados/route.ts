@@ -23,6 +23,23 @@ import {
 
 const CACHE_CONTROL = "no-store";
 
+type PgErrorLike = { code?: string };
+
+const isMissingCeroEstadoTableError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  (error as PgErrorLike).code === "42P01";
+
+const normalizeCompactDateParam = (raw: string): string | null => {
+  const value = raw.trim();
+  if (!value) return null;
+  if (/^[0-9]{8}$/.test(value)) return value;
+  if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) {
+    return value.replace(/-/g, "");
+  }
+  return null;
+};
+
 const parseSedeScope = (
   raw: string,
 ): { empresa: string; sedeId: string } | null => {
@@ -136,15 +153,15 @@ export async function GET(request: Request) {
   if (gate) return withSession(session, gate);
 
   const url = new URL(request.url);
-  const start = url.searchParams.get("start")?.trim() ?? "";
-  const end = url.searchParams.get("end")?.trim() ?? "";
+  const start = normalizeCompactDateParam(url.searchParams.get("start") ?? "");
+  const end = normalizeCompactDateParam(url.searchParams.get("end") ?? "");
   const sedeScopeRaw = url.searchParams.getAll("sedeScope").map((s) => s.trim());
 
-  if (!/^[0-9]{8}$/.test(start) || !/^[0-9]{8}$/.test(end)) {
+  if (!start || !end) {
     return withSession(
       session,
       NextResponse.json(
-        { error: "Parametros start y end requeridos (YYYYMMDD)." },
+        { error: "Parametros start y end requeridos (YYYYMMDD o YYYY-MM-DD)." },
         { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
@@ -169,18 +186,43 @@ export async function GET(request: Request) {
   if (!resolved.ok) return withSession(session, resolved.response);
 
   const pool = await getDbPool();
-  const result = await pool.query<{
-    sede_id: string;
-    item: string;
-    estado: string;
-  }>(
-    `
-    SELECT sede_id, item, estado
-    FROM rotacion_cero_item_estado
-    WHERE sede_id = ANY($1::text[])
-    `,
-    [resolved.sedeIds],
-  );
+  let result: Awaited<
+    ReturnType<
+      typeof pool.query<{
+        sede_id: string;
+        item: string;
+        estado: string;
+      }>
+    >
+  >;
+  try {
+    result = await pool.query<{
+      sede_id: string;
+      item: string;
+      estado: string;
+    }>(
+      `
+      SELECT sede_id, item, estado
+      FROM rotacion_cero_item_estado
+      WHERE sede_id = ANY($1::text[])
+      `,
+      [resolved.sedeIds],
+    );
+  } catch (error) {
+    if (isMissingCeroEstadoTableError(error)) {
+      return withSession(
+        session,
+        NextResponse.json(
+          {
+            error:
+              "Falta la tabla rotacion_cero_item_estado. Ejecuta la migracion 20260429_rotacion_cero_item_estado.sql.",
+          },
+          { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+    throw error;
+  }
 
   const estados: Record<string, CeroRotacionEstado> = {};
   for (const row of result.rows) {
@@ -270,15 +312,19 @@ export async function PATCH(request: Request) {
     typeof body === "object" && body !== null
       ? (body as { start?: unknown; end?: unknown })
       : {};
-  const start = String(fromBody.start ?? url.searchParams.get("start") ?? "").trim();
-  const end = String(fromBody.end ?? url.searchParams.get("end") ?? "").trim();
-  if (!/^[0-9]{8}$/.test(start) || !/^[0-9]{8}$/.test(end)) {
+  const start = normalizeCompactDateParam(
+    String(fromBody.start ?? url.searchParams.get("start") ?? ""),
+  );
+  const end = normalizeCompactDateParam(
+    String(fromBody.end ?? url.searchParams.get("end") ?? ""),
+  );
+  if (!start || !end) {
     return withSession(
       session,
       NextResponse.json(
         {
           error:
-            "start y end requeridos (YYYYMMDD) en el cuerpo o query para validar sede.",
+            "start y end requeridos (YYYYMMDD o YYYY-MM-DD) en el cuerpo o query para validar sede.",
         },
         { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
@@ -300,17 +346,33 @@ export async function PATCH(request: Request) {
   }
 
   const pool = await getDbPool();
-  await pool.query(
-    `
-    INSERT INTO rotacion_cero_item_estado (sede_id, item, estado, updated_at, updated_by)
-    VALUES ($1, $2, $3, now(), $4::uuid)
-    ON CONFLICT (sede_id, item) DO UPDATE SET
-      estado = EXCLUDED.estado,
-      updated_at = now(),
-      updated_by = EXCLUDED.updated_by
-    `,
-    [sedeId, item, estado, session.user.id],
-  );
+  try {
+    await pool.query(
+      `
+      INSERT INTO rotacion_cero_item_estado (sede_id, item, estado, updated_at, updated_by)
+      VALUES ($1, $2, $3, now(), $4::uuid)
+      ON CONFLICT (sede_id, item) DO UPDATE SET
+        estado = EXCLUDED.estado,
+        updated_at = now(),
+        updated_by = EXCLUDED.updated_by
+      `,
+      [sedeId, item, estado, session.user.id],
+    );
+  } catch (error) {
+    if (isMissingCeroEstadoTableError(error)) {
+      return withSession(
+        session,
+        NextResponse.json(
+          {
+            error:
+              "Falta la tabla rotacion_cero_item_estado. Ejecuta la migracion 20260429_rotacion_cero_item_estado.sql.",
+          },
+          { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+    throw error;
+  }
 
   return withSession(
     session,
