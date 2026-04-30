@@ -186,15 +186,7 @@ export async function GET(request: Request) {
   if (!resolved.ok) return withSession(session, resolved.response);
 
   const pool = await getDbPool();
-  let result: Awaited<
-    ReturnType<
-      typeof pool.query<{
-        sede_id: string;
-        item: string;
-        estado: string;
-      }>
-    >
-  >;
+  let result: { rows: Array<{ sede_id: string; item: string; estado: string }> };
   try {
     result = await pool.query<{
       sede_id: string;
