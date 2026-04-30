@@ -194,6 +194,7 @@ type RotationSortField =
   | "inventoryValue"
   | "rotation"
   | "trackedDays"
+  | "duvDays"
   | "salesEffectiveDays"
   | "lastMovementDate"
   | "lastPurchaseDate"
@@ -219,7 +220,6 @@ const ROTACION_TABLE_COL_WIDTHS = [
   "5%",
   "4%",
   "4%",
-  "8%",
   "6%",
   "8%",
 ] as const;
@@ -248,7 +248,6 @@ const ROTACION_FLOATING_HEADER_COLUMNS = [
   { label: "V. inv.", align: "right" as const, field: "inventoryValue" as const },
   { label: "DIC", align: "right" as const, field: "rotation" as const },
   { label: "DIE", align: "right" as const, field: "trackedDays" as const },
-  { label: "DUV", align: "right" as const, field: "lastPurchaseDate" as const },
   { label: "DVE", align: "right" as const, field: "salesEffectiveDays" as const },
   { label: "Ult. venta", align: "right" as const, field: "lastPurchaseDate" as const },
   { label: "Ult. ingr.", align: "right" as const, field: "lastMovementDate" as const },
@@ -265,7 +264,7 @@ const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
   { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
   { label: "V. inv.", align: "right" as const, field: "inventoryValue" as const },
   { label: "DI", align: "right" as const, field: "lastMovementDate" as const },
-  { label: "DUV", align: "right" as const, field: "lastPurchaseDate" as const },
+  { label: "DUV", align: "right" as const, field: "duvDays" as const },
   { label: "Ult. venta", align: "right" as const, field: "lastPurchaseDate" as const },
   { label: "Ult. ingr.", align: "right" as const, field: "lastMovementDate" as const },
 ] as const;
@@ -934,6 +933,15 @@ const sortRotationRows = (
         break;
       case "trackedDays":
         result = left.trackedDays - right.trackedDays;
+        break;
+      case "duvDays":
+        {
+          const leftDuvDays = calculateDuvDays(left.lastPurchaseDate);
+          const rightDuvDays = calculateDuvDays(right.lastPurchaseDate);
+          const leftValue = leftDuvDays ?? Number.POSITIVE_INFINITY;
+          const rightValue = rightDuvDays ?? Number.POSITIVE_INFINITY;
+          result = leftValue - rightValue;
+        }
         break;
       case "salesEffectiveDays":
         result = left.salesEffectiveDays - right.salesEffectiveDays;
@@ -3571,7 +3579,8 @@ export default function RotacionPage() {
                       rowFilter === "venta_hasta" || rowFilter === "both"
                         ? (ventaHastaCapByGroup[groupKey] ?? null)
                         : null;
-                    const isZeroRotationTableView = rowFilter === "cero_rotacion";
+                    const isZeroRotationTableView =
+                      rowFilter === "cero_rotacion" || categoryFilter === "0";
                     const quickFilteredRows = applyRowsQuickFilter(
                       group.rows,
                       rowFilter,
@@ -4531,7 +4540,7 @@ export default function RotacionPage() {
                                     </TableHead>
                                     <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                                       <SortableRotationHeader
-                                        field="lastPurchaseDate"
+                                        field="duvDays"
                                         align="right"
                                         label="DUV"
                                         activeField={tableSortField}
@@ -4697,16 +4706,6 @@ export default function RotacionPage() {
                                         Ult. venta
                                       </span>
                                     }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="lastPurchaseDate"
-                                    align="right"
-                                    label="DUV"
                                     activeField={tableSortField}
                                     direction={tableSortDirection}
                                     onSort={handleTableSort}
@@ -4914,11 +4913,6 @@ export default function RotacionPage() {
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
                                     {row.trackedDays.toLocaleString("es-CO")}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
-                                    {duvDays == null
-                                      ? "Sin fecha"
-                                      : `${duvDays.toLocaleString("es-CO")} dias`}
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
                                     {row.salesEffectiveDays.toLocaleString("es-CO")}
