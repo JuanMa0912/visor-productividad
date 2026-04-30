@@ -6,6 +6,14 @@ const enableReactCompiler = process.env.NEXT_ENABLE_REACT_COMPILER === "true";
 const enableUpgradeInsecure =
   process.env.UPGRADE_INSECURE_REQUESTS === "true";
 const allowUnsafeEval = process.env.CSP_UNSAFE_EVAL === "true";
+const parsedBuildCpus = Number.parseInt(
+  process.env.NEXT_BUILD_CPUS ?? "",
+  10,
+);
+const buildCpus =
+  Number.isFinite(parsedBuildCpus) && parsedBuildCpus > 0
+    ? parsedBuildCpus
+    : undefined;
 const allowedDevOrigins = (
   process.env.ALLOWED_DEV_ORIGINS ??
   "192.168.80.173"
@@ -69,6 +77,13 @@ const nextConfig: NextConfig = {
   reactCompiler: enableReactCompiler,
   poweredByHeader: false,
   allowedDevOrigins,
+  ...(buildCpus
+    ? {
+        experimental: {
+          cpus: buildCpus,
+        },
+      }
+    : {}),
   turbopack: {
     root: process.cwd(),
   },
