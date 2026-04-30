@@ -7,7 +7,7 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     // Utility scripts run in Node/CommonJS outside the app bundle.
-    files: ["scripts/**/*.js", "test-db.js", "test-db-postgres.js"],
+    files: ["scripts/**/*.js"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },

@@ -1594,7 +1594,6 @@ export default function InventarioXItemPage() {
     }, 550);
 
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- disparo alineado con el estado de filtros
   }, [canBuildMatrix, currentMatrixKey, appliedMatrixKey, loadMatrixData]);
 
   const handleReload = useCallback(() => {
@@ -1786,6 +1785,7 @@ export default function InventarioXItemPage() {
     lineSelectionMode,
     matrixTotalsByItem,
     selectedLines.length,
+    selectedCompanyState,
     selectedDateLabel,
     selectedSedeLabel,
     selectedSubcategory,

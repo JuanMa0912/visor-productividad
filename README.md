@@ -51,7 +51,7 @@ La definicion canónica de textos y modulos por seccion vive en `src/lib/portal-
 
 ### Stack actual
 
-- Framework: Next.js `16.1.2` con App Router.
+- Framework: Next.js `16.2.x` con App Router.
 - UI: React `19.2.3` + Tailwind CSS `4`.
 - Componentes: Radix UI, componentes locales y MUI X Charts.
 - Lenguaje: TypeScript.
@@ -59,6 +59,20 @@ La definicion canónica de textos y modulos por seccion vive en `src/lib/portal-
 - Auth: sesiones propias en base de datos + cookie `vp_session`.
 - Exportacion: ExcelJS, jsPDF, jsPDF AutoTable y canvas.
 - Animacion: Anime.js.
+
+### Estructura principal del repositorio
+
+| Ruta | Contenido |
+| --- | --- |
+| `.github/` | workflow de CI y plantilla de Pull Request |
+| `.agents/skills/` | skills de agentes usadas por el proyecto |
+| `db/` | esquema, migraciones y scripts SQL operativos |
+| `docs/reference/` | material de referencia que no se ejecuta en la app |
+| `public/` | imagenes y assets estaticos |
+| `scripts/` | utilidades de desarrollo, build, admin, debug y pruebas DB |
+| `src/app/` | rutas UI y API handlers de Next.js |
+| `src/components/` | componentes reutilizables |
+| `src/lib/` | utilidades compartidas, auth, DB, calculos y tests unitarios |
 
 ## 2. Arquitectura
 
@@ -265,7 +279,10 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
 npm install
 npm run dev
 npm run lint
+npm run typecheck
+npm test
 npm run build
+npm run ci
 npm run start
 ```
 
@@ -273,7 +290,7 @@ npm run start
 
 1. Configurar variables de entorno de base de datos y seguridad.
 2. Aplicar `db/schema-auth.sql` y luego las migraciones.
-3. Verificar conectividad con `node test-db.js` o `node test-db-postgres.js`.
+3. Verificar conectividad con `npm run db:test` o `npm run db:test:postgres`.
 4. Crear o actualizar un admin con `node scripts/create-admin.js` si hace falta.
 5. Ejecutar `npm run dev`.
 
@@ -296,7 +313,7 @@ El repo ya incluye `.env.example` con placeholders seguros. Las variables observ
 - `src/lib/db.ts` ya no incluye password hardcodeado: requiere `DB_PASSWORD` en el entorno y falla temprano si no existe.
 - `src/lib/db.ts` valida `DB_PORT` y `DB_SCHEMA` antes de abrir el pool.
 - `scripts/create-admin.js` lee `.env.local` si existe y exige `DB_PASSWORD` antes de conectarse.
-- `test-db.js` y `test-db-postgres.js` leen `.env.local` si existe y exigen `DB_PASSWORD`; ya no incluyen passwords embebidos.
+- `scripts/test-db.js` y `scripts/test-db-postgres.js` leen `.env.local` si existe y exigen `DB_PASSWORD`; ya no incluyen passwords embebidos.
 - `.env.example` se puede usar como base para nuevos ambientes sin exponer secretos reales.
 
 ### Esquema y migraciones
@@ -319,12 +336,22 @@ Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy
 | Archivo | Uso |
 | --- | --- |
 | `scripts/create-admin.js` | crea o actualiza un admin usando `ADMIN_USERNAME`, `ADMIN_PASSWORD` y `DB_PASSWORD` del entorno o `.env.local` |
-| `test-db.js` | prueba conexion, lista tablas y consulta `ventas_cajas` usando `DB_PASSWORD` del entorno o `.env.local` |
-| `test-db-postgres.js` | valida conexion con PostgreSQL y verifica el usuario `produ` usando `DB_PASSWORD` del entorno o `.env.local` |
+| `scripts/test-db.js` | prueba conexion, lista tablas y consulta `ventas_cajas` usando `DB_PASSWORD` del entorno o `.env.local` |
+| `scripts/test-db-postgres.js` | valida conexion con PostgreSQL y verifica el usuario `produ` usando `DB_PASSWORD` del entorno o `.env.local` |
 | `db/crear-usuario.sql` | crea el usuario PostgreSQL `produ` |
 | `db/permisos-usuario.sql` | otorga permisos sobre `public` |
 | `db/seed_sede_users.sql` | inserta usuarios base por sede |
 | `db/establecer-password.sql` | apoyo operativo para gestion de password |
+
+### Validacion en GitHub
+
+El repositorio incluye `.github/workflows/ci.yml`. En cada push o Pull Request contra `main` ejecuta:
+
+1. `npm ci`
+2. `npm run lint`
+3. `npm run typecheck`
+4. `npm test`
+5. `npm run build`
 
 ## 7. Riesgos abiertos y mantenimiento
 
@@ -332,7 +359,7 @@ Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy
 
 - No se encontro documentacion de despliegue.
 - No se encontro documentacion de backup, restore ni observabilidad.
-- No se encontro CI versionado ni checklist formal de release.
+- El CI versionado cubre lint, typecheck, test unitario y build; aun no existe checklist formal de release.
 - La ausencia de `middleware.ts` obliga a repetir validaciones en cliente y API.
 - Parte importante de la logica de negocio sigue concentrada en handlers grandes, especialmente `src/app/api/hourly-analysis/route.ts` y `src/app/api/productivity/route.ts`.
 
@@ -346,4 +373,4 @@ Actualizar `README.md` si cambia cualquiera de estos puntos:
 - se introduce una integracion externa
 - cambia la estrategia de cache, exportacion o despliegue
 
-Estado de referencia: documentacion consolidada contra el codigo versionado el **2026-04-21**.
+Estado de referencia: documentacion consolidada contra el codigo versionado el **2026-04-30**.
