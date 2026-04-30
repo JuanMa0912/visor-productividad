@@ -105,7 +105,7 @@ type RotationCategoriaBundle = {
   lineasN1PorCategoria: Record<string, string[]>;
 };
 
-type RotationFilterCatalog = {
+export type RotationFilterCatalog = {
   companies: string[];
   sedes: Array<{
     empresa: string;
@@ -312,7 +312,7 @@ const catalogSedeMatchesAllowedKeys = (
   return false;
 };
 
-const resolveVisibleSedes = (
+export const resolveVisibleSedes = (
   sessionUser: {
     role: "admin" | "user";
     sede: string | null;
@@ -744,7 +744,7 @@ const mapRotationCatalogRows = (
   };
 };
 
-const getRotationFilterCatalog = async (
+export const getRotationFilterCatalog = async (
   startDateCompact: string,
   endDateCompact: string,
 ): Promise<RotationFilterCatalog> => {

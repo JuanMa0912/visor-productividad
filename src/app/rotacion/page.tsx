@@ -47,7 +47,24 @@ import {
   canEditRotacionAbcdConfig,
 } from "@/lib/special-role-features";
 import { mapRawSedeToCanonical } from "@/lib/planilla-sede";
+import {
+  CERO_ROTACION_ESTADO_LABELS,
+  CERO_ROTACION_ESTADO_SORT_ORDER,
+  CERO_ROTACION_ESTADO_VALUES,
+  DEFAULT_CERO_ROTACION_ESTADO,
+  makeCeroRotacionEstadoKey,
+  type CeroRotacionEstado,
+} from "@/lib/rotacion-cero-estado";
 import { cn, formatDateLabel } from "@/lib/utils";
+
+const getCookieValue = (name: string) => {
+  if (typeof document === "undefined") return null;
+  const escaped = name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1");
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${escaped}=([^;]*)`),
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+};
 
 type DateRange = {
   start: string;
@@ -164,7 +181,7 @@ type AbcdConfig = {
   cUntilPercent: number;
 };
 type AbcdCategory = "A" | "B" | "C" | "D";
-type GroupAbcdFilter = "all" | AbcdCategory;
+type GroupAbcdFilter = "all" | AbcdCategory | "0" | "N";
 
 type RotationSortField =
   | "item"
@@ -180,7 +197,8 @@ type RotationSortField =
   | "salesEffectiveDays"
   | "lastMovementDate"
   | "lastPurchaseDate"
-  | "status";
+  | "status"
+  | "ceroRotacionEstado";
 
 type RotationSortDirection = "asc" | "desc";
 type PageSize = 25 | 50 | 100;
@@ -201,8 +219,21 @@ const ROTACION_TABLE_COL_WIDTHS = [
   "5%",
   "4%",
   "4%",
-  "9%",
-  "9%",
+  "8%",
+  "6%",
+  "8%",
+] as const;
+const ROTACION_ZERO_TABLE_COL_WIDTHS = [
+  "7%",
+  "4%",
+  "10%",
+  "22%",
+  "10%",
+  "10%",
+  "7%",
+  "7%",
+  "11%",
+  "8%",
 ] as const;
 const ROTACION_FLOATING_HEADER_TOP_PX = 0;
 const ROTACION_FLOATING_HEADER_COLUMNS = [
@@ -217,7 +248,24 @@ const ROTACION_FLOATING_HEADER_COLUMNS = [
   { label: "V. inv.", align: "right" as const, field: "inventoryValue" as const },
   { label: "DIC", align: "right" as const, field: "rotation" as const },
   { label: "DIE", align: "right" as const, field: "trackedDays" as const },
+  { label: "DUV", align: "right" as const, field: "lastPurchaseDate" as const },
   { label: "DVE", align: "right" as const, field: "salesEffectiveDays" as const },
+  { label: "Ult. venta", align: "right" as const, field: "lastPurchaseDate" as const },
+  { label: "Ult. ingr.", align: "right" as const, field: "lastMovementDate" as const },
+] as const;
+const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
+  { label: "Item", align: "left" as const, field: "item" as const },
+  { label: "Cat.", align: "center" as const },
+  {
+    label: "R.inventario",
+    align: "left" as const,
+    field: "ceroRotacionEstado" as const,
+  },
+  { label: "Descripcion", align: "left" as const, field: "descripcion" as const },
+  { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
+  { label: "V. inv.", align: "right" as const, field: "inventoryValue" as const },
+  { label: "DI", align: "right" as const, field: "lastMovementDate" as const },
+  { label: "DUV", align: "right" as const, field: "lastPurchaseDate" as const },
   { label: "Ult. venta", align: "right" as const, field: "lastPurchaseDate" as const },
   { label: "Ult. ingr.", align: "right" as const, field: "lastMovementDate" as const },
 ] as const;
@@ -592,6 +640,22 @@ const formatRotationOneDecimal = (value: number) => {
   });
 };
 
+const calculateDuvDays = (lastPurchaseDate: string | null) => {
+  if (!lastPurchaseDate) return null;
+  const today = parseDateKey(toDateKey(new Date()));
+  const sale = parseDateKey(lastPurchaseDate);
+  const diff = Math.floor((today.getTime() - sale.getTime()) / DAY_IN_MS);
+  return diff < 0 ? 0 : diff;
+};
+
+const calculateDiSinceLastIngresoDays = (lastMovementDate: string | null) => {
+  if (!lastMovementDate) return null;
+  const today = parseDateKey(toDateKey(new Date()));
+  const ingreso = parseDateKey(lastMovementDate);
+  const diff = Math.floor((today.getTime() - ingreso.getTime()) / DAY_IN_MS);
+  return diff < 0 ? 0 : diff;
+};
+
 const clampPercent = (value: number) =>
   Math.max(1, Math.min(100, Number.isFinite(value) ? value : 0));
 
@@ -804,7 +868,10 @@ const compareNullableIsoDateKeys = (
 const getDefaultSortDirection = (
   field: RotationSortField,
 ): RotationSortDirection =>
-  field === "item" || field === "descripcion" || field === "status"
+  field === "item" ||
+  field === "descripcion" ||
+  field === "status" ||
+  field === "ceroRotacionEstado"
     ? "asc"
     : "desc";
 
@@ -812,6 +879,7 @@ const sortRotationRows = (
   rows: RotationRow[],
   field: RotationSortField | null,
   direction: RotationSortDirection,
+  getCeroEstadoRank?: (row: RotationRow) => number,
 ) => {
   if (!field) return rows;
 
@@ -887,6 +955,11 @@ const sortRotationRows = (
       case "status":
         result =
           STATUS_SORT_ORDER[left.status] - STATUS_SORT_ORDER[right.status];
+        break;
+      case "ceroRotacionEstado":
+        result =
+          (getCeroEstadoRank?.(left) ?? 0) -
+          (getCeroEstadoRank?.(right) ?? 0);
         break;
       default:
         result = 0;
@@ -1000,15 +1073,32 @@ const buildConsolidatedRowsBySelection = (
 
 /** Filtros rápidos por bloque de sede (tabla). */
 type GroupRowsQuickFilter = "none" | "cero_rotacion" | "venta_hasta" | "both";
+type GroupZeroEstadoFilter = "all" | CeroRotacionEstado;
+
+const isCeroRotacionRow = (row: RotationRow) =>
+  row.totalUnits <= 0 && row.inventoryUnits > 0;
+
+const isNuevoItemRow = (row: RotationRow, maxDaysInInventory: number) =>
+  row.totalUnits <= 0 &&
+  row.inventoryUnits > 0 &&
+  row.trackedDays < maxDaysInInventory;
+
+const isCeroRotacionExcludingNuevo = (
+  row: RotationRow,
+  maxDaysInInventory: number,
+) => isCeroRotacionRow(row) && !isNuevoItemRow(row, maxDaysInInventory);
 
 const applyRowsQuickFilter = (
   rows: RotationRow[],
   filter: GroupRowsQuickFilter,
   ventaHastaMax: number | null,
+  maxDaysInInventory: number,
 ): RotationRow[] => {
   if (filter === "none") return rows;
   if (filter === "cero_rotacion") {
-    return rows.filter((row) => row.totalSales <= 0 && row.inventoryUnits > 0);
+    return rows.filter((row) =>
+      isCeroRotacionExcludingNuevo(row, maxDaysInInventory),
+    );
   }
   if (filter === "venta_hasta") {
     if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) return rows;
@@ -1018,12 +1108,15 @@ const applyRowsQuickFilter = (
   }
   if (filter === "both") {
     if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) {
-      return rows.filter(
-        (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+      return rows.filter((row) =>
+        isCeroRotacionExcludingNuevo(row, maxDaysInInventory),
       );
     }
     return rows.filter((row) => {
-      const isCeroRotacion = row.totalSales <= 0 && row.inventoryUnits > 0;
+      const isCeroRotacion = isCeroRotacionExcludingNuevo(
+        row,
+        maxDaysInInventory,
+      );
       const isVentaHasta =
         row.totalSales >= 1 && row.totalSales <= ventaHastaMax;
       return isCeroRotacion || isVentaHasta;
@@ -1316,6 +1409,9 @@ export default function RotacionPage() {
   const [rowsQuickFilterByGroup, setRowsQuickFilterByGroup] = useState<
     Record<string, GroupRowsQuickFilter>
   >({});
+  const [ceroEstadoFilterByGroup, setCeroEstadoFilterByGroup] = useState<
+    Record<string, GroupZeroEstadoFilter>
+  >({});
   /** Valor aplicado al pulsar «Venta ≤» (tope de venta periodo en COP). */
   const [ventaHastaCapByGroup, setVentaHastaCapByGroup] = useState<
     Record<string, number | undefined>
@@ -1330,6 +1426,9 @@ export default function RotacionPage() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
   const [productSearchInput, setProductSearchInput] = useState("");
+  const [ceroEstadoByKey, setCeroEstadoByKey] = useState<
+    Record<string, CeroRotacionEstado>
+  >({});
   const [isFamilyFilterOpen, setIsFamilyFilterOpen] = useState(false);
   const [floatingHeaderState, setFloatingHeaderState] = useState<{
     groupKey: string;
@@ -1956,6 +2055,105 @@ export default function RotacionPage() {
     [targetSedeSelections],
   );
 
+  const getCeroEstadoSortRank = useCallback(
+    (row: RotationRow) => {
+      const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+      const estado = ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+      return CERO_ROTACION_ESTADO_SORT_ORDER[estado];
+    },
+    [ceroEstadoByKey],
+  );
+
+  useEffect(() => {
+    if (!ready || !dateRange.start || !dateRange.end) return;
+    if (targetSedeSelections.length === 0) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams();
+    params.set("start", dateRange.start);
+    params.set("end", dateRange.end);
+    targetSedeSelections.forEach((s) => params.append("sedeScope", s.value));
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/rotacion/cero-estados?${params.toString()}`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          estados?: Record<string, CeroRotacionEstado>;
+        };
+        const next = data.estados ?? {};
+        setCeroEstadoByKey((prev) => ({ ...prev, ...next }));
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      }
+    })();
+    return () => controller.abort();
+  }, [
+    ready,
+    router,
+    dateRange.start,
+    dateRange.end,
+    targetSedeSelections,
+  ]);
+
+  const persistCeroRotacionEstado = useCallback(
+    async (row: RotationRow, estado: CeroRotacionEstado) => {
+      const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+      const rollback = ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+      setCeroEstadoByKey((prev) => ({ ...prev, [key]: estado }));
+      const csrf = getCookieValue("vp_csrf");
+      if (!csrf) {
+        setCeroEstadoByKey((prev) => ({ ...prev, [key]: rollback }));
+        setError("No se pudo validar la sesion. Recargue la pagina.");
+        return;
+      }
+      if (!dateRange.start || !dateRange.end) {
+        setCeroEstadoByKey((prev) => ({ ...prev, [key]: rollback }));
+        setError("Seleccione un rango de fechas antes de cambiar el estado.");
+        return;
+      }
+      try {
+        const res = await fetch("/api/rotacion/cero-estados", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrf,
+          },
+          body: JSON.stringify({
+            empresa: row.empresa,
+            sedeId: row.sedeId,
+            item: row.item,
+            estado,
+            start: dateRange.start,
+            end: dateRange.end,
+          }),
+        });
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(payload.error ?? "No se pudo guardar el estado.");
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setCeroEstadoByKey((prev) => ({ ...prev, [key]: rollback }));
+        setError(
+          err instanceof Error ? err.message : "Error guardando estado.",
+        );
+      }
+    },
+    [ceroEstadoByKey, dateRange.end, dateRange.start, router],
+  );
+
   const lineaN1FamilyKeySet = useMemo(
     () => new Set(lineaN1FamilyKeys),
     [lineaN1FamilyKeys],
@@ -2158,8 +2356,21 @@ export default function RotacionPage() {
   ]);
 
   const sortedRows = useMemo(
-    () => sortRotationRows(rows, tableSortField, tableSortDirection),
-    [rows, tableSortDirection, tableSortField],
+    () =>
+      sortRotationRows(
+        rows,
+        tableSortField,
+        tableSortDirection,
+        tableSortField === "ceroRotacionEstado"
+          ? getCeroEstadoSortRank
+          : undefined,
+      ),
+    [
+      rows,
+      tableSortDirection,
+      tableSortField,
+      getCeroEstadoSortRank,
+    ],
   );
   const rowsAfterProductFilter = useMemo(
     () =>
@@ -2443,16 +2654,27 @@ export default function RotacionPage() {
       rowsBySede.flatMap((group) => {
         const groupKey = `${group.empresa}-${group.sedeId}`;
         const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
+        const zeroEstadoFilter = ceroEstadoFilterByGroup[groupKey] ?? "all";
         const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
+        const maxDaysForNuevoItem = Math.min(31, Math.max(1, daysConsulted));
         const ventaHastaCap =
           rowFilter === "venta_hasta" || rowFilter === "both"
             ? (ventaHastaCapByGroup[groupKey] ?? null)
             : null;
-        const filteredRows = applyRowsQuickFilter(
+        const quickFilteredRows = applyRowsQuickFilter(
           group.rows,
           rowFilter,
           ventaHastaCap,
+          maxDaysForNuevoItem,
         );
+        const filteredRows =
+          rowFilter === "cero_rotacion" && zeroEstadoFilter !== "all"
+            ? quickFilteredRows.filter((row) => {
+                const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+                const estado = ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+                return estado === zeroEstadoFilter;
+              })
+            : quickFilteredRows;
         /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
         const sourceRowsForAbcd =
           baseRowsBySedeByKey.get(groupKey) ?? group.rows;
@@ -2463,9 +2685,17 @@ export default function RotacionPage() {
         const categoryFilteredRows =
           categoryFilter === "all"
             ? filteredRows
-            : filteredRows.filter(
-                (row) => categoryByItem.get(row.item) === categoryFilter,
-              );
+            : categoryFilter === "0"
+              ? filteredRows.filter((row) =>
+                  isCeroRotacionExcludingNuevo(row, maxDaysForNuevoItem),
+                )
+              : categoryFilter === "N"
+                ? filteredRows.filter((row) =>
+                    isNuevoItemRow(row, maxDaysForNuevoItem),
+                  )
+                : filteredRows.filter(
+                    (row) => categoryByItem.get(row.item) === categoryFilter,
+                  );
         return categoryFilteredRows.map((row) => ({
           empresa: formatCompanyLabel(row.empresa),
           sede: displayRotationSedeName(row.sedeName),
@@ -2495,6 +2725,9 @@ export default function RotacionPage() {
       abcdConfig,
       abcdFilterByGroup,
       baseRowsBySedeByKey,
+      ceroEstadoByKey,
+      ceroEstadoFilterByGroup,
+      daysConsulted,
       rowsBySede,
       rowsQuickFilterByGroup,
       ventaHastaCapByGroup,
@@ -3319,105 +3552,6 @@ export default function RotacionPage() {
               </Card>
             ) : (
               <>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleExportExcel}
-                    disabled={exportRows.length === 0 || isExportingExcel}
-                    className="h-9 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
-                  >
-                    {isExportingExcel ? "Exportando..." : "Descargar Excel"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleExportPdf}
-                    disabled={exportRows.length === 0 || isExportingPdf}
-                    className="h-9 rounded-lg border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
-                  >
-                    {isExportingPdf ? "Exportando..." : "Descargar PDF"}
-                  </Button>
-                  <details ref={whatsappDetailsRef} className="relative group">
-                    <summary
-                      className="flex h-9 list-none cursor-pointer items-center gap-2 rounded-lg border border-emerald-600 bg-[#25D366] px-3 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-[#20bd5a] [&::-webkit-details-marker]:hidden disabled:pointer-events-none disabled:opacity-50"
-                      aria-label="Enviar tabla por WhatsApp"
-                    >
-                      <WhatsAppLogo className="h-5 w-5 shrink-0 text-white" />
-                      <span className="hidden sm:inline">WhatsApp</span>
-                    </summary>
-                    <div
-                      className="absolute right-0 z-30 mt-1 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
-                      role="menu"
-                    >
-                      <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        Enviar tabla como
-                      </p>
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={
-                            exportRows.length === 0 || isWhatsAppSharing
-                          }
-                          className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                          onClick={() => void handleWhatsAppShare("png")}
-                        >
-                          Imagen PNG (sin pérdida)
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={
-                            exportRows.length === 0 || isWhatsAppSharing
-                          }
-                          className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                          onClick={() => void handleWhatsAppShare("jpeg")}
-                        >
-                          Imagen JPG (98% calidad)
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={
-                            exportRows.length === 0 || isWhatsAppSharing
-                          }
-                          className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                          onClick={() => void handleWhatsAppShare("pdf")}
-                        >
-                          PDF
-                        </button>
-                      </div>
-                      <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
-                        Imagen: solo la tabla (paginación por sede), captura
-                        ampliada y alta densidad de píxeles. JPG usa calidad
-                        98%; WhatsApp puede volver a comprimir al enviar — si no
-                        se lee bien, prueba PNG o PDF. PDF: todas las filas
-                        filtradas, igual que &quot;Descargar PDF&quot;.{" "}
-                        {typeof navigator !== "undefined" &&
-                        typeof navigator.share === "function"
-                          ? "Con compartir, elige WhatsApp si aparece."
-                          : "Se descarga el archivo y se intenta abrir WhatsApp Desktop; si no abre, se usa WhatsApp Web (adjunta el archivo con clip)."}
-                      </p>
-                    </div>
-                  </details>
-                  <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Filas por pagina
-                  </label>
-                  <select
-                    value={pageSize}
-                    onChange={(event) =>
-                      handlePageSizeChange(event.target.value)
-                    }
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
-                  >
-                    {PAGE_SIZE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </div>
                 <div
                   ref={rotacionTablesExportRef}
                   className="grid gap-5 bg-white p-2"
@@ -3426,16 +3560,36 @@ export default function RotacionPage() {
                     const groupKey = `${group.empresa}-${group.sedeId}`;
                     const rowFilter =
                       rowsQuickFilterByGroup[groupKey] ?? "none";
+                    const zeroEstadoFilter =
+                      ceroEstadoFilterByGroup[groupKey] ?? "all";
                     const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
+                    const maxDaysForNuevoItem = Math.min(
+                      31,
+                      Math.max(1, daysConsulted),
+                    );
                     const ventaHastaCap =
                       rowFilter === "venta_hasta" || rowFilter === "both"
                         ? (ventaHastaCapByGroup[groupKey] ?? null)
                         : null;
-                    const filteredRows = applyRowsQuickFilter(
+                    const isZeroRotationTableView = rowFilter === "cero_rotacion";
+                    const quickFilteredRows = applyRowsQuickFilter(
                       group.rows,
                       rowFilter,
                       ventaHastaCap,
+                      maxDaysForNuevoItem,
                     );
+                    const filteredRows =
+                      isZeroRotationTableView && zeroEstadoFilter !== "all"
+                        ? quickFilteredRows.filter((row) => {
+                            const key = makeCeroRotacionEstadoKey(
+                              row.sedeId,
+                              row.item,
+                            );
+                            const estado =
+                              ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+                            return estado === zeroEstadoFilter;
+                          })
+                        : quickFilteredRows;
                     /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
                     const sourceRowsForAbcd =
                       baseRowsBySedeByKey.get(groupKey) ?? group.rows;
@@ -3450,10 +3604,21 @@ export default function RotacionPage() {
                     const categoryFilteredRows =
                       categoryFilter === "all"
                         ? filteredRows
-                        : filteredRows.filter(
-                            (row) =>
-                              categoryByItem.get(row.item) === categoryFilter,
-                          );
+                        : categoryFilter === "0"
+                          ? filteredRows.filter((row) =>
+                              isCeroRotacionExcludingNuevo(
+                                row,
+                                maxDaysForNuevoItem,
+                              ),
+                            )
+                          : categoryFilter === "N"
+                            ? filteredRows.filter((row) =>
+                                isNuevoItemRow(row, maxDaysForNuevoItem),
+                              )
+                            : filteredRows.filter(
+                                (row) =>
+                                  categoryByItem.get(row.item) === categoryFilter,
+                              );
                     const infoTotalItems = filteredRows.length;
                     const infoTotalInv = filteredRows.reduce(
                       (acc, row) => acc + row.inventoryValue,
@@ -3543,9 +3708,15 @@ export default function RotacionPage() {
                         : 0;
                     const selectedCategoryLabel =
                       categoryFilter === "all" ? null : categoryFilter;
+                    const nuevoItemsCount = group.rows.filter((row) =>
+                      isNuevoItemRow(row, maxDaysForNuevoItem),
+                    ).length;
                     const categoryFilteredCeroRotacionCount =
-                      categoryFilteredRows.filter(
-                        (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+                      categoryFilteredRows.filter((row) =>
+                        isCeroRotacionExcludingNuevo(
+                          row,
+                          maxDaysForNuevoItem,
+                        ),
                       ).length;
                     const ventaHastaInput =
                       ventaHastaInputByGroup[groupKey] ?? "";
@@ -3568,7 +3739,11 @@ export default function RotacionPage() {
                                   row.totalSales <= ventaHastaParsedPreview;
                           }).length;
                     const ceroRotacionCount = group.rows.filter(
-                      (row) => row.totalSales <= 0 && row.inventoryUnits > 0,
+                      (row) =>
+                        isCeroRotacionExcludingNuevo(
+                          row,
+                          maxDaysForNuevoItem,
+                        ),
                     ).length;
                     const totalPages = Math.max(
                       1,
@@ -3752,6 +3927,62 @@ export default function RotacionPage() {
                                     D: {abcdCounts.D.toLocaleString("es-CO")}
                                   </Button>
                                   </div>
+                                  <div className="flex flex-col items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-slate-500">
+                                    cero
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    title="Sin ventas en el periodo y con inventario."
+                                    onClick={() => {
+                                      setAbcdFilterByGroup((prev) => ({
+                                        ...prev,
+                                        [groupKey]:
+                                          categoryFilter === "0" ? "all" : "0",
+                                      }));
+                                      setPageByGroupKey((prev) => ({
+                                        ...prev,
+                                        [groupKey]: 1,
+                                      }));
+                                    }}
+                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      categoryFilter === "0"
+                                        ? "border-slate-700 bg-slate-600 text-white shadow-md ring-2 ring-slate-200"
+                                        : "border-slate-300 bg-slate-100 text-slate-900"
+                                    }`}
+                                  >
+                                    0 Cero: {ceroRotacionCount.toLocaleString("es-CO")}
+                                  </Button>
+                                  </div>
+                                  <div className="flex flex-col items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-cyan-600">
+                                    nuevos
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    title={`Sin ventas, con inventario y con menos de ${maxDaysForNuevoItem} dias de inventario efectivo.`}
+                                    onClick={() => {
+                                      setAbcdFilterByGroup((prev) => ({
+                                        ...prev,
+                                        [groupKey]:
+                                          categoryFilter === "N" ? "all" : "N",
+                                      }));
+                                      setPageByGroupKey((prev) => ({
+                                        ...prev,
+                                        [groupKey]: 1,
+                                      }));
+                                    }}
+                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      categoryFilter === "N"
+                                        ? "border-cyan-700 bg-cyan-600 text-white shadow-md ring-2 ring-cyan-200"
+                                        : "border-cyan-300 bg-cyan-100 text-cyan-900"
+                                    }`}
+                                  >
+                                    N Nuevo: {nuevoItemsCount.toLocaleString("es-CO")}
+                                  </Button>
+                                  </div>
                                 </div>
                                 {rowFilter === "none" ? (
                                   <div className="ml-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
@@ -3923,6 +4154,40 @@ export default function RotacionPage() {
                                       : categoryFilteredCeroRotacionCount}
                                     )
                                   </Button>
+                                  {isZeroRotationTableView ? (
+                                    <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
+                                      <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                                        R.inventario
+                                      </span>
+                                      <select
+                                        value={zeroEstadoFilter}
+                                        onChange={(event) => {
+                                          const next = event.target
+                                            .value as GroupZeroEstadoFilter;
+                                          setCeroEstadoFilterByGroup((prev) => ({
+                                            ...prev,
+                                            [groupKey]: next,
+                                          }));
+                                          setPageByGroupKey((prev) => ({
+                                            ...prev,
+                                            [groupKey]: 1,
+                                          }));
+                                        }}
+                                        className="h-7 rounded-full border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 outline-none transition focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                                      >
+                                        <option value="all">Todos</option>
+                                        <option value="sin_verificar">
+                                          Sin verificar
+                                        </option>
+                                        <option value="seguimiento">
+                                          Seguimiento
+                                        </option>
+                                        <option value="surtido">
+                                          Surtido
+                                        </option>
+                                      </select>
+                                    </label>
+                                  ) : null}
                                   <label className="order-last mt-1 flex basis-full flex-col gap-1">
                                     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                                       Buscar producto
@@ -4053,7 +4318,104 @@ export default function RotacionPage() {
                             </span>{" "}
                             items
                           </span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              Filas por pagina
+                            </label>
+                            <select
+                              value={pageSize}
+                              onChange={(event) =>
+                                handlePageSizeChange(event.target.value)
+                              }
+                              className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 outline-none transition-all focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
+                            >
+                              {PAGE_SIZE_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleExportExcel}
+                              disabled={exportRows.length === 0 || isExportingExcel}
+                              className="h-8 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              {isExportingExcel ? "Exportando..." : "Descargar Excel"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleExportPdf}
+                              disabled={exportRows.length === 0 || isExportingPdf}
+                              className="h-8 rounded-lg border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
+                            >
+                              {isExportingPdf ? "Exportando..." : "Descargar PDF"}
+                            </Button>
+                            <details ref={whatsappDetailsRef} className="relative group">
+                              <summary
+                                className="flex h-8 list-none cursor-pointer items-center gap-2 rounded-lg border border-emerald-600 bg-[#25D366] px-3 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-[#20bd5a] [&::-webkit-details-marker]:hidden disabled:pointer-events-none disabled:opacity-50"
+                                aria-label="Enviar tabla por WhatsApp"
+                              >
+                                <WhatsAppLogo className="h-5 w-5 shrink-0 text-white" />
+                                <span className="hidden sm:inline">WhatsApp</span>
+                              </summary>
+                              <div
+                                className="absolute right-0 z-30 mt-1 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
+                                role="menu"
+                              >
+                                <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                  Enviar tabla como
+                                </p>
+                                <div className="flex flex-col gap-1">
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={
+                                      exportRows.length === 0 || isWhatsAppSharing
+                                    }
+                                    className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                                    onClick={() => void handleWhatsAppShare("png")}
+                                  >
+                                    Imagen PNG (sin pérdida)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={
+                                      exportRows.length === 0 || isWhatsAppSharing
+                                    }
+                                    className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                                    onClick={() => void handleWhatsAppShare("jpeg")}
+                                  >
+                                    Imagen JPG (98% calidad)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={
+                                      exportRows.length === 0 || isWhatsAppSharing
+                                    }
+                                    className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
+                                    onClick={() => void handleWhatsAppShare("pdf")}
+                                  >
+                                    PDF
+                                  </button>
+                                </div>
+                                <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
+                                  Imagen: solo la tabla (paginación por sede), captura
+                                  ampliada y alta densidad de píxeles. JPG usa calidad
+                                  98%; WhatsApp puede volver a comprimir al enviar — si no
+                                  se lee bien, prueba PNG o PDF. PDF: todas las filas
+                                  filtradas, igual que &quot;Descargar PDF&quot;.{" "}
+                                  {typeof navigator !== "undefined" &&
+                                  typeof navigator.share === "function"
+                                    ? "Con compartir, elige WhatsApp si aparece."
+                                    : "Se descarga el archivo y se intenta abrir WhatsApp Desktop; si no abre, se usa WhatsApp Web (adjunta el archivo con clip)."}
+                                </p>
+                              </div>
+                            </details>
                             <Button
                               type="button"
                               variant="outline"
@@ -4096,12 +4458,110 @@ export default function RotacionPage() {
                             className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm"
                           >
                             <colgroup>
-                              {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
+                              {(isZeroRotationTableView
+                                ? ROTACION_ZERO_TABLE_COL_WIDTHS
+                                : ROTACION_TABLE_COL_WIDTHS
+                              ).map((w, i) => (
                                 <col key={i} style={{ width: w }} />
                               ))}
                             </colgroup>
                             <TableHeader>
                               <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
+                                {isZeroRotationTableView ? (
+                                  <>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="item"
+                                        label="Item"
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                                      Cat.
+                                    </TableHead>
+                                    <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="ceroRotacionEstado"
+                                        label="R.inventario"
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="descripcion"
+                                        label="Descripcion"
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="inventoryUnits"
+                                        align="right"
+                                        label="Inv."
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="inventoryValue"
+                                        align="right"
+                                        label="V. inv."
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="lastMovementDate"
+                                        align="right"
+                                        label="DI"
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="lastPurchaseDate"
+                                        align="right"
+                                        label="DUV"
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="lastPurchaseDate"
+                                        align="right"
+                                        label="Ult. venta"
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                      <SortableRotationHeader
+                                        field="lastMovementDate"
+                                        align="right"
+                                        label="Ult. ingr."
+                                        activeField={tableSortField}
+                                        direction={tableSortDirection}
+                                        onSort={handleTableSort}
+                                      />
+                                    </TableHead>
+                                  </>
+                                ) : (
+                                  <>
                                 <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                                   <SortableRotationHeader
                                     field="item"
@@ -4244,6 +4704,16 @@ export default function RotacionPage() {
                                 </TableHead>
                                 <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
                                   <SortableRotationHeader
+                                    field="lastPurchaseDate"
+                                    align="right"
+                                    label="DUV"
+                                    activeField={tableSortField}
+                                    direction={tableSortDirection}
+                                    onSort={handleTableSort}
+                                  />
+                                </TableHead>
+                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                  <SortableRotationHeader
                                     field="lastMovementDate"
                                     align="right"
                                     label={
@@ -4256,11 +4726,127 @@ export default function RotacionPage() {
                                     onSort={handleTableSort}
                                   />
                                 </TableHead>
+                                  </>
+                                )}
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {paginatedRows.map((row) => (
+                              {paginatedRows.map((row) => {
+                                const duvDays = calculateDuvDays(
+                                  row.lastPurchaseDate,
+                                );
+                                const diSinceIngresoDays =
+                                  calculateDiSinceLastIngresoDays(
+                                    row.lastMovementDate,
+                                  );
+                                return (
                                 <TableRow key={`${group.sedeId}-${row.item}`}>
+                                  {isZeroRotationTableView ? (
+                                    <>
+                                      <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
+                                        <span className="text-xs">{row.item}</span>
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
+                                        {(() => {
+                                          const category =
+                                            categoryByItem.get(row.item) ?? "D";
+                                          const colorClass =
+                                            category === "A"
+                                              ? "border-emerald-300 bg-emerald-200 text-emerald-900"
+                                              : category === "B"
+                                                ? "border-amber-300 bg-amber-200 text-amber-900"
+                                                : category === "C"
+                                                  ? "border-orange-300 bg-orange-200 text-orange-900"
+                                                  : "border-rose-300 bg-rose-200 text-rose-900";
+                                          return (
+                                            <Badge
+                                              className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
+                                            >
+                                              {category}
+                                            </Badge>
+                                          );
+                                        })()}
+                                      </TableCell>
+                                      <TableCell className="min-w-0 px-1 py-2 align-top">
+                                        <select
+                                          className="max-w-44 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-left text-xs text-slate-800 shadow-sm"
+                                          value={
+                                            ceroEstadoByKey[
+                                              makeCeroRotacionEstadoKey(
+                                                row.sedeId,
+                                                row.item,
+                                              )
+                                            ] ?? DEFAULT_CERO_ROTACION_ESTADO
+                                          }
+                                          onChange={(e) => {
+                                            void persistCeroRotacionEstado(
+                                              row,
+                                              e.target
+                                                .value as CeroRotacionEstado,
+                                            );
+                                          }}
+                                        >
+                                          {CERO_ROTACION_ESTADO_VALUES.map(
+                                            (v) => (
+                                              <option key={v} value={v}>
+                                                {CERO_ROTACION_ESTADO_LABELS[v]}
+                                              </option>
+                                            ),
+                                          )}
+                                        </select>
+                                      </TableCell>
+                                      <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
+                                        <div className="wrap-break-word">
+                                          <p className="text-[13px] font-medium leading-snug text-slate-900">
+                                            {row.descripcion}
+                                          </p>
+                                          <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                                            Linea {row.linea}
+                                            {row.lineaN1Codigo
+                                              ? ` | N1 ${row.lineaN1Codigo}`
+                                              : ""}
+                                            {row.unidad ? ` | ${row.unidad}` : ""}
+                                          </p>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
+                                        {row.inventoryUnits.toLocaleString("es-CO")}{" "}
+                                        {row.unidad ?? ""}
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                        {formatPrice(row.inventoryValue)}
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
+                                        {diSinceIngresoDays == null
+                                          ? "Sin fecha"
+                                          : diSinceIngresoDays.toLocaleString(
+                                              "es-CO",
+                                            )}
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
+                                        {duvDays == null
+                                          ? "Sin fecha"
+                                          : `${duvDays.toLocaleString("es-CO")} dias`}
+                                      </TableCell>
+                                      <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                        {row.lastPurchaseDate
+                                          ? formatDateLabel(
+                                              row.lastPurchaseDate,
+                                              dateLabelOptions,
+                                            )
+                                          : "Sin fecha de venta"}
+                                      </TableCell>
+                                      <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                        {row.lastMovementDate
+                                          ? formatDateLabel(
+                                              row.lastMovementDate,
+                                              dateLabelOptions,
+                                            )
+                                          : "Sin fecha de ingreso"}
+                                      </TableCell>
+                                    </>
+                                  ) : (
+                                    <>
                                   <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
                                     <span className="text-xs">{row.item}</span>
                                   </TableCell>
@@ -4329,6 +4915,11 @@ export default function RotacionPage() {
                                   <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
                                     {row.trackedDays.toLocaleString("es-CO")}
                                   </TableCell>
+                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
+                                    {duvDays == null
+                                      ? "Sin fecha"
+                                      : `${duvDays.toLocaleString("es-CO")} dias`}
+                                  </TableCell>
                                   <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
                                     {row.salesEffectiveDays.toLocaleString("es-CO")}
                                   </TableCell>
@@ -4348,8 +4939,11 @@ export default function RotacionPage() {
                                         )
                                       : "Sin fecha de ingreso"}
                                   </TableCell>
+                                    </>
+                                  )}
                                 </TableRow>
-                              ))}
+                              );
+                              })}
                             </TableBody>
                             </Table>
                           </div>
@@ -4364,7 +4958,20 @@ export default function RotacionPage() {
         )}
       </div>
 
-      {floatingHeaderState ? (
+      {(() => {
+        const floatingRowFilter = floatingHeaderState
+          ? (rowsQuickFilterByGroup[floatingHeaderState.groupKey] ?? "none")
+          : "none";
+        const floatingIsZeroRotationTableView =
+          floatingRowFilter === "cero_rotacion";
+        const floatingWidths = floatingIsZeroRotationTableView
+          ? ROTACION_ZERO_TABLE_COL_WIDTHS
+          : ROTACION_TABLE_COL_WIDTHS;
+        const floatingColumns = floatingIsZeroRotationTableView
+          ? ROTACION_FLOATING_HEADER_COLUMNS_ZERO
+          : ROTACION_FLOATING_HEADER_COLUMNS;
+
+        return floatingHeaderState ? (
         <div
           className="fixed z-40"
           style={{
@@ -4381,13 +4988,13 @@ export default function RotacionPage() {
             >
               <table className="w-full min-w-7xl table-fixed border-collapse text-sm">
                 <colgroup>
-                  {ROTACION_TABLE_COL_WIDTHS.map((w, i) => (
+                  {floatingWidths.map((w, i) => (
                     <col key={`floating-col-${i}`} style={{ width: w }} />
                   ))}
                 </colgroup>
                 <thead>
                   <tr className="bg-slate-50/95">
-                    {ROTACION_FLOATING_HEADER_COLUMNS.map((col, i) => (
+                    {floatingColumns.map((col, i) => (
                       <th
                         key={`floating-header-${i}`}
                         className={cn(
@@ -4419,7 +5026,8 @@ export default function RotacionPage() {
             </div>
           </div>
         </div>
-      ) : null}
+        ) : null;
+      })()}
 
       {isAbcdModalOpen && canEditAbcdConfig ? (
         <div
