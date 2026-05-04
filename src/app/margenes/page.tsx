@@ -19,13 +19,13 @@ import {
   SEDE_ORDER,
   DEFAULT_LINES,
   Sede,
-} from "@/lib/constants";
-import { normalizeKeyCompact } from "@/lib/normalize";
-import { formatCOP } from "@/lib/calc";
+} from "@/lib/shared/constants";
+import { normalizeKeyCompact } from "@/lib/shared/normalize";
+import { formatCOP } from "@/lib/shared/calc";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 type DateRange = {
   start: string;

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 
 type DayKey =
   | "domingo"

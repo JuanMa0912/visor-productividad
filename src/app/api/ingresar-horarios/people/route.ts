@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { applySessionCookies, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 

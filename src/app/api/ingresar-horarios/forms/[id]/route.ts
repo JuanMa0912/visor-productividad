@@ -10,12 +10,12 @@ import {
   getPopulatedHorarioRows,
   insertHorarioPlanillaDetalles,
   validateHorarioPlanillaPayload,
-} from "@/lib/horario-planilla-persist";
+} from "@/lib/horarios/planilla-persist";
 import {
   isPlanillaSedeAllowedForUser,
   toCanonicalPlanillaSede,
-} from "@/lib/planilla-sede";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+} from "@/lib/horarios/planilla-sede";
+import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 
 type Params = {
   params: Promise<{ id: string }>;

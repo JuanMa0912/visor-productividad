@@ -4,8 +4,8 @@ import { getDbPool, withPoolClient } from "@/lib/db";
 import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
-} from "@/lib/rotacion-base-fields";
-import { normalizeRotationCategoriaKey } from "@/lib/rotacion-dimensions";
+} from "@/lib/rotacion/base-fields";
+import { normalizeRotationCategoriaKey } from "@/lib/rotacion/dimensions";
 
 /** Unifica codigos N1 para filtros (BD a veces devuelve "1" en vez de "01"). */
 const normalizeRotationLineaN1Code = (raw: string | null | undefined): string => {
@@ -18,11 +18,11 @@ const normalizeRotationLineaN1Code = (raw: string | null | undefined): string =>
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   canAccessRotacionBoard,
   canEditRotacionAbcdConfig,
-} from "@/lib/special-role-features";
+} from "@/lib/shared/special-role-features";
 
 type AvailableBoundsRow = {
   min_date: string | null;

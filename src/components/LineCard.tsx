@@ -1,4 +1,4 @@
-﻿import { formatCOP, formatHours, hasLaborDataForLine } from "@/lib/calc";
+﻿import { formatCOP, formatHours, hasLaborDataForLine } from "@/lib/shared/calc";
 import { LineMetrics } from "@/types";
 
 interface LineCardProps {

@@ -14,7 +14,7 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 const VENTA_MODULES: HubModuleItem[] = [
   {

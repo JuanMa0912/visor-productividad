@@ -4,7 +4,7 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 type AlexRow = {
   sede: string;

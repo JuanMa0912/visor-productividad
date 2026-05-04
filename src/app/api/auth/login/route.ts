@@ -10,7 +10,7 @@ import { getDbPool } from "@/lib/db";
 import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 const FAILED_LOGIN_WINDOW_MS = 15 * 60_000;
 const FAILED_LOGIN_MAX_PER_IP = 10;

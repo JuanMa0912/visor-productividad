@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
-import type { Sede } from "@/lib/constants";
+import type { Sede } from "@/lib/shared/constants";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
-import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
-import { normalizeKeySpaced } from "@/lib/normalize";
+} from "@/lib/shared/portal-sections";
+import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
+import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import {
   buildComparisonLookupKey,
   mergePlanillaWithAttendance,
   type AttendanceCompareInput,
   type PlanillaCompareInput,
-} from "@/lib/horarios-comparar-utils";
+} from "@/lib/horarios/comparar-utils";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const MAX_RANGE_DAYS = 45;

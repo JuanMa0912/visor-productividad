@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
-import { normalizeKeySpaced } from "@/lib/normalize";
-import type { Sede } from "@/lib/constants";
-import { mapRawSedeToCanonical } from "@/lib/planilla-sede";
+import { normalizeKeySpaced } from "@/lib/shared/normalize";
+import type { Sede } from "@/lib/shared/constants";
+import { mapRawSedeToCanonical } from "@/lib/horarios/planilla-sede";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";

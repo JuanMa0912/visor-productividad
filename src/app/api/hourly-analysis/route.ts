@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import type { PoolClient } from "pg";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
-import { isHorariosOcultarCedula } from "@/lib/horarios-ocultar-cedulas";
+import { isHorariosOcultarCedula } from "@/lib/horarios/ocultar-cedulas";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import type {
   HourlyAnalysisData,
   HourlyLineSales,

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { DailyProductivity } from "@/types";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, testDbConnection } from "@/lib/db";
-import { canAccessPortalSection } from "@/lib/portal-sections";
-import { normalizeKeyCompact } from "@/lib/normalize";
+import { canAccessPortalSection } from "@/lib/shared/portal-sections";
+import { normalizeKeyCompact } from "@/lib/shared/normalize";
 import { promises as fs } from "fs";
 import path from "path";
 

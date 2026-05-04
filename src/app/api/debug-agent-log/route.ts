@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { appendAgentDebugLog, AGENT_DEBUG_LOG_PATH } from "@/lib/agent-debug-log";
+import { appendAgentDebugLog, AGENT_DEBUG_LOG_PATH } from "@/lib/shared/agent-debug-log";
 import { promises as fs } from "fs";
 
 /**

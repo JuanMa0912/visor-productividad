@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/shared/utils";
 
 type TableProps = React.ComponentProps<"table"> & {
   /** Classes for the scroll wrapper around `<table>` (e.g. capture hooks, overscroll). */

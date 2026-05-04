@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
-import { canAccessPortalSection } from "@/lib/portal-sections";
+import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 import {
   buildDateNotFoundError,
   getVentasXItemDateAvailability,
   validateVentasXItemDateRange,
-} from "@/lib/ventas-x-item-date-range";
-import { normalizeEmpresa, normalizeIdCo } from "@/lib/ventas-x-item";
+} from "@/lib/ventas/x-item-date-range";
+import { normalizeEmpresa, normalizeIdCo } from "@/lib/ventas/x-item";
 
 type VentasXItemDbRow = {
   empresa: string | null;

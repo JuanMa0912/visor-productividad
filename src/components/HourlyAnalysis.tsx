@@ -21,10 +21,10 @@ import {
   TrendingDown,
   ArrowUp,
 } from "lucide-react";
-import { cn, formatDateLabel } from "@/lib/utils";
-import { escapeCsvValue, sanitizeExportText } from "@/lib/export-utils";
-import { DEFAULT_LINES } from "@/lib/constants";
-import type { Sede } from "@/lib/constants";
+import { cn, formatDateLabel } from "@/lib/shared/utils";
+import { escapeCsvValue, sanitizeExportText } from "@/lib/shared/export-utils";
+import { DEFAULT_LINES } from "@/lib/shared/constants";
+import type { Sede } from "@/lib/shared/constants";
 import type { HourlyAnalysisData } from "@/types";
 
 type HourlyAnalysisDashboardContext = "productividad" | "jornada-extendida";

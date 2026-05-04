@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 export type AuthUser = {
   id: string;

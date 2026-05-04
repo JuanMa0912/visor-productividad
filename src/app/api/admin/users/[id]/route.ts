@@ -6,14 +6,14 @@ import {
   requireAdminSession,
   verifyCsrf,
 } from "@/lib/auth";
-import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/constants";
+import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
 import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
   resolvePortalSectionId,
   resolvePortalSubsectionId,
-} from "@/lib/portal-sections";
-import { checkRateLimit } from "@/lib/rate-limit";
+} from "@/lib/shared/portal-sections";
+import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 type Params = { params: Promise<{ id: string }> };
 const ALL_SEDES_VALUE = "Todas";

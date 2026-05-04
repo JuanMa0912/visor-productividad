@@ -8,7 +8,7 @@ import { PortalBrandingHeader } from "@/components/portal/portal-branding-header
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 export default function AnalisisDeInventarioPage() {
   const router = useRouter();

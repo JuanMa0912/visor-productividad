@@ -5,7 +5,7 @@ import {
   requireAdminSession,
   verifyCsrf,
 } from "@/lib/auth";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 export async function GET(req: Request) {
   const session = await requireAdminSession();

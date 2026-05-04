@@ -1,5 +1,5 @@
-import { normalizePersonNameKey } from "@/lib/normalize";
-import { scheduleTimeToPostgresParam } from "@/lib/schedule-time";
+import { normalizePersonNameKey } from "@/lib/shared/normalize";
+import { scheduleTimeToPostgresParam } from "@/lib/horarios/schedule-time";
 
 export type HorarioDayKey =
   | "domingo"

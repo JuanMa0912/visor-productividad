@@ -8,15 +8,15 @@ import {
   INVENTARIO_X_ITEM_SOURCE_TABLE,
   parseInventarioLineKey,
   type InventarioSubcategoryKey,
-} from "@/lib/inventario-x-item";
+} from "@/lib/inventario/x-item";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
-} from "@/lib/rotacion-base-fields";
+} from "@/lib/rotacion/base-fields";
 
 type DateRangeRow = {
   min_date: string | null;

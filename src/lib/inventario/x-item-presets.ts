@@ -1,4 +1,4 @@
-import { INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS } from "@/lib/inventario-x-item";
+import { INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS } from "@/lib/inventario/x-item";
 
 export const MAX_ITEM_PRESETS = 25;
 

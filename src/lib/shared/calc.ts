@@ -1,4 +1,4 @@
-﻿import { LineMetrics } from "../types";
+﻿import { LineMetrics } from "../../types";
 
 // Líneas que NO tienen datos de horas en asistencia_horas
 // Todas las líneas principales ahora tienen datos de horas

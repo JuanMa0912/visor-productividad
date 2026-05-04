@@ -1,4 +1,4 @@
-import { normalizeKeySpaced, normalizePersonNameKey } from "@/lib/normalize";
+import { normalizeKeySpaced, normalizePersonNameKey } from "@/lib/shared/normalize";
 
 export type PlanillaCompareInput = {
   planillaId: number;

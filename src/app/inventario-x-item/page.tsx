@@ -32,17 +32,17 @@ import {
   compareInventarioMatrixSedeRows,
   stripInventarioSedeDisplayPrefix,
   type InventarioSubcategoryKey,
-} from "@/lib/inventario-x-item";
+} from "@/lib/inventario/x-item";
 import {
   MAX_ITEM_PRESETS,
   normalizeItemPresetsFromUnknown,
   type ItemPreset,
-} from "@/lib/inventario-x-item-presets";
+} from "@/lib/inventario/x-item-presets";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
-import { formatDateLabel } from "@/lib/utils";
+} from "@/lib/shared/portal-sections";
+import { formatDateLabel } from "@/lib/shared/utils";
 
 type InventarioSummaryRow = {
   lineKey: string;
@@ -634,55 +634,6 @@ export default function InventarioXItemPage() {
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const matrixImageRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-          };
-        };
-        const isAdmin = payload.user?.role === "admin";
-        if (
-          !isAdmin &&
-          (!canAccessPortalSection(payload.user?.allowedDashboards, "venta") ||
-            !canAccessPortalSubsection(
-              payload.user?.allowedSubdashboards,
-              "inventario-x-item",
-            ))
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-
-        if (isMounted) setReady(true);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
-
-    void loadUser();
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
-
   const persistItemPresetsRemote = useCallback(
     async (presets: ItemPreset[]): Promise<boolean> => {
       const csrf = getCookieValue("vp_csrf");
@@ -693,6 +644,7 @@ export default function InventarioXItemPage() {
       try {
         const res = await fetch("/api/inventario-x-item/presets", {
           method: "PUT",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
             "x-csrf-token": csrf,
@@ -718,47 +670,109 @@ export default function InventarioXItemPage() {
     [router],
   );
 
-  const loadItemPresetsFromServer = useCallback(async () => {
-    try {
-      const res = await fetch("/api/inventario-x-item/presets", { cache: "no-store" });
-      if (res.status === 401) {
-        router.replace("/login");
-        setItemPresets([]);
-        return;
-      }
-      if (!res.ok) {
-        setItemPresets([]);
-        return;
-      }
-      const data = (await res.json()) as { presets?: unknown };
-      let presets = normalizeItemPresetsFromUnknown(data.presets);
-      if (presets.length === 0 && typeof window !== "undefined") {
-        try {
-          const raw = window.localStorage.getItem(ITEM_PRESETS_STORAGE_KEY);
-          if (raw) {
-            const local = normalizeItemPresetsFromUnknown(JSON.parse(raw) as unknown);
-            if (local.length > 0) {
-              const migrated = await persistItemPresetsRemote(local);
-              if (migrated) {
-                window.localStorage.removeItem(ITEM_PRESETS_STORAGE_KEY);
-                presets = local;
+  const loadItemPresetsFromServer = useCallback(
+    async (signal?: AbortSignal): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/inventario-x-item/presets", {
+          cache: "no-store",
+          credentials: "include",
+          signal,
+        });
+        if (res.status === 401) {
+          router.replace("/login");
+          setItemPresets([]);
+          return false;
+        }
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          setError(
+            data.error ?? "No se pudieron cargar los presets. Intenta recargar.",
+          );
+          return true;
+        }
+        setError(null);
+        const data = (await res.json()) as { presets?: unknown };
+        let presets = normalizeItemPresetsFromUnknown(data.presets);
+        if (presets.length === 0 && typeof window !== "undefined") {
+          try {
+            const raw = window.localStorage.getItem(ITEM_PRESETS_STORAGE_KEY);
+            if (raw) {
+              const local = normalizeItemPresetsFromUnknown(JSON.parse(raw) as unknown);
+              if (local.length > 0) {
+                const migrated = await persistItemPresetsRemote(local);
+                if (migrated) {
+                  window.localStorage.removeItem(ITEM_PRESETS_STORAGE_KEY);
+                  presets = local;
+                }
               }
             }
+          } catch {
+            /* ignorar migracion */
           }
-        } catch {
-          /* ignorar migracion */
         }
+        setItemPresets(presets);
+        return true;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return false;
+        setError("No se pudieron cargar los presets. Verifica tu conexion.");
+        return true;
       }
-      setItemPresets(presets);
-    } catch {
-      setItemPresets([]);
-    }
-  }, [router, persistItemPresetsRemote]);
+    },
+    [router, persistItemPresetsRemote],
+  );
 
   useEffect(() => {
-    if (!ready) return;
-    void loadItemPresetsFromServer();
-  }, [ready, loadItemPresetsFromServer]);
+    let isMounted = true;
+    const controller = new AbortController();
+
+    const loadUserAndPresets = async () => {
+      try {
+        const response = await fetch("/api/auth/me", {
+          signal: controller.signal,
+          credentials: "include",
+        });
+
+        if (response.status === 401) {
+          if (isMounted) router.replace("/login");
+          return;
+        }
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as {
+          user?: {
+            role?: string;
+            allowedDashboards?: string[] | null;
+            allowedSubdashboards?: string[] | null;
+          };
+        };
+        const isAdmin = payload.user?.role === "admin";
+        if (
+          !isAdmin &&
+          (!canAccessPortalSection(payload.user?.allowedDashboards, "venta") ||
+            !canAccessPortalSubsection(
+              payload.user?.allowedSubdashboards,
+              "inventario-x-item",
+            ))
+        ) {
+          if (isMounted) router.replace("/secciones");
+          return;
+        }
+
+        if (!isMounted) return;
+        const presetsLoaded = await loadItemPresetsFromServer(controller.signal);
+        if (!isMounted || !presetsLoaded) return;
+        setReady(true);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      }
+    };
+
+    void loadUserAndPresets();
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [router, loadItemPresetsFromServer]);
 
   const resetScopedData = useCallback(() => {
     setRows([]);
@@ -1790,16 +1804,34 @@ export default function InventarioXItemPage() {
         ],
       ];
 
+      /** Ancho fijo por columna de item (solo números en cuerpo): evita que "auto" estire al ancho de página. */
+      const pdfSedeColMm = 40;
+      const pdfItemColMm = 16;
+      const pdfColumnStyles: Record<
+        number,
+        { cellWidth: number; halign?: "left" | "center" | "right"; fontStyle?: "bold" }
+      > = {
+        0: {
+          cellWidth: pdfSedeColMm,
+          halign: "left",
+          fontStyle: "bold",
+        },
+      };
+      for (let i = 0; i < summaryRows.length; i++) {
+        pdfColumnStyles[i + 1] = { cellWidth: pdfItemColMm };
+      }
+
       autoTable(doc, {
         startY: 50,
         head,
         body,
         foot,
         theme: "grid",
+        tableWidth: "wrap",
         margin: { left: 10, right: 10, top: 10, bottom: 12 },
         styles: {
           fontSize: 7,
-          cellPadding: 2,
+          cellPadding: 1.5,
           lineColor: [203, 213, 225],
           lineWidth: 0.1,
           valign: "middle",
@@ -1813,21 +1845,25 @@ export default function InventarioXItemPage() {
         },
         bodyStyles: {
           textColor: [51, 65, 85],
+          halign: "right",
         },
         footStyles: {
           fillColor: [254, 249, 195],
           textColor: [15, 23, 42],
           fontStyle: "bold",
+          halign: "right",
         },
         alternateRowStyles: {
           fillColor: [248, 250, 252],
         },
-        columnStyles: {
-          0: {
-            cellWidth: 58,
-            halign: "left",
-            fontStyle: "bold",
-          },
+        columnStyles: pdfColumnStyles,
+        didParseCell: (data) => {
+          if (data.section === "head" && data.column.index === 0) {
+            data.cell.styles.halign = "left";
+          }
+          if (data.section === "foot" && data.column.index === 0) {
+            data.cell.styles.halign = "left";
+          }
         },
         horizontalPageBreak: true,
         horizontalPageBreakRepeat: 0,
@@ -1876,11 +1912,24 @@ export default function InventarioXItemPage() {
     setExportingJpg(true);
 
     try {
-      const dataUrl = await toJpeg(matrixImageRef.current, {
+      const node = matrixImageRef.current;
+      // html-to-image usa clientWidth por defecto; con max-w-full la tabla se recorta al ancho
+      // visible del scroll horizontal. scrollWidth/scrollHeight incluyen todo el contenido.
+      const width = node.scrollWidth;
+      const height = node.scrollHeight;
+      const dataUrl = await toJpeg(node, {
         quality: 0.95,
         pixelRatio: 2,
         backgroundColor: "#ffffff",
         cacheBust: true,
+        width,
+        height,
+        style: {
+          width: `${width}px`,
+          height: `${height}px`,
+          maxWidth: "none",
+          overflow: "visible",
+        },
       });
 
       const link = document.createElement("a");

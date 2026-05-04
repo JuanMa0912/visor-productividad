@@ -18,15 +18,15 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/constants";
+import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import {
   PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTION_LABEL_BY_ID,
   PORTAL_SECTIONS,
   resolvePortalSubsectionId,
   resolvePortalSectionId,
-} from "@/lib/portal-sections";
-import { normalizeKeySpaced } from "@/lib/normalize";
+} from "@/lib/shared/portal-sections";
+import { normalizeKeySpaced } from "@/lib/shared/normalize";
 
 const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [

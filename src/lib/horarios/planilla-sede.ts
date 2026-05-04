@@ -2,8 +2,8 @@
  * Sede canónica para planillas de horario y cruce con asistencia.
  * Debe alinearse con los nombres usados en ingresar-horarios/options y horarios-comparar.
  */
-import type { Sede } from "@/lib/constants";
-import { normalizeKeySpaced } from "@/lib/normalize";
+import type { Sede } from "@/lib/shared/constants";
+import { normalizeKeySpaced } from "@/lib/shared/normalize";
 
 const normalizeText = (value?: string | null) =>
   (value ?? "")

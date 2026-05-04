@@ -33,12 +33,12 @@ import type { MarkPlotProps, LinePlotProps } from "@mui/x-charts/LineChart";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   escapeCsvValue,
   formatPdfDate,
   sanitizeExportText,
-} from "@/lib/export-utils";
+} from "@/lib/shared/export-utils";
 import type { Row, Worksheet } from "exceljs";
 import { LineCard } from "@/components/LineCard";
 import { LineComparisonTable } from "@/components/LineComparisonTable";
@@ -52,16 +52,16 @@ import {
   formatCOP,
   getSedeM2,
   hasLaborDataForLine,
-} from "@/lib/calc";
-import { formatDateLabel } from "@/lib/utils";
+} from "@/lib/shared/calc";
+import { formatDateLabel } from "@/lib/shared/utils";
 import {
   DEFAULT_LINES,
   DEFAULT_SEDES,
   SEDE_ORDER,
   SEDE_GROUPS,
   Sede,
-} from "@/lib/constants";
-import { normalizeKeyCompact } from "@/lib/normalize";
+} from "@/lib/shared/constants";
+import { normalizeKeyCompact } from "@/lib/shared/normalize";
 import { DailyProductivity, LineMetrics } from "@/types";
 
 const HourlyAnalysis = dynamic(

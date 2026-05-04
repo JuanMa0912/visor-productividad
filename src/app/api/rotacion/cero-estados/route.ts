@@ -8,14 +8,14 @@ import { getDbPool } from "@/lib/db";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
-import { canAccessRotacionBoard } from "@/lib/special-role-features";
+} from "@/lib/shared/portal-sections";
+import { canAccessRotacionBoard } from "@/lib/shared/special-role-features";
 import {
   CERO_ROTACION_ESTADO_VALUES,
   type CeroRotacionEstado,
   makeCeroRotacionEstadoKey,
   parseCeroRotacionEstado,
-} from "@/lib/rotacion-cero-estado";
+} from "@/lib/rotacion/cero-estado";
 import {
   getRotationFilterCatalog,
   resolveVisibleSedes,

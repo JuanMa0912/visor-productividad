@@ -10,16 +10,16 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { isSamePlanillaSede } from "@/lib/planilla-sede";
-import { normalizePersonNameKey } from "@/lib/normalize";
+import { isSamePlanillaSede } from "@/lib/horarios/planilla-sede";
+import { normalizePersonNameKey } from "@/lib/shared/normalize";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   normalizeScheduleRowsForSave,
   normalizeScheduleTime,
-} from "@/lib/schedule-time";
+} from "@/lib/horarios/schedule-time";
 import {
   DEFAULT_LUNES_SCHEDULE_PRESETS,
   loadLunesPresetsFromStorage,
@@ -27,8 +27,8 @@ import {
   presetsToByKey,
   type LunesSchedulePreset,
   type LunesSchedulePresetKey,
-} from "@/lib/lunes-schedule-presets";
-import { canUseLunesScheduleSync } from "@/lib/special-role-features";
+} from "@/lib/horarios/lunes-schedule-presets";
+import { canUseLunesScheduleSync } from "@/lib/shared/special-role-features";
 import { toJpeg } from "html-to-image";
 
 type DayKey =

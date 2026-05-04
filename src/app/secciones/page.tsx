@@ -17,7 +17,7 @@ import {
 import {
   PORTAL_SECTIONS,
   type PortalSectionId,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 
 const SECTION_STYLES: Record<
   PortalSectionId,

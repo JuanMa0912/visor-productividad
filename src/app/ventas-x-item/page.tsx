@@ -10,7 +10,7 @@ import * as ExcelJS from "exceljs";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   buildDailyTableAllRange,
   buildNumericPivotRange,
@@ -20,7 +20,7 @@ import {
   type DailyTableRow,
   type VentasXItemPreparedRow,
   type VentasXItemRawRow,
-} from "@/lib/ventas-x-item";
+} from "@/lib/ventas/x-item";
 
 const EMPRESA_LABELS: Record<string, string> = {
   mercamio: "MERCAMIO",

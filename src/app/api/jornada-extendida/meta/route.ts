@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
-import type { Sede } from "@/lib/constants";
+import type { Sede } from "@/lib/shared/constants";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
-import { normalizeKeySpaced } from "@/lib/normalize";
+} from "@/lib/shared/portal-sections";
+import { normalizeKeySpaced } from "@/lib/shared/normalize";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 

@@ -14,9 +14,9 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ArrowUp } from "lucide-react";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
-import { DEFAULT_SEDES } from "@/lib/constants";
-import type { Sede } from "@/lib/constants";
-import { normalizeKeySpaced } from "@/lib/normalize";
+import { DEFAULT_SEDES } from "@/lib/shared/constants";
+import type { Sede } from "@/lib/shared/constants";
+import { normalizeKeySpaced } from "@/lib/shared/normalize";
 
 type ApiResponse = {
   dates?: string[];

@@ -1,7 +1,7 @@
 import {
   getSedeOrderIndexForRawName,
   stripSedeLabelPrefixes,
-} from "./constants";
+} from "@/lib/shared/constants";
 
 export const INVENTARIO_X_ITEM_SOURCE_TABLE = "rotacion_base_item_dia_sede";
 export const INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS = 10;

@@ -14,8 +14,8 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
-} from "@/lib/portal-sections";
-import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
+} from "@/lib/shared/portal-sections";
+import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
 
 const BASE_OPERACION_MODULES: HubModuleItem[] = [
   {

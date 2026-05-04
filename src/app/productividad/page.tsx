@@ -19,8 +19,8 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
-} from "@/lib/portal-sections";
-import { canAccessRotacionBoard } from "@/lib/special-role-features";
+} from "@/lib/shared/portal-sections";
+import { canAccessRotacionBoard } from "@/lib/shared/special-role-features";
 
 const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
   {

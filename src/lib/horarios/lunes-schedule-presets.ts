@@ -3,7 +3,7 @@
  * Entrada = primer HE (he1). Salida del día = última HS (hs2); hs1 y he2 vacíos.
  */
 
-import { normalizeScheduleTime } from "@/lib/schedule-time";
+import { normalizeScheduleTime } from "@/lib/horarios/schedule-time";
 
 /** Planilla del día: coincide con un preset si primera entrada y última salida son las del preset. */
 export function planMatchesLunesPreset(

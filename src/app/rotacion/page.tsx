@@ -10,7 +10,6 @@ import autoTable from "jspdf-autotable";
 import {
   AlertCircle,
   ArrowLeft,
-  ArrowUp,
   Building2,
   CalendarDays,
   ChevronDown,
@@ -41,12 +40,11 @@ import {
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   canAccessRotacionBoard,
   canEditRotacionAbcdConfig,
-} from "@/lib/special-role-features";
-import { mapRawSedeToCanonical } from "@/lib/planilla-sede";
+} from "@/lib/shared/special-role-features";
 import {
   CERO_ROTACION_ESTADO_LABELS,
   CERO_ROTACION_ESTADO_SORT_ORDER,
@@ -54,1337 +52,84 @@ import {
   DEFAULT_CERO_ROTACION_ESTADO,
   makeCeroRotacionEstadoKey,
   type CeroRotacionEstado,
-} from "@/lib/rotacion-cero-estado";
-import { cn, formatDateLabel } from "@/lib/utils";
-
-const getCookieValue = (name: string) => {
-  if (typeof document === "undefined") return null;
-  const escaped = name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1");
-  const match = document.cookie.match(new RegExp(`(?:^|; )${escaped}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
-};
-
-type DateRange = {
-  start: string;
-  end: string;
-};
-
-type RotationRow = {
-  empresa: string;
-  sedeId: string;
-  sedeName: string;
-  linea: string;
-  lineaN1Codigo: string | null;
-  item: string;
-  descripcion: string;
-  unidad: string | null;
-  bodega: string | null;
-  nombreBodega: string | null;
-  categoria: string | null;
-  nombreCategoria: string | null;
-  linea01: string | null;
-  nombreLinea01: string | null;
-  totalSales: number;
-  totalCost: number;
-  totalMargin: number;
-  totalUnits: number;
-  inventoryUnits: number;
-  inventoryValue: number;
-  rotation: number;
-  trackedDays: number;
-  salesEffectiveDays: number;
-  lastMovementDate: string | null;
-  lastPurchaseDate: string | null;
-  effectiveDays: number | null;
-  status: "Agotado" | "Futuro agotado" | "Baja rotacion" | "En seguimiento";
-};
-
-type RotationCategoriaFilterOption = {
-  categoriaKey: string;
-  nombreCategoria: string | null;
-};
-
-type RotationApiResponse = {
-  rows: RotationRow[];
-  stats: {
-    evaluatedSedes: number;
-    visibleItems: number;
-    withoutMovement: number;
-  };
-  filters: {
-    companies: string[];
-    sedes: Array<{
-      empresa: string;
-      sedeId: string;
-      sedeName: string;
-    }>;
-    lineasN1: string[];
-    /** Nombre legible por codigo N1 (desde API / BD). */
-    lineasN1Nombres?: Record<string, string>;
-    categorias: RotationCategoriaFilterOption[];
-    lineasN1PorCategoria: Record<string, string[]>;
-  };
-  meta: {
-    effectiveRange: DateRange;
-    availableRange: { min: string; max: string };
-    sourceTable: string;
-    maxSalesValue: number | null;
-    abcdConfig?: {
-      aUntilPercent: number;
-      bUntilPercent: number;
-      cUntilPercent: number;
-    };
-  };
-  message?: string;
-  error?: string;
-};
-
-type RotationCatalogSnapshot = {
-  filters: RotationApiResponse["filters"];
-  meta?: RotationApiResponse["meta"];
-};
-
-type LineaN1Option = {
-  value: string;
-  label: string;
-  shortName?: string;
-};
-
-type LineaN1FamilyKey = "perecederos" | "manufactura";
-
-const ALL_LINEA_N1_FAMILY_KEYS: LineaN1FamilyKey[] = [
-  "perecederos",
-  "manufactura",
-];
-
-const LINEA_N1_FAMILY_LABELS: Record<LineaN1FamilyKey, string> = {
-  perecederos: "Perecederos",
-  manufactura: "Manufactura",
-};
-
-const matchesLineaN1Family = (
-  value: string,
-  keys: Set<LineaN1FamilyKey>,
-): boolean => {
-  const code = normalizeLineaN1CodeForFilter(value);
-  const isPerecedero = PERECEDEROS_LINEAS_N1.has(code);
-  if (keys.has("perecederos") && isPerecedero) return true;
-  if (keys.has("manufactura") && !isPerecedero) return true;
-  return false;
-};
-
-type AbcdConfig = {
-  aUntilPercent: number;
-  bUntilPercent: number;
-  cUntilPercent: number;
-};
-type AbcdCategory = "A" | "B" | "C" | "D";
-type GroupAbcdFilter = "all" | AbcdCategory | "0" | "N";
-
-type RotationSortField =
-  | "item"
-  | "descripcion"
-  | "totalSales"
-  | "totalCost"
-  | "totalMargin"
-  | "totalUnits"
-  | "inventoryUnits"
-  | "inventoryValue"
-  | "rotation"
-  | "trackedDays"
-  | "duvDays"
-  | "salesEffectiveDays"
-  | "lastMovementDate"
-  | "lastPurchaseDate"
-  | "status"
-  | "ceroRotacionEstado";
-
-type RotationSortDirection = "asc" | "desc";
-type PageSize = 25 | 50 | 100;
-
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
-/** Anchos de columna (table-layout: fixed) — thead y tbody comparten la misma rejilla. */
-const ROTACION_TABLE_COL_WIDTHS = [
-  "6%",
-  "3%",
-  "16%",
-  "8%",
-  "8%",
-  "6%",
-  "7%",
-  "7%",
-  "8%",
-  "5%",
-  "4%",
-  "4%",
-  "6%",
-  "8%",
-] as const;
-const ROTACION_ZERO_TABLE_COL_WIDTHS = [
-  "7%",
-  "4%",
-  "10%",
-  "22%",
-  "10%",
-  "10%",
-  "7%",
-  "7%",
-  "11%",
-  "8%",
-] as const;
-const ROTACION_FLOATING_HEADER_TOP_PX = 0;
-const ROTACION_FLOATING_HEADER_COLUMNS = [
-  { label: "Item", align: "left" as const, field: "item" as const },
-  { label: "Cat.", align: "center" as const },
-  {
-    label: "Descripcion",
-    align: "left" as const,
-    field: "descripcion" as const,
-  },
-  { label: "Venta", align: "right" as const, field: "totalSales" as const },
-  { label: "Costo", align: "right" as const, field: "totalCost" as const },
-  { label: "Margen %", align: "right" as const },
-  { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
-  { label: "U. vend.", align: "right" as const, field: "totalUnits" as const },
-  {
-    label: "V. inv.",
-    align: "right" as const,
-    field: "inventoryValue" as const,
-  },
-  { label: "DIC", align: "right" as const, field: "rotation" as const },
-  { label: "DIE", align: "right" as const, field: "trackedDays" as const },
-  {
-    label: "DVE",
-    align: "right" as const,
-    field: "salesEffectiveDays" as const,
-  },
-  {
-    label: "Ult. venta",
-    align: "right" as const,
-    field: "lastPurchaseDate" as const,
-  },
-  {
-    label: "Ult. ingr.",
-    align: "right" as const,
-    field: "lastMovementDate" as const,
-  },
-] as const;
-const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
-  { label: "Item", align: "left" as const, field: "item" as const },
-  { label: "Cat.", align: "center" as const },
-  {
-    label: "R.inventario",
-    align: "left" as const,
-    field: "ceroRotacionEstado" as const,
-  },
-  {
-    label: "Descripcion",
-    align: "left" as const,
-    field: "descripcion" as const,
-  },
-  { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
-  {
-    label: "V. inv.",
-    align: "right" as const,
-    field: "inventoryValue" as const,
-  },
-  { label: "DI", align: "right" as const, field: "lastMovementDate" as const },
-  { label: "DUV", align: "right" as const, field: "duvDays" as const },
-  {
-    label: "Ult. venta",
-    align: "right" as const,
-    field: "lastPurchaseDate" as const,
-  },
-  {
-    label: "Ult. ingr.",
-    align: "right" as const,
-    field: "lastMovementDate" as const,
-  },
-] as const;
-const NO_SALES_DI_VALUE = 999999;
-const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
-
-/** Misma regla que en /api/rotacion: codigos numericos a 2 cifras para alinear con familias. */
-const mergeRotationLineaN1NombreMaps = (
-  base: Record<string, string> | undefined,
-  extra: Record<string, string> | undefined,
-): Record<string, string> => {
-  const out = { ...(base ?? {}) };
-  for (const [code, name] of Object.entries(extra ?? {})) {
-    const prev = out[code];
-    if (!prev || name.length > prev.length) out[code] = name;
-  }
-  return out;
-};
-
-const bestLineaDisplayFromRow = (row: RotationRow): string | null => {
-  const linea = row.linea?.trim();
-  const n01 = row.nombreLinea01?.trim();
-  const safeLinea = linea && linea.toLowerCase() !== "sin linea" ? linea : null;
-  if (!safeLinea) return n01 && n01.length > 0 ? n01 : null;
-  if (!n01) return safeLinea;
-  return safeLinea.length >= n01.length ? safeLinea : n01;
-};
-
-/** Orden del filtro N1: numericos por valor (01, 2, 14), alfanumericos al final por etiqueta. */
-const compareLineaN1FilterCodes = (a: string, b: string): number => {
-  if (a === "__sin_n1__" && b === "__sin_n1__") return 0;
-  if (a === "__sin_n1__") return 1;
-  if (b === "__sin_n1__") return -1;
-  const aNum = /^\d+$/.test(a) ? Number.parseInt(a, 10) : Number.NaN;
-  const bNum = /^\d+$/.test(b) ? Number.parseInt(b, 10) : Number.NaN;
-  const aIsNum = Number.isFinite(aNum);
-  const bIsNum = Number.isFinite(bNum);
-  if (aIsNum && bIsNum && aNum !== bNum) return aNum - bNum;
-  if (aIsNum !== bIsNum) return aIsNum ? -1 : 1;
-  return a.localeCompare(b, "es", { sensitivity: "base", numeric: true });
-};
-
-const normalizeLineaN1CodeForFilter = (
-  raw: string | null | undefined,
-): string => {
-  const t = String(raw ?? "").trim();
-  if (!t) return "__sin_n1__";
-  if (t === "__sin_n1__") return t;
-  if (/^\d+$/.test(t)) return t.padStart(2, "0");
-  return t;
-};
-const LINEA_N1_SHORT_NAMES: Record<string, string> = {
-  "01": "Fruver",
-  "02": "Carnes rojas",
-  "03": "Pollo y aves",
-  "04": "Pescados",
-  "05": "Granos",
-  "06": "Bebidas vegetales",
-  "07": "Lacteos",
-  "08": "Aceites",
-  "09": "Nutricion",
-  "10": "Embutidos",
-  "11": "Achocolatados",
-  "12": "Huevos",
-  "13": "Sazonadores",
-  "14": "Cafe",
-  "15": "Pasabocas",
-  "16": "Blanqueadores",
-  "17": "Congelados",
-  "18": "Pastas",
-  "19": "Condimentos",
-  "20": "Bebidas",
-  "21": "Harinas",
-  "22": "Panaderia",
-  "23": "Confiteria",
-  "24": "Snacks",
-  "25": "Conservas",
-  "26": "Salsas",
-  "27": "Aseo hogar",
-  "28": "Empaques hogar",
-  "29": "Desechables",
-  "30": "Insumos internos",
-  "31": "Charcuteria",
-  "32": "No codificados",
-  "33": "Licores",
-  "34": "Antipastos",
-  "36": "Cuidado bebe",
-  "37": "Higiene oral",
-  "38": "Cuidado personal",
-  "39": "Higiene intima",
-  "40": "Cuidado capilar",
-  "41": "Papel higienico",
-  "42": "Botiquin",
-  "43": "Implementos aseo",
-  "44": "Ambientadores",
-  "45": "Mascotas",
-  "46": "Almacenamiento",
-  "47": "Ferreteria",
-  "48": "Calzado",
-  "49": "Bolsas y pequenos",
-};
-const DEFAULT_ABCD_CONFIG: AbcdConfig = {
-  aUntilPercent: 70,
-  bUntilPercent: 85,
-  cUntilPercent: 98,
-};
-const PAGE_SIZE_OPTIONS: PageSize[] = [25, 50, 100];
-
-const dateLabelOptions: Intl.DateTimeFormatOptions = {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-};
-
-const parseDateKey = (dateKey: string) => new Date(`${dateKey}T12:00:00`);
-
-const toDateKey = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const clampDateKeyToBounds = (key: string, min: string, max: string) => {
-  if (key < min) return min;
-  if (key > max) return max;
-  return key;
-};
-
-/** Fin = ayer (o tope de datos); inicio = mismo día un mes calendario atrás +1 día, acotado a datos disponibles. */
-const getRollingMonthBackRange = (
-  minAvailable: string,
-  maxAvailable: string,
-): DateRange => {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = toDateKey(yesterday);
-  const endKey = clampDateKeyToBounds(yesterdayKey, minAvailable, maxAvailable);
-  const endDate = parseDateKey(endKey);
-  const startDate = new Date(endDate);
-  startDate.setMonth(startDate.getMonth() - 1);
-  startDate.setDate(startDate.getDate() + 1);
-  let startKey = clampDateKeyToBounds(
-    toDateKey(startDate),
-    minAvailable,
-    maxAvailable,
-  );
-  if (startKey > endKey) {
-    startKey = endKey;
-  }
-  return { start: startKey, end: endKey };
-};
-
-const buildRotacionRowsKey = (input: {
-  start: string;
-  end: string;
-  empresas: string[];
-  sedeIds: string[];
-  lineasN1: string[];
-  categoriaKeys: string[];
-}) => {
-  const empresas = [...input.empresas].sort((a, b) => a.localeCompare(b, "es"));
-  const sedeIds = [...input.sedeIds].sort((a, b) => a.localeCompare(b, "es"));
-  const lineas = [...input.lineasN1].sort((a, b) => a.localeCompare(b, "es"));
-  const cats = [...input.categoriaKeys].sort((a, b) =>
-    a.localeCompare(b, "es"),
-  );
-  return `${input.start}|${input.end}|${empresas.join(",")}|${sedeIds.join(",")}|${lineas.join(",")}|${cats.join(",")}`;
-};
-
-const sanitizeNumericInput = (value: string) => value.replace(/\D/g, "");
-
-const normalizeDateRange = (
-  current: DateRange,
-  changedField: "start" | "end",
-): DateRange => {
-  const start = current.start;
-  const end = current.end;
-
-  if (!start && !end) return current;
-  if (!start) return { start: end, end };
-  if (!end) return { start, end: start };
-  if (start <= end) return { start, end };
-
-  return changedField === "start" ? { start, end: start } : { start: end, end };
-};
-
-const countInclusiveDays = (range: DateRange) => {
-  if (!range.start || !range.end) return 0;
-  const start = parseDateKey(range.start);
-  const end = parseDateKey(range.end);
-  return Math.floor((end.getTime() - start.getTime()) / DAY_IN_MS) + 1;
-};
-
-const formatRangeLabel = (range: DateRange) => {
-  if (!range.start || !range.end) return "Sin rango";
-  if (range.start === range.end) {
-    return `${formatDateLabel(range.start, dateLabelOptions)}`;
-  }
-  return `${formatDateLabel(range.start, dateLabelOptions)} al ${formatDateLabel(
-    range.end,
-    dateLabelOptions,
-  )}`;
-};
-
-const formatPrice = (value: number) =>
-  new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(value);
-
-const formatPriceWithoutSixZeros = (value: number) =>
-  `$ ${Math.round(value / 1_000_000).toLocaleString("es-CO")}`;
-
-const formatPercent = (value: number) =>
-  `${value.toLocaleString("es-CO", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })}%`;
-
-const buildExportFileStamp = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const h = String(now.getHours()).padStart(2, "0");
-  const min = String(now.getMinutes()).padStart(2, "0");
-  return `${y}${m}${d}_${h}${min}`;
-};
-
-/** Avoid fetch(data:...) — not reliable in all runtimes; decode inline like inventario flow. */
-const dataUrlToBlob = (dataUrl: string): Blob => {
-  const comma = dataUrl.indexOf(",");
-  if (comma === -1) {
-    throw new Error("dataUrlToBlob: invalid data URL");
-  }
-  const header = dataUrl.slice(0, comma);
-  const base64 = dataUrl.slice(comma + 1);
-  const mimeMatch = /^data:([^;,]+)/.exec(header);
-  const mime = mimeMatch?.[1] ?? "image/jpeg";
-  const binary = atob(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return new Blob([bytes], { type: mime });
-};
-
-const WHATSAPP_TABLE_EXCLUDE = "data-whatsapp-table-exclude";
-
-/** Más píxeles por lado; WhatsApp comprime mucho al enviar — conviene ir alto. */
-const getRotacionWhatsappPixelRatio = () => {
-  if (typeof window === "undefined") return 4;
-  const dpr = window.devicePixelRatio || 1;
-  return Math.min(5, Math.max(4, dpr * 2));
-};
-
-/** Intenta abrir WhatsApp Desktop (deep link) y, si no responde, cae a WhatsApp Web. */
-const openWhatsAppDesktopPreferred = () => {
-  if (typeof window === "undefined") return;
-  const desktopDeepLink = "whatsapp://send?text=Reporte%20de%20rotacion";
-  const webFallbackUrl = "https://web.whatsapp.com/";
-  let appOpened = false;
-
-  const onBlur = () => {
-    appOpened = true;
-  };
-
-  window.addEventListener("blur", onBlur, { once: true });
-  window.location.href = desktopDeepLink;
-
-  window.setTimeout(() => {
-    window.removeEventListener("blur", onBlur);
-    if (!appOpened) {
-      window.open(webFallbackUrl, "_blank", "noopener,noreferrer");
-    }
-  }, 1000);
-};
-
-const WHATSAPP_JPEG_QUALITY = 0.98;
-
-const rotacionWhatsappExportFilter = (node: HTMLElement) => {
-  if (!(node instanceof Element)) return true;
-  return !node.hasAttribute(WHATSAPP_TABLE_EXCLUDE);
-};
-
-/** Ancho completo de tabla + tarjeta compacta; restaurar después de toPng (html-to-image no expone onclone en tipos). */
-const prepareRotacionWhatsappExportDom = (root: HTMLElement) => {
-  const cleanups: Array<() => void> = [];
-
-  const prevZoom = root.style.zoom;
-  root.style.zoom = "1.22";
-  cleanups.push(() => {
-    root.style.zoom = prevZoom;
-  });
-
-  root.querySelectorAll(".rotacion-whatsapp-export-card").forEach((el) => {
-    const c = el as HTMLElement;
-    const pad = c.style.padding;
-    const bs = c.style.boxShadow;
-    const gap = c.style.gap;
-    const br = c.style.borderRadius;
-    c.style.padding = "0";
-    c.style.boxShadow = "none";
-    c.style.gap = "0";
-    c.style.borderRadius = "8px";
-    cleanups.push(() => {
-      c.style.padding = pad;
-      c.style.boxShadow = bs;
-      c.style.gap = gap;
-      c.style.borderRadius = br;
-    });
-  });
-  root.querySelectorAll(".rotacion-table-capture-scroll").forEach((el) => {
-    const h = el as HTMLElement;
-    const ov = h.style.overflow;
-    const mw = h.style.maxWidth;
-    h.style.overflow = "visible";
-    h.style.maxWidth = "none";
-    cleanups.push(() => {
-      h.style.overflow = ov;
-      h.style.maxWidth = mw;
-    });
-  });
-  root.querySelectorAll("table").forEach((t) => {
-    const ht = t as HTMLElement;
-    const w = ht.style.width;
-    const minW = ht.style.minWidth;
-    ht.style.width = "max-content";
-    ht.style.minWidth = "100%";
-    cleanups.push(() => {
-      ht.style.width = w;
-      ht.style.minWidth = minW;
-    });
-  });
-  return () => {
-    for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]();
-  };
-};
-
-const STATUS_SORT_ORDER: Record<RotationRow["status"], number> = {
-  Agotado: 0,
-  "Futuro agotado": 1,
-  "Baja rotacion": 2,
-  "En seguimiento": 3,
-};
-
-const compareRotationText = (left: string, right: string) =>
-  left.localeCompare(right, "es", { sensitivity: "base", numeric: true });
-
-const foldForProductSearch = (value: string) =>
-  value.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
-
-const rowMatchesProductSearch = (row: RotationRow, rawQuery: string) => {
-  const q = rawQuery.trim();
-  if (!q) return true;
-  const needle = foldForProductSearch(q);
-  return (
-    foldForProductSearch(row.item).includes(needle) ||
-    foldForProductSearch(row.descripcion).includes(needle)
-  );
-};
-
-const formatRotationOneDecimal = (value: number) => {
-  if (value >= NO_SALES_DI_VALUE) return "Sin venta";
-  return (Math.round(value * 10) / 10).toLocaleString("es-CO", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
-  });
-};
-
-const calculateDuvDays = (lastPurchaseDate: string | null) => {
-  if (!lastPurchaseDate) return null;
-  const today = parseDateKey(toDateKey(new Date()));
-  const sale = parseDateKey(lastPurchaseDate);
-  const diff = Math.floor((today.getTime() - sale.getTime()) / DAY_IN_MS);
-  return diff < 0 ? 0 : diff;
-};
-
-const calculateDiSinceLastIngresoDays = (lastMovementDate: string | null) => {
-  if (!lastMovementDate) return null;
-  const today = parseDateKey(toDateKey(new Date()));
-  const ingreso = parseDateKey(lastMovementDate);
-  const diff = Math.floor((today.getTime() - ingreso.getTime()) / DAY_IN_MS);
-  return diff < 0 ? 0 : diff;
-};
-
-const clampPercent = (value: number) =>
-  Math.max(1, Math.min(100, Number.isFinite(value) ? value : 0));
-
-const safeNumber = (value: unknown) =>
-  typeof value === "number" && Number.isFinite(value) ? value : 0;
-
-const normalizeRotationRows = (rows: RotationRow[]) =>
-  rows.map((row) => ({
-    ...row,
-    totalUnits: safeNumber(
-      (row as RotationRow & { totalUnits?: number }).totalUnits,
-    ),
-    bodega: row.bodega ?? null,
-    nombreBodega: row.nombreBodega ?? null,
-    categoria: row.categoria ?? null,
-    nombreCategoria: row.nombreCategoria ?? null,
-    linea01: row.linea01 ?? null,
-    nombreLinea01: row.nombreLinea01 ?? null,
-  }));
-
-/** Categorias a enviar en query: null = sin filtro (todo el catalogo o vacio). */
-const buildCategoriaQueryKeys = (
-  catalog: RotationCategoriaFilterOption[],
-  selectedKeys: string[],
-): string[] | null => {
-  if (catalog.length === 0) return null;
-  const catalogSet = new Set(catalog.map((c) => c.categoriaKey));
-  const valid = selectedKeys.filter((k) => catalogSet.has(k));
-  const isFull =
-    valid.length === catalog.length &&
-    catalog.every((c) => valid.includes(c.categoriaKey));
-  if (valid.length === 0 || isFull) return null;
-  return valid;
-};
-
-const appendCategoriaParams = (
-  params: URLSearchParams,
-  catalog: RotationCategoriaFilterOption[],
-  selectedKeys: string[],
-) => {
-  const keys = buildCategoriaQueryKeys(catalog, selectedKeys);
-  if (!keys) return;
-  keys.forEach((k) => params.append("categoria", k));
-};
-
-/** Lineas N1 a enviar en query: null = sin filtro (todo el catalogo o vacio). */
-const buildLineasN1QueryValues = (
-  catalog: string[],
-  selectedValues: string[],
-): string[] | null => {
-  if (catalog.length === 0) {
-    return selectedValues.length > 0 ? selectedValues : null;
-  }
-  const catalogSet = new Set(catalog);
-  const valid = selectedValues.filter((value) => catalogSet.has(value));
-  const isFull =
-    valid.length === catalog.length &&
-    catalog.every((value) => valid.includes(value));
-  if (valid.length === 0 || isFull) return null;
-  return valid;
-};
-
-const readCatalogCache = (
-  cache: Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>,
-  key: string,
-): RotationCatalogSnapshot | null => {
-  const cached = cache.get(key);
-  if (!cached) return null;
-  if (cached.expiresAt <= Date.now()) {
-    cache.delete(key);
-    return null;
-  }
-  return cached.value;
-};
-
-const writeCatalogCache = (
-  cache: Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>,
-  key: string,
-  value: RotationCatalogSnapshot,
-) => {
-  if (cache.size > 120) cache.clear();
-  cache.set(key, {
-    value,
-    expiresAt: Date.now() + ROTACION_FRONT_CATALOG_CACHE_TTL_MS,
-  });
-};
-
-const DEFAULT_CATEGORIA_DESTINO = "MERCANCIA NO FABRICADA POR LA EMPRESA";
-
-const buildDefaultCategoriaKeys = (
-  options: RotationCategoriaFilterOption[],
-): string[] => {
-  const preferred = options.filter(
-    (option) =>
-      (option.nombreCategoria ?? "").trim().toUpperCase() ===
-      DEFAULT_CATEGORIA_DESTINO,
-  );
-  if (preferred.length > 0) {
-    return preferred.map((option) => option.categoriaKey);
-  }
-  return options.map((option) => option.categoriaKey);
-};
-
-const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
-  const a = clampPercent(raw.aUntilPercent);
-  const b = Math.max(a, clampPercent(raw.bUntilPercent));
-  const c = Math.max(b, clampPercent(raw.cUntilPercent));
-  return { aUntilPercent: a, bUntilPercent: b, cUntilPercent: c };
-};
-
-const buildAbcdCategoryByItem = (
-  rows: RotationRow[],
-  config: AbcdConfig,
-): Map<string, AbcdCategory> => {
-  const sortedRows = [...rows].sort((a, b) => b.totalSales - a.totalSales);
-  const totalSales = sortedRows.reduce(
-    (sum, row) => sum + Math.max(0, row.totalSales),
-    0,
-  );
-  let cumulativeSales = 0;
-  const categories = new Map<string, AbcdCategory>();
-
-  for (const row of sortedRows) {
-    if (totalSales <= 0) {
-      categories.set(row.item, "D");
-      continue;
-    }
-    cumulativeSales += Math.max(0, row.totalSales);
-    const cumulativePercent = (cumulativeSales / totalSales) * 100;
-    const category: AbcdCategory =
-      cumulativePercent <= config.aUntilPercent
-        ? "A"
-        : cumulativePercent <= config.bUntilPercent
-          ? "B"
-          : cumulativePercent <= config.cUntilPercent
-            ? "C"
-            : "D";
-    categories.set(row.item, category);
-  }
-
-  return categories;
-};
-
-const countAbcdItemsByCategory = (
-  rows: RotationRow[],
-  categoryByItem: Map<string, AbcdCategory>,
-): Record<AbcdCategory, number> => {
-  const counts: Record<AbcdCategory, number> = { A: 0, B: 0, C: 0, D: 0 };
-  for (const row of rows) {
-    const cat = categoryByItem.get(row.item) ?? "D";
-    counts[cat]++;
-  }
-  return counts;
-};
-
-type AbcdSummaryRow = {
-  categoria: AbcdCategory;
-  totalSales: number;
-  itemCount: number;
-  totalMargin: number;
-  marginPct: number;
-};
-
-const buildAbcdSummaryRows = (
-  rows: RotationRow[],
-  categoryByItem: Map<string, AbcdCategory>,
-): AbcdSummaryRow[] => {
-  const byCategory: Record<
-    AbcdCategory,
-    { totalSales: number; totalMargin: number; items: Set<string> }
-  > = {
-    A: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    B: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    C: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    D: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-  };
-
-  for (const row of rows) {
-    const categoria = categoryByItem.get(row.item) ?? "D";
-    byCategory[categoria].totalSales += row.totalSales;
-    byCategory[categoria].totalMargin += row.totalMargin;
-    byCategory[categoria].items.add(row.item);
-  }
-
-  const order: AbcdCategory[] = ["A", "B", "C", "D"];
-  return order.map((categoria) => {
-    const totalSales = byCategory[categoria].totalSales;
-    const totalMargin = byCategory[categoria].totalMargin;
-    return {
-      categoria,
-      totalSales,
-      totalMargin,
-      itemCount: byCategory[categoria].items.size,
-      marginPct: totalSales > 0 ? (totalMargin / totalSales) * 100 : 0,
-    };
-  });
-};
-
-const compareNullableIsoDateKeys = (
-  left: string | null,
-  right: string | null,
-  direction: RotationSortDirection,
-) => {
-  if (left === null && right === null) return 0;
-  if (left === null) return 1;
-  if (right === null) return -1;
-  const base = compareRotationText(left, right);
-  return direction === "asc" ? base : -base;
-};
-
-const getDefaultSortDirection = (
-  field: RotationSortField,
-): RotationSortDirection =>
-  field === "item" ||
-  field === "descripcion" ||
-  field === "status" ||
-  field === "ceroRotacionEstado"
-    ? "asc"
-    : "desc";
-
-const sortRotationRows = (
-  rows: RotationRow[],
-  field: RotationSortField | null,
-  direction: RotationSortDirection,
-  getCeroEstadoRank?: (row: RotationRow) => number,
-) => {
-  if (!field) return rows;
-
-  const directionFactor = direction === "asc" ? 1 : -1;
-  const skipExpensiveTieBreak =
-    field === "rotation" ||
-    field === "trackedDays" ||
-    field === "salesEffectiveDays";
-
-  return [...rows].sort((left, right) => {
-    let result = 0;
-
-    switch (field) {
-      case "item":
-        result = compareRotationText(left.item, right.item);
-        break;
-      case "descripcion":
-        result = compareRotationText(left.descripcion, right.descripcion);
-        break;
-      case "totalSales":
-        result = left.totalSales - right.totalSales;
-        break;
-      case "totalCost":
-        result = left.totalCost - right.totalCost;
-        break;
-      case "totalMargin":
-        result = left.totalMargin - right.totalMargin;
-        break;
-      case "totalUnits":
-        result = left.totalUnits - right.totalUnits;
-        break;
-      case "inventoryUnits":
-        result = left.inventoryUnits - right.inventoryUnits;
-        break;
-      case "inventoryValue":
-        result = left.inventoryValue - right.inventoryValue;
-        break;
-      case "rotation":
-        {
-          const leftNoSales = left.rotation >= NO_SALES_DI_VALUE;
-          const rightNoSales = right.rotation >= NO_SALES_DI_VALUE;
-          if (leftNoSales !== rightNoSales) {
-            // "Sin venta" siempre se envia al final, sin importar asc/desc.
-            return leftNoSales ? 1 : -1;
-          }
-          if (leftNoSales && rightNoSales) {
-            result = 0;
-          } else {
-            result = left.rotation - right.rotation;
-          }
-        }
-        break;
-      case "trackedDays":
-        result = left.trackedDays - right.trackedDays;
-        break;
-      case "duvDays":
-        {
-          const leftDuvDays = calculateDuvDays(left.lastPurchaseDate);
-          const rightDuvDays = calculateDuvDays(right.lastPurchaseDate);
-          const leftValue = leftDuvDays ?? Number.POSITIVE_INFINITY;
-          const rightValue = rightDuvDays ?? Number.POSITIVE_INFINITY;
-          result = leftValue - rightValue;
-        }
-        break;
-      case "salesEffectiveDays":
-        result = left.salesEffectiveDays - right.salesEffectiveDays;
-        break;
-      case "lastMovementDate":
-        result = compareNullableIsoDateKeys(
-          left.lastMovementDate,
-          right.lastMovementDate,
-          direction,
-        );
-        break;
-      case "lastPurchaseDate":
-        result = compareNullableIsoDateKeys(
-          left.lastPurchaseDate,
-          right.lastPurchaseDate,
-          direction,
-        );
-        break;
-      case "status":
-        result =
-          STATUS_SORT_ORDER[left.status] - STATUS_SORT_ORDER[right.status];
-        break;
-      case "ceroRotacionEstado":
-        result =
-          (getCeroEstadoRank?.(left) ?? 0) - (getCeroEstadoRank?.(right) ?? 0);
-        break;
-      default:
-        result = 0;
-    }
-
-    if (result !== 0) {
-      if (field === "lastMovementDate" || field === "lastPurchaseDate") {
-        return result;
-      }
-      return result * directionFactor;
-    }
-    if (skipExpensiveTieBreak) return 0;
-
-    const byDescription = compareRotationText(
-      left.descripcion,
-      right.descripcion,
-    );
-    if (byDescription !== 0) return byDescription;
-
-    return compareRotationText(left.item, right.item);
-  });
-};
-
-const buildRowsBySede = (rows: RotationRow[]) => {
-  const grouped = new Map<
-    string,
-    {
-      empresa: string;
-      sedeId: string;
-      sedeName: string;
-      rows: RotationRow[];
-    }
-  >();
-
-  rows.forEach((row) => {
-    const key = `${row.empresa}::${row.sedeId}`;
-    const current = grouped.get(key) ?? {
-      empresa: row.empresa,
-      sedeId: row.sedeId,
-      sedeName: displayRotationSedeName(row.sedeName),
-      rows: [],
-    };
-    current.rows.push(row);
-    grouped.set(key, current);
-  });
-
-  return Array.from(grouped.values());
-};
-
-const buildConsolidatedRowsBySelection = (
-  rows: RotationRow[],
-  selectedGroupCount: number,
-) => {
-  const statusRank: Record<RotationRow["status"], number> = {
-    Agotado: 4,
-    "Futuro agotado": 3,
-    "Baja rotacion": 2,
-    "En seguimiento": 1,
-  };
-  const byItem = new Map<string, RotationRow>();
-  rows.forEach((row) => {
-    const key = row.item.trim().toUpperCase();
-    const current = byItem.get(key);
-    if (!current) {
-      byItem.set(key, { ...row });
-      return;
-    }
-    current.totalSales += row.totalSales;
-    current.totalCost += row.totalCost;
-    current.totalMargin += row.totalMargin;
-    current.totalUnits += row.totalUnits;
-    current.inventoryUnits += row.inventoryUnits;
-    current.inventoryValue += row.inventoryValue;
-    current.trackedDays = Math.max(current.trackedDays, row.trackedDays);
-    current.salesEffectiveDays = Math.max(
-      current.salesEffectiveDays,
-      row.salesEffectiveDays,
-    );
-    current.lastMovementDate =
-      !current.lastMovementDate ||
-      (row.lastMovementDate ?? "") > current.lastMovementDate
-        ? row.lastMovementDate
-        : current.lastMovementDate;
-    current.lastPurchaseDate =
-      !current.lastPurchaseDate ||
-      (row.lastPurchaseDate ?? "") > current.lastPurchaseDate
-        ? row.lastPurchaseDate
-        : current.lastPurchaseDate;
-    current.rotation =
-      current.inventoryUnits <= 0 || current.inventoryValue <= 0
-        ? 0
-        : current.totalUnits <= 0 || current.trackedDays <= 0
-          ? NO_SALES_DI_VALUE
-          : (current.inventoryUnits * current.trackedDays) / current.totalUnits;
-    current.status =
-      statusRank[row.status] > statusRank[current.status]
-        ? row.status
-        : current.status;
-  });
-
-  return [
-    {
-      empresa: "Consolidado",
-      sedeId: "__multi__",
-      sedeName:
-        selectedGroupCount > 1
-          ? `Sedes seleccionadas (${selectedGroupCount})`
-          : "Sede seleccionada",
-      rows: Array.from(byItem.values()),
-    },
-  ];
-};
-
-/** Filtros rápidos por bloque de sede (tabla). */
-type GroupRowsQuickFilter = "none" | "cero_rotacion" | "venta_hasta" | "both";
-type GroupZeroEstadoFilter = "all" | CeroRotacionEstado;
-
-const isCeroRotacionRow = (row: RotationRow) =>
-  row.totalUnits <= 0 && row.inventoryUnits > 0;
-
-const isNuevoItemRow = (row: RotationRow, maxDaysInInventory: number) =>
-  row.totalUnits <= 0 &&
-  row.inventoryUnits > 0 &&
-  row.trackedDays < maxDaysInInventory;
-
-const isCeroRotacionExcludingNuevo = (
-  row: RotationRow,
-  maxDaysInInventory: number,
-) => isCeroRotacionRow(row) && !isNuevoItemRow(row, maxDaysInInventory);
-
-const applyRowsQuickFilter = (
-  rows: RotationRow[],
-  filter: GroupRowsQuickFilter,
-  ventaHastaMax: number | null,
-  maxDaysInInventory: number,
-): RotationRow[] => {
-  if (filter === "none") return rows;
-  if (filter === "cero_rotacion") {
-    return rows.filter((row) =>
-      isCeroRotacionExcludingNuevo(row, maxDaysInInventory),
-    );
-  }
-  if (filter === "venta_hasta") {
-    if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) return rows;
-    return rows.filter(
-      (row) => row.totalSales >= 1 && row.totalSales <= ventaHastaMax,
-    );
-  }
-  if (filter === "both") {
-    if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) {
-      return rows.filter((row) =>
-        isCeroRotacionExcludingNuevo(row, maxDaysInInventory),
-      );
-    }
-    return rows.filter((row) => {
-      const isCeroRotacion = isCeroRotacionExcludingNuevo(
-        row,
-        maxDaysInInventory,
-      );
-      const isVentaHasta =
-        row.totalSales >= 1 && row.totalSales <= ventaHastaMax;
-      return isCeroRotacion || isVentaHasta;
-    });
-  }
-  return rows;
-};
-
-const COMPANY_LABELS: Record<string, string> = {
-  mercamio: "Mercamio",
-  mtodo: "Comercializadora",
-  bogota: "Merkmios",
-};
-
-const formatCompanyLabel = (value: string) =>
-  COMPANY_LABELS[value] ??
-  value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-
-const formatSedeLabel = (value: string) =>
-  value
-    .replace(/^sede\s+/i, "")
-    .replace(/\bproduccion\s+producto\s+terminado\b/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-/** Nombre de sede alineado con el resto del portal (planilla-sede / admin). */
-const displayRotationSedeName = (raw: string) => {
-  const cleaned = formatSedeLabel(raw);
-  const canonical = mapRawSedeToCanonical(cleaned);
-  return (canonical || cleaned).trim();
-};
-
-const mapRotationSedeOptions = (
-  sedes: RotationApiResponse["filters"]["sedes"],
-) =>
-  sedes
-    .map((option) => {
-      const displaySedeName = displayRotationSedeName(option.sedeName);
-      return {
-        value: `${option.empresa}::${option.sedeId}`,
-        label: `${formatCompanyLabel(option.empresa)} - ${displaySedeName}`,
-        empresa: option.empresa,
-        sedeId: option.sedeId,
-        sedeName: displaySedeName,
-      };
-    })
-    .filter((option) => option.sedeName.length > 0)
-    .sort((a, b) => a.label.localeCompare(b.label, "es"));
-
-type SortableRotationHeaderProps = {
-  field: RotationSortField;
-  label: React.ReactNode;
-  activeField: RotationSortField | null;
-  direction: RotationSortDirection;
-  onSort: (field: RotationSortField) => void;
-  /** Encabezados numericos alineados a la derecha como las celdas (evita desfase visual). */
-  align?: "left" | "right";
-};
-
-const WhatsAppLogo = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-  </svg>
-);
-
-const SortableRotationHeader = ({
-  field,
-  label,
-  activeField,
-  direction,
-  onSort,
-  align = "left",
-}: SortableRotationHeaderProps) => {
-  const isActive = activeField === field;
-  const isRight = align === "right";
-
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(field)}
-      className={cn(
-        "grid w-full min-w-0 items-center gap-x-2 transition-colors",
-        isRight
-          ? "grid-cols-[minmax(0,1fr)_auto] justify-items-end text-right"
-          : "grid-cols-[minmax(0,1fr)_auto] justify-items-start text-left",
-        isActive ? "text-amber-700" : "text-slate-700 hover:text-amber-700",
-      )}
-      aria-pressed={isActive}
-    >
-      <span
-        className={cn(
-          "min-w-0 leading-tight",
-          isRight ? "justify-self-end" : "justify-self-start",
-        )}
-      >
-        {label}
-      </span>
-      <ArrowUp
-        className={cn(
-          "h-3.5 w-3.5 shrink-0 transition-all",
-          isActive
-            ? `opacity-100 ${direction === "desc" ? "rotate-180" : ""}`
-            : "opacity-35",
-        )}
-      />
-    </button>
-  );
-};
-
-type SelectFieldProps = {
-  icon: React.ElementType;
-  label: string;
-  values: string[];
-  options: Array<{ value: string; label: string }>;
-  onChange: (values: string[]) => void;
-  helperText: string;
-  accentClassName: string;
-  disabled?: boolean;
-};
-
-const FilterFieldLabel = ({
-  icon: Icon,
-  label,
-  accentClassName,
-}: {
-  icon: React.ElementType;
-  label: string;
-  accentClassName: string;
-}) => (
-  <span
-    className={`mb-2 flex min-h-2.75rem items-start gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] leading-4 ${accentClassName}`}
-  >
-    <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-    <span className="block">{label}</span>
-  </span>
-);
-
-const FilterSelectField = ({
-  icon: Icon,
-  label,
-  values,
-  options,
-  onChange,
-  helperText,
-  accentClassName,
-  disabled = false,
-}: SelectFieldProps) => {
-  const valueSet = new Set(values);
-  const allSelected = options.length > 0 && values.length === options.length;
-  return (
-    <div className="block">
-      <FilterFieldLabel
-        icon={Icon}
-        label={label}
-        accentClassName={accentClassName}
-      />
-      <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={disabled || allSelected}
-            onClick={() => onChange(options.map((option) => option.value))}
-            className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
-          >
-            Seleccionar todas
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={disabled || values.length === 0}
-            onClick={() => onChange([])}
-            className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
-          >
-            Limpiar
-          </Button>
-        </div>
-        <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
-          {options.map((option) => {
-            const checked = valueSet.has(option.value);
-            return (
-              <label
-                key={option.value}
-                className="flex items-start gap-2 text-sm text-slate-700"
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabled}
-                  onChange={() =>
-                    onChange(
-                      checked
-                        ? values.filter((value) => value !== option.value)
-                        : [...values, option.value],
-                    )
-                  }
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-200"
-                />
-                <span className="leading-5">{option.label}</span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-      <p className="mt-1 text-[11px] text-slate-500">{helperText}</p>
-    </div>
-  );
-};
-
-const ROTACION_LAST_SEDE_STORAGE_KEY = "rotacion:lastSedeSelection";
-const ROTACION_FRONT_CATALOG_CACHE_TTL_MS = 3 * 60 * 1000;
-
-const readRotationApiForbiddenMessage = async (
-  response: Response,
-): Promise<string> => {
-  const fallback = "No tienes permiso para ver esta informacion.";
-  try {
-    const data = (await response.json()) as { error?: string };
-    return data.error?.trim() || fallback;
-  } catch {
-    return fallback;
-  }
-};
+} from "@/lib/rotacion/cero-estado";
+import { cn, formatDateLabel } from "@/lib/shared/utils";
+import {
+  FilterFieldLabel,
+  FilterSelectField,
+  SortableRotationHeader,
+  WhatsAppLogo,
+} from "./rotation-filter-widgets";
+import type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN1FamilyKey, AbcdConfig, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, GroupRowsQuickFilter, GroupZeroEstadoFilter } from "./rotacion-preamble";
+import {
+  getCookieValue,
+  ALL_LINEA_N1_FAMILY_KEYS,
+  LINEA_N1_FAMILY_LABELS,
+  matchesLineaN1Family,
+  toggleAbcdLetterFilter,
+  isAbcdLetterFilterActive,
+  formatAbcdCategoryFilterLabel,
+  ROTACION_TABLE_COL_WIDTHS,
+  ROTACION_ZERO_TABLE_COL_WIDTHS,
+  ROTACION_FLOATING_HEADER_TOP_PX,
+  ROTACION_FLOATING_HEADER_COLUMNS,
+  ROTACION_FLOATING_HEADER_COLUMNS_ZERO,
+  NO_SALES_DI_VALUE,
+  mergeRotationLineaN1NombreMaps,
+  bestLineaDisplayFromRow,
+  compareLineaN1FilterCodes,
+  normalizeLineaN1CodeForFilter,
+  LINEA_N1_SHORT_NAMES,
+  DEFAULT_ABCD_CONFIG,
+  PAGE_SIZE_OPTIONS,
+  dateLabelOptions,
+  getRollingMonthBackRange,
+  buildRotacionRowsKey,
+  sanitizeNumericInput,
+  normalizeDateRange,
+  ROTACION_MAX_RANGE_ERROR,
+  enforceMaxDateRangeMonths,
+  isRangeWithinMaxMonths,
+  countInclusiveDays,
+  formatRangeLabel,
+  formatPrice,
+  formatPriceWithoutSixZeros,
+  formatPercent,
+  buildExportFileStamp,
+  dataUrlToBlob,
+  WHATSAPP_TABLE_EXCLUDE,
+  getRotacionWhatsappPixelRatio,
+  openWhatsAppDesktopPreferred,
+  WHATSAPP_JPEG_QUALITY,
+  rotacionWhatsappExportFilter,
+  prepareRotacionWhatsappExportDom,
+  rowMatchesProductSearch,
+  formatRotationOneDecimal,
+  calculateDuvDays,
+  calculateDiSinceLastIngresoDays,
+  normalizeRotationRows,
+  appendCategoriaParams,
+  buildLineasN1QueryValues,
+  readCatalogCache,
+  writeCatalogCache,
+  buildDefaultCategoriaKeys,
+  normalizeAbcdConfig,
+  buildAbcdCategoryByItem,
+  countAbcdItemsByCategory,
+  buildAbcdSummaryRows,
+  getDefaultSortDirection,
+  sortRotationRows,
+  buildRowsBySede,
+  buildConsolidatedRowsBySelection,
+  isNuevoItemRow,
+  isCeroRotacionExcludingNuevo,
+  applyRowsQuickFilter,
+  formatCompanyLabel,
+  displayRotationSedeName,
+  mapRotationSedeOptions,
+  ROTACION_LAST_SEDE_STORAGE_KEY,
+  readRotationApiForbiddenMessage,
+} from "./rotacion-preamble";
 
 export default function RotacionPage() {
   const router = useRouter();
@@ -1622,6 +367,17 @@ export default function RotacionPage() {
       setHasLoadedItems(true);
 
       try {
+        if (
+          !isRangeWithinMaxMonths({
+            start: dateRange.start,
+            end: dateRange.end,
+          })
+        ) {
+          setRows([]);
+          setHasLoadedItems(false);
+          setError(ROTACION_MAX_RANGE_ERROR);
+          return false;
+        }
         const params = new URLSearchParams();
         if (dateRange.start && dateRange.end) {
           params.set("start", dateRange.start);
@@ -2562,16 +1318,26 @@ export default function RotacionPage() {
 
   const handleStartDateChange = (value: string) => {
     if (!value) return;
-    setDateRange((current) =>
-      normalizeDateRange({ start: value, end: current.end }, "start"),
-    );
+    setDateRange((current) => {
+      const normalized = normalizeDateRange(
+        { start: value, end: current.end },
+        "start",
+      );
+      return enforceMaxDateRangeMonths(normalized, "start", availableRange);
+    });
+    setError(null);
   };
 
   const handleEndDateChange = (value: string) => {
     if (!value) return;
-    setDateRange((current) =>
-      normalizeDateRange({ start: current.start, end: value }, "end"),
-    );
+    setDateRange((current) => {
+      const normalized = normalizeDateRange(
+        { start: current.start, end: value },
+        "end",
+      );
+      return enforceMaxDateRangeMonths(normalized, "end", availableRange);
+    });
+    setError(null);
   };
 
   const handleReloadRows = () => {
@@ -2703,26 +1469,27 @@ export default function RotacionPage() {
   const shouldReloadFirst =
     targetSedeSelections.length > 0 && !hasLoadedItems && !isLoadingLineCatalog;
 
-  const exportRows = useMemo(
+  const exportGroups = useMemo(
     () =>
-      rowsBySede.flatMap((group) => {
+      rowsBySede
+        .map((group) => {
         const groupKey = `${group.empresa}-${group.sedeId}`;
         const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
         const zeroEstadoFilter = ceroEstadoFilterByGroup[groupKey] ?? "all";
         const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
-        const maxDaysForNuevoItem = Math.min(31, Math.max(1, daysConsulted));
         const ventaHastaCap =
           rowFilter === "venta_hasta" || rowFilter === "both"
             ? (ventaHastaCapByGroup[groupKey] ?? null)
             : null;
+        const isZeroRotationTableView =
+          rowFilter === "cero_rotacion" || categoryFilter === "0";
         const quickFilteredRows = applyRowsQuickFilter(
           group.rows,
           rowFilter,
           ventaHastaCap,
-          maxDaysForNuevoItem,
         );
         const filteredRows =
-          rowFilter === "cero_rotacion" && zeroEstadoFilter !== "all"
+          isZeroRotationTableView && zeroEstadoFilter !== "all"
             ? quickFilteredRows.filter((row) => {
                 const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
                 const estado =
@@ -2741,50 +1508,87 @@ export default function RotacionPage() {
           categoryFilter === "all"
             ? filteredRows
             : categoryFilter === "0"
-              ? filteredRows.filter((row) =>
-                  isCeroRotacionExcludingNuevo(row, maxDaysForNuevoItem),
-                )
+              ? filteredRows.filter((row) => isCeroRotacionExcludingNuevo(row))
               : categoryFilter === "N"
-                ? filteredRows.filter((row) =>
-                    isNuevoItemRow(row, maxDaysForNuevoItem),
-                  )
-                : filteredRows.filter(
-                    (row) => categoryByItem.get(row.item) === categoryFilter,
-                  );
-        return categoryFilteredRows.map((row) => ({
-          empresa: formatCompanyLabel(row.empresa),
-          sede: displayRotationSedeName(row.sedeName),
-          item: row.item,
-          descripcion: row.descripcion,
-          ventaPeriodo: row.totalSales,
-          margenPorcentaje: formatPercent(
-            row.totalSales > 0 ? (row.totalMargin / row.totalSales) * 100 : 0,
-          ),
-          invCierre: row.inventoryUnits,
-          unidad: row.unidad ?? "",
-          valorInventario: row.inventoryValue,
-          rotacion: formatRotationOneDecimal(row.rotation),
-          diaInventarioEfectivo: row.trackedDays.toLocaleString("es-CO"),
-          diaVentaEfectivo: row.salesEffectiveDays.toLocaleString("es-CO"),
-          ultimoIngreso: row.lastMovementDate
-            ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
-            : "Sin fecha de ingreso",
-          fechaUltimaVenta: row.lastPurchaseDate
-            ? formatDateLabel(row.lastPurchaseDate, dateLabelOptions)
-            : "Sin fecha",
-        }));
-      }),
+                ? filteredRows.filter((row) => isNuevoItemRow(row))
+                : Array.isArray(categoryFilter)
+                  ? filteredRows.filter((row) => {
+                      const cat = categoryByItem.get(row.item);
+                      return (
+                        cat !== undefined && categoryFilter.includes(cat)
+                      );
+                    })
+                  : filteredRows;
+        const rows = categoryFilteredRows.map((row) => {
+          const displayCategory = isNuevoItemRow(row)
+            ? "N"
+            : isCeroRotacionExcludingNuevo(row)
+              ? "0"
+              : (categoryByItem.get(row.item) ?? "D");
+          const ceroEstadoKey = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+          const ceroEstado =
+            ceroEstadoByKey[ceroEstadoKey] ?? DEFAULT_CERO_ROTACION_ESTADO;
+          const duvDays = calculateDuvDays(row.lastPurchaseDate);
+          const diSinceIngresoDays = calculateDiSinceLastIngresoDays(
+            row.lastMovementDate,
+          );
+          return {
+            empresa: formatCompanyLabel(row.empresa),
+            sede: displayRotationSedeName(row.sedeName),
+            item: row.item,
+            categoria: displayCategory,
+            ceroEstado: CERO_ROTACION_ESTADO_LABELS[ceroEstado],
+            descripcion: row.descripcion,
+            ventaPeriodo: row.totalSales,
+            costoPeriodo: row.totalCost,
+            margenPorcentaje: formatPercent(
+              row.totalSales > 0 ? (row.totalMargin / row.totalSales) * 100 : 0,
+            ),
+            invCierre: row.inventoryUnits,
+            unidadesVendidas: row.totalUnits,
+            unidad: row.unidad ?? "",
+            valorInventario: row.inventoryValue,
+            rotacion: formatRotationOneDecimal(row.rotation),
+            diDesdeIngreso:
+              diSinceIngresoDays == null
+                ? "Sin fecha"
+                : diSinceIngresoDays.toLocaleString("es-CO"),
+            diaInventarioEfectivo: row.trackedDays.toLocaleString("es-CO"),
+            diaVentaEfectivo: row.salesEffectiveDays.toLocaleString("es-CO"),
+            duv:
+              duvDays == null ? "Sin fecha" : `${duvDays.toLocaleString("es-CO")} dias`,
+            ultimoIngreso: row.lastMovementDate
+              ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
+              : "Sin fecha de ingreso",
+            fechaUltimaVenta: row.lastPurchaseDate
+              ? formatDateLabel(row.lastPurchaseDate, dateLabelOptions)
+              : "Sin fecha",
+          };
+        });
+        return {
+          groupKey,
+          isZeroRotationTableView,
+          empresa: formatCompanyLabel(group.empresa),
+          sede: displayRotationSedeName(group.sedeName),
+          rows,
+        };
+      })
+      .filter((group) => group.rows.length > 0),
     [
       abcdConfig,
       abcdFilterByGroup,
       baseRowsBySedeByKey,
       ceroEstadoByKey,
       ceroEstadoFilterByGroup,
-      daysConsulted,
       rowsBySede,
       rowsQuickFilterByGroup,
       ventaHastaCapByGroup,
     ],
+  );
+
+  const exportRowCount = useMemo(
+    () => exportGroups.reduce((acc, group) => acc + group.rows.length, 0),
+    [exportGroups],
   );
 
   const buildRotacionPdfDocument = useCallback(() => {
@@ -2793,88 +1597,194 @@ export default function RotacionPage() {
     doc.text("Reporte de Rotacion", 14, 12);
     doc.setFontSize(9);
     doc.text(`Generado: ${new Date().toLocaleString("es-CO")}`, 14, 18);
+    let nextStartY = 22;
+    exportGroups.forEach((group, index) => {
+      if (index > 0) {
+        doc.addPage();
+        nextStartY = 14;
+      }
 
-    autoTable(doc, {
-      startY: 22,
-      styles: { fontSize: 7, cellPadding: 1.8 },
-      head: [
-        [
-          "Empresa",
-          "Sede",
-          "Item",
-          "Descripcion",
-          "Venta periodo",
-          "Margen %",
-          "Inv cierre",
-          "Unidad",
-          "Valor inventario",
-          "DI (dias inv.)",
-          "Dia inventario efectivo",
-          "Dia venta efectivo",
-          "Ultimo ingreso",
-          "Fecha ultima venta",
-        ],
-      ],
-      body: exportRows.map((row) => [
-        row.empresa,
-        row.sede,
-        row.item,
-        row.descripcion,
-        formatPrice(row.ventaPeriodo),
-        row.margenPorcentaje,
-        row.invCierre.toLocaleString("es-CO"),
-        row.unidad,
-        formatPrice(row.valorInventario),
-        row.rotacion,
-        row.diaInventarioEfectivo,
-        row.diaVentaEfectivo,
-        row.ultimoIngreso,
-        row.fechaUltimaVenta,
-      ]),
-      margin: { left: 8, right: 8 },
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+      doc.text(
+        `${group.empresa} - ${group.sede} | Vista: ${
+          group.isZeroRotationTableView ? "Cero rotacion" : "Rotacion general"
+        }`,
+        14,
+        nextStartY,
+      );
+
+      if (group.isZeroRotationTableView) {
+        autoTable(doc, {
+          startY: nextStartY + 4,
+          styles: { fontSize: 7, cellPadding: 1.8 },
+          head: [[
+            "Item",
+            "Cat.",
+            "R.inventario",
+            "Descripcion",
+            "Inv.",
+            "V. inv.",
+            "DI",
+            "DUV",
+            "Ult. venta",
+            "Ult. ingr.",
+          ]],
+          body: group.rows.map((row) => [
+            row.item,
+            row.categoria,
+            row.ceroEstado,
+            row.descripcion,
+            `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+            formatPrice(row.valorInventario),
+            row.diDesdeIngreso,
+            row.duv,
+            row.fechaUltimaVenta,
+            row.ultimoIngreso,
+          ]),
+          margin: { left: 8, right: 8 },
+        });
+      } else {
+        autoTable(doc, {
+          startY: nextStartY + 4,
+          styles: { fontSize: 7, cellPadding: 1.8 },
+          head: [[
+            "Item",
+            "Cat.",
+            "Descripcion",
+            "Venta",
+            "Costo",
+            "Margen %",
+            "Inv.",
+            "U. vend.",
+            "V. inv.",
+            "DIC",
+            "DI",
+            "DUV",
+            "Ult. venta",
+            "Ult. ingr.",
+          ]],
+          body: group.rows.map((row) => [
+            row.item,
+            row.categoria,
+            row.descripcion,
+            formatPrice(row.ventaPeriodo),
+            formatPrice(row.costoPeriodo),
+            row.margenPorcentaje,
+            `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+            row.unidadesVendidas.toLocaleString("es-CO"),
+            formatPrice(row.valorInventario),
+            row.rotacion,
+            row.diaInventarioEfectivo,
+            row.diaVentaEfectivo,
+            row.fechaUltimaVenta,
+            row.ultimoIngreso,
+          ]),
+          margin: { left: 8, right: 8 },
+        });
+      }
     });
     return doc;
-  }, [exportRows]);
+  }, [exportGroups]);
 
   const handleExportExcel = async () => {
-    if (exportRows.length === 0 || isExportingExcel) return;
+    if (exportRowCount === 0 || isExportingExcel) return;
     setIsExportingExcel(true);
     try {
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("Rotacion");
-      sheet.columns = [
-        { header: "Empresa", key: "empresa", width: 18 },
-        { header: "Sede", key: "sede", width: 24 },
-        { header: "Item", key: "item", width: 14 },
-        { header: "Descripcion", key: "descripcion", width: 46 },
-        { header: "Venta periodo", key: "ventaPeriodo", width: 16 },
-        { header: "Margen %", key: "margenPorcentaje", width: 12 },
-        { header: "Inv cierre", key: "invCierre", width: 12 },
-        { header: "Unidad", key: "unidad", width: 10 },
-        { header: "Valor inventario", key: "valorInventario", width: 16 },
-        { header: "DI (dias inv.)", key: "rotacion", width: 14 },
-        {
-          header: "Dia inventario efectivo",
-          key: "diaInventarioEfectivo",
-          width: 18,
-        },
-        { header: "Dia venta efectivo", key: "diaVentaEfectivo", width: 16 },
-        { header: "Ultimo ingreso", key: "ultimoIngreso", width: 16 },
-        { header: "Fecha ultima venta", key: "fechaUltimaVenta", width: 20 },
-      ];
-      sheet.addRows(exportRows);
+      sheet.columns = Array.from({ length: 14 }).map(() => ({ width: 18 }));
+      sheet.getColumn(1).width = 14;
+      sheet.getColumn(2).width = 8;
+      sheet.getColumn(3).width = 40;
 
-      const headerRow = sheet.getRow(1);
-      headerRow.font = { bold: true };
-      headerRow.eachCell((cell) => {
-        cell.fill = {
+      exportGroups.forEach((group) => {
+        const titleRow = sheet.addRow([
+          `${group.empresa} - ${group.sede} | Vista: ${
+            group.isZeroRotationTableView ? "Cero rotacion" : "Rotacion general"
+          }`,
+        ]);
+        titleRow.font = { bold: true, size: 11 };
+        titleRow.getCell(1).fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: "FFF8FAFC" },
+          fgColor: { argb: "FFE2E8F0" },
         };
+
+        const headers = group.isZeroRotationTableView
+          ? [
+              "Item",
+              "Cat.",
+              "R.inventario",
+              "Descripcion",
+              "Inv.",
+              "V. inv.",
+              "DI",
+              "DUV",
+              "Ult. venta",
+              "Ult. ingr.",
+            ]
+          : [
+              "Item",
+              "Cat.",
+              "Descripcion",
+              "Venta",
+              "Costo",
+              "Margen %",
+              "Inv.",
+              "U. vend.",
+              "V. inv.",
+              "DIC",
+              "DI",
+              "DUV",
+              "Ult. venta",
+              "Ult. ingr.",
+            ];
+        const headerRow = sheet.addRow(headers);
+        headerRow.font = { bold: true };
+        headerRow.eachCell((cell) => {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF8FAFC" },
+          };
+        });
+
+        group.rows.forEach((row) => {
+          if (group.isZeroRotationTableView) {
+            sheet.addRow([
+              row.item,
+              row.categoria,
+              row.ceroEstado,
+              row.descripcion,
+              `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+              formatPrice(row.valorInventario),
+              row.diDesdeIngreso,
+              row.duv,
+              row.fechaUltimaVenta,
+              row.ultimoIngreso,
+            ]);
+          } else {
+            sheet.addRow([
+              row.item,
+              row.categoria,
+              row.descripcion,
+              formatPrice(row.ventaPeriodo),
+              formatPrice(row.costoPeriodo),
+              row.margenPorcentaje,
+              `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+              row.unidadesVendidas.toLocaleString("es-CO"),
+              formatPrice(row.valorInventario),
+              row.rotacion,
+              row.diaInventarioEfectivo,
+              row.diaVentaEfectivo,
+              row.fechaUltimaVenta,
+              row.ultimoIngreso,
+            ]);
+          }
+        });
+        sheet.addRow([]);
       });
-      sheet.getColumn("ventaPeriodo").numFmt = '"$"#,##0';
-      sheet.getColumn("valorInventario").numFmt = '"$"#,##0';
       sheet.views = [{ state: "frozen", ySplit: 1 }];
 
       const buffer = await workbook.xlsx.writeBuffer();
@@ -2895,7 +1805,7 @@ export default function RotacionPage() {
   };
 
   const handleExportPdf = () => {
-    if (exportRows.length === 0 || isExportingPdf) return;
+    if (exportRowCount === 0 || isExportingPdf) return;
     setIsExportingPdf(true);
     try {
       buildRotacionPdfDocument().save(`rotacion_${buildExportFileStamp()}.pdf`);
@@ -2906,7 +1816,7 @@ export default function RotacionPage() {
 
   const handleWhatsAppShare = useCallback(
     async (format: "png" | "jpeg" | "pdf") => {
-      if (exportRows.length === 0 || whatsappShareLockRef.current) return;
+      if (exportRowCount === 0 || whatsappShareLockRef.current) return;
       whatsappShareLockRef.current = true;
       setIsWhatsAppSharing(true);
       try {
@@ -2981,7 +1891,7 @@ export default function RotacionPage() {
         setIsWhatsAppSharing(false);
       }
     },
-    [buildRotacionPdfDocument, exportRows.length],
+    [buildRotacionPdfDocument, exportRowCount],
   );
 
   if (!ready) {
@@ -3409,7 +2319,7 @@ export default function RotacionPage() {
                 Por defecto el periodo va desde el mismo dia del mes anterior
                 hasta <span className="font-medium text-slate-700">ayer</span>{" "}
                 (acotado a los datos disponibles). Puedes cambiarlo cuando
-                quieras.
+                quieras, con un maximo de 2 meses por consulta.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -3466,7 +2376,7 @@ export default function RotacionPage() {
                   <span className="font-semibold">
                     {formatDateLabel(availableRange.end, dateLabelOptions)}
                   </span>
-                  .
+                  . Rango maximo por consulta: 2 meses.
                 </div>
               )}
             </CardContent>
@@ -3616,10 +2526,6 @@ export default function RotacionPage() {
                     const zeroEstadoFilter =
                       ceroEstadoFilterByGroup[groupKey] ?? "all";
                     const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
-                    const maxDaysForNuevoItem = Math.min(
-                      31,
-                      Math.max(1, daysConsulted),
-                    );
                     const ventaHastaCap =
                       rowFilter === "venta_hasta" || rowFilter === "both"
                         ? (ventaHastaCapByGroup[groupKey] ?? null)
@@ -3630,7 +2536,6 @@ export default function RotacionPage() {
                       group.rows,
                       rowFilter,
                       ventaHastaCap,
-                      maxDaysForNuevoItem,
                     );
                     const filteredRows =
                       isZeroRotationTableView && zeroEstadoFilter !== "all"
@@ -3661,20 +2566,19 @@ export default function RotacionPage() {
                         ? filteredRows
                         : categoryFilter === "0"
                           ? filteredRows.filter((row) =>
-                              isCeroRotacionExcludingNuevo(
-                                row,
-                                maxDaysForNuevoItem,
-                              ),
+                              isCeroRotacionExcludingNuevo(row),
                             )
                           : categoryFilter === "N"
-                            ? filteredRows.filter((row) =>
-                                isNuevoItemRow(row, maxDaysForNuevoItem),
-                              )
-                            : filteredRows.filter(
-                                (row) =>
-                                  categoryByItem.get(row.item) ===
-                                  categoryFilter,
-                              );
+                            ? filteredRows.filter((row) => isNuevoItemRow(row))
+                            : Array.isArray(categoryFilter)
+                              ? filteredRows.filter((row) => {
+                                  const cat = categoryByItem.get(row.item);
+                                  return (
+                                    cat !== undefined &&
+                                    categoryFilter.includes(cat)
+                                  );
+                                })
+                              : filteredRows;
                     const infoTotalItems = filteredRows.length;
                     const infoTotalInv = filteredRows.reduce(
                       (acc, row) => acc + row.inventoryValue,
@@ -3763,13 +2667,13 @@ export default function RotacionPage() {
                           100
                         : 0;
                     const selectedCategoryLabel =
-                      categoryFilter === "all" ? null : categoryFilter;
+                      formatAbcdCategoryFilterLabel(categoryFilter);
                     const nuevoItemsCount = group.rows.filter((row) =>
-                      isNuevoItemRow(row, maxDaysForNuevoItem),
+                      isNuevoItemRow(row),
                     ).length;
                     const categoryFilteredCeroRotacionCount =
                       categoryFilteredRows.filter((row) =>
-                        isCeroRotacionExcludingNuevo(row, maxDaysForNuevoItem),
+                        isCeroRotacionExcludingNuevo(row),
                       ).length;
                     const ventaHastaInput =
                       ventaHastaInputByGroup[groupKey] ?? "";
@@ -3792,7 +2696,7 @@ export default function RotacionPage() {
                                   row.totalSales <= ventaHastaParsedPreview;
                           }).length;
                     const ceroRotacionCount = group.rows.filter((row) =>
-                      isCeroRotacionExcludingNuevo(row, maxDaysForNuevoItem),
+                      isCeroRotacionExcludingNuevo(row),
                     ).length;
                     const totalPages = Math.max(
                       1,
@@ -3867,10 +2771,10 @@ export default function RotacionPage() {
                                       onClick={() => {
                                         setAbcdFilterByGroup((prev) => ({
                                           ...prev,
-                                          [groupKey]:
-                                            categoryFilter === "A"
-                                              ? "all"
-                                              : "A",
+                                          [groupKey]: toggleAbcdLetterFilter(
+                                            prev[groupKey] ?? "all",
+                                            "A",
+                                          ),
                                         }));
                                         setPageByGroupKey((prev) => ({
                                           ...prev,
@@ -3878,7 +2782,10 @@ export default function RotacionPage() {
                                         }));
                                       }}
                                       className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                        categoryFilter === "A"
+                                        isAbcdLetterFilterActive(
+                                          categoryFilter,
+                                          "A",
+                                        )
                                           ? "border-emerald-700 bg-emerald-600 text-white shadow-md ring-2 ring-emerald-200"
                                           : "border-emerald-300 bg-emerald-100 text-emerald-900"
                                       }`}
@@ -3900,10 +2807,10 @@ export default function RotacionPage() {
                                       onClick={() => {
                                         setAbcdFilterByGroup((prev) => ({
                                           ...prev,
-                                          [groupKey]:
-                                            categoryFilter === "B"
-                                              ? "all"
-                                              : "B",
+                                          [groupKey]: toggleAbcdLetterFilter(
+                                            prev[groupKey] ?? "all",
+                                            "B",
+                                          ),
                                         }));
                                         setPageByGroupKey((prev) => ({
                                           ...prev,
@@ -3911,7 +2818,10 @@ export default function RotacionPage() {
                                         }));
                                       }}
                                       className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                        categoryFilter === "B"
+                                        isAbcdLetterFilterActive(
+                                          categoryFilter,
+                                          "B",
+                                        )
                                           ? "border-amber-700 bg-amber-500 text-white shadow-md ring-2 ring-amber-200"
                                           : "border-amber-300 bg-amber-100 text-amber-900"
                                       }`}
@@ -3933,10 +2843,10 @@ export default function RotacionPage() {
                                       onClick={() => {
                                         setAbcdFilterByGroup((prev) => ({
                                           ...prev,
-                                          [groupKey]:
-                                            categoryFilter === "C"
-                                              ? "all"
-                                              : "C",
+                                          [groupKey]: toggleAbcdLetterFilter(
+                                            prev[groupKey] ?? "all",
+                                            "C",
+                                          ),
                                         }));
                                         setPageByGroupKey((prev) => ({
                                           ...prev,
@@ -3944,7 +2854,10 @@ export default function RotacionPage() {
                                         }));
                                       }}
                                       className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                        categoryFilter === "C"
+                                        isAbcdLetterFilterActive(
+                                          categoryFilter,
+                                          "C",
+                                        )
                                           ? "border-orange-700 bg-orange-500 text-white shadow-md ring-2 ring-orange-200"
                                           : "border-orange-300 bg-orange-100 text-orange-900"
                                       }`}
@@ -3965,10 +2878,10 @@ export default function RotacionPage() {
                                       onClick={() => {
                                         setAbcdFilterByGroup((prev) => ({
                                           ...prev,
-                                          [groupKey]:
-                                            categoryFilter === "D"
-                                              ? "all"
-                                              : "D",
+                                          [groupKey]: toggleAbcdLetterFilter(
+                                            prev[groupKey] ?? "all",
+                                            "D",
+                                          ),
                                         }));
                                         setPageByGroupKey((prev) => ({
                                           ...prev,
@@ -3976,7 +2889,10 @@ export default function RotacionPage() {
                                         }));
                                       }}
                                       className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                        categoryFilter === "D"
+                                        isAbcdLetterFilterActive(
+                                          categoryFilter,
+                                          "D",
+                                        )
                                           ? "border-rose-700 bg-rose-600 text-white shadow-md ring-2 ring-rose-200"
                                           : "border-rose-300 bg-rose-100 text-rose-900"
                                       }`}
@@ -4024,7 +2940,7 @@ export default function RotacionPage() {
                                     <Button
                                       type="button"
                                       variant="outline"
-                                      title={`Sin ventas, con inventario y con menos de ${maxDaysForNuevoItem} dias de inventario efectivo.`}
+                                      title="Sin ventas, con inventario y último ingreso hoy o ayer."
                                       onClick={() => {
                                         setAbcdFilterByGroup((prev) => ({
                                           ...prev,
@@ -4425,7 +3341,7 @@ export default function RotacionPage() {
                               variant="outline"
                               onClick={handleExportExcel}
                               disabled={
-                                exportRows.length === 0 || isExportingExcel
+                                exportRowCount === 0 || isExportingExcel
                               }
                               className="h-8 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
                             >
@@ -4438,7 +3354,7 @@ export default function RotacionPage() {
                               variant="outline"
                               onClick={handleExportPdf}
                               disabled={
-                                exportRows.length === 0 || isExportingPdf
+                                exportRowCount === 0 || isExportingPdf
                               }
                               className="h-8 rounded-lg border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
                             >
@@ -4471,7 +3387,7 @@ export default function RotacionPage() {
                                     type="button"
                                     role="menuitem"
                                     disabled={
-                                      exportRows.length === 0 ||
+                                      exportRowCount === 0 ||
                                       isWhatsAppSharing
                                     }
                                     className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
@@ -4485,7 +3401,7 @@ export default function RotacionPage() {
                                     type="button"
                                     role="menuitem"
                                     disabled={
-                                      exportRows.length === 0 ||
+                                      exportRowCount === 0 ||
                                       isWhatsAppSharing
                                     }
                                     className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
@@ -4499,7 +3415,7 @@ export default function RotacionPage() {
                                     type="button"
                                     role="menuitem"
                                     disabled={
-                                      exportRows.length === 0 ||
+                                      exportRowCount === 0 ||
                                       isWhatsAppSharing
                                     }
                                     className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
@@ -4838,6 +3754,25 @@ export default function RotacionPage() {
                                     calculateDiSinceLastIngresoDays(
                                       row.lastMovementDate,
                                     );
+                                  const displayCategory = isNuevoItemRow(
+                                    row,
+                                  )
+                                    ? "N"
+                                    : isCeroRotacionExcludingNuevo(row)
+                                      ? "0"
+                                      : (categoryByItem.get(row.item) ?? "D");
+                                  const categoryColorClass =
+                                    displayCategory === "A"
+                                      ? "border-emerald-300 bg-emerald-200 text-emerald-900"
+                                      : displayCategory === "B"
+                                        ? "border-amber-300 bg-amber-200 text-amber-900"
+                                        : displayCategory === "C"
+                                          ? "border-orange-300 bg-orange-200 text-orange-900"
+                                          : displayCategory === "0"
+                                            ? "border-slate-300 bg-slate-200 text-slate-900"
+                                            : displayCategory === "N"
+                                              ? "border-cyan-300 bg-cyan-200 text-cyan-900"
+                                              : "border-rose-300 bg-rose-200 text-rose-900";
                                   return (
                                     <TableRow
                                       key={`${group.sedeId}-${row.item}`}
@@ -4850,26 +3785,11 @@ export default function RotacionPage() {
                                             </span>
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
-                                            {(() => {
-                                              const category =
-                                                categoryByItem.get(row.item) ??
-                                                "D";
-                                              const colorClass =
-                                                category === "A"
-                                                  ? "border-emerald-300 bg-emerald-200 text-emerald-900"
-                                                  : category === "B"
-                                                    ? "border-amber-300 bg-amber-200 text-amber-900"
-                                                    : category === "C"
-                                                      ? "border-orange-300 bg-orange-200 text-orange-900"
-                                                      : "border-rose-300 bg-rose-200 text-rose-900";
-                                              return (
-                                                <Badge
-                                                  className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
-                                                >
-                                                  {category}
-                                                </Badge>
-                                              );
-                                            })()}
+                                            <Badge
+                                              className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${categoryColorClass}`}
+                                            >
+                                              {displayCategory}
+                                            </Badge>
                                           </TableCell>
                                           <TableCell className="min-w-0 px-1 py-2 align-top">
                                             <select
@@ -4966,26 +3886,11 @@ export default function RotacionPage() {
                                             </span>
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
-                                            {(() => {
-                                              const category =
-                                                categoryByItem.get(row.item) ??
-                                                "D";
-                                              const colorClass =
-                                                category === "A"
-                                                  ? "border-emerald-300 bg-emerald-200 text-emerald-900"
-                                                  : category === "B"
-                                                    ? "border-amber-300 bg-amber-200 text-amber-900"
-                                                    : category === "C"
-                                                      ? "border-orange-300 bg-orange-200 text-orange-900"
-                                                      : "border-rose-300 bg-rose-200 text-rose-900";
-                                              return (
-                                                <Badge
-                                                  className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
-                                                >
-                                                  {category}
-                                                </Badge>
-                                              );
-                                            })()}
+                                            <Badge
+                                              className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${categoryColorClass}`}
+                                            >
+                                              {displayCategory}
+                                            </Badge>
                                           </TableCell>
                                           <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
                                             <div className="wrap-break-word">

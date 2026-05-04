@@ -4,12 +4,12 @@ import { applySessionCookies, requireAuthSession, verifyCsrf } from "@/lib/auth"
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   MAX_ITEM_PRESETS,
   normalizeItemPresetsFromUnknown,
   type ItemPreset,
-} from "@/lib/inventario-x-item-presets";
+} from "@/lib/inventario/x-item-presets";
 
 const CACHE_CONTROL = "private, no-store";
 

@@ -5,9 +5,9 @@ import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { DEFAULT_SEDES, type Sede } from "@/lib/constants";
-import { canAccessPortalSection } from "@/lib/portal-sections";
-import { normalizeKeyCompact } from "@/lib/normalize";
+import { DEFAULT_SEDES, type Sede } from "@/lib/shared/constants";
+import { canAccessPortalSection } from "@/lib/shared/portal-sections";
+import { normalizeKeyCompact } from "@/lib/shared/normalize";
 import type { DailyProductivity } from "@/types";
 
 type AuthPayload = {

@@ -4,13 +4,13 @@ import { getDbPool } from "@/lib/db";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
+} from "@/lib/shared/portal-sections";
 import {
   buildDateNotFoundError,
   getVentasXItemDateAvailability,
   validateVentasXItemDateRange,
-} from "@/lib/ventas-x-item-date-range";
-import { normalizeEmpresa } from "@/lib/ventas-x-item";
+} from "@/lib/ventas/x-item-date-range";
+import { normalizeEmpresa } from "@/lib/ventas/x-item";
 
 type VentasXItemDbRow = {
   empresa: string | null;

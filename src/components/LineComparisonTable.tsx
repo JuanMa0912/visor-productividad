@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
-import { formatCOP, formatHours, hasLaborDataForLine } from "@/lib/calc";
+import { formatCOP, formatHours, hasLaborDataForLine } from "@/lib/shared/calc";
 import { DailyProductivity, LineMetrics } from "@/types";
 
 interface LineComparisonTableProps {

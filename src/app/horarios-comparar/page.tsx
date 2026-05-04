@@ -20,18 +20,18 @@ import {
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
-} from "@/lib/portal-sections";
-import { canAccessHorariosCompararBoard } from "@/lib/special-role-features";
+} from "@/lib/shared/portal-sections";
+import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
 import {
   HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN,
   HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN,
   HORARIOS_COMPARAR_TARDE_MAX_MIN,
   type ComparisonRow,
-} from "@/lib/horarios-comparar-utils";
+} from "@/lib/horarios/comparar-utils";
 import {
   DEFAULT_LUNES_SCHEDULE_PRESETS,
   planMatchesLunesPreset,
-} from "@/lib/lunes-schedule-presets";
+} from "@/lib/horarios/lunes-schedule-presets";
 
 type SedeOption = { id: string; name: string };
 
