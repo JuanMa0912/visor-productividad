@@ -29,6 +29,8 @@ import {
 import {
   INVENTARIO_SUBCATEGORY_LABELS,
   INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS,
+  compareInventarioMatrixSedeRows,
+  stripInventarioSedeDisplayPrefix,
   type InventarioSubcategoryKey,
 } from "@/lib/inventario-x-item";
 import {
@@ -963,13 +965,26 @@ export default function InventarioXItemPage() {
 
   const sedeOptions = useMemo<SelectOption[]>(
     () =>
-      availableSedeOptions.map((sede) => ({
-        value: buildSedeOptionValue(sede.empresa, sede.sedeId),
-        label: selectedCompanyState.length > 0
-          ? sede.sedeName
-          : `${sede.sedeName} (${sede.empresa.toUpperCase()})`,
-        key: buildSedeOptionValue(sede.empresa, sede.sedeId),
-      })),
+      [...availableSedeOptions]
+        .sort((left, right) =>
+          compareInventarioMatrixSedeRows(
+            left.empresa,
+            left.sedeName,
+            right.empresa,
+            right.sedeName,
+          ),
+        )
+        .map((sede) => {
+          const shortName = stripInventarioSedeDisplayPrefix(sede.sedeName);
+          return {
+            value: buildSedeOptionValue(sede.empresa, sede.sedeId),
+            label:
+              selectedCompanyState.length > 0
+                ? shortName
+                : `${shortName} (${sede.empresa.toUpperCase()})`,
+            key: buildSedeOptionValue(sede.empresa, sede.sedeId),
+          };
+        }),
     [availableSedeOptions, selectedCompanyState],
   );
 
@@ -1427,7 +1442,7 @@ export default function InventarioXItemPage() {
       const opt = availableSedeOptions.find(
         (sede) => buildSedeOptionValue(sede.empresa, sede.sedeId) === only,
       );
-      return opt?.sedeName ?? "1 sede";
+      return opt ? stripInventarioSedeDisplayPrefix(opt.sedeName) : "1 sede";
     }
     return `${selectedSede.length} sedes`;
   }, [availableSedeOptions, selectedSede]);
@@ -1500,10 +1515,6 @@ export default function InventarioXItemPage() {
   );
 
   const matrixRowsBySede = useMemo(() => {
-    const multipleCompanies =
-      selectedCompanyState.length !== 1 &&
-      new Set(filteredMatrixRows.map((row) => row.empresa)).size > 1;
-
     const grouped = new Map<
       string,
       {
@@ -1518,14 +1529,13 @@ export default function InventarioXItemPage() {
 
     filteredMatrixRows.forEach((row) => {
       const key = `${row.empresa}::${row.sedeId}`;
+      const shortSede = stripInventarioSedeDisplayPrefix(row.sedeName);
       const current = grouped.get(key) ?? {
         key,
         empresa: row.empresa,
         sedeId: row.sedeId,
         sedeName: row.sedeName,
-        displayName: multipleCompanies
-          ? `${row.empresa.toUpperCase()} - ${row.sedeName}`
-          : row.sedeName,
+        displayName: shortSede,
         items: {},
       };
 
@@ -1538,12 +1548,15 @@ export default function InventarioXItemPage() {
       grouped.set(key, current);
     });
 
-    return Array.from(grouped.values()).sort((left, right) => {
-      const byCompany = compareText(left.empresa, right.empresa);
-      if (byCompany !== 0) return byCompany;
-      return compareText(left.sedeName, right.sedeName);
-    });
-  }, [filteredMatrixRows, selectedCompanyState.length]);
+    return Array.from(grouped.values()).sort((left, right) =>
+      compareInventarioMatrixSedeRows(
+        left.empresa,
+        left.sedeName,
+        right.empresa,
+        right.sedeName,
+      ),
+    );
+  }, [filteredMatrixRows]);
 
   const matrixTotalsByItem = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -1562,9 +1575,14 @@ export default function InventarioXItemPage() {
     const directionFactor = matrixSortDirection === "asc" ? 1 : -1;
     return [...matrixRowsBySede].sort((left, right) => {
       if (matrixSortField === "sede") {
-        const byCompany = compareText(left.empresa, right.empresa);
-        if (byCompany !== 0) return byCompany * directionFactor;
-        return compareText(left.sedeName, right.sedeName) * directionFactor;
+        return (
+          compareInventarioMatrixSedeRows(
+            left.empresa,
+            left.sedeName,
+            right.empresa,
+            right.sedeName,
+          ) * directionFactor
+        );
       }
 
       const leftInventory = left.items[matrixSortField]?.inventoryUnits ?? 0;
@@ -2360,10 +2378,10 @@ export default function InventarioXItemPage() {
                           className="flex items-center gap-2 text-left"
                           title={
                             matrixSortField === "sede" && matrixSortDirection === "asc"
-                              ? "Orden actual: A a Z. Click para cambiar a Z a A"
+                              ? "Orden actual: sedes (listado estandar). Click para invertir"
                               : matrixSortField === "sede" && matrixSortDirection === "desc"
-                                ? "Orden actual: Z a A. Click para cambiar a A a Z"
-                                : "Ordenar por sede"
+                                ? "Orden actual: sedes invertido. Click para volver al listado estandar"
+                                : "Ordenar por sede (listado estandar)"
                           }
                         >
                           <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">

@@ -1,4 +1,5 @@
 import { LineMetrics } from "@/types";
+import { normalizeKeyCompact } from "./normalize";
 
 export type Sede = { id: string; name: string };
 
@@ -34,6 +35,61 @@ export const SEDE_ORDER = [
   "Bogota",
   "Chia",
 ];
+
+/**
+ * Prefijos en textos de sede (inventario, asistencia) para comparar y mostrar
+ * alineado con la tabla de horas / productividad.
+ */
+export function stripSedeLabelPrefixes(name: string): string {
+  let s = name.trim();
+  s = s.replace(/^\s*mercamio\s+/i, "").trim();
+  s = s.replace(/^\s*merkmios\s+/i, "").trim();
+  s = s.replace(/^\s*sede\s+/i, "").trim();
+  return s;
+}
+
+/**
+ * Clave compacta → índice en {@link SEDE_ORDER} (misma lógica que productividad / tabla de horas).
+ * Incluye alias que aparecen en inventario u otras fuentes.
+ */
+export const SEDE_ORDER_INDEX_MAP: Map<string, number> = (() => {
+  const map = new Map<string, number>();
+  SEDE_ORDER.forEach((name, index) => {
+    map.set(normalizeKeyCompact(name), index);
+  });
+  const addAlias = (alias: string, canonical: string) => {
+    const index = SEDE_ORDER.indexOf(canonical);
+    if (index < 0) return;
+    const key = normalizeKeyCompact(alias);
+    if (!map.has(key)) map.set(key, index);
+  };
+  addAlias("CL 5", "Calle 5ta");
+  addAlias("CL5", "Calle 5ta");
+  addAlias("Cra 39", "La 39");
+  addAlias("CRA 39", "La 39");
+  addAlias("Palmira Nro 1", "Palmira");
+  addAlias("Palmira Nro. 1", "Palmira");
+  addAlias("Merkmios La 80", "Bogota");
+  addAlias("Mercamios La 80", "Bogota");
+  addAlias("Plaza Mayor Chia", "Chia");
+  addAlias("Plaza Mayor de Chia", "Chia");
+  addAlias("Palmira Mercamio", "Palmira");
+  addAlias("Mercatodo Floralia", "Floralia");
+  return map;
+})();
+
+/** Índice en {@link SEDE_ORDER}; desconocidos al final (como en tablas de horas). */
+export function getSedeOrderIndexForRawName(raw: string): number {
+  const stripped = stripSedeLabelPrefixes(raw);
+  let key = normalizeKeyCompact(stripped);
+  let index = SEDE_ORDER_INDEX_MAP.get(key);
+  if (index !== undefined) return index;
+  if (key.startsWith("sede") && key.length > 4) {
+    index = SEDE_ORDER_INDEX_MAP.get(key.slice(4));
+    if (index !== undefined) return index;
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
 
 export const SEDE_GROUPS: Array<{ id: string; name: string; sedes: string[] }> =
   [

@@ -1,3 +1,8 @@
+import {
+  getSedeOrderIndexForRawName,
+  stripSedeLabelPrefixes,
+} from "./constants";
+
 export const INVENTARIO_X_ITEM_SOURCE_TABLE = "rotacion_base_item_dia_sede";
 export const INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS = 10;
 
@@ -69,3 +74,37 @@ export const parseInventarioLineKey = (value: string) => {
     lineaName: lineName,
   };
 };
+
+/** Misma limpieza de prefijos que {@link stripSedeLabelPrefixes} (tabla de horas / productividad). */
+export function stripInventarioSedeDisplayPrefix(name: string): string {
+  return stripSedeLabelPrefixes(name);
+}
+
+const localeEs = "es";
+
+/**
+ * Orden de filas inventario x item: mismo criterio que la tabla de horas (`SEDE_ORDER` en constants),
+ * luego empresa y nombre para desempate.
+ */
+export function compareInventarioMatrixSedeRows(
+  empresaA: string,
+  sedeNameA: string,
+  empresaB: string,
+  sedeNameB: string,
+): number {
+  const orderA = getSedeOrderIndexForRawName(sedeNameA);
+  const orderB = getSedeOrderIndexForRawName(sedeNameB);
+  if (orderA !== orderB) return orderA - orderB;
+
+  const byEmpresa = empresaA.localeCompare(empresaB, localeEs, {
+    sensitivity: "base",
+    numeric: true,
+  });
+  if (byEmpresa !== 0) return byEmpresa;
+
+  return stripSedeLabelPrefixes(sedeNameA).localeCompare(
+    stripSedeLabelPrefixes(sedeNameB),
+    localeEs,
+    { sensitivity: "base", numeric: true },
+  );
+}
