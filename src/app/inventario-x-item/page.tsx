@@ -34,6 +34,11 @@ import {
   type InventarioSubcategoryKey,
 } from "@/lib/inventario-x-item";
 import {
+  MAX_ITEM_PRESETS,
+  normalizeItemPresetsFromUnknown,
+  type ItemPreset,
+} from "@/lib/inventario-x-item-presets";
+import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/portal-sections";
@@ -113,19 +118,20 @@ type SelectOption = {
 type LineSelectionMode = "unset" | "all" | "specific";
 type MatrixSortDirection = "asc" | "desc";
 type MatrixSortField = "sede" | string;
-type ItemPreset = {
-  id: string;
-  name: string;
-  items: string[];
-  createdAt: number;
-};
 
 const ALL_FILTER_VALUE = "__all__";
 const ITEM_DROPDOWN_NO_SEARCH_LIMIT = 120;
 const ITEM_DROPDOWN_SEARCH_LIMIT = 250;
+/** Clave legacy en localStorage; se migra una vez al servidor por usuario. */
 const ITEM_PRESETS_STORAGE_KEY = "inventario-x-item:item-presets:v1";
-const MAX_ITEM_PRESETS = 25;
 const NO_SALES_DI_VALUE = 999999;
+
+const getCookieValue = (name: string) => {
+  if (typeof document === "undefined") return null;
+  const escaped = name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1");
+  const match = document.cookie.match(new RegExp(`(?:^|; )${escaped}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+};
 
 const dateLabelOptions: Intl.DateTimeFormatOptions = {
   day: "2-digit",
@@ -184,47 +190,6 @@ const parseSedeOptionValue = (
   } catch {
     return null;
   }
-};
-
-const readItemPresetsFromStorage = (): ItemPreset[] => {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(ITEM_PRESETS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((entry): ItemPreset | null => {
-        if (!entry || typeof entry !== "object") return null;
-        const candidate = entry as Partial<ItemPreset>;
-        if (typeof candidate.id !== "string" || !candidate.id.trim()) return null;
-        if (typeof candidate.name !== "string" || !candidate.name.trim()) return null;
-        if (!Array.isArray(candidate.items)) return null;
-        return {
-          id: candidate.id,
-          name: candidate.name.trim(),
-          items: candidate.items
-            .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-            .slice(0, INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS),
-          createdAt:
-            typeof candidate.createdAt === "number" && Number.isFinite(candidate.createdAt)
-              ? candidate.createdAt
-              : Date.now(),
-        };
-      })
-      .filter((preset): preset is ItemPreset => Boolean(preset))
-      .slice(0, MAX_ITEM_PRESETS);
-  } catch {
-    return [];
-  }
-};
-
-const persistItemPresetsToStorage = (presets: ItemPreset[]) => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(
-    ITEM_PRESETS_STORAGE_KEY,
-    JSON.stringify(presets.slice(0, MAX_ITEM_PRESETS)),
-  );
 };
 
 const SelectField = ({
@@ -718,9 +683,82 @@ export default function InventarioXItemPage() {
     };
   }, [router]);
 
+  const persistItemPresetsRemote = useCallback(
+    async (presets: ItemPreset[]): Promise<boolean> => {
+      const csrf = getCookieValue("vp_csrf");
+      if (!csrf) {
+        setError("No se pudo validar la sesion. Recargue la pagina.");
+        return false;
+      }
+      try {
+        const res = await fetch("/api/inventario-x-item/presets", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrf,
+          },
+          body: JSON.stringify({ presets }),
+        });
+        if (res.status === 401) {
+          router.replace("/login");
+          return false;
+        }
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          setError(data.error ?? "No se pudieron guardar los presets.");
+          return false;
+        }
+        setError(null);
+        return true;
+      } catch {
+        setError("No se pudieron guardar los presets.");
+        return false;
+      }
+    },
+    [router],
+  );
+
+  const loadItemPresetsFromServer = useCallback(async () => {
+    try {
+      const res = await fetch("/api/inventario-x-item/presets", { cache: "no-store" });
+      if (res.status === 401) {
+        router.replace("/login");
+        setItemPresets([]);
+        return;
+      }
+      if (!res.ok) {
+        setItemPresets([]);
+        return;
+      }
+      const data = (await res.json()) as { presets?: unknown };
+      let presets = normalizeItemPresetsFromUnknown(data.presets);
+      if (presets.length === 0 && typeof window !== "undefined") {
+        try {
+          const raw = window.localStorage.getItem(ITEM_PRESETS_STORAGE_KEY);
+          if (raw) {
+            const local = normalizeItemPresetsFromUnknown(JSON.parse(raw) as unknown);
+            if (local.length > 0) {
+              const migrated = await persistItemPresetsRemote(local);
+              if (migrated) {
+                window.localStorage.removeItem(ITEM_PRESETS_STORAGE_KEY);
+                presets = local;
+              }
+            }
+          }
+        } catch {
+          /* ignorar migracion */
+        }
+      }
+      setItemPresets(presets);
+    } catch {
+      setItemPresets([]);
+    }
+  }, [router, persistItemPresetsRemote]);
+
   useEffect(() => {
-    setItemPresets(readItemPresetsFromStorage());
-  }, []);
+    if (!ready) return;
+    void loadItemPresetsFromServer();
+  }, [ready, loadItemPresetsFromServer]);
 
   const resetScopedData = useCallback(() => {
     setRows([]);
@@ -1269,7 +1307,7 @@ export default function InventarioXItemPage() {
     setError(null);
   }, []);
 
-  const handleSaveItemsPreset = useCallback(() => {
+  const handleSaveItemsPreset = useCallback(async () => {
     const name = presetNameInput.trim();
     if (!name || selectedItems.length === 0) return;
 
@@ -1282,6 +1320,7 @@ export default function InventarioXItemPage() {
       createdAt: now,
     };
 
+    let bounded: ItemPreset[] = [];
     setItemPresets((current) => {
       const sameNameIndex = current.findIndex(
         (preset) => preset.name.toLowerCase() === name.toLowerCase(),
@@ -1295,16 +1334,26 @@ export default function InventarioXItemPage() {
       if (sameNameIndex >= 0) {
         savedPresetId = current[sameNameIndex].id;
       }
-      const bounded = next.slice(0, MAX_ITEM_PRESETS);
-      persistItemPresetsToStorage(bounded);
+      bounded = next.slice(0, MAX_ITEM_PRESETS);
       return bounded;
     });
+
+    const ok = await persistItemPresetsRemote(bounded);
+    if (!ok) {
+      await loadItemPresetsFromServer();
+      return;
+    }
 
     setSelectedPresetId(savedPresetId);
     setPresetNameInput("");
     setMessage(`Preset "${name}" guardado.`);
     setError(null);
-  }, [presetNameInput, selectedItems]);
+  }, [
+    presetNameInput,
+    selectedItems,
+    persistItemPresetsRemote,
+    loadItemPresetsFromServer,
+  ]);
 
   const handleApplyItemsPreset = useCallback(
     (presetId: string) => {
@@ -1336,17 +1385,22 @@ export default function InventarioXItemPage() {
     [itemOptions, itemPresets],
   );
 
-  const handleDeleteItemsPreset = useCallback(() => {
+  const handleDeleteItemsPreset = useCallback(async () => {
     if (!selectedPresetId) return;
+    let next: ItemPreset[] = [];
     setItemPresets((current) => {
-      const next = current.filter((preset) => preset.id !== selectedPresetId);
-      persistItemPresetsToStorage(next);
+      next = current.filter((preset) => preset.id !== selectedPresetId);
       return next;
     });
+    const ok = await persistItemPresetsRemote(next);
+    if (!ok) {
+      await loadItemPresetsFromServer();
+      return;
+    }
     setSelectedPresetId("");
     setMessage("Preset eliminado.");
     setError(null);
-  }, [selectedPresetId]);
+  }, [selectedPresetId, persistItemPresetsRemote, loadItemPresetsFromServer]);
 
   const loadMatrixData = useCallback(
     async (signal?: AbortSignal) => {
@@ -1434,6 +1488,9 @@ export default function InventarioXItemPage() {
       .map((item) => rowsByItem.get(item))
       .filter((row): row is InventarioSummaryRow => Boolean(row));
   }, [rowsByItem, selectedItems]);
+
+  /** La tabla no fuerza 100% de ancho: solo crece con columnas (evita hueco entre Sede e items). */
+  const matrixItemColMinClass = "min-w-44";
 
   const selectedSedeLabel = useMemo(() => {
     if (selectedSede.length === 0) return "Todas";
@@ -2184,7 +2241,10 @@ export default function InventarioXItemPage() {
               </div>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Guarda hasta {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items por preset para volver a consultarlos rapido.
+              Cada usuario tiene sus propios presets (hasta {MAX_ITEM_PRESETS},{" "}
+              {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items c/u); se guardan en el servidor y
+              siguen disponibles al cerrar el navegador. Si tenias presets viejos en este
+              equipo, la primera vez se copian a tu cuenta.
             </p>
           </div>
         </div>
@@ -2364,13 +2424,16 @@ export default function InventarioXItemPage() {
           ) : (
             <div className="relative mt-6 overflow-visible rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_60px_-42px_rgba(15,23,42,0.28)]">
               <div className="overflow-x-auto overflow-y-visible bg-[linear-gradient(180deg,rgba(248,250,252,0.8),rgba(255,255,255,1))]">
-                <div ref={matrixImageRef} className="min-w-max bg-white px-2 py-2">
-                  <table className="min-w-full border-separate border-spacing-0">
+                <div
+                  ref={matrixImageRef}
+                  className="mx-auto inline-block w-max max-w-full bg-white px-2 py-2"
+                >
+                  <table className="w-max border-separate border-spacing-0">
                   <thead>
                     <tr className="text-center text-sm font-black uppercase text-slate-900">
                       <th
                         rowSpan={3}
-                        className="sticky top-0 left-0 z-30 min-w-56 rounded-tl-2xl border-b border-r border-slate-300 bg-slate-100 px-3 py-3 text-left align-middle shadow-[8px_0_16px_-14px_rgba(15,23,42,0.25)]"
+                        className="sticky top-0 left-0 z-30 w-max max-w-52 rounded-tl-2xl border-b border-r border-slate-300 bg-slate-100 px-3 py-2 text-left align-middle shadow-[8px_0_16px_-14px_rgba(15,23,42,0.25)]"
                       >
                         <button
                           type="button"
@@ -2404,7 +2467,7 @@ export default function InventarioXItemPage() {
                         <th
                           key={`matrix-head-${row.item}`}
                           colSpan={2}
-                          className="sticky top-0 z-20 min-w-52 border-b border-x-2 border-slate-300 bg-sky-100 px-2.5 py-2.5"
+                          className={`sticky top-0 z-20 ${matrixItemColMinClass} border-b border-x-2 border-slate-300 bg-sky-100 px-2.5 py-2`}
                         >
                           <button
                             type="button"
@@ -2441,11 +2504,11 @@ export default function InventarioXItemPage() {
                         <th
                           key={`matrix-subhead-${row.item}`}
                           colSpan={2}
-                          className="sticky top-[54px] z-20 border-b border-x-2 border-slate-300 bg-sky-50 px-2.5 py-2"
+                          className={`sticky top-[54px] z-20 ${matrixItemColMinClass} border-b border-x-2 border-slate-300 bg-sky-50 px-2.5 py-1.5 text-center align-middle`}
                           title={row.descripcion}
                         >
                           <div
-                            className="max-w-36 overflow-hidden text-[10px] font-bold tracking-[0.04em] text-slate-600"
+                            className="mx-auto max-w-56 overflow-hidden text-center text-[10px] font-bold leading-snug tracking-[0.04em] text-slate-600"
                             style={{
                               display: "-webkit-box",
                               WebkitLineClamp: 2,
@@ -2461,13 +2524,13 @@ export default function InventarioXItemPage() {
                       {summaryRows.flatMap((row) => [
                         <th
                           key={`matrix-col-inv-${row.item}`}
-                          className="sticky top-[96px] z-20 border-b border-l-2 border-r border-slate-300 bg-sky-50/90 px-2 py-1.5"
+                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-l-2 border-r border-slate-300 bg-sky-50/90 px-2 py-1`}
                         >
                           Inventario
                         </th>,
                         <th
                           key={`matrix-col-di-${row.item}`}
-                          className="sticky top-[96px] z-20 border-b border-r-2 border-l border-slate-300 bg-sky-50/90 px-2 py-1.5"
+                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-r-2 border-l border-slate-300 bg-sky-50/90 px-2 py-1`}
                         >
                           DI
                         </th>,
@@ -2481,10 +2544,10 @@ export default function InventarioXItemPage() {
                         className={index % 2 === 0 ? "bg-white" : "bg-slate-50/80"}
                       >
                         <td
-                          className="sticky left-0 z-10 border-b border-r border-slate-200 bg-inherit px-3 py-2 text-sm font-bold text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]"
+                          className="sticky left-0 z-10 w-max max-w-52 border-b border-r border-slate-200 bg-inherit px-3 py-1.5 text-sm font-bold text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]"
                           title={row.displayName}
                         >
-                          <div className="max-w-56">
+                          <div className="max-w-52">
                             {multipleCompaniesInMatrix && (
                               <span className="mb-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
                                 {row.empresa}
@@ -2503,7 +2566,7 @@ export default function InventarioXItemPage() {
                             <td
                               key={`${row.key}-${itemRow.item}-inv`}
                               title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Inv ${formatUnits(cellValue.inventoryUnits)}`}
-                              className={`border-b border-l-2 border-r border-slate-200 px-2 py-2 text-right text-sm font-semibold tabular-nums ${
+                              className={`${matrixItemColMinClass} border-b border-l-2 border-r border-slate-200 px-2 py-1.5 text-right text-sm font-semibold tabular-nums ${
                                 isZero ? "text-slate-300" : "text-slate-700"
                               }`}
                             >
@@ -2512,7 +2575,7 @@ export default function InventarioXItemPage() {
                             <td
                               key={`${row.key}-${itemRow.item}-di`}
                               title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: DI ${formatDi(cellValue.diDays)}`}
-                              className="border-b border-l border-r-2 border-slate-200 px-2 py-2 text-right text-xs font-semibold tabular-nums text-slate-600"
+                              className={`${matrixItemColMinClass} border-b border-l border-r-2 border-slate-200 px-2 py-1.5 text-right text-xs font-semibold tabular-nums text-slate-600`}
                             >
                               {formatDi(cellValue.diDays)}
                             </td>,
@@ -2523,21 +2586,21 @@ export default function InventarioXItemPage() {
                   </tbody>
                   <tfoot>
                     <tr className="bg-amber-50/90">
-                      <td className="sticky left-0 z-10 rounded-bl-2xl border-t-2 border-r border-amber-300 bg-amber-50 px-3 py-2 text-sm font-black uppercase tracking-[0.12em] text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]">
+                      <td className="sticky left-0 z-10 w-max max-w-52 rounded-bl-2xl border-t-2 border-r border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-black uppercase tracking-[0.12em] text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]">
                         Total general
                       </td>
                       {summaryRows.flatMap((row) => [
                           <td
                             key={`matrix-total-${row.item}-inv`}
                             title={`Total ${row.item}: ${formatUnits(matrixTotalsByItem[row.item] ?? 0)}`}
-                            className="border-t-2 border-l-2 border-r border-amber-300 bg-amber-50 px-2 py-2 text-right text-sm font-black text-slate-900 tabular-nums"
+                            className={`${matrixItemColMinClass} border-t-2 border-l-2 border-r border-amber-300 bg-amber-50 px-2 py-1.5 text-right text-sm font-black text-slate-900 tabular-nums`}
                           >
                             {formatUnits(matrixTotalsByItem[row.item] ?? 0)}
                           </td>,
                           <td
                             key={`matrix-total-${row.item}-di`}
                             title={`DI ${row.item}: ${formatDi(row.rotationDays)}`}
-                            className="border-t-2 border-l border-r-2 border-amber-300 bg-amber-50 px-2 py-2 text-right text-xs font-black text-slate-700 tabular-nums"
+                            className={`${matrixItemColMinClass} border-t-2 border-l border-r-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-right text-xs font-black text-slate-700 tabular-nums`}
                           >
                             {formatDi(row.rotationDays)}
                           </td>,
@@ -2547,9 +2610,11 @@ export default function InventarioXItemPage() {
                 </table>
                 </div>
 
-                <div className="border-t border-slate-200/80 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Desplaza horizontalmente para ver todos los items.
-                </div>
+                {summaryRows.length > 2 ? (
+                  <div className="border-t border-slate-200/80 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Desplaza horizontalmente para ver todos los items.
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
