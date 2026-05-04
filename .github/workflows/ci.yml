@@ -18,7 +18,8 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      NEXT_BUILD_CPUS: "2"
+      # Explicit heap for ubuntu-latest; local/Linux deploys use scripts/build.mjs heuristics.
+      NEXT_BUILD_MEMORY_MB: "4096"
       DB_HOST: localhost
       DB_PORT: "5432"
       DB_NAME: produXdia

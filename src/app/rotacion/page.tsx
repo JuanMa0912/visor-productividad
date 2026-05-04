@@ -60,9 +60,7 @@ import { cn, formatDateLabel } from "@/lib/utils";
 const getCookieValue = (name: string) => {
   if (typeof document === "undefined") return null;
   const escaped = name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1");
-  const match = document.cookie.match(
-    new RegExp(`(?:^|; )${escaped}=([^;]*)`),
-  );
+  const match = document.cookie.match(new RegExp(`(?:^|; )${escaped}=([^;]*)`));
   return match ? decodeURIComponent(match[1]) : null;
 };
 
@@ -239,18 +237,38 @@ const ROTACION_FLOATING_HEADER_TOP_PX = 0;
 const ROTACION_FLOATING_HEADER_COLUMNS = [
   { label: "Item", align: "left" as const, field: "item" as const },
   { label: "Cat.", align: "center" as const },
-  { label: "Descripcion", align: "left" as const, field: "descripcion" as const },
+  {
+    label: "Descripcion",
+    align: "left" as const,
+    field: "descripcion" as const,
+  },
   { label: "Venta", align: "right" as const, field: "totalSales" as const },
   { label: "Costo", align: "right" as const, field: "totalCost" as const },
   { label: "Margen %", align: "right" as const },
   { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
   { label: "U. vend.", align: "right" as const, field: "totalUnits" as const },
-  { label: "V. inv.", align: "right" as const, field: "inventoryValue" as const },
+  {
+    label: "V. inv.",
+    align: "right" as const,
+    field: "inventoryValue" as const,
+  },
   { label: "DIC", align: "right" as const, field: "rotation" as const },
   { label: "DIE", align: "right" as const, field: "trackedDays" as const },
-  { label: "DVE", align: "right" as const, field: "salesEffectiveDays" as const },
-  { label: "Ult. venta", align: "right" as const, field: "lastPurchaseDate" as const },
-  { label: "Ult. ingr.", align: "right" as const, field: "lastMovementDate" as const },
+  {
+    label: "DVE",
+    align: "right" as const,
+    field: "salesEffectiveDays" as const,
+  },
+  {
+    label: "Ult. venta",
+    align: "right" as const,
+    field: "lastPurchaseDate" as const,
+  },
+  {
+    label: "Ult. ingr.",
+    align: "right" as const,
+    field: "lastMovementDate" as const,
+  },
 ] as const;
 const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
   { label: "Item", align: "left" as const, field: "item" as const },
@@ -260,13 +278,29 @@ const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
     align: "left" as const,
     field: "ceroRotacionEstado" as const,
   },
-  { label: "Descripcion", align: "left" as const, field: "descripcion" as const },
+  {
+    label: "Descripcion",
+    align: "left" as const,
+    field: "descripcion" as const,
+  },
   { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
-  { label: "V. inv.", align: "right" as const, field: "inventoryValue" as const },
+  {
+    label: "V. inv.",
+    align: "right" as const,
+    field: "inventoryValue" as const,
+  },
   { label: "DI", align: "right" as const, field: "lastMovementDate" as const },
   { label: "DUV", align: "right" as const, field: "duvDays" as const },
-  { label: "Ult. venta", align: "right" as const, field: "lastPurchaseDate" as const },
-  { label: "Ult. ingr.", align: "right" as const, field: "lastMovementDate" as const },
+  {
+    label: "Ult. venta",
+    align: "right" as const,
+    field: "lastPurchaseDate" as const,
+  },
+  {
+    label: "Ult. ingr.",
+    align: "right" as const,
+    field: "lastMovementDate" as const,
+  },
 ] as const;
 const NO_SALES_DI_VALUE = 999999;
 const PERECEDEROS_LINEAS_N1 = new Set(["01", "02", "03", "04", "12"]);
@@ -287,8 +321,7 @@ const mergeRotationLineaN1NombreMaps = (
 const bestLineaDisplayFromRow = (row: RotationRow): string | null => {
   const linea = row.linea?.trim();
   const n01 = row.nombreLinea01?.trim();
-  const safeLinea =
-    linea && linea.toLowerCase() !== "sin linea" ? linea : null;
+  const safeLinea = linea && linea.toLowerCase() !== "sin linea" ? linea : null;
   if (!safeLinea) return n01 && n01.length > 0 ? n01 : null;
   if (!n01) return safeLinea;
   return safeLinea.length >= n01.length ? safeLinea : n01;
@@ -711,7 +744,8 @@ const buildLineasN1QueryValues = (
   const catalogSet = new Set(catalog);
   const valid = selectedValues.filter((value) => catalogSet.has(value));
   const isFull =
-    valid.length === catalog.length && catalog.every((value) => valid.includes(value));
+    valid.length === catalog.length &&
+    catalog.every((value) => valid.includes(value));
   if (valid.length === 0 || isFull) return null;
   return valid;
 };
@@ -966,8 +1000,7 @@ const sortRotationRows = (
         break;
       case "ceroRotacionEstado":
         result =
-          (getCeroEstadoRank?.(left) ?? 0) -
-          (getCeroEstadoRank?.(right) ?? 0);
+          (getCeroEstadoRank?.(left) ?? 0) - (getCeroEstadoRank?.(right) ?? 0);
         break;
       default:
         result = 0;
@@ -1047,11 +1080,13 @@ const buildConsolidatedRowsBySelection = (
       row.salesEffectiveDays,
     );
     current.lastMovementDate =
-      !current.lastMovementDate || (row.lastMovementDate ?? "") > current.lastMovementDate
+      !current.lastMovementDate ||
+      (row.lastMovementDate ?? "") > current.lastMovementDate
         ? row.lastMovementDate
         : current.lastMovementDate;
     current.lastPurchaseDate =
-      !current.lastPurchaseDate || (row.lastPurchaseDate ?? "") > current.lastPurchaseDate
+      !current.lastPurchaseDate ||
+      (row.lastPurchaseDate ?? "") > current.lastPurchaseDate
         ? row.lastPurchaseDate
         : current.lastPurchaseDate;
     current.rotation =
@@ -1214,7 +1249,12 @@ const SortableRotationHeader = ({
       )}
       aria-pressed={isActive}
     >
-      <span className={cn("min-w-0 leading-tight", isRight ? "justify-self-end" : "justify-self-start")}>
+      <span
+        className={cn(
+          "min-w-0 leading-tight",
+          isRight ? "justify-self-end" : "justify-self-start",
+        )}
+      >
         {label}
       </span>
       <ArrowUp
@@ -1271,62 +1311,62 @@ const FilterSelectField = ({
   const allSelected = options.length > 0 && values.length === options.length;
   return (
     <div className="block">
-    <FilterFieldLabel
-      icon={Icon}
-      label={label}
-      accentClassName={accentClassName}
-    />
-    <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || allSelected}
-          onClick={() => onChange(options.map((option) => option.value))}
-          className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
-        >
-          Seleccionar todas
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || values.length === 0}
-          onClick={() => onChange([])}
-          className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
-        >
-          Limpiar
-        </Button>
+      <FilterFieldLabel
+        icon={Icon}
+        label={label}
+        accentClassName={accentClassName}
+      />
+      <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={disabled || allSelected}
+            onClick={() => onChange(options.map((option) => option.value))}
+            className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
+          >
+            Seleccionar todas
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={disabled || values.length === 0}
+            onClick={() => onChange([])}
+            className="h-7 rounded-md border-slate-300 px-2 text-[11px]"
+          >
+            Limpiar
+          </Button>
+        </div>
+        <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+          {options.map((option) => {
+            const checked = valueSet.has(option.value);
+            return (
+              <label
+                key={option.value}
+                className="flex items-start gap-2 text-sm text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={() =>
+                    onChange(
+                      checked
+                        ? values.filter((value) => value !== option.value)
+                        : [...values, option.value],
+                    )
+                  }
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-200"
+                />
+                <span className="leading-5">{option.label}</span>
+              </label>
+            );
+          })}
+        </div>
       </div>
-      <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
-        {options.map((option) => {
-          const checked = valueSet.has(option.value);
-          return (
-            <label
-              key={option.value}
-              className="flex items-start gap-2 text-sm text-slate-700"
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={disabled}
-                onChange={() =>
-                  onChange(
-                    checked
-                      ? values.filter((value) => value !== option.value)
-                      : [...values, option.value],
-                  )
-                }
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-200"
-              />
-              <span className="leading-5">{option.label}</span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
-    <p className="mt-1 text-[11px] text-slate-500">{helperText}</p>
+      <p className="mt-1 text-[11px] text-slate-500">{helperText}</p>
     </div>
   );
 };
@@ -1459,7 +1499,10 @@ export default function RotacionPage() {
     () => new Set(selectedCompanies),
     [selectedCompanies],
   );
-  const selectedSedeSet = useMemo(() => new Set(selectedSedes), [selectedSedes]);
+  const selectedSedeSet = useMemo(
+    () => new Set(selectedSedes),
+    [selectedSedes],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -1489,7 +1532,10 @@ export default function RotacionPage() {
         setSpecialRoles(payload.user?.specialRoles ?? null);
         if (
           !isAdmin &&
-          (!canAccessPortalSection(payload.user?.allowedDashboards, "producto") ||
+          (!canAccessPortalSection(
+            payload.user?.allowedDashboards,
+            "producto",
+          ) ||
             !canAccessPortalSubsection(
               payload.user?.allowedSubdashboards,
               "rotacion",
@@ -1545,9 +1591,11 @@ export default function RotacionPage() {
       },
       options?: { signal?: AbortSignal },
     ): Promise<boolean> => {
-      const allSedeOptionsForQuery = mapRotationSedeOptions(filterCatalog.sedes);
-      const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
-        selectedSedeSet.has(option.value),
+      const allSedeOptionsForQuery = mapRotationSedeOptions(
+        filterCatalog.sedes,
+      );
+      const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter(
+        (option) => selectedSedeSet.has(option.value),
       );
       const targetSedeSelectionsForQuery =
         selectedSedeMetasForQuery.length > 0
@@ -1601,11 +1649,16 @@ export default function RotacionPage() {
         }
         const payload = (await response.json()) as RotationApiResponse;
         if (!response.ok) {
-          throw new Error(payload.error ?? "No fue posible consultar la rotacion.");
+          throw new Error(
+            payload.error ?? "No fue posible consultar la rotacion.",
+          );
         }
 
         setRows(normalizeRotationRows(payload.rows ?? []));
-        if (targetSedeSelectionsForQuery.length === 1 && payload.meta?.abcdConfig) {
+        if (
+          targetSedeSelectionsForQuery.length === 1 &&
+          payload.meta?.abcdConfig
+        ) {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
           setAbcdDraftConfig(normalizedConfig);
@@ -1745,17 +1798,16 @@ export default function RotacionPage() {
             rows: [],
             stats: { evaluatedSedes: 0, visibleItems: 0, withoutMovement: 0 },
             filters: payloadFromCache.filters,
-            meta:
-              payloadFromCache.meta ?? {
-                effectiveRange: {
-                  start: dateRange.start || "",
-                  end: dateRange.end || "",
-                },
-                availableRange: { min: "", max: "" },
-                sourceTable: "rotacion_base_item_dia_sede",
-                maxSalesValue: null,
-                abcdConfig: DEFAULT_ABCD_CONFIG,
+            meta: payloadFromCache.meta ?? {
+              effectiveRange: {
+                start: dateRange.start || "",
+                end: dateRange.end || "",
               },
+              availableRange: { min: "", max: "" },
+              sourceTable: "rotacion_base_item_dia_sede",
+              maxSalesValue: null,
+              abcdConfig: DEFAULT_ABCD_CONFIG,
+            },
           };
         } else {
           const response = await fetch(
@@ -1793,15 +1845,14 @@ export default function RotacionPage() {
 
         if (generation !== catalogLoadGenerationRef.current) return;
 
-        const baseFilters =
-          payload.filters ?? {
-            companies: [],
-            sedes: [],
-            lineasN1: [],
-            lineasN1Nombres: {},
-            categorias: [],
-            lineasN1PorCategoria: {},
-          };
+        const baseFilters = payload.filters ?? {
+          companies: [],
+          sedes: [],
+          lineasN1: [],
+          lineasN1Nombres: {},
+          categorias: [],
+          lineasN1PorCategoria: {},
+        };
         let allLineasN1 = baseFilters.lineasN1 ?? [];
         let allCategorias = baseFilters.categorias ?? [];
         let allLineasN1PorCategoria = baseFilters.lineasN1PorCategoria ?? {};
@@ -1809,9 +1860,11 @@ export default function RotacionPage() {
           undefined,
           baseFilters.lineasN1Nombres,
         );
-        const allSedeOptionsForQuery = mapRotationSedeOptions(baseFilters.sedes);
-        const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
-          selectedSedeSet.has(option.value),
+        const allSedeOptionsForQuery = mapRotationSedeOptions(
+          baseFilters.sedes,
+        );
+        const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter(
+          (option) => selectedSedeSet.has(option.value),
         );
         const targetSedeSelectionsForQuery =
           selectedSedeMetasForQuery.length > 0
@@ -1837,17 +1890,16 @@ export default function RotacionPage() {
               rows: [],
               stats: { evaluatedSedes: 0, visibleItems: 0, withoutMovement: 0 },
               filters: cachedCombo.filters,
-              meta:
-                cachedCombo.meta ?? {
-                  effectiveRange: {
-                    start: dateRange.start || "",
-                    end: dateRange.end || "",
-                  },
-                  availableRange: { min: "", max: "" },
-                  sourceTable: "rotacion_base_item_dia_sede",
-                  maxSalesValue: null,
-                  abcdConfig: DEFAULT_ABCD_CONFIG,
+              meta: cachedCombo.meta ?? {
+                effectiveRange: {
+                  start: dateRange.start || "",
+                  end: dateRange.end || "",
                 },
+                availableRange: { min: "", max: "" },
+                sourceTable: "rotacion_base_item_dia_sede",
+                maxSalesValue: null,
+                abcdConfig: DEFAULT_ABCD_CONFIG,
+              },
             };
           } else {
             const comboParams = new URLSearchParams();
@@ -1871,7 +1923,8 @@ export default function RotacionPage() {
               return;
             }
             if (comboResponse.ok) {
-              comboPayload = (await comboResponse.json()) as RotationApiResponse;
+              comboPayload =
+                (await comboResponse.json()) as RotationApiResponse;
               writeCatalogCache(catalogBySedeCacheRef.current, comboKey, {
                 filters: comboPayload.filters,
                 meta: comboPayload.meta,
@@ -2040,7 +2093,9 @@ export default function RotacionPage() {
   const sedeOptions = useMemo(() => {
     const scopedOptions =
       selectedCompanySet.size > 0
-        ? allSedeOptions.filter((option) => selectedCompanySet.has(option.empresa))
+        ? allSedeOptions.filter((option) =>
+            selectedCompanySet.has(option.empresa),
+          )
         : allSedeOptions;
 
     return scopedOptions.map((option) => ({
@@ -2056,7 +2111,9 @@ export default function RotacionPage() {
   const targetSedeSelections = useMemo(() => {
     if (selectedSedeMetas.length > 0) return selectedSedeMetas;
     if (selectedCompanySet.size === 0) return [];
-    return allSedeOptions.filter((option) => selectedCompanySet.has(option.empresa));
+    return allSedeOptions.filter((option) =>
+      selectedCompanySet.has(option.empresa),
+    );
   }, [allSedeOptions, selectedCompanySet, selectedSedeMetas]);
   const singleSelectedSedeTarget = useMemo(
     () => (targetSedeSelections.length === 1 ? targetSedeSelections[0] : null),
@@ -2101,13 +2158,7 @@ export default function RotacionPage() {
       }
     })();
     return () => controller.abort();
-  }, [
-    ready,
-    router,
-    dateRange.start,
-    dateRange.end,
-    targetSedeSelections,
-  ]);
+  }, [ready, router, dateRange.start, dateRange.end, targetSedeSelections]);
 
   const persistCeroRotacionEstado = useCallback(
     async (row: RotationRow, estado: CeroRotacionEstado) => {
@@ -2285,7 +2336,6 @@ export default function RotacionPage() {
     [filterCatalog.categorias],
   );
 
-
   useEffect(() => {
     const optionValues = lineaN1Options.map((option) => option.value);
     const optionSet = new Set(optionValues);
@@ -2356,12 +2406,7 @@ export default function RotacionPage() {
     } catch {
       /* ignore */
     }
-  }, [
-    ready,
-    isLoadingLineCatalog,
-    selectedSedes,
-    allSedeOptions,
-  ]);
+  }, [ready, isLoadingLineCatalog, selectedSedes, allSedeOptions]);
 
   const sortedRows = useMemo(
     () =>
@@ -2373,12 +2418,7 @@ export default function RotacionPage() {
           ? getCeroEstadoSortRank
           : undefined,
       ),
-    [
-      rows,
-      tableSortDirection,
-      tableSortField,
-      getCeroEstadoSortRank,
-    ],
+    [rows, tableSortDirection, tableSortField, getCeroEstadoSortRank],
   );
   const rowsAfterProductFilter = useMemo(
     () =>
@@ -2390,7 +2430,10 @@ export default function RotacionPage() {
   const baseRowsBySede = useMemo(
     () =>
       targetSedeSelections.length > 1
-        ? buildConsolidatedRowsBySelection(sortedRows, targetSedeSelections.length)
+        ? buildConsolidatedRowsBySelection(
+            sortedRows,
+            targetSedeSelections.length,
+          )
         : buildRowsBySede(sortedRows),
     [sortedRows, targetSedeSelections.length],
   );
@@ -2445,14 +2488,17 @@ export default function RotacionPage() {
           '[data-slot="table-container"]',
         ) as HTMLDivElement | null;
         const table = host.querySelector("table") as HTMLTableElement | null;
-        const thead = host.querySelector("thead") as HTMLTableSectionElement | null;
+        const thead = host.querySelector(
+          "thead",
+        ) as HTMLTableSectionElement | null;
         if (!container || !table || !thead) continue;
 
         const theadRect = thead.getBoundingClientRect();
         const tableRect = table.getBoundingClientRect();
         const theadHeight = Math.max(theadRect.height, 36);
         const inRange =
-          theadRect.top <= boundTop && tableRect.bottom > boundTop + theadHeight;
+          theadRect.top <= boundTop &&
+          tableRect.bottom > boundTop + theadHeight;
         if (!inRange) continue;
 
         const left = Math.max(8, tableRect.left);
@@ -2679,7 +2725,8 @@ export default function RotacionPage() {
           rowFilter === "cero_rotacion" && zeroEstadoFilter !== "all"
             ? quickFilteredRows.filter((row) => {
                 const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
-                const estado = ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+                const estado =
+                  ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
                 return estado === zeroEstadoFilter;
               })
             : quickFilteredRows;
@@ -2711,9 +2758,7 @@ export default function RotacionPage() {
           descripcion: row.descripcion,
           ventaPeriodo: row.totalSales,
           margenPorcentaje: formatPercent(
-            row.totalSales > 0
-              ? (row.totalMargin / row.totalSales) * 100
-              : 0,
+            row.totalSales > 0 ? (row.totalMargin / row.totalSales) * 100 : 0,
           ),
           invCierre: row.inventoryUnits,
           unidad: row.unidad ?? "",
@@ -3595,7 +3640,8 @@ export default function RotacionPage() {
                               row.item,
                             );
                             const estado =
-                              ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+                              ceroEstadoByKey[key] ??
+                              DEFAULT_CERO_ROTACION_ESTADO;
                             return estado === zeroEstadoFilter;
                           })
                         : quickFilteredRows;
@@ -3626,7 +3672,8 @@ export default function RotacionPage() {
                               )
                             : filteredRows.filter(
                                 (row) =>
-                                  categoryByItem.get(row.item) === categoryFilter,
+                                  categoryByItem.get(row.item) ===
+                                  categoryFilter,
                               );
                     const infoTotalItems = filteredRows.length;
                     const infoTotalInv = filteredRows.reduce(
@@ -3722,10 +3769,7 @@ export default function RotacionPage() {
                     ).length;
                     const categoryFilteredCeroRotacionCount =
                       categoryFilteredRows.filter((row) =>
-                        isCeroRotacionExcludingNuevo(
-                          row,
-                          maxDaysForNuevoItem,
-                        ),
+                        isCeroRotacionExcludingNuevo(row, maxDaysForNuevoItem),
                       ).length;
                     const ventaHastaInput =
                       ventaHastaInputByGroup[groupKey] ?? "";
@@ -3747,12 +3791,8 @@ export default function RotacionPage() {
                               : row.totalSales >= 1 &&
                                   row.totalSales <= ventaHastaParsedPreview;
                           }).length;
-                    const ceroRotacionCount = group.rows.filter(
-                      (row) =>
-                        isCeroRotacionExcludingNuevo(
-                          row,
-                          maxDaysForNuevoItem,
-                        ),
+                    const ceroRotacionCount = group.rows.filter((row) =>
+                      isCeroRotacionExcludingNuevo(row, maxDaysForNuevoItem),
                     ).length;
                     const totalPages = Math.max(
                       1,
@@ -3818,179 +3858,195 @@ export default function RotacionPage() {
                               <div className="flex min-w-0 flex-1 items-start gap-3">
                                 <div className="flex flex-wrap items-end gap-2">
                                   <div className="flex flex-col items-center gap-1">
-                                  <span className="text-[10px] font-semibold text-emerald-500">
-                                    {abcdConfig.aUntilPercent.toFixed(0)}%
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setAbcdFilterByGroup((prev) => ({
-                                        ...prev,
-                                        [groupKey]:
-                                          categoryFilter === "A" ? "all" : "A",
-                                      }));
-                                      setPageByGroupKey((prev) => ({
-                                        ...prev,
-                                        [groupKey]: 1,
-                                      }));
-                                    }}
-                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                      categoryFilter === "A"
-                                        ? "border-emerald-700 bg-emerald-600 text-white shadow-md ring-2 ring-emerald-200"
-                                        : "border-emerald-300 bg-emerald-100 text-emerald-900"
-                                    }`}
-                                  >
-                                    A: {abcdCounts.A.toLocaleString("es-CO")}
-                                  </Button>
+                                    <span className="text-[10px] font-semibold text-emerald-500">
+                                      {abcdConfig.aUntilPercent.toFixed(0)}%
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setAbcdFilterByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]:
+                                            categoryFilter === "A"
+                                              ? "all"
+                                              : "A",
+                                        }));
+                                        setPageByGroupKey((prev) => ({
+                                          ...prev,
+                                          [groupKey]: 1,
+                                        }));
+                                      }}
+                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "A"
+                                          ? "border-emerald-700 bg-emerald-600 text-white shadow-md ring-2 ring-emerald-200"
+                                          : "border-emerald-300 bg-emerald-100 text-emerald-900"
+                                      }`}
+                                    >
+                                      A: {abcdCounts.A.toLocaleString("es-CO")}
+                                    </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                  <span className="text-[10px] font-semibold text-amber-500">
-                                    {(
-                                      abcdConfig.bUntilPercent -
-                                      abcdConfig.aUntilPercent
-                                    ).toFixed(0)}
-                                    %
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setAbcdFilterByGroup((prev) => ({
-                                        ...prev,
-                                        [groupKey]:
-                                          categoryFilter === "B" ? "all" : "B",
-                                      }));
-                                      setPageByGroupKey((prev) => ({
-                                        ...prev,
-                                        [groupKey]: 1,
-                                      }));
-                                    }}
-                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                      categoryFilter === "B"
-                                        ? "border-amber-700 bg-amber-500 text-white shadow-md ring-2 ring-amber-200"
-                                        : "border-amber-300 bg-amber-100 text-amber-900"
-                                    }`}
-                                  >
-                                    B: {abcdCounts.B.toLocaleString("es-CO")}
-                                  </Button>
+                                    <span className="text-[10px] font-semibold text-amber-500">
+                                      {(
+                                        abcdConfig.bUntilPercent -
+                                        abcdConfig.aUntilPercent
+                                      ).toFixed(0)}
+                                      %
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setAbcdFilterByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]:
+                                            categoryFilter === "B"
+                                              ? "all"
+                                              : "B",
+                                        }));
+                                        setPageByGroupKey((prev) => ({
+                                          ...prev,
+                                          [groupKey]: 1,
+                                        }));
+                                      }}
+                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "B"
+                                          ? "border-amber-700 bg-amber-500 text-white shadow-md ring-2 ring-amber-200"
+                                          : "border-amber-300 bg-amber-100 text-amber-900"
+                                      }`}
+                                    >
+                                      B: {abcdCounts.B.toLocaleString("es-CO")}
+                                    </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                  <span className="text-[10px] font-semibold text-orange-500">
-                                    {(
-                                      abcdConfig.cUntilPercent -
-                                      abcdConfig.bUntilPercent
-                                    ).toFixed(0)}
-                                    %
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setAbcdFilterByGroup((prev) => ({
-                                        ...prev,
-                                        [groupKey]:
-                                          categoryFilter === "C" ? "all" : "C",
-                                      }));
-                                      setPageByGroupKey((prev) => ({
-                                        ...prev,
-                                        [groupKey]: 1,
-                                      }));
-                                    }}
-                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                      categoryFilter === "C"
-                                        ? "border-orange-700 bg-orange-500 text-white shadow-md ring-2 ring-orange-200"
-                                        : "border-orange-300 bg-orange-100 text-orange-900"
-                                    }`}
-                                  >
-                                    C: {abcdCounts.C.toLocaleString("es-CO")}
-                                  </Button>
+                                    <span className="text-[10px] font-semibold text-orange-500">
+                                      {(
+                                        abcdConfig.cUntilPercent -
+                                        abcdConfig.bUntilPercent
+                                      ).toFixed(0)}
+                                      %
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setAbcdFilterByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]:
+                                            categoryFilter === "C"
+                                              ? "all"
+                                              : "C",
+                                        }));
+                                        setPageByGroupKey((prev) => ({
+                                          ...prev,
+                                          [groupKey]: 1,
+                                        }));
+                                      }}
+                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "C"
+                                          ? "border-orange-700 bg-orange-500 text-white shadow-md ring-2 ring-orange-200"
+                                          : "border-orange-300 bg-orange-100 text-orange-900"
+                                      }`}
+                                    >
+                                      C: {abcdCounts.C.toLocaleString("es-CO")}
+                                    </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                  <span className="text-[10px] font-semibold text-rose-500">
-                                    {(100 - abcdConfig.cUntilPercent).toFixed(
-                                      0,
-                                    )}
-                                    %
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setAbcdFilterByGroup((prev) => ({
-                                        ...prev,
-                                        [groupKey]:
-                                          categoryFilter === "D" ? "all" : "D",
-                                      }));
-                                      setPageByGroupKey((prev) => ({
-                                        ...prev,
-                                        [groupKey]: 1,
-                                      }));
-                                    }}
-                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                      categoryFilter === "D"
-                                        ? "border-rose-700 bg-rose-600 text-white shadow-md ring-2 ring-rose-200"
-                                        : "border-rose-300 bg-rose-100 text-rose-900"
-                                    }`}
-                                  >
-                                    D: {abcdCounts.D.toLocaleString("es-CO")}
-                                  </Button>
+                                    <span className="text-[10px] font-semibold text-rose-500">
+                                      {(100 - abcdConfig.cUntilPercent).toFixed(
+                                        0,
+                                      )}
+                                      %
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setAbcdFilterByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]:
+                                            categoryFilter === "D"
+                                              ? "all"
+                                              : "D",
+                                        }));
+                                        setPageByGroupKey((prev) => ({
+                                          ...prev,
+                                          [groupKey]: 1,
+                                        }));
+                                      }}
+                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "D"
+                                          ? "border-rose-700 bg-rose-600 text-white shadow-md ring-2 ring-rose-200"
+                                          : "border-rose-300 bg-rose-100 text-rose-900"
+                                      }`}
+                                    >
+                                      D: {abcdCounts.D.toLocaleString("es-CO")}
+                                    </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                  <span className="text-[10px] font-semibold text-slate-500">
-                                    cero
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    title="Sin ventas en el periodo y con inventario."
-                                    onClick={() => {
-                                      setAbcdFilterByGroup((prev) => ({
-                                        ...prev,
-                                        [groupKey]:
-                                          categoryFilter === "0" ? "all" : "0",
-                                      }));
-                                      setPageByGroupKey((prev) => ({
-                                        ...prev,
-                                        [groupKey]: 1,
-                                      }));
-                                    }}
-                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                      categoryFilter === "0"
-                                        ? "border-slate-700 bg-slate-600 text-white shadow-md ring-2 ring-slate-200"
-                                        : "border-slate-300 bg-slate-100 text-slate-900"
-                                    }`}
-                                  >
-                                    0 Cero: {ceroRotacionCount.toLocaleString("es-CO")}
-                                  </Button>
+                                    <span className="text-[10px] font-semibold text-slate-500">
+                                      cero
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      title="Sin ventas en el periodo y con inventario."
+                                      onClick={() => {
+                                        setAbcdFilterByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]:
+                                            categoryFilter === "0"
+                                              ? "all"
+                                              : "0",
+                                        }));
+                                        setPageByGroupKey((prev) => ({
+                                          ...prev,
+                                          [groupKey]: 1,
+                                        }));
+                                      }}
+                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "0"
+                                          ? "border-slate-700 bg-slate-600 text-white shadow-md ring-2 ring-slate-200"
+                                          : "border-slate-300 bg-slate-100 text-slate-900"
+                                      }`}
+                                    >
+                                      0 Cero:{" "}
+                                      {ceroRotacionCount.toLocaleString(
+                                        "es-CO",
+                                      )}
+                                    </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                  <span className="text-[10px] font-semibold text-cyan-600">
-                                    nuevos
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    title={`Sin ventas, con inventario y con menos de ${maxDaysForNuevoItem} dias de inventario efectivo.`}
-                                    onClick={() => {
-                                      setAbcdFilterByGroup((prev) => ({
-                                        ...prev,
-                                        [groupKey]:
-                                          categoryFilter === "N" ? "all" : "N",
-                                      }));
-                                      setPageByGroupKey((prev) => ({
-                                        ...prev,
-                                        [groupKey]: 1,
-                                      }));
-                                    }}
-                                    className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
-                                      categoryFilter === "N"
-                                        ? "border-cyan-700 bg-cyan-600 text-white shadow-md ring-2 ring-cyan-200"
-                                        : "border-cyan-300 bg-cyan-100 text-cyan-900"
-                                    }`}
-                                  >
-                                    N Nuevo: {nuevoItemsCount.toLocaleString("es-CO")}
-                                  </Button>
+                                    <span className="text-[10px] font-semibold text-cyan-600">
+                                      nuevos
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      title={`Sin ventas, con inventario y con menos de ${maxDaysForNuevoItem} dias de inventario efectivo.`}
+                                      onClick={() => {
+                                        setAbcdFilterByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]:
+                                            categoryFilter === "N"
+                                              ? "all"
+                                              : "N",
+                                        }));
+                                        setPageByGroupKey((prev) => ({
+                                          ...prev,
+                                          [groupKey]: 1,
+                                        }));
+                                      }}
+                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "N"
+                                          ? "border-cyan-700 bg-cyan-600 text-white shadow-md ring-2 ring-cyan-200"
+                                          : "border-cyan-300 bg-cyan-100 text-cyan-900"
+                                      }`}
+                                    >
+                                      N Nuevo:{" "}
+                                      {nuevoItemsCount.toLocaleString("es-CO")}
+                                    </Button>
                                   </div>
                                 </div>
                                 {rowFilter === "none" ? (
@@ -3999,7 +4055,9 @@ export default function RotacionPage() {
                                       <div className="whitespace-nowrap">
                                         Total venta:{" "}
                                         <span className="font-black text-slate-900">
-                                          {formatPriceWithoutSixZeros(infoTotalSales)}
+                                          {formatPriceWithoutSixZeros(
+                                            infoTotalSales,
+                                          )}
                                         </span>
                                       </div>
                                       <div className="whitespace-nowrap">
@@ -4067,10 +4125,18 @@ export default function RotacionPage() {
                                     <table className="min-w-96 border-collapse text-sm text-slate-700">
                                       <thead>
                                         <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                          <th className="px-2 py-1 text-left">Clase</th>
-                                          <th className="px-2 py-1 text-right">$ VTA</th>
-                                          <th className="px-2 py-1 text-right"># ITEM</th>
-                                          <th className="px-2 py-1 text-right">Margen</th>
+                                          <th className="px-2 py-1 text-left">
+                                            Clase
+                                          </th>
+                                          <th className="px-2 py-1 text-right">
+                                            $ VTA
+                                          </th>
+                                          <th className="px-2 py-1 text-right">
+                                            # ITEM
+                                          </th>
+                                          <th className="px-2 py-1 text-right">
+                                            Margen
+                                          </th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -4083,10 +4149,14 @@ export default function RotacionPage() {
                                               {row.categoria}:
                                             </td>
                                             <td className="px-2 py-1.5 text-right tabular-nums">
-                                              {formatPriceWithoutSixZeros(row.totalSales)}
+                                              {formatPriceWithoutSixZeros(
+                                                row.totalSales,
+                                              )}
                                             </td>
                                             <td className="px-2 py-1.5 text-right tabular-nums">
-                                              {row.itemCount.toLocaleString("es-CO")}
+                                              {row.itemCount.toLocaleString(
+                                                "es-CO",
+                                              )}
                                             </td>
                                             <td className="px-2 py-1.5 text-right tabular-nums">
                                               {formatPercent(row.marginPct)}
@@ -4094,7 +4164,9 @@ export default function RotacionPage() {
                                           </tr>
                                         ))}
                                         <tr className="bg-slate-50/90 font-semibold text-slate-900">
-                                          <td className="px-2 py-1.5">Totales</td>
+                                          <td className="px-2 py-1.5">
+                                            Totales
+                                          </td>
                                           <td className="px-2 py-1.5 text-right tabular-nums">
                                             {formatPriceWithoutSixZeros(
                                               abcdSummaryTotals.totalSales,
@@ -4106,7 +4178,9 @@ export default function RotacionPage() {
                                             )}
                                           </td>
                                           <td className="px-2 py-1.5 text-right tabular-nums">
-                                            {formatPercent(abcdSummaryTotalMarginPct)}
+                                            {formatPercent(
+                                              abcdSummaryTotalMarginPct,
+                                            )}
                                           </td>
                                         </tr>
                                       </tbody>
@@ -4173,10 +4247,12 @@ export default function RotacionPage() {
                                         onChange={(event) => {
                                           const next = event.target
                                             .value as GroupZeroEstadoFilter;
-                                          setCeroEstadoFilterByGroup((prev) => ({
-                                            ...prev,
-                                            [groupKey]: next,
-                                          }));
+                                          setCeroEstadoFilterByGroup(
+                                            (prev) => ({
+                                              ...prev,
+                                              [groupKey]: next,
+                                            }),
+                                          );
                                           setPageByGroupKey((prev) => ({
                                             ...prev,
                                             [groupKey]: 1,
@@ -4191,9 +4267,7 @@ export default function RotacionPage() {
                                         <option value="seguimiento">
                                           Seguimiento
                                         </option>
-                                        <option value="surtido">
-                                          Surtido
-                                        </option>
+                                        <option value="surtido">Surtido</option>
                                       </select>
                                     </label>
                                   ) : null}
@@ -4288,7 +4362,9 @@ export default function RotacionPage() {
                                     <div>
                                       Total inv:{" "}
                                       <span className="font-black text-slate-900">
-                                        {formatPriceWithoutSixZeros(infoTotalInv)}
+                                        {formatPriceWithoutSixZeros(
+                                          infoTotalInv,
+                                        )}
                                       </span>
                                     </div>
                                     <div>
@@ -4348,27 +4424,40 @@ export default function RotacionPage() {
                               type="button"
                               variant="outline"
                               onClick={handleExportExcel}
-                              disabled={exportRows.length === 0 || isExportingExcel}
+                              disabled={
+                                exportRows.length === 0 || isExportingExcel
+                              }
                               className="h-8 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
                             >
-                              {isExportingExcel ? "Exportando..." : "Descargar Excel"}
+                              {isExportingExcel
+                                ? "Exportando..."
+                                : "Descargar Excel"}
                             </Button>
                             <Button
                               type="button"
                               variant="outline"
                               onClick={handleExportPdf}
-                              disabled={exportRows.length === 0 || isExportingPdf}
+                              disabled={
+                                exportRows.length === 0 || isExportingPdf
+                              }
                               className="h-8 rounded-lg border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
                             >
-                              {isExportingPdf ? "Exportando..." : "Descargar PDF"}
+                              {isExportingPdf
+                                ? "Exportando..."
+                                : "Descargar PDF"}
                             </Button>
-                            <details ref={whatsappDetailsRef} className="relative group">
+                            <details
+                              ref={whatsappDetailsRef}
+                              className="relative group"
+                            >
                               <summary
                                 className="flex h-8 list-none cursor-pointer items-center gap-2 rounded-lg border border-emerald-600 bg-[#25D366] px-3 text-xs font-semibold text-white shadow-sm outline-none transition hover:bg-[#20bd5a] [&::-webkit-details-marker]:hidden disabled:pointer-events-none disabled:opacity-50"
                                 aria-label="Enviar tabla por WhatsApp"
                               >
                                 <WhatsAppLogo className="h-5 w-5 shrink-0 text-white" />
-                                <span className="hidden sm:inline">WhatsApp</span>
+                                <span className="hidden sm:inline">
+                                  WhatsApp
+                                </span>
                               </summary>
                               <div
                                 className="absolute right-0 z-30 mt-1 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-lg ring-1 ring-black/5"
@@ -4382,10 +4471,13 @@ export default function RotacionPage() {
                                     type="button"
                                     role="menuitem"
                                     disabled={
-                                      exportRows.length === 0 || isWhatsAppSharing
+                                      exportRows.length === 0 ||
+                                      isWhatsAppSharing
                                     }
                                     className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                                    onClick={() => void handleWhatsAppShare("png")}
+                                    onClick={() =>
+                                      void handleWhatsAppShare("png")
+                                    }
                                   >
                                     Imagen PNG (sin pérdida)
                                   </button>
@@ -4393,10 +4485,13 @@ export default function RotacionPage() {
                                     type="button"
                                     role="menuitem"
                                     disabled={
-                                      exportRows.length === 0 || isWhatsAppSharing
+                                      exportRows.length === 0 ||
+                                      isWhatsAppSharing
                                     }
                                     className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                                    onClick={() => void handleWhatsAppShare("jpeg")}
+                                    onClick={() =>
+                                      void handleWhatsAppShare("jpeg")
+                                    }
                                   >
                                     Imagen JPG (98% calidad)
                                   </button>
@@ -4404,20 +4499,25 @@ export default function RotacionPage() {
                                     type="button"
                                     role="menuitem"
                                     disabled={
-                                      exportRows.length === 0 || isWhatsAppSharing
+                                      exportRows.length === 0 ||
+                                      isWhatsAppSharing
                                     }
                                     className="rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:bg-emerald-50 disabled:opacity-50"
-                                    onClick={() => void handleWhatsAppShare("pdf")}
+                                    onClick={() =>
+                                      void handleWhatsAppShare("pdf")
+                                    }
                                   >
                                     PDF
                                   </button>
                                 </div>
                                 <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
-                                  Imagen: solo la tabla (paginación por sede), captura
-                                  ampliada y alta densidad de píxeles. JPG usa calidad
-                                  98%; WhatsApp puede volver a comprimir al enviar — si no
-                                  se lee bien, prueba PNG o PDF. PDF: todas las filas
-                                  filtradas, igual que &quot;Descargar PDF&quot;.{" "}
+                                  Imagen: solo la tabla (paginación por sede),
+                                  captura ampliada y alta densidad de píxeles.
+                                  JPG usa calidad 98%; WhatsApp puede volver a
+                                  comprimir al enviar — si no se lee bien,
+                                  prueba PNG o PDF. PDF: todas las filas
+                                  filtradas, igual que &quot;Descargar
+                                  PDF&quot;.{" "}
                                   {typeof navigator !== "undefined" &&
                                   typeof navigator.share === "function"
                                     ? "Con compartir, elige WhatsApp si aparece."
@@ -4463,482 +4563,513 @@ export default function RotacionPage() {
                         <CardContent className="px-0 py-0">
                           <div ref={(node) => setTableHostRef(groupKey, node)}>
                             <Table
-                            containerClassName="rotacion-table-capture-scroll min-w-0 overscroll-x-contain"
-                            className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm"
-                          >
-                            <colgroup>
-                              {(isZeroRotationTableView
-                                ? ROTACION_ZERO_TABLE_COL_WIDTHS
-                                : ROTACION_TABLE_COL_WIDTHS
-                              ).map((w, i) => (
-                                <col key={i} style={{ width: w }} />
-                              ))}
-                            </colgroup>
-                            <TableHeader>
-                              <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                                {isZeroRotationTableView ? (
-                                  <>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="item"
-                                        label="Item"
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
-                                      Cat.
-                                    </TableHead>
-                                    <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="ceroRotacionEstado"
-                                        label="R.inventario"
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="descripcion"
-                                        label="Descripcion"
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="inventoryUnits"
-                                        align="right"
-                                        label="Inv."
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="inventoryValue"
-                                        align="right"
-                                        label="V. inv."
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="lastMovementDate"
-                                        align="right"
-                                        label="DI"
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="duvDays"
-                                        align="right"
-                                        label="DUV"
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="lastPurchaseDate"
-                                        align="right"
-                                        label="Ult. venta"
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                      <SortableRotationHeader
-                                        field="lastMovementDate"
-                                        align="right"
-                                        label="Ult. ingr."
-                                        activeField={tableSortField}
-                                        direction={tableSortDirection}
-                                        onSort={handleTableSort}
-                                      />
-                                    </TableHead>
-                                  </>
-                                ) : (
-                                  <>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="item"
-                                    label="Item"
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
-                                  Cat.
-                                </TableHead>
-                                <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="descripcion"
-                                    label="Descripcion"
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="totalSales"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        Venta
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="totalCost"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        Costo
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <span className="block text-[11px] leading-tight text-slate-700">
-                                    Margen %
-                                  </span>
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="inventoryUnits"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        Inv.
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="totalUnits"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        U. vend.
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="inventoryValue"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        V. inv.
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="rotation"
-                                    align="right"
-                                    label="DIC"
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="trackedDays"
-                                    align="right"
-                                    label="DIE"
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="salesEffectiveDays"
-                                    align="right"
-                                    label="DVE"
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="lastPurchaseDate"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        Ult. venta
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
-                                  <SortableRotationHeader
-                                    field="lastMovementDate"
-                                    align="right"
-                                    label={
-                                      <span className="block text-[11px] leading-tight">
-                                        Ult. ingr.
-                                      </span>
-                                    }
-                                    activeField={tableSortField}
-                                    direction={tableSortDirection}
-                                    onSort={handleTableSort}
-                                  />
-                                </TableHead>
-                                  </>
-                                )}
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {paginatedRows.map((row) => {
-                                const duvDays = calculateDuvDays(
-                                  row.lastPurchaseDate,
-                                );
-                                const diSinceIngresoDays =
-                                  calculateDiSinceLastIngresoDays(
-                                    row.lastMovementDate,
-                                  );
-                                return (
-                                <TableRow key={`${group.sedeId}-${row.item}`}>
+                              containerClassName="rotacion-table-capture-scroll min-w-0 overscroll-x-contain"
+                              className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm"
+                            >
+                              <colgroup>
+                                {(isZeroRotationTableView
+                                  ? ROTACION_ZERO_TABLE_COL_WIDTHS
+                                  : ROTACION_TABLE_COL_WIDTHS
+                                ).map((w, i) => (
+                                  <col key={i} style={{ width: w }} />
+                                ))}
+                              </colgroup>
+                              <TableHeader>
+                                <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
                                   {isZeroRotationTableView ? (
                                     <>
-                                      <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
-                                        <span className="text-xs">{row.item}</span>
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
-                                        {(() => {
-                                          const category =
-                                            categoryByItem.get(row.item) ?? "D";
-                                          const colorClass =
-                                            category === "A"
-                                              ? "border-emerald-300 bg-emerald-200 text-emerald-900"
-                                              : category === "B"
-                                                ? "border-amber-300 bg-amber-200 text-amber-900"
-                                                : category === "C"
-                                                  ? "border-orange-300 bg-orange-200 text-orange-900"
-                                                  : "border-rose-300 bg-rose-200 text-rose-900";
-                                          return (
-                                            <Badge
-                                              className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
-                                            >
-                                              {category}
-                                            </Badge>
-                                          );
-                                        })()}
-                                      </TableCell>
-                                      <TableCell className="min-w-0 px-1 py-2 align-top">
-                                        <select
-                                          className="max-w-44 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-left text-xs text-slate-800 shadow-sm"
-                                          value={
-                                            ceroEstadoByKey[
-                                              makeCeroRotacionEstadoKey(
-                                                row.sedeId,
-                                                row.item,
-                                              )
-                                            ] ?? DEFAULT_CERO_ROTACION_ESTADO
-                                          }
-                                          onChange={(e) => {
-                                            void persistCeroRotacionEstado(
-                                              row,
-                                              e.target
-                                                .value as CeroRotacionEstado,
-                                            );
-                                          }}
-                                        >
-                                          {CERO_ROTACION_ESTADO_VALUES.map(
-                                            (v) => (
-                                              <option key={v} value={v}>
-                                                {CERO_ROTACION_ESTADO_LABELS[v]}
-                                              </option>
-                                            ),
-                                          )}
-                                        </select>
-                                      </TableCell>
-                                      <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
-                                        <div className="wrap-break-word">
-                                          <p className="text-[13px] font-medium leading-snug text-slate-900">
-                                            {row.descripcion}
-                                          </p>
-                                          <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
-                                            Linea {row.linea}
-                                            {row.lineaN1Codigo
-                                              ? ` | N1 ${row.lineaN1Codigo}`
-                                              : ""}
-                                            {row.unidad ? ` | ${row.unidad}` : ""}
-                                          </p>
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
-                                        {row.inventoryUnits.toLocaleString("es-CO")}{" "}
-                                        {row.unidad ?? ""}
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                                        {formatPrice(row.inventoryValue)}
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
-                                        {diSinceIngresoDays == null
-                                          ? "Sin fecha"
-                                          : diSinceIngresoDays.toLocaleString(
-                                              "es-CO",
-                                            )}
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
-                                        {duvDays == null
-                                          ? "Sin fecha"
-                                          : `${duvDays.toLocaleString("es-CO")} dias`}
-                                      </TableCell>
-                                      <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
-                                        {row.lastPurchaseDate
-                                          ? formatDateLabel(
-                                              row.lastPurchaseDate,
-                                              dateLabelOptions,
-                                            )
-                                          : "Sin fecha de venta"}
-                                      </TableCell>
-                                      <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
-                                        {row.lastMovementDate
-                                          ? formatDateLabel(
-                                              row.lastMovementDate,
-                                              dateLabelOptions,
-                                            )
-                                          : "Sin fecha de ingreso"}
-                                      </TableCell>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="item"
+                                          label="Item"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                                        Cat.
+                                      </TableHead>
+                                      <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="ceroRotacionEstado"
+                                          label="R.inventario"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="descripcion"
+                                          label="Descripcion"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="inventoryUnits"
+                                          align="right"
+                                          label="Inv."
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="inventoryValue"
+                                          align="right"
+                                          label="V. inv."
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="lastMovementDate"
+                                          align="right"
+                                          label="DI"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="duvDays"
+                                          align="right"
+                                          label="DUV"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="lastPurchaseDate"
+                                          align="right"
+                                          label="Ult. venta"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="lastMovementDate"
+                                          align="right"
+                                          label="Ult. ingr."
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
                                     </>
                                   ) : (
                                     <>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
-                                    <span className="text-xs">{row.item}</span>
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
-                                    {(() => {
-                                      const category =
-                                        categoryByItem.get(row.item) ?? "D";
-                                      const colorClass =
-                                        category === "A"
-                                          ? "border-emerald-300 bg-emerald-200 text-emerald-900"
-                                          : category === "B"
-                                            ? "border-amber-300 bg-amber-200 text-amber-900"
-                                            : category === "C"
-                                              ? "border-orange-300 bg-orange-200 text-orange-900"
-                                              : "border-rose-300 bg-rose-200 text-rose-900";
-                                      return (
-                                        <Badge
-                                          className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
-                                        >
-                                          {category}
-                                        </Badge>
-                                      );
-                                    })()}
-                                  </TableCell>
-                                  <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
-                                    <div className="wrap-break-word">
-                                      <p className="text-[13px] font-medium leading-snug text-slate-900">
-                                        {row.descripcion}
-                                      </p>
-                                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
-                                        Linea {row.linea}
-                                        {row.lineaN1Codigo
-                                          ? ` | N1 ${row.lineaN1Codigo}`
-                                          : ""}
-                                        {row.unidad ? ` | ${row.unidad}` : ""}
-                                      </p>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                                    {formatPrice(row.totalSales)}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                                    {formatPrice(row.totalCost)}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                                    {formatPercent(
-                                      row.totalSales > 0
-                                        ? (row.totalMargin / row.totalSales) * 100
-                                        : 0,
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
-                                    {row.inventoryUnits.toLocaleString("es-CO")}{" "}
-                                    {row.unidad ?? ""}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
-                                    {row.totalUnits.toLocaleString("es-CO")}
-                                    {row.unidad ? ` ${row.unidad}` : ""}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
-                                    {formatPrice(row.inventoryValue)}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top tabular-nums text-slate-700">
-                                    {formatRotationOneDecimal(row.rotation)}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
-                                    {row.trackedDays.toLocaleString("es-CO")}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
-                                    {row.salesEffectiveDays.toLocaleString("es-CO")}
-                                  </TableCell>
-                                  <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
-                                    {row.lastPurchaseDate
-                                      ? formatDateLabel(
-                                          row.lastPurchaseDate,
-                                          dateLabelOptions,
-                                        )
-                                      : "Sin fecha de venta"}
-                                  </TableCell>
-                                  <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
-                                    {row.lastMovementDate
-                                      ? formatDateLabel(
-                                          row.lastMovementDate,
-                                          dateLabelOptions,
-                                        )
-                                      : "Sin fecha de ingreso"}
-                                  </TableCell>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="item"
+                                          label="Item"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                                        Cat.
+                                      </TableHead>
+                                      <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="descripcion"
+                                          label="Descripcion"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="totalSales"
+                                          align="right"
+                                          label={
+                                            <span className="block text-[11px] leading-tight">
+                                              Venta
+                                            </span>
+                                          }
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="totalCost"
+                                          align="right"
+                                          label={
+                                            <span className="block text-[11px] leading-tight">
+                                              Costo
+                                            </span>
+                                          }
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <span className="block text-[11px] leading-tight text-slate-700">
+                                          Margen %
+                                        </span>
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="inventoryUnits"
+                                          align="right"
+                                          label={
+                                            <span className="block text-[11px] leading-tight">
+                                              Inv.
+                                            </span>
+                                          }
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="totalUnits"
+                                          align="right"
+                                          label={
+                                            <span className="block text-[11px] leading-tight">
+                                              U. vend.
+                                            </span>
+                                          }
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="inventoryValue"
+                                          align="right"
+                                          label={
+                                            <span className="block text-[11px] leading-tight">
+                                              V. inv.
+                                            </span>
+                                          }
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="rotation"
+                                          align="right"
+                                          label="DIC"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="trackedDays"
+                                          align="right"
+                                          label="DIE"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 py-2 pl-4 pr-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="salesEffectiveDays"
+                                          align="right"
+                                          label="DVE"
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="lastPurchaseDate"
+                                          align="right"
+                                          label={
+                                            <span className="block text-[11px] leading-tight">
+                                              Ult. venta
+                                            </span>
+                                          }
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="lastMovementDate"
+                                          align="right"
+                                          label={
+                                            <span className="block text-[11px] leading-tight">
+                                              Ult. ingr.
+                                            </span>
+                                          }
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
+                                      </TableHead>
                                     </>
                                   )}
                                 </TableRow>
-                              );
-                              })}
-                            </TableBody>
+                              </TableHeader>
+                              <TableBody>
+                                {paginatedRows.map((row) => {
+                                  const duvDays = calculateDuvDays(
+                                    row.lastPurchaseDate,
+                                  );
+                                  const diSinceIngresoDays =
+                                    calculateDiSinceLastIngresoDays(
+                                      row.lastMovementDate,
+                                    );
+                                  return (
+                                    <TableRow
+                                      key={`${group.sedeId}-${row.item}`}
+                                    >
+                                      {isZeroRotationTableView ? (
+                                        <>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
+                                            <span className="text-xs">
+                                              {row.item}
+                                            </span>
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
+                                            {(() => {
+                                              const category =
+                                                categoryByItem.get(row.item) ??
+                                                "D";
+                                              const colorClass =
+                                                category === "A"
+                                                  ? "border-emerald-300 bg-emerald-200 text-emerald-900"
+                                                  : category === "B"
+                                                    ? "border-amber-300 bg-amber-200 text-amber-900"
+                                                    : category === "C"
+                                                      ? "border-orange-300 bg-orange-200 text-orange-900"
+                                                      : "border-rose-300 bg-rose-200 text-rose-900";
+                                              return (
+                                                <Badge
+                                                  className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
+                                                >
+                                                  {category}
+                                                </Badge>
+                                              );
+                                            })()}
+                                          </TableCell>
+                                          <TableCell className="min-w-0 px-1 py-2 align-top">
+                                            <select
+                                              className="max-w-44 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-left text-xs text-slate-800 shadow-sm"
+                                              value={
+                                                ceroEstadoByKey[
+                                                  makeCeroRotacionEstadoKey(
+                                                    row.sedeId,
+                                                    row.item,
+                                                  )
+                                                ] ??
+                                                DEFAULT_CERO_ROTACION_ESTADO
+                                              }
+                                              onChange={(e) => {
+                                                void persistCeroRotacionEstado(
+                                                  row,
+                                                  e.target
+                                                    .value as CeroRotacionEstado,
+                                                );
+                                              }}
+                                            >
+                                              {CERO_ROTACION_ESTADO_VALUES.map(
+                                                (v) => (
+                                                  <option key={v} value={v}>
+                                                    {
+                                                      CERO_ROTACION_ESTADO_LABELS[
+                                                        v
+                                                      ]
+                                                    }
+                                                  </option>
+                                                ),
+                                              )}
+                                            </select>
+                                          </TableCell>
+                                          <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
+                                            <div className="wrap-break-word">
+                                              <p className="text-[13px] font-medium leading-snug text-slate-900">
+                                                {row.descripcion}
+                                              </p>
+                                              <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                                                Linea {row.linea}
+                                                {row.lineaN1Codigo
+                                                  ? ` | N1 ${row.lineaN1Codigo}`
+                                                  : ""}
+                                                {row.unidad
+                                                  ? ` | ${row.unidad}`
+                                                  : ""}
+                                              </p>
+                                            </div>
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
+                                            {row.inventoryUnits.toLocaleString(
+                                              "es-CO",
+                                            )}{" "}
+                                            {row.unidad ?? ""}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                            {formatPrice(row.inventoryValue)}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
+                                            {diSinceIngresoDays == null
+                                              ? "Sin fecha"
+                                              : diSinceIngresoDays.toLocaleString(
+                                                  "es-CO",
+                                                )}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-xs tabular-nums text-slate-700">
+                                            {duvDays == null
+                                              ? "Sin fecha"
+                                              : `${duvDays.toLocaleString("es-CO")} dias`}
+                                          </TableCell>
+                                          <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                            {row.lastPurchaseDate
+                                              ? formatDateLabel(
+                                                  row.lastPurchaseDate,
+                                                  dateLabelOptions,
+                                                )
+                                              : "Sin fecha de venta"}
+                                          </TableCell>
+                                          <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                            {row.lastMovementDate
+                                              ? formatDateLabel(
+                                                  row.lastMovementDate,
+                                                  dateLabelOptions,
+                                                )
+                                              : "Sin fecha de ingreso"}
+                                          </TableCell>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
+                                            <span className="text-xs">
+                                              {row.item}
+                                            </span>
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
+                                            {(() => {
+                                              const category =
+                                                categoryByItem.get(row.item) ??
+                                                "D";
+                                              const colorClass =
+                                                category === "A"
+                                                  ? "border-emerald-300 bg-emerald-200 text-emerald-900"
+                                                  : category === "B"
+                                                    ? "border-amber-300 bg-amber-200 text-amber-900"
+                                                    : category === "C"
+                                                      ? "border-orange-300 bg-orange-200 text-orange-900"
+                                                      : "border-rose-300 bg-rose-200 text-rose-900";
+                                              return (
+                                                <Badge
+                                                  className={`min-w-7 justify-center px-1.5 py-0 text-xs font-black ${colorClass}`}
+                                                >
+                                                  {category}
+                                                </Badge>
+                                              );
+                                            })()}
+                                          </TableCell>
+                                          <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
+                                            <div className="wrap-break-word">
+                                              <p className="text-[13px] font-medium leading-snug text-slate-900">
+                                                {row.descripcion}
+                                              </p>
+                                              <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                                                Linea {row.linea}
+                                                {row.lineaN1Codigo
+                                                  ? ` | N1 ${row.lineaN1Codigo}`
+                                                  : ""}
+                                                {row.unidad
+                                                  ? ` | ${row.unidad}`
+                                                  : ""}
+                                              </p>
+                                            </div>
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                            {formatPrice(row.totalSales)}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                            {formatPrice(row.totalCost)}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                            {formatPercent(
+                                              row.totalSales > 0
+                                                ? (row.totalMargin /
+                                                    row.totalSales) *
+                                                    100
+                                                : 0,
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
+                                            {row.inventoryUnits.toLocaleString(
+                                              "es-CO",
+                                            )}{" "}
+                                            {row.unidad ?? ""}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">
+                                            {row.totalUnits.toLocaleString(
+                                              "es-CO",
+                                            )}
+                                            {row.unidad ? ` ${row.unidad}` : ""}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
+                                            {formatPrice(row.inventoryValue)}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top tabular-nums text-slate-700">
+                                            {formatRotationOneDecimal(
+                                              row.rotation,
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
+                                            {row.trackedDays.toLocaleString(
+                                              "es-CO",
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap py-2 pl-4 pr-2 text-right align-top text-xs tabular-nums text-slate-600">
+                                            {row.salesEffectiveDays.toLocaleString(
+                                              "es-CO",
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                            {row.lastPurchaseDate
+                                              ? formatDateLabel(
+                                                  row.lastPurchaseDate,
+                                                  dateLabelOptions,
+                                                )
+                                              : "Sin fecha de venta"}
+                                          </TableCell>
+                                          <TableCell className="px-2 py-2 text-right align-top text-xs leading-tight tabular-nums text-slate-700 whitespace-normal wrap-break-word">
+                                            {row.lastMovementDate
+                                              ? formatDateLabel(
+                                                  row.lastMovementDate,
+                                                  dateLabelOptions,
+                                                )
+                                              : "Sin fecha de ingreso"}
+                                          </TableCell>
+                                        </>
+                                      )}
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
                             </Table>
                           </div>
                         </CardContent>
@@ -4966,60 +5097,60 @@ export default function RotacionPage() {
           : ROTACION_FLOATING_HEADER_COLUMNS;
 
         return floatingHeaderState ? (
-        <div
-          className="fixed z-40"
-          style={{
-            top: ROTACION_FLOATING_HEADER_TOP_PX,
-            left: floatingHeaderState.left,
-            width: floatingHeaderState.width,
-          }}
-        >
-          <div className="pointer-events-auto overflow-hidden rounded-t-lg border border-slate-200 bg-white shadow-[0_12px_28px_-20px_rgba(15,23,42,0.7)]">
-            <div
-              style={{
-                transform: `translateX(-${floatingHeaderState.scrollLeft}px)`,
-              }}
-            >
-              <table className="w-full min-w-7xl table-fixed border-collapse text-sm">
-                <colgroup>
-                  {floatingWidths.map((w, i) => (
-                    <col key={`floating-col-${i}`} style={{ width: w }} />
-                  ))}
-                </colgroup>
-                <thead>
-                  <tr className="bg-slate-50/95">
-                    {floatingColumns.map((col, i) => (
-                      <th
-                        key={`floating-header-${i}`}
-                        className={cn(
-                          "border-b border-slate-200 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700",
-                          col.align === "right"
-                            ? "text-right"
-                            : col.align === "center"
-                              ? "text-center"
-                              : "text-left",
-                        )}
-                      >
-                        {"field" in col ? (
-                          <SortableRotationHeader
-                            field={col.field}
-                            label={col.label}
-                            activeField={tableSortField}
-                            direction={tableSortDirection}
-                            onSort={handleTableSort}
-                            align={col.align === "right" ? "right" : "left"}
-                          />
-                        ) : (
-                          col.label
-                        )}
-                      </th>
+          <div
+            className="fixed z-40"
+            style={{
+              top: ROTACION_FLOATING_HEADER_TOP_PX,
+              left: floatingHeaderState.left,
+              width: floatingHeaderState.width,
+            }}
+          >
+            <div className="pointer-events-auto overflow-hidden rounded-t-lg border border-slate-200 bg-white shadow-[0_12px_28px_-20px_rgba(15,23,42,0.7)]">
+              <div
+                style={{
+                  transform: `translateX(-${floatingHeaderState.scrollLeft}px)`,
+                }}
+              >
+                <table className="w-full min-w-7xl table-fixed border-collapse text-sm">
+                  <colgroup>
+                    {floatingWidths.map((w, i) => (
+                      <col key={`floating-col-${i}`} style={{ width: w }} />
                     ))}
-                  </tr>
-                </thead>
-              </table>
+                  </colgroup>
+                  <thead>
+                    <tr className="bg-slate-50/95">
+                      {floatingColumns.map((col, i) => (
+                        <th
+                          key={`floating-header-${i}`}
+                          className={cn(
+                            "border-b border-slate-200 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700",
+                            col.align === "right"
+                              ? "text-right"
+                              : col.align === "center"
+                                ? "text-center"
+                                : "text-left",
+                          )}
+                        >
+                          {"field" in col ? (
+                            <SortableRotationHeader
+                              field={col.field}
+                              label={col.label}
+                              activeField={tableSortField}
+                              direction={tableSortDirection}
+                              onSort={handleTableSort}
+                              align={col.align === "right" ? "right" : "left"}
+                            />
+                          ) : (
+                            col.label
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                </table>
+              </div>
             </div>
           </div>
-        </div>
         ) : null;
       })()}
 
