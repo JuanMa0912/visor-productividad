@@ -3787,8 +3787,6 @@ export default function Home() {
     const {
       pdfLines: exportLines,
       selectedScopeLabel: exportScopeLabel,
-      selectedScopeId: exportScopeId,
-      dateRange: exportDateRange,
       dateRangeLabel: exportDateRangeLabel,
       lineFilterLabel: exportLineFilterLabel,
       comparisonDateRangeLabel: exportComparisonDateRangeLabel,
@@ -3799,8 +3797,6 @@ export default function Home() {
     } = payload ?? buildExportPayload();
     const pdfLines = exportLines;
     const selectedScopeLabel = exportScopeLabel;
-    const selectedScopeId = exportScopeId;
-    const dateRange = exportDateRange;
     const dateRangeLabel = exportDateRangeLabel;
     const lineFilterLabel = exportLineFilterLabel;
     const comparisonDateRangeLabel = exportComparisonDateRangeLabel;
@@ -4583,7 +4579,6 @@ export default function Home() {
       workbook.removeWorksheet(sheet.id);
     });
 
-    const safeSede = selectedScopeId.replace(/\s+/g, "-");
     const fileName = "reporte-productividad.xlsx";
 
     const buffer = await workbook.xlsx.writeBuffer();

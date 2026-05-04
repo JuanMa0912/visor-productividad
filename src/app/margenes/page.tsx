@@ -89,13 +89,6 @@ const formatMarginPct = (totals: Totals) =>
 const getMarginRatio = (totals: Totals) =>
   totals.sales === 0 ? 0 : totals.profit / totals.sales;
 
-const getMarginToneClass = (ratio: number) => {
-  if (ratio >= 0.22) return "text-emerald-700";
-  if (ratio >= 0.16) return "text-teal-700";
-  if (ratio >= 0.1) return "text-sky-700";
-  return "text-slate-600";
-};
-
 const parseDateKey = (dateKey: string) => {
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -1049,7 +1042,7 @@ export default function MargenesPage() {
                       </div>
                     ) : (
                       <p className="px-4 py-5 text-sm text-muted-foreground">
-                        Presiona "Ver tabla" para mostrar los resultados por sede.
+                        Presiona &quot;Ver tabla&quot; para mostrar los resultados por sede.
                       </p>
                     )}
                   </div>
@@ -1164,7 +1157,7 @@ export default function MargenesPage() {
                       </>
                     ) : (
                       <p className="px-4 py-5 text-sm text-muted-foreground">
-                        Presiona "Ver tabla" para mostrar los resultados por línea.
+                        Presiona &quot;Ver tabla&quot; para mostrar los resultados por línea.
                       </p>
                     )}
                   </div>

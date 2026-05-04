@@ -7,7 +7,7 @@ import {
   isoDateToCompactDate,
   resolveMissingBoundary,
   validateVentasXItemDateRange,
-} from "./ventas-x-item-date-range.ts";
+} from "./ventas-x-item-date-range";
 
 test("convierte fechas ISO y compactas", () => {
   assert.equal(isoDateToCompactDate("2026-04-06"), "20260406");

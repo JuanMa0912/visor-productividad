@@ -4,7 +4,9 @@ import path from "path";
 /** Raíz del proyecto en tiempo de ejecución (Next `process.cwd()`). */
 export const AGENT_DEBUG_LOG_PATH = path.join(
   process.cwd(),
-  "debug-068c63.log",
+  "data",
+  "debug",
+  "agent-068c63.log",
 );
 
 export async function appendAgentDebugLog(
@@ -17,7 +19,10 @@ export async function appendAgentDebugLog(
       timestamp: Date.now(),
       ...payload,
     }) + "\n";
-  await fs.appendFile(AGENT_DEBUG_LOG_PATH, line, "utf-8").catch((err) => {
-    console.error("[agent-debug] append failed", AGENT_DEBUG_LOG_PATH, err);
-  });
+  await fs
+    .mkdir(path.dirname(AGENT_DEBUG_LOG_PATH), { recursive: true })
+    .then(() => fs.appendFile(AGENT_DEBUG_LOG_PATH, line, "utf-8"))
+    .catch((err) => {
+      console.error("[agent-debug] append failed", AGENT_DEBUG_LOG_PATH, err);
+    });
 }
