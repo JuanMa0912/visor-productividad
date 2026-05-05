@@ -889,6 +889,7 @@ const countAbcdItemsByCategory = (
 type AbcdSummaryRow = {
   categoria: AbcdCategory;
   totalSales: number;
+  totalInventory: number;
   itemCount: number;
   totalMargin: number;
   marginPct: number;
@@ -900,17 +901,23 @@ const buildAbcdSummaryRows = (
 ): AbcdSummaryRow[] => {
   const byCategory: Record<
     AbcdCategory,
-    { totalSales: number; totalMargin: number; items: Set<string> }
+    {
+      totalSales: number;
+      totalInventory: number;
+      totalMargin: number;
+      items: Set<string>;
+    }
   > = {
-    A: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    B: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    C: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    D: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    A: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
+    B: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
+    C: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
+    D: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
   };
 
   for (const row of rows) {
     const categoria = categoryByItem.get(row.item) ?? "D";
     byCategory[categoria].totalSales += row.totalSales;
+    byCategory[categoria].totalInventory += row.inventoryValue;
     byCategory[categoria].totalMargin += row.totalMargin;
     byCategory[categoria].items.add(row.item);
   }
@@ -918,13 +925,16 @@ const buildAbcdSummaryRows = (
   const order: AbcdCategory[] = ["A", "B", "C", "D"];
   return order.map((categoria) => {
     const totalSales = byCategory[categoria].totalSales;
+    const totalInventory = byCategory[categoria].totalInventory;
     const totalMargin = byCategory[categoria].totalMargin;
+    const marginBase = totalSales + totalInventory;
     return {
       categoria,
       totalSales,
+      totalInventory,
       totalMargin,
       itemCount: byCategory[categoria].items.size,
-      marginPct: totalSales > 0 ? (totalMargin / totalSales) * 100 : 0,
+      marginPct: marginBase > 0 ? (totalMargin / marginBase) * 100 : 0,
     };
   });
 };
@@ -1164,9 +1174,16 @@ type GroupZeroEstadoFilter = "all" | CeroRotacionEstado;
 const isCeroRotacionRow = (row: RotationRow) =>
   row.totalUnits <= 0 && row.inventoryUnits > 0;
 
-/** Nuevo = sin ventas, con inventario y con último ingreso hoy o ayer. */
+const ONE_MONTH_IN_DAYS = 30;
+
+/**
+ * Nuevo = sin ventas, con inventario y con último ingreso hoy o ayer.
+ * Si tiene última venta reciente (< 1 mes), no cuenta como nuevo.
+ */
 const isNuevoItemRow = (row: RotationRow) => {
   if (!(row.totalUnits <= 0 && row.inventoryUnits > 0)) return false;
+  const duvDays = calculateDuvDays(row.lastPurchaseDate);
+  if (duvDays !== null && duvDays < ONE_MONTH_IN_DAYS) return false;
   const daysSinceIngreso = calculateDiSinceLastIngresoDays(row.lastMovementDate);
   return daysSinceIngreso !== null && daysSinceIngreso <= 1;
 };

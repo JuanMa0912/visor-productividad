@@ -2625,15 +2625,18 @@ export default function RotacionPage() {
                         (acc, row) => acc + row.totalMargin,
                         0,
                       );
+                    const selectedCategoryMarginBase =
+                      selectedCategoryTotalSales + selectedCategoryTotalInv;
                     const selectedCategoryMarginPct =
-                      selectedCategoryTotalSales > 0
+                      selectedCategoryMarginBase > 0
                         ? (selectedCategoryTotalMargin /
-                            selectedCategoryTotalSales) *
+                            selectedCategoryMarginBase) *
                           100
                         : 0;
+                    const infoMarginBase = infoTotalSales + infoTotalInv;
                     const infoMarginPct =
-                      infoTotalSales > 0
-                        ? (infoTotalMargin / infoTotalSales) * 100
+                      infoMarginBase > 0
+                        ? (infoTotalMargin / infoMarginBase) * 100
                         : 0;
                     const infoSalesCoverageDays =
                       infoTotalUnits > 0 && daysConsulted > 0
@@ -2655,15 +2658,24 @@ export default function RotacionPage() {
                     const abcdSummaryTotals = abcdSummaryRows.reduce(
                       (acc, row) => ({
                         totalSales: acc.totalSales + row.totalSales,
+                        totalInventory: acc.totalInventory + row.totalInventory,
                         totalMargin: acc.totalMargin + row.totalMargin,
                         itemCount: acc.itemCount + row.itemCount,
                       }),
-                      { totalSales: 0, totalMargin: 0, itemCount: 0 },
+                      {
+                        totalSales: 0,
+                        totalInventory: 0,
+                        totalMargin: 0,
+                        itemCount: 0,
+                      },
                     );
+                    const abcdSummaryMarginBase =
+                      abcdSummaryTotals.totalSales +
+                      abcdSummaryTotals.totalInventory;
                     const abcdSummaryTotalMarginPct =
-                      abcdSummaryTotals.totalSales > 0
+                      abcdSummaryMarginBase > 0
                         ? (abcdSummaryTotals.totalMargin /
-                            abcdSummaryTotals.totalSales) *
+                            abcdSummaryMarginBase) *
                           100
                         : 0;
                     const selectedCategoryLabel =
