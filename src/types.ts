@@ -52,6 +52,8 @@ export interface HourlyPersonContribution {
   firstMinuteOfDay?: number | null;
   lastMinuteOfDay?: number | null;
   hourlySales: HourlyPersonSalesSlot[];
+  /** Total de ventas en un rango de fechas (sin desglose por hora). */
+  periodTotalSales?: number;
 }
 
 export interface OvertimeEmployee {
@@ -83,4 +85,7 @@ export interface HourlyAnalysisData {
   hours: HourSlot[];
   overtimeEmployees?: OvertimeEmployee[];
   personContributions?: HourlyPersonContribution[];
+  /** Cajeros agregados en varios dias; sin ventas por franja en personContributions. */
+  personContributionsScope?: "single-day" | "date-range";
+  personContributionsRange?: { start: string; end: string };
 }

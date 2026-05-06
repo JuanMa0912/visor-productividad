@@ -15,6 +15,7 @@ import {
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { ArrowLeftRight } from "lucide-react";
 import { animate, remove } from "animejs";
 import { LineChart } from "@mui/x-charts/LineChart";
 import {
@@ -2942,6 +2943,7 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<
     "cards" | "comparison" | "chart" | "trends" | "hourly" | "cashier" | "m2"
   >("cards");
+  const [cashierMonthCompare, setCashierMonthCompare] = useState(false);
 
   const prefsKey = useMemo(
     () => `vp_prefs_${username ?? "default"}`,
@@ -3720,6 +3722,7 @@ export default function Home() {
         | "m2",
     ) => {
       setViewMode(value);
+      if (value !== "cashier") setCashierMonthCompare(false);
     },
     [],
   );
@@ -5265,6 +5268,34 @@ export default function Home() {
         ) : (
           <div className="space-y-6">
             <ViewToggle viewMode={viewMode} onChange={handleViewChange} />
+            {viewMode === "cashier" && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-fuchsia-200/80 bg-linear-to-b from-fuchsia-50/90 to-white px-4 py-3 shadow-[0_12px_40px_-28px_rgba(112,26,117,0.35)]">
+                <div className="max-w-xl">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-fuchsia-900">
+                    Ranking de cajeros
+                  </p>
+                  <p className="text-sm text-slate-700">
+                    Compara el top 5 de cajeros del mes anterior con el de la parte corrida
+                    del mes actual para ver si los mismos nombres se mantienen arriba.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCashierMonthCompare((v) => !v)}
+                  aria-pressed={cashierMonthCompare}
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] transition-all ${
+                    cashierMonthCompare
+                      ? "bg-fuchsia-700 text-white shadow-sm ring-1 ring-fuchsia-900/25"
+                      : "border border-fuchsia-300/90 bg-white text-fuchsia-950 hover:bg-fuchsia-50"
+                  }`}
+                >
+                  <ArrowLeftRight className="h-4 w-4" />
+                  {cashierMonthCompare
+                    ? "Vista por periodo del filtro"
+                    : "Top 5: mes anterior vs actual"}
+                </button>
+              </div>
+            )}
             {(viewMode === "cards" || viewMode === "comparison") && (
               <SearchAndSort
                 searchQuery={searchQuery}
@@ -5329,7 +5360,7 @@ export default function Home() {
               />
             ) : viewMode === "cashier" ? (
               <HourlyAnalysis
-                key={`cashier-${dateRange.start}-${dateRange.end}-${selectedSede}`}
+                key={`cashier-${dateRange.start}-${dateRange.end}-${selectedSede}-${cashierMonthCompare ? "mc" : "p"}`}
                 availableDates={availableDates}
                 availableSedes={orderedSedes}
                 defaultDate={dateRange.end}
@@ -5343,6 +5374,8 @@ export default function Home() {
                 hidePersonBreakdownTabs
                 dashboardContext="productividad"
                 exportRef={hourlyExportRef}
+                cashierDateRange={dateRange}
+                cashierMonthComparison={cashierMonthCompare}
               />
             ) : viewMode === "m2" ? (
               <M2MetricsSection

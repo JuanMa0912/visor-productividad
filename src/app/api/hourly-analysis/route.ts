@@ -32,6 +32,8 @@ const LINE_IDS = new Set<string>(LINE_TABLES.map((line) => line.id));
 const normalizeLineId = (value: string) => value.trim().toLowerCase();
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const OVERTIME_MAX_RANGE_DAYS = 31;
+/** Rango maximo (inclusive) para agregar aporte por cajero en varias fechas. */
+const PEOPLE_RANGE_MAX_DAYS = 62;
 type DashboardContext = "productividad" | "jornada-extendida";
 const DASHBOARD_CONTEXTS = new Set<DashboardContext>([
   "productividad",
@@ -590,6 +592,8 @@ const fetchHourlyData = async (
   overtimeOnly = false,
   overtimeDateStart?: string | null,
   overtimeDateEnd?: string | null,
+  peopleDateStart?: string | null,
+  peopleDateEnd?: string | null,
 ): Promise<HourlyAnalysisData> => {
   const pool = await getDbPool();
   const client = await pool.connect();
@@ -705,6 +709,8 @@ const fetchHourlyData = async (
     }
 
     const personContributions: HourlyPersonContribution[] = [];
+    let personContributionsScope: HourlyAnalysisData["personContributionsScope"];
+    let personContributionsRange: HourlyAnalysisData["personContributionsRange"];
 
     if (
       !overtimeOnly &&
@@ -757,108 +763,185 @@ const fetchHourlyData = async (
           ? `COALESCE(${personNameExpr}, 'Sin nombre')`
           : `COALESCE(${personNameExpr}, ${personIdExpr}, 'Sin identificar')`;
 
-        const peopleQuery = `
-          SELECT
-            COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
-            ${personIdExpr} AS person_id,
-            ${personNameSelectExpr} AS person_name,
-            hora_final_hora,
-            COALESCE(SUM(total_bruto), 0) AS total_sales
-          FROM ventas_cajas
-          WHERE fecha_dcto = $1
-            ${salesBranchFilter}
-          GROUP BY 1, 2, 3, hora_final_hora
-          ORDER BY 3, hora_final_hora
-        `;
+        const peopleRangeInclusiveDays =
+          peopleDateStart && peopleDateEnd
+            ? getInclusiveDateRangeDays(peopleDateStart, peopleDateEnd)
+            : null;
+        const usePeopleRangeAggregate =
+          Boolean(
+            peopleDateStart &&
+              peopleDateEnd &&
+              peopleRangeInclusiveDays &&
+              peopleRangeInclusiveDays > 1,
+          );
 
-        const peopleResult = await client.query(peopleQuery, [
-          salesDateCompact,
-          ...salesBranchParams,
-        ]);
+        if (usePeopleRangeAggregate) {
+          const rangePeopleBranchClauses = selectedSedeConfigs
+            .map(
+              (_cfg, index) =>
+                `(centro_operacion = $${index * 2 + 3} AND (empresa_bd = $${index * 2 + 4} OR ($${index * 2 + 4} IS NULL AND empresa_bd IS NULL)))`,
+            )
+            .join(" OR ");
+          const rangePeopleBranchFilter =
+            selectedSedeConfigs.length > 0
+              ? `AND (${rangePeopleBranchClauses})`
+              : "AND 1=0";
 
-        const peopleMap = new Map<
-          string,
-          {
-            personKey: string;
-            personId?: string | null;
-            personName: string;
-            firstMinuteOfDay: number | null;
-            lastMinuteOfDay: number | null;
-            hourlySales: Map<number, number>;
-          }
-        >();
+          const startCompact = peopleDateStart!.replace(/-/g, "");
+          const endCompact = peopleDateEnd!.replace(/-/g, "");
 
-        for (const row of peopleResult.rows ?? []) {
-          const typedRow = row as {
-            person_key: string;
-            person_id?: string | null;
-            person_name: string;
-            hora_final_hora: unknown;
-            total_sales: string | number;
-          };
-          const minuteOfDay = parseMinuteOfDay(typedRow.hora_final_hora);
-          if (minuteOfDay === null) continue;
-          const bucketStartMinute =
-            Math.floor(minuteOfDay / bucketMinutes) * bucketMinutes;
-          const personKey = typedRow.person_key?.trim() || "sin-identificar";
-          const personName = typedRow.person_name?.trim() || "Sin identificar";
-          const personId = typedRow.person_id?.trim() || null;
-          const salesValue = Number(typedRow.total_sales) || 0;
+          const peopleRangeQuery = `
+            SELECT
+              COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
+              ${personIdExpr} AS person_id,
+              ${personNameSelectExpr} AS person_name,
+              COALESCE(SUM(total_bruto), 0) AS total_sales
+            FROM ventas_cajas
+            WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
+              ${rangePeopleBranchFilter}
+            GROUP BY 1, 2, 3
+            ORDER BY 4 DESC
+          `;
 
-          if (!peopleMap.has(personKey)) {
-            peopleMap.set(personKey, {
+          const rangeResult = await client.query(peopleRangeQuery, [
+            startCompact,
+            endCompact,
+            ...salesBranchParams,
+          ]);
+
+          for (const row of rangeResult.rows ?? []) {
+            const typedRow = row as {
+              person_key: string;
+              person_id?: string | null;
+              person_name: string;
+              total_sales: string | number;
+            };
+            const personKey = typedRow.person_key?.trim() || "sin-identificar";
+            const personName = typedRow.person_name?.trim() || "Sin identificar";
+            const personId = typedRow.person_id?.trim() || null;
+            const salesValue = Number(typedRow.total_sales) || 0;
+            if (isHorariosOcultarCedula(personId)) continue;
+            if (salesValue <= 0) continue;
+            personContributions.push({
               personKey,
               personId,
               personName,
-              firstMinuteOfDay: bucketStartMinute,
-              lastMinuteOfDay: bucketStartMinute,
-              hourlySales: new Map<number, number>(),
+              firstMinuteOfDay: null,
+              lastMinuteOfDay: null,
+              hourlySales: [],
+              periodTotalSales: salesValue,
             });
           }
 
-          const personEntry = peopleMap.get(personKey)!;
-          personEntry.hourlySales.set(
-            bucketStartMinute,
-            (personEntry.hourlySales.get(bucketStartMinute) ?? 0) + salesValue,
-          );
-          personEntry.firstMinuteOfDay =
-            personEntry.firstMinuteOfDay === null
-              ? bucketStartMinute
-              : Math.min(personEntry.firstMinuteOfDay, bucketStartMinute);
-          personEntry.lastMinuteOfDay =
-            personEntry.lastMinuteOfDay === null
-              ? bucketStartMinute
-              : Math.max(personEntry.lastMinuteOfDay, bucketStartMinute);
-        }
+          personContributionsScope = "date-range";
+          personContributionsRange = {
+            start: peopleDateStart!,
+            end: peopleDateEnd!,
+          };
+        } else {
+          const peopleQuery = `
+            SELECT
+              COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
+              ${personIdExpr} AS person_id,
+              ${personNameSelectExpr} AS person_name,
+              hora_final_hora,
+              COALESCE(SUM(total_bruto), 0) AS total_sales
+            FROM ventas_cajas
+            WHERE fecha_dcto = $1
+              ${salesBranchFilter}
+            GROUP BY 1, 2, 3, hora_final_hora
+            ORDER BY 3, hora_final_hora
+          `;
 
-        for (const person of peopleMap.values()) {
-          if (isHorariosOcultarCedula(person.personId)) {
-            continue;
+          const peopleResult = await client.query(peopleQuery, [
+            salesDateCompact,
+            ...salesBranchParams,
+          ]);
+
+          const peopleMap = new Map<
+            string,
+            {
+              personKey: string;
+              personId?: string | null;
+              personName: string;
+              firstMinuteOfDay: number | null;
+              lastMinuteOfDay: number | null;
+              hourlySales: Map<number, number>;
+            }
+          >();
+
+          for (const row of peopleResult.rows ?? []) {
+            const typedRow = row as {
+              person_key: string;
+              person_id?: string | null;
+              person_name: string;
+              hora_final_hora: unknown;
+              total_sales: string | number;
+            };
+            const minuteOfDay = parseMinuteOfDay(typedRow.hora_final_hora);
+            if (minuteOfDay === null) continue;
+            const bucketStartMinute =
+              Math.floor(minuteOfDay / bucketMinutes) * bucketMinutes;
+            const personKey = typedRow.person_key?.trim() || "sin-identificar";
+            const personName = typedRow.person_name?.trim() || "Sin identificar";
+            const personId = typedRow.person_id?.trim() || null;
+            const salesValue = Number(typedRow.total_sales) || 0;
+
+            if (!peopleMap.has(personKey)) {
+              peopleMap.set(personKey, {
+                personKey,
+                personId,
+                personName,
+                firstMinuteOfDay: bucketStartMinute,
+                lastMinuteOfDay: bucketStartMinute,
+                hourlySales: new Map<number, number>(),
+              });
+            }
+
+            const personEntry = peopleMap.get(personKey)!;
+            personEntry.hourlySales.set(
+              bucketStartMinute,
+              (personEntry.hourlySales.get(bucketStartMinute) ?? 0) + salesValue,
+            );
+            personEntry.firstMinuteOfDay =
+              personEntry.firstMinuteOfDay === null
+                ? bucketStartMinute
+                : Math.min(personEntry.firstMinuteOfDay, bucketStartMinute);
+            personEntry.lastMinuteOfDay =
+              personEntry.lastMinuteOfDay === null
+                ? bucketStartMinute
+                : Math.max(personEntry.lastMinuteOfDay, bucketStartMinute);
           }
-          const hourlySales = Array.from(person.hourlySales.entries())
-            .sort((a, b) => a[0] - b[0])
-            .map(([slotStartMinute, sales]) => ({
-              slotStartMinute,
-              slotEndMinute: (slotStartMinute + bucketMinutes) % 1440,
-              label: buildSlotLabel(slotStartMinute, bucketMinutes),
-              sales,
-            }));
 
-          personContributions.push({
-            personKey: person.personKey,
-            personId: person.personId,
-            personName: person.personName,
-            firstMinuteOfDay: person.firstMinuteOfDay,
-            lastMinuteOfDay: person.lastMinuteOfDay,
-            hourlySales,
+          for (const person of peopleMap.values()) {
+            if (isHorariosOcultarCedula(person.personId)) {
+              continue;
+            }
+            const hourlySales = Array.from(person.hourlySales.entries())
+              .sort((a, b) => a[0] - b[0])
+              .map(([slotStartMinute, sales]) => ({
+                slotStartMinute,
+                slotEndMinute: (slotStartMinute + bucketMinutes) % 1440,
+                label: buildSlotLabel(slotStartMinute, bucketMinutes),
+                sales,
+              }));
+
+            personContributions.push({
+              personKey: person.personKey,
+              personId: person.personId,
+              personName: person.personName,
+              firstMinuteOfDay: person.firstMinuteOfDay,
+              lastMinuteOfDay: person.lastMinuteOfDay,
+              hourlySales,
+            });
+          }
+
+          personContributions.sort((a, b) => {
+            const totalA = a.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
+            const totalB = b.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
+            return totalB - totalA;
           });
         }
-
-        personContributions.sort((a, b) => {
-          const totalA = a.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
-          const totalB = b.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
-          return totalB - totalA;
-        });
       } catch (error) {
         console.warn("[hourly-analysis] Error consultando detalle de cajas:", error);
       }
@@ -1290,6 +1373,8 @@ const fetchHourlyData = async (
       bucketMinutes,
       overtimeEmployees,
       personContributions,
+      personContributionsScope,
+      personContributionsRange,
       hours,
     };
   } finally {
@@ -1484,6 +1569,74 @@ export async function GET(request: Request) {
     );
   }
 
+  const peopleDateStartParam =
+    url.searchParams.get("peopleDateStart")?.trim() || null;
+  const peopleDateEndParam =
+    url.searchParams.get("peopleDateEnd")?.trim() || null;
+
+  if (
+    (peopleDateStartParam && !peopleDateEndParam) ||
+    (!peopleDateStartParam && peopleDateEndParam)
+  ) {
+    return withSession(
+      NextResponse.json(
+        {
+          error:
+            "Los parametros peopleDateStart y peopleDateEnd deben enviarse juntos.",
+        },
+        { status: 400 },
+      ),
+    );
+  }
+
+  if (peopleDateStartParam && !/^\d{4}-\d{2}-\d{2}$/.test(peopleDateStartParam)) {
+    return withSession(
+      NextResponse.json(
+        { error: "Formato de peopleDateStart invalido. Use YYYY-MM-DD." },
+        { status: 400 },
+      ),
+    );
+  }
+
+  if (peopleDateEndParam && !/^\d{4}-\d{2}-\d{2}$/.test(peopleDateEndParam)) {
+    return withSession(
+      NextResponse.json(
+        { error: "Formato de peopleDateEnd invalido. Use YYYY-MM-DD." },
+        { status: 400 },
+      ),
+    );
+  }
+
+  if (
+    peopleDateStartParam &&
+    peopleDateEndParam &&
+    peopleDateStartParam > peopleDateEndParam
+  ) {
+    return withSession(
+      NextResponse.json(
+        { error: "peopleDateStart no puede ser mayor que peopleDateEnd." },
+        { status: 400 },
+      ),
+    );
+  }
+
+  if (peopleDateStartParam && peopleDateEndParam) {
+    const peopleRangeDays = getInclusiveDateRangeDays(
+      peopleDateStartParam,
+      peopleDateEndParam,
+    );
+    if (!peopleRangeDays || peopleRangeDays > PEOPLE_RANGE_MAX_DAYS) {
+      return withSession(
+        NextResponse.json(
+          {
+            error: `El rango de cajeros no puede superar ${PEOPLE_RANGE_MAX_DAYS} dias.`,
+          },
+          { status: 400 },
+        ),
+      );
+    }
+  }
+
   if (overtimeDateStartParam && overtimeDateEndParam) {
     const overtimeRangeDays = getInclusiveDateRangeDays(
       overtimeDateStartParam,
@@ -1539,6 +1692,8 @@ export async function GET(request: Request) {
     dateParam,
     overtimeDateStartParam,
     overtimeDateEndParam,
+    peopleDateStartParam,
+    peopleDateEndParam,
     lineParam,
     includePeopleBreakdown,
     bucketMinutes,
@@ -1569,6 +1724,8 @@ export async function GET(request: Request) {
       overtimeOnly,
       overtimeDateStartParam,
       overtimeDateEndParam,
+      peopleDateStartParam,
+      peopleDateEndParam,
     );
 
     setCachedResponse(cacheKey, data);

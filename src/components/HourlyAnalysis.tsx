@@ -26,7 +26,10 @@ import { cn, formatDateLabel } from "@/lib/shared/utils";
 import { escapeCsvValue, sanitizeExportText } from "@/lib/shared/export-utils";
 import { DEFAULT_LINES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
-import type { HourlyAnalysisData } from "@/types";
+import type {
+  HourlyAnalysisData,
+  HourlyPersonContribution,
+} from "@/types";
 
 type HourlyAnalysisDashboardContext = "productividad" | "jornada-extendida";
 
@@ -61,6 +64,10 @@ interface HourlyAnalysisProps {
     absences: number;
   };
   exportRef?: MutableRefObject<HourlyAnalysisExportHandle | null>;
+  /** Rango del filtro global (p. ej. productividad). Si hay mas de un dia, el ranking de cajeros se agrega en el servidor; el detalle por franja solo aplica con un dia. */
+  cashierDateRange?: { start: string; end: string };
+  /** Compara ventas totales por cajero: mes anterior (completo) vs mes en curso hasta la fecha fin del filtro. */
+  cashierMonthComparison?: boolean;
 }
 
 const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -86,6 +93,74 @@ type OvertimeSortDirection = "asc" | "desc";
 export type HourlyAnalysisExportHandle = {
   exportCsv: () => boolean;
   exportXlsx: () => Promise<boolean>;
+};
+
+const CASHIER_MONTH_TOP_N = 5;
+
+const totalPersonContributionSales = (person: HourlyPersonContribution) => {
+  if (person.periodTotalSales != null) return person.periodTotalSales;
+  return person.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
+};
+
+const rankTopCashiers = (
+  people: HourlyPersonContribution[] | undefined,
+  limit: number,
+): Array<{
+  personKey: string;
+  personName: string;
+  personId: string | null;
+  sales: number;
+}> => {
+  if (!people?.length) return [];
+  const withSales = people.map((p) => ({
+    personKey: p.personKey,
+    personName: p.personName,
+    personId: p.personId?.trim() ? p.personId : null,
+    sales: totalPersonContributionSales(p),
+  }));
+  withSales.sort((a, b) => b.sales - a.sales);
+  return withSales.filter((r) => r.sales > 0).slice(0, limit);
+};
+
+/** Mes calendario anterior (completo) vs mes que contiene `anchorISO`, desde el dia 1 hasta `anchorISO` (o fin de mes si es menor). */
+const getCashierMonthComparisonRanges = (anchorISO: string) => {
+  const [y, m, d] = anchorISO.split("-").map(Number);
+  const anchor = new Date(y, m - 1, d);
+  const yi = anchor.getFullYear();
+  const mi = anchor.getMonth();
+
+  const prevMonthLast = new Date(yi, mi, 0);
+  const prevMonthFirst = new Date(yi, mi - 1, 1);
+  const currMonthFirst = new Date(yi, mi, 1);
+  const currMonthLast = new Date(yi, mi + 1, 0);
+
+  const toKey = (dt: Date) => {
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${dt.getFullYear()}-${mm}-${dd}`;
+  };
+
+  const currentEnd = new Date(
+    Math.min(anchor.getTime(), currMonthLast.getTime()),
+  );
+
+  const labelPrevious = `${formatDateLabel(toKey(prevMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(toKey(prevMonthLast), {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })}`;
+  const labelCurrent = `${formatDateLabel(toKey(currMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(toKey(currentEnd), {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })}`;
+
+  return {
+    previous: { start: toKey(prevMonthFirst), end: toKey(prevMonthLast) },
+    current: { start: toKey(currMonthFirst), end: toKey(currentEnd) },
+    labelPrevious,
+    labelCurrent,
+  };
 };
 
 const PERSON_BREAKDOWN_VIEW_OPTIONS: Array<{
@@ -451,6 +526,8 @@ export const HourlyAnalysis = ({
   hidePersonBreakdownTabs = false,
   dashboardContext = "productividad",
   exportRef,
+  cashierDateRange,
+  cashierMonthComparison = false,
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
     const unique = Array.from(new Set(sections));
@@ -540,6 +617,12 @@ export const HourlyAnalysis = ({
   const [personSearchQuery, setPersonSearchQuery] = useState("");
   const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
   const [expandedPersonKey, setExpandedPersonKey] = useState<string | null>(null);
+  const [cashierMonthPrevData, setCashierMonthPrevData] =
+    useState<HourlyAnalysisData | null>(null);
+  const [cashierMonthCurrData, setCashierMonthCurrData] =
+    useState<HourlyAnalysisData | null>(null);
+  const [cashierMonthResultKey, setCashierMonthResultKey] = useState("");
+  const [cashierMonthError, setCashierMonthError] = useState<string | null>(null);
   const [personBreakdownView, setPersonBreakdownView] =
     useState<PersonBreakdownView>(defaultPersonBreakdownView);
   const topSectionRef = useRef<HTMLDivElement | null>(null);
@@ -593,6 +676,14 @@ export const HourlyAnalysis = ({
   const showSectionToggle = enabledSections.length > 1;
   const overtimeDateStart = overtimeDateStartState || selectedDate;
   const overtimeDateEnd = overtimeDateEndState || selectedDate;
+  const isCashierMultiDayRange =
+    showPersonBreakdown &&
+    !cashierMonthComparison &&
+    Boolean(
+      cashierDateRange?.start &&
+        cashierDateRange?.end &&
+        cashierDateRange.start !== cashierDateRange.end,
+    );
   const hourlyRequestDate =
     enableOvertimeDateRange && isOvertimeOnlyMode
       ? overtimeDateEnd
@@ -642,8 +733,13 @@ export const HourlyAnalysis = ({
       line: effectiveSelectedLine,
       bucketMinutes,
       sedes: selectedSedes,
-      includePeople: showPersonBreakdown,
+      includePeople: showPersonBreakdown && !cashierMonthComparison,
+      cashierMonthComparison,
       dashboardContext,
+      cashierPeopleRange:
+        isCashierMultiDayRange && cashierDateRange
+          ? { start: cashierDateRange.start, end: cashierDateRange.end }
+          : null,
       overtimeDateRange:
         enableOvertimeDateRange && isOvertimeOnlyMode
           ? {
@@ -654,10 +750,13 @@ export const HourlyAnalysis = ({
     });
   }, [
     bucketMinutes,
+    cashierDateRange,
+    cashierMonthComparison,
     dashboardContext,
     effectiveSelectedLine,
     enableOvertimeDateRange,
     hourlyRequestDate,
+    isCashierMultiDayRange,
     isOvertimeOnlyMode,
     overtimeDateEnd,
     overtimeDateStart,
@@ -681,8 +780,32 @@ export const HourlyAnalysis = ({
     effectiveSelectedLine,
     selectedSedes,
   ]);
-  const isLoading =
+  const cashierMonthRequestKey = useMemo(() => {
+    if (!cashierMonthComparison || !showPersonBreakdown) return "";
+    if (!selectedDate) return "";
+    return JSON.stringify({
+      anchor: selectedDate,
+      line: effectiveSelectedLine,
+      bucketMinutes,
+      sedes: selectedSedes,
+      dashboardContext,
+    });
+  }, [
+    cashierMonthComparison,
+    showPersonBreakdown,
+    selectedDate,
+    effectiveSelectedLine,
+    bucketMinutes,
+    selectedSedes,
+    dashboardContext,
+  ]);
+
+  const primaryHourlyLoading =
     Boolean(hourlyRequestKey) && hourlyResultKey !== hourlyRequestKey;
+  const cashierMonthCompareLoading =
+    Boolean(cashierMonthRequestKey) &&
+    cashierMonthResultKey !== cashierMonthRequestKey;
+  const isLoading = primaryHourlyLoading || cashierMonthCompareLoading;
   const activeError =
     hourlyRequestKey && hourlyResultKey === hourlyRequestKey ? error : null;
   const activeHourlyData =
@@ -949,6 +1072,7 @@ export const HourlyAnalysis = ({
     currentDashboardContext: HourlyAnalysisDashboardContext,
     overtimeOnly: boolean,
     overtimeDateRange?: { start: string; end: string },
+    peopleRange?: { start: string; end: string },
     signal?: AbortSignal,
   ) => {
     const params = new URLSearchParams({ date });
@@ -962,6 +1086,15 @@ export const HourlyAnalysis = ({
       params.set("overtimeDateStart", overtimeDateRange.start);
     if (overtimeDateRange?.end)
       params.set("overtimeDateEnd", overtimeDateRange.end);
+    if (
+      includePeople &&
+      peopleRange?.start &&
+      peopleRange?.end &&
+      peopleRange.start !== peopleRange.end
+    ) {
+      params.set("peopleDateStart", peopleRange.start);
+      params.set("peopleDateEnd", peopleRange.end);
+    }
 
     const res = await fetch(`/api/hourly-analysis?${params.toString()}`, {
       signal,
@@ -987,7 +1120,7 @@ export const HourlyAnalysis = ({
       effectiveSelectedLine,
       bucketMinutes,
       selectedSedes,
-      showPersonBreakdown,
+      showPersonBreakdown && !cashierMonthComparison,
       dashboardContext,
       isOvertimeOnlyMode,
       enableOvertimeDateRange && isOvertimeOnlyMode
@@ -996,6 +1129,7 @@ export const HourlyAnalysis = ({
             end: overtimeDateEnd,
           }
         : undefined,
+      isCashierMultiDayRange && cashierDateRange ? cashierDateRange : undefined,
       controller.signal,
     )
       .then((data) => {
@@ -1012,6 +1146,8 @@ export const HourlyAnalysis = ({
 
     return () => controller.abort();
   }, [
+    cashierDateRange,
+    cashierMonthComparison,
     hourlyRequestDate,
     hourlyRequestKey,
     effectiveSelectedLine,
@@ -1020,9 +1156,62 @@ export const HourlyAnalysis = ({
     showPersonBreakdown,
     dashboardContext,
     enableOvertimeDateRange,
+    isCashierMultiDayRange,
     isOvertimeOnlyMode,
     overtimeDateStart,
     overtimeDateEnd,
+  ]);
+
+  useEffect(() => {
+    if (!cashierMonthRequestKey || !selectedDate) return;
+
+    const controller = new AbortController();
+    const ranges = getCashierMonthComparisonRanges(selectedDate);
+
+    const fetchPeriod = (range: { start: string; end: string }) => {
+      const multi = range.start !== range.end;
+      return fetchHourly(
+        range.end,
+        effectiveSelectedLine,
+        bucketMinutes,
+        selectedSedes,
+        true,
+        dashboardContext,
+        false,
+        undefined,
+        multi ? range : undefined,
+        controller.signal,
+      );
+    };
+
+    Promise.all([
+      fetchPeriod(ranges.previous),
+      fetchPeriod(ranges.current),
+    ])
+      .then(([prev, curr]) => {
+        setCashierMonthPrevData(prev);
+        setCashierMonthCurrData(curr);
+        setCashierMonthResultKey(cashierMonthRequestKey);
+        setCashierMonthError(null);
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setCashierMonthPrevData(null);
+        setCashierMonthCurrData(null);
+        setCashierMonthError(
+          err instanceof Error ? err.message : "Error al comparar meses",
+        );
+        setCashierMonthResultKey(cashierMonthRequestKey);
+      });
+
+    return () => controller.abort();
+  }, [
+    cashierMonthRequestKey,
+    selectedDate,
+    effectiveSelectedLine,
+    bucketMinutes,
+    selectedSedes,
+    dashboardContext,
   ]);
 
   useEffect(() => {
@@ -1038,6 +1227,7 @@ export const HourlyAnalysis = ({
       false,
       dashboardContext,
       false,
+      undefined,
       undefined,
       controller.signal,
     )
@@ -1257,6 +1447,21 @@ export const HourlyAnalysis = ({
         peakEmployees: 0,
         activeHoursCount: 0,
       };
+    if (
+      activeHourlyData.personContributionsScope === "date-range" &&
+      activeHourlyData.personContributions?.length
+    ) {
+      const sales = activeHourlyData.personContributions.reduce(
+        (sum, p) => sum + (p.periodTotalSales ?? 0),
+        0,
+      );
+      return {
+        sales,
+        avgProductivity: 0,
+        peakEmployees: 0,
+        activeHoursCount: 0,
+      };
+    }
     const sales = rangedHours.reduce((sum, h) => sum + h.totalSales, 0);
     const productivityValues = rangedHours.reduce(
       (acc, h) => {
@@ -1279,6 +1484,9 @@ export const HourlyAnalysis = ({
     ).length;
     return { sales, avgProductivity, peakEmployees, activeHoursCount };
   }, [activeHourlyData, bucketMinutes, rangedHours]);
+
+  const isCashierPersonRangeResponse =
+    activeHourlyData?.personContributionsScope === "date-range";
 
   const handleExportHourlyCsv = useCallback(() => {
     if (hourlyExportRows.length === 0) return false;
@@ -1378,6 +1586,30 @@ export const HourlyAnalysis = ({
 
     return people
       .map((person) => {
+        if (
+          person.periodTotalSales != null &&
+          person.hourlySales.length === 0
+        ) {
+          const totalSales = person.periodTotalSales;
+          const contributionShare =
+            dayTotals.sales > 0 ? totalSales / dayTotals.sales : 0;
+          return {
+            ...person,
+            activeSlots: [] as typeof person.hourlySales,
+            slotDiffs: [] as Array<
+              (typeof person.hourlySales)[number] & {
+                deltaSales: number;
+                deltaPercent: number | null;
+              }
+            >,
+            totalSales,
+            contributionShare,
+            peakSlot: null,
+            firstSlot: null,
+            lastSlot: null,
+          };
+        }
+
         const activeSlots = person.hourlySales
           .filter(
             (slot) =>
@@ -1439,9 +1671,50 @@ export const HourlyAnalysis = ({
   }, [deferredPersonSearchQuery, peopleBreakdown, personBreakdownView]);
 
   const topContributor = useMemo(() => {
+    if (cashierMonthComparison) return null;
     if (personBreakdownView !== "individual") return null;
     return filteredPeopleBreakdown[0] ?? peopleBreakdown[0] ?? null;
-  }, [filteredPeopleBreakdown, peopleBreakdown, personBreakdownView]);
+  }, [
+    cashierMonthComparison,
+    filteredPeopleBreakdown,
+    peopleBreakdown,
+    personBreakdownView,
+  ]);
+
+  const cashierMonthMeta = useMemo(() => {
+    if (!selectedDate) return null;
+    return getCashierMonthComparisonRanges(selectedDate);
+  }, [selectedDate]);
+
+  const cashierMonthCompareReady =
+    cashierMonthComparison &&
+    Boolean(cashierMonthRequestKey) &&
+    cashierMonthResultKey === cashierMonthRequestKey;
+
+  const cashierTop5PreviousMonth = useMemo(() => {
+    if (!cashierMonthCompareReady) return [];
+    return rankTopCashiers(
+      cashierMonthPrevData?.personContributions,
+      CASHIER_MONTH_TOP_N,
+    );
+  }, [cashierMonthCompareReady, cashierMonthPrevData]);
+
+  const cashierTop5CurrentMonth = useMemo(() => {
+    if (!cashierMonthCompareReady) return [];
+    return rankTopCashiers(
+      cashierMonthCurrData?.personContributions,
+      CASHIER_MONTH_TOP_N,
+    );
+  }, [cashierMonthCompareReady, cashierMonthCurrData]);
+
+  const cashierTop5SharedKeys = useMemo(() => {
+    const prevKeys = new Set(cashierTop5PreviousMonth.map((r) => r.personKey));
+    const shared = new Set<string>();
+    for (const row of cashierTop5CurrentMonth) {
+      if (prevKeys.has(row.personKey)) shared.add(row.personKey);
+    }
+    return shared;
+  }, [cashierTop5CurrentMonth, cashierTop5PreviousMonth]);
 
   const salesByHourCards = useMemo(
     () => {
@@ -2269,6 +2542,11 @@ export const HourlyAnalysis = ({
           {activeError}
         </div>
       )}
+      {cashierMonthError && (
+        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-800">
+          {cashierMonthError}
+        </div>
+      )}
       {activeCompareError && (
         <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-800">
           {activeCompareError}
@@ -2925,7 +3203,10 @@ export const HourlyAnalysis = ({
             </div>
           )}
 
-          {showMapSection && hourlySection === "map" && (
+          {showMapSection &&
+            hourlySection === "map" &&
+            !isCashierMultiDayRange &&
+            !cashierMonthComparison && (
             <div className="mb-6 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
@@ -3239,10 +3520,14 @@ export const HourlyAnalysis = ({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--cashier-muted)">
-                      Aporte individual
+                      {cashierMonthComparison
+                        ? `Top ${CASHIER_MONTH_TOP_N}: mes anterior vs mes actual`
+                        : "Aporte individual"}
                     </p>
                     <p className="text-sm font-semibold text-(--cashier-text)">
-                      Personas activas y contribucion dentro del intervalo
+                      {cashierMonthComparison
+                        ? `Los ${CASHIER_MONTH_TOP_N} cajeros con mas ventas en el mes anterior (cierre completo) y en el mes en curso (hasta la fecha fin del filtro). Si un nombre aparece en ambos, suele ser el mismo perfil de desempeño mes a mes.`
+                        : "Personas activas y contribucion dentro del intervalo"}
                     </p>
                   </div>
                   {topContributor && (
@@ -3252,37 +3537,195 @@ export const HourlyAnalysis = ({
                   )}
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <label className="min-w-64 flex-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                      Filtrar cajero
-                    </span>
-                    <div className="mt-1 flex items-center gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
-                      <Search className="h-4 w-4 text-(--cashier-muted)" />
-                      <input
-                        type="text"
-                        value={personSearchQuery}
-                        onChange={(e) => setPersonSearchQuery(e.target.value)}
-                        placeholder="Buscar por nombre o ID"
-                        className="w-full bg-transparent text-sm text-(--cashier-text) outline-none placeholder:text-(--cashier-muted)"
-                      />
-                    </div>
-                  </label>
-                  <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs font-semibold text-(--cashier-muted)">
-                    Mostrando {filteredPeopleBreakdown.length} de {peopleBreakdown.length}
-                  </span>
-                  {personSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setPersonSearchQuery("")}
-                      className="rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
-                    >
-                      Limpiar
-                    </button>
+                {!cashierMonthComparison && isCashierPersonRangeResponse &&
+                  activeHourlyData?.personContributionsRange && (
+                    <p className="mt-3 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 text-sm text-(--cashier-muted)">
+                      Ventas de cajas sumadas del{" "}
+                      <span className="font-semibold text-(--cashier-text)">
+                        {formatDateLabel(
+                          activeHourlyData.personContributionsRange.start,
+                          { day: "2-digit", month: "short", year: "numeric" },
+                        )}
+                      </span>{" "}
+                      al{" "}
+                      <span className="font-semibold text-(--cashier-text)">
+                        {formatDateLabel(
+                          activeHourlyData.personContributionsRange.end,
+                          { day: "2-digit", month: "short", year: "numeric" },
+                        )}
+                      </span>
+                      . Para revisar venta por franja de cada persona, elige un solo día en el
+                      calendario del encabezado.
+                    </p>
                   )}
-                </div>
 
-                {filteredPeopleBreakdown.length === 0 ? (
+                {!cashierMonthComparison && (
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <label className="min-w-64 flex-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                        Filtrar cajero
+                      </span>
+                      <div className="mt-1 flex items-center gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
+                        <Search className="h-4 w-4 text-(--cashier-muted)" />
+                        <input
+                          type="text"
+                          value={personSearchQuery}
+                          onChange={(e) => setPersonSearchQuery(e.target.value)}
+                          placeholder="Buscar por nombre o ID"
+                          className="w-full bg-transparent text-sm text-(--cashier-text) outline-none placeholder:text-(--cashier-muted)"
+                        />
+                      </div>
+                    </label>
+                    <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs font-semibold text-(--cashier-muted)">
+                      Mostrando {filteredPeopleBreakdown.length} de {peopleBreakdown.length}
+                    </span>
+                    {personSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setPersonSearchQuery("")}
+                        className="rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {cashierMonthComparison && cashierMonthMeta && (
+                  <p className="mt-3 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 text-sm text-(--cashier-muted)">
+                    <span className="font-semibold text-(--cashier-text)">Mes anterior:</span>{" "}
+                    {cashierMonthMeta.labelPrevious}.{" "}
+                    <span className="font-semibold text-(--cashier-text)">Mes en curso:</span>{" "}
+                    {cashierMonthMeta.labelCurrent}.
+                  </p>
+                )}
+
+                {cashierMonthComparison ? (
+                  cashierMonthCompareLoading ? (
+                    <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
+                      Cargando los top {CASHIER_MONTH_TOP_N} de cada mes…
+                    </p>
+                  ) : cashierTop5PreviousMonth.length === 0 &&
+                    cashierTop5CurrentMonth.length === 0 ? (
+                    <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
+                      No hay ventas de cajas en alguno de los dos periodos para este filtro.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      {cashierTop5SharedKeys.size > 0 && (
+                        <p className="rounded-2xl border border-emerald-200/80 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+                          <span className="font-semibold">En ambos top {CASHIER_MONTH_TOP_N}:</span>{" "}
+                          {cashierTop5CurrentMonth
+                            .filter((r) => cashierTop5SharedKeys.has(r.personKey))
+                            .map((r) => r.personName)
+                            .sort((a, b) => a.localeCompare(b, "es"))
+                            .join(", ")}
+                          .
+                        </p>
+                      )}
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                            Mes anterior (top {CASHIER_MONTH_TOP_N})
+                          </p>
+                          <p className="mt-1 text-xs text-(--cashier-muted)">
+                            {cashierMonthMeta?.labelPrevious}
+                          </p>
+                          <ul className="mt-3 space-y-2">
+                            {cashierTop5PreviousMonth.map((row, idx) => {
+                              const inBoth = cashierTop5SharedKeys.has(row.personKey);
+                              return (
+                                <li
+                                  key={row.personKey}
+                                  className={cn(
+                                    "flex items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm",
+                                    inBoth
+                                      ? "border-emerald-300/90 bg-emerald-50/80"
+                                      : "border-(--cashier-border) bg-(--cashier-surface)",
+                                  )}
+                                >
+                                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                                    <span className="shrink-0 font-semibold text-(--cashier-muted)">
+                                      {idx + 1}.
+                                    </span>
+                                    <span className="min-w-0 font-semibold text-(--cashier-text)">
+                                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                                        <UserRound className="h-3.5 w-3.5 shrink-0 text-(--cashier-brand)" />
+                                        {row.personName}
+                                        {inBoth && (
+                                          <span className="rounded-full border border-emerald-400/80 bg-emerald-100/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
+                                            Tambien en mes actual
+                                          </span>
+                                        )}
+                                        {row.personId && (
+                                          <span className="text-[11px] font-normal text-(--cashier-muted)">
+                                            ID {row.personId}
+                                          </span>
+                                        )}
+                                      </span>
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
+                                    {formatCurrency(row.sales)}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                        <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                            Mes en curso (top {CASHIER_MONTH_TOP_N})
+                          </p>
+                          <p className="mt-1 text-xs text-(--cashier-muted)">
+                            {cashierMonthMeta?.labelCurrent}
+                          </p>
+                          <ul className="mt-3 space-y-2">
+                            {cashierTop5CurrentMonth.map((row, idx) => {
+                              const inBoth = cashierTop5SharedKeys.has(row.personKey);
+                              return (
+                                <li
+                                  key={row.personKey}
+                                  className={cn(
+                                    "flex items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm",
+                                    inBoth
+                                      ? "border-emerald-300/90 bg-emerald-50/80"
+                                      : "border-(--cashier-border) bg-(--cashier-surface)",
+                                  )}
+                                >
+                                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                                    <span className="shrink-0 font-semibold text-(--cashier-muted)">
+                                      {idx + 1}.
+                                    </span>
+                                    <span className="min-w-0 font-semibold text-(--cashier-text)">
+                                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                                        <UserRound className="h-3.5 w-3.5 shrink-0 text-(--cashier-brand)" />
+                                        {row.personName}
+                                        {inBoth && (
+                                          <span className="rounded-full border border-emerald-400/80 bg-emerald-100/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
+                                            Tambien mes anterior
+                                          </span>
+                                        )}
+                                        {row.personId && (
+                                          <span className="text-[11px] font-normal text-(--cashier-muted)">
+                                            ID {row.personId}
+                                          </span>
+                                        )}
+                                      </span>
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
+                                    {formatCurrency(row.sales)}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ) : filteredPeopleBreakdown.length === 0 ? (
                   <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
                     No se encontraron cajeros para ese filtro.
                   </p>
@@ -3313,92 +3756,100 @@ export const HourlyAnalysis = ({
 
                         </div>
 
-                        {(() => {
-                          const timeline = person.slotDiffs.slice(0, 9);
-                          const maxBarValue = Math.max(
-                            ...timeline.map((slot) => slot.sales),
-                            1,
-                          );
-                          return (
-                            <div className="mt-4">
-                              <div className="grid grid-cols-9 items-end gap-1.5">
-                                {timeline.map((slot) => {
-                                  const isPeak =
-                                    person.peakSlot?.slotStartMinute === slot.slotStartMinute;
-                                  const height = Math.max(
-                                    10,
-                                    Math.round((slot.sales / maxBarValue) * 42),
-                                  );
-                                  return (
-                                    <div key={`${person.personKey}-spark-${slot.slotStartMinute}`} className="flex flex-col items-center gap-1">
-                                      <div
-                                        className="w-full rounded-md"
-                                        style={{
-                                          height: `${height}px`,
-                                          background: isPeak
-                                            ? "var(--cashier-brand)"
-                                            : "var(--cashier-brand-soft)",
-                                        }}
-                                      />
-                                      <span className="text-[9px] font-medium text-(--cashier-muted)">
-                                        {formatMinuteLabel(slot.slotStartMinute)}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        <div className="mt-4">
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePerson(person.personKey)}
-                            className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
-                          >
-                            <ChevronDown
-                              className={`h-3.5 w-3.5 transition-transform ${
-                                expandedPersonKey === person.personKey ? "rotate-180" : ""
-                              }`}
-                            />
-                            {expandedPersonKey === person.personKey
-                              ? "Ocultar detalle"
-                              : "Ver detalle por franja"}
-                          </button>
-                        </div>
-
-                        {expandedPersonKey === person.personKey && (
-                          <div className="mt-4 overflow-x-auto">
-                            <div className="min-w-[760px] rounded-2xl border border-(--cashier-border) bg-(--cashier-surface)">
-                              <div className="grid grid-cols-[1.4fr_1fr] gap-2 border-b border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                                <span>Franja</span>
-                                <span className="text-right">Venta</span>
-                              </div>
-                              {person.slotDiffs.map((slot) => {
-                                const isPeak =
-                                  person.peakSlot?.slotStartMinute === slot.slotStartMinute;
-                                return (
-                                  <div
-                                    key={`${person.personKey}-${slot.slotStartMinute}`}
-                                    className="grid grid-cols-[1.4fr_1fr] items-center gap-2 border-b border-(--cashier-border) px-3 py-2 text-sm last:border-b-0"
-                                    style={{
-                                      background: isPeak
-                                        ? "var(--cashier-peak-bg)"
-                                        : "transparent",
-                                    }}
-                                  >
-                                    <span className="font-semibold text-(--cashier-text)">
-                                      {slot.label}
-                                    </span>
-                                    <span className="text-right font-semibold text-(--cashier-text)">
-                                      {formatCurrency(slot.sales)}
-                                    </span>
+                        {!isCashierPersonRangeResponse && (
+                          <>
+                            {(() => {
+                              const timeline = person.slotDiffs.slice(0, 9);
+                              const maxBarValue = Math.max(
+                                ...timeline.map((slot) => slot.sales),
+                                1,
+                              );
+                              return (
+                                <div className="mt-4">
+                                  <div className="grid grid-cols-9 items-end gap-1.5">
+                                    {timeline.map((slot) => {
+                                      const isPeak =
+                                        person.peakSlot?.slotStartMinute ===
+                                        slot.slotStartMinute;
+                                      const height = Math.max(
+                                        10,
+                                        Math.round((slot.sales / maxBarValue) * 42),
+                                      );
+                                      return (
+                                        <div key={`${person.personKey}-spark-${slot.slotStartMinute}`} className="flex flex-col items-center gap-1">
+                                          <div
+                                            className="w-full rounded-md"
+                                            style={{
+                                              height: `${height}px`,
+                                              background: isPeak
+                                                ? "var(--cashier-brand)"
+                                                : "var(--cashier-brand-soft)",
+                                            }}
+                                          />
+                                          <span className="text-[9px] font-medium text-(--cashier-muted)">
+                                            {formatMinuteLabel(slot.slotStartMinute)}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
-                                );
-                              })}
+                                </div>
+                              );
+                            })()}
+
+                            <div className="mt-4">
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePerson(person.personKey)}
+                                className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
+                              >
+                                <ChevronDown
+                                  className={`h-3.5 w-3.5 transition-transform ${
+                                    expandedPersonKey === person.personKey
+                                      ? "rotate-180"
+                                      : ""
+                                  }`}
+                                />
+                                {expandedPersonKey === person.personKey
+                                  ? "Ocultar detalle"
+                                  : "Ver detalle por franja"}
+                              </button>
                             </div>
-                          </div>
+
+                            {expandedPersonKey === person.personKey && (
+                              <div className="mt-4 overflow-x-auto">
+                                <div className="min-w-[760px] rounded-2xl border border-(--cashier-border) bg-(--cashier-surface)">
+                                  <div className="grid grid-cols-[1.4fr_1fr] gap-2 border-b border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                    <span>Franja</span>
+                                    <span className="text-right">Venta</span>
+                                  </div>
+                                  {person.slotDiffs.map((slot) => {
+                                    const isPeak =
+                                      person.peakSlot?.slotStartMinute ===
+                                      slot.slotStartMinute;
+                                    return (
+                                      <div
+                                        key={`${person.personKey}-${slot.slotStartMinute}`}
+                                        className="grid grid-cols-[1.4fr_1fr] items-center gap-2 border-b border-(--cashier-border) px-3 py-2 text-sm last:border-b-0"
+                                        style={{
+                                          background: isPeak
+                                            ? "var(--cashier-peak-bg)"
+                                            : "transparent",
+                                        }}
+                                      >
+                                        <span className="font-semibold text-(--cashier-text)">
+                                          {slot.label}
+                                        </span>
+                                        <span className="text-right font-semibold text-(--cashier-text)">
+                                          {formatCurrency(slot.sales)}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     ))}
