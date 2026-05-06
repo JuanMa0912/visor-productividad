@@ -32,6 +32,7 @@ type RotationRow = {
   totalSales: number;
   totalCost: number;
   totalMargin: number;
+  marginDailyAvgPct: number;
   totalUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
@@ -215,7 +216,8 @@ const ROTACION_ZERO_TABLE_COL_WIDTHS = [
   "7%",
   "4%",
   "10%",
-  "22%",
+  "17%",
+  "9%",
   "10%",
   "10%",
   "7%",
@@ -272,6 +274,11 @@ const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
     label: "Descripcion",
     align: "left" as const,
     field: "descripcion" as const,
+  },
+  {
+    label: "Venta período",
+    align: "right" as const,
+    field: "totalSales" as const,
   },
   { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
   {
@@ -743,6 +750,9 @@ const normalizeRotationRows = (rows: RotationRow[]) =>
     totalUnits: safeNumber(
       (row as RotationRow & { totalUnits?: number }).totalUnits,
     ),
+    marginDailyAvgPct: safeNumber(
+      (row as RotationRow & { marginDailyAvgPct?: number }).marginDailyAvgPct,
+    ),
     bodega: row.bodega ?? null,
     nombreBodega: row.nombreBodega ?? null,
     categoria: row.categoria ?? null,
@@ -889,7 +899,6 @@ const countAbcdItemsByCategory = (
 type AbcdSummaryRow = {
   categoria: AbcdCategory;
   totalSales: number;
-  totalInventory: number;
   itemCount: number;
   totalMargin: number;
   marginPct: number;
@@ -901,23 +910,17 @@ const buildAbcdSummaryRows = (
 ): AbcdSummaryRow[] => {
   const byCategory: Record<
     AbcdCategory,
-    {
-      totalSales: number;
-      totalInventory: number;
-      totalMargin: number;
-      items: Set<string>;
-    }
+    { totalSales: number; totalMargin: number; items: Set<string> }
   > = {
-    A: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
-    B: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
-    C: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
-    D: { totalSales: 0, totalInventory: 0, totalMargin: 0, items: new Set<string>() },
+    A: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    B: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    C: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    D: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
   };
 
   for (const row of rows) {
     const categoria = categoryByItem.get(row.item) ?? "D";
     byCategory[categoria].totalSales += row.totalSales;
-    byCategory[categoria].totalInventory += row.inventoryValue;
     byCategory[categoria].totalMargin += row.totalMargin;
     byCategory[categoria].items.add(row.item);
   }
@@ -925,16 +928,13 @@ const buildAbcdSummaryRows = (
   const order: AbcdCategory[] = ["A", "B", "C", "D"];
   return order.map((categoria) => {
     const totalSales = byCategory[categoria].totalSales;
-    const totalInventory = byCategory[categoria].totalInventory;
     const totalMargin = byCategory[categoria].totalMargin;
-    const marginBase = totalSales + totalInventory;
     return {
       categoria,
       totalSales,
-      totalInventory,
       totalMargin,
       itemCount: byCategory[categoria].items.size,
-      marginPct: marginBase > 0 ? (totalMargin / marginBase) * 100 : 0,
+      marginPct: totalSales > 0 ? (totalMargin / totalSales) * 100 : 0,
     };
   });
 };
@@ -1172,7 +1172,7 @@ type GroupRowsQuickFilter = "none" | "cero_rotacion" | "venta_hasta" | "both";
 type GroupZeroEstadoFilter = "all" | CeroRotacionEstado;
 
 const isCeroRotacionRow = (row: RotationRow) =>
-  row.totalUnits <= 0 && row.inventoryUnits > 0;
+  row.salesEffectiveDays <= 0 && row.inventoryUnits > 0;
 
 const ONE_MONTH_IN_DAYS = 30;
 
@@ -1181,7 +1181,7 @@ const ONE_MONTH_IN_DAYS = 30;
  * Si tiene última venta reciente (< 1 mes), no cuenta como nuevo.
  */
 const isNuevoItemRow = (row: RotationRow) => {
-  if (!(row.totalUnits <= 0 && row.inventoryUnits > 0)) return false;
+  if (!(row.salesEffectiveDays <= 0 && row.inventoryUnits > 0)) return false;
   const duvDays = calculateDuvDays(row.lastPurchaseDate);
   if (duvDays !== null && duvDays < ONE_MONTH_IN_DAYS) return false;
   const daysSinceIngreso = calculateDiSinceLastIngresoDays(row.lastMovementDate);

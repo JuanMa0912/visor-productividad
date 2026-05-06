@@ -17,6 +17,7 @@ Centralizar la experiencia del Portal UAID con acceso por secciones, filtros por
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos; grafico multi-serie (filtros y top series); CSV, XLSX, PDF |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
 | Rotacion | `/rotacion` | `/api/rotacion` | inventario, rotacion y margen estimado por item/sede |
+| Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario de margen y resúmenes agregados con formula SUM/SUM |
 | Inventario x item | `/inventario-x-item` | `/api/inventario-x-item` | vistas y pivotes de inventario desde la base comun de rotacion |
 | Analisis de inventario | `/analisis-de-inventario` | — | exploracion complementaria inventario vs venta |
 | Prediccion pedidos | `/prediccion-pedidos` | — | modulo UI orientado a demanda (sin API REST de negocio dedicada listada aqui) |
@@ -216,6 +217,10 @@ La unica integracion de negocio observada en el codigo es PostgreSQL. No se enco
   - `bucketMinutes` acepta `60`, `30`, `20`, `15` y `10`.
   - Cachea respuesta 30 segundos y columnas de `asistencia_horas` 5 minutos en memoria.
   - Reutiliza logica entre productividad y jornada extendida.
+- `GET /api/kardex/*`
+  - Endpoints: `detalle`, `resumen-item`, `resumen-categoria`, `totales` y `lookups`.
+  - Filtros por query params (`empresa`, `sede`, `bodegaLocal`, `idItem`, `idCategoria`, `idLineaNivel1`, `fechaDesde`, `fechaHasta`).
+  - Regla de margen agregado: `SUM(margen)/SUM(ventas)*100` (nunca promedio de porcentajes).
 - Vista `/` modo **Grafico** (productividad)
   - Comparativos multi-serie de `Vta/Hr`: por defecto el grafico puede limitar las lineas dibujadas a las series con mayor promedio en el rango seleccionado; la UI ofrece **Ver todas** para mostrar todas las combinaciones sede/linea seleccionadas.
   - Filtros de lineas y sedes del grafico incluyen busqueda textual; las exportaciones CSV/XLSX del grafico incluyen **todas** las series seleccionadas, no solo las visibles en pantalla.

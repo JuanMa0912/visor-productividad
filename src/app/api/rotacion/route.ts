@@ -53,6 +53,7 @@ type RotationDbRow = {
   total_sales: string | number | null;
   total_cost: string | number | null;
   total_margin: string | number | null;
+  margin_daily_avg_pct: string | number | null;
   total_units: string | number | null;
   inventory_units: string | number | null;
   inventory_value: string | number | null;
@@ -83,6 +84,7 @@ type RotationRow = {
   totalSales: number;
   totalCost: number;
   totalMargin: number;
+  marginDailyAvgPct: number;
   totalUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
@@ -1090,7 +1092,7 @@ const queryRotationRows = async ({
           ) AS latest_rank
         FROM scoped
       ),
-      aggregated AS (
+      item_day_margin AS (
         SELECT
           empresa,
           sede_id,
@@ -1100,38 +1102,41 @@ const queryRotationRows = async ({
           item,
           descripcion,
           unidad,
-          SUM(venta_sin_impuesto)::numeric AS total_sales,
-          SUM(cost_value)::numeric AS total_cost,
-          SUM(margin_value)::numeric AS total_margin,
-          SUM(unidades_vendidas)::numeric AS total_units,
-          MAX(last_movement_date) AS last_movement_date,
-          MAX(last_purchase_date) AS last_purchase_date,
-          SUM(
-            CASE
-              WHEN consulta_date = latest_consulta_date THEN inventory_units
-              ELSE 0
-            END
-          )::numeric AS inventory_units,
-          SUM(
-            CASE
-              WHEN consulta_date = latest_consulta_date THEN inventory_value
-              ELSE 0
-            END
-          )::numeric AS inventory_value,
-          MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
-          MAX(CASE WHEN latest_rank = 1 THEN nombre_bodega END) AS nombre_bodega,
-          MAX(CASE WHEN latest_rank = 1 THEN categoria END) AS categoria,
-          MAX(CASE WHEN latest_rank = 1 THEN nombre_categoria END) AS nombre_categoria,
-          MAX(CASE WHEN latest_rank = 1 THEN linea01 END) AS linea01,
-          MAX(CASE WHEN latest_rank = 1 THEN nombre_linea01 END) AS nombre_linea01,
-          COUNT(DISTINCT consulta_date)::int AS tracked_days,
-          COUNT(
-            DISTINCT CASE
-              WHEN unidades_vendidas > 0 THEN consulta_date
-              ELSE NULL
-            END
-          )::int AS sales_effective_days
-        FROM ranked
+          consulta_date,
+          SUM(venta_sin_impuesto)::numeric AS daily_sales,
+          SUM(margin_value)::numeric AS daily_margin
+        FROM scoped
+        GROUP BY
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          consulta_date
+      ),
+      item_day_margin_avg AS (
+        SELECT
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          COALESCE(
+            AVG(
+              CASE
+                WHEN daily_sales > 0 THEN (daily_margin / daily_sales) * 100
+                ELSE NULL
+              END
+            ),
+            0
+          )::numeric AS margin_daily_avg_pct
+        FROM item_day_margin
         GROUP BY
           empresa,
           sede_id,
@@ -1141,6 +1146,67 @@ const queryRotationRows = async ({
           item,
           descripcion,
           unidad
+      ),
+      aggregated AS (
+        SELECT
+          r.empresa,
+          r.sede_id,
+          r.sede_name,
+          r.linea,
+          r.linea_n1_codigo,
+          r.item,
+          r.descripcion,
+          r.unidad,
+          SUM(r.venta_sin_impuesto)::numeric AS total_sales,
+          SUM(r.cost_value)::numeric AS total_cost,
+          SUM(r.margin_value)::numeric AS total_margin,
+          COALESCE(MAX(dma.margin_daily_avg_pct), 0)::numeric AS margin_daily_avg_pct,
+          SUM(r.unidades_vendidas)::numeric AS total_units,
+          MAX(r.last_movement_date) AS last_movement_date,
+          MAX(r.last_purchase_date) AS last_purchase_date,
+          SUM(
+            CASE
+              WHEN r.consulta_date = r.latest_consulta_date THEN r.inventory_units
+              ELSE 0
+            END
+          )::numeric AS inventory_units,
+          SUM(
+            CASE
+              WHEN r.consulta_date = r.latest_consulta_date THEN r.inventory_value
+              ELSE 0
+            END
+          )::numeric AS inventory_value,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.bodega END) AS bodega,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.nombre_bodega END) AS nombre_bodega,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.categoria END) AS categoria,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.nombre_categoria END) AS nombre_categoria,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.linea01 END) AS linea01,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.nombre_linea01 END) AS nombre_linea01,
+          COUNT(DISTINCT r.consulta_date)::int AS tracked_days,
+          COUNT(
+            DISTINCT CASE
+              WHEN r.unidades_vendidas > 0 THEN r.consulta_date
+              ELSE NULL
+            END
+          )::int AS sales_effective_days
+        FROM ranked r
+        LEFT JOIN item_day_margin_avg dma
+          ON dma.empresa = r.empresa
+          AND dma.sede_id = r.sede_id
+          AND dma.item = r.item
+          AND dma.linea IS NOT DISTINCT FROM r.linea
+          AND dma.linea_n1_codigo IS NOT DISTINCT FROM r.linea_n1_codigo
+          AND dma.descripcion IS NOT DISTINCT FROM r.descripcion
+          AND dma.unidad IS NOT DISTINCT FROM r.unidad
+        GROUP BY
+          r.empresa,
+          r.sede_id,
+          r.sede_name,
+          r.linea,
+          r.linea_n1_codigo,
+          r.item,
+          r.descripcion,
+          r.unidad
       ),
       enriched AS (
         SELECT
@@ -1161,6 +1227,7 @@ const queryRotationRows = async ({
           total_sales,
           total_cost,
           total_margin,
+          margin_daily_avg_pct,
           total_units,
           COALESCE(inventory_units, 0) AS inventory_units,
           COALESCE(inventory_value, 0) AS inventory_value,
@@ -1199,6 +1266,7 @@ const queryRotationRows = async ({
           total_sales,
           total_cost,
           total_margin,
+          margin_daily_avg_pct,
           total_units,
           inventory_units,
           inventory_value,
@@ -1238,6 +1306,7 @@ const queryRotationRows = async ({
         total_sales,
         total_cost,
         total_margin,
+        margin_daily_avg_pct,
         total_units,
         inventory_units,
         inventory_value,
@@ -1289,6 +1358,7 @@ const queryRotationRows = async ({
         totalSales: toNumber(row.total_sales),
         totalCost: toNumber(row.total_cost),
         totalMargin: toNumber(row.total_margin),
+        marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
         totalUnits: toNumber(row.total_units),
         inventoryUnits: toNumber(row.inventory_units),
         inventoryValue: toNumber(row.inventory_value),
