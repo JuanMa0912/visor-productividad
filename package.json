@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
+    "build:server": "node scripts/build.mjs --standalone",
     "start": "next start",
+    "start:server": "node .next/standalone/server.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:unit",

@@ -287,8 +287,10 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run build:server
 npm run ci
 npm run start
+npm run start:server
 ```
 
 ### Flujo recomendado

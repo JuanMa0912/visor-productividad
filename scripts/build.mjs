@@ -3,6 +3,8 @@ import os from "node:os";
 import { spawn } from "node:child_process";
 
 const projectDir = process.cwd();
+const args = new Set(process.argv.slice(2));
+const standaloneBuild = args.has("--standalone");
 const nextBin =
   process.platform === "win32"
     ? path.join(projectDir, "node_modules", ".bin", "next.cmd")
@@ -57,6 +59,9 @@ function withMaxOldSpaceSize(nodeOptions, memoryMb) {
 }
 
 const env = { ...process.env };
+if (standaloneBuild) {
+  env.NEXT_BUILD_STANDALONE = "1";
+}
 
 const heapMb = resolveBuildHeapMb();
 if (heapMb !== null) {
@@ -74,6 +79,9 @@ if (process.env.NEXT_BUILD_LOG_LIMITS === "1") {
       ? `[build] heap: using existing NODE_OPTIONS (total RAM ~${totalMb} MB)`
       : `[build] heap: --max-old-space-size=${heapMb} (total RAM ~${totalMb} MB; set NEXT_BUILD_MEMORY_MB or NODE_OPTIONS to override)`;
   console.error(line);
+  if (standaloneBuild) {
+    console.error("[build] output: standalone server bundle enabled");
+  }
 }
 
 const child =
