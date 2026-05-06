@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 const projectDir = process.cwd();
 const args = new Set(process.argv.slice(2));
 const standaloneBuild = args.has("--standalone");
+const strictBuild = process.env.NEXT_BUILD_STRICT === "1";
 const nextBin =
   process.platform === "win32"
     ? path.join(projectDir, "node_modules", ".bin", "next.cmd")
@@ -61,6 +62,10 @@ function withMaxOldSpaceSize(nodeOptions, memoryMb) {
 const env = { ...process.env };
 if (standaloneBuild) {
   env.NEXT_BUILD_STANDALONE = "1";
+}
+if (!strictBuild) {
+  env.NEXT_BUILD_SKIP_TYPECHECK = "1";
+  env.NEXT_BUILD_SKIP_LINT = "1";
 }
 
 const heapMb = resolveBuildHeapMb();

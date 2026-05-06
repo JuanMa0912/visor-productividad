@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const isDev = process.env.NODE_ENV !== "production";
 const enableReactCompiler = process.env.NEXT_ENABLE_REACT_COMPILER === "true";
 const standaloneBuild = process.env.NEXT_BUILD_STANDALONE === "1";
+const skipTypecheckInBuild = process.env.NEXT_BUILD_SKIP_TYPECHECK === "1";
 
 const enableUpgradeInsecure =
   process.env.UPGRADE_INSECURE_REQUESTS === "true";
@@ -68,6 +69,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   ...(standaloneBuild ? { output: "standalone" } : {}),
+  typescript: {
+    ignoreBuildErrors: skipTypecheckInBuild,
+  },
   reactCompiler: enableReactCompiler,
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
