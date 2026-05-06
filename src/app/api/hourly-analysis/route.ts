@@ -728,8 +728,9 @@ const fetchHourlyData = async (
             "numero",
             "usuario",
           ]);
+        const vendedorColumn = salesColumnLookup.get("vendedor");
         const personNameColumn =
-          salesColumnLookup.get("vendedor") ??
+          vendedorColumn ??
           pickAttendanceColumn(salesColumns, SALES_PERSON_NAME_COLUMN_CANDIDATES, [
             "cajer",
             "vendedor",
@@ -752,11 +753,15 @@ const fetchHourlyData = async (
           ? `NULLIF(TRIM(CAST(${personNameIdentifier} AS text)), '')`
           : "NULL::text";
 
+        const personNameSelectExpr = vendedorColumn
+          ? `COALESCE(${personNameExpr}, 'Sin nombre')`
+          : `COALESCE(${personNameExpr}, ${personIdExpr}, 'Sin identificar')`;
+
         const peopleQuery = `
           SELECT
             COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
             ${personIdExpr} AS person_id,
-            COALESCE(${personNameExpr}, ${personIdExpr}, 'Sin identificar') AS person_name,
+            ${personNameSelectExpr} AS person_name,
             hora_final_hora,
             COALESCE(SUM(total_bruto), 0) AS total_sales
           FROM ventas_cajas
@@ -796,10 +801,7 @@ const fetchHourlyData = async (
           const bucketStartMinute =
             Math.floor(minuteOfDay / bucketMinutes) * bucketMinutes;
           const personKey = typedRow.person_key?.trim() || "sin-identificar";
-          const personName =
-            typedRow.person_name?.trim() ||
-            typedRow.person_id?.trim() ||
-            "Sin identificar";
+          const personName = typedRow.person_name?.trim() || "Sin identificar";
           const personId = typedRow.person_id?.trim() || null;
           const salesValue = Number(typedRow.total_sales) || 0;
 

@@ -16,6 +16,7 @@ import {
   Clock,
   Sparkles,
   Download,
+  Search,
   UserRound,
   TrendingUp,
   TrendingDown,
@@ -50,6 +51,8 @@ interface HourlyAnalysisProps {
   panelTitle?: string;
   panelDescription?: string;
   showPersonBreakdown?: boolean;
+  defaultPersonBreakdownView?: PersonBreakdownView;
+  hidePersonBreakdownTabs?: boolean;
   dashboardContext?: HourlyAnalysisDashboardContext;
   alexTotalsOverride?: {
     moreThan72With2: number;
@@ -444,6 +447,8 @@ export const HourlyAnalysis = ({
   panelTitle = "Desglose horario",
   panelDescription = "Filtra por linea para enfocar el comportamiento horario en todas las sedes.",
   showPersonBreakdown = false,
+  defaultPersonBreakdownView = "individual",
+  hidePersonBreakdownTabs = false,
   dashboardContext = "productividad",
   exportRef,
 }: HourlyAnalysisProps) => {
@@ -536,7 +541,7 @@ export const HourlyAnalysis = ({
   const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
   const [expandedPersonKey, setExpandedPersonKey] = useState<string | null>(null);
   const [personBreakdownView, setPersonBreakdownView] =
-    useState<PersonBreakdownView>("individual");
+    useState<PersonBreakdownView>(defaultPersonBreakdownView);
   const topSectionRef = useRef<HTMLDivElement | null>(null);
   const contributionSectionRef = useRef<HTMLDivElement | null>(null);
   const [showFloatingContributionBack, setShowFloatingContributionBack] =
@@ -3086,35 +3091,37 @@ export const HourlyAnalysis = ({
                     Alterna entre el aporte de cajeros y el comportamiento por franjas sin perder el contexto del filtro actual.
                   </p>
                 </div>
-                <div
-                  role="tablist"
-                  aria-label="Selector de detalle de cajas"
-                  className="grid w-full grid-cols-1 rounded-2xl border border-slate-200/70 bg-slate-100/80 p-1 sm:grid-cols-2 lg:max-w-[540px]"
-                >
-                  {PERSON_BREAKDOWN_VIEW_OPTIONS.map((option) => {
-                    const isActive = personBreakdownView === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        role="tab"
-                        aria-selected={isActive}
-                        onClick={() => setPersonBreakdownView(option.value)}
-                        className={cn(
-                          "flex w-full flex-col rounded-xl px-4 py-3 text-left transition-all",
-                          isActive
-                            ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80"
-                            : "text-slate-600 hover:bg-white/80 hover:text-slate-900",
-                        )}
-                      >
-                        <span className="text-xs font-semibold uppercase tracking-[0.16em]">
-                          {option.label}
-                        </span>
-                        <span className="mt-1 text-xs text-slate-500">{option.hint}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {!hidePersonBreakdownTabs && (
+                  <div
+                    role="tablist"
+                    aria-label="Selector de detalle de cajas"
+                    className="grid w-full grid-cols-1 rounded-2xl border border-slate-200/70 bg-slate-100/80 p-1 sm:grid-cols-2 lg:max-w-[540px]"
+                  >
+                    {PERSON_BREAKDOWN_VIEW_OPTIONS.map((option) => {
+                      const isActive = personBreakdownView === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          onClick={() => setPersonBreakdownView(option.value)}
+                          className={cn(
+                            "flex w-full flex-col rounded-xl px-4 py-3 text-left transition-all",
+                            isActive
+                              ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80"
+                              : "text-slate-600 hover:bg-white/80 hover:text-slate-900",
+                          )}
+                        >
+                          <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+                            {option.label}
+                          </span>
+                          <span className="mt-1 text-xs text-slate-500">{option.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 space-y-4">
@@ -3227,19 +3234,19 @@ export const HourlyAnalysis = ({
 
                 {personBreakdownView === "individual" && (
               <div
-                className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm"
+                className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface) p-5 shadow-[0_1px_2px_0_color-mix(in_oklab,var(--cashier-text)_8%,transparent)] font-[Inter,var(--font-geist-sans),system-ui,sans-serif] [font-variant-numeric:tabular-nums]"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--cashier-muted)">
                       Aporte individual
                     </p>
-                    <p className="text-sm font-semibold text-slate-900">
+                    <p className="text-sm font-semibold text-(--cashier-text)">
                       Personas activas y contribucion dentro del intervalo
                     </p>
                   </div>
                   {topContributor && (
-                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
+                    <span className="rounded-full border border-(--cashier-border) bg-(--cashier-top-bg) px-3 py-1 text-xs font-semibold text-(--cashier-top-text)">
                       Top: {topContributor.personName} {formatCurrency(topContributor.totalSales)}
                     </span>
                   )}
@@ -3247,18 +3254,21 @@ export const HourlyAnalysis = ({
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <label className="min-w-64 flex-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
                       Filtrar cajero
                     </span>
-                    <input
-                      type="text"
-                      value={personSearchQuery}
-                      onChange={(e) => setPersonSearchQuery(e.target.value)}
-                      placeholder="Buscar por nombre o ID"
-                      className="mt-1 w-full rounded-full border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-all focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                    />
+                    <div className="mt-1 flex items-center gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
+                      <Search className="h-4 w-4 text-(--cashier-muted)" />
+                      <input
+                        type="text"
+                        value={personSearchQuery}
+                        onChange={(e) => setPersonSearchQuery(e.target.value)}
+                        placeholder="Buscar por nombre o ID"
+                        className="w-full bg-transparent text-sm text-(--cashier-text) outline-none placeholder:text-(--cashier-muted)"
+                      />
+                    </div>
                   </label>
-                  <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 ring-1 ring-slate-200/70">
+                  <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs font-semibold text-(--cashier-muted)">
                     Mostrando {filteredPeopleBreakdown.length} de {peopleBreakdown.length}
                   </span>
                   {personSearchQuery && (
@@ -3273,59 +3283,73 @@ export const HourlyAnalysis = ({
                 </div>
 
                 {filteredPeopleBreakdown.length === 0 ? (
-                  <p className="mt-4 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-6 text-center text-sm text-slate-500">
+                  <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
                     No se encontraron cajeros para ese filtro.
                   </p>
                 ) : (
                   <div className="mt-4 space-y-3">
                     {filteredPeopleBreakdown.map((person) => (
-                      <div
-                        key={person.personKey}
-                        className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4"
-                      >
+                      <div key={person.personKey} className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200/70">
-                                <UserRound className="h-3.5 w-3.5 text-sky-600" />
+                              <span className="inline-flex items-center gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-3 py-1 text-xs font-semibold text-(--cashier-text)">
+                                <UserRound className="h-3.5 w-3.5 text-(--cashier-brand)" />
                                 {person.personName}
                               </span>
                               {person.personId && (
-                                <span className="rounded-full bg-slate-200/70 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-muted)">
                                   ID {person.personId}
                                 </span>
                               )}
                             </div>
-                            <p className="mt-2 text-sm font-semibold text-slate-900">
+                            <p className="mt-2 text-[2rem] font-semibold leading-tight text-(--cashier-text)">
                               {formatCurrency(person.totalSales)}
                             </p>
-                            <p className="mt-1 text-xs text-slate-600">
+                            <p className="mt-1 text-xs text-(--cashier-muted)">
                               Participacion: {formatShare(person.contributionShare)} del total
                             </p>
                           </div>
 
-                          <div className="grid gap-2 sm:grid-cols-3">
-                            <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
-                              <span className="block text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                                Participacion
-                              </span>
-                              {formatMinuteLabel(person.firstSlot?.slotStartMinute)} -{" "}
-                              {formatMinuteLabel(person.lastSlot?.slotEndMinute)}
-                            </div>
-                            <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
-                              <span className="block text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                                Franja pico
-                              </span>
-                              {person.peakSlot?.label ?? "-"}
-                            </div>
-                            <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
-                              <span className="block text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                                Pico individual
-                              </span>
-                              {person.peakSlot ? formatCurrency(person.peakSlot.sales) : "-"}
-                            </div>
-                          </div>
                         </div>
+
+                        {(() => {
+                          const timeline = person.slotDiffs.slice(0, 9);
+                          const maxBarValue = Math.max(
+                            ...timeline.map((slot) => slot.sales),
+                            1,
+                          );
+                          return (
+                            <div className="mt-4">
+                              <div className="grid grid-cols-9 items-end gap-1.5">
+                                {timeline.map((slot) => {
+                                  const isPeak =
+                                    person.peakSlot?.slotStartMinute === slot.slotStartMinute;
+                                  const height = Math.max(
+                                    10,
+                                    Math.round((slot.sales / maxBarValue) * 42),
+                                  );
+                                  return (
+                                    <div key={`${person.personKey}-spark-${slot.slotStartMinute}`} className="flex flex-col items-center gap-1">
+                                      <div
+                                        className="w-full rounded-md"
+                                        style={{
+                                          height: `${height}px`,
+                                          background: isPeak
+                                            ? "var(--cashier-brand)"
+                                            : "var(--cashier-brand-soft)",
+                                        }}
+                                      />
+                                      <span className="text-[9px] font-medium text-(--cashier-muted)">
+                                        {formatMinuteLabel(slot.slotStartMinute)}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div className="mt-4">
                           <button
@@ -3346,37 +3370,29 @@ export const HourlyAnalysis = ({
 
                         {expandedPersonKey === person.personKey && (
                           <div className="mt-4 overflow-x-auto">
-                            <div className="min-w-[760px] rounded-2xl border border-slate-200/70 bg-white">
-                              <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-2 border-b border-slate-200/70 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            <div className="min-w-[760px] rounded-2xl border border-(--cashier-border) bg-(--cashier-surface)">
+                              <div className="grid grid-cols-[1.4fr_1fr] gap-2 border-b border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
                                 <span>Franja</span>
                                 <span className="text-right">Venta</span>
-                                <span className="text-right">Delta</span>
-                                <span className="text-right">% cambio</span>
                               </div>
                               {person.slotDiffs.map((slot) => {
-                                const positive = slot.deltaSales >= 0;
+                                const isPeak =
+                                  person.peakSlot?.slotStartMinute === slot.slotStartMinute;
                                 return (
                                   <div
                                     key={`${person.personKey}-${slot.slotStartMinute}`}
-                                    className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0"
+                                    className="grid grid-cols-[1.4fr_1fr] items-center gap-2 border-b border-(--cashier-border) px-3 py-2 text-sm last:border-b-0"
+                                    style={{
+                                      background: isPeak
+                                        ? "var(--cashier-peak-bg)"
+                                        : "transparent",
+                                    }}
                                   >
-                                    <span className="font-semibold text-slate-700">
+                                    <span className="font-semibold text-(--cashier-text)">
                                       {slot.label}
                                     </span>
-                                    <span className="text-right font-semibold text-slate-900">
+                                    <span className="text-right font-semibold text-(--cashier-text)">
                                       {formatCurrency(slot.sales)}
-                                    </span>
-                                    <span
-                                      className={`text-right font-semibold ${
-                                        positive ? "text-emerald-700" : "text-red-700"
-                                      }`}
-                                    >
-                                      {`${positive ? "+" : "-"}${formatCurrency(Math.abs(slot.deltaSales))}`}
-                                    </span>
-                                    <span className="text-right font-semibold text-slate-600">
-                                      {slot.deltaPercent === null
-                                        ? "-"
-                                        : `${positive ? "+" : "-"}${Math.abs(slot.deltaPercent).toFixed(1)}%`}
                                     </span>
                                   </div>
                                 );

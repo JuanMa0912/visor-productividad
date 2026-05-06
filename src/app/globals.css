@@ -34,6 +34,18 @@
   --sidebar-accent-foreground: oklch(0.28 0.03 255);
   --sidebar-border: oklch(0.84 0.01 240 / 70%);
   --sidebar-ring: oklch(0.58 0.05 255);
+  --cashier-surface: oklch(0.99 0.004 250);
+  --cashier-surface-soft: oklch(0.985 0.004 250);
+  --cashier-text: oklch(0.24 0.03 255);
+  --cashier-muted: oklch(0.5 0.02 255);
+  --cashier-border: oklch(0.94 0.01 250);
+  --cashier-brand: oklch(0.45 0.13 255);
+  --cashier-brand-soft: oklch(0.45 0.13 255 / 22%);
+  --cashier-top-bg: oklch(0.96 0.045 92);
+  --cashier-top-text: oklch(0.44 0.08 85);
+  --cashier-positive: oklch(0.63 0.16 150);
+  --cashier-negative: oklch(0.59 0.2 25);
+  --cashier-peak-bg: oklch(0.975 0.026 92);
 }
 
 .dark {

@@ -285,7 +285,14 @@ const useProductivityData = () => {
 const useAnimations = (
   isLoading: boolean,
   filteredLinesCount: number,
-  viewMode: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2",
+  viewMode:
+    | "cards"
+    | "comparison"
+    | "chart"
+    | "trends"
+    | "hourly"
+    | "cashier"
+    | "m2",
 ) => {
   useEffect(() => {
     if (
@@ -354,7 +361,7 @@ const useAnimations = (
         }
       }
 
-      if (viewMode === "hourly") {
+      if (viewMode === "hourly" || viewMode === "cashier") {
         if (hasTargets("[data-animate='hourly-card']")) {
           animate("[data-animate='hourly-card']", {
             translateY: [-8, 0],
@@ -2933,7 +2940,7 @@ export default function Home() {
   });
   const [lineFilter, setLineFilter] = useState("all");
   const [viewMode, setViewMode] = useState<
-    "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2"
+    "cards" | "comparison" | "chart" | "trends" | "hourly" | "cashier" | "m2"
   >("cards");
 
   const prefsKey = useMemo(
@@ -2979,7 +2986,14 @@ export default function Home() {
           selectedCompanies?: string[];
           dateRange?: DateRange;
           lineFilter?: string;
-          viewMode?: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2";
+          viewMode?:
+            | "cards"
+            | "comparison"
+            | "chart"
+            | "trends"
+            | "hourly"
+            | "cashier"
+            | "m2";
         };
         if (Array.isArray(parsed.selectedCompanies)) {
           setSelectedCompanies(parsed.selectedCompanies.slice(0, 2));
@@ -3045,6 +3059,7 @@ export default function Home() {
           | "chart"
           | "trends"
           | "hourly"
+          | "cashier"
           | "m2",
       );
     }
@@ -3694,7 +3709,16 @@ export default function Home() {
   }, []);
 
   const handleViewChange = useCallback(
-    (value: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2") => {
+    (
+      value:
+        | "cards"
+        | "comparison"
+        | "chart"
+        | "trends"
+        | "hourly"
+        | "cashier"
+        | "m2",
+    ) => {
       setViewMode(value);
     },
     [],
@@ -4952,7 +4976,7 @@ export default function Home() {
             format === "csv"
               ? trendsExportRef.current?.exportCsv() ?? false
               : (await trendsExportRef.current?.exportXlsx?.()) ?? false;
-        } else if (viewMode === "hourly") {
+        } else if (viewMode === "hourly" || viewMode === "cashier") {
           exported =
             format === "csv"
               ? hourlyExportRef.current?.exportCsv() ?? false
@@ -5035,6 +5059,7 @@ export default function Home() {
           if (prev === "comparison") return "chart";
           if (prev === "chart") return "trends";
           if (prev === "trends") return "hourly";
+          if (prev === "hourly") return "cashier";
           return "cards";
         });
       }
@@ -5291,12 +5316,31 @@ export default function Home() {
               />
             ) : viewMode === "hourly" ? (
               <HourlyAnalysis
+                key={`hourly-${dateRange.start}-${dateRange.end}-${selectedSede}`}
                 availableDates={availableDates}
                 availableSedes={orderedSedes}
                 defaultDate={dateRange.end}
                 defaultSede={selectedSede || undefined}
                 allowedLineIds={!isAdmin ? allowedLineIds : undefined}
                 sections={["map"]}
+                showTopDateFilter={false}
+                dashboardContext="productividad"
+                exportRef={hourlyExportRef}
+              />
+            ) : viewMode === "cashier" ? (
+              <HourlyAnalysis
+                key={`cashier-${dateRange.start}-${dateRange.end}-${selectedSede}`}
+                availableDates={availableDates}
+                availableSedes={orderedSedes}
+                defaultDate={dateRange.end}
+                defaultSede={selectedSede || undefined}
+                defaultLine="cajas"
+                allowedLineIds={!isAdmin ? allowedLineIds : undefined}
+                sections={["map"]}
+                showTopDateFilter={false}
+                showPersonBreakdown
+                defaultPersonBreakdownView="individual"
+                hidePersonBreakdownTabs
                 dashboardContext="productividad"
                 exportRef={hourlyExportRef}
               />

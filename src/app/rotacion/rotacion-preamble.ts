@@ -34,6 +34,8 @@ type RotationRow = {
   totalMargin: number;
   marginDailyAvgPct: number;
   totalUnits: number;
+  openingInventoryUnits: number;
+  minInventoryUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
   rotation: number;
@@ -125,8 +127,8 @@ type AbcdConfig = {
   cUntilPercent: number;
 };
 type AbcdCategory = "A" | "B" | "C" | "D";
-/** "all" = sin filtro ABCD; "0"/"N" = modos especiales; arreglo = unión de clases A–D. */
-type GroupAbcdFilter = "all" | "0" | "N" | AbcdCategory[];
+/** "all" = sin filtro ABCD; "0"/"R" = modos especiales; arreglo = unión de clases A–D. */
+type GroupAbcdFilter = "all" | "0" | "R" | "N" | AbcdCategory[];
 
 const ABCD_FILTER_LETTERS_ORDER: AbcdCategory[] = ["A", "B", "C", "D"];
 
@@ -139,7 +141,7 @@ const toggleAbcdLetterFilter = (
   current: GroupAbcdFilter,
   letter: AbcdCategory,
 ): GroupAbcdFilter => {
-  if (current === "0" || current === "N") {
+  if (current === "0" || current === "R" || current === "N") {
     return normalizeAbcdLetterSelection([letter]);
   }
   if (current === "all") {
@@ -165,7 +167,7 @@ const formatAbcdCategoryFilterLabel = (
 ): string | null => {
   if (filter === "all") return null;
   if (filter === "0") return "0";
-  if (filter === "N") return "N";
+  if (filter === "R" || filter === "N") return "R";
   if (Array.isArray(filter) && filter.length > 0) {
     return filter.join("+");
   }
@@ -197,9 +199,10 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 /** Anchos de columna (table-layout: fixed) — thead y tbody comparten la misma rejilla. */
 const ROTACION_TABLE_COL_WIDTHS = [
+  "4%",
   "6%",
   "3%",
-  "16%",
+  "14%",
   "8%",
   "8%",
   "6%",
@@ -213,10 +216,11 @@ const ROTACION_TABLE_COL_WIDTHS = [
   "8%",
 ] as const;
 const ROTACION_ZERO_TABLE_COL_WIDTHS = [
+  "4%",
   "7%",
   "4%",
   "10%",
-  "17%",
+  "16%",
   "9%",
   "10%",
   "10%",
@@ -227,6 +231,7 @@ const ROTACION_ZERO_TABLE_COL_WIDTHS = [
 ] as const;
 const ROTACION_FLOATING_HEADER_TOP_PX = 0;
 const ROTACION_FLOATING_HEADER_COLUMNS = [
+  { label: "#", align: "right" as const },
   { label: "Item", align: "left" as const, field: "item" as const },
   { label: "Cat.", align: "center" as const },
   {
@@ -263,6 +268,7 @@ const ROTACION_FLOATING_HEADER_COLUMNS = [
   },
 ] as const;
 const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
+  { label: "#", align: "right" as const },
   { label: "Item", align: "left" as const, field: "item" as const },
   { label: "Cat.", align: "center" as const },
   {
@@ -753,6 +759,13 @@ const normalizeRotationRows = (rows: RotationRow[]) =>
     marginDailyAvgPct: safeNumber(
       (row as RotationRow & { marginDailyAvgPct?: number }).marginDailyAvgPct,
     ),
+    openingInventoryUnits: safeNumber(
+      (row as RotationRow & { openingInventoryUnits?: number })
+        .openingInventoryUnits,
+    ),
+    minInventoryUnits: safeNumber(
+      (row as RotationRow & { minInventoryUnits?: number }).minInventoryUnits,
+    ),
     bodega: row.bodega ?? null,
     nombreBodega: row.nombreBodega ?? null,
     categoria: row.categoria ?? null,
@@ -1174,16 +1187,23 @@ type GroupZeroEstadoFilter = "all" | CeroRotacionEstado;
 const isCeroRotacionRow = (row: RotationRow) =>
   row.salesEffectiveDays <= 0 && row.inventoryUnits > 0;
 
-const ONE_MONTH_IN_DAYS = 30;
+const EXCLUDE_RECENT_SALE_DAYS = 5;
 
 /**
- * Nuevo = sin ventas, con inventario y con último ingreso hoy o ayer.
- * Si tiene última venta reciente (< 1 mes), no cuenta como nuevo.
+ * Nuevo:
+ * 1) Regla original: sin ventas, con inventario y último ingreso hoy/ayer.
+ * 2) Regla adicional negocio: si estuvo agotado (inventario 0 en el rango)
+ *    y ahora tiene inventario (restock), también cuenta como nuevo.
+ * En ambos casos, si tiene última venta reciente (< 5 dias), se excluye.
  */
 const isNuevoItemRow = (row: RotationRow) => {
-  if (!(row.salesEffectiveDays <= 0 && row.inventoryUnits > 0)) return false;
   const duvDays = calculateDuvDays(row.lastPurchaseDate);
-  if (duvDays !== null && duvDays < ONE_MONTH_IN_DAYS) return false;
+  const hasRecentSales = duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS;
+  if (hasRecentSales) return false;
+  if (!(row.salesEffectiveDays <= 0 && row.inventoryUnits > 0)) return false;
+  const wasOutOfStockAndRestocked =
+    row.minInventoryUnits <= 0 && row.inventoryUnits > 0;
+  if (wasOutOfStockAndRestocked) return true;
   const daysSinceIngreso = calculateDiSinceLastIngresoDays(row.lastMovementDate);
   return daysSinceIngreso !== null && daysSinceIngreso <= 1;
 };

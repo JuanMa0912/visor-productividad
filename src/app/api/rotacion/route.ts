@@ -55,6 +55,8 @@ type RotationDbRow = {
   total_margin: string | number | null;
   margin_daily_avg_pct: string | number | null;
   total_units: string | number | null;
+  opening_inventory_units: string | number | null;
+  min_inventory_units: string | number | null;
   inventory_units: string | number | null;
   inventory_value: string | number | null;
   rotation: string | number | null;
@@ -86,6 +88,8 @@ type RotationRow = {
   totalMargin: number;
   marginDailyAvgPct: number;
   totalUnits: number;
+  openingInventoryUnits: number;
+  minInventoryUnits: number;
   inventoryUnits: number;
   inventoryValue: number;
   rotation: number;
@@ -1083,6 +1087,9 @@ const queryRotationRows = async ({
       ranked AS (
         SELECT
           *,
+          MIN(consulta_date) OVER (
+            PARTITION BY empresa, sede_id, item
+          ) AS first_consulta_date,
           MAX(consulta_date) OVER (
             PARTITION BY empresa, sede_id, item
           ) AS latest_consulta_date,
@@ -1116,6 +1123,52 @@ const queryRotationRows = async ({
           descripcion,
           unidad,
           consulta_date
+      ),
+      item_day_inventory AS (
+        SELECT
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          consulta_date,
+          SUM(inventory_units)::numeric AS daily_inventory_units
+        FROM scoped
+        GROUP BY
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          consulta_date
+      ),
+      item_inventory_range_summary AS (
+        SELECT
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          MIN(daily_inventory_units)::numeric AS min_inventory_units
+        FROM item_day_inventory
+        GROUP BY
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad
       ),
       item_day_margin_avg AS (
         SELECT
@@ -1166,6 +1219,13 @@ const queryRotationRows = async ({
           MAX(r.last_purchase_date) AS last_purchase_date,
           SUM(
             CASE
+              WHEN r.consulta_date = r.first_consulta_date THEN r.inventory_units
+              ELSE 0
+            END
+          )::numeric AS opening_inventory_units,
+          COALESCE(MAX(iir.min_inventory_units), 0)::numeric AS min_inventory_units,
+          SUM(
+            CASE
               WHEN r.consulta_date = r.latest_consulta_date THEN r.inventory_units
               ELSE 0
             END
@@ -1198,6 +1258,14 @@ const queryRotationRows = async ({
           AND dma.linea_n1_codigo IS NOT DISTINCT FROM r.linea_n1_codigo
           AND dma.descripcion IS NOT DISTINCT FROM r.descripcion
           AND dma.unidad IS NOT DISTINCT FROM r.unidad
+        LEFT JOIN item_inventory_range_summary iir
+          ON iir.empresa = r.empresa
+          AND iir.sede_id = r.sede_id
+          AND iir.item = r.item
+          AND iir.linea IS NOT DISTINCT FROM r.linea
+          AND iir.linea_n1_codigo IS NOT DISTINCT FROM r.linea_n1_codigo
+          AND iir.descripcion IS NOT DISTINCT FROM r.descripcion
+          AND iir.unidad IS NOT DISTINCT FROM r.unidad
         GROUP BY
           r.empresa,
           r.sede_id,
@@ -1229,6 +1297,8 @@ const queryRotationRows = async ({
           total_margin,
           margin_daily_avg_pct,
           total_units,
+          COALESCE(opening_inventory_units, 0) AS opening_inventory_units,
+          COALESCE(min_inventory_units, 0) AS min_inventory_units,
           COALESCE(inventory_units, 0) AS inventory_units,
           COALESCE(inventory_value, 0) AS inventory_value,
           tracked_days,
@@ -1268,6 +1338,8 @@ const queryRotationRows = async ({
           total_margin,
           margin_daily_avg_pct,
           total_units,
+          opening_inventory_units,
+          min_inventory_units,
           inventory_units,
           inventory_value,
           rotation,
@@ -1308,6 +1380,8 @@ const queryRotationRows = async ({
         total_margin,
         margin_daily_avg_pct,
         total_units,
+        opening_inventory_units,
+        min_inventory_units,
         inventory_units,
         inventory_value,
         rotation,
@@ -1360,6 +1434,8 @@ const queryRotationRows = async ({
         totalMargin: toNumber(row.total_margin),
         marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
         totalUnits: toNumber(row.total_units),
+        openingInventoryUnits: toNumber(row.opening_inventory_units),
+        minInventoryUnits: toNumber(row.min_inventory_units),
         inventoryUnits: toNumber(row.inventory_units),
         inventoryValue: toNumber(row.inventory_value),
         rotation: toNumber(row.rotation),

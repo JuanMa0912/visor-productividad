@@ -4,15 +4,30 @@ import {
   Clock,
   LayoutGrid,
   Table2,
+  UserRound,
 } from "lucide-react";
 
 export const ViewToggle = ({
   viewMode,
   onChange,
 }: {
-  viewMode: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2";
+  viewMode:
+    | "cards"
+    | "comparison"
+    | "chart"
+    | "trends"
+    | "hourly"
+    | "cashier"
+    | "m2";
   onChange: (
-    value: "cards" | "comparison" | "chart" | "trends" | "hourly" | "m2",
+    value:
+      | "cards"
+      | "comparison"
+      | "chart"
+      | "trends"
+      | "hourly"
+      | "cashier"
+      | "m2",
   ) => void;
 }) => {
   const getModeLabel = () => {
@@ -27,6 +42,8 @@ export const ViewToggle = ({
         return "Análisis de tendencias";
       case "hourly":
         return "Análisis por hora";
+      case "cashier":
+        return "Ranking por cajero";
       case "m2":
         return "Indicadores por m2";
     }
@@ -108,6 +125,19 @@ export const ViewToggle = ({
         >
           <Clock className="h-4 w-4" />
           Por hora
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("cashier")}
+          aria-pressed={viewMode === "cashier"}
+          className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition-all ${
+            viewMode === "cashier"
+              ? "bg-fuchsia-100 text-fuchsia-800 ring-1 ring-fuchsia-200/80 shadow-sm"
+              : "text-slate-600 hover:bg-white/80 hover:text-slate-800"
+          }`}
+        >
+          <UserRound className="h-4 w-4" />
+          Por cajero
         </button>
       </div>
     </div>

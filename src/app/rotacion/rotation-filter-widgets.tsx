@@ -10,8 +10,8 @@ type SortableRotationHeaderProps = {
   activeField: RotationSortField | null;
   direction: RotationSortDirection;
   onSort: (field: RotationSortField) => void;
-  /** Encabezados numericos alineados a la derecha como las celdas (evita desfase visual). */
-  align?: "left" | "right";
+  /** Alineación visual del encabezado sortable. */
+  align?: "left" | "center" | "right";
 };
 
 export const WhatsAppLogo = (props: SVGProps<SVGSVGElement>) => (
@@ -26,10 +26,10 @@ export const SortableRotationHeader = ({
   activeField,
   direction,
   onSort,
-  align = "left",
+  align = "center",
 }: SortableRotationHeaderProps) => {
   const isActive = activeField === field;
-  const isRight = align === "right";
+  const isLeft = align === "left";
 
   return (
     <button
@@ -37,9 +37,9 @@ export const SortableRotationHeader = ({
       onClick={() => onSort(field)}
       className={cn(
         "grid w-full min-w-0 items-center gap-x-2 transition-colors",
-        isRight
-          ? "grid-cols-[minmax(0,1fr)_auto] justify-items-end text-right"
-          : "grid-cols-[minmax(0,1fr)_auto] justify-items-start text-left",
+        isLeft
+          ? "grid-cols-[minmax(0,1fr)_auto] justify-items-start text-left"
+          : "grid-cols-[minmax(0,1fr)_auto] justify-items-center text-center",
         isActive ? "text-amber-700" : "text-slate-700 hover:text-amber-700",
       )}
       aria-pressed={isActive}
@@ -47,7 +47,7 @@ export const SortableRotationHeader = ({
       <span
         className={cn(
           "min-w-0 leading-tight",
-          isRight ? "justify-self-end" : "justify-self-start",
+          isLeft ? "justify-self-start" : "justify-self-center",
         )}
       >
         {label}

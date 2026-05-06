@@ -1509,7 +1509,7 @@ export default function RotacionPage() {
             ? filteredRows
             : categoryFilter === "0"
               ? filteredRows.filter((row) => isCeroRotacionExcludingNuevo(row))
-              : categoryFilter === "N"
+              : categoryFilter === "R" || categoryFilter === "N"
                 ? filteredRows.filter((row) => isNuevoItemRow(row))
                 : Array.isArray(categoryFilter)
                   ? filteredRows.filter((row) => {
@@ -1521,7 +1521,7 @@ export default function RotacionPage() {
                   : filteredRows;
         const rows = categoryFilteredRows.map((row) => {
           const displayCategory = isNuevoItemRow(row)
-            ? "N"
+            ? "R"
             : isCeroRotacionExcludingNuevo(row)
               ? "0"
               : (categoryByItem.get(row.item) ?? "D");
@@ -2572,7 +2572,7 @@ export default function RotacionPage() {
                           ? filteredRows.filter((row) =>
                               isCeroRotacionExcludingNuevo(row),
                             )
-                          : categoryFilter === "N"
+                          : categoryFilter === "R" || categoryFilter === "N"
                             ? filteredRows.filter((row) => isNuevoItemRow(row))
                             : Array.isArray(categoryFilter)
                               ? filteredRows.filter((row) => {
@@ -2939,7 +2939,7 @@ export default function RotacionPage() {
                                           : "border-slate-300 bg-slate-100 text-slate-900"
                                       }`}
                                     >
-                                      0 Cero:{" "}
+                                      0:{" "}
                                       {ceroRotacionCount.toLocaleString(
                                         "es-CO",
                                       )}
@@ -2947,19 +2947,20 @@ export default function RotacionPage() {
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-[10px] font-semibold text-cyan-600">
-                                      nuevos
+                                      restock
                                     </span>
                                     <Button
                                       type="button"
                                       variant="outline"
-                                      title="Sin ventas, con inventario y último ingreso hoy o ayer."
+                                      title="Items con condición de restock (categoría R)."
                                       onClick={() => {
                                         setAbcdFilterByGroup((prev) => ({
                                           ...prev,
                                           [groupKey]:
+                                            categoryFilter === "R" ||
                                             categoryFilter === "N"
                                               ? "all"
-                                              : "N",
+                                              : "R",
                                         }));
                                         setPageByGroupKey((prev) => ({
                                           ...prev,
@@ -2967,12 +2968,13 @@ export default function RotacionPage() {
                                         }));
                                       }}
                                       className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "R" ||
                                         categoryFilter === "N"
                                           ? "border-cyan-700 bg-cyan-600 text-white shadow-md ring-2 ring-cyan-200"
                                           : "border-cyan-300 bg-cyan-100 text-cyan-900"
                                       }`}
                                     >
-                                      N Nuevo:{" "}
+                                      R:{" "}
                                       {nuevoItemsCount.toLocaleString("es-CO")}
                                     </Button>
                                   </div>
@@ -3492,7 +3494,7 @@ export default function RotacionPage() {
                           <div ref={(node) => setTableHostRef(groupKey, node)}>
                             <Table
                               containerClassName="rotacion-table-capture-scroll min-w-0 overscroll-x-contain"
-                              className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm"
+                              className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm [&_th]:text-center! [&_td]:text-center!"
                             >
                               <colgroup>
                                 {(isZeroRotationTableView
@@ -3506,6 +3508,9 @@ export default function RotacionPage() {
                                 <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
                                   {isZeroRotationTableView ? (
                                     <>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                                        #
+                                      </TableHead>
                                       <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                                         <SortableRotationHeader
                                           field="item"
@@ -3613,6 +3618,9 @@ export default function RotacionPage() {
                                     </>
                                   ) : (
                                     <>
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                                        #
+                                      </TableHead>
                                       <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                                         <SortableRotationHeader
                                           field="item"
@@ -3772,7 +3780,8 @@ export default function RotacionPage() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {paginatedRows.map((row) => {
+                                {paginatedRows.map((row, rowIndex) => {
+                                  const rowNumber = startIndex + rowIndex + 1;
                                   const duvDays = calculateDuvDays(
                                     row.lastPurchaseDate,
                                   );
@@ -3783,7 +3792,7 @@ export default function RotacionPage() {
                                   const displayCategory = isNuevoItemRow(
                                     row,
                                   )
-                                    ? "N"
+                                    ? "R"
                                     : isCeroRotacionExcludingNuevo(row)
                                       ? "0"
                                       : (categoryByItem.get(row.item) ?? "D");
@@ -3796,7 +3805,7 @@ export default function RotacionPage() {
                                           ? "border-orange-300 bg-orange-200 text-orange-900"
                                           : displayCategory === "0"
                                             ? "border-slate-300 bg-slate-200 text-slate-900"
-                                            : displayCategory === "N"
+                                            : displayCategory === "R"
                                               ? "border-cyan-300 bg-cyan-200 text-cyan-900"
                                               : "border-rose-300 bg-rose-200 text-rose-900";
                                   return (
@@ -3805,6 +3814,9 @@ export default function RotacionPage() {
                                     >
                                       {isZeroRotationTableView ? (
                                         <>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-500">
+                                            {rowNumber}
+                                          </TableCell>
                                           <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
                                             <span className="text-xs">
                                               {row.item}
@@ -3909,6 +3921,9 @@ export default function RotacionPage() {
                                         </>
                                       ) : (
                                         <>
+                                          <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-500">
+                                            {rowNumber}
+                                          </TableCell>
                                           <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
                                             <span className="text-xs">
                                               {row.item}
