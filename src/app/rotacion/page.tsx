@@ -95,6 +95,7 @@ import {
   formatPrice,
   formatPriceWithoutSixZeros,
   formatPercent,
+  parseDateKey,
   buildExportFileStamp,
   dataUrlToBlob,
   WHATSAPP_TABLE_EXCLUDE,
@@ -1217,6 +1218,19 @@ export default function RotacionPage() {
     () => rowsBySede.map((group) => `${group.empresa}-${group.sedeId}`),
     [rowsBySede],
   );
+  const isNuevoItemInSelectedRange = useCallback(
+    (row: RotationRow) => {
+      if (!isNuevoItemRow(row)) return false;
+      if (!row.lastPurchaseDate || !dateRange.start || !dateRange.end) return true;
+      const lastSale = parseDateKey(row.lastPurchaseDate);
+      const rangeStart = parseDateKey(dateRange.start);
+      const rangeEnd = parseDateKey(dateRange.end);
+      const hasSaleDateInsideSelectedRange =
+        lastSale >= rangeStart && lastSale <= rangeEnd;
+      return !hasSaleDateInsideSelectedRange;
+    },
+    [dateRange.end, dateRange.start],
+  );
 
   const setTableHostRef = useCallback(
     (groupKey: string, node: HTMLDivElement | null) => {
@@ -1224,6 +1238,16 @@ export default function RotacionPage() {
     },
     [],
   );
+  const scrollGroupTableToTop = useCallback((groupKey: string) => {
+    const host = tableHostByGroupRef.current[groupKey];
+    if (!host || typeof window === "undefined") return;
+    const targetTop =
+      host.getBoundingClientRect().top +
+      window.scrollY -
+      ROTACION_FLOATING_HEADER_TOP_PX -
+      16;
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+  }, []);
 
   useEffect(() => {
     let rafId = 0;
@@ -1509,8 +1533,8 @@ export default function RotacionPage() {
             ? filteredRows
             : categoryFilter === "0"
               ? filteredRows.filter((row) => isCeroRotacionExcludingNuevo(row))
-              : categoryFilter === "R" || categoryFilter === "N"
-                ? filteredRows.filter((row) => isNuevoItemRow(row))
+              : categoryFilter === "S" || categoryFilter === "R" || categoryFilter === "N"
+                ? filteredRows.filter((row) => isNuevoItemInSelectedRange(row))
                 : Array.isArray(categoryFilter)
                   ? filteredRows.filter((row) => {
                       const cat = categoryByItem.get(row.item);
@@ -1520,8 +1544,8 @@ export default function RotacionPage() {
                     })
                   : filteredRows;
         const rows = categoryFilteredRows.map((row) => {
-          const displayCategory = isNuevoItemRow(row)
-            ? "R"
+          const displayCategory = isNuevoItemInSelectedRange(row)
+            ? "S"
             : isCeroRotacionExcludingNuevo(row)
               ? "0"
               : (categoryByItem.get(row.item) ?? "D");
@@ -1580,6 +1604,7 @@ export default function RotacionPage() {
       baseRowsBySedeByKey,
       ceroEstadoByKey,
       ceroEstadoFilterByGroup,
+      isNuevoItemInSelectedRange,
       rowsBySede,
       rowsQuickFilterByGroup,
       ventaHastaCapByGroup,
@@ -1621,7 +1646,7 @@ export default function RotacionPage() {
           head: [[
             "Item",
             "Cat.",
-            "R.inventario",
+            "S.inventario",
             "Descripcion",
             "Venta periodo",
             "Inv.",
@@ -1717,7 +1742,7 @@ export default function RotacionPage() {
           ? [
               "Item",
               "Cat.",
-              "R.inventario",
+              "S.inventario",
               "Descripcion",
               "Venta periodo",
               "Inv.",
@@ -2572,8 +2597,10 @@ export default function RotacionPage() {
                           ? filteredRows.filter((row) =>
                               isCeroRotacionExcludingNuevo(row),
                             )
-                          : categoryFilter === "R" || categoryFilter === "N"
-                            ? filteredRows.filter((row) => isNuevoItemRow(row))
+                          : categoryFilter === "S" || categoryFilter === "R" || categoryFilter === "N"
+                            ? filteredRows.filter((row) =>
+                                isNuevoItemInSelectedRange(row),
+                              )
                             : Array.isArray(categoryFilter)
                               ? filteredRows.filter((row) => {
                                   const cat = categoryByItem.get(row.item);
@@ -2681,7 +2708,7 @@ export default function RotacionPage() {
                     const selectedCategoryLabel =
                       formatAbcdCategoryFilterLabel(categoryFilter);
                     const nuevoItemsCount = group.rows.filter((row) =>
-                      isNuevoItemRow(row),
+                      isNuevoItemInSelectedRange(row),
                     ).length;
                     const categoryFilteredCeroRotacionCount =
                       categoryFilteredRows.filter((row) =>
@@ -2952,15 +2979,16 @@ export default function RotacionPage() {
                                     <Button
                                       type="button"
                                       variant="outline"
-                                      title="Items con condición de restock (categoría R)."
+                                      title="Items con condicion de restock (categoria S)."
                                       onClick={() => {
                                         setAbcdFilterByGroup((prev) => ({
                                           ...prev,
                                           [groupKey]:
+                                            categoryFilter === "S" ||
                                             categoryFilter === "R" ||
                                             categoryFilter === "N"
                                               ? "all"
-                                              : "R",
+                                              : "S",
                                         }));
                                         setPageByGroupKey((prev) => ({
                                           ...prev,
@@ -2968,13 +2996,14 @@ export default function RotacionPage() {
                                         }));
                                       }}
                                       className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                        categoryFilter === "S" ||
                                         categoryFilter === "R" ||
                                         categoryFilter === "N"
                                           ? "border-cyan-700 bg-cyan-600 text-white shadow-md ring-2 ring-cyan-200"
                                           : "border-cyan-300 bg-cyan-100 text-cyan-900"
                                       }`}
                                     >
-                                      R:{" "}
+                                      S:{" "}
                                       {nuevoItemsCount.toLocaleString("es-CO")}
                                     </Button>
                                   </div>
@@ -3170,7 +3199,7 @@ export default function RotacionPage() {
                                   {isZeroRotationTableView ? (
                                     <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
                                       <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
-                                        R.inventario
+                                        S.inventario
                                       </span>
                                       <select
                                         value={zeroEstadoFilter}
@@ -3526,7 +3555,7 @@ export default function RotacionPage() {
                                       <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                                         <SortableRotationHeader
                                           field="ceroRotacionEstado"
-                                          label="R.inventario"
+                                          label="S.inventario"
                                           activeField={tableSortField}
                                           direction={tableSortDirection}
                                           onSort={handleTableSort}
@@ -3789,10 +3818,10 @@ export default function RotacionPage() {
                                     calculateDiSinceLastIngresoDays(
                                       row.lastMovementDate,
                                     );
-                                  const displayCategory = isNuevoItemRow(
+                                  const displayCategory = isNuevoItemInSelectedRange(
                                     row,
                                   )
-                                    ? "R"
+                                    ? "S"
                                     : isCeroRotacionExcludingNuevo(row)
                                       ? "0"
                                       : (categoryByItem.get(row.item) ?? "D");
@@ -3805,7 +3834,7 @@ export default function RotacionPage() {
                                           ? "border-orange-300 bg-orange-200 text-orange-900"
                                           : displayCategory === "0"
                                             ? "border-slate-300 bg-slate-200 text-slate-900"
-                                            : displayCategory === "R"
+                                          : displayCategory === "S"
                                               ? "border-cyan-300 bg-cyan-200 text-cyan-900"
                                               : "border-rose-300 bg-rose-200 text-rose-900";
                                   return (
@@ -4020,6 +4049,49 @@ export default function RotacionPage() {
                                 })}
                               </TableBody>
                             </Table>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-3 py-3">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 rounded-md px-3 text-xs font-semibold"
+                              onClick={() =>
+                                setGroupPage(
+                                  groupKey,
+                                  currentPage - 1,
+                                  totalPages,
+                                )
+                              }
+                              disabled={currentPage <= 1}
+                            >
+                              Anterior
+                            </Button>
+                            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Pagina {currentPage} de {totalPages}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 rounded-md px-3 text-xs font-semibold"
+                              onClick={() =>
+                                setGroupPage(
+                                  groupKey,
+                                  currentPage + 1,
+                                  totalPages,
+                                )
+                              }
+                              disabled={currentPage >= totalPages}
+                            >
+                              Siguiente
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 rounded-md px-3 text-xs font-semibold"
+                              onClick={() => scrollGroupTableToTop(groupKey)}
+                            >
+                              Subir al inicio
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>

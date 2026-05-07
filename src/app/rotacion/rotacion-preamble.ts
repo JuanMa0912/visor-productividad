@@ -127,8 +127,8 @@ type AbcdConfig = {
   cUntilPercent: number;
 };
 type AbcdCategory = "A" | "B" | "C" | "D";
-/** "all" = sin filtro ABCD; "0"/"R" = modos especiales; arreglo = unión de clases A–D. */
-type GroupAbcdFilter = "all" | "0" | "R" | "N" | AbcdCategory[];
+/** "all" = sin filtro ABCD; "0"/"S" = modos especiales; arreglo = union de clases A-D. */
+type GroupAbcdFilter = "all" | "0" | "S" | "R" | "N" | AbcdCategory[];
 
 const ABCD_FILTER_LETTERS_ORDER: AbcdCategory[] = ["A", "B", "C", "D"];
 
@@ -141,7 +141,7 @@ const toggleAbcdLetterFilter = (
   current: GroupAbcdFilter,
   letter: AbcdCategory,
 ): GroupAbcdFilter => {
-  if (current === "0" || current === "R" || current === "N") {
+  if (current === "0" || current === "S" || current === "R" || current === "N") {
     return normalizeAbcdLetterSelection([letter]);
   }
   if (current === "all") {
@@ -167,7 +167,7 @@ const formatAbcdCategoryFilterLabel = (
 ): string | null => {
   if (filter === "all") return null;
   if (filter === "0") return "0";
-  if (filter === "R" || filter === "N") return "R";
+  if (filter === "S" || filter === "R" || filter === "N") return "S";
   if (Array.isArray(filter) && filter.length > 0) {
     return filter.join("+");
   }
@@ -1193,7 +1193,7 @@ const EXCLUDE_RECENT_SALE_DAYS = 5;
  * Nuevo:
  * 1) Regla original: sin ventas, con inventario y ultimo ingreso hoy/ayer.
  * 2) Regla adicional negocio: si estuvo agotado (inventario 0 en el rango)
- *    y ahora tiene inventario (restock), tambien cuenta como nuevo.
+ *    y ahora tiene inventario (restock), tambien cuenta como S.
  * En ambos casos se mantiene la condicion de ultimo ingreso hoy/ayer,
  * y si tiene ultima venta reciente (< 5 dias), se excluye.
  */
@@ -1201,6 +1201,9 @@ const isNuevoItemRow = (row: RotationRow) => {
   const duvDays = calculateDuvDays(row.lastPurchaseDate);
   const hasRecentSales = duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS;
   if (hasRecentSales) return false;
+  const hasSalesInSelectedPeriod =
+    row.totalSales > 0 || row.totalUnits > 0 || row.salesEffectiveDays > 0;
+  if (hasSalesInSelectedPeriod) return false;
   if (!(row.salesEffectiveDays <= 0 && row.inventoryUnits > 0)) return false;
   const daysSinceIngreso = calculateDiSinceLastIngresoDays(row.lastMovementDate);
   const hasRecentIngreso = daysSinceIngreso !== null && daysSinceIngreso <= 1;
