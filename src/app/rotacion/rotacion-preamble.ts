@@ -1191,21 +1191,24 @@ const EXCLUDE_RECENT_SALE_DAYS = 5;
 
 /**
  * Nuevo:
- * 1) Regla original: sin ventas, con inventario y último ingreso hoy/ayer.
+ * 1) Regla original: sin ventas, con inventario y ultimo ingreso hoy/ayer.
  * 2) Regla adicional negocio: si estuvo agotado (inventario 0 en el rango)
- *    y ahora tiene inventario (restock), también cuenta como nuevo.
- * En ambos casos, si tiene última venta reciente (< 5 dias), se excluye.
+ *    y ahora tiene inventario (restock), tambien cuenta como nuevo.
+ * En ambos casos se mantiene la condicion de ultimo ingreso hoy/ayer,
+ * y si tiene ultima venta reciente (< 5 dias), se excluye.
  */
 const isNuevoItemRow = (row: RotationRow) => {
   const duvDays = calculateDuvDays(row.lastPurchaseDate);
   const hasRecentSales = duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS;
   if (hasRecentSales) return false;
   if (!(row.salesEffectiveDays <= 0 && row.inventoryUnits > 0)) return false;
+  const daysSinceIngreso = calculateDiSinceLastIngresoDays(row.lastMovementDate);
+  const hasRecentIngreso = daysSinceIngreso !== null && daysSinceIngreso <= 1;
+  if (!hasRecentIngreso) return false;
   const wasOutOfStockAndRestocked =
     row.minInventoryUnits <= 0 && row.inventoryUnits > 0;
   if (wasOutOfStockAndRestocked) return true;
-  const daysSinceIngreso = calculateDiSinceLastIngresoDays(row.lastMovementDate);
-  return daysSinceIngreso !== null && daysSinceIngreso <= 1;
+  return true;
 };
 
 const isCeroRotacionExcludingNuevo = (row: RotationRow) =>

@@ -1503,8 +1503,15 @@ export default function InventarioXItemPage() {
       .filter((row): row is InventarioSummaryRow => Boolean(row));
   }, [rowsByItem, selectedItems]);
 
-  /** La tabla no fuerza 100% de ancho: solo crece con columnas (evita hueco entre Sede e items). */
-  const matrixItemColMinClass = "min-w-44";
+  /**
+   * Ajuste dinamico del ancho de columnas para reducir espacio blanco muerto
+   * (especialmente en la exportacion JPG) sin perder legibilidad.
+   */
+  const matrixItemColMinClass = useMemo(() => {
+    if (summaryRows.length >= 10) return "min-w-20";
+    if (summaryRows.length >= 6) return "min-w-24";
+    return "min-w-32";
+  }, [summaryRows.length]);
 
   const selectedSedeLabel = useMemo(() => {
     if (selectedSede.length === 0) return "Todas";
@@ -2479,7 +2486,7 @@ export default function InventarioXItemPage() {
                 >
                   <table className="w-max border-separate border-spacing-0">
                   <thead>
-                    <tr className="text-center text-sm font-black uppercase text-slate-900">
+                    <tr className="h-[54px] text-center text-sm font-black uppercase text-slate-900">
                       <th
                         rowSpan={3}
                         className="sticky top-0 left-0 z-30 w-max max-w-52 rounded-tl-2xl border-b border-r border-slate-300 bg-slate-100 px-3 py-2 text-left align-middle shadow-[8px_0_16px_-14px_rgba(15,23,42,0.25)]"
@@ -2548,7 +2555,7 @@ export default function InventarioXItemPage() {
                         </th>
                       ))}
                     </tr>
-                    <tr className="text-center text-xs font-bold uppercase tracking-[0.04em] text-slate-700">
+                    <tr className="h-[42px] text-center text-xs font-bold uppercase tracking-[0.04em] text-slate-700">
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-subhead-${row.item}`}
@@ -2569,7 +2576,7 @@ export default function InventarioXItemPage() {
                         </th>
                       ))}
                     </tr>
-                    <tr className="text-center text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
+                    <tr className="h-[32px] text-center text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
                       {summaryRows.flatMap((row) => [
                         <th
                           key={`matrix-col-inv-${row.item}`}
