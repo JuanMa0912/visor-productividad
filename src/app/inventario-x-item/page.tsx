@@ -1334,23 +1334,22 @@ export default function InventarioXItemPage() {
       createdAt: now,
     };
 
-    let bounded: ItemPreset[] = [];
-    setItemPresets((current) => {
-      const sameNameIndex = current.findIndex(
-        (preset) => preset.name.toLowerCase() === name.toLowerCase(),
-      );
-      const next =
-        sameNameIndex >= 0
-          ? current.map((preset, index) =>
-              index === sameNameIndex ? { ...newPreset, id: current[sameNameIndex].id } : preset,
-            )
-          : [newPreset, ...current];
-      if (sameNameIndex >= 0) {
-        savedPresetId = current[sameNameIndex].id;
-      }
-      bounded = next.slice(0, MAX_ITEM_PRESETS);
-      return bounded;
-    });
+    const sameNameIndex = itemPresets.findIndex(
+      (preset) => preset.name.toLowerCase() === name.toLowerCase(),
+    );
+    const nextPresets =
+      sameNameIndex >= 0
+        ? itemPresets.map((preset, index) =>
+            index === sameNameIndex
+              ? { ...newPreset, id: itemPresets[sameNameIndex].id }
+              : preset,
+          )
+        : [newPreset, ...itemPresets];
+    if (sameNameIndex >= 0) {
+      savedPresetId = itemPresets[sameNameIndex].id;
+    }
+    const bounded = nextPresets.slice(0, MAX_ITEM_PRESETS);
+    setItemPresets(bounded);
 
     const ok = await persistItemPresetsRemote(bounded);
     if (!ok) {
@@ -1363,6 +1362,7 @@ export default function InventarioXItemPage() {
     setMessage(`Preset "${name}" guardado.`);
     setError(null);
   }, [
+    itemPresets,
     presetNameInput,
     selectedItems,
     persistItemPresetsRemote,
@@ -1401,11 +1401,8 @@ export default function InventarioXItemPage() {
 
   const handleDeleteItemsPreset = useCallback(async () => {
     if (!selectedPresetId) return;
-    let next: ItemPreset[] = [];
-    setItemPresets((current) => {
-      next = current.filter((preset) => preset.id !== selectedPresetId);
-      return next;
-    });
+    const next = itemPresets.filter((preset) => preset.id !== selectedPresetId);
+    setItemPresets(next);
     const ok = await persistItemPresetsRemote(next);
     if (!ok) {
       await loadItemPresetsFromServer();
@@ -1414,7 +1411,12 @@ export default function InventarioXItemPage() {
     setSelectedPresetId("");
     setMessage("Preset eliminado.");
     setError(null);
-  }, [selectedPresetId, persistItemPresetsRemote, loadItemPresetsFromServer]);
+  }, [
+    itemPresets,
+    selectedPresetId,
+    persistItemPresetsRemote,
+    loadItemPresetsFromServer,
+  ]);
 
   const loadMatrixData = useCallback(
     async (signal?: AbortSignal) => {
