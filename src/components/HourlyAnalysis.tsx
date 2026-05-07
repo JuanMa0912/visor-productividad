@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -196,14 +197,16 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-const loadExcelJs = () => import("exceljs");
+const normalizeDateKeyForDisplay = (raw: string) => {
+  const value = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (/^\d{8}$/.test(value)) {
+    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  }
+  return value;
+};
 
-const formatShare = (value: number) =>
-  new Intl.NumberFormat("es-CO", {
-    style: "percent",
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value);
+const loadExcelJs = () => import("exceljs");
 
 const formatHoursBase60 = (value: number) => {
   if (!Number.isFinite(value)) return "0.00";
@@ -264,16 +267,6 @@ const parseTimeToMinute = (value: string) => {
     return 0;
   }
   return hours * 60 + minutes;
-};
-
-const formatMinuteLabel = (minute: number | null | undefined) => {
-  if (minute === null || minute === undefined || !Number.isFinite(minute)) {
-    return "-";
-  }
-  const normalized = ((minute % 1440) + 1440) % 1440;
-  const hours = Math.floor(normalized / 60);
-  const minutes = normalized % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
 
 const OVERTIME_PAGE_SIZE = 150;
@@ -616,7 +609,9 @@ export const HourlyAnalysis = ({
   const overtimeDepartmentPanelRef = useRef<HTMLDivElement | null>(null);
   const [personSearchQuery, setPersonSearchQuery] = useState("");
   const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
-  const [expandedPersonKey, setExpandedPersonKey] = useState<string | null>(null);
+  const [expandedPersonDailyKey, setExpandedPersonDailyKey] = useState<string | null>(
+    null,
+  );
   const [cashierMonthPrevData, setCashierMonthPrevData] =
     useState<HourlyAnalysisData | null>(null);
   const [cashierMonthCurrData, setCashierMonthCurrData] =
@@ -1737,10 +1732,6 @@ export const HourlyAnalysis = ({
 
   const handleToggleHour = (hour: number) => {
     setExpandedSlotStart((prev) => (prev === hour ? null : hour));
-  };
-
-  const handleTogglePerson = (personKey: string) => {
-    setExpandedPersonKey((prev) => (prev === personKey ? null : personKey));
   };
 
   const handleScrollToContributionStart = useCallback(() => {
@@ -3730,129 +3721,110 @@ export const HourlyAnalysis = ({
                     No se encontraron cajeros para ese filtro.
                   </p>
                 ) : (
-                  <div className="mt-4 space-y-3">
-                    {filteredPeopleBreakdown.map((person) => (
-                      <div key={person.personKey} className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="inline-flex items-center gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-3 py-1 text-xs font-semibold text-(--cashier-text)">
-                                <UserRound className="h-3.5 w-3.5 text-(--cashier-brand)" />
-                                {person.personName}
-                              </span>
-                              {person.personId && (
-                                <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-muted)">
-                                  ID {person.personId}
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-2 text-[2rem] font-semibold leading-tight text-(--cashier-text)">
-                              {formatCurrency(person.totalSales)}
-                            </p>
-                            <p className="mt-1 text-xs text-(--cashier-muted)">
-                              Participacion: {formatShare(person.contributionShare)} del total
-                            </p>
-                          </div>
-
-                        </div>
-
-                        {!isCashierPersonRangeResponse && (
-                          <>
-                            {(() => {
-                              const timeline = person.slotDiffs.slice(0, 9);
-                              const maxBarValue = Math.max(
-                                ...timeline.map((slot) => slot.sales),
-                                1,
-                              );
-                              return (
-                                <div className="mt-4">
-                                  <div className="grid grid-cols-9 items-end gap-1.5">
-                                    {timeline.map((slot) => {
-                                      const isPeak =
-                                        person.peakSlot?.slotStartMinute ===
-                                        slot.slotStartMinute;
-                                      const height = Math.max(
-                                        10,
-                                        Math.round((slot.sales / maxBarValue) * 42),
-                                      );
-                                      return (
-                                        <div key={`${person.personKey}-spark-${slot.slotStartMinute}`} className="flex flex-col items-center gap-1">
-                                          <div
-                                            className="w-full rounded-md"
-                                            style={{
-                                              height: `${height}px`,
-                                              background: isPeak
-                                                ? "var(--cashier-brand)"
-                                                : "var(--cashier-brand-soft)",
-                                            }}
-                                          />
-                                          <span className="text-[9px] font-medium text-(--cashier-muted)">
-                                            {formatMinuteLabel(slot.slotStartMinute)}
-                                          </span>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-
-                            <div className="mt-4">
-                              <button
-                                type="button"
-                                onClick={() => handleTogglePerson(person.personKey)}
-                                className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-[780px] w-full border-collapse rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft)">
+                      <thead>
+                        <tr className="border-b border-(--cashier-border) bg-(--cashier-surface)">
+                          <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">#</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">Nombre</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">ID</th>
+                          <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">Ventas totales</th>
+                          <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">Vta/Hr</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredPeopleBreakdown.map((person, index) => {
+                          const activeSlotsCount =
+                            (typeof person.activeSlotsCount === "number"
+                              ? person.activeSlotsCount
+                              : person.activeSlots?.length ?? person.hourlySales.length) || 0;
+                          const workedHours = (activeSlotsCount * bucketMinutes) / 60;
+                          const salesPerHour = calcVtaHr(person.totalSales, workedHours);
+                          const isExpanded = expandedPersonDailyKey === person.personKey;
+                          const dailyRows = (person.dailySales ?? []).slice().sort((a, b) =>
+                            a.date.localeCompare(b.date),
+                          );
+                          return (
+                            <Fragment key={person.personKey}>
+                              <tr
+                                className="cursor-pointer border-b border-(--cashier-border) transition-colors hover:bg-(--cashier-surface)"
+                                onClick={() =>
+                                  setExpandedPersonDailyKey((prev) =>
+                                    prev === person.personKey ? null : person.personKey,
+                                  )
+                                }
+                                title="Click para ver venta dia a dia"
                               >
-                                <ChevronDown
-                                  className={`h-3.5 w-3.5 transition-transform ${
-                                    expandedPersonKey === person.personKey
-                                      ? "rotate-180"
-                                      : ""
-                                  }`}
-                                />
-                                {expandedPersonKey === person.personKey
-                                  ? "Ocultar detalle"
-                                  : "Ver detalle por franja"}
-                              </button>
-                            </div>
-
-                            {expandedPersonKey === person.personKey && (
-                              <div className="mt-4 overflow-x-auto">
-                                <div className="min-w-[760px] rounded-2xl border border-(--cashier-border) bg-(--cashier-surface)">
-                                  <div className="grid grid-cols-[1.4fr_1fr] gap-2 border-b border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                                    <span>Franja</span>
-                                    <span className="text-right">Venta</span>
-                                  </div>
-                                  {person.slotDiffs.map((slot) => {
-                                    const isPeak =
-                                      person.peakSlot?.slotStartMinute ===
-                                      slot.slotStartMinute;
-                                    return (
-                                      <div
-                                        key={`${person.personKey}-${slot.slotStartMinute}`}
-                                        className="grid grid-cols-[1.4fr_1fr] items-center gap-2 border-b border-(--cashier-border) px-3 py-2 text-sm last:border-b-0"
-                                        style={{
-                                          background: isPeak
-                                            ? "var(--cashier-peak-bg)"
-                                            : "transparent",
-                                        }}
-                                      >
-                                        <span className="font-semibold text-(--cashier-text)">
-                                          {slot.label}
-                                        </span>
-                                        <span className="text-right font-semibold text-(--cashier-text)">
-                                          {formatCurrency(slot.sales)}
-                                        </span>
+                                <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-muted)">
+                                  {index + 1}
+                                </td>
+                                <td className="px-3 py-2 text-sm font-semibold text-(--cashier-text)">
+                                  {person.personName}
+                                </td>
+                                <td className="px-3 py-2 text-sm text-(--cashier-muted)">
+                                  {person.personId || "-"}
+                                </td>
+                                <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-text)">
+                                  {formatCurrency(person.totalSales)}
+                                </td>
+                                <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-text)">
+                                  {formatProductivity(salesPerHour)}
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="border-b border-(--cashier-border) last:border-b-0">
+                                  <td colSpan={5} className="bg-(--cashier-surface) px-4 py-3">
+                                    {dailyRows.length === 0 ? (
+                                      <p className="text-xs text-(--cashier-muted)">
+                                        Sin detalle diario para este filtro.
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-1.5">
+                                        <div className="grid grid-cols-[1fr_170px_120px] items-center rounded-md border border-(--cashier-border) bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                                          <span>Fecha</span>
+                                          <span className="text-center">Venta</span>
+                                          <span className="text-right">Vta/Hr</span>
+                                        </div>
+                                        {dailyRows.map((day) => (
+                                          <div
+                                            key={`${person.personKey}-${day.date}`}
+                                            className="grid grid-cols-[1fr_170px_120px] items-center gap-3 rounded-md border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs"
+                                          >
+                                            <span className="font-medium text-(--cashier-muted)">
+                                              {formatDateLabel(
+                                                normalizeDateKeyForDisplay(day.date),
+                                                {
+                                                day: "2-digit",
+                                                month: "short",
+                                                year: "numeric",
+                                                },
+                                              )}
+                                            </span>
+                                            <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
+                                              {formatCurrency(day.sales)}
+                                            </span>
+                                            <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                              {formatProductivity(
+                                                calcVtaHr(
+                                                  day.sales,
+                                                  ((day.activeSlotsCount ?? 0) *
+                                                    bucketMinutes) /
+                                                    60,
+                                                ),
+                                              )}
+                                            </span>
+                                          </div>
+                                        ))}
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ))}
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

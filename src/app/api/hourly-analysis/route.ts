@@ -795,7 +795,12 @@ const fetchHourlyData = async (
               COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
               ${personIdExpr} AS person_id,
               ${personNameSelectExpr} AS person_name,
-              COALESCE(SUM(total_bruto), 0) AS total_sales
+              COALESCE(SUM(total_bruto), 0) AS total_sales,
+              COUNT(
+                DISTINCT (
+                  CAST(fecha_dcto AS text) || '|' || COALESCE(CAST(hora_final_hora AS text), 'sin-hora')
+                )
+              ) AS active_slots_count
             FROM ventas_cajas
             WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
               ${rangePeopleBranchFilter}
@@ -809,17 +814,64 @@ const fetchHourlyData = async (
             ...salesBranchParams,
           ]);
 
+          const peopleDailyQuery = `
+            SELECT
+              COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
+              ${personIdExpr} AS person_id,
+              ${personNameSelectExpr} AS person_name,
+              fecha_dcto,
+              COALESCE(SUM(total_bruto), 0) AS total_sales,
+              COUNT(DISTINCT COALESCE(CAST(hora_final_hora AS text), 'sin-hora')) AS active_slots_count
+            FROM ventas_cajas
+            WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
+              ${rangePeopleBranchFilter}
+            GROUP BY 1, 2, 3, fecha_dcto
+            ORDER BY 1, fecha_dcto ASC
+          `;
+          const peopleDailyResult = await client.query(peopleDailyQuery, [
+            startCompact,
+            endCompact,
+            ...salesBranchParams,
+          ]);
+          const dailySalesByPersonKey = new Map<
+            string,
+            Array<{ date: string; sales: number; activeSlotsCount: number }>
+          >();
+          for (const row of peopleDailyResult.rows ?? []) {
+            const typedRow = row as {
+              person_key: string;
+              fecha_dcto: string | number;
+              total_sales: string | number;
+              active_slots_count: string | number;
+            };
+            const personKey = typedRow.person_key?.trim() || "sin-identificar";
+            const dateRaw = String(typedRow.fecha_dcto ?? "").trim();
+            const salesValue = Number(typedRow.total_sales) || 0;
+            const activeSlotsCount = Number(typedRow.active_slots_count) || 0;
+            if (!dateRaw || salesValue <= 0) continue;
+            if (!dailySalesByPersonKey.has(personKey)) {
+              dailySalesByPersonKey.set(personKey, []);
+            }
+            dailySalesByPersonKey.get(personKey)!.push({
+              date: dateRaw,
+              sales: salesValue,
+              activeSlotsCount,
+            });
+          }
+
           for (const row of rangeResult.rows ?? []) {
             const typedRow = row as {
               person_key: string;
               person_id?: string | null;
               person_name: string;
               total_sales: string | number;
+              active_slots_count: string | number;
             };
             const personKey = typedRow.person_key?.trim() || "sin-identificar";
             const personName = typedRow.person_name?.trim() || "Sin identificar";
             const personId = typedRow.person_id?.trim() || null;
             const salesValue = Number(typedRow.total_sales) || 0;
+            const activeSlotsCount = Number(typedRow.active_slots_count) || 0;
             if (isHorariosOcultarCedula(personId)) continue;
             if (salesValue <= 0) continue;
             personContributions.push({
@@ -830,6 +882,8 @@ const fetchHourlyData = async (
               lastMinuteOfDay: null,
               hourlySales: [],
               periodTotalSales: salesValue,
+              activeSlotsCount,
+              dailySales: dailySalesByPersonKey.get(personKey) ?? [],
             });
           }
 

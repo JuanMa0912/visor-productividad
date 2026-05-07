@@ -303,6 +303,8 @@ export default function ProductividadCajasPage() {
           showTopLineFilter={false}
           showComparison={false}
           showPersonBreakdown
+          defaultPersonBreakdownView="individual"
+          hidePersonBreakdownTabs
           badgeLabel="Cajas por hora"
           panelTitle="Facturacion por intervalos"
           panelDescription="Consulta cuanto se facturo por hora y el acumulado del rango seleccionado usando la misma base horaria del modulo de productividad."

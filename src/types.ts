@@ -54,6 +54,14 @@ export interface HourlyPersonContribution {
   hourlySales: HourlyPersonSalesSlot[];
   /** Total de ventas en un rango de fechas (sin desglose por hora). */
   periodTotalSales?: number;
+  /** Cantidad de franjas con venta en el periodo (solo rango de fechas). */
+  activeSlotsCount?: number;
+  /** Ventas por fecha para exploracion dia a dia. */
+  dailySales?: Array<{
+    date: string;
+    sales: number;
+    activeSlotsCount?: number;
+  }>;
 }
 
 export interface OvertimeEmployee {
