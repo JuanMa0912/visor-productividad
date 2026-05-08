@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   Users,
+  ArrowLeftRight,
   ChevronDown,
   Clock,
   Sparkles,
@@ -27,10 +28,7 @@ import { cn, formatDateLabel } from "@/lib/shared/utils";
 import { escapeCsvValue, sanitizeExportText } from "@/lib/shared/export-utils";
 import { DEFAULT_LINES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
-import type {
-  HourlyAnalysisData,
-  HourlyPersonContribution,
-} from "@/types";
+import type { HourlyAnalysisData, HourlyPersonContribution } from "@/types";
 
 type HourlyAnalysisDashboardContext = "productividad" | "jornada-extendida";
 
@@ -69,6 +67,7 @@ interface HourlyAnalysisProps {
   cashierDateRange?: { start: string; end: string };
   /** Compara ventas totales por cajero: mes anterior (completo) vs mes en curso hasta la fecha fin del filtro. */
   cashierMonthComparison?: boolean;
+  onCashierMonthComparisonToggle?: () => void;
 }
 
 const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -90,6 +89,7 @@ type OvertimeSortField =
   | "nomina"
   | "departamento";
 type OvertimeSortDirection = "asc" | "desc";
+type CashierSortField = "totalSales" | "workedHours" | "vtaHr";
 
 export type HourlyAnalysisExportHandle = {
   exportCsv: () => boolean;
@@ -145,16 +145,22 @@ const getCashierMonthComparisonRanges = (anchorISO: string) => {
     Math.min(anchor.getTime(), currMonthLast.getTime()),
   );
 
-  const labelPrevious = `${formatDateLabel(toKey(prevMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(toKey(prevMonthLast), {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })}`;
-  const labelCurrent = `${formatDateLabel(toKey(currMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(toKey(currentEnd), {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })}`;
+  const labelPrevious = `${formatDateLabel(toKey(prevMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(
+    toKey(prevMonthLast),
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    },
+  )}`;
+  const labelCurrent = `${formatDateLabel(toKey(currMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(
+    toKey(currentEnd),
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    },
+  )}`;
 
   return {
     previous: { start: toKey(prevMonthFirst), end: toKey(prevMonthLast) },
@@ -199,6 +205,27 @@ const formatCurrency = (value: number) =>
 
 const formatCurrencyWithoutSixZeros = (value: number) =>
   `$ ${Math.round(value / 1_000_000).toLocaleString("es-CO")}`;
+
+const formatCurrencyMillionsOneDecimal = (value: number) =>
+  `$ ${(value / 1_000_000).toLocaleString("es-CO", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}`;
+
+const getTopRankToneClass = (rank: number) => {
+  switch (rank) {
+    case 1:
+      return "border-amber-300/90 bg-amber-50/85";
+    case 2:
+      return "border-slate-300/90 bg-slate-100/85";
+    case 3:
+      return "border-orange-300/90 bg-orange-50/85";
+    case 4:
+      return "border-sky-200/90 bg-sky-50/75";
+    default:
+      return "border-indigo-200/90 bg-indigo-50/70";
+  }
+};
 
 const normalizeDateKeyForDisplay = (raw: string) => {
   const value = raw.trim();
@@ -524,6 +551,7 @@ export const HourlyAnalysis = ({
   exportRef,
   cashierDateRange,
   cashierMonthComparison = false,
+  onCashierMonthComparisonToggle,
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
     const unique = Array.from(new Set(sections));
@@ -551,7 +579,9 @@ export const HourlyAnalysis = ({
     requestKey: string;
     slotStart: number | null;
   }>({ requestKey: "", slotStart: null });
-  const [hourlySectionState, setHourlySectionState] = useState<"map" | "overtime">(
+  const [hourlySectionState, setHourlySectionState] = useState<
+    "map" | "overtime"
+  >(
     enabledSections.includes(defaultSection)
       ? defaultSection
       : enabledSections[0],
@@ -569,9 +599,9 @@ export const HourlyAnalysis = ({
   const [overtimeAlertOnly, setOvertimeAlertOnly] = useState(false);
   const [overtimeAbsenceOnly, setOvertimeAbsenceOnly] = useState(false);
   const [overtimeOddMarksOnly, setOvertimeOddMarksOnly] = useState(false);
-  const [overtimeAlertMode, setOvertimeAlertMode] = useState<"920" | "720-2marks">(
-    "920",
-  );
+  const [overtimeAlertMode, setOvertimeAlertMode] = useState<
+    "920" | "720-2marks"
+  >("920");
   const [overtimeExcludedIds, setOvertimeExcludedIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -612,15 +642,22 @@ export const HourlyAnalysis = ({
   const overtimeDepartmentPanelRef = useRef<HTMLDivElement | null>(null);
   const [personSearchQuery, setPersonSearchQuery] = useState("");
   const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
-  const [expandedPersonDailyKey, setExpandedPersonDailyKey] = useState<string | null>(
-    null,
+  const [cashierSortField, setCashierSortField] =
+    useState<CashierSortField>("totalSales");
+  const [cashierSalesSortDirection, setCashierSalesSortDirection] = useState<"desc" | "asc">(
+    "desc",
   );
+  const [expandedPersonDailyKey, setExpandedPersonDailyKey] = useState<
+    string | null
+  >(null);
   const [cashierMonthPrevData, setCashierMonthPrevData] =
     useState<HourlyAnalysisData | null>(null);
   const [cashierMonthCurrData, setCashierMonthCurrData] =
     useState<HourlyAnalysisData | null>(null);
   const [cashierMonthResultKey, setCashierMonthResultKey] = useState("");
-  const [cashierMonthError, setCashierMonthError] = useState<string | null>(null);
+  const [cashierMonthError, setCashierMonthError] = useState<string | null>(
+    null,
+  );
   const [personBreakdownView, setPersonBreakdownView] =
     useState<PersonBreakdownView>(defaultPersonBreakdownView);
   const topSectionRef = useRef<HTMLDivElement | null>(null);
@@ -679,8 +716,8 @@ export const HourlyAnalysis = ({
     !cashierMonthComparison &&
     Boolean(
       cashierDateRange?.start &&
-        cashierDateRange?.end &&
-        cashierDateRange.start !== cashierDateRange.end,
+      cashierDateRange?.end &&
+      cashierDateRange.start !== cashierDateRange.end,
     );
   const hourlyRequestDate =
     enableOvertimeDateRange && isOvertimeOnlyMode
@@ -807,7 +844,9 @@ export const HourlyAnalysis = ({
   const activeError =
     hourlyRequestKey && hourlyResultKey === hourlyRequestKey ? error : null;
   const activeHourlyData =
-    hourlyRequestKey && hourlyResultKey === hourlyRequestKey ? hourlyData : null;
+    hourlyRequestKey && hourlyResultKey === hourlyRequestKey
+      ? hourlyData
+      : null;
   const activeCompareData =
     compareRequestKey && compareResultKey === compareRequestKey
       ? compareData
@@ -931,42 +970,56 @@ export const HourlyAnalysis = ({
     setOvertimeDepartmentFilter([]);
   };
 
-  const getResponsivePopoverPosition = useCallback((trigger: HTMLButtonElement) => {
-    const rect = trigger.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const viewportPadding = 16;
-    const gap = 8;
-    const minWidth = 260;
-    const preferredMaxHeight = 320;
-    const minimumVisibleHeight = 160;
-    const width = Math.min(
-      Math.max(minWidth, rect.width),
-      Math.max(minWidth, viewportWidth - viewportPadding * 2),
-    );
-    const maxLeft = Math.max(viewportPadding, viewportWidth - viewportPadding - width);
-    const left = Math.min(Math.max(rect.left, viewportPadding), maxLeft);
-    const availableBelow = viewportHeight - rect.bottom - gap - viewportPadding;
-    const availableAbove = rect.top - gap - viewportPadding;
-    const shouldOpenUpward =
-      availableBelow < minimumVisibleHeight && availableAbove > availableBelow;
+  const getResponsivePopoverPosition = useCallback(
+    (trigger: HTMLButtonElement) => {
+      const rect = trigger.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const viewportPadding = 16;
+      const gap = 8;
+      const minWidth = 260;
+      const preferredMaxHeight = 320;
+      const minimumVisibleHeight = 160;
+      const width = Math.min(
+        Math.max(minWidth, rect.width),
+        Math.max(minWidth, viewportWidth - viewportPadding * 2),
+      );
+      const maxLeft = Math.max(
+        viewportPadding,
+        viewportWidth - viewportPadding - width,
+      );
+      const left = Math.min(Math.max(rect.left, viewportPadding), maxLeft);
+      const availableBelow =
+        viewportHeight - rect.bottom - gap - viewportPadding;
+      const availableAbove = rect.top - gap - viewportPadding;
+      const shouldOpenUpward =
+        availableBelow < minimumVisibleHeight &&
+        availableAbove > availableBelow;
 
-    if (shouldOpenUpward) {
+      if (shouldOpenUpward) {
+        return {
+          bottom: Math.max(viewportPadding, viewportHeight - rect.top + gap),
+          left,
+          width,
+          maxHeight: Math.max(
+            minimumVisibleHeight,
+            Math.min(preferredMaxHeight, availableAbove),
+          ),
+        };
+      }
+
       return {
-        bottom: Math.max(viewportPadding, viewportHeight - rect.top + gap),
+        top: rect.bottom + gap,
         left,
         width,
-        maxHeight: Math.max(minimumVisibleHeight, Math.min(preferredMaxHeight, availableAbove)),
+        maxHeight: Math.max(
+          minimumVisibleHeight,
+          Math.min(preferredMaxHeight, availableBelow),
+        ),
       };
-    }
-
-    return {
-      top: rect.bottom + gap,
-      left,
-      width,
-      maxHeight: Math.max(minimumVisibleHeight, Math.min(preferredMaxHeight, availableBelow)),
-    };
-  }, []);
+    },
+    [],
+  );
 
   const updateOvertimeSedePopoverPos = useCallback(() => {
     const trigger = overtimeSedeTriggerRef.current;
@@ -1182,10 +1235,7 @@ export const HourlyAnalysis = ({
       );
     };
 
-    Promise.all([
-      fetchPeriod(ranges.previous),
-      fetchPeriod(ranges.current),
-    ])
+    Promise.all([fetchPeriod(ranges.previous), fetchPeriod(ranges.current)])
       .then(([prev, curr]) => {
         setCashierMonthPrevData(prev);
         setCashierMonthCurrData(curr);
@@ -1315,18 +1365,17 @@ export const HourlyAnalysis = ({
     return calcVtaHr(totals.sales, totals.hours);
   }, [activeCompareData, bucketMinutes, minuteRangeEnd, minuteRangeStart]);
 
-  const computeHeatRatio = useCallback((
-    sales: number,
-    employees: number,
-    baselineSalesPerEmployee: number,
-  ) => {
-    const laborHours = employees * (bucketMinutes / 60);
-    const vtaHr = calcVtaHr(sales, laborHours);
-    if (baselineSalesPerEmployee > 0) {
-      return (vtaHr / baselineSalesPerEmployee) * 100;
-    }
-    return 0;
-  }, [bucketMinutes]);
+  const computeHeatRatio = useCallback(
+    (sales: number, employees: number, baselineSalesPerEmployee: number) => {
+      const laborHours = employees * (bucketMinutes / 60);
+      const vtaHr = calcVtaHr(sales, laborHours);
+      if (baselineSalesPerEmployee > 0) {
+        return (vtaHr / baselineSalesPerEmployee) * 100;
+      }
+      return 0;
+    },
+    [bucketMinutes],
+  );
 
   const maxProductivity = useMemo(() => {
     if (activeHours.length === 0) return 1;
@@ -1494,11 +1543,15 @@ export const HourlyAnalysis = ({
         sanitizeExportText(row.label),
         Math.round(row.sales),
         row.employees,
-        Number.isFinite(row.productivity) ? row.productivity.toFixed(3) : "0.000",
+        Number.isFinite(row.productivity)
+          ? row.productivity.toFixed(3)
+          : "0.000",
       ]),
     ];
     const csv = rows.map((r) => r.map(escapeCsvValue).join(",")).join("\n");
-    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\ufeff" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     const dateKey = selectedDate || "sin-fecha";
@@ -1526,7 +1579,9 @@ export const HourlyAnalysis = ({
         sanitizeExportText(row.label),
         Math.round(row.sales),
         row.employees,
-        Number.isFinite(row.productivity) ? Number(row.productivity.toFixed(3)) : 0,
+        Number.isFinite(row.productivity)
+          ? Number(row.productivity.toFixed(3))
+          : 0,
       ]);
     });
     sheet.getRow(1).font = { bold: true };
@@ -1562,7 +1617,9 @@ export const HourlyAnalysis = ({
     if (personBreakdownView !== "franjas") return [];
     return rangedHours.map((slot, index) => {
       const previous = index > 0 ? rangedHours[index - 1] : null;
-      const deltaSales = previous ? slot.totalSales - previous.totalSales : slot.totalSales;
+      const deltaSales = previous
+        ? slot.totalSales - previous.totalSales
+        : slot.totalSales;
       const deltaPercent =
         previous && previous.totalSales > 0
           ? (deltaSales / previous.totalSales) * 100
@@ -1617,11 +1674,17 @@ export const HourlyAnalysis = ({
           )
           .sort((a, b) => a.slotStartMinute - b.slotStartMinute);
 
-        const totalSales = activeSlots.reduce((sum, slot) => sum + slot.sales, 0);
-        const contributionShare = dayTotals.sales > 0 ? totalSales / dayTotals.sales : 0;
+        const totalSales = activeSlots.reduce(
+          (sum, slot) => sum + slot.sales,
+          0,
+        );
+        const contributionShare =
+          dayTotals.sales > 0 ? totalSales / dayTotals.sales : 0;
         const slotDiffs = activeSlots.map((slot, index) => {
           const previous = index > 0 ? activeSlots[index - 1] : null;
-          const deltaSales = previous ? slot.sales - previous.sales : slot.sales;
+          const deltaSales = previous
+            ? slot.sales - previous.sales
+            : slot.sales;
           const deltaPercent =
             previous && previous.sales > 0
               ? (deltaSales / previous.sales) * 100
@@ -1632,7 +1695,8 @@ export const HourlyAnalysis = ({
             deltaPercent,
           };
         });
-        const peakSlot = [...activeSlots].sort((a, b) => b.sales - a.sales)[0] ?? null;
+        const peakSlot =
+          [...activeSlots].sort((a, b) => b.sales - a.sales)[0] ?? null;
         const firstSlot = activeSlots[0] ?? null;
         const lastSlot = activeSlots[activeSlots.length - 1] ?? null;
 
@@ -1670,9 +1734,53 @@ export const HourlyAnalysis = ({
 
   const cashierListTotalSales = useMemo(
     () =>
-      filteredPeopleBreakdown.reduce((sum, person) => sum + person.totalSales, 0),
+      filteredPeopleBreakdown.reduce(
+        (sum, person) => sum + person.totalSales,
+        0,
+      ),
     [filteredPeopleBreakdown],
   );
+  const sortedPeopleBreakdown = useMemo(() => {
+    const rows = [...filteredPeopleBreakdown];
+    rows.sort((a, b) => {
+      const aActiveSlots =
+        (typeof a.activeSlotsCount === "number"
+          ? a.activeSlotsCount
+          : (a.activeSlots?.length ?? a.hourlySales.length)) || 0;
+      const bActiveSlots =
+        (typeof b.activeSlotsCount === "number"
+          ? b.activeSlotsCount
+          : (b.activeSlots?.length ?? b.hourlySales.length)) || 0;
+      const aWorkedHours = (aActiveSlots * bucketMinutes) / 60;
+      const bWorkedHours = (bActiveSlots * bucketMinutes) / 60;
+      const aVtaHr = calcVtaHr(a.totalSales, aWorkedHours);
+      const bVtaHr = calcVtaHr(b.totalSales, bWorkedHours);
+
+      const aValue =
+        cashierSortField === "workedHours"
+          ? aWorkedHours
+          : cashierSortField === "vtaHr"
+            ? aVtaHr
+            : a.totalSales;
+      const bValue =
+        cashierSortField === "workedHours"
+          ? bWorkedHours
+          : cashierSortField === "vtaHr"
+            ? bVtaHr
+            : b.totalSales;
+      const diff = aValue - bValue;
+      return cashierSalesSortDirection === "desc" ? -diff : diff;
+    });
+    return rows;
+  }, [bucketMinutes, cashierSalesSortDirection, cashierSortField, filteredPeopleBreakdown]);
+  const handleCashierSortBy = useCallback((field: CashierSortField) => {
+    if (cashierSortField === field) {
+      setCashierSalesSortDirection((prev) => (prev === "desc" ? "asc" : "desc"));
+      return;
+    }
+    setCashierSortField(field);
+    setCashierSalesSortDirection("desc");
+  }, [cashierSortField]);
 
   const topContributor = useMemo(() => {
     if (cashierMonthComparison) return null;
@@ -1719,23 +1827,28 @@ export const HourlyAnalysis = ({
     }
     return shared;
   }, [cashierTop5CurrentMonth, cashierTop5PreviousMonth]);
-
-  const salesByHourCards = useMemo(
-    () => {
-      if (personBreakdownView !== "franjas") return [];
-      return rangedHours.map((slot) => ({
-        slotStartMinute: slot.slotStartMinute,
-        label: slot.label,
-        sales: slot.totalSales,
-        productivity: calcVtaHr(
-          slot.totalSales,
-          slot.employeesPresent * (bucketMinutes / 60),
-        ),
-        employeesPresent: slot.employeesPresent,
-      }));
-    },
-    [bucketMinutes, personBreakdownView, rangedHours],
+  const cashierTop5PreviousTotalSales = useMemo(
+    () => cashierTop5PreviousMonth.reduce((sum, row) => sum + row.sales, 0),
+    [cashierTop5PreviousMonth],
   );
+  const cashierTop5CurrentTotalSales = useMemo(
+    () => cashierTop5CurrentMonth.reduce((sum, row) => sum + row.sales, 0),
+    [cashierTop5CurrentMonth],
+  );
+
+  const salesByHourCards = useMemo(() => {
+    if (personBreakdownView !== "franjas") return [];
+    return rangedHours.map((slot) => ({
+      slotStartMinute: slot.slotStartMinute,
+      label: slot.label,
+      sales: slot.totalSales,
+      productivity: calcVtaHr(
+        slot.totalSales,
+        slot.employeesPresent * (bucketMinutes / 60),
+      ),
+      employeesPresent: slot.employeesPresent,
+    }));
+  }, [bucketMinutes, personBreakdownView, rangedHours]);
   const shouldShowHourBars =
     !showPersonBreakdown || personBreakdownView === "franjas";
 
@@ -1770,12 +1883,12 @@ export const HourlyAnalysis = ({
       const rawSede = employee.sede?.trim();
       if (!rawSede) return employee;
 
-        const normalizedRaw = canonicalizeSedeValue(rawSede);
-        const match = availableSedes.find((sede) => {
-          const normalizedSede = canonicalizeSedeValue(sede.name);
-          return (
-            normalizedSede === normalizedRaw ||
-            normalizedSede.includes(normalizedRaw) ||
+      const normalizedRaw = canonicalizeSedeValue(rawSede);
+      const match = availableSedes.find((sede) => {
+        const normalizedSede = canonicalizeSedeValue(sede.name);
+        return (
+          normalizedSede === normalizedRaw ||
+          normalizedSede.includes(normalizedRaw) ||
           normalizedRaw.includes(normalizedSede)
         );
       });
@@ -1799,10 +1912,10 @@ export const HourlyAnalysis = ({
       "planta desposte mixto",
       "planta desprese pollo",
     ];
-      const isPlant = (value: string) =>
-        plantKeywords.some((keyword) =>
-          canonicalizeSedeValue(value).includes(keyword),
-        );
+    const isPlant = (value: string) =>
+      plantKeywords.some((keyword) =>
+        canonicalizeSedeValue(value).includes(keyword),
+      );
     return values.sort((a, b) => {
       const aPlant = isPlant(a);
       const bPlant = isPlant(b);
@@ -1881,7 +1994,9 @@ export const HourlyAnalysis = ({
       ) {
         const employeeType = employee.employeeType?.trim() ?? "";
         const normalizedEmployeeType = normalizeEmployeeType(employeeType);
-        const normalizedFilter = normalizeEmployeeType(overtimeEmployeeTypeFilter);
+        const normalizedFilter = normalizeEmployeeType(
+          overtimeEmployeeTypeFilter,
+        );
         if (normalizedFilter === "36horas") {
           const has36 =
             normalizedEmployeeType.includes("36horas") ||
@@ -1931,34 +2046,40 @@ export const HourlyAnalysis = ({
   const filteredOvertimeEmployees = useMemo(() => {
     const filtered = overtimeAbsenceOnly
       ? baseFilteredOvertimeEmployees.filter(
-          (employee) => employee.isAbsence || isAbsenceIncident(employee.incident),
+          (employee) =>
+            employee.isAbsence || isAbsenceIncident(employee.incident),
         )
       : overtimeOddMarksOnly
         ? baseFilteredOvertimeEmployees.filter((employee) => {
             const marks = employee.marksCount ?? 0;
             return marks > 0 && marks % 2 !== 0;
           })
-      : overtimeAlertOnly
-        ? baseFilteredOvertimeEmployees.filter((employee) => {
-          const employeeMinutes = decimalHoursToMinutes(employee.workedHours);
-          if (overtimeAlertMode === "720-2marks") {
-            const marks = employee.marksCount ?? 0;
-            return (
-              employeeMinutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
-              employeeMinutes <= ALERT_THRESHOLD_MINUTES &&
-              marks === 2
-            );
-          }
-          return employeeMinutes > ALERT_THRESHOLD_MINUTES;
-          })
-        : baseFilteredOvertimeEmployees;
+        : overtimeAlertOnly
+          ? baseFilteredOvertimeEmployees.filter((employee) => {
+              const employeeMinutes = decimalHoursToMinutes(
+                employee.workedHours,
+              );
+              if (overtimeAlertMode === "720-2marks") {
+                const marks = employee.marksCount ?? 0;
+                return (
+                  employeeMinutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
+                  employeeMinutes <= ALERT_THRESHOLD_MINUTES &&
+                  marks === 2
+                );
+              }
+              return employeeMinutes > ALERT_THRESHOLD_MINUTES;
+            })
+          : baseFilteredOvertimeEmployees;
     const compareByDate = (left: OvertimeEmployee, right: OvertimeEmployee) =>
       getOvertimeDateTimestamp(left) - getOvertimeDateTimestamp(right);
     const compareByHours = (left: OvertimeEmployee, right: OvertimeEmployee) =>
       left.workedHours - right.workedHours;
     const compareByMarks = (left: OvertimeEmployee, right: OvertimeEmployee) =>
       (left.marksCount ?? 0) - (right.marksCount ?? 0);
-    const compareByIncident = (left: OvertimeEmployee, right: OvertimeEmployee) =>
+    const compareByIncident = (
+      left: OvertimeEmployee,
+      right: OvertimeEmployee,
+    ) =>
       compareOvertimeText(
         getOvertimeIncidentValue(left),
         getOvertimeIncidentValue(right),
@@ -1991,7 +2112,7 @@ export const HourlyAnalysis = ({
                 ? compareByIncident(a, b)
                 : overtimeSortField === "nomina"
                   ? compareByNomina(a, b)
-                : compareByDepartment(a, b);
+                  : compareByDepartment(a, b);
       if (primaryDiff !== 0) {
         return overtimeSortDirection === "asc" ? primaryDiff : -primaryDiff;
       }
@@ -2028,7 +2149,8 @@ export const HourlyAnalysis = ({
   const overtimeAbsenceCount = useMemo(
     () =>
       baseFilteredOvertimeEmployees.filter(
-        (employee) => employee.isAbsence || isAbsenceIncident(employee.incident),
+        (employee) =>
+          employee.isAbsence || isAbsenceIncident(employee.incident),
       ).length,
     [baseFilteredOvertimeEmployees],
   );
@@ -2199,7 +2321,9 @@ export const HourlyAnalysis = ({
         onClick={() => handleOvertimeSort(field)}
         className={cn(
           "inline-flex w-full items-center gap-1 rounded-full border px-2 py-1 whitespace-nowrap transition-all",
-          align === "center" ? "justify-center text-center" : "justify-start text-left",
+          align === "center"
+            ? "justify-center text-center"
+            : "justify-start text-left",
           isActive
             ? "border-rose-200/80 bg-linear-to-r from-rose-50 via-white to-amber-50 text-rose-700 shadow-[0_10px_20px_-16px_rgba(225,29,72,0.65)]"
             : "border-transparent text-slate-500 hover:border-rose-100/80 hover:bg-white/80 hover:text-rose-600",
@@ -2210,7 +2334,9 @@ export const HourlyAnalysis = ({
         <ArrowUp
           className={cn(
             "h-3.5 w-3.5 shrink-0 transition-all",
-            isActive ? "text-rose-600 opacity-100" : "text-slate-400 opacity-60",
+            isActive
+              ? "text-rose-600 opacity-100"
+              : "text-slate-400 opacity-60",
             isActive && overtimeSortDirection === "desc" ? "rotate-180" : "",
           )}
         />
@@ -2316,9 +2442,7 @@ export const HourlyAnalysis = ({
           <h3 className="mt-1 text-lg font-semibold text-slate-900">
             {panelTitle}
           </h3>
-          <p className="mt-1 text-xs text-slate-600">
-            {panelDescription}
-          </p>
+          <p className="mt-1 text-xs text-slate-600">{panelDescription}</p>
         </div>
         <div className="flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
           <Clock className="h-4 w-4 text-mercamio-600" />
@@ -2642,7 +2766,8 @@ export const HourlyAnalysis = ({
                   </span>
                 )}
                 {activeHourlyData.attendanceDateUsed &&
-                  activeHourlyData.attendanceDateUsed !== activeHourlyData.date && (
+                  activeHourlyData.attendanceDateUsed !==
+                    activeHourlyData.date && (
                     <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
                       Asistencia usada: {activeHourlyData.attendanceDateUsed}
                     </span>
@@ -2956,9 +3081,9 @@ export const HourlyAnalysis = ({
               </div>
               {isAlexStrictMode && (
                 <p className="mt-2 text-xs font-semibold text-amber-700">
-                  Modo Alex activo: el listado usa exactamente la misma regla del
-                  reporte (superior a 9:20h) y
-                  bloquea filtros que cambian el conteo.
+                  Modo Alex activo: el listado usa exactamente la misma regla
+                  del reporte (superior a 9:20h) y bloquea filtros que cambian
+                  el conteo.
                 </p>
               )}
 
@@ -3074,8 +3199,12 @@ export const HourlyAnalysis = ({
                   No hay empleados para ese filtro de horas.
                 </p>
               ) : (
-                <div className={`mt-3 overflow-hidden rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white`}>
-                  <div className={`flex flex-wrap items-center justify-between gap-2 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/70 px-2 py-2`}>
+                <div
+                  className={`mt-3 overflow-hidden rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white`}
+                >
+                  <div
+                    className={`flex flex-wrap items-center justify-between gap-2 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/70 px-2 py-2`}
+                  >
                     <div className="flex flex-wrap items-center gap-1">
                       <button
                         type="button"
@@ -3120,7 +3249,9 @@ export const HourlyAnalysis = ({
                       {visibleOvertimeEmployees.length}
                     </span>
                   </div>
-                  <div className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500`}>
+                  <div
+                    className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500`}
+                  >
                     <span className="text-center whitespace-nowrap">#</span>
                     <span className="text-center whitespace-nowrap">Excel</span>
                     <span className="whitespace-nowrap">Empleado</span>
@@ -3131,12 +3262,17 @@ export const HourlyAnalysis = ({
                     <span className="whitespace-nowrap">Cargo</span>
                     {renderOvertimeSortHeader("incidencia", "Incid.")}
                     {renderOvertimeSortHeader("nomina", "Nomina", "center")}
-                    {renderOvertimeSortHeader("departamento", "Depto.", "center")}
+                    {renderOvertimeSortHeader(
+                      "departamento",
+                      "Depto.",
+                      "center",
+                    )}
                   </div>
                   {pagedOvertimeEmployees.map((employee, index) => {
                     const employeeKey = getOvertimeEmployeeKey(employee);
                     const isAbsence =
-                      employee.isAbsence || isAbsenceIncident(employee.incident);
+                      employee.isAbsence ||
+                      isAbsenceIncident(employee.incident);
                     const absoluteIndex =
                       (overtimePage - 1) * OVERTIME_PAGE_SIZE + index + 1;
                     return (
@@ -3207,156 +3343,159 @@ export const HourlyAnalysis = ({
             hourlySection === "map" &&
             !isCashierMultiDayRange &&
             !cashierMonthComparison && (
-            <div className="mb-6 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Diferencias por hora
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    Colores por rendimiento (formula de mapa de calor)
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {compareEnabled && compareDate && (
-                    <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70">
-                      Comparado: {compareDate}
-                    </span>
-                  )}
-                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
-                    Max Vta/Hr: {formatProductivity(maxProductivity)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Fecha
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {formatDateLabel(
-                      activeHourlyData.date,
-                      hourlyDateLabelOptions,
+              <div className="mb-6 rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Diferencias por hora
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Colores por rendimiento (formula de mapa de calor)
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {compareEnabled && compareDate && (
+                      <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70">
+                        Comparado: {compareDate}
+                      </span>
                     )}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Alcance
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {activeHourlyData.scopeLabel}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Rango
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {minuteToTime(minuteRangeStart)} -{" "}
-                    {minuteToTime(minuteRangeEnd)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                {selectedLineLabel && (
-                  <span className="rounded-full bg-mercamio-50 px-3 py-1 text-xs font-semibold text-mercamio-700 ring-1 ring-mercamio-200/70">
-                    Linea: {selectedLineLabel}
-                  </span>
-                )}
-                {activeHourlyData.attendanceDateUsed &&
-                  activeHourlyData.attendanceDateUsed !== activeHourlyData.date && (
                     <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
-                      Asistencia usada: {activeHourlyData.attendanceDateUsed}
+                      Max Vta/Hr: {formatProductivity(maxProductivity)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Fecha
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {formatDateLabel(
+                        activeHourlyData.date,
+                        hourlyDateLabelOptions,
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Alcance
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {activeHourlyData.scopeLabel}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Rango
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {minuteToTime(minuteRangeStart)} -{" "}
+                      {minuteToTime(minuteRangeEnd)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {selectedLineLabel && (
+                    <span className="rounded-full bg-mercamio-50 px-3 py-1 text-xs font-semibold text-mercamio-700 ring-1 ring-mercamio-200/70">
+                      Linea: {selectedLineLabel}
                     </span>
                   )}
-                {activeHourlyData.salesDateUsed &&
-                  activeHourlyData.salesDateUsed !== activeHourlyData.date && (
-                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
-                      Ventas usadas: {activeHourlyData.salesDateUsed}
-                    </span>
-                  )}
-              </div>
+                  {activeHourlyData.attendanceDateUsed &&
+                    activeHourlyData.attendanceDateUsed !==
+                      activeHourlyData.date && (
+                      <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
+                        Asistencia usada: {activeHourlyData.attendanceDateUsed}
+                      </span>
+                    )}
+                  {activeHourlyData.salesDateUsed &&
+                    activeHourlyData.salesDateUsed !==
+                      activeHourlyData.date && (
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                        Ventas usadas: {activeHourlyData.salesDateUsed}
+                      </span>
+                    )}
+                </div>
 
-              <div className="w-full rounded-2xl border border-slate-200/70 bg-slate-50/70 p-3">
-                {chartHours.length === 0 ? (
-                  <p className="py-10 text-center text-xs text-slate-500">
-                    Sin horas con ventas para graficar.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto pb-2">
-                    <div
-                      className="relative h-52"
-                      style={{
-                        width: `${Math.max(chartHours.length * chartColumnWidth, 920)}px`,
-                      }}
-                    >
-                      <div className="pointer-events-none absolute inset-x-0 top-[20%] border-t border-dashed border-slate-300/70" />
-                      <div className="pointer-events-none absolute inset-x-0 top-[40%] border-t border-dashed border-slate-300/70" />
-                      <div className="pointer-events-none absolute inset-x-0 top-[60%] border-t border-dashed border-slate-300/70" />
-                      <div className="pointer-events-none absolute inset-x-0 top-[80%] border-t border-dashed border-slate-300/70" />
-                      <div className="absolute inset-x-0 bottom-5 border-t border-slate-300/80" />
+                <div className="w-full rounded-2xl border border-slate-200/70 bg-slate-50/70 p-3">
+                  {chartHours.length === 0 ? (
+                    <p className="py-10 text-center text-xs text-slate-500">
+                      Sin horas con ventas para graficar.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto pb-2">
+                      <div
+                        className="relative h-52"
+                        style={{
+                          width: `${Math.max(chartHours.length * chartColumnWidth, 920)}px`,
+                        }}
+                      >
+                        <div className="pointer-events-none absolute inset-x-0 top-[20%] border-t border-dashed border-slate-300/70" />
+                        <div className="pointer-events-none absolute inset-x-0 top-[40%] border-t border-dashed border-slate-300/70" />
+                        <div className="pointer-events-none absolute inset-x-0 top-[60%] border-t border-dashed border-slate-300/70" />
+                        <div className="pointer-events-none absolute inset-x-0 top-[80%] border-t border-dashed border-slate-300/70" />
+                        <div className="absolute inset-x-0 bottom-5 border-t border-slate-300/80" />
 
-                      <div className="relative flex h-full items-end gap-1">
-                        {chartHours.map((slot, index) => {
-                          const mainHeight =
-                            (slot.mainProductivity / chartMaxProductivity) *
-                            100;
-                          const compareHeight =
-                            (slot.compareProductivity / chartMaxProductivity) *
-                            100;
-                          const showTick =
-                            index % chartTickEvery === 0 ||
-                            index === chartHours.length - 1;
+                        <div className="relative flex h-full items-end gap-1">
+                          {chartHours.map((slot, index) => {
+                            const mainHeight =
+                              (slot.mainProductivity / chartMaxProductivity) *
+                              100;
+                            const compareHeight =
+                              (slot.compareProductivity /
+                                chartMaxProductivity) *
+                              100;
+                            const showTick =
+                              index % chartTickEvery === 0 ||
+                              index === chartHours.length - 1;
 
-                          return (
-                            <div
-                              key={slot.slotStartMinute}
-                              className="group flex shrink-0 flex-col items-center justify-end gap-1"
-                              style={{ width: `${chartColumnWidth}px` }}
-                            >
-                              <div className="flex h-44 w-full items-end justify-center gap-0.75">
-                                <div
-                                  className="w-[46%] min-h-0.75 rounded-t-md shadow-[0_8px_18px_-14px_rgba(15,23,42,0.6)] transition-all duration-200 group-hover:brightness-110"
-                                  style={{
-                                    height: `${Math.max(mainHeight, slot.mainProductivity > 0 ? 2.5 : 0)}%`,
-                                    backgroundColor: slot.mainHeatColor,
-                                  }}
-                                  title={`${slot.label} | Vta/Hr ${formatProductivity(slot.mainProductivity)} | ${slot.mainHeatRatio.toFixed(0)}%`}
-                                />
-                                {compareEnabled && activeCompareData && (
+                            return (
+                              <div
+                                key={slot.slotStartMinute}
+                                className="group flex shrink-0 flex-col items-center justify-end gap-1"
+                                style={{ width: `${chartColumnWidth}px` }}
+                              >
+                                <div className="flex h-44 w-full items-end justify-center gap-0.75">
                                   <div
-                                    className="w-[34%] min-h-0.75 rounded-t-md bg-sky-400/85 shadow-[0_8px_18px_-14px_rgba(14,165,233,0.8)]"
+                                    className="w-[46%] min-h-0.75 rounded-t-md shadow-[0_8px_18px_-14px_rgba(15,23,42,0.6)] transition-all duration-200 group-hover:brightness-110"
                                     style={{
-                                      height: `${Math.max(compareHeight, slot.compareProductivity > 0 ? 2.5 : 0)}%`,
+                                      height: `${Math.max(mainHeight, slot.mainProductivity > 0 ? 2.5 : 0)}%`,
+                                      backgroundColor: slot.mainHeatColor,
                                     }}
-                                    title={`${slot.label} comparado | Vta/Hr ${formatProductivity(slot.compareProductivity)} | ${slot.compareHeatRatio.toFixed(0)}%`}
+                                    title={`${slot.label} | Vta/Hr ${formatProductivity(slot.mainProductivity)} | ${slot.mainHeatRatio.toFixed(0)}%`}
                                   />
-                                )}
+                                  {compareEnabled && activeCompareData && (
+                                    <div
+                                      className="w-[34%] min-h-0.75 rounded-t-md bg-sky-400/85 shadow-[0_8px_18px_-14px_rgba(14,165,233,0.8)]"
+                                      style={{
+                                        height: `${Math.max(compareHeight, slot.compareProductivity > 0 ? 2.5 : 0)}%`,
+                                      }}
+                                      title={`${slot.label} comparado | Vta/Hr ${formatProductivity(slot.compareProductivity)} | ${slot.compareHeatRatio.toFixed(0)}%`}
+                                    />
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-semibold text-slate-500">
+                                  {showTick ? slot.tickLabel : ""}
+                                </span>
                               </div>
-                              <span className="text-[10px] font-semibold text-slate-500">
-                                {showTick ? slot.tickLabel : ""}
-                              </span>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
+                  )}
+                </div>
+
+                {compareEnabled && activeCompareData && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                    <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700 ring-1 ring-sky-200">
+                      Barra azul: dia comparado
+                    </span>
                   </div>
                 )}
               </div>
-
-              {compareEnabled && activeCompareData && (
-                <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-                  <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700 ring-1 ring-sky-200">
-                    Barra azul: dia comparado
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+            )}
 
           {showMapSection && hourlySection === "map" && showPersonBreakdown && (
             <div
@@ -3368,9 +3507,7 @@ export const HourlyAnalysis = ({
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                     Exploracion detallada
                   </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    Alterna entre el aporte de cajeros y el comportamiento por franjas sin perder el contexto del filtro actual.
-                  </p>
+                  <p className="text-sm font-semibold text-slate-900"></p>
                 </div>
                 {!hidePersonBreakdownTabs && (
                   <div
@@ -3397,7 +3534,9 @@ export const HourlyAnalysis = ({
                           <span className="text-xs font-semibold uppercase tracking-[0.16em]">
                             {option.label}
                           </span>
-                          <span className="mt-1 text-xs text-slate-500">{option.hint}</span>
+                          <span className="mt-1 text-xs text-slate-500">
+                            {option.hint}
+                          </span>
                         </button>
                       );
                     })}
@@ -3409,462 +3548,624 @@ export const HourlyAnalysis = ({
                 {personBreakdownView === "franjas" && (
                   <>
                     <div className="rounded-2xl border border-slate-200/70 bg-slate-50/60 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Variacion por hora
-                    </p>
-                    <p className="text-sm font-semibold text-slate-900">
-                      Cambio absoluto y porcentual dentro del rango seleccionado
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
-                      Total intervalo: {formatCurrency(dayTotals.sales)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {hourDifferences
-                    .filter((slot) => slot.sales > 0)
-                    .map((slot) => {
-                      const positive = slot.deltaSales >= 0;
-                      return (
-                        <div
-                          key={`diff-${slot.slotStartMinute}`}
-                          className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-3"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                {slot.label}
-                              </p>
-                              <p className="mt-1 text-sm font-semibold text-slate-900">
-                                {formatCurrency(slot.sales)}
-                              </p>
-                            </div>
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
-                                positive
-                                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200/70"
-                                  : "bg-red-50 text-red-700 ring-red-200/70"
-                              }`}
-                            >
-                              {positive ? (
-                                <TrendingUp className="h-3.5 w-3.5" />
-                              ) : (
-                                <TrendingDown className="h-3.5 w-3.5" />
-                              )}
-                              {`${positive ? "+" : "-"}${formatCurrency(Math.abs(slot.deltaSales))}`}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-600">
-                            {slot.deltaPercent === null
-                              ? "Sin base previa para porcentaje."
-                              : `${positive ? "+" : "-"}${Math.abs(slot.deltaPercent).toFixed(1)}% vs. franja anterior`}
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Variacion por hora
+                          </p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            Cambio absoluto y porcentual dentro del rango
+                            seleccionado
                           </p>
                         </div>
-                      );
-                    })}
-                </div>
-              </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                            Total intervalo: {formatCurrency(dayTotals.sales)}
+                          </span>
+                        </div>
+                      </div>
 
-              <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Venta x hora
-                    </p>
-                    <p className="text-sm font-semibold text-slate-900">
-                      Facturacion y productividad por cada franja del rango
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70">
-                    {salesByHourCards.length} franjas
-                  </span>
-                </div>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {salesByHourCards.map((slot) => (
-                    <div
-                      key={`sales-hour-${slot.slotStartMinute}`}
-                      className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-3"
-                    >
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        {slot.label}
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">
-                        {formatCurrency(slot.sales)}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-                        <span className="rounded-full bg-white px-2 py-1 text-slate-700 ring-1 ring-slate-200/70">
-                          Vta/Hr {formatProductivity(slot.productivity)}
-                        </span>
-                        <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700 ring-1 ring-sky-200/70">
-                          {slot.employeesPresent} pers.
-                        </span>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        {hourDifferences
+                          .filter((slot) => slot.sales > 0)
+                          .map((slot) => {
+                            const positive = slot.deltaSales >= 0;
+                            return (
+                              <div
+                                key={`diff-${slot.slotStartMinute}`}
+                                className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                      {slot.label}
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                                      {formatCurrency(slot.sales)}
+                                    </p>
+                                  </div>
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${
+                                      positive
+                                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200/70"
+                                        : "bg-red-50 text-red-700 ring-red-200/70"
+                                    }`}
+                                  >
+                                    {positive ? (
+                                      <TrendingUp className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <TrendingDown className="h-3.5 w-3.5" />
+                                    )}
+                                    {`${positive ? "+" : "-"}${formatCurrency(Math.abs(slot.deltaSales))}`}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs text-slate-600">
+                                  {slot.deltaPercent === null
+                                    ? "Sin base previa para porcentaje."
+                                    : `${positive ? "+" : "-"}${Math.abs(slot.deltaPercent).toFixed(1)}% vs. franja anterior`}
+                                </p>
+                              </div>
+                            );
+                          })}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
 
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Venta x hora
+                          </p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            Facturacion y productividad por cada franja del
+                            rango
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70">
+                          {salesByHourCards.length} franjas
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        {salesByHourCards.map((slot) => (
+                          <div
+                            key={`sales-hour-${slot.slotStartMinute}`}
+                            className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-3"
+                          >
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                              {slot.label}
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {formatCurrency(slot.sales)}
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                              <span className="rounded-full bg-white px-2 py-1 text-slate-700 ring-1 ring-slate-200/70">
+                                Vta/Hr {formatProductivity(slot.productivity)}
+                              </span>
+                              <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700 ring-1 ring-sky-200/70">
+                                {slot.employeesPresent} pers.
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </>
                 )}
 
                 {personBreakdownView === "individual" && (
-              <div
-                className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface) p-5 shadow-[0_1px_2px_0_color-mix(in_oklab,var(--cashier-text)_8%,transparent)] font-[Inter,var(--font-geist-sans),system-ui,sans-serif] [font-variant-numeric:tabular-nums]"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--cashier-muted)">
-                      {cashierMonthComparison
-                        ? `Top ${CASHIER_MONTH_TOP_N}: mes anterior vs mes actual`
-                        : "Aporte individual"}
-                    </p>
-                    <p className="text-sm font-semibold text-(--cashier-text)">
-                      {cashierMonthComparison
-                        ? `Los ${CASHIER_MONTH_TOP_N} cajeros con mas ventas en el mes anterior (cierre completo) y en el mes en curso (hasta la fecha fin del filtro). Si un nombre aparece en ambos, suele ser el mismo perfil de desempeño mes a mes.`
-                        : "Personas activas y contribucion dentro del intervalo"}
-                    </p>
-                  </div>
-                  {topContributor && (
-                    <span className="rounded-full border border-(--cashier-border) bg-(--cashier-top-bg) px-3 py-1 text-xs font-semibold text-(--cashier-top-text)">
-                      Top: {topContributor.personName} {formatCurrency(topContributor.totalSales)}
-                    </span>
-                  )}
-                </div>
-
-                {!cashierMonthComparison && isCashierPersonRangeResponse &&
-                  activeHourlyData?.personContributionsRange && (
-                    <p className="mt-3 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 text-sm text-(--cashier-muted)">
-                      Ventas de cajas sumadas del{" "}
-                      <span className="font-semibold text-(--cashier-text)">
-                        {formatDateLabel(
-                          activeHourlyData.personContributionsRange.start,
-                          { day: "2-digit", month: "short", year: "numeric" },
+                  <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface) p-5 shadow-[0_1px_2px_0_color-mix(in_oklab,var(--cashier-text)_8%,transparent)] font-[Inter,var(--font-geist-sans),system-ui,sans-serif] [font-variant-numeric:tabular-nums]">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--cashier-muted)">
+                          {cashierMonthComparison
+                            ? `Top ${CASHIER_MONTH_TOP_N}: mes anterior vs mes actual`
+                            : "Aporte individual"}
+                        </p>
+                        {!cashierMonthComparison && (
+                          <p className="text-sm font-semibold text-(--cashier-text)"></p>
                         )}
-                      </span>{" "}
-                      al{" "}
-                      <span className="font-semibold text-(--cashier-text)">
-                        {formatDateLabel(
-                          activeHourlyData.personContributionsRange.end,
-                          { day: "2-digit", month: "short", year: "numeric" },
-                        )}
-                      </span>
-                      . Para revisar venta por franja de cada persona, elige un solo día en el
-                      calendario del encabezado.
-                    </p>
-                  )}
-
-                {!cashierMonthComparison && (
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <label className="min-w-64 flex-1">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                        Filtrar cajero
-                      </span>
-                      <div className="mt-1 flex items-center gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
-                        <Search className="h-4 w-4 text-(--cashier-muted)" />
-                        <input
-                          type="text"
-                          value={personSearchQuery}
-                          onChange={(e) => setPersonSearchQuery(e.target.value)}
-                          placeholder="Buscar por nombre o ID"
-                          className="w-full bg-transparent text-sm text-(--cashier-text) outline-none placeholder:text-(--cashier-muted)"
-                        />
                       </div>
-                    </label>
-                    <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs font-semibold text-(--cashier-muted)">
-                      Mostrando {filteredPeopleBreakdown.length} de {peopleBreakdown.length}
-                    </span>
-                    {personSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setPersonSearchQuery("")}
-                        className="rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
-                      >
-                        Limpiar
-                      </button>
+                      {topContributor && (
+                        <span className="rounded-full border border-(--cashier-border) bg-(--cashier-top-bg) px-3 py-1 text-xs font-semibold text-(--cashier-top-text)">
+                          Top: {topContributor.personName}{" "}
+                          {formatCurrency(topContributor.totalSales)}
+                        </span>
+                      )}
+                    </div>
+
+                    {!cashierMonthComparison &&
+                      isCashierPersonRangeResponse &&
+                      activeHourlyData?.personContributionsRange && (
+                        <p className="mt-3 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 text-sm text-(--cashier-muted)">
+                          Ventas de cajas sumadas del{" "}
+                          <span className="font-semibold text-(--cashier-text)">
+                            {formatDateLabel(
+                              activeHourlyData.personContributionsRange.start,
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )}
+                          </span>{" "}
+                          al{" "}
+                          <span className="font-semibold text-(--cashier-text)">
+                            {formatDateLabel(
+                              activeHourlyData.personContributionsRange.end,
+                              {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )}
+                          </span>
+                          . Para revisar venta por franja de cada persona, elige
+                          un solo día en el calendario del encabezado.
+                        </p>
+                      )}
+
+                    {!cashierMonthComparison && (
+                      <div className="mt-4 flex flex-wrap items-end gap-3">
+                        <label className="min-w-64 flex-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                            Filtrar cajero
+                          </span>
+                          <div className="mt-1 flex items-center gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
+                            <Search className="h-4 w-4 text-(--cashier-muted)" />
+                            <input
+                              type="text"
+                              value={personSearchQuery}
+                              onChange={(e) =>
+                                setPersonSearchQuery(e.target.value)
+                              }
+                              placeholder="Buscar por nombre o ID"
+                              className="w-full bg-transparent text-sm text-(--cashier-text) outline-none placeholder:text-(--cashier-muted)"
+                            />
+                          </div>
+                        </label>
+                        <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs font-semibold text-(--cashier-muted)">
+                          Mostrando {filteredPeopleBreakdown.length} de{" "}
+                          {peopleBreakdown.length}
+                        </span>
+                        {personSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setPersonSearchQuery("")}
+                            className="rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                          >
+                            Limpiar
+                          </button>
+                        )}
+                        {onCashierMonthComparisonToggle && (
+                          <button
+                            type="button"
+                            onClick={onCashierMonthComparisonToggle}
+                            aria-pressed={cashierMonthComparison}
+                            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-fuchsia-300/90 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-fuchsia-950 transition-all hover:bg-fuchsia-50"
+                          >
+                            <ArrowLeftRight className="h-4 w-4" />
+                            Top 5: mes anterior vs actual
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {cashierMonthComparison && (
+                      <div className="mt-3 space-y-3">
+                        <div className="rounded-2xl border border-fuchsia-200/80 bg-linear-to-br from-fuchsia-50/90 to-white px-4 py-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fuchsia-900">
+                                Comparativo top {CASHIER_MONTH_TOP_N}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-700">
+                                Mes anterior:{" "}
+                                <span className="font-semibold text-slate-900">
+                                  {cashierMonthMeta?.labelPrevious ?? "--"}
+                                </span>{" "}
+                                vs mes en curso:{" "}
+                                <span className="font-semibold text-slate-900">
+                                  {cashierMonthMeta?.labelCurrent ?? "--"}
+                                </span>
+                              </p>
+                            </div>
+                            {onCashierMonthComparisonToggle && (
+                              <button
+                                type="button"
+                                onClick={onCashierMonthComparisonToggle}
+                                aria-pressed={cashierMonthComparison}
+                                className="inline-flex shrink-0 items-center gap-2 rounded-full bg-fuchsia-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-sm ring-1 ring-fuchsia-900/25 transition-all hover:bg-fuchsia-800"
+                              >
+                                <ArrowLeftRight className="h-4 w-4" />
+                                Volver a periodo del filtro
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                              Coinciden en ambos top
+                            </p>
+                            <p className="mt-1 text-lg font-bold tabular-nums text-(--cashier-text)">
+                              {cashierTop5SharedKeys.size}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                              Venta top {CASHIER_MONTH_TOP_N} mes anterior
+                            </p>
+                            <p className="mt-1 text-lg font-bold tabular-nums text-(--cashier-text)">
+                              {formatCurrency(cashierTop5PreviousTotalSales)}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                              Venta top {CASHIER_MONTH_TOP_N} mes en curso
+                            </p>
+                            <p className="mt-1 text-lg font-bold tabular-nums text-(--cashier-text)">
+                              {formatCurrency(cashierTop5CurrentTotalSales)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {cashierMonthComparison ? (
+                      cashierMonthCompareLoading ? (
+                        <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
+                          Cargando los top {CASHIER_MONTH_TOP_N} de cada mes…
+                        </p>
+                      ) : cashierTop5PreviousMonth.length === 0 &&
+                        cashierTop5CurrentMonth.length === 0 ? (
+                        <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
+                          No hay ventas de cajas en alguno de los dos periodos
+                          para este filtro.
+                        </p>
+                      ) : (
+                        <div className="mt-4 space-y-4">
+                          {cashierTop5SharedKeys.size > 0 && (
+                            <p className="rounded-2xl border border-emerald-200/80 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+                              <span className="font-semibold">
+                                Cajeros que se mantienen en ambos top{" "}
+                                {CASHIER_MONTH_TOP_N}:
+                              </span>{" "}
+                              {cashierTop5CurrentMonth
+                                .filter((r) =>
+                                  cashierTop5SharedKeys.has(r.personKey),
+                                )
+                                .map((r) => r.personName)
+                                .sort((a, b) => a.localeCompare(b, "es"))
+                                .join(", ")}
+                              .
+                            </p>
+                          )}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                Mes anterior (top {CASHIER_MONTH_TOP_N})
+                              </p>
+                              <p className="mt-1 text-xs text-(--cashier-muted)">
+                                {cashierMonthMeta?.labelPrevious}
+                              </p>
+                              <ul className="mt-3 space-y-2">
+                                {cashierTop5PreviousMonth.map((row, idx) => {
+                                  const inBoth = cashierTop5SharedKeys.has(
+                                    row.personKey,
+                                  );
+                                  return (
+                                    <li
+                                      key={row.personKey}
+                                      className={cn(
+                                        "flex items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm",
+                                        getTopRankToneClass(idx + 1),
+                                        inBoth && "ring-1 ring-emerald-300/80",
+                                      )}
+                                    >
+                                      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                                        <span className="shrink-0 font-semibold text-(--cashier-muted)">
+                                          {idx + 1}.
+                                        </span>
+                                        <span className="min-w-0 font-semibold text-(--cashier-text)">
+                                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                                            <UserRound className="h-3.5 w-3.5 shrink-0 text-(--cashier-brand)" />
+                                            {row.personName}
+                                            {inBoth && (
+                                              <span className="rounded-full border border-emerald-400/80 bg-emerald-100/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
+                                                Tambien en mes actual
+                                              </span>
+                                            )}
+                                            {row.personId && (
+                                              <span className="text-[11px] font-normal text-(--cashier-muted)">
+                                                ID {row.personId}
+                                              </span>
+                                            )}
+                                          </span>
+                                        </span>
+                                      </span>
+                                      <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
+                                        {formatCurrency(row.sales)}
+                                      </span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                            <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                Mes en curso (top {CASHIER_MONTH_TOP_N})
+                              </p>
+                              <p className="mt-1 text-xs text-(--cashier-muted)">
+                                {cashierMonthMeta?.labelCurrent}
+                              </p>
+                              <ul className="mt-3 space-y-2">
+                                {cashierTop5CurrentMonth.map((row, idx) => {
+                                  const inBoth = cashierTop5SharedKeys.has(
+                                    row.personKey,
+                                  );
+                                  return (
+                                    <li
+                                      key={row.personKey}
+                                      className={cn(
+                                        "flex items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm",
+                                        getTopRankToneClass(idx + 1),
+                                        inBoth && "ring-1 ring-emerald-300/80",
+                                      )}
+                                    >
+                                      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                                        <span className="shrink-0 font-semibold text-(--cashier-muted)">
+                                          {idx + 1}.
+                                        </span>
+                                        <span className="min-w-0 font-semibold text-(--cashier-text)">
+                                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                                            <UserRound className="h-3.5 w-3.5 shrink-0 text-(--cashier-brand)" />
+                                            {row.personName}
+                                            {inBoth && (
+                                              <span className="rounded-full border border-emerald-400/80 bg-emerald-100/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
+                                                Tambien mes anterior
+                                              </span>
+                                            )}
+                                            {row.personId && (
+                                              <span className="text-[11px] font-normal text-(--cashier-muted)">
+                                                ID {row.personId}
+                                              </span>
+                                            )}
+                                          </span>
+                                        </span>
+                                      </span>
+                                      <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
+                                        {formatCurrency(row.sales)}
+                                      </span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    ) : filteredPeopleBreakdown.length === 0 ? (
+                      <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
+                        No se encontraron cajeros para ese filtro.
+                      </p>
+                    ) : (
+                      <div className="mt-4 space-y-3">
+                        <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 shadow-sm">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                            Total listado
+                          </p>
+                          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+                            <p className="text-sm text-(--cashier-muted)">
+                              Suma de ventas totales de{" "}
+                              <span className="font-semibold text-(--cashier-text)">
+                                {filteredPeopleBreakdown.length.toLocaleString(
+                                  "es-CO",
+                                )}
+                              </span>{" "}
+                              cajero
+                              {filteredPeopleBreakdown.length === 1 ? "" : "s"}
+                            </p>
+                            <p className="text-lg font-bold tabular-nums text-(--cashier-text)">
+                              {formatCurrencyMillionsOneDecimal(
+                                cashierListTotalSales,
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-[920px] w-full border-collapse rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft)">
+                            <thead>
+                              <tr className="border-b border-(--cashier-border) bg-(--cashier-surface)">
+                                <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                  #
+                                </th>
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                  Nombre
+                                </th>
+                                <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                  ID
+                                </th>
+                                <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCashierSortBy("totalSales")}
+                                    className="inline-flex items-center gap-1 transition-colors hover:text-(--cashier-text)"
+                                  >
+                                    Ventas totales
+                                    <ArrowUp
+                                      className={cn(
+                                        "h-3.5 w-3.5 transition-transform",
+                                        cashierSortField !== "totalSales" && "opacity-40",
+                                        cashierSortField === "totalSales" &&
+                                          cashierSalesSortDirection === "asc" &&
+                                          "rotate-180",
+                                      )}
+                                    />
+                                  </button>
+                                </th>
+                                <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCashierSortBy("workedHours")}
+                                    className="inline-flex items-center gap-1 transition-colors hover:text-(--cashier-text)"
+                                  >
+                                    Horas laboradas
+                                    <ArrowUp
+                                      className={cn(
+                                        "h-3.5 w-3.5 transition-transform",
+                                        cashierSortField !== "workedHours" && "opacity-40",
+                                        cashierSortField === "workedHours" &&
+                                          cashierSalesSortDirection === "asc" &&
+                                          "rotate-180",
+                                      )}
+                                    />
+                                  </button>
+                                </th>
+                                <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCashierSortBy("vtaHr")}
+                                    className="ml-auto inline-flex items-center gap-1 transition-colors hover:text-(--cashier-text)"
+                                  >
+                                    Vta/Hr
+                                    <ArrowUp
+                                      className={cn(
+                                        "h-3.5 w-3.5 transition-transform",
+                                        cashierSortField !== "vtaHr" && "opacity-40",
+                                        cashierSortField === "vtaHr" &&
+                                          cashierSalesSortDirection === "asc" &&
+                                          "rotate-180",
+                                      )}
+                                    />
+                                  </button>
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sortedPeopleBreakdown.map((person, index) => {
+                                const activeSlotsCount =
+                                  (typeof person.activeSlotsCount === "number"
+                                    ? person.activeSlotsCount
+                                    : (person.activeSlots?.length ??
+                                      person.hourlySales.length)) || 0;
+                                const workedHours =
+                                  (activeSlotsCount * bucketMinutes) / 60;
+                                const salesPerHour = calcVtaHr(
+                                  person.totalSales,
+                                  workedHours,
+                                );
+                                const isExpanded =
+                                  expandedPersonDailyKey === person.personKey;
+                                const dailyRows = (person.dailySales ?? [])
+                                  .slice()
+                                  .sort((a, b) => a.date.localeCompare(b.date));
+                                return (
+                                  <Fragment key={person.personKey}>
+                                    <tr
+                                      className="cursor-pointer border-b border-(--cashier-border) transition-colors hover:bg-(--cashier-surface)"
+                                      onClick={() =>
+                                        setExpandedPersonDailyKey((prev) =>
+                                          prev === person.personKey
+                                            ? null
+                                            : person.personKey,
+                                        )
+                                      }
+                                      title="Click para ver venta dia a dia"
+                                    >
+                                      <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-muted)">
+                                        {index + 1}
+                                      </td>
+                                      <td className="px-3 py-2 text-sm font-semibold text-(--cashier-text)">
+                                        {person.personName}
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-sm text-(--cashier-muted) tabular-nums">
+                                        {person.personId || "-"}
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums text-(--cashier-text)">
+                                        {formatCurrencyMillionsOneDecimal(
+                                          person.totalSales,
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums text-(--cashier-text)">
+                                        {workedHours.toFixed(1)}h
+                                      </td>
+                                      <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-text)">
+                                        {formatProductivity(salesPerHour)}
+                                      </td>
+                                    </tr>
+                                    {isExpanded && (
+                                      <tr className="border-b border-(--cashier-border) last:border-b-0">
+                                        <td
+                                          colSpan={6}
+                                          className="bg-(--cashier-surface) px-4 py-3"
+                                        >
+                                          {dailyRows.length === 0 ? (
+                                            <p className="text-xs text-(--cashier-muted)">
+                                              Sin detalle diario para este
+                                              filtro.
+                                            </p>
+                                          ) : (
+                                            <div className="space-y-1.5">
+                                              <div className="grid grid-cols-[1fr_170px_120px] items-center rounded-md border border-(--cashier-border) bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                                                <span>Fecha</span>
+                                                <span className="text-center">
+                                                  Venta
+                                                </span>
+                                                <span className="text-right">
+                                                  Vta/Hr
+                                                </span>
+                                              </div>
+                                              {dailyRows.map((day) => (
+                                                <div
+                                                  key={`${person.personKey}-${day.date}`}
+                                                  className="grid grid-cols-[1fr_170px_120px] items-center gap-3 rounded-md border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs"
+                                                >
+                                                  <span className="font-medium text-(--cashier-muted)">
+                                                    {formatDateLabel(
+                                                      normalizeDateKeyForDisplay(
+                                                        day.date,
+                                                      ),
+                                                      {
+                                                        day: "2-digit",
+                                                        month: "short",
+                                                        year: "numeric",
+                                                      },
+                                                    )}
+                                                  </span>
+                                                  <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
+                                                    {formatCurrencyWithoutSixZeros(
+                                                      day.sales,
+                                                    )}
+                                                  </span>
+                                                  <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                    {formatProductivity(
+                                                      calcVtaHr(
+                                                        day.sales,
+                                                        ((day.activeSlotsCount ??
+                                                          0) *
+                                                          bucketMinutes) /
+                                                          60,
+                                                      ),
+                                                    )}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </Fragment>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
-
-                {cashierMonthComparison && cashierMonthMeta && (
-                  <p className="mt-3 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 text-sm text-(--cashier-muted)">
-                    <span className="font-semibold text-(--cashier-text)">Mes anterior:</span>{" "}
-                    {cashierMonthMeta.labelPrevious}.{" "}
-                    <span className="font-semibold text-(--cashier-text)">Mes en curso:</span>{" "}
-                    {cashierMonthMeta.labelCurrent}.
-                  </p>
-                )}
-
-                {cashierMonthComparison ? (
-                  cashierMonthCompareLoading ? (
-                    <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
-                      Cargando los top {CASHIER_MONTH_TOP_N} de cada mes…
-                    </p>
-                  ) : cashierTop5PreviousMonth.length === 0 &&
-                    cashierTop5CurrentMonth.length === 0 ? (
-                    <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
-                      No hay ventas de cajas en alguno de los dos periodos para este filtro.
-                    </p>
-                  ) : (
-                    <div className="mt-4 space-y-4">
-                      {cashierTop5SharedKeys.size > 0 && (
-                        <p className="rounded-2xl border border-emerald-200/80 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
-                          <span className="font-semibold">En ambos top {CASHIER_MONTH_TOP_N}:</span>{" "}
-                          {cashierTop5CurrentMonth
-                            .filter((r) => cashierTop5SharedKeys.has(r.personKey))
-                            .map((r) => r.personName)
-                            .sort((a, b) => a.localeCompare(b, "es"))
-                            .join(", ")}
-                          .
-                        </p>
-                      )}
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                            Mes anterior (top {CASHIER_MONTH_TOP_N})
-                          </p>
-                          <p className="mt-1 text-xs text-(--cashier-muted)">
-                            {cashierMonthMeta?.labelPrevious}
-                          </p>
-                          <ul className="mt-3 space-y-2">
-                            {cashierTop5PreviousMonth.map((row, idx) => {
-                              const inBoth = cashierTop5SharedKeys.has(row.personKey);
-                              return (
-                                <li
-                                  key={row.personKey}
-                                  className={cn(
-                                    "flex items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm",
-                                    inBoth
-                                      ? "border-emerald-300/90 bg-emerald-50/80"
-                                      : "border-(--cashier-border) bg-(--cashier-surface)",
-                                  )}
-                                >
-                                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                                    <span className="shrink-0 font-semibold text-(--cashier-muted)">
-                                      {idx + 1}.
-                                    </span>
-                                    <span className="min-w-0 font-semibold text-(--cashier-text)">
-                                      <span className="inline-flex flex-wrap items-center gap-1.5">
-                                        <UserRound className="h-3.5 w-3.5 shrink-0 text-(--cashier-brand)" />
-                                        {row.personName}
-                                        {inBoth && (
-                                          <span className="rounded-full border border-emerald-400/80 bg-emerald-100/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
-                                            Tambien en mes actual
-                                          </span>
-                                        )}
-                                        {row.personId && (
-                                          <span className="text-[11px] font-normal text-(--cashier-muted)">
-                                            ID {row.personId}
-                                          </span>
-                                        )}
-                                      </span>
-                                    </span>
-                                  </span>
-                                  <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
-                                    {formatCurrency(row.sales)}
-                                  </span>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                        <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                            Mes en curso (top {CASHIER_MONTH_TOP_N})
-                          </p>
-                          <p className="mt-1 text-xs text-(--cashier-muted)">
-                            {cashierMonthMeta?.labelCurrent}
-                          </p>
-                          <ul className="mt-3 space-y-2">
-                            {cashierTop5CurrentMonth.map((row, idx) => {
-                              const inBoth = cashierTop5SharedKeys.has(row.personKey);
-                              return (
-                                <li
-                                  key={row.personKey}
-                                  className={cn(
-                                    "flex items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm",
-                                    inBoth
-                                      ? "border-emerald-300/90 bg-emerald-50/80"
-                                      : "border-(--cashier-border) bg-(--cashier-surface)",
-                                  )}
-                                >
-                                  <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                                    <span className="shrink-0 font-semibold text-(--cashier-muted)">
-                                      {idx + 1}.
-                                    </span>
-                                    <span className="min-w-0 font-semibold text-(--cashier-text)">
-                                      <span className="inline-flex flex-wrap items-center gap-1.5">
-                                        <UserRound className="h-3.5 w-3.5 shrink-0 text-(--cashier-brand)" />
-                                        {row.personName}
-                                        {inBoth && (
-                                          <span className="rounded-full border border-emerald-400/80 bg-emerald-100/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
-                                            Tambien mes anterior
-                                          </span>
-                                        )}
-                                        {row.personId && (
-                                          <span className="text-[11px] font-normal text-(--cashier-muted)">
-                                            ID {row.personId}
-                                          </span>
-                                        )}
-                                      </span>
-                                    </span>
-                                  </span>
-                                  <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
-                                    {formatCurrency(row.sales)}
-                                  </span>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                ) : filteredPeopleBreakdown.length === 0 ? (
-                  <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
-                    No se encontraron cajeros para ese filtro.
-                  </p>
-                ) : (
-                  <div className="mt-4 space-y-3">
-                    <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 shadow-sm">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                        Total listado
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
-                        <p className="text-sm text-(--cashier-muted)">
-                          Suma de ventas totales de{" "}
-                          <span className="font-semibold text-(--cashier-text)">
-                            {filteredPeopleBreakdown.length.toLocaleString("es-CO")}
-                          </span>{" "}
-                          cajero
-                          {filteredPeopleBreakdown.length === 1 ? "" : "s"}
-                        </p>
-                        <p className="text-lg font-bold tabular-nums text-(--cashier-text)">
-                          {formatCurrencyWithoutSixZeros(cashierListTotalSales)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                    <table className="min-w-[920px] w-full border-collapse rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft)">
-                      <thead>
-                        <tr className="border-b border-(--cashier-border) bg-(--cashier-surface)">
-                          <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">#</th>
-                          <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">Nombre</th>
-                          <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">ID</th>
-                          <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">Ventas totales</th>
-                          <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">Prom. ventas/dia</th>
-                          <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">Vta/Hr</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredPeopleBreakdown.map((person, index) => {
-                          const activeSlotsCount =
-                            (typeof person.activeSlotsCount === "number"
-                              ? person.activeSlotsCount
-                              : person.activeSlots?.length ?? person.hourlySales.length) || 0;
-                          const workedHours = (activeSlotsCount * bucketMinutes) / 60;
-                          const salesPerHour = calcVtaHr(person.totalSales, workedHours);
-                          const isExpanded = expandedPersonDailyKey === person.personKey;
-                          const dailyRows = (person.dailySales ?? []).slice().sort((a, b) =>
-                            a.date.localeCompare(b.date),
-                          );
-                          const averageDailySales =
-                            person.totalSales / Math.max(1, dailyRows.length);
-                          return (
-                            <Fragment key={person.personKey}>
-                              <tr
-                                className="cursor-pointer border-b border-(--cashier-border) transition-colors hover:bg-(--cashier-surface)"
-                                onClick={() =>
-                                  setExpandedPersonDailyKey((prev) =>
-                                    prev === person.personKey ? null : person.personKey,
-                                  )
-                                }
-                                title="Click para ver venta dia a dia"
-                              >
-                                <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-muted)">
-                                  {index + 1}
-                                </td>
-                                <td className="px-3 py-2 text-sm font-semibold text-(--cashier-text)">
-                                  {person.personName}
-                                </td>
-                                <td className="px-3 py-2 text-center text-sm text-(--cashier-muted) tabular-nums">
-                                  {person.personId || "-"}
-                                </td>
-                                <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums text-(--cashier-text)">
-                                  {formatCurrencyWithoutSixZeros(person.totalSales)}
-                                </td>
-                                <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums text-(--cashier-text)">
-                                  {formatCurrencyWithoutSixZeros(averageDailySales)}
-                                </td>
-                                <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-text)">
-                                  {formatProductivity(salesPerHour)}
-                                </td>
-                              </tr>
-                              {isExpanded && (
-                                <tr className="border-b border-(--cashier-border) last:border-b-0">
-                                  <td colSpan={6} className="bg-(--cashier-surface) px-4 py-3">
-                                    {dailyRows.length === 0 ? (
-                                      <p className="text-xs text-(--cashier-muted)">
-                                        Sin detalle diario para este filtro.
-                                      </p>
-                                    ) : (
-                                      <div className="space-y-1.5">
-                                        <div className="grid grid-cols-[1fr_170px_120px] items-center rounded-md border border-(--cashier-border) bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
-                                          <span>Fecha</span>
-                                          <span className="text-center">Venta</span>
-                                          <span className="text-right">Vta/Hr</span>
-                                        </div>
-                                        {dailyRows.map((day) => (
-                                          <div
-                                            key={`${person.personKey}-${day.date}`}
-                                            className="grid grid-cols-[1fr_170px_120px] items-center gap-3 rounded-md border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs"
-                                          >
-                                            <span className="font-medium text-(--cashier-muted)">
-                                              {formatDateLabel(
-                                                normalizeDateKeyForDisplay(day.date),
-                                                {
-                                                day: "2-digit",
-                                                month: "short",
-                                                year: "numeric",
-                                                },
-                                              )}
-                                            </span>
-                                            <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
-                                              {formatCurrencyWithoutSixZeros(day.sales)}
-                                            </span>
-                                            <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
-                                              {formatProductivity(
-                                                calcVtaHr(
-                                                  day.sales,
-                                                  ((day.activeSlotsCount ?? 0) *
-                                                    bucketMinutes) /
-                                                    60,
-                                                ),
-                                              )}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              )}
-                            </Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  </div>
-                )}
-              </div>
-                )}
-
               </div>
             </div>
           )}
