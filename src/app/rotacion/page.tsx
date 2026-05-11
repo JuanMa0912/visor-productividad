@@ -818,34 +818,50 @@ export default function RotacionPage() {
     [filterCatalog.companies],
   );
 
-  const allSedeOptions = useMemo(
-    () =>
-      filterCatalog.sedes
-        .map((option) => {
-          const displaySedeName = displayRotationSedeName(option.sedeName);
-          return {
-            value: `${option.empresa}::${option.sedeId}`,
-            label: `${formatCompanyLabel(option.empresa)} - ${displaySedeName}`,
-            empresa: option.empresa,
-            sedeId: option.sedeId,
-            sedeName: displaySedeName,
-          };
-        })
-        .filter((option) => option.sedeName.length > 0)
-        .sort((a, b) => {
-          const parseN1 = (value: string) => {
-            if (/^\d+$/.test(value)) return Number.parseInt(value, 10);
-            return Number.POSITIVE_INFINITY;
-          };
-          const aN1 = parseN1(a.value);
-          const bN1 = parseN1(b.value);
-          if (aN1 !== bN1) return aN1 - bN1;
-          if (a.value === "__sin_n1__") return 1;
-          if (b.value === "__sin_n1__") return -1;
-          return a.label.localeCompare(b.label, "es");
-        }),
-    [filterCatalog.sedes],
-  );
+  const allSedeOptions = useMemo(() => {
+    const mapped = filterCatalog.sedes
+      .map((option) => {
+        const displaySedeName = displayRotationSedeName(option.sedeName);
+        return {
+          value: `${option.empresa}::${option.sedeId}`,
+          label: `${formatCompanyLabel(option.empresa)} - ${displaySedeName}`,
+          empresa: option.empresa,
+          sedeId: option.sedeId,
+          sedeName: displaySedeName,
+        };
+      })
+      .filter((option) => option.sedeName.length > 0);
+    const dedupedByValue = new Map<
+      string,
+      (typeof mapped)[number]
+    >();
+    for (const option of mapped) {
+      const prev = dedupedByValue.get(option.value);
+      if (!prev) {
+        dedupedByValue.set(option.value, option);
+        continue;
+      }
+      const preferNew =
+        option.sedeName.length > prev.sedeName.length ||
+        (option.sedeName.length === prev.sedeName.length &&
+          option.label.length > prev.label.length);
+      if (preferNew) {
+        dedupedByValue.set(option.value, option);
+      }
+    }
+    return [...dedupedByValue.values()].sort((a, b) => {
+      const parseN1 = (value: string) => {
+        if (/^\d+$/.test(value)) return Number.parseInt(value, 10);
+        return Number.POSITIVE_INFINITY;
+      };
+      const aN1 = parseN1(a.value);
+      const bN1 = parseN1(b.value);
+      if (aN1 !== bN1) return aN1 - bN1;
+      if (a.value === "__sin_n1__") return 1;
+      if (b.value === "__sin_n1__") return -1;
+      return a.label.localeCompare(b.label, "es");
+    });
+  }, [filterCatalog.sedes]);
 
   const sedeOptions = useMemo(() => {
     const scopedOptions =

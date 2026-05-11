@@ -23,12 +23,17 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowUp,
+  Loader2,
 } from "lucide-react";
 import { cn, formatDateLabel } from "@/lib/shared/utils";
 import { escapeCsvValue, sanitizeExportText } from "@/lib/shared/export-utils";
 import { DEFAULT_LINES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
-import type { HourlyAnalysisData, HourlyPersonContribution } from "@/types";
+import type {
+  HourlyAnalysisData,
+  HourlyPersonContribution,
+  HourlyPersonSalesSlot,
+} from "@/types";
 
 type HourlyAnalysisDashboardContext = "productividad" | "jornada-extendida";
 
@@ -68,6 +73,8 @@ interface HourlyAnalysisProps {
   /** Compara ventas totales por cajero: mes anterior (completo) vs mes en curso hasta la fecha fin del filtro. */
   cashierMonthComparison?: boolean;
   onCashierMonthComparisonToggle?: () => void;
+  /** Cuando el bloque de cajeros termina de cargar tras un cambio de modo (p. ej. aviso al padre para quitar overlay). */
+  onCashierViewReady?: () => void;
 }
 
 const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -103,24 +110,91 @@ const totalPersonContributionSales = (person: HourlyPersonContribution) => {
   return person.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
 };
 
+const getContributionLaborMinutes = (
+  person: HourlyPersonContribution,
+  bucketMinutes: number,
+) => {
+  const att = person.attendanceWorkedHours;
+  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
+    return Math.round(att * 60);
+  }
+  const slots =
+    (typeof person.activeSlotsCount === "number"
+      ? person.activeSlotsCount
+      : person.hourlySales.length) || 0;
+  return slots * bucketMinutes;
+};
+
 const rankTopCashiers = (
   people: HourlyPersonContribution[] | undefined,
   limit: number,
+  bucketMinutes: number,
 ): Array<{
   personKey: string;
   personName: string;
   personId: string | null;
   sales: number;
+  hours: number;
+  vtaHr: number;
 }> => {
   if (!people?.length) return [];
-  const withSales = people.map((p) => ({
-    personKey: p.personKey,
-    personName: p.personName,
-    personId: p.personId?.trim() ? p.personId : null,
-    sales: totalPersonContributionSales(p),
-  }));
-  withSales.sort((a, b) => b.sales - a.sales);
-  return withSales.filter((r) => r.sales > 0).slice(0, limit);
+  const withMetrics = people.map((p) => {
+    const sales = totalPersonContributionSales(p);
+    const minutes = getContributionLaborMinutes(p, bucketMinutes);
+    const hours = minutes / 60;
+    const vtaHr = hours > 0 ? sales / 1_000_000 / hours : 0;
+    return {
+      personKey: p.personKey,
+      personName: p.personName,
+      personId: p.personId?.trim() ? p.personId : null,
+      sales,
+      hours,
+      vtaHr,
+    };
+  });
+  withMetrics.sort((a, b) => {
+    if (b.vtaHr !== a.vtaHr) return b.vtaHr - a.vtaHr;
+    return b.sales - a.sales;
+  });
+  return withMetrics
+    .filter((r) => r.sales > 0 && r.hours > 0)
+    .slice(0, limit);
+};
+
+const rankImproveCashiers = (
+  people: HourlyPersonContribution[] | undefined,
+  limit: number,
+  bucketMinutes: number,
+): Array<{
+  personKey: string;
+  personName: string;
+  personId: string | null;
+  sales: number;
+  hours: number;
+  vtaHr: number;
+}> => {
+  if (!people?.length) return [];
+  const withMetrics = people.map((p) => {
+    const sales = totalPersonContributionSales(p);
+    const minutes = getContributionLaborMinutes(p, bucketMinutes);
+    const hours = minutes / 60;
+    const vtaHr = hours > 0 ? sales / 1_000_000 / hours : 0;
+    return {
+      personKey: p.personKey,
+      personName: p.personName,
+      personId: p.personId?.trim() ? p.personId : null,
+      sales,
+      hours,
+      vtaHr,
+    };
+  });
+  withMetrics.sort((a, b) => {
+    if (a.vtaHr !== b.vtaHr) return a.vtaHr - b.vtaHr;
+    return b.sales - a.sales;
+  });
+  return withMetrics
+    .filter((r) => r.sales > 0 && r.hours > 0)
+    .slice(0, limit);
 };
 
 /** Mes calendario anterior (completo) vs mes que contiene `anchorISO`, desde el dia 1 hasta `anchorISO` (o fin de mes si es menor). */
@@ -236,6 +310,9 @@ const normalizeDateKeyForDisplay = (raw: string) => {
   return value;
 };
 
+const cashierHourDetailCacheKey = (personKey: string, isoDate: string) =>
+  `${personKey}|||${isoDate}`;
+
 const loadExcelJs = () => import("exceljs");
 
 const formatHoursBase60 = (value: number) => {
@@ -249,6 +326,19 @@ const formatHoursBase60 = (value: number) => {
     minutes = 0;
   }
   return `${sign}${hours}.${String(minutes).padStart(2, "0")}`;
+};
+
+/** Horas desde minutos totales; maximo 2 decimales (tabla cajeros). */
+const formatTotalLaborMinutesLabel = (totalMinutes: number) => {
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return "0,00h";
+  const hoursVal = totalMinutes / 60;
+  const rounded = Math.round(hoursVal * 100) / 100;
+  const str = rounded.toLocaleString("es-CO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: true,
+  });
+  return `${str}h`;
 };
 
 const decimalHoursToMinutes = (value: number) => {
@@ -283,6 +373,33 @@ const parseBase60HoursInputToMinutes = (value: string): number | null => {
 
 const calcVtaHr = (sales: number, laborHours: number) =>
   laborHours > 0 ? sales / 1_000_000 / laborHours : 0;
+
+/** Minutos laborales: prioriza `asistencia_horas` si el API cruzó cedula/nombre; si no, franjas con venta. */
+const getCashierLaborMinutes = (
+  person: HourlyPersonContribution,
+  activeSlotsCount: number,
+  bucketMinutes: number,
+) => {
+  const att = person.attendanceWorkedHours;
+  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
+    return Math.round(att * 60);
+  }
+  return activeSlotsCount * bucketMinutes;
+};
+
+const cashierLaborHoursSourceTitle = (person: HourlyPersonContribution) => {
+  const m = person.attendanceMatchMode;
+  if (m === "cedula") {
+    return "Horas desde asistencia (total_laborado_horas), cruce por cedula.";
+  }
+  if (m === "id_texto") {
+    return "Horas desde asistencia, cruce por identificador (no numerico o corto).";
+  }
+  if (m === "nombre") {
+    return "Horas desde asistencia, cruce por nombre unico en ventas y en asistencia con una sola cedula.";
+  }
+  return "Horas estimadas por franjas con venta; sin match fiable en asistencia.";
+};
 
 const parseTimeToMinute = (value: string) => {
   const [hours, minutes] = value.split(":").map(Number);
@@ -552,6 +669,7 @@ export const HourlyAnalysis = ({
   cashierDateRange,
   cashierMonthComparison = false,
   onCashierMonthComparisonToggle,
+  onCashierViewReady,
 }: HourlyAnalysisProps) => {
   const enabledSections = useMemo(() => {
     const unique = Array.from(new Set(sections));
@@ -650,6 +768,19 @@ export const HourlyAnalysis = ({
   const [expandedPersonDailyKey, setExpandedPersonDailyKey] = useState<
     string | null
   >(null);
+  const [cashierHourDetailSelection, setCashierHourDetailSelection] =
+    useState<{ personKey: string; isoDate: string } | null>(null);
+  const [cashierDayHourlySlots, setCashierDayHourlySlots] = useState<
+    Record<string, HourlyPersonSalesSlot[]>
+  >({});
+  const [cashierDayHourlyError, setCashierDayHourlyError] = useState<
+    Record<string, string>
+  >({});
+  const [cashierDayHourlyLoadingKey, setCashierDayHourlyLoadingKey] = useState<
+    string | null
+  >(null);
+  const cashierHourDetailAbortRef = useRef<AbortController | null>(null);
+
   const [cashierMonthPrevData, setCashierMonthPrevData] =
     useState<HourlyAnalysisData | null>(null);
   const [cashierMonthCurrData, setCashierMonthCurrData] =
@@ -658,8 +789,14 @@ export const HourlyAnalysis = ({
   const [cashierMonthError, setCashierMonthError] = useState<string | null>(
     null,
   );
+  const [cashierMonthShowImprove, setCashierMonthShowImprove] = useState(false);
   const [personBreakdownView, setPersonBreakdownView] =
     useState<PersonBreakdownView>(defaultPersonBreakdownView);
+
+  useEffect(() => {
+    // Al salir del modo comparativo de meses, volvemos a mostrar el Top 5 normal.
+    if (!cashierMonthComparison) setCashierMonthShowImprove(false);
+  }, [cashierMonthComparison]);
   const topSectionRef = useRef<HTMLDivElement | null>(null);
   const contributionSectionRef = useRef<HTMLDivElement | null>(null);
   const [showFloatingContributionBack, setShowFloatingContributionBack] =
@@ -672,17 +809,17 @@ export const HourlyAnalysis = ({
   const bucketOptions = useMemo(() => [60, 30, 20, 15, 10], []);
   // Modo estricto desactivado: usuarios con rol Alex pueden ajustar filtros libremente.
   const isAlexStrictMode = false;
-  const availableSedeNameSet = useMemo(
-    () => new Set(availableSedes.map((sede) => sede.name)),
-    [availableSedes],
-  );
-  const selectedSedes = useMemo(
-    () =>
-      selectedSedesState.filter((sedeName) =>
-        availableSedeNameSet.has(sedeName),
-      ),
-    [availableSedeNameSet, selectedSedesState],
-  );
+  /** Nombres de sede seleccionadas (el filtro global usa id; los chips del mapa usan name). */
+  const selectedSedes = useMemo(() => {
+    const nameSet = new Set<string>();
+    for (const token of selectedSedesState) {
+      const match = availableSedes.find(
+        (s) => s.name === token || s.id === token,
+      );
+      if (match) nameSet.add(match.name);
+    }
+    return Array.from(nameSet);
+  }, [availableSedes, selectedSedesState]);
   const setSelectedSedes = setSelectedSedesState;
   const hourlySection = enabledSections.includes(hourlySectionState)
     ? hourlySectionState
@@ -841,6 +978,27 @@ export const HourlyAnalysis = ({
     Boolean(cashierMonthRequestKey) &&
     cashierMonthResultKey !== cashierMonthRequestKey;
   const isLoading = primaryHourlyLoading || cashierMonthCompareLoading;
+
+  useEffect(() => {
+    if (!onCashierViewReady || !showPersonBreakdown) return;
+    if (cashierMonthComparison) {
+      if (!cashierMonthRequestKey) return;
+      if (cashierMonthCompareLoading || primaryHourlyLoading) return;
+    } else {
+      if (!hourlyRequestKey) return;
+      if (primaryHourlyLoading) return;
+    }
+    onCashierViewReady();
+  }, [
+    cashierMonthCompareLoading,
+    cashierMonthComparison,
+    cashierMonthRequestKey,
+    hourlyRequestKey,
+    onCashierViewReady,
+    primaryHourlyLoading,
+    showPersonBreakdown,
+  ]);
+
   const activeError =
     hourlyRequestKey && hourlyResultKey === hourlyRequestKey ? error : null;
   const activeHourlyData =
@@ -1260,6 +1418,83 @@ export const HourlyAnalysis = ({
     bucketMinutes,
     selectedSedes,
     dashboardContext,
+  ]);
+
+  useEffect(() => {
+    if (!cashierHourDetailSelection) return;
+    if (!showPersonBreakdown || cashierMonthComparison) return;
+    if (expandedPersonDailyKey !== cashierHourDetailSelection.personKey)
+      return;
+    const { personKey, isoDate } = cashierHourDetailSelection;
+    const ck = cashierHourDetailCacheKey(personKey, isoDate);
+    if (!isCashierMultiDayRange) return;
+    if (Object.hasOwn(cashierDayHourlySlots, ck)) return;
+
+    cashierHourDetailAbortRef.current?.abort();
+    const ac = new AbortController();
+    cashierHourDetailAbortRef.current = ac;
+    queueMicrotask(() => {
+      if (ac.signal.aborted) return;
+      setCashierDayHourlyLoadingKey(ck);
+      setCashierDayHourlyError((prev) => {
+        const next = { ...prev };
+        delete next[ck];
+        return next;
+      });
+    });
+
+    void fetchHourly(
+      isoDate,
+      effectiveSelectedLine,
+      bucketMinutes,
+      selectedSedes,
+      true,
+      dashboardContext,
+      false,
+      undefined,
+      undefined,
+      ac.signal,
+    )
+      .then((data) => {
+        if (ac.signal.aborted) return;
+        const contrib = data.personContributions?.find(
+          (row) => row.personKey === personKey,
+        );
+        const slots =
+          contrib?.hourlySales
+            ?.filter((s) => s.sales > 0)
+            .sort((a, b) => a.slotStartMinute - b.slotStartMinute) ?? [];
+        setCashierDayHourlySlots((prev) => ({ ...prev, [ck]: slots }));
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setCashierDayHourlyError((prev) => ({
+          ...prev,
+          [ck]:
+            err instanceof Error
+              ? err.message
+              : "No se pudieron cargar ventas por hora.",
+        }));
+      })
+      .finally(() => {
+        setCashierDayHourlyLoadingKey((k) => (k === ck ? null : k));
+      });
+
+    return () => {
+      ac.abort();
+      setCashierDayHourlyLoadingKey((k) => (k === ck ? null : k));
+    };
+  }, [
+    cashierDayHourlySlots,
+    cashierHourDetailSelection,
+    cashierMonthComparison,
+    dashboardContext,
+    effectiveSelectedLine,
+    expandedPersonDailyKey,
+    isCashierMultiDayRange,
+    bucketMinutes,
+    selectedSedes,
+    showPersonBreakdown,
   ]);
 
   useEffect(() => {
@@ -1751,8 +1986,10 @@ export const HourlyAnalysis = ({
         (typeof b.activeSlotsCount === "number"
           ? b.activeSlotsCount
           : (b.activeSlots?.length ?? b.hourlySales.length)) || 0;
-      const aWorkedHours = (aActiveSlots * bucketMinutes) / 60;
-      const bWorkedHours = (bActiveSlots * bucketMinutes) / 60;
+      const aWorkedHours =
+        getCashierLaborMinutes(a, aActiveSlots, bucketMinutes) / 60;
+      const bWorkedHours =
+        getCashierLaborMinutes(b, bActiveSlots, bucketMinutes) / 60;
       const aVtaHr = calcVtaHr(a.totalSales, aWorkedHours);
       const bVtaHr = calcVtaHr(b.totalSales, bWorkedHours);
 
@@ -1808,16 +2045,36 @@ export const HourlyAnalysis = ({
     return rankTopCashiers(
       cashierMonthPrevData?.personContributions,
       CASHIER_MONTH_TOP_N,
+      bucketMinutes,
     );
-  }, [cashierMonthCompareReady, cashierMonthPrevData]);
+  }, [bucketMinutes, cashierMonthCompareReady, cashierMonthPrevData]);
 
   const cashierTop5CurrentMonth = useMemo(() => {
     if (!cashierMonthCompareReady) return [];
     return rankTopCashiers(
       cashierMonthCurrData?.personContributions,
       CASHIER_MONTH_TOP_N,
+      bucketMinutes,
     );
-  }, [cashierMonthCompareReady, cashierMonthCurrData]);
+  }, [bucketMinutes, cashierMonthCompareReady, cashierMonthCurrData]);
+
+  const cashierImprove5PreviousMonth = useMemo(() => {
+    if (!cashierMonthCompareReady) return [];
+    return rankImproveCashiers(
+      cashierMonthPrevData?.personContributions,
+      CASHIER_MONTH_TOP_N,
+      bucketMinutes,
+    );
+  }, [bucketMinutes, cashierMonthCompareReady, cashierMonthPrevData]);
+
+  const cashierImprove5CurrentMonth = useMemo(() => {
+    if (!cashierMonthCompareReady) return [];
+    return rankImproveCashiers(
+      cashierMonthCurrData?.personContributions,
+      CASHIER_MONTH_TOP_N,
+      bucketMinutes,
+    );
+  }, [bucketMinutes, cashierMonthCompareReady, cashierMonthCurrData]);
 
   const cashierTop5SharedKeys = useMemo(() => {
     const prevKeys = new Set(cashierTop5PreviousMonth.map((r) => r.personKey));
@@ -1827,14 +2084,85 @@ export const HourlyAnalysis = ({
     }
     return shared;
   }, [cashierTop5CurrentMonth, cashierTop5PreviousMonth]);
-  const cashierTop5PreviousTotalSales = useMemo(
-    () => cashierTop5PreviousMonth.reduce((sum, row) => sum + row.sales, 0),
-    [cashierTop5PreviousMonth],
-  );
-  const cashierTop5CurrentTotalSales = useMemo(
-    () => cashierTop5CurrentMonth.reduce((sum, row) => sum + row.sales, 0),
-    [cashierTop5CurrentMonth],
-  );
+
+  const cashierImprove5SharedKeys = useMemo(() => {
+    const prevKeys = new Set(
+      cashierImprove5PreviousMonth.map((r) => r.personKey),
+    );
+    const shared = new Set<string>();
+    for (const row of cashierImprove5CurrentMonth) {
+      if (prevKeys.has(row.personKey)) shared.add(row.personKey);
+    }
+    return shared;
+  }, [cashierImprove5CurrentMonth, cashierImprove5PreviousMonth]);
+  const cashierTop5PreviousTotalVtaHr = useMemo(() => {
+    const sumSales = cashierTop5PreviousMonth.reduce(
+      (sum, row) => sum + row.sales,
+      0,
+    );
+    const sumHours = cashierTop5PreviousMonth.reduce(
+      (sum, row) => sum + row.hours,
+      0,
+    );
+    return sumHours > 0 ? calcVtaHr(sumSales, sumHours) : 0;
+  }, [cashierTop5PreviousMonth]);
+
+  const cashierTop5CurrentTotalVtaHr = useMemo(() => {
+    const sumSales = cashierTop5CurrentMonth.reduce(
+      (sum, row) => sum + row.sales,
+      0,
+    );
+    const sumHours = cashierTop5CurrentMonth.reduce(
+      (sum, row) => sum + row.hours,
+      0,
+    );
+    return sumHours > 0 ? calcVtaHr(sumSales, sumHours) : 0;
+  }, [cashierTop5CurrentMonth]);
+
+  const cashierImprove5PreviousTotalVtaHr = useMemo(() => {
+    const sumSales = cashierImprove5PreviousMonth.reduce(
+      (sum, row) => sum + row.sales,
+      0,
+    );
+    const sumHours = cashierImprove5PreviousMonth.reduce(
+      (sum, row) => sum + row.hours,
+      0,
+    );
+    return sumHours > 0 ? calcVtaHr(sumSales, sumHours) : 0;
+  }, [cashierImprove5PreviousMonth]);
+
+  const cashierImprove5CurrentTotalVtaHr = useMemo(() => {
+    const sumSales = cashierImprove5CurrentMonth.reduce(
+      (sum, row) => sum + row.sales,
+      0,
+    );
+    const sumHours = cashierImprove5CurrentMonth.reduce(
+      (sum, row) => sum + row.hours,
+      0,
+    );
+    return sumHours > 0 ? calcVtaHr(sumSales, sumHours) : 0;
+  }, [cashierImprove5CurrentMonth]);
+
+  const cashierMonthPrevRows = cashierMonthShowImprove
+    ? cashierImprove5PreviousMonth
+    : cashierTop5PreviousMonth;
+  const cashierMonthCurrRows = cashierMonthShowImprove
+    ? cashierImprove5CurrentMonth
+    : cashierTop5CurrentMonth;
+  const cashierMonthSharedKeys = cashierMonthShowImprove
+    ? cashierImprove5SharedKeys
+    : cashierTop5SharedKeys;
+
+  const cashierMonthPrevTotalVtaHr = cashierMonthShowImprove
+    ? cashierImprove5PreviousTotalVtaHr
+    : cashierTop5PreviousTotalVtaHr;
+  const cashierMonthCurrTotalVtaHr = cashierMonthShowImprove
+    ? cashierImprove5CurrentTotalVtaHr
+    : cashierTop5CurrentTotalVtaHr;
+
+  const cashierMonthRankLabel = cashierMonthShowImprove
+    ? `5 a mejorar`
+    : `top ${CASHIER_MONTH_TOP_N}`;
 
   const salesByHourCards = useMemo(() => {
     if (personBreakdownView !== "franjas") return [];
@@ -3757,7 +4085,7 @@ export const HourlyAnalysis = ({
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fuchsia-900">
-                                Comparativo top {CASHIER_MONTH_TOP_N}
+                                Comparativo {cashierMonthRankLabel}
                               </p>
                               <p className="mt-1 text-sm text-slate-700">
                                 Mes anterior:{" "}
@@ -3781,31 +4109,43 @@ export const HourlyAnalysis = ({
                                 Volver a periodo del filtro
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCashierMonthShowImprove((v) => !v)
+                              }
+                              aria-pressed={cashierMonthShowImprove}
+                              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-fuchsia-400/80 bg-white px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-fuchsia-950 shadow-sm ring-1 ring-fuchsia-900/10 transition-all hover:bg-fuchsia-50 hover:shadow-md"
+                            >
+                              {cashierMonthShowImprove
+                                ? `Ver ${CASHIER_MONTH_TOP_N} top`
+                                : "Ver 5 a mejorar"}
+                            </button>
                           </div>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-3">
                           <div className="rounded-xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
                             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
-                              Coinciden en ambos top
+                              Coinciden en ambos {cashierMonthRankLabel}
                             </p>
                             <p className="mt-1 text-lg font-bold tabular-nums text-(--cashier-text)">
-                              {cashierTop5SharedKeys.size}
+                              {cashierMonthSharedKeys.size}
                             </p>
                           </div>
                           <div className="rounded-xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
                             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
-                              Venta top {CASHIER_MONTH_TOP_N} mes anterior
+                              VTA/Hr {cashierMonthRankLabel} mes anterior
                             </p>
                             <p className="mt-1 text-lg font-bold tabular-nums text-(--cashier-text)">
-                              {formatCurrency(cashierTop5PreviousTotalSales)}
+                              {formatProductivity(cashierMonthPrevTotalVtaHr)}
                             </p>
                           </div>
                           <div className="rounded-xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
                             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
-                              Venta top {CASHIER_MONTH_TOP_N} mes en curso
+                              VTA/Hr {cashierMonthRankLabel} mes en curso
                             </p>
                             <p className="mt-1 text-lg font-bold tabular-nums text-(--cashier-text)">
-                              {formatCurrency(cashierTop5CurrentTotalSales)}
+                              {formatProductivity(cashierMonthCurrTotalVtaHr)}
                             </p>
                           </div>
                         </div>
@@ -3815,25 +4155,25 @@ export const HourlyAnalysis = ({
                     {cashierMonthComparison ? (
                       cashierMonthCompareLoading ? (
                         <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
-                          Cargando los top {CASHIER_MONTH_TOP_N} de cada mes…
+                          Cargando los {cashierMonthRankLabel} de cada mes…
                         </p>
-                      ) : cashierTop5PreviousMonth.length === 0 &&
-                        cashierTop5CurrentMonth.length === 0 ? (
+                      ) : cashierMonthPrevRows.length === 0 &&
+                        cashierMonthCurrRows.length === 0 ? (
                         <p className="mt-4 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-6 text-center text-sm text-(--cashier-muted)">
                           No hay ventas de cajas en alguno de los dos periodos
                           para este filtro.
                         </p>
                       ) : (
                         <div className="mt-4 space-y-4">
-                          {cashierTop5SharedKeys.size > 0 && (
+                          {cashierMonthSharedKeys.size > 0 && (
                             <p className="rounded-2xl border border-emerald-200/80 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
                               <span className="font-semibold">
-                                Cajeros que se mantienen en ambos top{" "}
-                                {CASHIER_MONTH_TOP_N}:
+                                Cajeros que se mantienen en ambos{" "}
+                                {cashierMonthRankLabel}:
                               </span>{" "}
-                              {cashierTop5CurrentMonth
+                              {cashierMonthCurrRows
                                 .filter((r) =>
-                                  cashierTop5SharedKeys.has(r.personKey),
+                                  cashierMonthSharedKeys.has(r.personKey),
                                 )
                                 .map((r) => r.personName)
                                 .sort((a, b) => a.localeCompare(b, "es"))
@@ -3844,14 +4184,14 @@ export const HourlyAnalysis = ({
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                                Mes anterior (top {CASHIER_MONTH_TOP_N})
+                                Mes anterior ({cashierMonthRankLabel})
                               </p>
                               <p className="mt-1 text-xs text-(--cashier-muted)">
                                 {cashierMonthMeta?.labelPrevious}
                               </p>
                               <ul className="mt-3 space-y-2">
-                                {cashierTop5PreviousMonth.map((row, idx) => {
-                                  const inBoth = cashierTop5SharedKeys.has(
+                                {cashierMonthPrevRows.map((row, idx) => {
+                                  const inBoth = cashierMonthSharedKeys.has(
                                     row.personKey,
                                   );
                                   return (
@@ -3885,7 +4225,7 @@ export const HourlyAnalysis = ({
                                         </span>
                                       </span>
                                       <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
-                                        {formatCurrency(row.sales)}
+                                        {formatProductivity(row.vtaHr)}
                                       </span>
                                     </li>
                                   );
@@ -3894,14 +4234,14 @@ export const HourlyAnalysis = ({
                             </div>
                             <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) p-4">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                                Mes en curso (top {CASHIER_MONTH_TOP_N})
+                                Mes en curso ({cashierMonthRankLabel})
                               </p>
                               <p className="mt-1 text-xs text-(--cashier-muted)">
                                 {cashierMonthMeta?.labelCurrent}
                               </p>
                               <ul className="mt-3 space-y-2">
-                                {cashierTop5CurrentMonth.map((row, idx) => {
-                                  const inBoth = cashierTop5SharedKeys.has(
+                                {cashierMonthCurrRows.map((row, idx) => {
+                                  const inBoth = cashierMonthSharedKeys.has(
                                     row.personKey,
                                   );
                                   return (
@@ -3935,7 +4275,7 @@ export const HourlyAnalysis = ({
                                         </span>
                                       </span>
                                       <span className="shrink-0 tabular-nums font-semibold text-(--cashier-text)">
-                                        {formatCurrency(row.sales)}
+                                        {formatProductivity(row.vtaHr)}
                                       </span>
                                     </li>
                                   );
@@ -3986,6 +4326,9 @@ export const HourlyAnalysis = ({
                                 <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
                                   ID
                                 </th>
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                  Cargo
+                                </th>
                                 <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
                                   <button
                                     type="button"
@@ -4007,6 +4350,7 @@ export const HourlyAnalysis = ({
                                 <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
                                   <button
                                     type="button"
+                                    title="Prioridad: cedula (solo digitos) > identificador texto > nombre solo si es unico en ventas y en asistencia con una sola cedula. Si no hay match, franjas con venta."
                                     onClick={() => handleCashierSortBy("workedHours")}
                                     className="inline-flex items-center gap-1 transition-colors hover:text-(--cashier-text)"
                                   >
@@ -4049,8 +4393,12 @@ export const HourlyAnalysis = ({
                                     ? person.activeSlotsCount
                                     : (person.activeSlots?.length ??
                                       person.hourlySales.length)) || 0;
-                                const workedHours =
-                                  (activeSlotsCount * bucketMinutes) / 60;
+                                const totalLaborMinutes = getCashierLaborMinutes(
+                                  person,
+                                  activeSlotsCount,
+                                  bucketMinutes,
+                                );
+                                const workedHours = totalLaborMinutes / 60;
                                 const salesPerHour = calcVtaHr(
                                   person.totalSales,
                                   workedHours,
@@ -4064,13 +4412,16 @@ export const HourlyAnalysis = ({
                                   <Fragment key={person.personKey}>
                                     <tr
                                       className="cursor-pointer border-b border-(--cashier-border) transition-colors hover:bg-(--cashier-surface)"
-                                      onClick={() =>
+                                      onClick={() => {
+                                        cashierHourDetailAbortRef.current?.abort();
+                                        setCashierHourDetailSelection(null);
+                                        setCashierDayHourlyLoadingKey(null);
                                         setExpandedPersonDailyKey((prev) =>
                                           prev === person.personKey
                                             ? null
                                             : person.personKey,
-                                        )
-                                      }
+                                        );
+                                      }}
                                       title="Click para ver venta dia a dia"
                                     >
                                       <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-muted)">
@@ -4082,13 +4433,21 @@ export const HourlyAnalysis = ({
                                       <td className="px-3 py-2 text-center text-sm text-(--cashier-muted) tabular-nums">
                                         {person.personId || "-"}
                                       </td>
+                                      <td className="max-w-[200px] px-3 py-2 text-left text-xs font-medium leading-snug wrap-break-word text-(--cashier-text)">
+                                        {person.personCargo?.trim() || "—"}
+                                      </td>
                                       <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums text-(--cashier-text)">
                                         {formatCurrencyMillionsOneDecimal(
                                           person.totalSales,
                                         )}
                                       </td>
-                                      <td className="px-3 py-2 text-center text-sm font-semibold tabular-nums text-(--cashier-text)">
-                                        {workedHours.toFixed(1)}h
+                                      <td
+                                        className="px-3 py-2 text-center text-sm font-semibold tabular-nums text-(--cashier-text)"
+                                        title={cashierLaborHoursSourceTitle(person)}
+                                      >
+                                        {formatTotalLaborMinutesLabel(
+                                          totalLaborMinutes,
+                                        )}
                                       </td>
                                       <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-text)">
                                         {formatProductivity(salesPerHour)}
@@ -4097,18 +4456,13 @@ export const HourlyAnalysis = ({
                                     {isExpanded && (
                                       <tr className="border-b border-(--cashier-border) last:border-b-0">
                                         <td
-                                          colSpan={6}
+                                          colSpan={7}
                                           className="bg-(--cashier-surface) px-4 py-3"
                                         >
-                                          {dailyRows.length === 0 ? (
-                                            <p className="text-xs text-(--cashier-muted)">
-                                              Sin detalle diario para este
-                                              filtro.
-                                            </p>
-                                          ) : (
-                                            <div className="space-y-1.5">
-                                              <div className="grid grid-cols-[1fr_170px_120px] items-center rounded-md border border-(--cashier-border) bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
-                                                <span>Fecha</span>
+                                          {!isCashierMultiDayRange ? (
+                                            <div className="space-y-1">
+                                              <div className="grid grid-cols-[minmax(0,1fr)_120px_100px] items-center px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                                                <span>Franja</span>
                                                 <span className="text-center">
                                                   Venta
                                                 </span>
@@ -4116,41 +4470,260 @@ export const HourlyAnalysis = ({
                                                   Vta/Hr
                                                 </span>
                                               </div>
-                                              {dailyRows.map((day) => (
-                                                <div
-                                                  key={`${person.personKey}-${day.date}`}
-                                                  className="grid grid-cols-[1fr_170px_120px] items-center gap-3 rounded-md border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs"
-                                                >
-                                                  <span className="font-medium text-(--cashier-muted)">
-                                                    {formatDateLabel(
-                                                      normalizeDateKeyForDisplay(
-                                                        day.date,
-                                                      ),
-                                                      {
-                                                        day: "2-digit",
-                                                        month: "short",
-                                                        year: "numeric",
-                                                      },
+                                              {[...person.hourlySales]
+                                                .filter(
+                                                  (slot) =>
+                                                    slot.sales > 0 &&
+                                                    slot.slotStartMinute >=
+                                                      minuteRangeStart &&
+                                                    slot.slotStartMinute <=
+                                                      minuteRangeEnd,
+                                                )
+                                                .sort(
+                                                  (a, b) =>
+                                                    a.slotStartMinute -
+                                                    b.slotStartMinute,
+                                                )
+                                                .map((slot) => (
+                                                  <div
+                                                    key={`${person.personKey}-single-${slot.slotStartMinute}`}
+                                                    className="grid grid-cols-[minmax(0,1fr)_120px_100px] items-center gap-2 rounded border border-(--cashier-border)/60 bg-white/80 px-2 py-1.5 text-[11px]"
+                                                  >
+                                                    <span className="font-medium text-(--cashier-muted)">
+                                                      {slot.label}
+                                                    </span>
+                                                    <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
+                                                      {formatCurrencyWithoutSixZeros(
+                                                        slot.sales,
+                                                      )}
+                                                    </span>
+                                                    <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                      {formatProductivity(
+                                                        calcVtaHr(
+                                                          slot.sales,
+                                                          bucketMinutes / 60,
+                                                        ),
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                ))}
+                                            </div>
+                                          ) : dailyRows.length === 0 ? (
+                                            <p className="text-xs text-(--cashier-muted)">
+                                              Sin detalle diario para este
+                                              filtro.
+                                            </p>
+                                          ) : (
+                                            <div className="space-y-1.5">
+                                              <div className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px] items-center rounded-md border border-(--cashier-border) bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                                                <span className="text-left">Fecha</span>
+                                                <span className="text-right">
+                                                  Venta
+                                                </span>
+                                                <span className="text-right">
+                                                  Horas
+                                                </span>
+                                                <span className="text-right">
+                                                  Vta/Hr
+                                                </span>
+                                              </div>
+                                              {dailyRows.map((day) => {
+                                                const iso = normalizeDateKeyForDisplay(
+                                                  day.date,
+                                                );
+                                                const dayLaborMinutes =
+                                                  (day.activeSlotsCount ?? 0) *
+                                                  bucketMinutes;
+                                                const hourCk =
+                                                  cashierHourDetailCacheKey(
+                                                    person.personKey,
+                                                    iso,
+                                                  );
+                                                const hourOpen =
+                                                  expandedPersonDailyKey ===
+                                                    person.personKey &&
+                                                  cashierHourDetailSelection?.personKey ===
+                                                    person.personKey &&
+                                                  cashierHourDetailSelection?.isoDate ===
+                                                    iso;
+                                                const hourlySlotsForDay =
+                                                  hourOpen && !isCashierMultiDayRange
+                                                    ? [...person.hourlySales]
+                                                        .filter(
+                                                          (slot) =>
+                                                            slot.sales > 0,
+                                                        )
+                                                        .sort(
+                                                          (a, b) =>
+                                                            a.slotStartMinute -
+                                                            b.slotStartMinute,
+                                                        )
+                                                    : hourOpen &&
+                                                        isCashierMultiDayRange
+                                                      ? cashierDayHourlySlots[
+                                                          hourCk
+                                                        ] ?? []
+                                                      : [];
+                                                const hourSlotsLoading =
+                                                  hourOpen &&
+                                                  isCashierMultiDayRange &&
+                                                  cashierDayHourlyLoadingKey ===
+                                                    hourCk;
+                                                const hourSlotsError =
+                                                  hourOpen &&
+                                                  isCashierMultiDayRange
+                                                    ? cashierDayHourlyError[
+                                                        hourCk
+                                                      ]
+                                                    : undefined;
+                                                return (
+                                                  <Fragment
+                                                    key={`${person.personKey}-${day.date}-day`}
+                                                  >
+                                                    <button
+                                                      type="button"
+                                                      title="Ver ventas por franja horaria del dia"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const nextIso =
+                                                          normalizeDateKeyForDisplay(
+                                                            day.date,
+                                                          );
+                                                        let closing = false;
+                                                        setCashierHourDetailSelection(
+                                                          (prev) => {
+                                                            if (
+                                                              prev?.personKey ===
+                                                                person.personKey &&
+                                                              prev?.isoDate ===
+                                                                nextIso
+                                                            ) {
+                                                              closing = true;
+                                                              return null;
+                                                            }
+                                                            return {
+                                                              personKey:
+                                                                person.personKey,
+                                                              isoDate: nextIso,
+                                                            };
+                                                          },
+                                                        );
+                                                        if (closing) {
+                                                          cashierHourDetailAbortRef.current?.abort();
+                                                          setCashierDayHourlyLoadingKey(
+                                                            null,
+                                                          );
+                                                        }
+                                                      }}
+                                                      className={cn(
+                                                        "flex w-full items-center gap-2 rounded-md border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-left text-xs transition-colors hover:bg-white",
+                                                        hourOpen &&
+                                                          "border-(--cashier-brand)/40 bg-white ring-1 ring-(--cashier-brand-soft)",
+                                                      )}
+                                                    >
+                                                      <ChevronDown
+                                                        aria-hidden
+                                                        className={cn(
+                                                          "h-4 w-4 shrink-0 text-(--cashier-muted) transition-transform",
+                                                          hourOpen &&
+                                                            "rotate-180 text-(--cashier-brand)",
+                                                        )}
+                                                      />
+                                                      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_90px_90px_90px] items-center gap-3">
+                                                        <span className="font-medium text-(--cashier-muted) text-left">
+                                                          {formatDateLabel(iso, {
+                                                            day: "2-digit",
+                                                            month: "short",
+                                                            year: "numeric",
+                                                          })}
+                                                        </span>
+                                                        <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                          {formatCurrencyWithoutSixZeros(
+                                                            day.sales,
+                                                          )}
+                                                        </span>
+                                                        <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                          {formatTotalLaborMinutesLabel(
+                                                            dayLaborMinutes,
+                                                          )}
+                                                        </span>
+                                                        <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                          {formatProductivity(
+                                                            calcVtaHr(
+                                                              day.sales,
+                                                              ((day.activeSlotsCount ??
+                                                                0) *
+                                                                bucketMinutes) /
+                                                                60,
+                                                            ),
+                                                          )}
+                                                        </span>
+                                                      </div>
+                                                    </button>
+                                                    {hourOpen && (
+                                                      <div className="ml-6 space-y-1 border-l border-dashed border-(--cashier-border) pl-4">
+                                                        <div className="grid grid-cols-[minmax(0,1fr)_100px_80px] items-center px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                                                          <span>Franja</span>
+                                                          <span className="text-center">
+                                                            Venta
+                                                          </span>
+                                                          <span className="text-right">
+                                                            Vta/Hr
+                                                          </span>
+                                                        </div>
+                                                        {hourSlotsLoading && (
+                                                          <div className="flex items-center gap-2 px-2 py-2 text-xs text-(--cashier-muted)">
+                                                            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                                            Cargando horas...
+                                                          </div>
+                                                        )}
+                                                        {hourSlotsError && (
+                                                          <p className="px-2 text-xs text-red-700">
+                                                            {hourSlotsError}
+                                                          </p>
+                                                        )}
+                                                        {!hourSlotsLoading &&
+                                                          !hourSlotsError &&
+                                                          hourlySlotsForDay.length ===
+                                                            0 && (
+                                                            <p className="px-2 py-1 text-xs text-(--cashier-muted)">
+                                                              Sin ventas por franja
+                                                              en este dia (o fuera
+                                                              del filtro de horas).
+                                                            </p>
+                                                          )}
+                                                        {!hourSlotsLoading &&
+                                                          hourlySlotsForDay.map(
+                                                            (slot) => (
+                                                              <div
+                                                                key={`${hourCk}-${slot.slotStartMinute}`}
+                                                                className="grid grid-cols-[minmax(0,1fr)_100px_80px] items-center gap-2 rounded border border-(--cashier-border)/60 bg-white/80 px-2 py-1.5 text-[11px]"
+                                                              >
+                                                                <span className="font-medium text-(--cashier-muted)">
+                                                                  {slot.label}
+                                                                </span>
+                                                                <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
+                                                                  {formatCurrencyWithoutSixZeros(
+                                                                    slot.sales,
+                                                                  )}
+                                                                </span>
+                                                                <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                                  {formatProductivity(
+                                                                    calcVtaHr(
+                                                                      slot.sales,
+                                                                      bucketMinutes /
+                                                                        60,
+                                                                    ),
+                                                                  )}
+                                                                </span>
+                                                              </div>
+                                                            ),
+                                                          )}
+                                                      </div>
                                                     )}
-                                                  </span>
-                                                  <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
-                                                    {formatCurrencyWithoutSixZeros(
-                                                      day.sales,
-                                                    )}
-                                                  </span>
-                                                  <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
-                                                    {formatProductivity(
-                                                      calcVtaHr(
-                                                        day.sales,
-                                                        ((day.activeSlotsCount ??
-                                                          0) *
-                                                          bucketMinutes) /
-                                                          60,
-                                                      ),
-                                                    )}
-                                                  </span>
-                                                </div>
-                                              ))}
+                                                  </Fragment>
+                                                );
+                                              })}
                                             </div>
                                           )}
                                         </td>

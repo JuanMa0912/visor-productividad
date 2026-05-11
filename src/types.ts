@@ -38,6 +38,8 @@ export interface HourSlot {
   lines: HourlyLineSales[];
 }
 
+export type CashierAttendanceMatchMode = "cedula" | "id_texto" | "nombre";
+
 export interface HourlyPersonSalesSlot {
   slotStartMinute: number;
   slotEndMinute: number;
@@ -56,6 +58,15 @@ export interface HourlyPersonContribution {
   periodTotalSales?: number;
   /** Cantidad de franjas con venta en el periodo (solo rango de fechas). */
   activeSlotsCount?: number;
+  /**
+   * Horas laboradas desde `asistencia_horas.total_laborado_horas` (depto cajas),
+   * cuando hubo match por cedula o nombre con el cajero de ventas.
+   */
+  attendanceWorkedHours?: number | null;
+  /** Como se cruzo con asistencia; null si no hubo match o no aplica. */
+  attendanceMatchMode?: CashierAttendanceMatchMode | null;
+  /** Cargo en asistencia cuando hubo match de horas con asistencia_horas. */
+  personCargo?: string | null;
   /** Ventas por fecha para exploracion dia a dia. */
   dailySales?: Array<{
     date: string;

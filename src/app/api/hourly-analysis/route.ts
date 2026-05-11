@@ -415,6 +415,38 @@ const parseHoursValue = (value: string | number): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+/** Clave laxa para cruzar cedula / nombre entre ventas_cajas y asistencia_horas. */
+const normalizePersonMatchKey = (raw: string | null | undefined) =>
+  (raw ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[\s._\-]+/g, "")
+    .trim();
+
+/** Solo digitos; ceros a la izquierda no cambian la identidad de la cedula. */
+const normalizeCedulaDigits = (raw: string | null | undefined): string => {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  const trimmed = digits.replace(/^0+/, "");
+  return trimmed.length > 0 ? trimmed : digits;
+};
+
+const MIN_CEDULA_DIGITS_FOR_MATCH = 6;
+
+/**
+ * Clave principal en asistencia: cedula numerica si tiene longitud suficiente;
+ * si no, token normalizado del id (codigos alfanumericos).
+ */
+const primaryIdMatchKeyFromAttendance = (
+  employeeId: string | null | undefined,
+): string | null => {
+  const digits = normalizeCedulaDigits(employeeId);
+  if (digits.length >= MIN_CEDULA_DIGITS_FOR_MATCH) return digits;
+  const token = normalizePersonMatchKey(employeeId);
+  return token.length > 0 ? token : null;
+};
+
 const normalizeIncidentValue = (value: string | null | undefined) =>
   (value ?? "")
     .normalize("NFD")
@@ -790,102 +822,124 @@ const fetchHourlyData = async (
           const startCompact = peopleDateStart!.replace(/-/g, "");
           const endCompact = peopleDateEnd!.replace(/-/g, "");
 
-          const peopleRangeQuery = `
-            SELECT
-              COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
-              ${personIdExpr} AS person_id,
-              ${personNameSelectExpr} AS person_name,
-              COALESCE(SUM(total_bruto), 0) AS total_sales,
-              COUNT(
-                DISTINCT (
-                  CAST(fecha_dcto AS text) || '|' || COALESCE(CAST(hora_final_hora AS text), 'sin-hora')
-                )
-              ) AS active_slots_count
-            FROM ventas_cajas
-            WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
-              ${rangePeopleBranchFilter}
-            GROUP BY 1, 2, 3
-            ORDER BY 4 DESC
-          `;
-
-          const rangeResult = await client.query(peopleRangeQuery, [
-            startCompact,
-            endCompact,
-            ...salesBranchParams,
-          ]);
-
-          const peopleDailyQuery = `
+          /**
+           * Rango multi-dia: antes se contaba COUNT(DISTINCT fecha|hora_final_hora).
+           * Si hora_final_hora trae minuto (cada ticket distinto), eso inflaba "franjas"
+           * y las horas laboradas (UI = franjas * bucketMinutes). Aqui alineamos con
+           * el analisis por hora: misma regla de bucket que en dia unico.
+           */
+          const peopleGranularQuery = `
             SELECT
               COALESCE(${personIdExpr}, 'sin-id') || '|' || COALESCE(${personNameExpr}, 'sin-nombre') AS person_key,
               ${personIdExpr} AS person_id,
               ${personNameSelectExpr} AS person_name,
               fecha_dcto,
-              COALESCE(SUM(total_bruto), 0) AS total_sales,
-              COUNT(DISTINCT COALESCE(CAST(hora_final_hora AS text), 'sin-hora')) AS active_slots_count
+              hora_final_hora,
+              COALESCE(SUM(total_bruto), 0) AS total_sales
             FROM ventas_cajas
             WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
               ${rangePeopleBranchFilter}
-            GROUP BY 1, 2, 3, fecha_dcto
-            ORDER BY 1, fecha_dcto ASC
+            GROUP BY 1, 2, 3, 4, 5
+            HAVING COALESCE(SUM(total_bruto), 0) > 0
+            ORDER BY 1 ASC, fecha_dcto ASC, hora_final_hora ASC
           `;
-          const peopleDailyResult = await client.query(peopleDailyQuery, [
+
+          const granularResult = await client.query(peopleGranularQuery, [
             startCompact,
             endCompact,
             ...salesBranchParams,
           ]);
-          const dailySalesByPersonKey = new Map<
-            string,
-            Array<{ date: string; sales: number; activeSlotsCount: number }>
-          >();
-          for (const row of peopleDailyResult.rows ?? []) {
-            const typedRow = row as {
-              person_key: string;
-              fecha_dcto: string | number;
-              total_sales: string | number;
-              active_slots_count: string | number;
-            };
-            const personKey = typedRow.person_key?.trim() || "sin-identificar";
-            const dateRaw = String(typedRow.fecha_dcto ?? "").trim();
-            const salesValue = Number(typedRow.total_sales) || 0;
-            const activeSlotsCount = Number(typedRow.active_slots_count) || 0;
-            if (!dateRaw || salesValue <= 0) continue;
-            if (!dailySalesByPersonKey.has(personKey)) {
-              dailySalesByPersonKey.set(personKey, []);
-            }
-            dailySalesByPersonKey.get(personKey)!.push({
-              date: dateRaw,
-              sales: salesValue,
-              activeSlotsCount,
-            });
-          }
 
-          for (const row of rangeResult.rows ?? []) {
+          type RangePersonAgg = {
+            personKey: string;
+            personId: string | null;
+            personName: string;
+            periodSales: number;
+            periodSlotKeys: Set<string>;
+            daily: Map<string, { sales: number; slotKeys: Set<number> }>;
+          };
+
+          const personAggs = new Map<string, RangePersonAgg>();
+
+          for (const row of granularResult.rows ?? []) {
             const typedRow = row as {
               person_key: string;
               person_id?: string | null;
               person_name: string;
+              fecha_dcto: string | number;
+              hora_final_hora: unknown;
               total_sales: string | number;
-              active_slots_count: string | number;
             };
+            const salesValue = Number(typedRow.total_sales) || 0;
+            if (salesValue <= 0) continue;
+
             const personKey = typedRow.person_key?.trim() || "sin-identificar";
             const personName = typedRow.person_name?.trim() || "Sin identificar";
             const personId = typedRow.person_id?.trim() || null;
-            const salesValue = Number(typedRow.total_sales) || 0;
-            const activeSlotsCount = Number(typedRow.active_slots_count) || 0;
-            if (isHorariosOcultarCedula(personId)) continue;
-            if (salesValue <= 0) continue;
-            personContributions.push({
-              personKey,
-              personId,
-              personName,
+            const dateRaw = String(typedRow.fecha_dcto ?? "").trim();
+            if (!dateRaw) continue;
+
+            let agg = personAggs.get(personKey);
+            if (!agg) {
+              agg = {
+                personKey,
+                personId,
+                personName,
+                periodSales: 0,
+                periodSlotKeys: new Set(),
+                daily: new Map(),
+              };
+              personAggs.set(personKey, agg);
+            }
+
+            agg.periodSales += salesValue;
+
+            let day = agg.daily.get(dateRaw);
+            if (!day) {
+              day = { sales: 0, slotKeys: new Set<number>() };
+              agg.daily.set(dateRaw, day);
+            }
+            day.sales += salesValue;
+
+            const minuteOfDay = parseMinuteOfDay(typedRow.hora_final_hora);
+            if (minuteOfDay !== null) {
+              const bucketStart =
+                Math.floor(minuteOfDay / bucketMinutes) * bucketMinutes;
+              agg.periodSlotKeys.add(`${dateRaw}|${bucketStart}`);
+              day.slotKeys.add(bucketStart);
+            }
+          }
+
+          const rangeContributions: HourlyPersonContribution[] = [];
+          for (const agg of personAggs.values()) {
+            if (isHorariosOcultarCedula(agg.personId)) continue;
+            if (agg.periodSales <= 0) continue;
+
+            const dailySales = Array.from(agg.daily.entries())
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([date, d]) => ({
+                date,
+                sales: d.sales,
+                activeSlotsCount: d.slotKeys.size,
+              }));
+
+            rangeContributions.push({
+              personKey: agg.personKey,
+              personId: agg.personId,
+              personName: agg.personName,
               firstMinuteOfDay: null,
               lastMinuteOfDay: null,
               hourlySales: [],
-              periodTotalSales: salesValue,
-              activeSlotsCount,
-              dailySales: dailySalesByPersonKey.get(personKey) ?? [],
+              periodTotalSales: agg.periodSales,
+              activeSlotsCount: agg.periodSlotKeys.size,
+              dailySales,
             });
           }
+
+          rangeContributions.sort(
+            (a, b) => (b.periodTotalSales ?? 0) - (a.periodTotalSales ?? 0),
+          );
+          personContributions.push(...rangeContributions);
 
           personContributionsScope = "date-range";
           personContributionsRange = {
@@ -1369,6 +1423,180 @@ const fetchHourlyData = async (
           }
 
           overtimeEmployees.sort((a, b) => b.workedHours - a.workedHours);
+
+          if (
+            !overtimeOnly &&
+            includePeopleBreakdown &&
+            lineFilter === "cajas" &&
+            personContributions.length > 0 &&
+            selectedSedeConfigs.length > 0
+          ) {
+            const peopleRangeDaysForAtt =
+              peopleDateStart && peopleDateEnd
+                ? getInclusiveDateRangeDays(peopleDateStart, peopleDateEnd)
+                : null;
+            const usePeopleDatesForAttendance =
+              Boolean(
+                peopleDateStart &&
+                  peopleDateEnd &&
+                  peopleRangeDaysForAtt &&
+                  peopleRangeDaysForAtt > 1,
+              );
+            const attRangeStart = usePeopleDatesForAttendance
+              ? peopleDateStart!
+              : attendanceDateUsed ?? dateISO;
+            const attRangeEnd = usePeopleDatesForAttendance
+              ? peopleDateEnd!
+              : attendanceDateUsed ?? dateISO;
+
+            try {
+              const cajasCargoAgg = attendanceColumnSet.has("cargo")
+                ? `MAX(NULLIF(TRIM(CAST(cargo AS text)), '')) AS cargo`
+                : `NULL::text AS cargo`;
+              const cajasHoursQuery = `
+                SELECT
+                  ${employeeIdExpr} AS employee_id,
+                  ${employeeNameExpr} AS employee_name,
+                  NULLIF(TRIM(CAST(departamento AS text)), '') AS departamento,
+                  SUM(COALESCE(total_laborado_horas, 0))::numeric AS total_hours,
+                  ${cajasCargoAgg}
+                FROM asistencia_horas
+                WHERE fecha::date >= $1::date
+                  AND fecha::date <= $2::date
+                  AND departamento IS NOT NULL
+                  AND ${buildNormalizeSedeSql("sede")} = ANY($3::text[])
+                GROUP BY 1, 2, 3
+              `;
+              const cajasHoursResult = await client.query(cajasHoursQuery, [
+                attRangeStart,
+                attRangeEnd,
+                selectedAttendanceNames,
+              ]);
+
+              /** Horas agregadas solo por clave de id en asistencia (cedula o id texto). */
+              const hoursByPrimaryId = new Map<string, number>();
+              /** Cargo mas descriptivo visto por clave de id (prefiere texto mas largo). */
+              const cargoByPrimaryId = new Map<string, string>();
+              /** nombre_norm -> (clave_id_asistencia -> horas) para detectar nombres ambiguos. */
+              const nameSubBuckets = new Map<string, Map<string, number>>();
+
+              for (const row of cajasHoursResult.rows ?? []) {
+                const typed = row as {
+                  employee_id: string | null;
+                  employee_name: string | null;
+                  departamento: string | null;
+                  total_hours: string | number;
+                  cargo: string | null;
+                };
+                const lineId = resolveLineId(typed.departamento ?? "");
+                if (lineId !== "cajas") continue;
+
+                const h = parseHoursValue(typed.total_hours);
+                if (!Number.isFinite(h) || h <= 0) continue;
+
+                const primaryId = primaryIdMatchKeyFromAttendance(
+                  typed.employee_id ?? undefined,
+                );
+                if (primaryId) {
+                  hoursByPrimaryId.set(
+                    primaryId,
+                    (hoursByPrimaryId.get(primaryId) ?? 0) + h,
+                  );
+                  const cg = typed.cargo?.trim();
+                  if (cg) {
+                    const prev = cargoByPrimaryId.get(primaryId);
+                    if (!prev || cg.length > prev.length) {
+                      cargoByPrimaryId.set(primaryId, cg);
+                    }
+                  }
+                }
+
+                const nameKey = normalizePersonMatchKey(
+                  typed.employee_name ?? undefined,
+                );
+                if (nameKey) {
+                  const subKey = primaryId ?? "__sin_id__";
+                  if (!nameSubBuckets.has(nameKey)) {
+                    nameSubBuckets.set(nameKey, new Map());
+                  }
+                  const inner = nameSubBuckets.get(nameKey)!;
+                  inner.set(subKey, (inner.get(subKey) ?? 0) + h);
+                }
+              }
+
+              /** Nombre usable solo si en asistencia todas las filas cajas con ese nombre comparten la misma clave de id no vacia. */
+              const hoursByUnambiguousName = new Map<string, number>();
+              for (const [nameKey, inner] of nameSubBuckets) {
+                if (inner.size !== 1) continue;
+                const [onlySubKey, onlyHours] = [...inner.entries()][0];
+                if (onlySubKey === "__sin_id__") continue;
+                if (!Number.isFinite(onlyHours) || onlyHours <= 0) continue;
+                hoursByUnambiguousName.set(nameKey, onlyHours);
+              }
+
+              const cargoByUnambiguousName = new Map<string, string>();
+              for (const [nameKey, inner] of nameSubBuckets) {
+                if (inner.size !== 1) continue;
+                const onlySubKey = [...inner.keys()][0];
+                if (onlySubKey === "__sin_id__") continue;
+                const c = cargoByPrimaryId.get(onlySubKey);
+                if (c) cargoByUnambiguousName.set(nameKey, c);
+              }
+
+              const salesNameKeyCounts = new Map<string, number>();
+              for (const p of personContributions) {
+                const nk = normalizePersonMatchKey(p.personName);
+                if (!nk) continue;
+                salesNameKeyCounts.set(nk, (salesNameKeyCounts.get(nk) ?? 0) + 1);
+              }
+
+              for (const person of personContributions) {
+                const digits = normalizeCedulaDigits(person.personId ?? undefined);
+                const tokenId = normalizePersonMatchKey(person.personId ?? undefined);
+                const nameKey = normalizePersonMatchKey(person.personName);
+
+                let matched: number | null = null;
+                let mode: "cedula" | "id_texto" | "nombre" | null = null;
+
+                if (
+                  digits.length >= MIN_CEDULA_DIGITS_FOR_MATCH &&
+                  hoursByPrimaryId.has(digits)
+                ) {
+                  matched = hoursByPrimaryId.get(digits)!;
+                  mode = "cedula";
+                } else if (tokenId && hoursByPrimaryId.has(tokenId)) {
+                  matched = hoursByPrimaryId.get(tokenId)!;
+                  mode = "id_texto";
+                } else if (
+                  nameKey &&
+                  (salesNameKeyCounts.get(nameKey) ?? 0) === 1 &&
+                  hoursByUnambiguousName.has(nameKey)
+                ) {
+                  matched = hoursByUnambiguousName.get(nameKey)!;
+                  mode = "nombre";
+                }
+
+                if (matched != null && mode != null) {
+                  person.attendanceWorkedHours = matched;
+                  person.attendanceMatchMode = mode;
+                  let cargo: string | null = null;
+                  if (mode === "cedula" && digits) {
+                    cargo = cargoByPrimaryId.get(digits) ?? null;
+                  } else if (mode === "id_texto" && tokenId) {
+                    cargo = cargoByPrimaryId.get(tokenId) ?? null;
+                  } else if (mode === "nombre" && nameKey) {
+                    cargo = cargoByUnambiguousName.get(nameKey) ?? null;
+                  }
+                  if (cargo) person.personCargo = cargo;
+                }
+              }
+            } catch (mergeErr) {
+              console.warn(
+                "[hourly-analysis] Error cruzando horas de asistencia con cajeros:",
+                mergeErr,
+              );
+            }
+          }
         }
       }
     } catch (error) {

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { isIP } from "node:net";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import type { PoolClient } from "pg";
 import { getDbPool } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import {
@@ -27,6 +28,8 @@ export type AuthUser = {
 const SESSION_COOKIE = "vp_session";
 const CSRF_COOKIE = "vp_csrf";
 const SESSION_IDLE_MINUTES = 60;
+/** Namespace for `pg_advisory_xact_lock` so login for one user serializes without colliding with other app locks. */
+const SESSION_LOGIN_ADVISORY_KEY1 = 849_201;
 
 const getSessionExpiry = () =>
   new Date(Date.now() + SESSION_IDLE_MINUTES * 60 * 1000);
@@ -112,12 +115,14 @@ export const createSession = async (
   userId: string,
   ip: string | null,
   userAgent: string | null,
+  dbClient?: PoolClient,
 ) => {
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
   const expiresAt = getSessionExpiry();
 
-  const client = await (await getDbPool()).connect();
+  const ownClient = !dbClient;
+  const client = dbClient ?? (await (await getDbPool()).connect());
   try {
     await client.query(
       `
@@ -127,10 +132,38 @@ export const createSession = async (
       [userId, tokenHash, expiresAt.toISOString(), ip, userAgent],
     );
   } finally {
-    client.release();
+    if (ownClient) {
+      client.release();
+    }
   }
 
   return { token, expiresAt };
+};
+
+/**
+ * Revokes any existing sessions for the user, then inserts a new one, in a single transaction
+ * with a per-user advisory lock so concurrent logins cannot leave two active rows.
+ */
+export const createSessionReplacingOthers = async (
+  userId: string,
+  ip: string | null,
+  userAgent: string | null,
+  dbClient: PoolClient,
+) => {
+  await dbClient.query("BEGIN");
+  try {
+    await dbClient.query(
+      `SELECT pg_advisory_xact_lock($1, hashtext($2::text))`,
+      [SESSION_LOGIN_ADVISORY_KEY1, userId],
+    );
+    await revokeAllSessionsForUser(userId, dbClient);
+    const session = await createSession(userId, ip, userAgent, dbClient);
+    await dbClient.query("COMMIT");
+    return session;
+  } catch (error) {
+    await dbClient.query("ROLLBACK");
+    throw error;
+  }
 };
 
 export const revokeSessionByToken = async (token: string) => {
@@ -150,8 +183,12 @@ export const revokeSessionByToken = async (token: string) => {
   }
 };
 
-export const revokeAllSessionsForUser = async (userId: string) => {
-  const client = await (await getDbPool()).connect();
+export const revokeAllSessionsForUser = async (
+  userId: string,
+  dbClient?: PoolClient,
+) => {
+  const ownClient = !dbClient;
+  const client = dbClient ?? (await (await getDbPool()).connect());
   try {
     await client.query(
       `
@@ -162,7 +199,9 @@ export const revokeAllSessionsForUser = async (userId: string) => {
       [userId],
     );
   } finally {
-    client.release();
+    if (ownClient) {
+      client.release();
+    }
   }
 };
 

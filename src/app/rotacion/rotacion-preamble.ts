@@ -751,7 +751,8 @@ const safeNumber = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
 const normalizeRotationRows = (rows: RotationRow[]) =>
-  rows.map((row) => ({
+  rows.map((row) => {
+    return {
     ...row,
     totalUnits: safeNumber(
       (row as RotationRow & { totalUnits?: number }).totalUnits,
@@ -772,7 +773,8 @@ const normalizeRotationRows = (rows: RotationRow[]) =>
     nombreCategoria: row.nombreCategoria ?? null,
     linea01: row.linea01 ?? null,
     nombreLinea01: row.nombreLinea01 ?? null,
-  }));
+  };
+  });
 
 /** Categorias a enviar en query: null = sin filtro (todo el catalogo o vacio). */
 const buildCategoriaQueryKeys = (

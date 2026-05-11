@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   applySessionCookies,
-  createSession,
+  createSessionReplacingOthers,
   getAuditNetworkId,
   getClientIp,
   verifyPassword,
@@ -176,7 +176,7 @@ export async function POST(req: Request) {
 
       clearFailedLoginAttempts(rateLimitKey, userKey);
       const userAgent = req.headers.get("user-agent");
-      const session = await createSession(user.id, ipForDb, userAgent);
+      const session = await createSessionReplacingOthers(user.id, ipForDb, userAgent, client);
 
       await client.query(
         `

@@ -15,6 +15,7 @@ import {
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { animate, remove } from "animejs";
 import { LineChart } from "@mui/x-charts/LineChart";
 import {
@@ -2943,6 +2944,8 @@ export default function Home() {
     "cards" | "comparison" | "chart" | "trends" | "hourly" | "cashier" | "m2"
   >("cards");
   const [cashierMonthCompare, setCashierMonthCompare] = useState(false);
+  const [cashierCompareTransitionLoading, setCashierCompareTransitionLoading] =
+    useState(false);
 
   const prefsKey = useMemo(
     () => `vp_prefs_${username ?? "default"}`,
@@ -3721,10 +3724,22 @@ export default function Home() {
         | "m2",
     ) => {
       setViewMode(value);
-      if (value !== "cashier") setCashierMonthCompare(false);
+      if (value !== "cashier") {
+        setCashierMonthCompare(false);
+        setCashierCompareTransitionLoading(false);
+      }
     },
     [],
   );
+
+  const handleCashierViewReady = useCallback(() => {
+    setCashierCompareTransitionLoading(false);
+  }, []);
+
+  const handleCashierMonthComparisonToggle = useCallback(() => {
+    setCashierCompareTransitionLoading(true);
+    setCashierMonthCompare((value) => !value);
+  }, []);
 
   const handleSortOrderToggle = useCallback(() => {
     setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -5330,28 +5345,44 @@ export default function Home() {
                 exportRef={hourlyExportRef}
               />
             ) : viewMode === "cashier" ? (
-              <HourlyAnalysis
-                key={`cashier-${dateRange.start}-${dateRange.end}-${selectedSede}-${cashierMonthCompare ? "mc" : "p"}`}
-                availableDates={availableDates}
-                availableSedes={orderedSedes}
-                defaultDate={dateRange.end}
-                defaultSede={selectedSede || undefined}
-                defaultLine="cajas"
-                allowedLineIds={!isAdmin ? allowedLineIds : undefined}
-                sections={["map"]}
-                showTopDateFilter={false}
-                showComparison={false}
-                showPersonBreakdown
-                defaultPersonBreakdownView="individual"
-                hidePersonBreakdownTabs
-                dashboardContext="productividad"
-                exportRef={hourlyExportRef}
-                cashierDateRange={dateRange}
-                cashierMonthComparison={cashierMonthCompare}
-                onCashierMonthComparisonToggle={() =>
-                  setCashierMonthCompare((value) => !value)
-                }
-              />
+              <div className="relative min-h-[240px]">
+                {cashierCompareTransitionLoading && (
+                  <div
+                    className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-3xl bg-background/75 backdrop-blur-sm"
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="true"
+                  >
+                    <Loader2 className="h-10 w-10 animate-spin text-fuchsia-700" />
+                    <span className="text-sm font-medium text-slate-700">
+                      Cargando cajeros…
+                    </span>
+                  </div>
+                )}
+                <HourlyAnalysis
+                  key={`cashier-${dateRange.start}-${dateRange.end}-${selectedSede}-${cashierMonthCompare ? "mc" : "p"}`}
+                  availableDates={availableDates}
+                  availableSedes={orderedSedes}
+                  defaultDate={dateRange.end}
+                  defaultSede={selectedSede || undefined}
+                  defaultLine="cajas"
+                  allowedLineIds={!isAdmin ? allowedLineIds : undefined}
+                  sections={["map"]}
+                  showTopDateFilter={false}
+                  showComparison={false}
+                  showPersonBreakdown
+                  defaultPersonBreakdownView="individual"
+                  hidePersonBreakdownTabs
+                  dashboardContext="productividad"
+                  exportRef={hourlyExportRef}
+                  cashierDateRange={dateRange}
+                  cashierMonthComparison={cashierMonthCompare}
+                  onCashierMonthComparisonToggle={
+                    handleCashierMonthComparisonToggle
+                  }
+                  onCashierViewReady={handleCashierViewReady}
+                />
+              </div>
             ) : viewMode === "m2" ? (
               <M2MetricsSection
                 ref={m2ExportRef}
