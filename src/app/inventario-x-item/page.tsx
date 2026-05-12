@@ -171,6 +171,8 @@ type MatrixCellValue = {
 const calculateDiDays = (row: Pick<InventarioSummaryRow, "inventoryUnits" | "totalUnits" | "trackedDays">) => {
   if (row.inventoryUnits <= 0) return 0;
   if (row.totalUnits <= 0 || row.trackedDays <= 0) return NO_SALES_DI_VALUE;
+  // API: inventario = cierre ultimo dia del rango (por sede); totalUnits = ventas del periodo;
+  // trackedDays = dias distintos con dato. DI = inventario / (ventas/dia) ~ cobertura vs ritmo del rango.
   return (row.inventoryUnits * row.trackedDays) / row.totalUnits;
 };
 
@@ -2681,8 +2683,11 @@ export default function InventarioXItemPage() {
         <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-4 text-sm leading-6 text-slate-600">
           Esta primera version del modulo usa el ultimo corte disponible de la
           tabla base de rotacion para darte una lectura rapida del inventario
-          por referencia. En la siguiente iteracion podemos profundizar con
-          columnas adicionales, comportamiento por sede o comparativos.
+          por referencia. El listado de lineas e items al elegir alcance usa el
+          ultimo dia del rango para cargar rapido; la matriz usa todo el rango y
+          el DI con inventario de cierre y ventas del periodo. En la siguiente
+          iteracion podemos profundizar con columnas adicionales, comportamiento
+          por sede o comparativos.
         </div>
 
         <div className="pointer-events-none fixed bottom-6 right-6 z-40">

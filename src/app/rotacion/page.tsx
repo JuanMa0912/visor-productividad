@@ -95,6 +95,7 @@ import {
   formatPrice,
   formatPriceWithoutSixZeros,
   formatPercent,
+  rotationMarginPct,
   parseDateKey,
   buildExportFileStamp,
   dataUrlToBlob,
@@ -1582,7 +1583,7 @@ export default function RotacionPage() {
             ventaPeriodo: row.totalSales,
             costoPeriodo: row.totalCost,
             margenPorcentaje: formatPercent(
-              row.totalSales > 0 ? (row.totalMargin / row.totalSales) * 100 : 0,
+              rotationMarginPct(row.totalSales, row.totalCost),
             ),
             invCierre: row.inventoryUnits,
             unidadesVendidas: row.totalUnits,
@@ -2663,25 +2664,23 @@ export default function RotacionPage() {
                         (acc, row) => acc + row.totalUnits,
                         0,
                       );
-                    const selectedCategoryTotalMargin =
+                    const selectedCategoryTotalCost =
                       categoryFilteredRows.reduce(
-                        (acc, row) => acc + row.totalMargin,
+                        (acc, row) => acc + row.totalCost,
                         0,
                       );
-                    const selectedCategoryMarginPct =
-                      selectedCategoryTotalSales > 0
-                        ? (selectedCategoryTotalMargin /
-                            selectedCategoryTotalSales) *
-                          100
-                        : 0;
-                    const infoTotalMargin = filteredRows.reduce(
-                      (acc, row) => acc + row.totalMargin,
+                    const selectedCategoryMarginPct = rotationMarginPct(
+                      selectedCategoryTotalSales,
+                      selectedCategoryTotalCost,
+                    );
+                    const infoTotalCost = filteredRows.reduce(
+                      (acc, row) => acc + row.totalCost,
                       0,
                     );
-                    const infoMarginPct =
-                      infoTotalSales > 0
-                        ? (infoTotalMargin / infoTotalSales) * 100
-                        : 0;
+                    const infoMarginPct = rotationMarginPct(
+                      infoTotalSales,
+                      infoTotalCost,
+                    );
                     const infoSalesCoverageDays =
                       infoTotalUnits > 0 && daysConsulted > 0
                         ? (infoTotalInvUnits * daysConsulted) / infoTotalUnits
@@ -2712,15 +2711,14 @@ export default function RotacionPage() {
                       (acc, row) => acc + row.totalSales,
                       0,
                     );
-                    const abcdTotalMarginForMargin = abcdRowsForMargin.reduce(
-                      (acc, row) => acc + row.totalMargin,
+                    const abcdTotalCostForMargin = abcdRowsForMargin.reduce(
+                      (acc, row) => acc + row.totalCost,
                       0,
                     );
-                    const abcdSummaryTotalMarginPct =
-                      abcdTotalSalesForMargin > 0
-                        ? (abcdTotalMarginForMargin / abcdTotalSalesForMargin) *
-                          100
-                        : 0;
+                    const abcdSummaryTotalMarginPct = rotationMarginPct(
+                      abcdTotalSalesForMargin,
+                      abcdTotalCostForMargin,
+                    );
                     const selectedCategoryLabel =
                       formatAbcdCategoryFilterLabel(categoryFilter);
                     const nuevoItemsCount = group.rows.filter((row) =>
@@ -4005,11 +4003,10 @@ export default function RotacionPage() {
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-700">
                                             {formatPercent(
-                                              row.totalSales > 0
-                                                ? (row.totalMargin /
-                                                    row.totalSales) *
-                                                    100
-                                                : 0,
+                                              rotationMarginPct(
+                                                row.totalSales,
+                                                row.totalCost,
+                                              ),
                                             )}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top text-sm tabular-nums text-slate-700">

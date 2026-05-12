@@ -159,6 +159,22 @@ const buildCompactDateRangeSql = (
     : `${column} BETWEEN ${startParam} AND ${endParam}
         AND ${column} ~ '^[0-9]{8}$'`;
 
+/** Fecha por fila para ultimo corte y conteo de dias con dato (DI). */
+const buildConsultaDateSql = (column: RotacionBaseDateColumn) =>
+  column === "fecha_carga" || column === "fecha_dia"
+    ? `${column}::date`
+    : `TO_DATE(${column}, 'YYYYMMDD')`;
+
+/** Solo fecha fin del rango: catalogo de lineas sin escanear todo el periodo. */
+const buildEndDateEqualsSql = (
+  column: RotacionBaseDateColumn,
+  endParam = "$1",
+) =>
+  column === "fecha_carga" || column === "fecha_dia"
+    ? `${column}::date = TO_DATE(${endParam}::text, 'YYYYMMDD')`
+    : `${column} = ${endParam}
+        AND ${column} ~ '^[0-9]{8}$'`;
+
 const getAvailableDateRange = async () => {
   const now = Date.now();
   if (dateRangeCache && dateRangeCache.expiresAt > now) {
@@ -252,7 +268,40 @@ const getInventoryFilterCatalog = async (
   }
 };
 
-const queryInventorySummaryRows = async ({
+const mapInventorySummaryDbRow = (
+  row: InventorySummaryDbRow,
+): InventorySummaryRow => {
+  const subcategory = getInventarioSubcategory(row.linea_n1_codigo);
+  return {
+    lineKey: buildInventarioLineKey({
+      linea: row.linea,
+      lineaN1Codigo: row.linea_n1_codigo,
+    }),
+    lineLabel: getInventarioLineLabel({
+      linea: row.linea,
+      lineaN1Codigo: row.linea_n1_codigo,
+    }),
+    linea: row.linea,
+    lineaN1Codigo: row.linea_n1_codigo,
+    subcategory,
+    item: row.item,
+    descripcion: row.descripcion,
+    unidad: row.unidad,
+    inventoryUnits: toNumber(row.inventory_units),
+    inventoryValue: toNumber(row.inventory_value),
+    totalUnits: toNumber(row.total_units),
+    trackedDays: toNumber(row.tracked_days),
+    rotationDays: toNumber(row.rotation_days),
+    companyCount: toNumber(row.company_count),
+    sedeCount: toNumber(row.sede_count),
+  };
+};
+
+/**
+ * Listado liviano para mode=catalog: un solo dia (fecha fin del rango) sin CTEs
+ * ni ventanas; alimenta lineas/ítems sin bloquear la UI.
+ */
+const queryInventoryCatalogRows = async ({
   dateRangeCompact,
   empresas,
   sedes,
@@ -276,7 +325,7 @@ const queryInventorySummaryRows = async ({
         SUM(${fields.closingUnitsExpr})::numeric AS inventory_units,
         SUM(${fields.inventoryValueExpr})::numeric AS inventory_value,
         SUM(${fields.unitsSoldExpr})::numeric AS total_units,
-        COUNT(*)::int AS tracked_days,
+        1::int AS tracked_days,
         CASE
           WHEN SUM(${fields.closingUnitsExpr}) <= 0
             OR SUM(${fields.inventoryValueExpr}) <= 0
@@ -284,22 +333,16 @@ const queryInventorySummaryRows = async ({
           WHEN SUM(${fields.unitsSoldExpr}) <= 0
             THEN 999999::numeric
           ELSE
-            (
-              SUM(${fields.closingUnitsExpr}) *
-              COUNT(*)::numeric
-            ) / NULLIF(SUM(${fields.unitsSoldExpr}), 0)
+            SUM(${fields.closingUnitsExpr})::numeric
+              / NULLIF(SUM(${fields.unitsSoldExpr}), 0)
         END AS rotation_days,
-        COUNT(
-          DISTINCT ${fields.empresaExpr}
-        )::int AS company_count,
-        COUNT(
-          DISTINCT ${fields.sedeIdExpr}
-        )::int AS sede_count
+        COUNT(DISTINCT ${fields.empresaExpr})::int AS company_count,
+        COUNT(DISTINCT ${fields.sedeIdExpr})::int AS sede_count
       FROM rotacion_base_item_dia_sede
-      WHERE ${buildCompactDateRangeSql(dateColumn)}
+      WHERE ${buildEndDateEqualsSql(dateColumn)}
         AND ${fields.itemPresentCondition}
-        AND ($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))
-        AND ($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))
+        AND ($2::text[] IS NULL OR ${fields.empresaExpr} = ANY($2::text[]))
+        AND ($3::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($3::text[]))
       GROUP BY
         ${fields.lineExpr},
         ${fields.n1CodeExpr},
@@ -314,6 +357,162 @@ const queryInventorySummaryRows = async ({
         item ASC
       `,
       [
+        dateRangeCompact.end,
+        empresas.length > 0 ? empresas : null,
+        sedes.length > 0 ? sedes : null,
+      ],
+    );
+
+    return ((result.rows ?? []) as InventorySummaryDbRow[]).map(
+      mapInventorySummaryDbRow,
+    );
+  } finally {
+    client.release();
+  }
+};
+
+const queryInventorySummaryRows = async ({
+  dateRangeCompact,
+  empresas,
+  sedes,
+}: {
+  dateRangeCompact: { start: string; end: string };
+  empresas: string[];
+  sedes: string[];
+}): Promise<InventorySummaryRow[]> => {
+  const client = await (await getDbPool()).connect();
+  try {
+    const fields = await resolveRotacionBaseSqlFields(client);
+    const dateColumn = fields.dateColumn;
+    const result = await client.query(
+      `
+      WITH scoped AS (
+        SELECT
+          ${fields.lineExpr} AS linea,
+          ${fields.n1CodeExpr} AS linea_n1_codigo,
+          ${fields.itemExpr} AS item,
+          ${fields.descriptionExpr} AS descripcion,
+          ${fields.unitExpr} AS unidad,
+          ${fields.empresaExpr} AS empresa,
+          ${fields.sedeIdExpr} AS sede_id,
+          ${fields.closingUnitsExpr} AS inventory_units,
+          ${fields.inventoryValueExpr} AS inventory_value,
+          ${fields.unitsSoldExpr} AS total_units,
+          ${buildConsultaDateSql(dateColumn)} AS consulta_date,
+          ${fields.loadTimestampExpr} AS carga_ts
+        FROM rotacion_base_item_dia_sede
+        WHERE ${buildCompactDateRangeSql(dateColumn)}
+          AND ${fields.itemPresentCondition}
+          AND ($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))
+          AND ($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))
+      ),
+      ranked AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              empresa,
+              sede_id,
+              linea,
+              linea_n1_codigo,
+              item,
+              descripcion,
+              unidad
+            ORDER BY consulta_date DESC, carga_ts DESC NULLS LAST
+          ) AS latest_rank
+        FROM scoped
+      ),
+      sales_agg AS (
+        SELECT
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          SUM(total_units)::numeric AS total_units,
+          COUNT(DISTINCT consulta_date)::int AS tracked_days
+        FROM scoped
+        GROUP BY
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad
+      ),
+      latest_inv AS (
+        SELECT
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          SUM(inventory_units)::numeric AS inventory_units,
+          SUM(inventory_value)::numeric AS inventory_value
+        FROM ranked
+        WHERE latest_rank = 1
+        GROUP BY
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad
+      ),
+      key_counts AS (
+        SELECT
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          COUNT(DISTINCT empresa)::int AS company_count,
+          COUNT(DISTINCT sede_id)::int AS sede_count
+        FROM scoped
+        GROUP BY
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad
+      )
+      SELECT
+        s.linea,
+        s.linea_n1_codigo,
+        s.item,
+        s.descripcion,
+        s.unidad,
+        l.inventory_units,
+        l.inventory_value,
+        s.total_units,
+        s.tracked_days,
+        CASE
+          WHEN l.inventory_units <= 0 OR l.inventory_value <= 0 THEN 0::numeric
+          WHEN s.total_units <= 0 THEN 999999::numeric
+          ELSE
+            (l.inventory_units * s.tracked_days::numeric) / NULLIF(s.total_units, 0)
+        END AS rotation_days,
+        k.company_count,
+        k.sede_count
+      FROM sales_agg s
+      INNER JOIN latest_inv l
+        ON l.linea IS NOT DISTINCT FROM s.linea
+        AND l.linea_n1_codigo IS NOT DISTINCT FROM s.linea_n1_codigo
+        AND l.item IS NOT DISTINCT FROM s.item
+        AND l.descripcion IS NOT DISTINCT FROM s.descripcion
+        AND l.unidad IS NOT DISTINCT FROM s.unidad
+      INNER JOIN key_counts k
+        ON k.linea IS NOT DISTINCT FROM s.linea
+        AND k.linea_n1_codigo IS NOT DISTINCT FROM s.linea_n1_codigo
+        AND k.item IS NOT DISTINCT FROM s.item
+        AND k.descripcion IS NOT DISTINCT FROM s.descripcion
+        AND k.unidad IS NOT DISTINCT FROM s.unidad
+      WHERE
+        l.inventory_units > 0
+        OR l.inventory_value > 0
+      ORDER BY
+        l.inventory_value DESC,
+        s.item ASC
+      `,
+      [
         dateRangeCompact.start,
         dateRangeCompact.end,
         empresas.length > 0 ? empresas : null,
@@ -321,32 +520,9 @@ const queryInventorySummaryRows = async ({
       ],
     );
 
-    return ((result.rows ?? []) as InventorySummaryDbRow[]).map((row) => {
-      const subcategory = getInventarioSubcategory(row.linea_n1_codigo);
-      return {
-        lineKey: buildInventarioLineKey({
-          linea: row.linea,
-          lineaN1Codigo: row.linea_n1_codigo,
-        }),
-        lineLabel: getInventarioLineLabel({
-          linea: row.linea,
-          lineaN1Codigo: row.linea_n1_codigo,
-        }),
-        linea: row.linea,
-        lineaN1Codigo: row.linea_n1_codigo,
-        subcategory,
-        item: row.item,
-        descripcion: row.descripcion,
-        unidad: row.unidad,
-        inventoryUnits: toNumber(row.inventory_units),
-        inventoryValue: toNumber(row.inventory_value),
-        totalUnits: toNumber(row.total_units),
-        trackedDays: toNumber(row.tracked_days),
-        rotationDays: toNumber(row.rotation_days),
-        companyCount: toNumber(row.company_count),
-        sedeCount: toNumber(row.sede_count),
-      };
-    });
+    return ((result.rows ?? []) as InventorySummaryDbRow[]).map(
+      mapInventorySummaryDbRow,
+    );
   } finally {
     client.release();
   }
@@ -438,16 +614,65 @@ const queryInventoryMatrixRows = async ({
           ${fields.unitExpr} AS unidad,
           ${fields.closingUnitsExpr} AS inventory_units,
           ${fields.inventoryValueExpr} AS inventory_value,
-          ${fields.unitsSoldExpr} AS total_units
+          ${fields.unitsSoldExpr} AS total_units,
+          ${buildConsultaDateSql(dateColumn)} AS consulta_date,
+          ${fields.loadTimestampExpr} AS carga_ts
         FROM rotacion_base_item_dia_sede
         WHERE ${whereClauses.join("\n          AND ")}
       ),
+      ranked AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              empresa,
+              sede_id,
+              item,
+              linea,
+              linea_n1_codigo,
+              descripcion,
+              unidad
+            ORDER BY consulta_date DESC, carga_ts DESC NULLS LAST
+          ) AS latest_rank
+        FROM scoped
+      ),
       top_items AS (
         SELECT item
-        FROM scoped
+        FROM ranked
+        WHERE latest_rank = 1
         GROUP BY item
-        ORDER BY SUM(inventory_value) DESC, item ASC
+        ORDER BY SUM(inventory_value) DESC NULLS LAST, item ASC
         LIMIT ${itemFilterParam ? "999999" : "10"}
+      ),
+      aggregated AS (
+        SELECT
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad,
+          SUM(total_units)::numeric AS total_units,
+          COUNT(DISTINCT consulta_date)::int AS tracked_days,
+          MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
+          MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value
+        FROM ranked
+        WHERE ${
+          itemFilterParam
+            ? `item = ANY($${itemFilterParam}::text[])`
+            : "item IN (SELECT item FROM top_items)"
+        }
+        GROUP BY
+          empresa,
+          sede_id,
+          sede_name,
+          linea,
+          linea_n1_codigo,
+          item,
+          descripcion,
+          unidad
       )
       SELECT
         empresa,
@@ -458,33 +683,19 @@ const queryInventoryMatrixRows = async ({
         item,
         descripcion,
         unidad,
-        SUM(inventory_units)::numeric AS inventory_units,
-        SUM(inventory_value)::numeric AS inventory_value,
-        SUM(total_units)::numeric AS total_units,
-        COUNT(*)::int AS tracked_days,
+        inventory_units,
+        inventory_value,
+        total_units,
+        tracked_days,
         CASE
-          WHEN SUM(inventory_units) <= 0 OR SUM(inventory_value) <= 0 THEN 0::numeric
-          WHEN SUM(total_units) <= 0 THEN 999999::numeric
-          ELSE (SUM(inventory_units) * COUNT(*)::numeric) / NULLIF(SUM(total_units), 0)
+          WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 0::numeric
+          WHEN total_units <= 0 THEN 999999::numeric
+          ELSE (inventory_units * tracked_days::numeric) / NULLIF(total_units, 0)
         END AS rotation_days
-      FROM scoped
-      WHERE ${
-        itemFilterParam
-          ? `item = ANY($${itemFilterParam}::text[])`
-          : "item IN (SELECT item FROM top_items)"
-      }
-      GROUP BY
-        empresa,
-        sede_id,
-        sede_name,
-        linea,
-        linea_n1_codigo,
-        item,
-        descripcion,
-        unidad
-      HAVING
-        SUM(inventory_units) > 0
-        OR SUM(inventory_value) > 0
+      FROM aggregated
+      WHERE
+        inventory_units > 0
+        OR inventory_value > 0
       ORDER BY
         empresa ASC,
         sede_name ASC,
@@ -673,13 +884,19 @@ export async function GET(request: Request) {
         start: dateStartCompact,
         end: dateEndCompact,
       }),
-      mode === "table" || mode === "filters"
-        ? Promise.resolve<InventorySummaryRow[]>([])
-        : queryInventorySummaryRows({
+      mode === "catalog"
+        ? queryInventoryCatalogRows({
             dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
             empresas: requestedCompanies,
             sedes: requestedSedes,
-          }),
+          })
+        : mode === "table" || mode === "filters"
+          ? Promise.resolve<InventorySummaryRow[]>([])
+          : queryInventorySummaryRows({
+              dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
+              empresas: requestedCompanies,
+              sedes: requestedSedes,
+            }),
       mode === "catalog" || mode === "filters"
         ? Promise.resolve<InventoryMatrixRow[]>([])
         : queryInventoryMatrixRows({

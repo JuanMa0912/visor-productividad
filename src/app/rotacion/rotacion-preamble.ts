@@ -911,6 +911,13 @@ const countAbcdItemsByCategory = (
   return counts;
 };
 
+/** Margen % de ventas = (1 - costo/venta) x 100 (misma regla que negocio / Excel). */
+const rotationMarginPct = (totalSales: number, totalCost: number) => {
+  if (!(totalSales > 0) || !Number.isFinite(totalSales)) return 0;
+  const cost = Number.isFinite(totalCost) ? totalCost : 0;
+  return (1 - cost / totalSales) * 100;
+};
+
 type AbcdSummaryRow = {
   categoria: AbcdCategory;
   totalSales: number;
@@ -925,18 +932,19 @@ const buildAbcdSummaryRows = (
 ): AbcdSummaryRow[] => {
   const byCategory: Record<
     AbcdCategory,
-    { totalSales: number; totalMargin: number; items: Set<string> }
+    { totalSales: number; totalMargin: number; totalCost: number; items: Set<string> }
   > = {
-    A: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    B: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    C: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
-    D: { totalSales: 0, totalMargin: 0, items: new Set<string>() },
+    A: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
+    B: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
+    C: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
+    D: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
   };
 
   for (const row of rows) {
     const categoria = categoryByItem.get(row.item) ?? "D";
     byCategory[categoria].totalSales += row.totalSales;
     byCategory[categoria].totalMargin += row.totalMargin;
+    byCategory[categoria].totalCost += row.totalCost;
     byCategory[categoria].items.add(row.item);
   }
 
@@ -944,12 +952,13 @@ const buildAbcdSummaryRows = (
   return order.map((categoria) => {
     const totalSales = byCategory[categoria].totalSales;
     const totalMargin = byCategory[categoria].totalMargin;
+    const totalCost = byCategory[categoria].totalCost;
     return {
       categoria,
       totalSales,
       totalMargin,
       itemCount: byCategory[categoria].items.size,
-      marginPct: totalSales > 0 ? (totalMargin / totalSales) * 100 : 0,
+      marginPct: rotationMarginPct(totalSales, totalCost),
     };
   });
 };
@@ -1306,4 +1315,4 @@ const readRotationApiForbiddenMessage = async (
 };
 
 export type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN1FamilyKey, AbcdConfig, AbcdCategory, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, AbcdSummaryRow, GroupRowsQuickFilter, GroupZeroEstadoFilter };
-export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, normalizeLineaN1CodeForFilter, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage };
+export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, normalizeLineaN1CodeForFilter, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, rotationMarginPct, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage };

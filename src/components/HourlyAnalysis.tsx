@@ -104,6 +104,8 @@ export type HourlyAnalysisExportHandle = {
 };
 
 const CASHIER_MONTH_TOP_N = 5;
+/** Valor interno del `<select>` para filtrar cajeros sin cargo (no usar como cargo real). */
+const CASHIER_CARGO_SELECT_EMPTY = "__sin_cargo__";
 
 const totalPersonContributionSales = (person: HourlyPersonContribution) => {
   if (person.periodTotalSales != null) return person.periodTotalSales;
@@ -759,6 +761,10 @@ export const HourlyAnalysis = ({
   const overtimeDepartmentTriggerRef = useRef<HTMLButtonElement | null>(null);
   const overtimeDepartmentPanelRef = useRef<HTMLDivElement | null>(null);
   const [personSearchQuery, setPersonSearchQuery] = useState("");
+  /** null = todos los cargos; "" = solo sin cargo registrado. */
+  const [personCargoFilter, setPersonCargoFilter] = useState<string | null>(
+    null,
+  );
   const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
   const [cashierSortField, setCashierSortField] =
     useState<CashierSortField>("totalSales");
@@ -1956,16 +1962,43 @@ export const HourlyAnalysis = ({
     personBreakdownView,
   ]);
 
+  const cashierCargoSelectOptions = useMemo(() => {
+    const nonEmpty = new Set<string>();
+    let hasEmpty = false;
+    for (const p of peopleBreakdown) {
+      const c = (p.personCargo ?? "").trim();
+      if (!c) hasEmpty = true;
+      else nonEmpty.add(c);
+    }
+    const sorted = [...nonEmpty].sort((a, b) =>
+      a.localeCompare(b, "es", { sensitivity: "base" }),
+    );
+    return { sorted, hasEmpty };
+  }, [peopleBreakdown]);
+
   const filteredPeopleBreakdown = useMemo(() => {
     if (personBreakdownView !== "individual") return [];
+    let rows = peopleBreakdown;
+    if (personCargoFilter !== null) {
+      rows = rows.filter((person) => {
+        const cargo = (person.personCargo ?? "").trim();
+        if (personCargoFilter === "") return cargo === "";
+        return cargo === personCargoFilter;
+      });
+    }
     const query = deferredPersonSearchQuery.trim().toLowerCase();
-    if (!query) return peopleBreakdown;
-    return peopleBreakdown.filter((person) => {
+    if (!query) return rows;
+    return rows.filter((person) => {
       const name = person.personName.trim().toLowerCase();
       const id = person.personId?.trim().toLowerCase() ?? "";
       return name.includes(query) || id.includes(query);
     });
-  }, [deferredPersonSearchQuery, peopleBreakdown, personBreakdownView]);
+  }, [
+    deferredPersonSearchQuery,
+    peopleBreakdown,
+    personBreakdownView,
+    personCargoFilter,
+  ]);
 
   const cashierListTotalSales = useMemo(
     () =>
@@ -4052,14 +4085,56 @@ export const HourlyAnalysis = ({
                             />
                           </div>
                         </label>
+                        <label className="min-w-[200px] shrink-0">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                            Cargo
+                          </span>
+                          <select
+                            value={
+                              personCargoFilter === null
+                                ? ""
+                                : personCargoFilter === ""
+                                  ? CASHIER_CARGO_SELECT_EMPTY
+                                  : personCargoFilter
+                            }
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === "") setPersonCargoFilter(null);
+                              else if (v === CASHIER_CARGO_SELECT_EMPTY) {
+                                setPersonCargoFilter("");
+                              } else setPersonCargoFilter(v);
+                            }}
+                            className="mt-1 w-full cursor-pointer appearance-none rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 pr-8 text-sm font-medium text-(--cashier-text) outline-none ring-(--cashier-brand)/30 transition-colors hover:bg-(--cashier-surface) focus:ring-2"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                              backgroundRepeat: "no-repeat",
+                              backgroundPosition: "right 0.65rem center",
+                            }}
+                          >
+                            <option value="">Todos los cargos</option>
+                            {cashierCargoSelectOptions.sorted.map((cargo) => (
+                              <option key={cargo} value={cargo}>
+                                {cargo}
+                              </option>
+                            ))}
+                            {cashierCargoSelectOptions.hasEmpty ? (
+                              <option value={CASHIER_CARGO_SELECT_EMPTY}>
+                                Sin cargo
+                              </option>
+                            ) : null}
+                          </select>
+                        </label>
                         <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs font-semibold text-(--cashier-muted)">
                           Mostrando {filteredPeopleBreakdown.length} de{" "}
                           {peopleBreakdown.length}
                         </span>
-                        {personSearchQuery && (
+                        {(personSearchQuery || personCargoFilter !== null) && (
                           <button
                             type="button"
-                            onClick={() => setPersonSearchQuery("")}
+                            onClick={() => {
+                              setPersonSearchQuery("");
+                              setPersonCargoFilter(null);
+                            }}
                             className="rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
                           >
                             Limpiar

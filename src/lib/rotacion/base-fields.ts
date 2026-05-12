@@ -287,11 +287,13 @@ export const resolveRotacionBaseSqlFields = async (
     "costo_unitario",
   ]);
   const avgUnitCostAtSaleExpr = numericColumnExpr(columns, avgUnitCostAtSaleColumn);
-  const costOfSalesExpr = totalCostColumn
-    ? `ROUND((${totalCostExpr})::numeric, 2)`
+  /** Misma base que costo de ventas: total_costo si existe; si no, unidades x costo unitario. */
+  const rawCostOfSalesNumericExpr = totalCostColumn
+    ? `(${totalCostExpr})::numeric`
     : avgUnitCostAtSaleColumn
-      ? `ROUND(((${unitsSoldExpr}) * (${avgUnitCostAtSaleExpr}))::numeric, 2)`
-      : "0::numeric";
+      ? `((${unitsSoldExpr}) * (${avgUnitCostAtSaleExpr}))::numeric`
+      : `0::numeric`;
+  const costOfSalesExpr = `ROUND((${rawCostOfSalesNumericExpr}), 2)`;
   const closingUnitsExpr = `GREATEST(${numericExpr(columns, [
     "can_disponible_foto",
     "inventario_cierre",
@@ -352,11 +354,9 @@ export const resolveRotacionBaseSqlFields = async (
     unitExpr: nullableTextExpr(columns, ["id_unidad", "unidad"]),
     salesExpr,
     costOfSalesExpr,
-    // Margen del periodo por fila bajo regla de kardex (promedio ponderado):
-    // costo total venta = unidades vendidas * costo promedio unitario vigente.
-    marginExpr: avgUnitCostAtSaleColumn
-      ? `ROUND(((${salesExpr}) - ((${unitsSoldExpr}) * (${avgUnitCostAtSaleExpr})))::numeric, 2)`
-      : "0::numeric",
+    // Margen $ = venta - costo (misma base que costOfSalesExpr).
+    // Margen % en UI: (1 - costo/venta) x 100 = (margen$/venta) x 100.
+    marginExpr: `ROUND(((${salesExpr})::numeric - (${rawCostOfSalesNumericExpr}))::numeric, 2)`,
     unitsSoldExpr,
     closingUnitsExpr,
     inventoryValueExpr,
