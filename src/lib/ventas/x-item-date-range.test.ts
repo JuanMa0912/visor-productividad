@@ -34,26 +34,27 @@ test("determina correctamente el borde faltante", () => {
   assert.equal(resolveMissingBoundary(true, true), null);
 });
 
-test("arma el payload estructurado para DATE_NOT_FOUND", () => {
+test("arma el payload estructurado para DATE_NOT_FOUND (sin datos en el rango)", () => {
   assert.deepEqual(
     buildDateNotFoundError(
       {
         minDate: "2025-11-01",
         maxDate: "2026-04-06",
         hasStart: false,
-        hasEnd: true,
+        hasEnd: false,
       },
-      "2026-01-01",
-      "2026-01-31",
+      "2099-01-01",
+      "2099-01-31",
     ),
     {
       code: "DATE_NOT_FOUND",
-      error: "La fecha inicial 2026-01-01 no se encontro en la base de datos.",
-      requestedStart: "2026-01-01",
-      requestedEnd: "2026-01-31",
+      error:
+        "Las fechas 2099-01-01 y 2099-01-31 no se encontraron en la base de datos.",
+      requestedStart: "2099-01-01",
+      requestedEnd: "2099-01-31",
       availableStart: "2025-11-01",
       availableEnd: "2026-04-06",
-      missingBoundary: "start",
+      missingBoundary: "both",
     },
   );
 });

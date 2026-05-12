@@ -168,12 +168,22 @@ type MatrixCellValue = {
   diDays: number;
 };
 
-const calculateDiDays = (row: Pick<InventarioSummaryRow, "inventoryUnits" | "totalUnits" | "trackedDays">) => {
-  if (row.inventoryUnits <= 0) return 0;
+/** Misma formula que la API de rotacion (rotation): inv*cierre * dias_con_dato / ventas_periodo; sin ventas -> NO_SALES. */
+const calculateDiDays = (
+  row: Pick<
+    InventarioSummaryRow,
+    "inventoryUnits" | "inventoryValue" | "totalUnits" | "trackedDays"
+  >,
+) => {
+  if (row.inventoryUnits <= 0 || row.inventoryValue <= 0) return 0;
   if (row.totalUnits <= 0 || row.trackedDays <= 0) return NO_SALES_DI_VALUE;
-  // API: inventario = cierre ultimo dia del rango (por sede); totalUnits = ventas del periodo;
-  // trackedDays = dias distintos con dato. DI = inventario / (ventas/dia) ~ cobertura vs ritmo del rango.
   return (row.inventoryUnits * row.trackedDays) / row.totalUnits;
+};
+
+type SummaryItemAgg = InventarioSummaryRow & {
+  diWeightedNum: number;
+  diWeightedDen: number;
+  anyNoSalesDi: boolean;
 };
 
 const buildSedeOptionValue = (empresa: string, sedeId: string) =>
@@ -1119,28 +1129,51 @@ export default function InventarioXItemPage() {
   );
 
   const summarizedItemRows = useMemo(() => {
-    const itemMap = new Map<string, InventarioSummaryRow>();
+    const itemMap = new Map<string, SummaryItemAgg>();
+
+    const mergedRotationDays = (agg: SummaryItemAgg) => {
+      if (agg.inventoryUnits <= 0 || agg.inventoryValue <= 0) return 0;
+      if (agg.anyNoSalesDi) return NO_SALES_DI_VALUE;
+      if (agg.diWeightedDen <= 0) return NO_SALES_DI_VALUE;
+      return agg.diWeightedNum / agg.diWeightedDen;
+    };
 
     filteredRows.forEach((row) => {
       const current = itemMap.get(row.item);
+      const rowNoSales =
+        row.totalUnits <= 0 ||
+        row.trackedDays <= 0 ||
+        row.rotationDays >= NO_SALES_DI_VALUE;
+
       if (current) {
         current.inventoryUnits += row.inventoryUnits;
         current.inventoryValue += row.inventoryValue;
         current.totalUnits += row.totalUnits;
         current.trackedDays = Math.max(current.trackedDays, row.trackedDays);
-        current.rotationDays = calculateDiDays(current);
         current.companyCount = Math.max(current.companyCount, row.companyCount);
         current.sedeCount = Math.max(current.sedeCount, row.sedeCount);
+        current.anyNoSalesDi = current.anyNoSalesDi || rowNoSales;
+        if (!rowNoSales && row.totalUnits > 0) {
+          current.diWeightedNum += row.rotationDays * row.totalUnits;
+          current.diWeightedDen += row.totalUnits;
+        }
+        current.rotationDays = mergedRotationDays(current);
         return;
       }
 
       itemMap.set(row.item, {
         ...row,
+        diWeightedNum: rowNoSales ? 0 : row.rotationDays * row.totalUnits,
+        diWeightedDen: rowNoSales ? 0 : row.totalUnits,
+        anyNoSalesDi: rowNoSales,
         rotationDays: calculateDiDays(row),
       });
     });
 
-    return Array.from(itemMap.values());
+    return Array.from(itemMap.values()).map(
+      ({ diWeightedNum: _n, diWeightedDen: _d, anyNoSalesDi: _a, ...rest }) =>
+        rest,
+    );
   }, [filteredRows]);
 
   const itemOptions = useMemo<SelectOption[]>(() => {
@@ -1597,6 +1630,48 @@ export default function InventarioXItemPage() {
   );
 
   const matrixRowsBySede = useMemo(() => {
+    type CellAgg = {
+      inventoryUnits: number;
+      diWeightedNum: number;
+      diWeightedDen: number;
+      anyNoSalesDi: boolean;
+    };
+
+    const cellAggs = new Map<string, CellAgg>();
+    const sedeMeta = new Map<
+      string,
+      { empresa: string; sedeId: string; sedeName: string }
+    >();
+
+    filteredMatrixRows.forEach((row) => {
+      const sedeKey = `${row.empresa}::${row.sedeId}`;
+      sedeMeta.set(sedeKey, {
+        empresa: row.empresa,
+        sedeId: row.sedeId,
+        sedeName: row.sedeName,
+      });
+
+      const cellKey = `${sedeKey}::${row.item}`;
+      const rowNoSales =
+        row.totalUnits <= 0 ||
+        row.trackedDays <= 0 ||
+        row.rotationDays >= NO_SALES_DI_VALUE;
+
+      const agg = cellAggs.get(cellKey) ?? {
+        inventoryUnits: 0,
+        diWeightedNum: 0,
+        diWeightedDen: 0,
+        anyNoSalesDi: false,
+      };
+      agg.inventoryUnits += row.inventoryUnits;
+      agg.anyNoSalesDi = agg.anyNoSalesDi || rowNoSales;
+      if (!rowNoSales && row.totalUnits > 0) {
+        agg.diWeightedNum += row.rotationDays * row.totalUnits;
+        agg.diWeightedDen += row.totalUnits;
+      }
+      cellAggs.set(cellKey, agg);
+    });
+
     const grouped = new Map<
       string,
       {
@@ -1609,25 +1684,37 @@ export default function InventarioXItemPage() {
       }
     >();
 
-    filteredMatrixRows.forEach((row) => {
-      const key = `${row.empresa}::${row.sedeId}`;
-      const shortSede = stripInventarioSedeDisplayPrefix(row.sedeName);
-      const current = grouped.get(key) ?? {
-        key,
-        empresa: row.empresa,
-        sedeId: row.sedeId,
-        sedeName: row.sedeName,
+    cellAggs.forEach((agg, cellKey) => {
+      const parts = cellKey.split("::");
+      const item = parts.pop() ?? "";
+      const sedeKey = parts.join("::");
+      const meta = sedeMeta.get(sedeKey);
+      if (!meta) return;
+
+      const shortSede = stripInventarioSedeDisplayPrefix(meta.sedeName);
+      const current = grouped.get(sedeKey) ?? {
+        key: sedeKey,
+        empresa: meta.empresa,
+        sedeId: meta.sedeId,
+        sedeName: meta.sedeName,
         displayName: shortSede,
         items: {},
       };
 
-      const existing = current.items[row.item];
-      const inventoryUnits = (existing?.inventoryUnits ?? 0) + row.inventoryUnits;
-      current.items[row.item] = {
-        inventoryUnits,
-        diDays: row.rotationDays,
+      const diDays =
+        agg.inventoryUnits <= 0
+          ? 0
+          : agg.anyNoSalesDi
+            ? NO_SALES_DI_VALUE
+            : agg.diWeightedDen > 0
+              ? agg.diWeightedNum / agg.diWeightedDen
+              : NO_SALES_DI_VALUE;
+
+      current.items[item] = {
+        inventoryUnits: agg.inventoryUnits,
+        diDays,
       };
-      grouped.set(key, current);
+      grouped.set(sedeKey, current);
     });
 
     return Array.from(grouped.values()).sort((left, right) =>
@@ -2684,8 +2771,10 @@ export default function InventarioXItemPage() {
           Esta primera version del modulo usa el ultimo corte disponible de la
           tabla base de rotacion para darte una lectura rapida del inventario
           por referencia. El listado de lineas e items al elegir alcance usa el
-          ultimo dia del rango para cargar rapido; la matriz usa todo el rango y
-          el DI con inventario de cierre y ventas del periodo. En la siguiente
+          ultimo dia del rango para cargar rapido; la matriz usa todo el rango.
+          El DI replica la logica de Rotacion: inventario de cierre en la ultima
+          fecha con dato por empresa/sede/item, dias con dato en el periodo y
+          ventas del periodo (sin venta = 999999). En la siguiente
           iteracion podemos profundizar con columnas adicionales, comportamiento
           por sede o comparativos.
         </div>

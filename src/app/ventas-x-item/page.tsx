@@ -45,6 +45,26 @@ const LOAD_EMPRESA_OPTIONS = Object.keys(EMPRESA_LABELS).sort();
 
 const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
 
+const DEFAULT_LOAD_DAYS = 30;
+
+/** Últimos `DEFAULT_LOAD_DAYS` días (inclusivo) hasta la última fecha con datos (`max`), sin bajar de `min`. */
+const defaultRollingDaysRange = (
+  min: string,
+  max: string,
+): { start: string; end: string } | null => {
+  if (!max || !/^\d{4}-\d{2}-\d{2}$/.test(max)) return null;
+  const endAtNoon = new Date(`${max}T12:00:00`);
+  if (Number.isNaN(endAtNoon.getTime())) return null;
+  const startDate = new Date(endAtNoon);
+  startDate.setDate(startDate.getDate() - (DEFAULT_LOAD_DAYS - 1));
+  const y = startDate.getFullYear();
+  const m = String(startDate.getMonth() + 1).padStart(2, "0");
+  const d = String(startDate.getDate()).padStart(2, "0");
+  let start = `${y}-${m}-${d}`;
+  if (min && /^\d{4}-\d{2}-\d{2}$/.test(min) && start < min) start = min;
+  return { start, end: max };
+};
+
 const escapeCsv = (value: string | number) => {
   const text = String(value ?? "");
   if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
@@ -83,7 +103,9 @@ export default function VentasXItemPage() {
   const [fileName, setFileName] = useState("");
   const [dbMinDate, setDbMinDate] = useState("");
   const [dbMaxDate, setDbMaxDate] = useState("");
-  const [empresasCargaSel, setEmpresasCargaSel] = useState<string[]>([]);
+  const [empresasCargaSel, setEmpresasCargaSel] = useState<string[]>(
+    () => [...LOAD_EMPRESA_OPTIONS],
+  );
   const [empresasSel, setEmpresasSel] = useState<string[]>([]);
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
@@ -468,13 +490,21 @@ export default function VentasXItemPage() {
       setDbMinDate(min);
       setDbMaxDate(max);
       setDateStart((prev) => {
-        if (!prev) return min;
+        if (!prev) {
+          const rolling = defaultRollingDaysRange(min, max);
+          if (rolling) return rolling.start;
+          return min;
+        }
         if (min && prev < min) return min;
         if (max && prev > max) return max;
         return prev;
       });
       setDateEnd((prev) => {
-        if (!prev) return max;
+        if (!prev) {
+          const rolling = defaultRollingDaysRange(min, max);
+          if (rolling) return rolling.end;
+          return max;
+        }
         if (min && prev < min) return min;
         if (max && prev > max) return max;
         return prev;
@@ -878,7 +908,7 @@ export default function VentasXItemPage() {
             Carga desde base de datos
           </p>
           <p className="mt-1 text-xs text-slate-600">
-            Al elegir fechas validas y al menos una empresa, la carga se inicia sola (puedes repetir con el boton si lo necesitas).
+            Al entrar se eligen todas las empresas y los últimos {DEFAULT_LOAD_DAYS} días hasta el último día con datos; la carga arranca sola. Puedes ajustar y repetir con el botón si lo necesitas.
           </p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
@@ -948,7 +978,7 @@ export default function VentasXItemPage() {
           <p className="mt-2 text-xs text-slate-500">
             {fileName
               ? `Fuente actual: ${fileName}`
-              : "Selecciona fecha y una o varias empresas; la carga arranca sola al completar."}
+              : "Ajusta fecha o empresas si quieres otro rango; la carga arranca sola al tener rango valido."}
           </p>
           <p className="mt-1 text-[11px] text-slate-500">
             {minDateKey && maxDateKey

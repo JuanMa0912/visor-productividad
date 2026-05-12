@@ -172,7 +172,7 @@ const buildEndDateEqualsSql = (
 ) =>
   column === "fecha_carga" || column === "fecha_dia"
     ? `${column}::date = TO_DATE(${endParam}::text, 'YYYYMMDD')`
-    : `${column} = ${endParam}
+    : `${column} = ${endParam}::text
         AND ${column} ~ '^[0-9]{8}$'`;
 
 const getAvailableDateRange = async () => {
@@ -409,17 +409,12 @@ const queryInventorySummaryRows = async ({
       ranked AS (
         SELECT
           *,
-          ROW_NUMBER() OVER (
-            PARTITION BY
-              empresa,
-              sede_id,
-              linea,
-              linea_n1_codigo,
-              item,
-              descripcion,
-              unidad
-            ORDER BY consulta_date DESC, carga_ts DESC NULLS LAST
-          ) AS latest_rank
+          MIN(consulta_date) OVER (
+            PARTITION BY empresa, sede_id, item
+          ) AS first_consulta_date,
+          MAX(consulta_date) OVER (
+            PARTITION BY empresa, sede_id, item
+          ) AS latest_consulta_date
         FROM scoped
       ),
       sales_agg AS (
@@ -446,10 +441,19 @@ const queryInventorySummaryRows = async ({
           item,
           descripcion,
           unidad,
-          SUM(inventory_units)::numeric AS inventory_units,
-          SUM(inventory_value)::numeric AS inventory_value
+          SUM(
+            CASE
+              WHEN consulta_date = latest_consulta_date THEN inventory_units
+              ELSE 0
+            END
+          )::numeric AS inventory_units,
+          SUM(
+            CASE
+              WHEN consulta_date = latest_consulta_date THEN inventory_value
+              ELSE 0
+            END
+          )::numeric AS inventory_value
         FROM ranked
-        WHERE latest_rank = 1
         GROUP BY
           linea,
           linea_n1_codigo,
@@ -486,7 +490,7 @@ const queryInventorySummaryRows = async ({
         s.tracked_days,
         CASE
           WHEN l.inventory_units <= 0 OR l.inventory_value <= 0 THEN 0::numeric
-          WHEN s.total_units <= 0 THEN 999999::numeric
+          WHEN s.total_units <= 0 OR s.tracked_days <= 0 THEN 999999::numeric
           ELSE
             (l.inventory_units * s.tracked_days::numeric) / NULLIF(s.total_units, 0)
         END AS rotation_days,
@@ -623,23 +627,18 @@ const queryInventoryMatrixRows = async ({
       ranked AS (
         SELECT
           *,
-          ROW_NUMBER() OVER (
-            PARTITION BY
-              empresa,
-              sede_id,
-              item,
-              linea,
-              linea_n1_codigo,
-              descripcion,
-              unidad
-            ORDER BY consulta_date DESC, carga_ts DESC NULLS LAST
-          ) AS latest_rank
+          MIN(consulta_date) OVER (
+            PARTITION BY empresa, sede_id, item
+          ) AS first_consulta_date,
+          MAX(consulta_date) OVER (
+            PARTITION BY empresa, sede_id, item
+          ) AS latest_consulta_date
         FROM scoped
       ),
       top_items AS (
         SELECT item
         FROM ranked
-        WHERE latest_rank = 1
+        WHERE consulta_date = latest_consulta_date
         GROUP BY item
         ORDER BY SUM(inventory_value) DESC NULLS LAST, item ASC
         LIMIT ${itemFilterParam ? "999999" : "10"}
@@ -656,8 +655,18 @@ const queryInventoryMatrixRows = async ({
           unidad,
           SUM(total_units)::numeric AS total_units,
           COUNT(DISTINCT consulta_date)::int AS tracked_days,
-          MAX(CASE WHEN latest_rank = 1 THEN inventory_units END)::numeric AS inventory_units,
-          MAX(CASE WHEN latest_rank = 1 THEN inventory_value END)::numeric AS inventory_value
+          SUM(
+            CASE
+              WHEN consulta_date = latest_consulta_date THEN inventory_units
+              ELSE 0
+            END
+          )::numeric AS inventory_units,
+          SUM(
+            CASE
+              WHEN consulta_date = latest_consulta_date THEN inventory_value
+              ELSE 0
+            END
+          )::numeric AS inventory_value
         FROM ranked
         WHERE ${
           itemFilterParam
@@ -689,7 +698,7 @@ const queryInventoryMatrixRows = async ({
         tracked_days,
         CASE
           WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 0::numeric
-          WHEN total_units <= 0 THEN 999999::numeric
+          WHEN total_units <= 0 OR tracked_days <= 0 THEN 999999::numeric
           ELSE (inventory_units * tracked_days::numeric) / NULLIF(total_units, 0)
         END AS rotation_days
       FROM aggregated

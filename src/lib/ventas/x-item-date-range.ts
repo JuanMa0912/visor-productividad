@@ -34,6 +34,7 @@ export type VentasXItemDateAvailability = {
   minDate: string | null;
   maxDate: string | null;
   totalRows: number;
+  /** True si existe al menos un `fecha_dcto` en [start,end] (misma condición que `hasEnd` cuando se pidió rango). */
   hasStart: boolean;
   hasEnd: boolean;
 };
@@ -154,17 +155,18 @@ export const getVentasXItemDateAvailability = async (
   requestedRange?: { startCompact: string; endCompact: string },
 ): Promise<VentasXItemDateAvailability> => {
   const params = [...(filter.params ?? [])];
+  /** Hay al menos un `fecha_dcto` dentro del rango compacto (no exige que existan todos los días calendario). */
   let hasStartSql = "FALSE";
   let hasEndSql = "FALSE";
 
   if (requestedRange) {
     params.push(requestedRange.startCompact);
     const startParamIndex = params.length;
-    hasStartSql = `COUNT(*) FILTER (WHERE fecha_dcto = $${startParamIndex}) > 0`;
-
     params.push(requestedRange.endCompact);
     const endParamIndex = params.length;
-    hasEndSql = `COUNT(*) FILTER (WHERE fecha_dcto = $${endParamIndex}) > 0`;
+    const inRange = `COUNT(*) FILTER (WHERE fecha_dcto >= $${startParamIndex}::text AND fecha_dcto <= $${endParamIndex}::text) > 0`;
+    hasStartSql = inRange;
+    hasEndSql = inRange;
   }
 
   const whereSql =
