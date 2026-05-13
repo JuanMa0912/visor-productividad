@@ -107,7 +107,7 @@ Exportaciones
 ### Rasgos de implementacion
 
 - Las vistas principales usan `"use client"`.
-- No existe `middleware.ts`; la autorizacion se repite por endpoint.
+- `src/proxy.ts` (convencion Next.js 16, antes `middleware`) redirige a `/login` sin cookie `vp_session`, salvo `/login` y `/ExcelDian`; las APIs siguen validando sesion en cada `route.ts`.
 - SQL, normalizaciones y shape de respuesta viven en los handlers.
 - Hay mapeos manuales para sedes, empresas, centros de operacion y departamentos.
 - Los caches actuales no son distribuidos:
@@ -185,7 +185,7 @@ Nota operativa: la home funcional ya no se organiza por "tableros" sino por secc
 
 ### Limitaciones de seguridad actuales
 
-- No hay `middleware.ts` para auth centralizada.
+- La capa de borde (`src/proxy.ts`) no sustituye la validacion en APIs: cada endpoint sigue usando `requireAuthSession` / `requireAdminSession` donde corresponda.
 - Los rate limits viven en memoria del proceso y no se comparten entre replicas.
 - No hay proceso documentado de limpieza de sesiones expiradas.
 
@@ -367,7 +367,7 @@ El repositorio incluye `.github/workflows/ci.yml`. En cada push o Pull Request c
 - No se encontro documentacion de despliegue.
 - No se encontro documentacion de backup, restore ni observabilidad.
 - El CI versionado cubre lint, typecheck, test unitario y build; aun no existe checklist formal de release.
-- La ausencia de `middleware.ts` obliga a repetir validaciones en cliente y API.
+- Aun con `src/proxy.ts` en el borde, la autorizacion fina (permisos, sedes, rate limits) sigue en cada API y en el cliente donde aplique.
 - Parte importante de la logica de negocio sigue concentrada en handlers grandes, especialmente `src/app/api/hourly-analysis/route.ts` y `src/app/api/productivity/route.ts`.
 
 ### Cuando actualizar este documento

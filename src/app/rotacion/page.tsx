@@ -1250,7 +1250,7 @@ export default function RotacionPage() {
         lastSale >= rangeStart && lastSale <= rangeEnd;
       return !hasSaleDateInsideSelectedRange;
     },
-    [dateRange.end, dateRange.start],
+    [dateRange],
   );
 
   const setTableHostRef = useCallback(
@@ -1628,8 +1628,7 @@ export default function RotacionPage() {
       baseRowsBySedeByKey,
       ceroEstadoByKey,
       ceroEstadoFilterByGroup,
-      dateRange.end,
-      dateRange.start,
+      dateRange,
       isNuevoItemInSelectedRange,
       rowsBySede,
       rowsQuickFilterByGroup,
