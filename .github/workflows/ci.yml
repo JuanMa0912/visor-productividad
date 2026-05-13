@@ -4,9 +4,9 @@ on:
   pull_request:
     branches:
       - main
-  push:
-    branches:
-      - main
+  # Sin push a main: evita correr lint/test/build en cada merge o subida directa.
+  # Ejecuta manualmente desde Actions → CI → "Run workflow" cuando lo necesites.
+  workflow_dispatch:
 
 permissions:
   contents: read
