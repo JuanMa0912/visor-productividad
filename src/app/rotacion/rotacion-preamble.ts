@@ -1151,6 +1151,13 @@ const buildConsolidatedRowsBySelection = (
     current.totalUnits += row.totalUnits;
     current.inventoryUnits += row.inventoryUnits;
     current.inventoryValue += row.inventoryValue;
+    current.openingInventoryUnits =
+      safeNumber(current.openingInventoryUnits) +
+      safeNumber(row.openingInventoryUnits);
+    current.minInventoryUnits = Math.min(
+      safeNumber(current.minInventoryUnits),
+      safeNumber(row.minInventoryUnits),
+    );
     current.trackedDays = Math.max(current.trackedDays, row.trackedDays);
     current.salesEffectiveDays = Math.max(
       current.salesEffectiveDays,
@@ -1200,42 +1207,95 @@ const isCeroRotacionRow = (row: RotationRow) =>
 
 const EXCLUDE_RECENT_SALE_DAYS = 5;
 
+const hasNoSalesInSelectedPeriod = (row: RotationRow) =>
+  row.totalSales <= 0 &&
+  row.totalUnits <= 0 &&
+  row.salesEffectiveDays <= 0;
+
+const isDateKeyWithinInclusiveRange = (dateKey: string, range: DateRange) => {
+  const t = dateKey.trim();
+  if (!t) return false;
+  return t >= range.start && t <= range.end;
+};
+
 /**
- * Nuevo:
- * 1) Regla original: sin ventas, con inventario y ultimo ingreso hoy/ayer.
- * 2) Regla adicional negocio: si estuvo agotado (inventario 0 en el rango)
- *    y ahora tiene inventario (restock), tambien cuenta como S.
- * En ambos casos se mantiene la condicion de ultimo ingreso hoy/ayer,
- * y si tiene ultima venta reciente (< 5 dias), se excluye.
+ * True si el rango incluye alguna fecha de calendario con dia de mes < dayLimit
+ * (p. ej. 13 → hay dias "antes del 13" en el periodo).
  */
-const isNuevoItemRow = (row: RotationRow) => {
+const rangeIntersectsDayOfMonthBefore = (
+  range: DateRange,
+  dayLimit: number,
+): boolean => {
+  const start = parseDateKey(range.start);
+  const end = parseDateKey(range.end);
+  for (let t = start.getTime(); t <= end.getTime(); t += DAY_IN_MS) {
+    if (new Date(t).getDate() < dayLimit) return true;
+  }
+  return false;
+};
+
+/**
+ * Restock (categoria S): sin inventario al inicio del periodo, sin ventas en el
+ * periodo, inventario al cierre, y fecha de ultimo ingreso dentro del periodo.
+ */
+const isRestockItemRow = (row: RotationRow, range: DateRange) => {
   const duvDays = calculateDuvDays(row.lastPurchaseDate);
-  const hasRecentSales = duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS;
-  if (hasRecentSales) return false;
-  const hasSalesInSelectedPeriod =
-    row.totalSales > 0 || row.totalUnits > 0 || row.salesEffectiveDays > 0;
-  if (hasSalesInSelectedPeriod) return false;
+  if (duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS) return false;
+  if (!hasNoSalesInSelectedPeriod(row)) return false;
+  if (!(row.inventoryUnits > 0)) return false;
+  if (row.openingInventoryUnits > 0) return false;
+  if (!row.lastMovementDate) return false;
+  return isDateKeyWithinInclusiveRange(row.lastMovementDate, range);
+};
+
+/**
+ * Nuevo clasico (S): sin ventas en el periodo, con inventario, ultimo ingreso hoy o ayer.
+ */
+const isNuevoClasicoItemRow = (row: RotationRow) => {
+  const duvDays = calculateDuvDays(row.lastPurchaseDate);
+  if (duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS) return false;
+  if (!hasNoSalesInSelectedPeriod(row)) return false;
   if (!(row.salesEffectiveDays <= 0 && row.inventoryUnits > 0)) return false;
   const daysSinceIngreso = calculateDiSinceLastIngresoDays(row.lastMovementDate);
   const hasRecentIngreso = daysSinceIngreso !== null && daysSinceIngreso <= 1;
-  if (!hasRecentIngreso) return false;
-  const wasOutOfStockAndRestocked =
-    row.minInventoryUnits <= 0 && row.inventoryUnits > 0;
-  if (wasOutOfStockAndRestocked) return true;
-  return true;
+  return hasRecentIngreso;
 };
 
-const isCeroRotacionExcludingNuevo = (row: RotationRow) =>
-  isCeroRotacionRow(row) && !isNuevoItemRow(row);
+/**
+ * S (restock o nuevo): restock segun periodo seleccionado, o nuevo por ingreso muy reciente.
+ */
+const isNuevoItemRow = (row: RotationRow, range: DateRange | null) => {
+  if (range?.start && range?.end && isRestockItemRow(row, range)) return true;
+  return isNuevoClasicoItemRow(row);
+};
+
+/**
+ * Cero rotacion: sin ventas efectivas en el periodo, con inventario al cierre,
+ * no es S, y si el periodo incluye dias anteriores al 13 del mes debe haber
+ * inventario al inicio del periodo ("tenia inventario antes del 13").
+ */
+const isCeroRotacionExcludingNuevo = (
+  row: RotationRow,
+  range: DateRange | null,
+) => {
+  if (!isCeroRotacionRow(row)) return false;
+  if (isNuevoItemRow(row, range)) return false;
+  if (!range?.start || !range?.end) return true;
+  if (rangeIntersectsDayOfMonthBefore(range, 13)) {
+    return row.openingInventoryUnits > 0;
+  }
+  return true;
+};
 
 const applyRowsQuickFilter = (
   rows: RotationRow[],
   filter: GroupRowsQuickFilter,
   ventaHastaMax: number | null,
+  dateRange: DateRange | null,
 ): RotationRow[] => {
   if (filter === "none") return rows;
   if (filter === "cero_rotacion") {
-    return rows.filter((row) => isCeroRotacionExcludingNuevo(row));
+    return rows.filter((row) => isCeroRotacionExcludingNuevo(row, dateRange));
   }
   if (filter === "venta_hasta") {
     if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) return rows;
@@ -1245,10 +1305,10 @@ const applyRowsQuickFilter = (
   }
   if (filter === "both") {
     if (ventaHastaMax == null || Number.isNaN(ventaHastaMax)) {
-      return rows.filter((row) => isCeroRotacionExcludingNuevo(row));
+      return rows.filter((row) => isCeroRotacionExcludingNuevo(row, dateRange));
     }
     return rows.filter((row) => {
-      const isCeroRotacion = isCeroRotacionExcludingNuevo(row);
+      const isCeroRotacion = isCeroRotacionExcludingNuevo(row, dateRange);
       const isVentaHasta =
         row.totalSales >= 1 && row.totalSales <= ventaHastaMax;
       return isCeroRotacion || isVentaHasta;

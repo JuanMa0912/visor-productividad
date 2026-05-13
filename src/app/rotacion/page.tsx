@@ -1239,7 +1239,9 @@ export default function RotacionPage() {
   );
   const isNuevoItemInSelectedRange = useCallback(
     (row: RotationRow) => {
-      if (!isNuevoItemRow(row)) return false;
+      const rangeForS =
+        dateRange.start && dateRange.end ? dateRange : null;
+      if (!isNuevoItemRow(row, rangeForS)) return false;
       if (!row.lastPurchaseDate || !dateRange.start || !dateRange.end) return true;
       const lastSale = parseDateKey(row.lastPurchaseDate);
       const rangeStart = parseDateKey(dateRange.start);
@@ -1530,6 +1532,7 @@ export default function RotacionPage() {
           group.rows,
           rowFilter,
           ventaHastaCap,
+          dateRange,
         );
         const filteredRows =
           isZeroRotationTableView && zeroEstadoFilter !== "all"
@@ -1551,7 +1554,9 @@ export default function RotacionPage() {
           categoryFilter === "all"
             ? filteredRows
             : categoryFilter === "0"
-              ? filteredRows.filter((row) => isCeroRotacionExcludingNuevo(row))
+              ? filteredRows.filter((row) =>
+                  isCeroRotacionExcludingNuevo(row, dateRange),
+                )
               : categoryFilter === "S" || categoryFilter === "R" || categoryFilter === "N"
                 ? filteredRows.filter((row) => isNuevoItemInSelectedRange(row))
                 : Array.isArray(categoryFilter)
@@ -1565,7 +1570,7 @@ export default function RotacionPage() {
         const rows = categoryFilteredRows.map((row) => {
           const displayCategory = isNuevoItemInSelectedRange(row)
             ? "S"
-            : isCeroRotacionExcludingNuevo(row)
+            : isCeroRotacionExcludingNuevo(row, dateRange)
               ? "0"
               : (categoryByItem.get(row.item) ?? "D");
           const ceroEstadoKey = makeCeroRotacionEstadoKey(row.sedeId, row.item);
@@ -1623,6 +1628,8 @@ export default function RotacionPage() {
       baseRowsBySedeByKey,
       ceroEstadoByKey,
       ceroEstadoFilterByGroup,
+      dateRange.end,
+      dateRange.start,
       isNuevoItemInSelectedRange,
       rowsBySede,
       rowsQuickFilterByGroup,
@@ -2584,6 +2591,7 @@ export default function RotacionPage() {
                       group.rows,
                       rowFilter,
                       ventaHastaCap,
+                      dateRange,
                     );
                     const filteredRows =
                       isZeroRotationTableView && zeroEstadoFilter !== "all"
@@ -2614,7 +2622,7 @@ export default function RotacionPage() {
                         ? filteredRows
                         : categoryFilter === "0"
                           ? filteredRows.filter((row) =>
-                              isCeroRotacionExcludingNuevo(row),
+                              isCeroRotacionExcludingNuevo(row, dateRange),
                             )
                           : categoryFilter === "S" || categoryFilter === "R" || categoryFilter === "N"
                             ? filteredRows.filter((row) =>
@@ -2728,7 +2736,7 @@ export default function RotacionPage() {
                     ).length;
                     const categoryFilteredCeroRotacionCount =
                       categoryFilteredRows.filter((row) =>
-                        isCeroRotacionExcludingNuevo(row),
+                        isCeroRotacionExcludingNuevo(row, dateRange),
                       ).length;
                     const ventaHastaInput =
                       ventaHastaInputByGroup[groupKey] ?? "";
@@ -2751,7 +2759,7 @@ export default function RotacionPage() {
                                   row.totalSales <= ventaHastaParsedPreview;
                           }).length;
                     const ceroRotacionCount = group.rows.filter((row) =>
-                      isCeroRotacionExcludingNuevo(row),
+                      isCeroRotacionExcludingNuevo(row, dateRange),
                     ).length;
                     const totalPages = Math.max(
                       1,
@@ -3838,7 +3846,7 @@ export default function RotacionPage() {
                                     row,
                                   )
                                     ? "S"
-                                    : isCeroRotacionExcludingNuevo(row)
+                                    : isCeroRotacionExcludingNuevo(row, dateRange)
                                       ? "0"
                                       : (categoryByItem.get(row.item) ?? "D");
                                   const categoryColorClass =

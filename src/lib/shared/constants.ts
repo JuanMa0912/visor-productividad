@@ -81,7 +81,7 @@ export const SEDE_ORDER_INDEX_MAP: Map<string, number> = (() => {
 /** Índice en {@link SEDE_ORDER}; desconocidos al final (como en tablas de horas). */
 export function getSedeOrderIndexForRawName(raw: string): number {
   const stripped = stripSedeLabelPrefixes(raw);
-  let key = normalizeKeyCompact(stripped);
+  const key = normalizeKeyCompact(stripped);
   let index = SEDE_ORDER_INDEX_MAP.get(key);
   if (index !== undefined) return index;
   if (key.startsWith("sede") && key.length > 4) {
