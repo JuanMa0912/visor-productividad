@@ -2673,23 +2673,39 @@ export default function RotacionPage() {
                         (acc, row) => acc + row.totalUnits,
                         0,
                       );
-                    const selectedCategoryTotalCost =
-                      categoryFilteredRows.reduce(
-                        (acc, row) => acc + row.totalCost,
-                        0,
-                      );
-                    const selectedCategoryMarginPct = rotationMarginPct(
-                      selectedCategoryTotalSales,
-                      selectedCategoryTotalCost,
+                    const rowsWithCostBasis = categoryFilteredRows.filter(
+                      (row) => row.totalSales > 0 && row.totalCost > 0,
                     );
-                    const infoTotalCost = filteredRows.reduce(
+                    const selectedCategoryMarginSales = rowsWithCostBasis.reduce(
+                      (acc, row) => acc + row.totalSales,
+                      0,
+                    );
+                    const selectedCategoryMarginCost = rowsWithCostBasis.reduce(
                       (acc, row) => acc + row.totalCost,
                       0,
                     );
-                    const infoMarginPct = rotationMarginPct(
-                      infoTotalSales,
-                      infoTotalCost,
+                    const selectedCategoryMarginPct =
+                      selectedCategoryMarginSales > 0
+                        ? rotationMarginPct(
+                            selectedCategoryMarginSales,
+                            selectedCategoryMarginCost,
+                          )
+                        : null;
+                    const infoRowsWithCostBasis = filteredRows.filter(
+                      (row) => row.totalSales > 0 && row.totalCost > 0,
                     );
+                    const infoMarginSales = infoRowsWithCostBasis.reduce(
+                      (acc, row) => acc + row.totalSales,
+                      0,
+                    );
+                    const infoMarginCost = infoRowsWithCostBasis.reduce(
+                      (acc, row) => acc + row.totalCost,
+                      0,
+                    );
+                    const infoMarginPct =
+                      infoMarginSales > 0
+                        ? rotationMarginPct(infoMarginSales, infoMarginCost)
+                        : null;
                     const infoSalesCoverageDays =
                       infoTotalUnits > 0 && daysConsulted > 0
                         ? (infoTotalInvUnits * daysConsulted) / infoTotalUnits
@@ -2715,7 +2731,9 @@ export default function RotacionPage() {
                       }),
                       { totalSales: 0, totalMargin: 0, itemCount: 0 },
                     );
-                    const abcdRowsForMargin = sourceRowsForAbcd.filter((row) => row.totalSales > 0);
+                    const abcdRowsForMargin = sourceRowsForAbcd.filter(
+                      (row) => row.totalSales > 0 && row.totalCost > 0,
+                    );
                     const abcdTotalSalesForMargin = abcdRowsForMargin.reduce(
                       (acc, row) => acc + row.totalSales,
                       0,
@@ -2724,10 +2742,13 @@ export default function RotacionPage() {
                       (acc, row) => acc + row.totalCost,
                       0,
                     );
-                    const abcdSummaryTotalMarginPct = rotationMarginPct(
-                      abcdTotalSalesForMargin,
-                      abcdTotalCostForMargin,
-                    );
+                    const abcdSummaryTotalMarginPct =
+                      abcdTotalSalesForMargin > 0
+                        ? rotationMarginPct(
+                            abcdTotalSalesForMargin,
+                            abcdTotalCostForMargin,
+                          )
+                        : null;
                     const selectedCategoryLabel =
                       formatAbcdCategoryFilterLabel(categoryFilter);
                     const nuevoItemsCount = group.rows.filter((row) =>

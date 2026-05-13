@@ -570,11 +570,13 @@ const formatPrice = (value: number) =>
 const formatPriceWithoutSixZeros = (value: number) =>
   `$ ${Math.round(value / 1_000_000).toLocaleString("es-CO")}`;
 
-const formatPercent = (value: number) =>
-  `${value.toLocaleString("es-CO", {
+const formatPercent = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(value)) return "—";
+  return `${value.toLocaleString("es-CO", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;
+};
 
 const buildExportFileStamp = () => {
   const now = new Date();
@@ -911,10 +913,18 @@ const countAbcdItemsByCategory = (
   return counts;
 };
 
-/** Margen % de ventas = (1 - costo/venta) x 100 (misma regla que negocio / Excel). */
-const rotationMarginPct = (totalSales: number, totalCost: number) => {
-  if (!(totalSales > 0) || !Number.isFinite(totalSales)) return 0;
+/**
+ * Margen % de ventas = (1 - costo/venta) x 100 (misma regla que negocio / Excel).
+ * Con costo 0 no hay base para el % (antes salía 100% y distorsionaba resúmenes).
+ */
+const rotationMarginPct = (
+  totalSales: number,
+  totalCost: number,
+): number | null => {
+  if (!Number.isFinite(totalSales)) return 0;
+  if (!(totalSales > 0)) return 0;
   const cost = Number.isFinite(totalCost) ? totalCost : 0;
+  if (!(cost > 0)) return null;
   return (1 - cost / totalSales) * 100;
 };
 
@@ -923,7 +933,7 @@ type AbcdSummaryRow = {
   totalSales: number;
   itemCount: number;
   totalMargin: number;
-  marginPct: number;
+  marginPct: number | null;
 };
 
 const buildAbcdSummaryRows = (
@@ -932,33 +942,77 @@ const buildAbcdSummaryRows = (
 ): AbcdSummaryRow[] => {
   const byCategory: Record<
     AbcdCategory,
-    { totalSales: number; totalMargin: number; totalCost: number; items: Set<string> }
+    {
+      totalSales: number;
+      totalMargin: number;
+      totalCost: number;
+      marginBasisSales: number;
+      marginBasisCost: number;
+      items: Set<string>;
+    }
   > = {
-    A: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
-    B: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
-    C: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
-    D: { totalSales: 0, totalMargin: 0, totalCost: 0, items: new Set<string>() },
+    A: {
+      totalSales: 0,
+      totalMargin: 0,
+      totalCost: 0,
+      marginBasisSales: 0,
+      marginBasisCost: 0,
+      items: new Set<string>(),
+    },
+    B: {
+      totalSales: 0,
+      totalMargin: 0,
+      totalCost: 0,
+      marginBasisSales: 0,
+      marginBasisCost: 0,
+      items: new Set<string>(),
+    },
+    C: {
+      totalSales: 0,
+      totalMargin: 0,
+      totalCost: 0,
+      marginBasisSales: 0,
+      marginBasisCost: 0,
+      items: new Set<string>(),
+    },
+    D: {
+      totalSales: 0,
+      totalMargin: 0,
+      totalCost: 0,
+      marginBasisSales: 0,
+      marginBasisCost: 0,
+      items: new Set<string>(),
+    },
   };
 
   for (const row of rows) {
     const categoria = categoryByItem.get(row.item) ?? "D";
-    byCategory[categoria].totalSales += row.totalSales;
-    byCategory[categoria].totalMargin += row.totalMargin;
-    byCategory[categoria].totalCost += row.totalCost;
-    byCategory[categoria].items.add(row.item);
+    const bucket = byCategory[categoria];
+    bucket.totalSales += row.totalSales;
+    bucket.totalMargin += row.totalMargin;
+    bucket.totalCost += row.totalCost;
+    bucket.items.add(row.item);
+    if (row.totalSales > 0 && row.totalCost > 0) {
+      bucket.marginBasisSales += row.totalSales;
+      bucket.marginBasisCost += row.totalCost;
+    }
   }
 
   const order: AbcdCategory[] = ["A", "B", "C", "D"];
   return order.map((categoria) => {
-    const totalSales = byCategory[categoria].totalSales;
-    const totalMargin = byCategory[categoria].totalMargin;
-    const totalCost = byCategory[categoria].totalCost;
+    const bucket = byCategory[categoria];
+    const totalSales = bucket.totalSales;
+    const totalMargin = bucket.totalMargin;
+    const marginPct =
+      bucket.marginBasisSales > 0
+        ? rotationMarginPct(bucket.marginBasisSales, bucket.marginBasisCost)
+        : null;
     return {
       categoria,
       totalSales,
       totalMargin,
-      itemCount: byCategory[categoria].items.size,
-      marginPct: rotationMarginPct(totalSales, totalCost),
+      itemCount: bucket.items.size,
+      marginPct,
     };
   });
 };
