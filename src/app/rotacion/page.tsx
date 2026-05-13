@@ -366,7 +366,6 @@ export default function RotacionPage() {
 
       setIsLoadingData(true);
       setError(null);
-      setHasLoadedItems(true);
 
       try {
         if (
@@ -413,6 +412,7 @@ export default function RotacionPage() {
         }
 
         setRows(normalizeRotationRows(payload.rows ?? []));
+        setHasLoadedItems(true);
         if (
           targetSedeSelectionsForQuery.length === 1 &&
           payload.meta?.abcdConfig
@@ -432,6 +432,7 @@ export default function RotacionPage() {
         return true;
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
+          setHasLoadedItems(false);
           return false;
         }
         setRows([]);
@@ -462,7 +463,8 @@ export default function RotacionPage() {
 
   useEffect(() => {
     if (!ready || isLoadingLineCatalog) return;
-    if (rotacionRowsFetchKeyRef.current === null) return;
+    /** No exigir ref previo: si el primer fetch se aborta o falla, el ref queda null y antes el efecto
+     *  nunca volvia a disparar la recarga (tabla vacia hasta recargar la pagina). */
     const allSedeOptionsForQuery = mapRotationSedeOptions(filterCatalog.sedes);
     const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
       selectedSedeSet.has(option.value),

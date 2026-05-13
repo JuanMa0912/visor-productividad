@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { BarChart } from "@mui/x-charts/BarChart";
 import * as ExcelJS from "exceljs";
@@ -117,6 +118,7 @@ export default function VentasXItemPage() {
   const [itemSearch, setItemSearch] = useState("");
   const [itemsDropdownOpen, setItemsDropdownOpen] = useState(false);
   const [summaryRows, setSummaryRows] = useState<VentasXItemPreparedRow[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
   const [exportingXlsx, setExportingXlsx] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [parityLoading, setParityLoading] = useState(false);
@@ -343,6 +345,7 @@ export default function VentasXItemPage() {
   useEffect(() => {
     if (itemsSel.length === 0 || !activeRangeStart || !activeRangeEnd) {
       setSummaryRows([]);
+      setSummaryLoading(false);
       return;
     }
 
@@ -355,10 +358,12 @@ export default function VentasXItemPage() {
     );
     if (itemIds.length === 0) {
       setSummaryRows([]);
+      setSummaryLoading(false);
       return;
     }
 
     const controller = new AbortController();
+    setSummaryLoading(true);
 
     const loadSummary = async () => {
       try {
@@ -385,6 +390,8 @@ export default function VentasXItemPage() {
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSummaryLoading(false);
       }
     };
 
@@ -618,6 +625,7 @@ export default function VentasXItemPage() {
         selectedEmpresasLoaded.length > 0 ? selectedEmpresasLoaded : empresas,
       );
       setSummaryRows([]);
+      setSummaryLoading(false);
       setItemsSel([]);
       setItemsOrder([]);
       setItemSearch("");
@@ -1195,60 +1203,102 @@ export default function VentasXItemPage() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
+            <div className="relative mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
               <h2 className="text-base font-bold text-slate-900">{title}</h2>
-              {tableRows.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-600">
-                  Selecciona al menos un ítem y un rango válido para ver resultados.
-                </p>
-              ) : (
-                <div className="mt-3 overflow-auto rounded-xl border border-slate-200">
-                  <table className="min-w-full text-xs text-slate-700">
-                    <thead className="bg-slate-100">
-                      <tr>
-                        {tableColumns.map((column) => (
-                          <th key={column} className="border-b border-slate-200 px-2 py-2 text-left font-bold">
-                            {column}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tableRows.map((row, index) => {
-                        const isTotal = index === tableRows.length - 1;
-                        const isSunday =
-                          typeof row["Fecha"] === "string" &&
-                          row["Fecha"].includes("/dom") &&
-                          !isTotal;
-                        return (
-                          <tr
-                            key={`${String(row["Fecha"])}-${index}`}
-                            className={isTotal ? "bg-blue-50 font-bold" : ""}
-                          >
-                            {tableColumns.map((column) => {
-                              const value = row[column];
-                              const tDia = column === "T. Dia";
-                              return (
-                                <td
-                                  key={column}
-                                  className={`border-b border-slate-100 px-2 py-1.5 ${
-                                    isSunday ? "font-bold text-red-600" : ""
-                                  } ${tDia ? "font-bold" : ""}`}
-                                >
-                                  {String(value)}
-                                </td>
-                              );
-                            })}
+              <div
+                className={`relative mt-3 ${
+                  itemsSel.length > 0 && summaryLoading ? "min-h-56 sm:min-h-72" : ""
+                }`}
+              >
+                <div
+                  className={
+                    itemsSel.length > 0 &&
+                    summaryLoading &&
+                    tableRows.length > 0
+                      ? "pointer-events-none blur-[2px] opacity-[0.38] transition-[filter,opacity] duration-200"
+                      : ""
+                  }
+                >
+                  {tableRows.length === 0 && !(itemsSel.length > 0 && summaryLoading) ? (
+                    <p className="text-sm text-slate-600">
+                      Selecciona al menos un ítem y un rango válido para ver resultados.
+                    </p>
+                  ) : null}
+                  {tableRows.length > 0 ? (
+                    <div className="overflow-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full text-xs text-slate-700">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            {tableColumns.map((column) => (
+                              <th key={column} className="border-b border-slate-200 px-2 py-2 text-left font-bold">
+                                {column}
+                              </th>
+                            ))}
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {tableRows.map((row, index) => {
+                            const isTotal = index === tableRows.length - 1;
+                            const isSunday =
+                              typeof row["Fecha"] === "string" &&
+                              row["Fecha"].includes("/dom") &&
+                              !isTotal;
+                            return (
+                              <tr
+                                key={`${String(row["Fecha"])}-${index}`}
+                                className={isTotal ? "bg-blue-50 font-bold" : ""}
+                              >
+                                {tableColumns.map((column) => {
+                                  const value = row[column];
+                                  const tDia = column === "T. Dia";
+                                  return (
+                                    <td
+                                      key={column}
+                                      className={`border-b border-slate-100 px-2 py-1.5 ${
+                                        isSunday ? "font-bold text-red-600" : ""
+                                      } ${tDia ? "font-bold" : ""}`}
+                                    >
+                                      {String(value)}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                 </div>
-              )}
+
+                {itemsSel.length > 0 && summaryLoading ? (
+                  <div
+                    className="absolute inset-0 z-10 flex cursor-wait items-center justify-center rounded-xl border border-slate-200/60 bg-slate-50/70 shadow-inner backdrop-blur-md"
+                    aria-live="polite"
+                    aria-busy="true"
+                  >
+                    <div className="mx-4 flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-blue-200/80 bg-white/95 px-10 py-8 text-center shadow-[0_20px_50px_-24px_rgba(30,58,138,0.45)]">
+                      <Loader2
+                        className="h-12 w-12 shrink-0 animate-spin text-blue-600 drop-shadow-sm"
+                        aria-hidden
+                      />
+                      <div>
+                        <p className="text-base font-bold text-slate-900">Cargando tabla</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Obteniendo ventas por ítem para el rango seleccionado…
+                        </p>
+                        <p className="mt-2 text-[11px] leading-snug text-slate-500">
+                          Si cambiaste ítems o fechas, la tabla difuminada puede mostrar la
+                          selección anterior hasta completar la carga.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
-            {pivot && (
+            {pivot && !summaryLoading && (
               <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-base font-bold text-slate-900">Gráficas</h3>

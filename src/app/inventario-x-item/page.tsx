@@ -1883,28 +1883,70 @@ export default function InventarioXItemPage() {
         44,
       );
 
+      const truncatePdfDesc = (value: string, max = 30) => {
+        const trimmed = value.trim();
+        if (trimmed.length <= max) return trimmed;
+        return `${trimmed.slice(0, Math.max(0, max - 1))}…`;
+      };
+
+      /** Misma estructura que la matriz en pantalla: ítem + descripción, luego Inventario y DI por referencia. */
       const head = [
         [
-          "Sede",
-          ...summaryRows.map((row) => `${row.item}\n${row.descripcion}`),
+          { content: "Sede", rowSpan: 2, styles: { valign: "middle" as const } },
+          ...summaryRows.map((row) => ({
+            content: `${row.item}\n${truncatePdfDesc(row.descripcion)}`,
+            colSpan: 2,
+            styles: { halign: "center" as const, valign: "middle" as const },
+          })),
         ],
+        summaryRows.flatMap(() => [
+          {
+            content: "Inventario",
+            styles: { halign: "center" as const, fontStyle: "normal" as const },
+          },
+          {
+            content: "DI",
+            styles: {
+              halign: "center" as const,
+              fontStyle: "bold" as const,
+            },
+          },
+        ]),
       ];
 
       const body = sortedMatrixRowsBySede.map((row) => [
         row.displayName,
-        ...summaryRows.map((itemRow) => formatUnits(row.items[itemRow.item]?.inventoryUnits ?? 0)),
+        ...summaryRows.flatMap((itemRow) => {
+          const cell = row.items[itemRow.item] ?? {
+            inventoryUnits: 0,
+            diDays: 0,
+          };
+          return [formatUnits(cell.inventoryUnits), formatDi(cell.diDays)];
+        }),
       ]);
 
       const foot = [
         [
           "Total general",
-          ...summaryRows.map((row) => formatUnits(matrixTotalsByItem[row.item] ?? 0)),
+          ...summaryRows.flatMap((row) => [
+            formatUnits(matrixTotalsByItem[row.item] ?? 0),
+            formatDi(row.rotationDays),
+          ]),
         ],
       ];
 
-      /** Ancho fijo por columna de item (solo números en cuerpo): evita que "auto" estire al ancho de página. */
-      const pdfSedeColMm = 40;
-      const pdfItemColMm = 16;
+      const marginX = 10;
+      const pdfSedeColMm = 42;
+      const dataColCount = summaryRows.length * 2;
+      const usableWidthMm = pageWidth - marginX * 2 - pdfSedeColMm;
+      /** Ancho por columna numérica: si no cabe en una página, autotable reparte con salto horizontal. */
+      const pdfDataColMm = Math.max(8.5, usableWidthMm / Math.max(1, dataColCount));
+      const tableNaturalWidthMm = pdfSedeColMm + dataColCount * pdfDataColMm;
+      const pdfFontSize = Math.max(
+        5,
+        Math.min(7, 7.25 - summaryRows.length * 0.12),
+      );
+
       const pdfColumnStyles: Record<
         number,
         { cellWidth: number; halign?: "left" | "center" | "right"; fontStyle?: "bold" }
@@ -1915,8 +1957,8 @@ export default function InventarioXItemPage() {
           fontStyle: "bold",
         },
       };
-      for (let i = 0; i < summaryRows.length; i++) {
-        pdfColumnStyles[i + 1] = { cellWidth: pdfItemColMm };
+      for (let i = 0; i < dataColCount; i++) {
+        pdfColumnStyles[i + 1] = { cellWidth: pdfDataColMm, halign: "right" };
       }
 
       autoTable(doc, {
@@ -1925,10 +1967,10 @@ export default function InventarioXItemPage() {
         body,
         foot,
         theme: "grid",
-        tableWidth: "wrap",
-        margin: { left: 10, right: 10, top: 10, bottom: 12 },
+        tableWidth: tableNaturalWidthMm,
+        margin: { left: marginX, right: marginX, top: 10, bottom: 12 },
         styles: {
-          fontSize: 7,
+          fontSize: pdfFontSize,
           cellPadding: 1.5,
           lineColor: [203, 213, 225],
           lineWidth: 0.1,
@@ -1956,15 +1998,47 @@ export default function InventarioXItemPage() {
         },
         columnStyles: pdfColumnStyles,
         didParseCell: (data) => {
-          if (data.section === "head" && data.column.index === 0) {
+          const col = data.column.index;
+          const isPdfDiColumn = col > 0 && (col - 1) % 2 === 1;
+
+          if (
+            data.section === "head" &&
+            data.row.index === 0 &&
+            col === 0
+          ) {
             data.cell.styles.halign = "left";
           }
-          if (data.section === "foot" && data.column.index === 0) {
+
+          if (data.section === "head" && data.row.index === 1 && col > 0) {
+            if (isPdfDiColumn) {
+              data.cell.styles.fillColor = [252, 250, 255];
+              data.cell.styles.textColor = [15, 23, 42];
+            } else {
+              data.cell.styles.fillColor = [241, 249, 255];
+              data.cell.styles.textColor = [71, 85, 105];
+            }
+          }
+
+          if (data.section === "body" && isPdfDiColumn) {
+            const zebra = data.row.index % 2 === 0;
+            data.cell.styles.fillColor = zebra
+              ? [253, 252, 254]
+              : [251, 248, 254];
+            data.cell.styles.textColor = [15, 23, 42];
+          }
+
+          if (data.section === "foot" && isPdfDiColumn) {
+            data.cell.styles.fillColor = [249, 246, 252];
+            data.cell.styles.textColor = [15, 23, 42];
+          }
+
+          if (data.section === "foot" && col === 0) {
             data.cell.styles.halign = "left";
           }
         },
         horizontalPageBreak: true,
         horizontalPageBreakRepeat: 0,
+        showHead: "everyPage",
         didDrawPage: () => {
           const pageHeight = doc.internal.pageSize.getHeight();
           doc.setFontSize(8);
@@ -2671,13 +2745,13 @@ export default function InventarioXItemPage() {
                       {summaryRows.flatMap((row) => [
                         <th
                           key={`matrix-col-inv-${row.item}`}
-                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-l-2 border-r border-slate-300 bg-sky-50/90 px-2 py-1`}
+                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/90 bg-sky-50/70 px-2 py-1 text-sky-900/80`}
                         >
                           Inventario
                         </th>,
                         <th
                           key={`matrix-col-di-${row.item}`}
-                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-r-2 border-l border-slate-300 bg-sky-50/90 px-2 py-1`}
+                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-r-2 border-l border-violet-100/90 bg-violet-50/80 px-2 py-1 font-semibold tracking-[0.06em] text-violet-950`}
                         >
                           DI
                         </th>,
@@ -2713,7 +2787,7 @@ export default function InventarioXItemPage() {
                             <td
                               key={`${row.key}-${itemRow.item}-inv`}
                               title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Inv ${formatUnits(cellValue.inventoryUnits)}`}
-                              className={`${matrixItemColMinClass} border-b border-l-2 border-r border-slate-200 px-2 py-1.5 text-right text-sm font-semibold tabular-nums ${
+                              className={`${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/70 bg-sky-50/35 px-2 py-1.5 text-right text-sm font-semibold tabular-nums ${
                                 isZero ? "text-slate-300" : "text-slate-700"
                               }`}
                             >
@@ -2722,7 +2796,7 @@ export default function InventarioXItemPage() {
                             <td
                               key={`${row.key}-${itemRow.item}-di`}
                               title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: DI ${formatDi(cellValue.diDays)}`}
-                              className={`${matrixItemColMinClass} border-b border-l border-r-2 border-slate-200 px-2 py-1.5 text-right text-xs font-semibold tabular-nums text-slate-600`}
+                              className={`${matrixItemColMinClass} border-b border-slate-200/80 border-l-2 border-l-violet-100 border-r-2 border-r-violet-100 bg-violet-50/45 px-2 py-1.5 text-right text-xs font-semibold tabular-nums text-slate-800`}
                             >
                               {formatDi(cellValue.diDays)}
                             </td>,
@@ -2747,7 +2821,7 @@ export default function InventarioXItemPage() {
                           <td
                             key={`matrix-total-${row.item}-di`}
                             title={`DI ${row.item}: ${formatDi(row.rotationDays)}`}
-                            className={`${matrixItemColMinClass} border-t-2 border-l border-r-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-right text-xs font-black text-slate-700 tabular-nums`}
+                            className={`${matrixItemColMinClass} border-t-2 border-t-amber-300 border-l-2 border-l-violet-100 border-r-2 border-r-violet-100 bg-violet-50/90 px-2 py-1.5 text-right text-xs font-black text-slate-900 tabular-nums`}
                           >
                             {formatDi(row.rotationDays)}
                           </td>,
