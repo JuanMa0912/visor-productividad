@@ -10,6 +10,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  EXCEL_DIAN_EMPRESA_OPTIONS,
+  type ExcelDianEmpresaValue,
+} from "./excel-dian-empresa";
+import {
+  buildExcelDianFullYearRange,
+  buildExcelDianInclusiveRange,
+  buildExcelDianMonthSpanRange,
+  EXCEL_DIAN_PERIOD_MODE_OPTIONS,
+  type ExcelDianPeriodMode,
+  parseLocalYmd,
+} from "./excel-dian-period";
 
 const MONTH_OPTIONS: { value: string; label: string }[] = [
   { value: "01", label: "Enero" },
@@ -45,14 +57,151 @@ function buildYearOptions(): string[] {
 
 export function ExcelDianPanel() {
   const yearOptions = useMemo(() => buildYearOptions(), []);
-  const now = useMemo(() => new Date(), []);
-  const defaultMonth = String(now.getMonth() + 1).padStart(2, "0");
-  const defaultYear = String(now.getFullYear());
-
-  const [month, setMonth] = useState(defaultMonth);
-  const [year, setYear] = useState(defaultYear);
+  const [periodMode, setPeriodMode] =
+    useState<ExcelDianPeriodMode>("single_month");
+  const [month, setMonth] = useState(() =>
+    String(new Date().getMonth() + 1).padStart(2, "0"),
+  );
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
+  const [spanStartMonth, setSpanStartMonth] = useState(() =>
+    String(new Date().getMonth() + 1).padStart(2, "0"),
+  );
+  const [spanStartYear, setSpanStartYear] = useState(() =>
+    String(new Date().getFullYear()),
+  );
+  const [spanEndMonth, setSpanEndMonth] = useState(() =>
+    String(new Date().getMonth() + 1).padStart(2, "0"),
+  );
+  const [spanEndYear, setSpanEndYear] = useState(() =>
+    String(new Date().getFullYear()),
+  );
+  const [empresa, setEmpresa] = useState<ExcelDianEmpresaValue>("mercamio");
 
   const monthLabel = MONTH_OPTIONS.find((m) => m.value === month)?.label ?? "—";
+  const empresaLabel =
+    EXCEL_DIAN_EMPRESA_OPTIONS.find((e) => e.value === empresa)?.label ?? "—";
+
+  const reportRange = useMemo(() => {
+    if (periodMode === "single_month") {
+      return buildExcelDianInclusiveRange(month, year);
+    }
+    if (periodMode === "month_span") {
+      return buildExcelDianMonthSpanRange(
+        spanStartMonth,
+        spanStartYear,
+        spanEndMonth,
+        spanEndYear,
+      );
+    }
+    return buildExcelDianFullYearRange(year);
+  }, [
+    periodMode,
+    month,
+    year,
+    spanStartMonth,
+    spanStartYear,
+    spanEndMonth,
+    spanEndYear,
+  ]);
+
+  const rangeDescription = useMemo(() => {
+    if (!reportRange.start || !reportRange.end) return "";
+    const fmt = new Intl.DateTimeFormat("es-CO", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const from = fmt.format(parseLocalYmd(reportRange.start));
+    const to = fmt.format(parseLocalYmd(reportRange.end));
+    const cap = reportRange.cappedAtToday
+      ? " El periodo incluye el mes en curso: los datos van solo hasta hoy."
+      : "";
+    if (periodMode === "single_month") {
+      return `El archivo usará datos desde el ${from} hasta el ${to} (${monthLabel} ${year}).${cap}`;
+    }
+    if (periodMode === "full_year") {
+      return `El archivo usará datos desde el ${from} hasta el ${to} (año ${year}).${cap}`;
+    }
+    return `El archivo usará datos desde el ${from} hasta el ${to} (lapso de meses).${cap}`;
+  }, [reportRange, periodMode, monthLabel, year]);
+
+  const onPeriodModeChange = (next: ExcelDianPeriodMode) => {
+    setPeriodMode(next);
+    if (next === "month_span") {
+      setSpanStartMonth(month);
+      setSpanStartYear(year);
+      setSpanEndMonth(month);
+      setSpanEndYear(year);
+    }
+  };
+
+  const monthSelect = (
+    id: string,
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+  ) => (
+    <div className="space-y-2 text-left">
+      <label
+        htmlFor={id}
+        className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+      >
+        {label}
+      </label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger
+          id={id}
+          size="default"
+          className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
+        >
+          <SelectValue placeholder="Mes" />
+        </SelectTrigger>
+        <SelectContent position="popper" className={selectListClassName}>
+          {MONTH_OPTIONS.map((m) => (
+            <SelectItem
+              key={m.value}
+              value={m.value}
+              className={selectItemClassName}
+            >
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
+  const yearSelect = (
+    id: string,
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+  ) => (
+    <div className="space-y-2 text-left">
+      <label
+        htmlFor={id}
+        className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+      >
+        {label}
+      </label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger
+          id={id}
+          size="default"
+          className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
+        >
+          <SelectValue placeholder="Año" />
+        </SelectTrigger>
+        <SelectContent position="popper" className={selectListClassName}>
+          {yearOptions.map((y) => (
+            <SelectItem key={y} value={y} className={selectItemClassName}>
+              {y}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 
   return (
     <div className="relative min-h-[calc(100vh-2rem)] overflow-x-hidden bg-[#F8FAFC] px-4 py-12 sm:px-6 md:py-16">
@@ -78,75 +227,139 @@ export function ExcelDianPanel() {
               Exportación Excel
             </h1>
             <p className="mt-2.5 max-w-xl text-pretty text-sm leading-relaxed text-slate-500">
-              Configura el periodo para generar tu archivo de conciliación
-              fiscal oficial.
+              Elige la empresa y el periodo (un mes, varios meses o un año
+              calendario); cada legal genera su archivo por separado.
             </p>
           </header>
 
           <div className="mt-8 grid gap-6 sm:grid-cols-2">
-            <div className="space-y-2 text-left">
+            <div className="space-y-2 text-left sm:col-span-2 lg:col-span-1">
               <label
-                htmlFor="excel-dian-month"
+                htmlFor="excel-dian-empresa"
                 className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
               >
-                Mes de reporte
+                Empresa
               </label>
-              <Select value={month} onValueChange={setMonth}>
+              <Select
+                value={empresa}
+                onValueChange={(v) => setEmpresa(v as ExcelDianEmpresaValue)}
+              >
                 <SelectTrigger
-                  id="excel-dian-month"
+                  id="excel-dian-empresa"
                   size="default"
                   className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
                 >
-                  <SelectValue placeholder="Elegir mes" />
+                  <SelectValue placeholder="Elegir empresa" />
                 </SelectTrigger>
                 <SelectContent
                   position="popper"
                   className={selectListClassName}
                 >
-                  {MONTH_OPTIONS.map((m) => (
+                  {EXCEL_DIAN_EMPRESA_OPTIONS.map((e) => (
                     <SelectItem
-                      key={m.value}
-                      value={m.value}
+                      key={e.value}
+                      value={e.value}
                       className={selectItemClassName}
                     >
-                      {m.label}
+                      {e.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 text-left">
+            <div className="space-y-2 text-left sm:col-span-2 lg:col-span-1">
               <label
-                htmlFor="excel-dian-year"
+                htmlFor="excel-dian-period-mode"
                 className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
               >
-                Año fiscal
+                Tipo de periodo
               </label>
-              <Select value={year} onValueChange={setYear}>
+              <Select
+                value={periodMode}
+                onValueChange={(v) => onPeriodModeChange(v as ExcelDianPeriodMode)}
+              >
                 <SelectTrigger
-                  id="excel-dian-year"
+                  id="excel-dian-period-mode"
                   size="default"
                   className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
                 >
-                  <SelectValue placeholder="Elegir año" />
+                  <SelectValue placeholder="Tipo de periodo" />
                 </SelectTrigger>
                 <SelectContent
                   position="popper"
                   className={selectListClassName}
                 >
-                  {yearOptions.map((y) => (
+                  {EXCEL_DIAN_PERIOD_MODE_OPTIONS.map((opt) => (
                     <SelectItem
-                      key={y}
-                      value={y}
+                      key={opt.value}
+                      value={opt.value}
                       className={selectItemClassName}
+                      title={opt.description}
                     >
-                      {y}
+                      {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
+
+          {periodMode === "single_month" ? (
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              {monthSelect("excel-dian-month", "Mes de reporte", month, setMonth)}
+              {yearSelect("excel-dian-year", "Año", year, setYear)}
+            </div>
+          ) : null}
+
+          {periodMode === "month_span" ? (
+            <div className="mt-6 space-y-6">
+              <div className="grid gap-6 sm:grid-cols-2">
+                {monthSelect(
+                  "excel-dian-span-start-m",
+                  "Desde (mes)",
+                  spanStartMonth,
+                  setSpanStartMonth,
+                )}
+                {yearSelect(
+                  "excel-dian-span-start-y",
+                  "Desde (año)",
+                  spanStartYear,
+                  setSpanStartYear,
+                )}
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                {monthSelect(
+                  "excel-dian-span-end-m",
+                  "Hasta (mes)",
+                  spanEndMonth,
+                  setSpanEndMonth,
+                )}
+                {yearSelect(
+                  "excel-dian-span-end-y",
+                  "Hasta (año)",
+                  spanEndYear,
+                  setSpanEndYear,
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {periodMode === "full_year" ? (
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              {yearSelect(
+                "excel-dian-full-year",
+                "Año calendario",
+                year,
+                setYear,
+              )}
+            </div>
+          ) : null}
+
+          {rangeDescription ? (
+            <p className="mt-5 rounded-lg border border-slate-200/90 bg-slate-50/80 px-4 py-3 text-left text-sm leading-relaxed text-slate-600">
+              {rangeDescription}
+            </p>
+          ) : null}
 
           <Button
             type="button"
@@ -167,7 +380,9 @@ export function ExcelDianPanel() {
                   12 Abr, 2026 • 2.4 MB
                 </p>
                 <p className="sr-only">
-                  Periodo seleccionado: {monthLabel} {year}
+                  Empresa: {empresaLabel}. Modo: {periodMode}. Rango efectivo:{" "}
+                  {reportRange.start} a {reportRange.end}
+                  {reportRange.cappedAtToday ? " (acotado a hoy)" : ""}.
                 </p>
               </div>
               <div className="text-left sm:text-right">
