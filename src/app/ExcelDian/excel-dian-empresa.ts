@@ -1,11 +1,13 @@
 /**
- * Códigos de empresa alineados con filtros de rotación / BD (`formatCompanyLabel` en rotacion-preamble).
- * `bogota` es el valor almacenado para la filial mostrada como "Merkmios".
+ * Códigos de empresa para exportación DIAN y variables `EXCEL_DIAN_*_DB_*`.
+ * - `mtodo`: Comercializadora
+ * - `mio`: Mercamio
+ * - `bgt`: Merkmios
  */
 export const EXCEL_DIAN_EMPRESA_OPTIONS = [
-  { value: "mercamio", label: "Mercamio" },
   { value: "mtodo", label: "Comercializadora" },
-  { value: "bogota", label: "Merkmios" },
+  { value: "mio", label: "Mercamio" },
+  { value: "bgt", label: "Merkmios" },
 ] as const;
 
 export type ExcelDianEmpresaValue =

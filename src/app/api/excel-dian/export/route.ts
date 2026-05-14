@@ -1,7 +1,10 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { applySessionCookies, requireAuthSession } from "@/lib/auth";
-import { getMtodoExcelDianPool } from "@/lib/excel-dian/mtodo-db";
+import {
+  getExcelDianPool,
+  type ExcelDianDbEmpresa,
+} from "@/lib/excel-dian/excel-dian-db";
 import {
   MTODO_MEDIOS_MAGNETICOS_COLUMNS,
   buildYearLapsoRange,
@@ -9,6 +12,7 @@ import {
 } from "@/lib/excel-dian/mtodo-medios-magneticos";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 import { isExcelDianExportPublic } from "@/lib/excel-dian/public-export-env";
+import { EXCEL_DIAN_EMPRESA_OPTIONS } from "@/app/ExcelDian/excel-dian-empresa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,6 +69,25 @@ const NUM_FMT_ACCOUNTING_INT =
   '_-* #,##0_-;\\-* #,##0_-;\\-* "-"??_-;\\-_@_-';
 
 const MAX_SPAN_MONTHS = 36;
+
+const EXCEL_DIAN_ENV_PREFIX: Record<ExcelDianDbEmpresa, string> = {
+  mtodo: "EXCEL_DIAN_MTDO",
+  mio: "EXCEL_DIAN_MIO",
+  bgt: "EXCEL_DIAN_BGT",
+};
+
+const parseExcelDianEmpresaParam = (
+  raw: string | null,
+): ExcelDianDbEmpresa | null => {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "mtodo" || v === "mio" || v === "bgt") return v;
+  if (v === "mercamio") return "mio";
+  if (v === "bogota") return "bgt";
+  return null;
+};
+
+const excelDianEmpresaLabel = (code: ExcelDianDbEmpresa): string =>
+  EXCEL_DIAN_EMPRESA_OPTIONS.find((o) => o.value === code)?.label ?? code;
 
 const parseLapsoParam = (value: string | null): string | null => {
   const s = value?.trim();
@@ -131,6 +154,7 @@ const buildWorkbook = async (
   rows: Awaited<ReturnType<typeof queryMtodoMediosMagneticos>>["rows"],
   startLapso: string,
   endLapso: string,
+  metaEmpresa: { label: string; dbCode: ExcelDianDbEmpresa },
 ) => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Visor de Productividad";
@@ -266,8 +290,8 @@ const buildWorkbook = async (
     { header: "Valor", key: "value", width: 42 },
   ];
   meta.addRows([
-    { field: "Empresa", value: "Comercializadora" },
-    { field: "Base de datos", value: "mtodo" },
+    { field: "Empresa", value: metaEmpresa.label },
+    { field: "Base de datos", value: metaEmpresa.dbCode },
     { field: "Lapso inicial", value: startLapso },
     { field: "Lapso final", value: endLapso },
     { field: "Registros exportados", value: rows.length },
@@ -380,11 +404,14 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const empresa = (url.searchParams.get("empresa") ?? "").trim().toLowerCase();
-  if (empresa !== "mtodo") {
+  const empresa = parseExcelDianEmpresaParam(url.searchParams.get("empresa"));
+  if (!empresa) {
     return finalizeResponse(
       NextResponse.json(
-        { error: "Por ahora la exportacion DIAN solo esta habilitada para Comercializadora." },
+        {
+          error:
+            "Indica empresa=mtodo, mio o bgt (Comercializadora, Mercamio o Merkmios).",
+        },
         { status: 400, headers: { "Cache-Control": "no-store" } },
       ),
     );
@@ -468,15 +495,34 @@ export async function GET(request: Request) {
   }
 
   try {
-    const pool = await getMtodoExcelDianPool();
+    let pool;
+    try {
+      pool = await getExcelDianPool(empresa);
+    } catch (envErr) {
+      const msg =
+        envErr instanceof Error
+          ? envErr.message
+          : "Configuracion de base de datos incompleta.";
+      return finalizeResponse(
+        NextResponse.json(
+          {
+            error: `${msg} Revisa las variables ${EXCEL_DIAN_ENV_PREFIX[empresa]}_DB_* en el entorno.`,
+          },
+          { status: 503, headers: { "Cache-Control": "no-store" } },
+        ),
+      );
+    }
     const client = await pool.connect();
     try {
       const { rows, startLapso: sl, endLapso: el } =
         await queryMtodoMediosMagneticos(client, startLapso, endLapso);
-      const workbook = await buildWorkbook(rows, sl, el);
+      const workbook = await buildWorkbook(rows, sl, el, {
+        label: excelDianEmpresaLabel(empresa),
+        dbCode: empresa,
+      });
       const raw = await workbook.xlsx.writeBuffer();
       const body = Buffer.isBuffer(raw) ? raw : Buffer.from(new Uint8Array(raw as ArrayBuffer));
-      const filename = `medios-magneticos-comercializadora-${sl}-${el}.xlsx`;
+      const filename = `medios-magneticos-${empresa}-${sl}-${el}.xlsx`;
       const byteLength = body.length;
 
       return finalizeResponse(

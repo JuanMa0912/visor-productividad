@@ -208,12 +208,6 @@ export function ExcelDianPanel() {
 
   const handleDownload = async () => {
     setDownloadError("");
-    if (empresa !== "mtodo") {
-      setDownloadError(
-        "Por ahora la descarga DIAN solo esta habilitada para Comercializadora.",
-      );
-      return;
-    }
     if (!lapsoBounds) {
       setDownloadError(
         "El periodo seleccionado no es valido (futuro o sin datos).",
@@ -300,13 +294,13 @@ export function ExcelDianPanel() {
       const elapsedMs = Date.now() - serverStartedAt;
       setLastExportMeta({
         durationLabel: formatExcelDianExportDuration(elapsedMs),
-        lapsoLabel: `${lapsoBounds.startLapso}–${lapsoBounds.endLapso}`,
+        lapsoLabel: `${empresa} · ${lapsoBounds.startLapso}–${lapsoBounds.endLapso}`,
       });
 
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `medios-magneticos-comercializadora-${lapsoBounds.startLapso}-${lapsoBounds.endLapso}.xlsx`;
+      link.download = `medios-magneticos-${empresa}-${lapsoBounds.startLapso}-${lapsoBounds.endLapso}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -466,9 +460,10 @@ export function ExcelDianPanel() {
               Exportacion Excel
             </h1>
             <p className="mt-2.5 max-w-xl text-pretty text-sm leading-relaxed text-slate-500">
-              Elige la empresa y el periodo: un mes, varios meses o el año
-              calendario completo (enero–diciembre). Comercializadora usa lapso
-              en base de datos (YYYYMM).
+              Elige la empresa (Comercializadora, Mercamio o Merkmios) y el
+              periodo: un mes, varios meses o el año calendario completo
+              (enero–diciembre). Cada empresa usa su base en formato lapso
+              YYYYMM.
             </p>
           </header>
 
