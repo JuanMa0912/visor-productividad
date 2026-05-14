@@ -38,6 +38,8 @@ export function ExcelDianPanel() {
   const [empresa, setEmpresa] = useState<ExcelDianEmpresaValue>("mtodo");
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  /** 0–100: fase servidor estimada; luego recepción real si hay Content-Length */
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const empresaLabel =
     EXCEL_DIAN_EMPRESA_OPTIONS.find((e) => e.value === empresa)?.label ?? "-";
@@ -54,12 +56,26 @@ export function ExcelDianPanel() {
     }
 
     setIsDownloading(true);
+    setDownloadProgress(2);
+    let serverTimer: ReturnType<typeof setInterval> | undefined;
+    const serverStartedAt = Date.now();
     try {
+      serverTimer = setInterval(() => {
+        setDownloadProgress((prev) => {
+          const elapsed = Date.now() - serverStartedAt;
+          const asymptotic = 82 * (1 - Math.exp(-elapsed / 28_000));
+          return Math.max(prev, Math.min(82, asymptotic));
+        });
+      }, 450);
+
       const params = new URLSearchParams({ empresa, year });
       const response = await fetch(`/api/excel-dian/export?${params}`, {
         method: "GET",
         cache: "no-store",
       });
+      if (serverTimer) clearInterval(serverTimer);
+      serverTimer = undefined;
+
       if (!response.ok) {
         let message = "No se pudo generar el Excel DIAN.";
         try {
@@ -71,7 +87,35 @@ export function ExcelDianPanel() {
         throw new Error(message);
       }
 
-      const blob = await response.blob();
+      const rawLen = response.headers.get("Content-Length");
+      const totalBytes =
+        rawLen && /^\d+$/.test(rawLen.trim()) ? Number.parseInt(rawLen.trim(), 10) : 0;
+
+      let blob: Blob;
+      const body = response.body;
+      if (body && totalBytes > 0) {
+        const reader = body.getReader();
+        const chunks: BlobPart[] = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          const transferPct = Math.min(100, Math.round((received / totalBytes) * 100));
+          setDownloadProgress(82 + Math.round((transferPct / 100) * 18));
+        }
+        const type =
+          response.headers.get("Content-Type") ??
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        blob = new Blob(chunks, { type });
+        setDownloadProgress(100);
+      } else {
+        setDownloadProgress(92);
+        blob = await response.blob();
+        setDownloadProgress(100);
+      }
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -87,7 +131,9 @@ export function ExcelDianPanel() {
           : "No se pudo generar el Excel DIAN.",
       );
     } finally {
+      if (serverTimer) clearInterval(serverTimer);
       setIsDownloading(false);
+      setDownloadProgress(0);
     }
   };
 
@@ -218,6 +264,32 @@ export function ExcelDianPanel() {
             )}
             {isDownloading ? "Generando..." : "Descargar Excel"}
           </Button>
+
+          {isDownloading ? (
+            <div className="mt-4 space-y-2">
+              <div
+                className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(downloadProgress)}
+                aria-label="Progreso de exportacion"
+              >
+                <div
+                  className="h-full rounded-full bg-emerald-600 transition-[width] duration-200 ease-out"
+                  style={{ width: `${Math.min(100, downloadProgress)}%` }}
+                />
+              </div>
+              <p className="text-center text-xs text-slate-500">
+                {downloadProgress < 83
+                  ? "Generando en el servidor (consulta y Excel); puede tardar varios minutos."
+                  : "Recibiendo archivo..."}
+                <span className="ml-1 tabular-nums text-slate-600">
+                  {Math.round(downloadProgress)}%
+                </span>
+              </p>
+            </div>
+          ) : null}
 
           {downloadError ? (
             <p

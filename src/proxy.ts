@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { isExcelDianExportPublic } from "@/lib/excel-dian/public-export-env";
 
 /** Misma cookie que `SESSION_COOKIE` en `@/lib/auth` (no importar auth aqui). */
 const SESSION_COOKIE = "vp_session";
 
 const isPublicPagePath = (pathname: string) => {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true;
+  if (
+    isExcelDianExportPublic() &&
+    (pathname === "/ExcelDian" || pathname.startsWith("/ExcelDian/"))
+  ) {
+    return true;
+  }
   return false;
 };
 
