@@ -26,6 +26,31 @@ export type MtodoMediosMagneticosRow = QueryResultRow & {
     | null;
 };
 
+/** Persona natural (cédula) en el layout DIAN usado por esta exportación. */
+const TERCERO_TD_PERSONA_NATURAL = "13";
+
+const normalizeTercerotdForExportRule = (
+  raw: string | number | null | undefined,
+): string => {
+  if (raw === null || raw === undefined) return "";
+  return String(raw).trim();
+};
+
+/**
+ * Reglas solo para el Excel (no modifica el SQL).
+ * Si `tercerotd` es 13 (persona natural), `tercero_razon_social` debe ir vacía;
+ * en el resto de tipos de documento se conserva el valor devuelto por la consulta.
+ */
+export const applyMtodoMediosMagneticosExportRowRules = (
+  rows: MtodoMediosMagneticosRow[],
+): MtodoMediosMagneticosRow[] =>
+  rows.map((row) => {
+    if (normalizeTercerotdForExportRule(row.tercerotd) !== TERCERO_TD_PERSONA_NATURAL) {
+      return row;
+    }
+    return { ...row, tercero_razon_social: null };
+  });
+
 export const buildYearLapsoRange = (year: number) => ({
   startLapso: `${year}01`,
   endLapso: `${year}12`,
@@ -148,7 +173,7 @@ export const queryMtodoMediosMagneticos = async (
     [startLapso, endLapso],
   );
   return {
-    rows: result.rows,
+    rows: applyMtodoMediosMagneticosExportRowRules(result.rows),
     startLapso,
     endLapso,
   };

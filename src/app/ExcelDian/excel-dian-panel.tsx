@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,6 +73,21 @@ function clampLapsoRange(bounds: {
   return { startLapso, endLapso };
 }
 
+/** Tiempo desde clic en Descargar hasta tener el blob listo (consulta + Excel + red). */
+function formatExcelDianExportDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const s = ms / 1000;
+  if (s < 60) {
+    return `${s.toLocaleString("es-CO", {
+      maximumFractionDigits: 1,
+      minimumFractionDigits: s < 10 ? 1 : 0,
+    })} s`;
+  }
+  const m = Math.floor(s / 60);
+  const rs = Math.round(s - m * 60);
+  return `${m} min ${rs} s`;
+}
+
 function monthsForYear(
   yearStr: string,
   calendarYear: number,
@@ -114,6 +129,22 @@ export function ExcelDianPanel() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [lastExportMeta, setLastExportMeta] = useState<{
+    durationLabel: string;
+    lapsoLabel: string;
+  } | null>(null);
+  const downloadCompleteHideTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (downloadCompleteHideTimeoutRef.current) {
+        clearTimeout(downloadCompleteHideTimeoutRef.current);
+        downloadCompleteHideTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!yearOptions.includes(year)) {
@@ -190,9 +221,15 @@ export function ExcelDianPanel() {
       return;
     }
 
+    if (downloadCompleteHideTimeoutRef.current) {
+      clearTimeout(downloadCompleteHideTimeoutRef.current);
+      downloadCompleteHideTimeoutRef.current = null;
+    }
+
     setIsDownloading(true);
     setDownloadProgress(2);
     let serverTimer: ReturnType<typeof setInterval> | undefined;
+    let downloadSucceeded = false;
     const serverStartedAt = Date.now();
     try {
       serverTimer = setInterval(() => {
@@ -260,6 +297,12 @@ export function ExcelDianPanel() {
         setDownloadProgress(100);
       }
 
+      const elapsedMs = Date.now() - serverStartedAt;
+      setLastExportMeta({
+        durationLabel: formatExcelDianExportDuration(elapsedMs),
+        lapsoLabel: `${lapsoBounds.startLapso}–${lapsoBounds.endLapso}`,
+      });
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -268,6 +311,7 @@ export function ExcelDianPanel() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      downloadSucceeded = true;
     } catch (error) {
       setDownloadError(
         error instanceof Error
@@ -276,8 +320,17 @@ export function ExcelDianPanel() {
       );
     } finally {
       if (serverTimer) clearInterval(serverTimer);
-      setIsDownloading(false);
-      setDownloadProgress(0);
+      if (downloadSucceeded) {
+        setDownloadProgress(100);
+        downloadCompleteHideTimeoutRef.current = setTimeout(() => {
+          downloadCompleteHideTimeoutRef.current = null;
+          setIsDownloading(false);
+          setDownloadProgress(0);
+        }, 350);
+      } else {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+      }
     }
   };
 
@@ -579,7 +632,11 @@ export function ExcelDianPanel() {
             ) : (
               <Download className="size-5 text-white" aria-hidden />
             )}
-            {isDownloading ? "Generando..." : "Descargar Excel"}
+            {isDownloading
+              ? downloadProgress >= 100
+                ? "Listo"
+                : "Generando..."
+              : "Descargar Excel"}
           </Button>
 
           {isDownloading ? (
@@ -598,9 +655,13 @@ export function ExcelDianPanel() {
                 />
               </div>
               <p className="text-center text-xs text-slate-500">
-                {downloadProgress < 83
-                  ? "Generando en el servidor (consulta y Excel); puede tardar varios minutos."
-                  : "Recibiendo archivo..."}
+                {downloadProgress >= 100
+                  ? lastExportMeta
+                    ? `Exportacion lista · ${lastExportMeta.durationLabel}`
+                    : "Exportacion lista."
+                  : downloadProgress < 83
+                    ? "Generando en el servidor (consulta y Excel); puede tardar varios minutos."
+                    : "Recibiendo archivo..."}
                 <span className="ml-1 tabular-nums text-slate-600">
                   {Math.round(downloadProgress)}%
                 </span>
@@ -624,7 +685,16 @@ export function ExcelDianPanel() {
                   Ultima exportacion
                 </p>
                 <p className="mt-1 text-sm font-medium text-slate-700">
-                  Pendiente de generar
+                  {lastExportMeta ? (
+                    <>
+                      {lastExportMeta.durationLabel}
+                      <span className="block text-xs font-normal text-slate-500">
+                        Lapso {lastExportMeta.lapsoLabel}
+                      </span>
+                    </>
+                  ) : (
+                    "Pendiente de generar"
+                  )}
                 </p>
                 <p className="sr-only">
                   Empresa: {empresaLabel}. Modo: {periodMode}. Lapso:{" "}
