@@ -114,7 +114,7 @@ SELECT
     TRIM(t.apellido1)                                                          AS tercero_apellido1,
     TRIM(t.apellido2)                                                          AS tercero_apellido2,
     SPLIT_PART(TRIM(t.nombres), ' ', 1)                                        AS tercero_nombre1,
-    NULLIF(TRIM(REGEXP_REPLACE(TRIM(t.nombres), '^[^ ]+\\s*', '')), '')        AS tercero_nombre2,
+    NULLIF(TRIM(REGEXP_REPLACE(TRIM(t.nombres), '^[^ ]+\\s*', '')), '')         AS tercero_nombre2,
     TRIM(t.descripcion)                                                        AS tercero_razon_social,
     TRIM(t.pais_corresp)                                                       AS pais,
     pt.valor_bruto,
@@ -122,12 +122,14 @@ SELECT
     pt.suma_impo1,
     pt.suma_impo2,
     pt.imp_bolsa,
-    pt.ingresos_brutos_propios,
+    pt.ingresos_brutos_propios
+        + COALESCE(ce.movimiento_excluido, 0)                                  AS ingresos_brutos_propios,
     COALESCE(pn.devoluciones_pdv, 0)
         + COALESCE(ce.movimiento_excluido, 0)                                  AS devoluciones_notas,
     pt.ingresos_brutos_propios
         - (COALESCE(pn.devoluciones_pdv, 0)
-           + COALESCE(ce.movimiento_excluido, 0))                              AS total_ingreso
+           + COALESCE(ce.movimiento_excluido, 0))
+        + COALESCE(ce.movimiento_excluido, 0)                                  AS total_ingreso
 FROM public.terceros t
 INNER JOIN pdv_totales pt        ON t.codigo = pt.id_terc
 LEFT  JOIN pdv_notas pn          ON t.codigo = pn.id_terc
