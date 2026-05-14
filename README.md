@@ -107,7 +107,7 @@ Exportaciones
 ### Rasgos de implementacion
 
 - Las vistas principales usan `"use client"`.
-- `src/proxy.ts` (convencion Next.js 16, antes `middleware`) redirige a `/login` sin cookie `vp_session`, salvo `/login` y `/ExcelDian`; las APIs siguen validando sesion en cada `route.ts`.
+- `src/proxy.ts` (convencion Next.js 16, antes `middleware`) redirige a `/login` sin cookie `vp_session`, salvo `/login`; las APIs siguen validando sesion en cada `route.ts`.
 - SQL, normalizaciones y shape de respuesta viven en los handlers.
 - Hay mapeos manuales para sedes, empresas, centros de operacion y departamentos.
 - Los caches actuales no son distribuidos:

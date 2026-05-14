@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-/** Misma cookie que `SESSION_COOKIE` en `@/lib/auth` (no importar auth aquí). */
+/** Misma cookie que `SESSION_COOKIE` en `@/lib/auth` (no importar auth aqui). */
 const SESSION_COOKIE = "vp_session";
 
 const isPublicPagePath = (pathname: string) => {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true;
-  if (pathname === "/ExcelDian" || pathname.startsWith("/ExcelDian/")) return true;
   return false;
 };
 
@@ -16,9 +15,9 @@ const isLikelyStaticAsset = (pathname: string) =>
   );
 
 /**
- * Protege el portal UAID en el borde: sin cookie de sesión solo se permite
- * iniciar sesión y el tablero público Excel DIAN. Las rutas `/api/*` no se
- * redirigen aquí (cada endpoint sigue usando su propia validación).
+ * Protege el portal UAID en el borde: sin cookie de sesion solo se permite
+ * iniciar sesion. Las rutas `/api/*` no se redirigen aqui porque cada endpoint
+ * sigue usando su propia validacion.
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
