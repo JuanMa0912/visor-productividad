@@ -36,6 +36,7 @@ const ALLOWED_SPECIAL_ROLE_SET = new Set([
   "rotacion",
   "comparar_horarios",
   "abcd",
+  "historial_sinventario",
 ]);
 
 const resolveValidSede = (value?: string | null) => {

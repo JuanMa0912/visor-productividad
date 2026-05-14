@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
+  History,
   Loader2,
   MapPin,
   PackageSearch,
@@ -44,6 +45,7 @@ import {
 import {
   canAccessRotacionBoard,
   canEditRotacionAbcdConfig,
+  canViewRotacionSinventarioHistorial,
 } from "@/lib/shared/special-role-features";
 import {
   CERO_ROTACION_ESTADO_LABELS,
@@ -51,7 +53,9 @@ import {
   CERO_ROTACION_ESTADO_VALUES,
   DEFAULT_CERO_ROTACION_ESTADO,
   makeCeroRotacionEstadoKey,
+  parseCeroRotacionEstado,
   type CeroRotacionEstado,
+  type RotacionSurtidoEstadoContext,
 } from "@/lib/rotacion/cero-estado";
 import { cn, formatDateLabel } from "@/lib/shared/utils";
 import {
@@ -60,7 +64,7 @@ import {
   SortableRotationHeader,
   WhatsAppLogo,
 } from "./rotation-filter-widgets";
-import type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN1FamilyKey, AbcdConfig, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, GroupRowsQuickFilter, GroupZeroEstadoFilter } from "./rotacion-preamble";
+import type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN1FamilyKey, AbcdConfig, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, GroupRowsQuickFilter } from "./rotacion-preamble";
 import {
   getCookieValue,
   ALL_LINEA_N1_FAMILY_KEYS,
@@ -131,7 +135,37 @@ import {
   mapRotationSedeOptions,
   ROTACION_LAST_SEDE_STORAGE_KEY,
   readRotationApiForbiddenMessage,
+  normalizeGroupZeroEstadoSetFilter,
 } from "./rotacion-preamble";
+
+type SurtidoAuditApiRow = {
+  id: string;
+  sede_id: string;
+  item: string;
+  context: string;
+  estado_anterior: string | null;
+  estado_nuevo: string;
+  changed_at: string;
+  changed_by: string | null;
+  username: string | null;
+};
+
+const formatAuditEstadoLabel = (raw: string | null): string => {
+  if (!raw) return "—";
+  const parsed = parseCeroRotacionEstado(raw);
+  return parsed ? CERO_ROTACION_ESTADO_LABELS[parsed] : raw;
+};
+
+const formatAuditContextLabel = (raw: string) =>
+  raw === "restock" ? "Restock" : "Cero rot.";
+
+const auditChangedAtDateKeyBogota = (changedAtIso: string) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(changedAtIso));
 
 export default function RotacionPage() {
   const router = useRouter();
@@ -139,6 +173,24 @@ export default function RotacionPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
+  const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
+  const [surtidoAuditRows, setSurtidoAuditRows] = useState<SurtidoAuditApiRow[]>(
+    [],
+  );
+  const [surtidoAuditLoading, setSurtidoAuditLoading] = useState(false);
+  const [surtidoAuditError, setSurtidoAuditError] = useState<string | null>(null);
+  const [surtidoAuditFilterDateFrom, setSurtidoAuditFilterDateFrom] =
+    useState("");
+  const [surtidoAuditFilterDateTo, setSurtidoAuditFilterDateTo] = useState("");
+  const [surtidoAuditFilterUser, setSurtidoAuditFilterUser] = useState("");
+  const [surtidoAuditFilterItem, setSurtidoAuditFilterItem] = useState("");
+  const [surtidoAuditFilterSede, setSurtidoAuditFilterSede] = useState("");
+  const [surtidoAuditFilterContext, setSurtidoAuditFilterContext] = useState<
+    "" | "cero" | "restock"
+  >("");
+  const [surtidoAuditFilterAntes, setSurtidoAuditFilterAntes] = useState("");
+  const [surtidoAuditFilterDespues, setSurtidoAuditFilterDespues] =
+    useState("");
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -205,7 +257,7 @@ export default function RotacionPage() {
     Record<string, GroupRowsQuickFilter>
   >({});
   const [ceroEstadoFilterByGroup, setCeroEstadoFilterByGroup] = useState<
-    Record<string, GroupZeroEstadoFilter>
+    Record<string, CeroRotacionEstado[]>
   >({});
   /** Valor aplicado al pulsar «Venta ≤» (tope de venta periodo en COP). */
   const [ventaHastaCapByGroup, setVentaHastaCapByGroup] = useState<
@@ -222,6 +274,9 @@ export default function RotacionPage() {
   const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
   const [productSearchInput, setProductSearchInput] = useState("");
   const [ceroEstadoByKey, setCeroEstadoByKey] = useState<
+    Record<string, CeroRotacionEstado>
+  >({});
+  const [restockEstadoByKey, setRestockEstadoByKey] = useState<
     Record<string, CeroRotacionEstado>
   >({});
   const [isFamilyFilterOpen, setIsFamilyFilterOpen] = useState(false);
@@ -326,6 +381,12 @@ export default function RotacionPage() {
 
   const canEditAbcdConfig = useMemo(
     () => canEditRotacionAbcdConfig(specialRoles, isAdmin),
+    [specialRoles, isAdmin],
+  );
+
+  const canViewSurtidoHistorial = useMemo(
+    /* Admin (role en BD): siempre. Resto: solo con special_roles historial_sinventario. Sin permiso: no mostrar boton. */
+    () => canViewRotacionSinventarioHistorial(specialRoles, isAdmin),
     [specialRoles, isAdmin],
   );
 
@@ -896,13 +957,32 @@ export default function RotacionPage() {
     [targetSedeSelections],
   );
 
-  const getCeroEstadoSortRank = useCallback(
+  const isNuevoItemInSelectedRange = useCallback(
+    (row: RotationRow) => {
+      const rangeForS =
+        dateRange.start && dateRange.end ? dateRange : null;
+      if (!isNuevoItemRow(row, rangeForS)) return false;
+      if (!row.lastPurchaseDate || !dateRange.start || !dateRange.end) return true;
+      const lastSale = parseDateKey(row.lastPurchaseDate);
+      const rangeStart = parseDateKey(dateRange.start);
+      const rangeEnd = parseDateKey(dateRange.end);
+      const hasSaleDateInsideSelectedRange =
+        lastSale >= rangeStart && lastSale <= rangeEnd;
+      return !hasSaleDateInsideSelectedRange;
+    },
+    [dateRange],
+  );
+
+  const getSurtidoEstadoSortRank = useCallback(
     (row: RotationRow) => {
       const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
-      const estado = ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+      const map = isNuevoItemInSelectedRange(row)
+        ? restockEstadoByKey
+        : ceroEstadoByKey;
+      const estado = map[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
       return CERO_ROTACION_ESTADO_SORT_ORDER[estado];
     },
-    [ceroEstadoByKey],
+    [ceroEstadoByKey, restockEstadoByKey, isNuevoItemInSelectedRange],
   );
 
   useEffect(() => {
@@ -926,9 +1006,12 @@ export default function RotacionPage() {
         if (!res.ok) return;
         const data = (await res.json()) as {
           estados?: Record<string, CeroRotacionEstado>;
+          estadosRestock?: Record<string, CeroRotacionEstado>;
         };
-        const next = data.estados ?? {};
-        setCeroEstadoByKey((prev) => ({ ...prev, ...next }));
+        const nextCero = data.estados ?? {};
+        const nextRestock = data.estadosRestock ?? {};
+        setCeroEstadoByKey((prev) => ({ ...prev, ...nextCero }));
+        setRestockEstadoByKey((prev) => ({ ...prev, ...nextRestock }));
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
       }
@@ -936,19 +1019,161 @@ export default function RotacionPage() {
     return () => controller.abort();
   }, [ready, router, dateRange.start, dateRange.end, targetSedeSelections]);
 
-  const persistCeroRotacionEstado = useCallback(
-    async (row: RotationRow, estado: CeroRotacionEstado) => {
+  useEffect(() => {
+    if (!surtidoAuditModalOpen) return;
+    if (!canViewSurtidoHistorial) {
+      setSurtidoAuditModalOpen(false);
+      return;
+    }
+    if (!dateRange.start || !dateRange.end) return;
+    if (targetSedeSelections.length === 0) return;
+    const controller = new AbortController();
+    setSurtidoAuditLoading(true);
+    setSurtidoAuditError(null);
+    void (async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("start", dateRange.start);
+        params.set("end", dateRange.end);
+        targetSedeSelections.forEach((s) => params.append("sedeScope", s.value));
+        const res = await fetch(
+          `/api/rotacion/cero-estados/audit?${params.toString()}`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        const data = (await res.json()) as {
+          rows?: SurtidoAuditApiRow[];
+          auditTableMissing?: boolean;
+          message?: string;
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(data.error ?? "No fue posible cargar el historial.");
+        }
+        setSurtidoAuditRows(data.rows ?? []);
+        if (data.auditTableMissing && data.message) {
+          setSurtidoAuditError(data.message);
+        } else {
+          setSurtidoAuditError(null);
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setSurtidoAuditError(
+          err instanceof Error ? err.message : "Error cargando historial.",
+        );
+        setSurtidoAuditRows([]);
+      } finally {
+        if (!controller.signal.aborted) {
+          setSurtidoAuditLoading(false);
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [
+    surtidoAuditModalOpen,
+    canViewSurtidoHistorial,
+    dateRange.start,
+    dateRange.end,
+    targetSedeSelections,
+    router,
+  ]);
+
+  useEffect(() => {
+    if (!surtidoAuditModalOpen) return;
+    setSurtidoAuditFilterDateFrom("");
+    setSurtidoAuditFilterDateTo("");
+    setSurtidoAuditFilterUser("");
+    setSurtidoAuditFilterItem("");
+    setSurtidoAuditFilterSede("");
+    setSurtidoAuditFilterContext("");
+    setSurtidoAuditFilterAntes("");
+    setSurtidoAuditFilterDespues("");
+  }, [surtidoAuditModalOpen]);
+
+  const surtidoAuditSedeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of surtidoAuditRows) {
+      if (r.sede_id) set.add(r.sede_id);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }, [surtidoAuditRows]);
+
+  const surtidoAuditFilteredRows = useMemo(() => {
+    const itemQ = surtidoAuditFilterItem.trim().toLowerCase();
+    const userQ = surtidoAuditFilterUser.trim().toLowerCase();
+    const sedeVal = surtidoAuditFilterSede.trim();
+    const from = surtidoAuditFilterDateFrom.trim();
+    const to = surtidoAuditFilterDateTo.trim();
+    const ctx = surtidoAuditFilterContext;
+    const antes = surtidoAuditFilterAntes.trim();
+    const desp = surtidoAuditFilterDespues.trim();
+
+    return surtidoAuditRows.filter((r) => {
+      if (from) {
+        const dk = auditChangedAtDateKeyBogota(r.changed_at);
+        if (dk < from) return false;
+      }
+      if (to) {
+        const dk = auditChangedAtDateKeyBogota(r.changed_at);
+        if (dk > to) return false;
+      }
+      if (itemQ && !r.item.toLowerCase().includes(itemQ)) return false;
+      if (userQ) {
+        const u = (r.username ?? "").trim().toLowerCase();
+        if (!u.includes(userQ)) return false;
+      }
+      if (sedeVal && r.sede_id !== sedeVal) return false;
+      if (ctx && r.context !== ctx) return false;
+      if (antes === "__vacio__") {
+        if (r.estado_anterior != null && String(r.estado_anterior).trim() !== "")
+          return false;
+      } else if (antes) {
+        const parsed = parseCeroRotacionEstado(r.estado_anterior ?? "");
+        const norm = (parsed ?? r.estado_anterior) as string;
+        if (norm !== antes) return false;
+      }
+      if (desp) {
+        const parsed = parseCeroRotacionEstado(r.estado_nuevo);
+        const norm = (parsed ?? r.estado_nuevo) as string;
+        if (norm !== desp) return false;
+      }
+      return true;
+    });
+  }, [
+    surtidoAuditRows,
+    surtidoAuditFilterDateFrom,
+    surtidoAuditFilterDateTo,
+    surtidoAuditFilterUser,
+    surtidoAuditFilterItem,
+    surtidoAuditFilterSede,
+    surtidoAuditFilterContext,
+    surtidoAuditFilterAntes,
+    surtidoAuditFilterDespues,
+  ]);
+
+  const persistRotacionSurtidoEstado = useCallback(
+    async (
+      row: RotationRow,
+      estado: CeroRotacionEstado,
+      context: RotacionSurtidoEstadoContext,
+    ) => {
       const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
-      const rollback = ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
-      setCeroEstadoByKey((prev) => ({ ...prev, [key]: estado }));
+      const setMap =
+        context === "restock" ? setRestockEstadoByKey : setCeroEstadoByKey;
+      const currentMap = context === "restock" ? restockEstadoByKey : ceroEstadoByKey;
+      const rollback = currentMap[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+      setMap((prev) => ({ ...prev, [key]: estado }));
       const csrf = getCookieValue("vp_csrf");
       if (!csrf) {
-        setCeroEstadoByKey((prev) => ({ ...prev, [key]: rollback }));
+        setMap((prev) => ({ ...prev, [key]: rollback }));
         setError("No se pudo validar la sesion. Recargue la pagina.");
         return;
       }
       if (!dateRange.start || !dateRange.end) {
-        setCeroEstadoByKey((prev) => ({ ...prev, [key]: rollback }));
+        setMap((prev) => ({ ...prev, [key]: rollback }));
         setError("Seleccione un rango de fechas antes de cambiar el estado.");
         return;
       }
@@ -964,6 +1189,7 @@ export default function RotacionPage() {
             sedeId: row.sedeId,
             item: row.item,
             estado,
+            context,
             start: dateRange.start,
             end: dateRange.end,
           }),
@@ -980,13 +1206,19 @@ export default function RotacionPage() {
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setCeroEstadoByKey((prev) => ({ ...prev, [key]: rollback }));
+        setMap((prev) => ({ ...prev, [key]: rollback }));
         setError(
           err instanceof Error ? err.message : "Error guardando estado.",
         );
       }
     },
-    [ceroEstadoByKey, dateRange.end, dateRange.start, router],
+    [
+      ceroEstadoByKey,
+      restockEstadoByKey,
+      dateRange.end,
+      dateRange.start,
+      router,
+    ],
   );
 
   const lineaN1FamilyKeySet = useMemo(
@@ -1191,10 +1423,10 @@ export default function RotacionPage() {
         tableSortField,
         tableSortDirection,
         tableSortField === "ceroRotacionEstado"
-          ? getCeroEstadoSortRank
+          ? getSurtidoEstadoSortRank
           : undefined,
       ),
-    [rows, tableSortDirection, tableSortField, getCeroEstadoSortRank],
+    [rows, tableSortDirection, tableSortField, getSurtidoEstadoSortRank],
   );
   const rowsAfterProductFilter = useMemo(
     () =>
@@ -1236,21 +1468,6 @@ export default function RotacionPage() {
   const rowsBySedeKeys = useMemo(
     () => rowsBySede.map((group) => `${group.empresa}-${group.sedeId}`),
     [rowsBySede],
-  );
-  const isNuevoItemInSelectedRange = useCallback(
-    (row: RotationRow) => {
-      const rangeForS =
-        dateRange.start && dateRange.end ? dateRange : null;
-      if (!isNuevoItemRow(row, rangeForS)) return false;
-      if (!row.lastPurchaseDate || !dateRange.start || !dateRange.end) return true;
-      const lastSale = parseDateKey(row.lastPurchaseDate);
-      const rangeStart = parseDateKey(dateRange.start);
-      const rangeEnd = parseDateKey(dateRange.end);
-      const hasSaleDateInsideSelectedRange =
-        lastSale >= rangeStart && lastSale <= rangeEnd;
-      return !hasSaleDateInsideSelectedRange;
-    },
-    [dateRange],
   );
 
   const setTableHostRef = useCallback(
@@ -1510,6 +1727,37 @@ export default function RotacionPage() {
     }));
   };
 
+  const toggleSurtidoEstadoFilterChip = useCallback(
+    (groupKey: string, estado: CeroRotacionEstado) => {
+      setCeroEstadoFilterByGroup((prev) => {
+        const cur = normalizeGroupZeroEstadoSetFilter(prev[groupKey]);
+        const nextSet = new Set(cur);
+        if (nextSet.has(estado)) {
+          nextSet.delete(estado);
+        } else {
+          nextSet.add(estado);
+        }
+        if (nextSet.size === 0) {
+          return { ...prev, [groupKey]: [...CERO_ROTACION_ESTADO_VALUES] };
+        }
+        return {
+          ...prev,
+          [groupKey]: normalizeGroupZeroEstadoSetFilter([...nextSet]),
+        };
+      });
+      setPageByGroupKey((p) => ({ ...p, [groupKey]: 1 }));
+    },
+    [],
+  );
+
+  const selectAllSurtidoEstadoFilters = useCallback((groupKey: string) => {
+    setCeroEstadoFilterByGroup((prev) => ({
+      ...prev,
+      [groupKey]: [...CERO_ROTACION_ESTADO_VALUES],
+    }));
+    setPageByGroupKey((p) => ({ ...p, [groupKey]: 1 }));
+  }, []);
+
   const shouldSelectSedeFirst = targetSedeSelections.length === 0;
   const shouldReloadFirst =
     targetSedeSelections.length > 0 && !hasLoadedItems && !isLoadingLineCatalog;
@@ -1520,29 +1768,48 @@ export default function RotacionPage() {
         .map((group) => {
         const groupKey = `${group.empresa}-${group.sedeId}`;
         const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
-        const zeroEstadoFilter = ceroEstadoFilterByGroup[groupKey] ?? "all";
         const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
         const ventaHastaCap =
           rowFilter === "venta_hasta" || rowFilter === "both"
             ? (ventaHastaCapByGroup[groupKey] ?? null)
             : null;
-        const isZeroRotationTableView =
+        const isCeroTableContext =
           rowFilter === "cero_rotacion" || categoryFilter === "0";
+        const isRestockCategoryView =
+          categoryFilter === "S" ||
+          categoryFilter === "R" ||
+          categoryFilter === "N";
+        const isSurtidoTrackingTableView =
+          isCeroTableContext || isRestockCategoryView;
+        const surTrackingExportLabel =
+          isCeroTableContext && !isRestockCategoryView
+            ? "Cero rotacion"
+            : isRestockCategoryView && !isCeroTableContext
+              ? "Restock"
+              : "Seguimiento inventario";
+        const estadoMapForFilter = isCeroTableContext
+          ? ceroEstadoByKey
+          : restockEstadoByKey;
         const quickFilteredRows = applyRowsQuickFilter(
           group.rows,
           rowFilter,
           ventaHastaCap,
           dateRange,
         );
-        const filteredRows =
-          isZeroRotationTableView && zeroEstadoFilter !== "all"
-            ? quickFilteredRows.filter((row) => {
-                const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
-                const estado =
-                  ceroEstadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
-                return estado === zeroEstadoFilter;
-              })
-            : quickFilteredRows;
+        const zeroEstadoSet = normalizeGroupZeroEstadoSetFilter(
+          ceroEstadoFilterByGroup[groupKey],
+        );
+        const filterSurtidoByEstadoMulti =
+          isSurtidoTrackingTableView &&
+          zeroEstadoSet.length < CERO_ROTACION_ESTADO_VALUES.length;
+        const filteredRows = filterSurtidoByEstadoMulti
+          ? quickFilteredRows.filter((row) => {
+              const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+              const estado =
+                estadoMapForFilter[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+              return zeroEstadoSet.includes(estado);
+            })
+          : quickFilteredRows;
         /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
         const sourceRowsForAbcd =
           baseRowsBySedeByKey.get(groupKey) ?? group.rows;
@@ -1573,9 +1840,12 @@ export default function RotacionPage() {
             : isCeroRotacionExcludingNuevo(row, dateRange)
               ? "0"
               : (categoryByItem.get(row.item) ?? "D");
-          const ceroEstadoKey = makeCeroRotacionEstadoKey(row.sedeId, row.item);
-          const ceroEstado =
-            ceroEstadoByKey[ceroEstadoKey] ?? DEFAULT_CERO_ROTACION_ESTADO;
+          const estadoKey = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+          const estadoMapForRow = isNuevoItemInSelectedRange(row)
+            ? restockEstadoByKey
+            : ceroEstadoByKey;
+          const surEstado =
+            estadoMapForRow[estadoKey] ?? DEFAULT_CERO_ROTACION_ESTADO;
           const duvDays = calculateDuvDays(row.lastPurchaseDate);
           const diSinceIngresoDays = calculateDiSinceLastIngresoDays(
             row.lastMovementDate,
@@ -1585,7 +1855,7 @@ export default function RotacionPage() {
             sede: displayRotationSedeName(row.sedeName),
             item: row.item,
             categoria: displayCategory,
-            ceroEstado: CERO_ROTACION_ESTADO_LABELS[ceroEstado],
+            ceroEstado: CERO_ROTACION_ESTADO_LABELS[surEstado],
             descripcion: row.descripcion,
             ventaPeriodo: row.totalSales,
             costoPeriodo: row.totalCost,
@@ -1615,7 +1885,8 @@ export default function RotacionPage() {
         });
         return {
           groupKey,
-          isZeroRotationTableView,
+          isSurtidoTrackingTableView,
+          surTrackingExportLabel,
           empresa: formatCompanyLabel(group.empresa),
           sede: displayRotationSedeName(group.sedeName),
           rows,
@@ -1627,6 +1898,7 @@ export default function RotacionPage() {
       abcdFilterByGroup,
       baseRowsBySedeByKey,
       ceroEstadoByKey,
+      restockEstadoByKey,
       ceroEstadoFilterByGroup,
       dateRange,
       isNuevoItemInSelectedRange,
@@ -1658,13 +1930,15 @@ export default function RotacionPage() {
       doc.setTextColor(30, 41, 59);
       doc.text(
         `${group.empresa} - ${group.sede} | Vista: ${
-          group.isZeroRotationTableView ? "Cero rotacion" : "Rotacion general"
+          group.isSurtidoTrackingTableView
+            ? group.surTrackingExportLabel
+            : "Rotacion general"
         }`,
         14,
         nextStartY,
       );
 
-      if (group.isZeroRotationTableView) {
+      if (group.isSurtidoTrackingTableView) {
         autoTable(doc, {
           startY: nextStartY + 4,
           styles: { fontSize: 7, cellPadding: 1.8 },
@@ -1753,7 +2027,9 @@ export default function RotacionPage() {
       exportGroups.forEach((group) => {
         const titleRow = sheet.addRow([
           `${group.empresa} - ${group.sede} | Vista: ${
-            group.isZeroRotationTableView ? "Cero rotacion" : "Rotacion general"
+            group.isSurtidoTrackingTableView
+              ? group.surTrackingExportLabel
+              : "Rotacion general"
           }`,
         ]);
         titleRow.font = { bold: true, size: 11 };
@@ -1763,7 +2039,7 @@ export default function RotacionPage() {
           fgColor: { argb: "FFE2E8F0" },
         };
 
-        const headers = group.isZeroRotationTableView
+        const headers = group.isSurtidoTrackingTableView
           ? [
               "Item",
               "Cat.",
@@ -1804,7 +2080,7 @@ export default function RotacionPage() {
         });
 
         group.rows.forEach((row) => {
-          if (group.isZeroRotationTableView) {
+          if (group.isSurtidoTrackingTableView) {
             sheet.addRow([
               row.item,
               row.categoria,
@@ -1997,20 +2273,45 @@ export default function RotacionPage() {
                     <Link href="/secciones">Cambiar seccion</Link>
                   </Button>
                 </div>
-                {canEditAbcdConfig ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full rounded-full border-emerald-300 bg-emerald-50/90 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 hover:bg-emerald-100 sm:w-auto"
-                    onClick={() => {
-                      setAbcdDraftConfig(abcdConfig);
-                      setAbcdSaveScope("global");
-                      setIsAbcdModalOpen(true);
-                    }}
-                  >
-                    Configurar ABCD
-                  </Button>
-                ) : null}
+                <div className="flex w-full flex-wrap justify-end gap-2">
+                  {canViewSurtidoHistorial ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        !dateRange.start ||
+                        !dateRange.end ||
+                        targetSedeSelections.length === 0
+                      }
+                      title={
+                        !dateRange.start || !dateRange.end
+                          ? "Seleccione rango de fechas"
+                          : targetSedeSelections.length === 0
+                            ? "Seleccione al menos una sede"
+                            : "Cambios de S.inventario en el periodo y sedes actuales"
+                      }
+                      className="rounded-full border-slate-300 bg-white/90 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                      onClick={() => setSurtidoAuditModalOpen(true)}
+                    >
+                      <History className="mr-2 inline h-4 w-4 align-text-bottom" />
+                      Historial S.inventario
+                    </Button>
+                  ) : null}
+                  {canEditAbcdConfig ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full border-emerald-300 bg-emerald-50/90 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 hover:bg-emerald-100"
+                      onClick={() => {
+                        setAbcdDraftConfig(abcdConfig);
+                        setAbcdSaveScope("global");
+                        setIsAbcdModalOpen(true);
+                      }}
+                    >
+                      Configurar ABCD
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </CardContent>
@@ -2577,34 +2878,46 @@ export default function RotacionPage() {
                     const groupKey = `${group.empresa}-${group.sedeId}`;
                     const rowFilter =
                       rowsQuickFilterByGroup[groupKey] ?? "none";
-                    const zeroEstadoFilter =
-                      ceroEstadoFilterByGroup[groupKey] ?? "all";
                     const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
                     const ventaHastaCap =
                       rowFilter === "venta_hasta" || rowFilter === "both"
                         ? (ventaHastaCapByGroup[groupKey] ?? null)
                         : null;
-                    const isZeroRotationTableView =
+                    const isCeroTableContext =
                       rowFilter === "cero_rotacion" || categoryFilter === "0";
+                    const isRestockCategoryView =
+                      categoryFilter === "S" ||
+                      categoryFilter === "R" ||
+                      categoryFilter === "N";
+                    const isSurtidoTrackingTableView =
+                      isCeroTableContext || isRestockCategoryView;
+                    const estadoMapForFilter = isCeroTableContext
+                      ? ceroEstadoByKey
+                      : restockEstadoByKey;
                     const quickFilteredRows = applyRowsQuickFilter(
                       group.rows,
                       rowFilter,
                       ventaHastaCap,
                       dateRange,
                     );
-                    const filteredRows =
-                      isZeroRotationTableView && zeroEstadoFilter !== "all"
-                        ? quickFilteredRows.filter((row) => {
-                            const key = makeCeroRotacionEstadoKey(
-                              row.sedeId,
-                              row.item,
-                            );
-                            const estado =
-                              ceroEstadoByKey[key] ??
-                              DEFAULT_CERO_ROTACION_ESTADO;
-                            return estado === zeroEstadoFilter;
-                          })
-                        : quickFilteredRows;
+                    const zeroEstadoSet = normalizeGroupZeroEstadoSetFilter(
+                      ceroEstadoFilterByGroup[groupKey],
+                    );
+                    const filterSurtidoByEstadoMulti =
+                      isSurtidoTrackingTableView &&
+                      zeroEstadoSet.length < CERO_ROTACION_ESTADO_VALUES.length;
+                    const filteredRows = filterSurtidoByEstadoMulti
+                      ? quickFilteredRows.filter((row) => {
+                          const key = makeCeroRotacionEstadoKey(
+                            row.sedeId,
+                            row.item,
+                          );
+                          const estado =
+                            estadoMapForFilter[key] ??
+                            DEFAULT_CERO_ROTACION_ESTADO;
+                          return zeroEstadoSet.includes(estado);
+                        })
+                      : quickFilteredRows;
                     /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
                     const sourceRowsForAbcd =
                       baseRowsBySedeByKey.get(groupKey) ?? group.rows;
@@ -3240,39 +3553,59 @@ export default function RotacionPage() {
                                       : categoryFilteredCeroRotacionCount}
                                     )
                                   </Button>
-                                  {isZeroRotationTableView ? (
-                                    <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                                      <span className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                                  {isSurtidoTrackingTableView ? (
+                                    <div
+                                      className="inline-flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1"
+                                      role="group"
+                                      aria-label="Filtrar por estado de inventario"
+                                    >
+                                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                                         S.inventario
                                       </span>
-                                      <select
-                                        value={zeroEstadoFilter}
-                                        onChange={(event) => {
-                                          const next = event.target
-                                            .value as GroupZeroEstadoFilter;
-                                          setCeroEstadoFilterByGroup(
-                                            (prev) => ({
-                                              ...prev,
-                                              [groupKey]: next,
-                                            }),
-                                          );
-                                          setPageByGroupKey((prev) => ({
-                                            ...prev,
-                                            [groupKey]: 1,
-                                          }));
-                                        }}
-                                        className="h-7 rounded-full border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 outline-none transition focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                                      {CERO_ROTACION_ESTADO_VALUES.map((est) => {
+                                        const active = zeroEstadoSet.includes(
+                                          est,
+                                        );
+                                        return (
+                                          <Button
+                                            key={est}
+                                            type="button"
+                                            variant={active ? "default" : "outline"}
+                                            title={
+                                              active
+                                                ? "Quitar de la vista"
+                                                : "Incluir en la vista"
+                                            }
+                                            onClick={() =>
+                                              toggleSurtidoEstadoFilterChip(
+                                                groupKey,
+                                                est,
+                                              )
+                                            }
+                                            className={`h-7 rounded-full px-2.5 py-0 text-[11px] font-semibold ${
+                                              active
+                                                ? "bg-amber-600 text-white hover:bg-amber-700"
+                                                : ""
+                                            }`}
+                                          >
+                                            {CERO_ROTACION_ESTADO_LABELS[est]}
+                                          </Button>
+                                        );
+                                      })}
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        title="Mostrar los tres estados"
+                                        onClick={() =>
+                                          selectAllSurtidoEstadoFilters(
+                                            groupKey,
+                                          )
+                                        }
+                                        className="h-7 rounded-full px-2.5 py-0 text-[11px] font-semibold"
                                       >
-                                        <option value="all">Todos</option>
-                                        <option value="sin_verificar">
-                                          Sin verificar
-                                        </option>
-                                        <option value="seguimiento">
-                                          Seguimiento
-                                        </option>
-                                        <option value="surtido">Surtido</option>
-                                      </select>
-                                    </label>
+                                        Todos
+                                      </Button>
+                                    </div>
                                   ) : null}
                                   <label className="order-last mt-1 flex basis-full flex-col gap-1">
                                     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -3570,7 +3903,7 @@ export default function RotacionPage() {
                               className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm [&_th]:text-center! [&_td]:text-center!"
                             >
                               <colgroup>
-                                {(isZeroRotationTableView
+                                {(isSurtidoTrackingTableView
                                   ? ROTACION_ZERO_TABLE_COL_WIDTHS
                                   : ROTACION_TABLE_COL_WIDTHS
                                 ).map((w, i) => (
@@ -3579,7 +3912,7 @@ export default function RotacionPage() {
                               </colgroup>
                               <TableHeader>
                                 <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                                  {isZeroRotationTableView ? (
+                                  {isSurtidoTrackingTableView ? (
                                     <>
                                       <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 text-right align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
                                         #
@@ -3885,7 +4218,7 @@ export default function RotacionPage() {
                                     <TableRow
                                       key={`${group.sedeId}-${row.item}`}
                                     >
-                                      {isZeroRotationTableView ? (
+                                      {isSurtidoTrackingTableView ? (
                                         <>
                                           <TableCell className="whitespace-nowrap px-2 py-2 text-right align-top tabular-nums text-slate-500">
                                             {rowNumber}
@@ -3906,19 +4239,23 @@ export default function RotacionPage() {
                                             <select
                                               className="max-w-44 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-left text-xs text-slate-800 shadow-sm"
                                               value={
-                                                ceroEstadoByKey[
+                                                (isCeroTableContext
+                                                  ? ceroEstadoByKey
+                                                  : restockEstadoByKey)[
                                                   makeCeroRotacionEstadoKey(
                                                     row.sedeId,
                                                     row.item,
                                                   )
-                                                ] ??
-                                                DEFAULT_CERO_ROTACION_ESTADO
+                                                ] ?? DEFAULT_CERO_ROTACION_ESTADO
                                               }
                                               onChange={(e) => {
-                                                void persistCeroRotacionEstado(
+                                                void persistRotacionSurtidoEstado(
                                                   row,
                                                   e.target
                                                     .value as CeroRotacionEstado,
+                                                  isCeroTableContext
+                                                    ? "cero"
+                                                    : "restock",
                                                 );
                                               }}
                                             >
@@ -4151,12 +4488,22 @@ export default function RotacionPage() {
         const floatingRowFilter = floatingHeaderState
           ? (rowsQuickFilterByGroup[floatingHeaderState.groupKey] ?? "none")
           : "none";
-        const floatingIsZeroRotationTableView =
-          floatingRowFilter === "cero_rotacion";
-        const floatingWidths = floatingIsZeroRotationTableView
+        const floatingCategoryFilter = floatingHeaderState
+          ? (abcdFilterByGroup[floatingHeaderState.groupKey] ?? "all")
+          : "all";
+        const floatingIsCeroContext =
+          floatingRowFilter === "cero_rotacion" ||
+          floatingCategoryFilter === "0";
+        const floatingIsRestockCategory =
+          floatingCategoryFilter === "S" ||
+          floatingCategoryFilter === "R" ||
+          floatingCategoryFilter === "N";
+        const floatingIsSurtidoTrackingTableView =
+          floatingIsCeroContext || floatingIsRestockCategory;
+        const floatingWidths = floatingIsSurtidoTrackingTableView
           ? ROTACION_ZERO_TABLE_COL_WIDTHS
           : ROTACION_TABLE_COL_WIDTHS;
-        const floatingColumns = floatingIsZeroRotationTableView
+        const floatingColumns = floatingIsSurtidoTrackingTableView
           ? ROTACION_FLOATING_HEADER_COLUMNS_ZERO
           : ROTACION_FLOATING_HEADER_COLUMNS;
 
@@ -4217,6 +4564,282 @@ export default function RotacionPage() {
           </div>
         ) : null;
       })()}
+
+      {surtidoAuditModalOpen && canViewSurtidoHistorial ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rotacion-surtido-audit-title"
+          onClick={() => setSurtidoAuditModalOpen(false)}
+        >
+          <div
+            className="relative flex max-h-[82vh] w-full max-w-5xl flex-col rounded-2xl border border-amber-200 bg-white p-5 shadow-xl sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-3 top-3 rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              onClick={() => setSurtidoAuditModalOpen(false)}
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <h2
+              id="rotacion-surtido-audit-title"
+              className="pr-10 text-lg font-bold text-slate-900"
+            >
+              Historial S.inventario
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {formattedRange} · {targetSedeSelections.length} sede
+              {targetSedeSelections.length === 1 ? "" : "s"} seleccionada
+              {targetSedeSelections.length === 1 ? "" : "s"}.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Incluye cambios hasta la fecha de hoy (America/Bogota), aunque el
+              periodo del tablero termine antes.
+            </p>
+            {surtidoAuditError ? (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                {surtidoAuditError}
+              </div>
+            ) : null}
+            {!surtidoAuditLoading && surtidoAuditRows.length > 0 ? (
+              <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Filtros
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-slate-300 text-xs"
+                    onClick={() => {
+                      setSurtidoAuditFilterDateFrom("");
+                      setSurtidoAuditFilterDateTo("");
+                      setSurtidoAuditFilterUser("");
+                      setSurtidoAuditFilterItem("");
+                      setSurtidoAuditFilterSede("");
+                      setSurtidoAuditFilterContext("");
+                      setSurtidoAuditFilterAntes("");
+                      setSurtidoAuditFilterDespues("");
+                    }}
+                  >
+                    Limpiar filtros
+                  </Button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Fecha desde
+                    <input
+                      type="date"
+                      value={surtidoAuditFilterDateFrom}
+                      onChange={(e) =>
+                        setSurtidoAuditFilterDateFrom(e.target.value)
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Fecha hasta
+                    <input
+                      type="date"
+                      value={surtidoAuditFilterDateTo}
+                      onChange={(e) =>
+                        setSurtidoAuditFilterDateTo(e.target.value)
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Usuario
+                    <input
+                      type="search"
+                      placeholder="Contiene…"
+                      value={surtidoAuditFilterUser}
+                      onChange={(e) =>
+                        setSurtidoAuditFilterUser(e.target.value)
+                      }
+                      autoComplete="off"
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Item
+                    <input
+                      type="search"
+                      placeholder="Codigo o parte…"
+                      value={surtidoAuditFilterItem}
+                      onChange={(e) =>
+                        setSurtidoAuditFilterItem(e.target.value)
+                      }
+                      autoComplete="off"
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Sede
+                    <select
+                      value={surtidoAuditFilterSede}
+                      onChange={(e) => setSurtidoAuditFilterSede(e.target.value)}
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">Todas</option>
+                      {surtidoAuditSedeOptions.map((id) => (
+                        <option key={id} value={id}>
+                          {id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Origen
+                    <select
+                      value={surtidoAuditFilterContext}
+                      onChange={(e) =>
+                        setSurtidoAuditFilterContext(
+                          e.target.value as "" | "cero" | "restock",
+                        )
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">Todos</option>
+                      <option value="cero">Cero rot.</option>
+                      <option value="restock">Restock</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Antes
+                    <select
+                      value={surtidoAuditFilterAntes}
+                      onChange={(e) =>
+                        setSurtidoAuditFilterAntes(e.target.value)
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">Cualquiera</option>
+                      <option value="__vacio__">Sin valor anterior</option>
+                      {CERO_ROTACION_ESTADO_VALUES.map((v) => (
+                        <option key={v} value={v}>
+                          {CERO_ROTACION_ESTADO_LABELS[v]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
+                    Después
+                    <select
+                      value={surtidoAuditFilterDespues}
+                      onChange={(e) =>
+                        setSurtidoAuditFilterDespues(e.target.value)
+                      }
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">Cualquiera</option>
+                      {CERO_ROTACION_ESTADO_VALUES.map((v) => (
+                        <option key={v} value={v}>
+                          {CERO_ROTACION_ESTADO_LABELS[v]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Mostrando{" "}
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    {surtidoAuditFilteredRows.length}
+                  </span>{" "}
+                  de{" "}
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    {surtidoAuditRows.length}
+                  </span>
+                  .
+                </p>
+              </div>
+            ) : null}
+            <div className="mt-4 min-h-[140px] flex-1 overflow-auto rounded-lg border border-slate-200">
+              {surtidoAuditLoading ? (
+                <div className="flex items-center justify-center gap-2 p-10 text-slate-600">
+                  <Loader2 className="h-6 w-6 shrink-0 animate-spin" />
+                  Cargando historial…
+                </div>
+              ) : surtidoAuditRows.length === 0 ? (
+                <p className="p-8 text-center text-sm text-slate-600">
+                  Sin cambios registrados para estas sedes en el intervalo del
+                  periodo (desde el inicio hasta hoy en Colombia).
+                </p>
+              ) : surtidoAuditFilteredRows.length === 0 ? (
+                <p className="p-8 text-center text-sm text-slate-600">
+                  Ningún registro coincide con los filtros. Ajusta o limpia los
+                  filtros.
+                </p>
+              ) : (
+                <Table className="min-w-208 text-sm">
+                  <TableHeader>
+                    <TableRow className="bg-slate-50/90 hover:bg-slate-50/90">
+                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Fecha y hora
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Usuario
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Sede
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Item
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Origen
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Antes
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Después
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {surtidoAuditFilteredRows.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="whitespace-nowrap tabular-nums text-slate-800">
+                          {new Date(r.changed_at).toLocaleString("es-CO", {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })}
+                        </TableCell>
+                        <TableCell className="max-w-40 truncate font-medium text-slate-900">
+                          {r.username?.trim() || "—"}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-slate-700">
+                          {r.sede_id}
+                        </TableCell>
+                        <TableCell className="max-w-48 truncate font-mono text-xs text-slate-900">
+                          {r.item}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-slate-600">
+                          {formatAuditContextLabel(r.context)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-slate-700">
+                          {formatAuditEstadoLabel(r.estado_anterior)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap font-semibold text-slate-900">
+                          {formatAuditEstadoLabel(r.estado_nuevo)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isAbcdModalOpen && canEditAbcdConfig ? (
         <div

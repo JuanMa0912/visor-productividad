@@ -178,6 +178,10 @@ const SPECIAL_ROLE_OPTIONS = [
   { id: "rotacion", label: "Rotacion" },
   { id: "comparar_horarios", label: "Comparar horarios" },
   { id: "abcd", label: "ABCD" },
+  {
+    id: "historial_sinventario",
+    label: "Historial S.inventario (rotacion)",
+  },
 ];
 
 const formatAllowedLines = (allowedLines: string[] | null) => {

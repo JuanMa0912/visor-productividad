@@ -53,13 +53,30 @@ CREATE INDEX IF NOT EXISTS idx_app_user_login_logs_user_time
 CREATE TABLE IF NOT EXISTS rotacion_cero_item_estado (
   sede_id text NOT NULL,
   item text NOT NULL,
+  context text NOT NULL DEFAULT 'cero' CHECK (context IN ('cero', 'restock')),
   estado text NOT NULL CHECK (
     estado IN ('sin_verificar', 'seguimiento', 'surtido')
   ),
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid REFERENCES app_users(id) ON DELETE SET NULL,
-  PRIMARY KEY (sede_id, item)
+  PRIMARY KEY (sede_id, item, context)
 );
 
 CREATE INDEX IF NOT EXISTS idx_rotacion_cero_item_estado_updated
   ON rotacion_cero_item_estado (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS rotacion_cero_item_estado_audit (
+  id bigserial PRIMARY KEY,
+  sede_id text NOT NULL,
+  item text NOT NULL,
+  context text NOT NULL DEFAULT 'cero' CHECK (context IN ('cero', 'restock')),
+  estado_anterior text NULL,
+  estado_nuevo text NOT NULL CHECK (
+    estado_nuevo IN ('sin_verificar', 'seguimiento', 'surtido')
+  ),
+  changed_at timestamptz NOT NULL DEFAULT now(),
+  changed_by uuid REFERENCES app_users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rotacion_cero_audit_sede_changed
+  ON rotacion_cero_item_estado_audit (sede_id, changed_at DESC);

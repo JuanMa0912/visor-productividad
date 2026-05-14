@@ -1,5 +1,20 @@
 export type CeroRotacionEstado = "sin_verificar" | "seguimiento" | "surtido";
 
+/** Donde aplica el estado operativo (cero rotacion vs items restock S/R/N). */
+export type RotacionSurtidoEstadoContext = "cero" | "restock";
+
+export const ROTACION_SURTIDO_ESTADO_CONTEXT_VALUES: readonly RotacionSurtidoEstadoContext[] =
+  ["cero", "restock"] as const;
+
+export const parseRotacionSurtidoEstadoContext = (
+  raw: string | null | undefined,
+): RotacionSurtidoEstadoContext | null => {
+  if (!raw || typeof raw !== "string") return null;
+  const t = raw.trim();
+  if (t === "cero" || t === "restock") return t;
+  return null;
+};
+
 export const CERO_ROTACION_ESTADO_VALUES: readonly CeroRotacionEstado[] = [
   "sin_verificar",
   "seguimiento",

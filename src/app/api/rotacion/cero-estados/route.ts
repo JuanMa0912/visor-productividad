@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Pool } from "pg";
 import {
   getSessionCookieOptions,
   requireAuthSession,
@@ -13,8 +14,10 @@ import { canAccessRotacionBoard } from "@/lib/shared/special-role-features";
 import {
   CERO_ROTACION_ESTADO_VALUES,
   type CeroRotacionEstado,
+  type RotacionSurtidoEstadoContext,
   makeCeroRotacionEstadoKey,
   parseCeroRotacionEstado,
+  parseRotacionSurtidoEstadoContext,
 } from "@/lib/rotacion/cero-estado";
 import {
   getRotationFilterCatalog,
@@ -23,12 +26,102 @@ import {
 
 const CACHE_CONTROL = "no-store";
 
-type PgErrorLike = { code?: string };
+type PgErrorLike = { code?: string; message?: string };
 
-const isMissingCeroEstadoTableError = (error: unknown): boolean =>
+const isUndefinedRelationError = (error: unknown): boolean =>
   typeof error === "object" &&
   error !== null &&
   (error as PgErrorLike).code === "42P01";
+
+const isMissingCeroEstadoTableError = (error: unknown): boolean =>
+  isUndefinedRelationError(error) &&
+  /rotacion_cero_item_estado\b/i.test(
+    String((error as PgErrorLike).message ?? ""),
+  );
+
+const isMissingAuditTableError = (error: unknown): boolean =>
+  isUndefinedRelationError(error) &&
+  /rotacion_cero_item_estado_audit/i.test(
+    String((error as PgErrorLike).message ?? ""),
+  );
+
+const isUndefinedObjectError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  (error as PgErrorLike).code === "42703";
+
+/** Columna `context` aún no migrada (42703 en mensaje). */
+const isMissingContextColumnError = (error: unknown): boolean => {
+  if (!isUndefinedObjectError(error)) return false;
+  const msg = String((error as PgErrorLike).message ?? "");
+  return /\bcontext\b/i.test(msg);
+};
+
+const MIGRATION_RESTOCK_CONTEXT_HINT =
+  "Ejecuta en la base de datos la migracion db/migrations/20260514_rotacion_cero_item_estado_restock_context.sql (columna context y clave primaria por contexto).";
+
+const readEstadoAnterior = async (
+  pool: Pool,
+  sedeId: string,
+  item: string,
+  context: RotacionSurtidoEstadoContext,
+): Promise<string | null> => {
+  try {
+    const r = await pool.query<{ estado: string }>(
+      `
+      SELECT estado
+      FROM rotacion_cero_item_estado
+      WHERE sede_id = $1 AND item = $2 AND context = $3
+      `,
+      [sedeId, item, context],
+    );
+    return r.rows[0]?.estado ?? null;
+  } catch (error) {
+    if (!isMissingContextColumnError(error)) throw error;
+    const r2 = await pool.query<{ estado: string }>(
+      `
+      SELECT estado
+      FROM rotacion_cero_item_estado
+      WHERE sede_id = $1 AND item = $2
+      `,
+      [sedeId, item],
+    );
+    return r2.rows[0]?.estado ?? null;
+  }
+};
+
+const tryInsertSurtidoAudit = async (
+  pool: Pool,
+  params: {
+    sedeId: string;
+    item: string;
+    context: RotacionSurtidoEstadoContext;
+    estadoAnterior: string | null;
+    estadoNuevo: CeroRotacionEstado;
+    changedBy: string;
+  },
+) => {
+  try {
+    await pool.query(
+      `
+      INSERT INTO rotacion_cero_item_estado_audit (
+        sede_id, item, context, estado_anterior, estado_nuevo, changed_by
+      ) VALUES ($1, $2, $3, $4, $5, $6::uuid)
+      `,
+      [
+        params.sedeId,
+        params.item,
+        params.context,
+        params.estadoAnterior,
+        params.estadoNuevo,
+        params.changedBy,
+      ],
+    );
+  } catch (error) {
+    if (isMissingAuditTableError(error)) return;
+    console.error("[rotacion] rotacion_cero_item_estado_audit insert:", error);
+  }
+};
 
 const normalizeCompactDateParam = (raw: string): string | null => {
   const value = raw.trim();
@@ -171,7 +264,10 @@ export async function GET(request: Request) {
     return withSession(
       session,
       NextResponse.json(
-        { estados: {} as Record<string, CeroRotacionEstado> },
+        {
+          estados: {} as Record<string, CeroRotacionEstado>,
+          estadosRestock: {} as Record<string, CeroRotacionEstado>,
+        },
         { headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
@@ -186,15 +282,23 @@ export async function GET(request: Request) {
   if (!resolved.ok) return withSession(session, resolved.response);
 
   const pool = await getDbPool();
-  let result: { rows: Array<{ sede_id: string; item: string; estado: string }> };
+  let result: {
+    rows: Array<{
+      sede_id: string;
+      item: string;
+      estado: string;
+      context: RotacionSurtidoEstadoContext;
+    }>;
+  };
   try {
     result = await pool.query<{
       sede_id: string;
       item: string;
       estado: string;
+      context: RotacionSurtidoEstadoContext;
     }>(
       `
-      SELECT sede_id, item, estado
+      SELECT sede_id, item, estado, context
       FROM rotacion_cero_item_estado
       WHERE sede_id = ANY($1::text[])
       `,
@@ -213,19 +317,61 @@ export async function GET(request: Request) {
         ),
       );
     }
-    throw error;
+    if (isMissingContextColumnError(error)) {
+      try {
+        result = await pool.query<{
+          sede_id: string;
+          item: string;
+          estado: string;
+          context: RotacionSurtidoEstadoContext;
+        }>(
+          `
+          SELECT sede_id, item, estado, 'cero'::text AS context
+          FROM rotacion_cero_item_estado
+          WHERE sede_id = ANY($1::text[])
+          `,
+          [resolved.sedeIds],
+        );
+      } catch (fallbackErr) {
+        if (isMissingCeroEstadoTableError(fallbackErr)) {
+          return withSession(
+            session,
+            NextResponse.json(
+              {
+                error:
+                  "Falta la tabla rotacion_cero_item_estado. Ejecuta la migracion 20260429_rotacion_cero_item_estado.sql.",
+              },
+              { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+            ),
+          );
+        }
+        throw fallbackErr;
+      }
+    } else {
+      throw error;
+    }
   }
 
   const estados: Record<string, CeroRotacionEstado> = {};
+  const estadosRestock: Record<string, CeroRotacionEstado> = {};
   for (const row of result.rows) {
     const parsed = parseCeroRotacionEstado(row.estado);
     if (!parsed) continue;
-    estados[makeCeroRotacionEstadoKey(row.sede_id, row.item)] = parsed;
+    const key = makeCeroRotacionEstadoKey(row.sede_id, row.item);
+    const ctx =
+      parseRotacionSurtidoEstadoContext(
+        typeof row.context === "string" ? row.context : undefined,
+      ) ?? "cero";
+    if (ctx === "restock") estadosRestock[key] = parsed;
+    else estados[key] = parsed;
   }
 
   return withSession(
     session,
-    NextResponse.json({ estados }, { headers: { "Cache-Control": CACHE_CONTROL } }),
+    NextResponse.json(
+      { estados, estadosRestock },
+      { headers: { "Cache-Control": CACHE_CONTROL } },
+    ),
   );
 }
 
@@ -299,6 +445,13 @@ export async function PATCH(request: Request) {
     );
   }
 
+  const contextRaw =
+    typeof body === "object" && body !== null && "context" in body
+      ? String((body as { context?: unknown }).context ?? "").trim()
+      : "";
+  const context: RotacionSurtidoEstadoContext =
+    parseRotacionSurtidoEstadoContext(contextRaw) ?? "cero";
+
   const url = new URL(request.url);
   const fromBody =
     typeof body === "object" && body !== null
@@ -338,17 +491,24 @@ export async function PATCH(request: Request) {
   }
 
   const pool = await getDbPool();
+  let estadoAnterior: string | null = null;
+  try {
+    estadoAnterior = await readEstadoAnterior(pool, sedeId, item, context);
+  } catch {
+    estadoAnterior = null;
+  }
+
   try {
     await pool.query(
       `
-      INSERT INTO rotacion_cero_item_estado (sede_id, item, estado, updated_at, updated_by)
-      VALUES ($1, $2, $3, now(), $4::uuid)
-      ON CONFLICT (sede_id, item) DO UPDATE SET
+      INSERT INTO rotacion_cero_item_estado (sede_id, item, context, estado, updated_at, updated_by)
+      VALUES ($1, $2, $3, $4, now(), $5::uuid)
+      ON CONFLICT (sede_id, item, context) DO UPDATE SET
         estado = EXCLUDED.estado,
         updated_at = now(),
         updated_by = EXCLUDED.updated_by
       `,
-      [sedeId, item, estado, session.user.id],
+      [sedeId, item, context, estado, session.user.id],
     );
   } catch (error) {
     if (isMissingCeroEstadoTableError(error)) {
@@ -363,7 +523,59 @@ export async function PATCH(request: Request) {
         ),
       );
     }
-    throw error;
+    if (isMissingContextColumnError(error)) {
+      if (context === "restock") {
+        return withSession(
+          session,
+          NextResponse.json(
+            {
+              error: `Estados de restock requieren la columna context en la base de datos. ${MIGRATION_RESTOCK_CONTEXT_HINT}`,
+            },
+            { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+          ),
+        );
+      }
+      try {
+        await pool.query(
+          `
+          INSERT INTO rotacion_cero_item_estado (sede_id, item, estado, updated_at, updated_by)
+          VALUES ($1, $2, $3, now(), $4::uuid)
+          ON CONFLICT (sede_id, item) DO UPDATE SET
+            estado = EXCLUDED.estado,
+            updated_at = now(),
+            updated_by = EXCLUDED.updated_by
+          `,
+          [sedeId, item, estado, session.user.id],
+        );
+      } catch (legacyErr) {
+        if (isMissingCeroEstadoTableError(legacyErr)) {
+          return withSession(
+            session,
+            NextResponse.json(
+              {
+                error:
+                  "Falta la tabla rotacion_cero_item_estado. Ejecuta la migracion 20260429_rotacion_cero_item_estado.sql.",
+              },
+              { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+            ),
+          );
+        }
+        throw legacyErr;
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  if (estadoAnterior !== estado) {
+    await tryInsertSurtidoAudit(pool, {
+      sedeId,
+      item,
+      context,
+      estadoAnterior,
+      estadoNuevo: estado,
+      changedBy: session.user.id,
+    });
   }
 
   return withSession(
@@ -373,6 +585,7 @@ export async function PATCH(request: Request) {
         ok: true,
         key: makeCeroRotacionEstadoKey(sedeId, item),
         estado,
+        context,
       },
       { headers: { "Cache-Control": CACHE_CONTROL } },
     ),
