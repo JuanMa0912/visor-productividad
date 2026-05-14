@@ -34,6 +34,18 @@ export type ExcelDianPeriodRange = {
   cappedAtToday: boolean;
 };
 
+/** Convierte rango de fechas locales (YYYY-MM-DD) a lapso YYYYMM del primer y ultimo mes tocado. */
+export function periodRangeToLapsoBounds(
+  range: ExcelDianPeriodRange,
+): { startLapso: string; endLapso: string } | null {
+  if (!range.start || !range.end) return null;
+  if (range.start.length < 7 || range.end.length < 7) return null;
+  const startLapso = `${range.start.slice(0, 4)}${range.start.slice(5, 7)}`;
+  const endLapso = `${range.end.slice(0, 4)}${range.end.slice(5, 7)}`;
+  if (!/^\d{6}$/.test(startLapso) || !/^\d{6}$/.test(endLapso)) return null;
+  return { startLapso, endLapso };
+}
+
 /**
  * Lapso inclusivo de meses (desde el día 1 del mes inicial hasta el último día
  * del mes final). Si el intervalo calendario llega más allá de hoy, el fin

@@ -138,9 +138,9 @@ ORDER BY t.nit
 
 export const queryMtodoMediosMagneticos = async (
   client: PoolClient,
-  year: number,
+  startLapso: string,
+  endLapso: string,
 ) => {
-  const { startLapso, endLapso } = buildYearLapsoRange(year);
   const result = await client.query<MtodoMediosMagneticosRow>(
     MTODO_MEDIOS_MAGNETICOS_QUERY,
     [startLapso, endLapso],

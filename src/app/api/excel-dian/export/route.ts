@@ -4,6 +4,7 @@ import { applySessionCookies, requireAuthSession } from "@/lib/auth";
 import { getMtodoExcelDianPool } from "@/lib/excel-dian/mtodo-db";
 import {
   MTODO_MEDIOS_MAGNETICOS_COLUMNS,
+  buildYearLapsoRange,
   queryMtodoMediosMagneticos,
 } from "@/lib/excel-dian/mtodo-medios-magneticos";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
@@ -63,8 +64,39 @@ const HEADER_FONT_SIZE = 10;
 const NUM_FMT_ACCOUNTING_INT =
   '_-* #,##0_-;\\-* #,##0_-;\\-* "-"??_-;\\-_@_-';
 
+const MAX_SPAN_MONTHS = 36;
+
+const parseLapsoParam = (value: string | null): string | null => {
+  const s = value?.trim();
+  if (!s || !/^\d{6}$/.test(s)) return null;
+  const y = Number.parseInt(s.slice(0, 4), 10);
+  const m = Number.parseInt(s.slice(4, 6), 10);
+  if (!Number.isInteger(y) || y < MIN_YEAR || y > MAX_YEAR) return null;
+  if (!Number.isInteger(m) || m < 1 || m > 12) return null;
+  return s;
+};
+
+const currentLapsoYm = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const monthsInclusiveSpan = (start: string, end: string): number => {
+  const ys = Number.parseInt(start.slice(0, 4), 10);
+  const ms = Number.parseInt(start.slice(4, 6), 10);
+  const ye = Number.parseInt(end.slice(0, 4), 10);
+  const me = Number.parseInt(end.slice(4, 6), 10);
+  return (ye - ys) * 12 + (me - ms) + 1;
+};
+
+const parseMonth1to12 = (value: string | null): number | null => {
+  const n = Number(value?.trim());
+  if (!Number.isInteger(n) || n < 1 || n > 12) return null;
+  return n;
+};
+
 const parseYear = (value: string | null) => {
-  const year = Number(value);
+  const year = Number(value?.trim());
   if (!Number.isInteger(year) || year < MIN_YEAR || year > MAX_YEAR) {
     return null;
   }
@@ -97,7 +129,6 @@ const normalizeExcelRow = (
 
 const buildWorkbook = async (
   rows: Awaited<ReturnType<typeof queryMtodoMediosMagneticos>>["rows"],
-  year: number,
   startLapso: string,
   endLapso: string,
 ) => {
@@ -237,7 +268,6 @@ const buildWorkbook = async (
   meta.addRows([
     { field: "Empresa", value: "Comercializadora" },
     { field: "Base de datos", value: "mtodo" },
-    { field: "Anio", value: year },
     { field: "Lapso inicial", value: startLapso },
     { field: "Lapso final", value: endLapso },
     { field: "Registros exportados", value: rows.length },
@@ -360,11 +390,78 @@ export async function GET(request: Request) {
     );
   }
 
-  const year = parseYear(url.searchParams.get("year"));
-  if (!year) {
+  const lapsoStartQ = parseLapsoParam(url.searchParams.get("startLapso"));
+  const lapsoEndQ = parseLapsoParam(url.searchParams.get("endLapso"));
+
+  let startLapso: string;
+  let endLapso: string;
+
+  if (lapsoStartQ && lapsoEndQ) {
+    if (lapsoStartQ > lapsoEndQ) {
+      return finalizeResponse(
+        NextResponse.json(
+          { error: "El lapso inicial no puede ser mayor que el lapso final." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        ),
+      );
+    }
+    if (monthsInclusiveSpan(lapsoStartQ, lapsoEndQ) > MAX_SPAN_MONTHS) {
+      return finalizeResponse(
+        NextResponse.json(
+          { error: `El rango no puede superar ${MAX_SPAN_MONTHS} meses.` },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        ),
+      );
+    }
+    startLapso = lapsoStartQ;
+    endLapso = lapsoEndQ;
+  } else if (lapsoStartQ || lapsoEndQ) {
     return finalizeResponse(
       NextResponse.json(
-        { error: "Debes enviar un anio valido." },
+        {
+          error:
+            "Envía startLapso y endLapso juntos (formato YYYYMM), o usa year (y opcionalmente month).",
+        },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      ),
+    );
+  } else {
+    const year = parseYear(url.searchParams.get("year"));
+    if (!year) {
+      return finalizeResponse(
+        NextResponse.json(
+          { error: "Indica un año válido (year) o lapso (startLapso y endLapso)." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        ),
+      );
+    }
+    const month = parseMonth1to12(url.searchParams.get("month"));
+    if (month != null) {
+      startLapso = `${year}${String(month).padStart(2, "0")}`;
+      endLapso = startLapso;
+    } else {
+      const y = buildYearLapsoRange(year);
+      startLapso = y.startLapso;
+      endLapso = y.endLapso;
+    }
+  }
+
+  const capLapso = currentLapsoYm();
+  if (startLapso > capLapso) {
+    return finalizeResponse(
+      NextResponse.json(
+        { error: "El periodo no puede ser completamente futuro." },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      ),
+    );
+  }
+  if (endLapso > capLapso) {
+    endLapso = capLapso;
+  }
+  if (startLapso > endLapso) {
+    return finalizeResponse(
+      NextResponse.json(
+        { error: "El periodo queda vacío tras ajustar al mes en curso." },
         { status: 400, headers: { "Cache-Control": "no-store" } },
       ),
     );
@@ -374,12 +471,12 @@ export async function GET(request: Request) {
     const pool = await getMtodoExcelDianPool();
     const client = await pool.connect();
     try {
-      const { rows, startLapso, endLapso } =
-        await queryMtodoMediosMagneticos(client, year);
-      const workbook = await buildWorkbook(rows, year, startLapso, endLapso);
+      const { rows, startLapso: sl, endLapso: el } =
+        await queryMtodoMediosMagneticos(client, startLapso, endLapso);
+      const workbook = await buildWorkbook(rows, sl, el);
       const raw = await workbook.xlsx.writeBuffer();
       const body = Buffer.isBuffer(raw) ? raw : Buffer.from(new Uint8Array(raw as ArrayBuffer));
-      const filename = `medios-magneticos-comercializadora-${year}.xlsx`;
+      const filename = `medios-magneticos-comercializadora-${sl}-${el}.xlsx`;
       const byteLength = body.length;
 
       return finalizeResponse(

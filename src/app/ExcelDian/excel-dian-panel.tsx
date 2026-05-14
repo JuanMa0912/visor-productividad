@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,14 @@ import {
   EXCEL_DIAN_EMPRESA_OPTIONS,
   type ExcelDianEmpresaValue,
 } from "./excel-dian-empresa";
+import {
+  buildExcelDianFullYearRange,
+  buildExcelDianInclusiveRange,
+  buildExcelDianMonthSpanRange,
+  EXCEL_DIAN_PERIOD_MODE_OPTIONS,
+  type ExcelDianPeriodMode,
+  periodRangeToLapsoBounds,
+} from "./excel-dian-period";
 
 const selectListClassName =
   "z-[200] min-w-(--radix-select-trigger-width) rounded-lg border border-slate-200 bg-white text-slate-900 shadow-lg";
@@ -23,34 +31,161 @@ const selectItemClassName =
   "data-[highlighted]:bg-slate-100 data-[highlighted]:text-slate-900 " +
   "data-[state=checked]:bg-slate-50 data-[state=checked]:text-slate-900";
 
-function buildYearOptions(): string[] {
-  const y = new Date().getFullYear();
-  const from = y - 6;
-  const to = y + 2;
+const MONTH_OPTIONS: { value: string; label: string }[] = [
+  { value: "01", label: "Enero" },
+  { value: "02", label: "Febrero" },
+  { value: "03", label: "Marzo" },
+  { value: "04", label: "Abril" },
+  { value: "05", label: "Mayo" },
+  { value: "06", label: "Junio" },
+  { value: "07", label: "Julio" },
+  { value: "08", label: "Agosto" },
+  { value: "09", label: "Septiembre" },
+  { value: "10", label: "Octubre" },
+  { value: "11", label: "Noviembre" },
+  { value: "12", label: "Diciembre" },
+];
+
+/** Años desde (actual - 6) hasta el año calendario actual (sin futuros). */
+function buildYearOptions(maxYear: number): string[] {
+  const from = maxYear - 6;
+  const to = maxYear;
   const out: string[] = [];
   for (let i = from; i <= to; i += 1) out.push(String(i));
   return out.reverse();
 }
 
+function currentLapsoYm(): string {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function clampLapsoRange(bounds: {
+  startLapso: string;
+  endLapso: string;
+}): { startLapso: string; endLapso: string } | null {
+  const cap = currentLapsoYm();
+  const { startLapso } = bounds;
+  let { endLapso } = bounds;
+  if (startLapso > cap) return null;
+  if (endLapso > cap) endLapso = cap;
+  if (startLapso > endLapso) return null;
+  return { startLapso, endLapso };
+}
+
+function monthsForYear(
+  yearStr: string,
+  calendarYear: number,
+  calendarMonth: number,
+): { value: string; label: string }[] {
+  const y = Number.parseInt(yearStr, 10);
+  if (!Number.isFinite(y) || y > calendarYear) return MONTH_OPTIONS;
+  if (y < calendarYear) return MONTH_OPTIONS;
+  return MONTH_OPTIONS.filter(
+    (m) => Number.parseInt(m.value, 10) <= calendarMonth,
+  );
+}
+
 export function ExcelDianPanel() {
-  const yearOptions = useMemo(() => buildYearOptions(), []);
-  const [year, setYear] = useState(() => String(new Date().getFullYear()));
+  const now = new Date();
+  const calendarYear = now.getFullYear();
+  const calendarMonth = now.getMonth() + 1;
+  const yearOptions = useMemo(
+    () => buildYearOptions(calendarYear),
+    [calendarYear],
+  );
+
+  const [periodMode, setPeriodMode] =
+    useState<ExcelDianPeriodMode>("full_year");
+  const [year, setYear] = useState(() => String(calendarYear));
+  const [month, setMonth] = useState(() =>
+    String(calendarMonth).padStart(2, "0"),
+  );
+  const [spanStartMonth, setSpanStartMonth] = useState(() =>
+    String(calendarMonth).padStart(2, "0"),
+  );
+  const [spanStartYear, setSpanStartYear] = useState(() => String(calendarYear));
+  const [spanEndMonth, setSpanEndMonth] = useState(() =>
+    String(calendarMonth).padStart(2, "0"),
+  );
+  const [spanEndYear, setSpanEndYear] = useState(() => String(calendarYear));
+
   const [empresa, setEmpresa] = useState<ExcelDianEmpresaValue>("mtodo");
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
-  /** 0–100: fase servidor estimada; luego recepción real si hay Content-Length */
   const [downloadProgress, setDownloadProgress] = useState(0);
+
+  useEffect(() => {
+    if (!yearOptions.includes(year)) {
+      setYear(String(calendarYear));
+    }
+  }, [calendarYear, year, yearOptions]);
+
+  const onPeriodModeChange = (next: ExcelDianPeriodMode) => {
+    setPeriodMode(next);
+    if (next === "month_span") {
+      setSpanStartMonth(month);
+      setSpanStartYear(year);
+      setSpanEndMonth(month);
+      setSpanEndYear(year);
+    }
+  };
+
+  const reportRange = useMemo(() => {
+    const today = new Date();
+    if (periodMode === "full_year") {
+      return buildExcelDianFullYearRange(year, today);
+    }
+    if (periodMode === "single_month") {
+      return buildExcelDianInclusiveRange(month, year, today);
+    }
+    return buildExcelDianMonthSpanRange(
+      spanStartMonth,
+      spanStartYear,
+      spanEndMonth,
+      spanEndYear,
+      today,
+    );
+  }, [
+    periodMode,
+    year,
+    month,
+    spanStartMonth,
+    spanStartYear,
+    spanEndMonth,
+    spanEndYear,
+  ]);
+
+  const lapsoBounds = useMemo(() => {
+    const raw = periodRangeToLapsoBounds(reportRange);
+    if (!raw) return null;
+    return clampLapsoRange(raw);
+  }, [reportRange]);
 
   const empresaLabel =
     EXCEL_DIAN_EMPRESA_OPTIONS.find((e) => e.value === empresa)?.label ?? "-";
-  const startLapso = `${year}01`;
-  const endLapso = `${year}12`;
+
+  const rangeDescription = useMemo(() => {
+    if (!lapsoBounds) {
+      return "Revisa el periodo: el rango queda vacío o es futuro.";
+    }
+    const capped = reportRange.cappedAtToday
+      ? " El fin se acotó a la fecha de hoy porque el periodo incluye el mes en curso."
+      : "";
+    return `El archivo usará datos del lapso ${lapsoBounds.startLapso} al ${lapsoBounds.endLapso}.${capped}`;
+  }, [lapsoBounds, reportRange.cappedAtToday]);
 
   const handleDownload = async () => {
     setDownloadError("");
     if (empresa !== "mtodo") {
       setDownloadError(
         "Por ahora la descarga DIAN solo esta habilitada para Comercializadora.",
+      );
+      return;
+    }
+    if (!lapsoBounds) {
+      setDownloadError(
+        "El periodo seleccionado no es valido (futuro o sin datos).",
       );
       return;
     }
@@ -68,7 +203,11 @@ export function ExcelDianPanel() {
         });
       }, 450);
 
-      const params = new URLSearchParams({ empresa, year });
+      const params = new URLSearchParams({
+        empresa,
+        startLapso: lapsoBounds.startLapso,
+        endLapso: lapsoBounds.endLapso,
+      });
       const response = await fetch(`/api/excel-dian/export?${params}`, {
         method: "GET",
         cache: "no-store",
@@ -89,7 +228,9 @@ export function ExcelDianPanel() {
 
       const rawLen = response.headers.get("Content-Length");
       const totalBytes =
-        rawLen && /^\d+$/.test(rawLen.trim()) ? Number.parseInt(rawLen.trim(), 10) : 0;
+        rawLen && /^\d+$/.test(rawLen.trim())
+          ? Number.parseInt(rawLen.trim(), 10)
+          : 0;
 
       let blob: Blob;
       const body = response.body;
@@ -102,7 +243,10 @@ export function ExcelDianPanel() {
           if (done) break;
           chunks.push(value);
           received += value.length;
-          const transferPct = Math.min(100, Math.round((received / totalBytes) * 100));
+          const transferPct = Math.min(
+            100,
+            Math.round((received / totalBytes) * 100),
+          );
           setDownloadProgress(82 + Math.round((transferPct / 100) * 18));
         }
         const type =
@@ -119,7 +263,7 @@ export function ExcelDianPanel() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `medios-magneticos-comercializadora-${year}.xlsx`;
+      link.download = `medios-magneticos-comercializadora-${lapsoBounds.startLapso}-${lapsoBounds.endLapso}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -136,6 +280,76 @@ export function ExcelDianPanel() {
       setDownloadProgress(0);
     }
   };
+
+  const monthOptionsSingle = useMemo(
+    () => monthsForYear(year, calendarYear, calendarMonth),
+    [year, calendarYear, calendarMonth],
+  );
+
+  const monthOptionsSpanStart = useMemo(
+    () => monthsForYear(spanStartYear, calendarYear, calendarMonth),
+    [spanStartYear, calendarYear, calendarMonth],
+  );
+
+  const monthOptionsSpanEnd = useMemo(
+    () => monthsForYear(spanEndYear, calendarYear, calendarMonth),
+    [spanEndYear, calendarYear, calendarMonth],
+  );
+
+  useEffect(() => {
+    if (!monthOptionsSingle.some((m) => m.value === month)) {
+      setMonth(monthOptionsSingle[0]?.value ?? "01");
+    }
+  }, [month, monthOptionsSingle]);
+
+  useEffect(() => {
+    if (!monthOptionsSpanStart.some((m) => m.value === spanStartMonth)) {
+      setSpanStartMonth(monthOptionsSpanStart[0]?.value ?? "01");
+    }
+  }, [spanStartMonth, monthOptionsSpanStart]);
+
+  useEffect(() => {
+    if (!monthOptionsSpanEnd.some((m) => m.value === spanEndMonth)) {
+      setSpanEndMonth(monthOptionsSpanEnd[0]?.value ?? "01");
+    }
+  }, [spanEndMonth, monthOptionsSpanEnd]);
+
+  const monthSelect = (
+    id: string,
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    options: { value: string; label: string }[],
+  ) => (
+    <div className="space-y-2 text-left">
+      <label
+        htmlFor={id}
+        className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+      >
+        {label}
+      </label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger
+          id={id}
+          size="default"
+          className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
+        >
+          <SelectValue placeholder="Mes" />
+        </SelectTrigger>
+        <SelectContent position="popper" className={selectListClassName}>
+          {options.map((m) => (
+            <SelectItem
+              key={m.value}
+              value={m.value}
+              className={selectItemClassName}
+            >
+              {m.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 
   const yearSelect = (
     id: string,
@@ -162,7 +376,7 @@ export function ExcelDianPanel() {
           size="default"
           className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
         >
-          <SelectValue placeholder="Anio" />
+          <SelectValue placeholder="Año" />
         </SelectTrigger>
         <SelectContent position="popper" className={selectListClassName}>
           {yearOptions.map((y) => (
@@ -199,8 +413,9 @@ export function ExcelDianPanel() {
               Exportacion Excel
             </h1>
             <p className="mt-2.5 max-w-xl text-pretty text-sm leading-relaxed text-slate-500">
-              Elige la empresa y el anio calendario. Para Comercializadora, el
-              lapso se genera completo de enero a diciembre.
+              Elige la empresa y el periodo: un mes, varios meses o el año
+              calendario completo (enero–diciembre). Comercializadora usa lapso
+              en base de datos (YYYYMM).
             </p>
           </header>
 
@@ -243,19 +458,121 @@ export function ExcelDianPanel() {
               </Select>
             </div>
 
-            {yearSelect("excel-dian-full-year", "Anio calendario", year, setYear)}
+            <div className="space-y-2 text-left">
+              <label
+                htmlFor="excel-dian-period-mode"
+                className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+              >
+                Tipo de periodo
+              </label>
+              <Select
+                value={periodMode}
+                onValueChange={(v) => {
+                  onPeriodModeChange(v as ExcelDianPeriodMode);
+                  setDownloadError("");
+                }}
+              >
+                <SelectTrigger
+                  id="excel-dian-period-mode"
+                  size="default"
+                  className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
+                >
+                  <SelectValue placeholder="Periodo" />
+                </SelectTrigger>
+                <SelectContent position="popper" className={selectListClassName}>
+                  {EXCEL_DIAN_PERIOD_MODE_OPTIONS.map((opt) => (
+                    <SelectItem
+                      key={opt.value}
+                      value={opt.value}
+                      className={selectItemClassName}
+                      title={opt.description}
+                    >
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
+          {periodMode === "single_month" ? (
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              {monthSelect(
+                "excel-dian-month",
+                "Mes",
+                month,
+                (v) => {
+                  setMonth(v);
+                  setDownloadError("");
+                },
+                monthOptionsSingle,
+              )}
+              {yearSelect("excel-dian-year", "Año", year, setYear)}
+            </div>
+          ) : null}
+
+          {periodMode === "month_span" ? (
+            <div className="mt-6 space-y-6">
+              <div className="grid gap-6 sm:grid-cols-2">
+                {monthSelect(
+                  "excel-dian-span-start-m",
+                  "Desde (mes)",
+                  spanStartMonth,
+                  (v) => {
+                    setSpanStartMonth(v);
+                    setDownloadError("");
+                  },
+                  monthOptionsSpanStart,
+                )}
+                {yearSelect(
+                  "excel-dian-span-start-y",
+                  "Desde (año)",
+                  spanStartYear,
+                  setSpanStartYear,
+                )}
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                {monthSelect(
+                  "excel-dian-span-end-m",
+                  "Hasta (mes)",
+                  spanEndMonth,
+                  (v) => {
+                    setSpanEndMonth(v);
+                    setDownloadError("");
+                  },
+                  monthOptionsSpanEnd,
+                )}
+                {yearSelect(
+                  "excel-dian-span-end-y",
+                  "Hasta (año)",
+                  spanEndYear,
+                  setSpanEndYear,
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {periodMode === "full_year" ? (
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              {yearSelect(
+                "excel-dian-full-year",
+                "Año calendario",
+                year,
+                setYear,
+              )}
+            </div>
+          ) : null}
+
           <p className="mt-5 rounded-lg border border-slate-200/90 bg-slate-50/80 px-4 py-3 text-left text-sm leading-relaxed text-slate-600">
-            El archivo usara datos del lapso {startLapso} al {endLapso}.
+            {rangeDescription}
           </p>
 
           <Button
             type="button"
             size="lg"
             onClick={handleDownload}
-            disabled={isDownloading}
-            className="mt-7 h-11 w-full rounded-lg bg-slate-900 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-400/60 focus-visible:ring-offset-2"
+            disabled={isDownloading || !lapsoBounds}
+            className="mt-7 h-11 w-full rounded-lg bg-slate-900 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-400/60 focus-visible:ring-offset-2 disabled:opacity-60"
           >
             {isDownloading ? (
               <Loader2 className="size-5 animate-spin text-white" aria-hidden />
@@ -310,8 +627,11 @@ export function ExcelDianPanel() {
                   Pendiente de generar
                 </p>
                 <p className="sr-only">
-                  Empresa: {empresaLabel}. Rango efectivo: {startLapso} a{" "}
-                  {endLapso}.
+                  Empresa: {empresaLabel}. Modo: {periodMode}. Lapso:{" "}
+                  {lapsoBounds
+                    ? `${lapsoBounds.startLapso} a ${lapsoBounds.endLapso}`
+                    : "—"}
+                  .
                 </p>
               </div>
               <div className="text-left sm:text-right">
