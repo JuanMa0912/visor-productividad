@@ -1318,11 +1318,33 @@ const rangeIntersectsDayOfMonthBefore = (
   return false;
 };
 
+const passesCeroRotacionStockDuvGate = (row: RotationRow) => {
+  const duvDays = calculateDuvDays(row.lastPurchaseDate);
+  return duvDays === null || duvDays >= EXCLUDE_RECENT_SALE_DAYS;
+};
+
+const hasUltimoIngresoEnPeriodo = (row: RotationRow, range: DateRange) =>
+  Boolean(row.lastMovementDate) &&
+  isDateKeyWithinInclusiveRange(row.lastMovementDate, range);
+
+/**
+ * Cero rotacion con ultimo ingreso dentro del periodo revisado → restock (no "nuevo").
+ */
+const isCeroRotacionRestockPorIngresoEnPeriodo = (
+  row: RotationRow,
+  range: DateRange,
+) =>
+  passesCeroRotacionStockDuvGate(row) &&
+  isCeroRotacionRow(row) &&
+  hasUltimoIngresoEnPeriodo(row, range);
+
 /**
  * Restock (categoria S): sin inventario al inicio del periodo, sin ventas en el
- * periodo, inventario al cierre, y fecha de ultimo ingreso dentro del periodo.
+ * periodo, inventario al cierre, y fecha de ultimo ingreso dentro del periodo;
+ * o cero rotacion con ultimo ingreso en el periodo (aunque hubiera stock inicial).
  */
 const isRestockItemRow = (row: RotationRow, range: DateRange) => {
+  if (isCeroRotacionRestockPorIngresoEnPeriodo(row, range)) return true;
   const duvDays = calculateDuvDays(row.lastPurchaseDate);
   if (duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS) return false;
   if (!hasNoSalesInSelectedPeriod(row)) return false;
@@ -1334,8 +1356,19 @@ const isRestockItemRow = (row: RotationRow, range: DateRange) => {
 
 /**
  * Nuevo clasico (S): sin ventas en el periodo, con inventario, ultimo ingreso hoy o ayer.
+ * No aplica si el ingreso cae dentro del periodo seleccionado (esos van a restock).
  */
-const isNuevoClasicoItemRow = (row: RotationRow) => {
+const isNuevoClasicoItemRow = (
+  row: RotationRow,
+  range: DateRange | null,
+) => {
+  if (
+    range?.start &&
+    range?.end &&
+    isCeroRotacionRestockPorIngresoEnPeriodo(row, range)
+  ) {
+    return false;
+  }
   const duvDays = calculateDuvDays(row.lastPurchaseDate);
   if (duvDays !== null && duvDays < EXCLUDE_RECENT_SALE_DAYS) return false;
   if (!hasNoSalesInSelectedPeriod(row)) return false;
@@ -1346,11 +1379,12 @@ const isNuevoClasicoItemRow = (row: RotationRow) => {
 };
 
 /**
- * S (restock o nuevo): restock segun periodo seleccionado, o nuevo por ingreso muy reciente.
+ * S (restock o nuevo): restock segun periodo / ingreso en periodo, o nuevo solo si
+ * el ingreso es hoy/ayer y no aplica la regla de restock por periodo.
  */
 const isNuevoItemRow = (row: RotationRow, range: DateRange | null) => {
   if (range?.start && range?.end && isRestockItemRow(row, range)) return true;
-  return isNuevoClasicoItemRow(row);
+  return isNuevoClasicoItemRow(row, range);
 };
 
 /**

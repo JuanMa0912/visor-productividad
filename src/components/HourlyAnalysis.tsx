@@ -420,6 +420,8 @@ const parseTimeToMinute = (value: string) => {
 
 const OVERTIME_PAGE_SIZE = 150;
 const OVERTIME_PAGE_TAB_WINDOW = 8;
+const CASHIER_PAGE_SIZE = 30;
+const CASHIER_PAGE_TAB_WINDOW = 8;
 const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
 const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 29;
 const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";
@@ -739,6 +741,10 @@ export const HourlyAnalysis = ({
     scopeKey: string;
     page: number;
   }>({ scopeKey: "", page: 1 });
+  const [cashierPageState, setCashierPageState] = useState<{
+    scopeKey: string;
+    page: number;
+  }>({ scopeKey: "", page: 1 });
   const [overtimeSedeOpen, setOvertimeSedeOpen] = useState(false);
   const [overtimeDepartmentOpen, setOvertimeDepartmentOpen] = useState(false);
   const [overtimeSedePopoverPos, setOvertimeSedePopoverPos] = useState<{
@@ -760,11 +766,20 @@ export const HourlyAnalysis = ({
   const overtimeSedePanelRef = useRef<HTMLDivElement | null>(null);
   const overtimeDepartmentTriggerRef = useRef<HTMLButtonElement | null>(null);
   const overtimeDepartmentPanelRef = useRef<HTMLDivElement | null>(null);
+  const [personCargoFilterOpen, setPersonCargoFilterOpen] = useState(false);
+  const [personCargoFilterPopoverPos, setPersonCargoFilterPopoverPos] =
+    useState<{
+      top?: number;
+      bottom?: number;
+      left: number;
+      width: number;
+      maxHeight: number;
+    } | null>(null);
+  const personCargoFilterTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const personCargoFilterPanelRef = useRef<HTMLDivElement | null>(null);
   const [personSearchQuery, setPersonSearchQuery] = useState("");
-  /** null = todos los cargos; "" = solo sin cargo registrado. */
-  const [personCargoFilter, setPersonCargoFilter] = useState<string | null>(
-    null,
-  );
+  /** Vacío = todos los cargos; incluye CASHIER_CARGO_SELECT_EMPTY para "sin cargo". */
+  const [personCargoFilters, setPersonCargoFilters] = useState<string[]>([]);
   const deferredPersonSearchQuery = useDeferredValue(personSearchQuery);
   const [cashierSortField, setCashierSortField] =
     useState<CashierSortField>("totalSales");
@@ -1134,6 +1149,18 @@ export const HourlyAnalysis = ({
     setOvertimeDepartmentFilter([]);
   };
 
+  const togglePersonCargoFilter = (cargoValue: string) => {
+    setPersonCargoFilters((prev) =>
+      prev.includes(cargoValue)
+        ? prev.filter((value) => value !== cargoValue)
+        : [...prev, cargoValue],
+    );
+  };
+
+  const clearPersonCargoFilters = () => {
+    setPersonCargoFilters([]);
+  };
+
   const getResponsivePopoverPosition = useCallback(
     (trigger: HTMLButtonElement) => {
       const rect = trigger.getBoundingClientRect();
@@ -1197,6 +1224,12 @@ export const HourlyAnalysis = ({
     setOvertimeDepartmentPopoverPos(getResponsivePopoverPosition(trigger));
   }, [getResponsivePopoverPosition]);
 
+  const updatePersonCargoFilterPopoverPos = useCallback(() => {
+    const trigger = personCargoFilterTriggerRef.current;
+    if (!trigger) return;
+    setPersonCargoFilterPopoverPos(getResponsivePopoverPosition(trigger));
+  }, [getResponsivePopoverPosition]);
+
   useEffect(() => {
     if (!overtimeSedeOpen) return;
     updateOvertimeSedePopoverPos();
@@ -1252,6 +1285,34 @@ export const HourlyAnalysis = ({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [overtimeDepartmentOpen, updateOvertimeDepartmentPopoverPos]);
+
+  useEffect(() => {
+    if (!personCargoFilterOpen) return;
+    updatePersonCargoFilterPopoverPos();
+
+    const onResizeOrScroll = () => updatePersonCargoFilterPopoverPos();
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (personCargoFilterTriggerRef.current?.contains(target)) return;
+      if (personCargoFilterPanelRef.current?.contains(target)) return;
+      setPersonCargoFilterOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPersonCargoFilterOpen(false);
+    };
+
+    window.addEventListener("resize", onResizeOrScroll);
+    window.addEventListener("scroll", onResizeOrScroll, true);
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("resize", onResizeOrScroll);
+      window.removeEventListener("scroll", onResizeOrScroll, true);
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [personCargoFilterOpen, updatePersonCargoFilterPopoverPos]);
 
   useEffect(() => {
     if (!showPersonBreakdown) return;
@@ -1976,14 +2037,40 @@ export const HourlyAnalysis = ({
     return { sorted, hasEmpty };
   }, [peopleBreakdown]);
 
+  const personCargoFilterButtonLabel = useMemo(() => {
+    if (personCargoFilters.length === 0) return "Todos los cargos";
+    const named = personCargoFilters.filter(
+      (value) => value !== CASHIER_CARGO_SELECT_EMPTY,
+    );
+    const includesEmpty = personCargoFilters.includes(
+      CASHIER_CARGO_SELECT_EMPTY,
+    );
+    if (personCargoFilters.length === 1) {
+      if (includesEmpty) return "Sin cargo";
+      return named[0] ?? "1 cargo";
+    }
+    const parts: string[] = [];
+    if (named.length > 0) {
+      parts.push(`${named.length} cargo(s)`);
+    }
+    if (includesEmpty) {
+      parts.push("sin cargo");
+    }
+    return parts.join(" · ") || `${personCargoFilters.length} seleccionados`;
+  }, [personCargoFilters]);
+
   const filteredPeopleBreakdown = useMemo(() => {
     if (personBreakdownView !== "individual") return [];
     let rows = peopleBreakdown;
-    if (personCargoFilter !== null) {
+    if (personCargoFilters.length > 0) {
+      const allowEmpty = personCargoFilters.includes(CASHIER_CARGO_SELECT_EMPTY);
+      const allowedNamed = new Set(
+        personCargoFilters.filter((value) => value !== CASHIER_CARGO_SELECT_EMPTY),
+      );
       rows = rows.filter((person) => {
         const cargo = (person.personCargo ?? "").trim();
-        if (personCargoFilter === "") return cargo === "";
-        return cargo === personCargoFilter;
+        if (!cargo) return allowEmpty;
+        return allowedNamed.has(cargo);
       });
     }
     const query = deferredPersonSearchQuery.trim().toLowerCase();
@@ -1997,7 +2084,7 @@ export const HourlyAnalysis = ({
     deferredPersonSearchQuery,
     peopleBreakdown,
     personBreakdownView,
-    personCargoFilter,
+    personCargoFilters,
   ]);
 
   const cashierListTotalSales = useMemo(
@@ -2043,6 +2130,71 @@ export const HourlyAnalysis = ({
     });
     return rows;
   }, [bucketMinutes, cashierSalesSortDirection, cashierSortField, filteredPeopleBreakdown]);
+
+  const cashierPaginationScopeKey = useMemo(
+    () =>
+      JSON.stringify({
+        request: hourlyRequestKey,
+        search: deferredPersonSearchQuery.trim().toLowerCase(),
+        cargos: [...personCargoFilters].sort(),
+        sortField: cashierSortField,
+        sortDirection: cashierSalesSortDirection,
+        count: sortedPeopleBreakdown.length,
+      }),
+    [
+      cashierSalesSortDirection,
+      cashierSortField,
+      deferredPersonSearchQuery,
+      hourlyRequestKey,
+      personCargoFilters,
+      sortedPeopleBreakdown.length,
+    ],
+  );
+  const cashierTotalPages = useMemo(
+    () =>
+      Math.max(1, Math.ceil(sortedPeopleBreakdown.length / CASHIER_PAGE_SIZE)),
+    [sortedPeopleBreakdown.length],
+  );
+  const cashierPage =
+    cashierPageState.scopeKey === cashierPaginationScopeKey
+      ? Math.max(1, Math.min(cashierTotalPages, cashierPageState.page))
+      : 1;
+  const setCashierPage = useCallback(
+    (next: number | ((prev: number) => number)) => {
+      setExpandedPersonDailyKey(null);
+      setCashierHourDetailSelection(null);
+      cashierHourDetailAbortRef.current?.abort();
+      setCashierDayHourlyLoadingKey(null);
+      setCashierPageState((prev) => {
+        const previousPage =
+          prev.scopeKey === cashierPaginationScopeKey ? prev.page : 1;
+        const resolvedPage =
+          typeof next === "function" ? next(previousPage) : next;
+        return {
+          scopeKey: cashierPaginationScopeKey,
+          page: Math.max(1, Math.min(cashierTotalPages, resolvedPage)),
+        };
+      });
+    },
+    [cashierPaginationScopeKey, cashierTotalPages],
+  );
+  const pagedCashiers = useMemo(() => {
+    const start = (cashierPage - 1) * CASHIER_PAGE_SIZE;
+    return sortedPeopleBreakdown.slice(start, start + CASHIER_PAGE_SIZE);
+  }, [cashierPage, sortedPeopleBreakdown]);
+  const cashierPageTabs = useMemo(() => {
+    const half = Math.floor(CASHIER_PAGE_TAB_WINDOW / 2);
+    let start = Math.max(1, cashierPage - half);
+    const end = Math.min(
+      cashierTotalPages,
+      start + CASHIER_PAGE_TAB_WINDOW - 1,
+    );
+    if (end - start + 1 < CASHIER_PAGE_TAB_WINDOW) {
+      start = Math.max(1, end - CASHIER_PAGE_TAB_WINDOW + 1);
+    }
+    return Array.from({ length: end - start + 1 }, (_v, i) => start + i);
+  }, [cashierPage, cashierTotalPages]);
+
   const handleCashierSortBy = useCallback((field: CashierSortField) => {
     if (cashierSortField === field) {
       setCashierSalesSortDirection((prev) => (prev === "desc" ? "asc" : "desc"));
@@ -4089,51 +4241,36 @@ export const HourlyAnalysis = ({
                           <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
                             Cargo
                           </span>
-                          <select
-                            value={
-                              personCargoFilter === null
-                                ? ""
-                                : personCargoFilter === ""
-                                  ? CASHIER_CARGO_SELECT_EMPTY
-                                  : personCargoFilter
-                            }
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (v === "") setPersonCargoFilter(null);
-                              else if (v === CASHIER_CARGO_SELECT_EMPTY) {
-                                setPersonCargoFilter("");
-                              } else setPersonCargoFilter(v);
+                          <button
+                            ref={personCargoFilterTriggerRef}
+                            type="button"
+                            onClick={() => {
+                              if (!personCargoFilterOpen) {
+                                updatePersonCargoFilterPopoverPos();
+                              }
+                              setPersonCargoFilterOpen((prev) => !prev);
                             }}
-                            className="mt-1 w-full cursor-pointer appearance-none rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 pr-8 text-sm font-medium text-(--cashier-text) outline-none ring-(--cashier-brand)/30 transition-colors hover:bg-(--cashier-surface) focus:ring-2"
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                              backgroundRepeat: "no-repeat",
-                              backgroundPosition: "right 0.65rem center",
-                            }}
+                            className="mt-1 flex w-full cursor-pointer items-center justify-between gap-2 rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-left text-sm font-medium text-(--cashier-text) outline-none ring-(--cashier-brand)/30 transition-colors hover:bg-(--cashier-surface) focus:ring-2"
                           >
-                            <option value="">Todos los cargos</option>
-                            {cashierCargoSelectOptions.sorted.map((cargo) => (
-                              <option key={cargo} value={cargo}>
-                                {cargo}
-                              </option>
-                            ))}
-                            {cashierCargoSelectOptions.hasEmpty ? (
-                              <option value={CASHIER_CARGO_SELECT_EMPTY}>
-                                Sin cargo
-                              </option>
-                            ) : null}
-                          </select>
+                            <span className="truncate">
+                              {personCargoFilterButtonLabel}
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-(--cashier-muted)" />
+                          </button>
                         </label>
                         <span className="rounded-full border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2 text-xs font-semibold text-(--cashier-muted)">
-                          Mostrando {filteredPeopleBreakdown.length} de{" "}
-                          {peopleBreakdown.length}
+                          {filteredPeopleBreakdown.length} cajero
+                          {filteredPeopleBreakdown.length === 1 ? "" : "s"}
+                          {cashierTotalPages > 1
+                            ? ` · Pág. ${cashierPage}/${cashierTotalPages}`
+                            : ""}
                         </span>
-                        {(personSearchQuery || personCargoFilter !== null) && (
+                        {(personSearchQuery || personCargoFilters.length > 0) && (
                           <button
                             type="button"
                             onClick={() => {
                               setPersonSearchQuery("");
-                              setPersonCargoFilter(null);
+                              clearPersonCargoFilters();
                             }}
                             className="rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
                           >
@@ -4153,6 +4290,77 @@ export const HourlyAnalysis = ({
                         )}
                       </div>
                     )}
+
+                    {personCargoFilterOpen &&
+                      personCargoFilterPopoverPos &&
+                      typeof document !== "undefined" &&
+                      createPortal(
+                        <div
+                          ref={personCargoFilterPanelRef}
+                          className="fixed z-9999 flex flex-col overflow-hidden rounded-2xl border border-(--cashier-border) bg-(--cashier-surface) p-2 shadow-2xl"
+                          style={{
+                            top: personCargoFilterPopoverPos.top,
+                            bottom: personCargoFilterPopoverPos.bottom,
+                            left: personCargoFilterPopoverPos.left,
+                            width: personCargoFilterPopoverPos.width,
+                            maxHeight: personCargoFilterPopoverPos.maxHeight,
+                            maxWidth: "calc(100vw - 32px)",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={clearPersonCargoFilters}
+                            className={`w-full rounded-full border px-3 py-2 text-sm font-semibold transition-all ${
+                              personCargoFilters.length === 0
+                                ? "border-(--cashier-brand)/40 bg-(--cashier-brand-soft) text-(--cashier-brand)"
+                                : "border-(--cashier-border) bg-(--cashier-surface-soft) text-(--cashier-text) hover:bg-(--cashier-surface)"
+                            }`}
+                          >
+                            Todos los cargos
+                          </button>
+                          <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-auto pr-1">
+                            {cashierCargoSelectOptions.sorted.map((cargo) => {
+                              const checked = personCargoFilters.includes(cargo);
+                              return (
+                                <label
+                                  key={cargo}
+                                  className="flex items-start gap-2 rounded-md px-2 py-1 text-sm text-(--cashier-text) hover:bg-(--cashier-surface-soft)"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => togglePersonCargoFilter(cargo)}
+                                    className="mt-0.5 h-4 w-4 rounded border-(--cashier-border) text-(--cashier-brand) focus:ring-(--cashier-brand)/30"
+                                  />
+                                  <span className="whitespace-normal wrap-break-word leading-5">
+                                    {cargo}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                            {cashierCargoSelectOptions.hasEmpty ? (
+                              <label className="flex items-start gap-2 rounded-md px-2 py-1 text-sm text-(--cashier-text) hover:bg-(--cashier-surface-soft)">
+                                <input
+                                  type="checkbox"
+                                  checked={personCargoFilters.includes(
+                                    CASHIER_CARGO_SELECT_EMPTY,
+                                  )}
+                                  onChange={() =>
+                                    togglePersonCargoFilter(
+                                      CASHIER_CARGO_SELECT_EMPTY,
+                                    )
+                                  }
+                                  className="mt-0.5 h-4 w-4 rounded border-(--cashier-border) text-(--cashier-brand) focus:ring-(--cashier-brand)/30"
+                                />
+                                <span className="whitespace-normal wrap-break-word leading-5">
+                                  Sin cargo
+                                </span>
+                              </label>
+                            ) : null}
+                          </div>
+                        </div>,
+                        document.body,
+                      )}
 
                     {cashierMonthComparison && (
                       <div className="mt-3 space-y-3">
@@ -4388,6 +4596,57 @@ export const HourlyAnalysis = ({
                             </p>
                           </div>
                         </div>
+                        {cashierTotalPages > 1 && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCashierPage((prev) => Math.max(1, prev - 1))
+                                }
+                                disabled={cashierPage === 1}
+                                className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-text) disabled:opacity-50"
+                              >
+                                Anterior
+                              </button>
+                              {cashierPageTabs.map((tabPage) => (
+                                <button
+                                  key={tabPage}
+                                  type="button"
+                                  onClick={() => setCashierPage(tabPage)}
+                                  className={cn(
+                                    "rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors",
+                                    tabPage === cashierPage
+                                      ? "bg-(--cashier-brand) text-white"
+                                      : "border border-(--cashier-border) bg-(--cashier-surface) text-(--cashier-text) hover:bg-(--cashier-surface-soft)",
+                                  )}
+                                >
+                                  {tabPage}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCashierPage((prev) =>
+                                    Math.min(cashierTotalPages, prev + 1),
+                                  )
+                                }
+                                disabled={cashierPage === cashierTotalPages}
+                                className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-text) disabled:opacity-50"
+                              >
+                                Siguiente
+                              </button>
+                            </div>
+                            <span className="text-[11px] font-semibold text-(--cashier-muted)">
+                              Mostrando {(cashierPage - 1) * CASHIER_PAGE_SIZE + 1}–
+                              {Math.min(
+                                cashierPage * CASHIER_PAGE_SIZE,
+                                sortedPeopleBreakdown.length,
+                              )}{" "}
+                              de {sortedPeopleBreakdown.length}
+                            </span>
+                          </div>
+                        )}
                         <div className="overflow-x-auto">
                           <table className="min-w-[920px] w-full border-collapse rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft)">
                             <thead>
@@ -4462,7 +4721,9 @@ export const HourlyAnalysis = ({
                               </tr>
                             </thead>
                             <tbody>
-                              {sortedPeopleBreakdown.map((person, index) => {
+                              {pagedCashiers.map((person, index) => {
+                                const rank =
+                                  (cashierPage - 1) * CASHIER_PAGE_SIZE + index + 1;
                                 const activeSlotsCount =
                                   (typeof person.activeSlotsCount === "number"
                                     ? person.activeSlotsCount
@@ -4500,7 +4761,7 @@ export const HourlyAnalysis = ({
                                       title="Click para ver venta dia a dia"
                                     >
                                       <td className="px-3 py-2 text-right text-sm font-semibold text-(--cashier-muted)">
-                                        {index + 1}
+                                        {rank}
                                       </td>
                                       <td className="px-3 py-2 text-sm font-semibold text-(--cashier-text)">
                                         {person.personName}
