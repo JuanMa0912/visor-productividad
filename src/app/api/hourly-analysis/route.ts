@@ -408,6 +408,37 @@ const pickAttendanceColumn = (
   return fuzzy ?? null;
 };
 
+const buildAttendanceEmployeeIdExpr = (
+  attendanceColumns: string[],
+): string | null => {
+  const employeeIdColumns = Array.from(
+    new Set([
+      ...attendanceColumns.filter((col) =>
+        EMPLOYEE_ID_COLUMN_CANDIDATES.includes(
+          normalizeColumnName(col) as (typeof EMPLOYEE_ID_COLUMN_CANDIDATES)[number],
+        ),
+      ),
+      ...attendanceColumns.filter((col) => {
+        const normalized = normalizeColumnName(col);
+        if (normalized.includes("tipo")) return false;
+        return ["cedula", "ident", "document", "doc", "dni", "nit"].some(
+          (token) => normalized.includes(token),
+        );
+      }),
+    ]),
+  );
+  const employeeIdIdentifiers = employeeIdColumns
+    .map((col) => quoteIdentifier(col))
+    .filter((value): value is string => Boolean(value));
+  if (employeeIdIdentifiers.length === 0) return null;
+  return `COALESCE(${employeeIdIdentifiers
+    .map(
+      (identifier) =>
+        `NULLIF(TRIM(BOTH '"' FROM CAST(${identifier} AS text)), '')`,
+    )
+    .join(", ")})`;
+};
+
 const parseHoursValue = (value: string | number): number => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   const normalized = value.replace(",", ".").trim();
@@ -1094,8 +1125,15 @@ const fetchHourlyData = async (
         (attendanceDateResult.rows?.[0] as { attendance_date?: string })
           ?.attendance_date ?? null;
 
+      const attendanceColumns = await getTableColumns(client, "asistencia_horas");
+      const attendanceColumnSet = new Set(
+        attendanceColumns.map((col) => normalizeColumnName(col)),
+      );
+      const presenceEmployeeIdExpr =
+        buildAttendanceEmployeeIdExpr(attendanceColumns);
       const attendanceQuery = `
         SELECT
+          ${presenceEmployeeIdExpr ? `${presenceEmployeeIdExpr} AS employee_id,` : ""}
           hora_entrada,
           hora_intermedia1,
           hora_intermedia2,
@@ -1110,10 +1148,6 @@ const fetchHourlyData = async (
               : "AND 1=0"
           }
       `;
-      const attendanceColumns = await getTableColumns(client, "asistencia_horas");
-      const attendanceColumnSet = new Set(
-        attendanceColumns.map((col) => normalizeColumnName(col)),
-      );
       if (!overtimeOnly && attendanceDateUsed) {
         const attendanceParams: unknown[] = [attendanceDateUsed];
         if (selectedSedeConfigs.length > 0) {
@@ -1124,12 +1158,17 @@ const fetchHourlyData = async (
         if (attendanceResult.rows) {
           for (const row of attendanceResult.rows) {
             const typedRow = row as {
+              employee_id?: string | null;
               hora_entrada: unknown;
               hora_intermedia1: unknown;
               hora_intermedia2: unknown;
               hora_salida: unknown;
               departamento: string;
             };
+
+            if (presenceEmployeeIdExpr && shouldHideCedula(typedRow.employee_id)) {
+              continue;
+            }
 
             const lineId = resolveLineId(typedRow.departamento);
             if (!lineId) continue;
@@ -1175,25 +1214,7 @@ const fetchHourlyData = async (
           attendanceColumns.find(
             (col) => normalizeColumnName(col) === "apellidos",
           ) ?? null;
-        const employeeIdColumns = Array.from(
-          new Set([
-            ...attendanceColumns.filter((col) =>
-              EMPLOYEE_ID_COLUMN_CANDIDATES.includes(
-                normalizeColumnName(col) as (typeof EMPLOYEE_ID_COLUMN_CANDIDATES)[number],
-              ),
-            ),
-            ...Array.from(attendanceColumns).filter((col) => {
-              const normalized = normalizeColumnName(col);
-              if (normalized.includes("tipo")) return false;
-              return ["cedula", "ident", "document", "doc", "dni", "nit"].some(
-                (token) => normalized.includes(token),
-              );
-            }),
-          ]),
-        );
-        const employeeIdIdentifiers = employeeIdColumns
-          .map((col) => quoteIdentifier(col))
-          .filter((value): value is string => Boolean(value));
+        const employeeIdExpr = buildAttendanceEmployeeIdExpr(attendanceColumns);
         const employeeNameIdentifier = employeeNameColumn
           ? quoteIdentifier(employeeNameColumn)
           : null;
@@ -1212,20 +1233,12 @@ const fetchHourlyData = async (
           : null;
 
         if (
-          employeeIdIdentifiers.length > 0 ||
+          employeeIdExpr != null ||
           employeeNameIdentifier ||
           firstNameIdentifier ||
           lastNameIdentifier
         ) {
-          const employeeIdExpr =
-            employeeIdIdentifiers.length > 0
-              ? `COALESCE(${employeeIdIdentifiers
-                  .map(
-                    (identifier) =>
-                      `NULLIF(TRIM(BOTH '"' FROM CAST(${identifier} AS text)), '')`,
-                  )
-                  .join(", ")})`
-              : "NULL::text";
+          const employeeIdSqlExpr = employeeIdExpr ?? "NULL::text";
           const employeeNameExpr = employeeNameIdentifier
             ? `NULLIF(TRIM(CAST(${employeeNameIdentifier} AS text)), '')`
             : firstNameIdentifier || lastNameIdentifier
@@ -1253,7 +1266,7 @@ const fetchHourlyData = async (
           const overtimeQuery = `
             WITH raw AS (
               SELECT
-                ${employeeIdExpr} AS employee_id,
+                ${employeeIdSqlExpr} AS employee_id,
                 ${employeeNameExpr} AS employee_name,
                 NULLIF(TRIM(CAST(sede AS text)), '') AS sede,
                 fecha::date::text AS worked_date,
@@ -1277,7 +1290,7 @@ const fetchHourlyData = async (
                   (CASE WHEN hora_salida IS NOT NULL THEN 1 ELSE 0 END)
                 )::int AS marks_count_row,
                 COALESCE(
-                  ${employeeIdExpr},
+                  ${employeeIdSqlExpr},
                   ${employeeNameExpr},
                   md5(
                     COALESCE(sede::text, '') || '|' ||
