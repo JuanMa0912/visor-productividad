@@ -22,3 +22,9 @@ export const isHorariosOcultarCedula = (
   const d = normalizeCedulaDigits(documento);
   return d.length > 0 && OCULTAR_SET.has(d);
 };
+
+/** Oculta cédulas de la lista salvo para administradores (rol admin en sesión). */
+export const shouldHideHorariosCedulaForViewer = (
+  documento: string | null | undefined,
+  viewerIsAdmin: boolean,
+): boolean => !viewerIsAdmin && isHorariosOcultarCedula(documento);

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { PoolClient } from "pg";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
-import { isHorariosOcultarCedula } from "@/lib/horarios/ocultar-cedulas";
+import { shouldHideHorariosCedulaForViewer } from "@/lib/horarios/ocultar-cedulas";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -626,7 +626,11 @@ const fetchHourlyData = async (
   overtimeDateEnd?: string | null,
   peopleDateStart?: string | null,
   peopleDateEnd?: string | null,
+  hideListedCedulas = true,
 ): Promise<HourlyAnalysisData> => {
+  const viewerIsAdmin = !hideListedCedulas;
+  const shouldHideCedula = (documento: string | null | undefined) =>
+    shouldHideHorariosCedulaForViewer(documento, viewerIsAdmin);
   const pool = await getDbPool();
   const client = await pool.connect();
 
@@ -912,7 +916,7 @@ const fetchHourlyData = async (
 
           const rangeContributions: HourlyPersonContribution[] = [];
           for (const agg of personAggs.values()) {
-            if (isHorariosOcultarCedula(agg.personId)) continue;
+            if (shouldHideCedula(agg.personId)) continue;
             if (agg.periodSales <= 0) continue;
 
             const dailySales = Array.from(agg.daily.entries())
@@ -1022,7 +1026,7 @@ const fetchHourlyData = async (
           }
 
           for (const person of peopleMap.values()) {
-            if (isHorariosOcultarCedula(person.personId)) {
+            if (shouldHideCedula(person.personId)) {
               continue;
             }
             const hourlySales = Array.from(person.hourlySales.entries())
@@ -1364,7 +1368,7 @@ const fetchHourlyData = async (
             if (lineFilter && lineId !== lineFilter) continue;
 
             const employeeId = typedRow.employee_id?.trim() || null;
-            if (isHorariosOcultarCedula(employeeId)) {
+            if (shouldHideCedula(employeeId)) {
               continue;
             }
             const employeeNameRaw = typedRow.employee_name?.trim() || "";
@@ -1996,6 +2000,7 @@ export async function GET(request: Request) {
 
   try {
     await testDbConnection();
+    const hideListedCedulas = session.user.role !== "admin";
     const data = await fetchHourlyData(
       dateParam,
       lineParam,
@@ -2008,6 +2013,7 @@ export async function GET(request: Request) {
       overtimeDateEndParam,
       peopleDateStartParam,
       peopleDateEndParam,
+      hideListedCedulas,
     );
 
     setCachedResponse(cacheKey, data);
