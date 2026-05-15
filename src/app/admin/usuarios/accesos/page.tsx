@@ -24,6 +24,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 
 const APP_VERSION_LABEL = "UAID V4.0";
 const PAGE_SIZE = 15;
@@ -61,13 +62,6 @@ const formatRelativeTime = (isoDate: string) => {
   if (absHours < 24) return rtf.format(Math.round(diffMs / 3600000), "hour");
 
   return rtf.format(Math.round(diffMs / 86400000), "day");
-};
-
-const truncateUa = (ua: string | null, max = 72) => {
-  if (!ua) return "—";
-  const t = ua.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max)}…`;
 };
 
 const getCookieValue = (name: string) => {
@@ -490,9 +484,12 @@ export default function AdminUsuariosAccesosPage() {
                         <td className="px-4 py-3 font-mono text-xs text-slate-600">
                           {log.ip ?? "—"}
                         </td>
-                        <td className="hidden max-w-md px-4 py-3 text-xs leading-snug text-slate-500 lg:table-cell">
-                          <span title={log.user_agent ?? undefined}>
-                            {truncateUa(log.user_agent)}
+                        <td className="hidden max-w-md px-4 py-3 text-xs leading-snug text-slate-600 lg:table-cell">
+                          <span
+                            className="font-medium text-slate-700"
+                            title={log.user_agent ?? undefined}
+                          >
+                            {formatUserAgentLabel(log.user_agent)}
                           </span>
                         </td>
                       </tr>
