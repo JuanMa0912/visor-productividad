@@ -1012,6 +1012,13 @@ export function RotacionPageInner() {
     [dateRange],
   );
 
+  const isAbcdFilterableRow = useCallback(
+    (row: RotationRow) =>
+      !isNuevoItemInSelectedRange(row) &&
+      !isCeroRotacionExcludingNuevo(row, dateRange),
+    [dateRange, isNuevoItemInSelectedRange],
+  );
+
   const getSurtidoEstadoSortRank = useCallback(
     (row: RotationRow) => {
       const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
@@ -1858,8 +1865,10 @@ export function RotacionPageInner() {
         /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
         const sourceRowsForAbcd =
           baseRowsBySedeByKey.get(groupKey) ?? group.rows;
+        const sourceRowsForAbcdFilterable =
+          sourceRowsForAbcd.filter(isAbcdFilterableRow);
         const categoryByItem = buildAbcdCategoryByItem(
-          sourceRowsForAbcd,
+          sourceRowsForAbcdFilterable,
           abcdConfig,
         );
         const categoryFilteredRows =
@@ -1875,7 +1884,9 @@ export function RotacionPageInner() {
                   ? filteredRows.filter((row) => {
                       const cat = categoryByItem.get(row.item);
                       return (
-                        cat !== undefined && categoryFilter.includes(cat)
+                        isAbcdFilterableRow(row) &&
+                        cat !== undefined &&
+                        categoryFilter.includes(cat)
                       );
                     })
                   : filteredRows;
@@ -1946,6 +1957,7 @@ export function RotacionPageInner() {
       restockEstadoByKey,
       ceroEstadoFilterByGroup,
       dateRange,
+      isAbcdFilterableRow,
       isNuevoItemInSelectedRange,
       rowsBySede,
       rowsQuickFilterByGroup,
@@ -2965,12 +2977,14 @@ export function RotacionPageInner() {
                     /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
                     const sourceRowsForAbcd =
                       baseRowsBySedeByKey.get(groupKey) ?? group.rows;
+                    const sourceRowsForAbcdFilterable =
+                      sourceRowsForAbcd.filter(isAbcdFilterableRow);
                     const categoryByItem = buildAbcdCategoryByItem(
-                      sourceRowsForAbcd,
+                      sourceRowsForAbcdFilterable,
                       abcdConfig,
                     );
                     const abcdCounts = countAbcdItemsByCategory(
-                      sourceRowsForAbcd,
+                      sourceRowsForAbcdFilterable,
                       categoryByItem,
                     );
                     const abcRotationTotalItems =
@@ -2990,6 +3004,7 @@ export function RotacionPageInner() {
                               ? filteredRows.filter((row) => {
                                   const cat = categoryByItem.get(row.item);
                                   return (
+                                    isAbcdFilterableRow(row) &&
                                     cat !== undefined &&
                                     categoryFilter.includes(cat)
                                   );
@@ -3079,7 +3094,7 @@ export function RotacionPageInner() {
                           ? NO_SALES_DI_VALUE
                           : 0;
                     const abcdSummaryRows = buildAbcdSummaryRows(
-                      sourceRowsForAbcd,
+                      sourceRowsForAbcdFilterable,
                       categoryByItem,
                     );
                     const abcdSummaryTotals = abcdSummaryRows.reduce(
@@ -3090,7 +3105,7 @@ export function RotacionPageInner() {
                       }),
                       { totalSales: 0, totalMargin: 0, itemCount: 0 },
                     );
-                    const abcdRowsForMargin = sourceRowsForAbcd.filter(
+                    const abcdRowsForMargin = sourceRowsForAbcdFilterable.filter(
                       (row) => row.totalSales > 0 && row.totalCost > 0,
                     );
                     const abcdTotalSalesForMargin = abcdRowsForMargin.reduce(
