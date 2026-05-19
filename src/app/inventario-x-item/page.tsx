@@ -645,6 +645,11 @@ export default function InventarioXItemPage() {
   const [presetNameInput, setPresetNameInput] = useState("");
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const matrixImageRef = useRef<HTMLDivElement | null>(null);
+  const pendingInventarioDeepLinkRef = useRef<{
+    item: string;
+    needsScope: boolean;
+  } | null>(null);
+  const inventarioDeepLinkInitRef = useRef(false);
 
   const persistItemPresetsRemote = useCallback(
     async (presets: ItemPreset[]): Promise<boolean> => {
@@ -732,6 +737,20 @@ export default function InventarioXItemPage() {
     },
     [router, persistItemPresetsRemote],
   );
+
+  useEffect(() => {
+    if (inventarioDeepLinkInitRef.current) return;
+    inventarioDeepLinkInitRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const item = params.get("item")?.trim();
+    const dateStart = params.get("dateStart")?.trim();
+    const dateEnd = params.get("dateEnd")?.trim();
+    if (dateStart) setSelectedDateStartState(dateStart);
+    if (dateEnd) setSelectedDateEndState(dateEnd);
+    if (item) {
+      pendingInventarioDeepLinkRef.current = { item, needsScope: true };
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -1004,6 +1023,28 @@ export default function InventarioXItemPage() {
   );
 
   useEffect(() => {
+    const pending = pendingInventarioDeepLinkRef.current;
+    if (!ready || !pending?.needsScope) return;
+    if (filters.companies.length === 0 || filters.sedes.length === 0) return;
+    if (selectedCompanyState.length > 0) {
+      pending.needsScope = false;
+      return;
+    }
+    setSelectedCompanyState([...filters.companies]);
+    setSelectedSedeState(
+      filters.sedes.map((sede) =>
+        buildSedeOptionValue(sede.empresa, sede.sedeId),
+      ),
+    );
+    pending.needsScope = false;
+  }, [
+    filters.companies,
+    filters.sedes,
+    ready,
+    selectedCompanyState.length,
+  ]);
+
+  useEffect(() => {
     if (!ready) return;
     const controller = new AbortController();
     void loadFilterOptions(controller.signal);
@@ -1195,6 +1236,15 @@ export default function InventarioXItemPage() {
     hasSubcategorySelection,
     summarizedItemRows,
   ]);
+
+  useEffect(() => {
+    const pending = pendingInventarioDeepLinkRef.current;
+    if (!pending?.item || itemOptions.length === 0) return;
+    const normalized = pending.item.trim();
+    if (!itemOptions.some((option) => option.value === normalized)) return;
+    setSelectedItemsState([normalized]);
+    pendingInventarioDeepLinkRef.current = null;
+  }, [itemOptions]);
 
   const selectedItemOptionSet = useMemo(
     () => new Set(selectedItemsState),

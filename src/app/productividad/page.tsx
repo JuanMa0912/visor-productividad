@@ -53,6 +53,16 @@ const ROTACION_MODULE: HubModuleItem = {
   href: "/rotacion",
 };
 
+const ROTACION_V4_MODULE: HubModuleItem = {
+  id: "rotacion-dos",
+  icon: RefreshCw,
+  badge: "ROTACION V4",
+  title: "Rotacion v4 (prueba)",
+  description:
+    "Misma vista de rotacion leyendo la tabla rotacion_v4 para validar datos nuevos.",
+  href: "/rotacion-dos",
+};
+
 export default function ProductividadHubPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -120,7 +130,7 @@ export default function ProductividadHubPage() {
   const modules = useMemo(() => {
     if (!canSeeRotacion) return BASE_PRODUCTO_MODULES;
     const withRotacion = [...BASE_PRODUCTO_MODULES];
-    withRotacion.splice(2, 0, ROTACION_MODULE);
+    withRotacion.splice(2, 0, ROTACION_MODULE, ROTACION_V4_MODULE);
     return withRotacion;
   }, [canSeeRotacion]);
   const visibleModules = useMemo(

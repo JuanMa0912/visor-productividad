@@ -67,11 +67,22 @@ export interface HourlyPersonContribution {
   attendanceMatchMode?: CashierAttendanceMatchMode | null;
   /** Cargo en asistencia cuando hubo match de horas con asistencia_horas. */
   personCargo?: string | null;
+  /**
+   * Marcas del dia (entrada, salida, descansos) para calcular minutos reales por franja.
+   */
+  attendanceShift?: {
+    markInMinute: number | null;
+    markOutMinute: number | null;
+    break1Minute: number | null;
+    break2Minute: number | null;
+  } | null;
   /** Ventas por fecha para exploracion dia a dia. */
   dailySales?: Array<{
     date: string;
     sales: number;
     activeSlotsCount?: number;
+    /** Horas del dia desde asistencia_horas cuando hubo cruce con el cajero. */
+    attendanceWorkedHours?: number | null;
   }>;
 }
 

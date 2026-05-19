@@ -68,6 +68,8 @@ La definicion canónica de textos y modulos por seccion vive en `src/lib/portal-
 | `.github/` | workflow de CI y plantilla de Pull Request |
 | `.agents/skills/` | skills de agentes usadas por el proyecto |
 | `db/` | esquema, migraciones y scripts SQL operativos |
+| `docs/STRUCTURE.md` | mapa del codigo (`src/`, rutas, componentes) |
+| `docs/DATABASE.md` | tablas PostgreSQL, indices, migraciones y operacion BD |
 | `docs/reference/` | material de referencia que no se ejecuta en la app |
 | `public/` | imagenes y assets estaticos |
 | `scripts/` | utilidades de desarrollo, build, admin, debug y pruebas DB |
@@ -335,6 +337,7 @@ Orden recomendado para reflejar el estado actual del codigo:
 6. `db/migrations/20260302_user_allowed_sedes.sql`
 7. `db/migrations/20260303_ventas_x_item.sql`
 8. `db/migrations/20260305_user_special_roles.sql`
+9. `db/migrations/20260424_user_allowed_subdashboards.sql`
 
 Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy por la aplicacion.
 
@@ -345,6 +348,7 @@ Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy
 | `scripts/create-admin.js` | crea o actualiza un admin usando `ADMIN_USERNAME`, `ADMIN_PASSWORD` y `DB_PASSWORD` del entorno o `.env.local` |
 | `scripts/test-db.js` | prueba conexion, lista tablas y consulta `ventas_cajas` usando `DB_PASSWORD` del entorno o `.env.local` |
 | `scripts/test-db-postgres.js` | valida conexion con PostgreSQL y verifica el usuario `produ` usando `DB_PASSWORD` del entorno o `.env.local` |
+| `scripts/apply-migration-file.mjs` | aplica un archivo SQL de `db/migrations/` usando credenciales de `.env.local` |
 | `db/crear-usuario.sql` | crea el usuario PostgreSQL `produ` |
 | `db/permisos-usuario.sql` | otorga permisos sobre `public` |
 | `db/seed_sede_users.sql` | inserta usuarios base por sede |

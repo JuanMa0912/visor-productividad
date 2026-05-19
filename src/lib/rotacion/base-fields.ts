@@ -1,5 +1,7 @@
-export const ROTACION_BASE_ITEM_DIA_SEDE_TABLE =
-  "rotacion_base_item_dia_sede";
+import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
+import { ROTACION_SOURCE_LEGACY } from "@/lib/rotacion/source-tables";
+
+export const ROTACION_BASE_ITEM_DIA_SEDE_TABLE = ROTACION_SOURCE_LEGACY;
 
 export type RotacionBaseDateColumn =
   | "fecha_dia"
@@ -52,9 +54,10 @@ type ColumnMeta = {
 
 const SCHEMA_CACHE_TTL_MS = 5 * 60 * 1000;
 
-let rotacionBaseColumnsCache:
-  | { value: Map<string, ColumnMeta>; expiresAt: number }
-  | null = null;
+const rotacionBaseColumnsCache = new Map<
+  string,
+  { value: Map<string, ColumnMeta>; expiresAt: number }
+>();
 
 const NUMERIC_DATA_TYPES = new Set([
   "bigint",
@@ -88,10 +91,12 @@ const normalizeColumnRows = (
 
 export const getRotacionBaseColumns = async (
   client: RotacionBaseQueryClient,
+  tableName: string = getRotacionSourceTable(),
 ): Promise<Map<string, ColumnMeta>> => {
   const now = Date.now();
-  if (rotacionBaseColumnsCache && rotacionBaseColumnsCache.expiresAt > now) {
-    return rotacionBaseColumnsCache.value;
+  const cached = rotacionBaseColumnsCache.get(tableName);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
   }
 
   const scopedResult = await client.query(
@@ -102,7 +107,7 @@ export const getRotacionBaseColumns = async (
       AND table_schema = ANY(current_schemas(false))
     ORDER BY ordinal_position
     `,
-    [ROTACION_BASE_ITEM_DIA_SEDE_TABLE],
+    [tableName],
   );
   let columns = normalizeColumnRows(scopedResult.rows ?? []);
 
@@ -114,15 +119,15 @@ export const getRotacionBaseColumns = async (
       WHERE table_name = $1
       ORDER BY ordinal_position
       `,
-      [ROTACION_BASE_ITEM_DIA_SEDE_TABLE],
+      [tableName],
     );
     columns = normalizeColumnRows(fallbackResult.rows ?? []);
   }
 
-  rotacionBaseColumnsCache = {
+  rotacionBaseColumnsCache.set(tableName, {
     value: columns,
     expiresAt: now + SCHEMA_CACHE_TTL_MS,
-  };
+  });
   return columns;
 };
 
@@ -242,8 +247,9 @@ const normalizeTwoDigitCodeExpr = (expr: string) => `(
 
 export const resolveRotacionBaseSqlFields = async (
   client: RotacionBaseQueryClient,
+  tableName: string = getRotacionSourceTable(),
 ): Promise<RotacionBaseSqlFields> => {
-  const columns = await getRotacionBaseColumns(client);
+  const columns = await getRotacionBaseColumns(client, tableName);
   const dateColumn = pickColumn(columns, [
     "fecha_dia",
     "fecha_consulta",
@@ -253,7 +259,7 @@ export const resolveRotacionBaseSqlFields = async (
 
   if (!dateColumn) {
     throw new Error(
-      "No existe una columna de fecha valida en rotacion_base_item_dia_sede (esperadas: fecha_dia, fecha_consulta, fecha o fecha_carga).",
+      `No existe una columna de fecha valida en ${tableName} (esperadas: fecha_dia, fecha_consulta, fecha o fecha_carga).`,
     );
   }
 
@@ -366,6 +372,7 @@ export const resolveRotacionBaseSqlFields = async (
       "fecha_ultima_venta",
     ]),
     lastEntryDateExpr: coalesceDateExpr(columns, [
+      "ultimo_ingreso",
       "fecha_ultima_entrada",
       "fecha_ultima_compra",
     ]),

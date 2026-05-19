@@ -36,7 +36,10 @@ const EXTRA_SEDES = [
   "Planta Desposte Mixto",
   "Planta Desprese Pollo",
 ];
-const USER_SEDE_OPTIONS = [...BRANCH_LOCATIONS, ...EXTRA_SEDES];
+const USER_SEDE_OPTIONS = Array.from(
+  new Set([ALL_SEDES_VALUE, ...BRANCH_LOCATIONS, ...EXTRA_SEDES]),
+);
+const USER_SEDE_OPTION_SET = new Set(USER_SEDE_OPTIONS);
 
 type UserRow = {
   id: string;
@@ -391,12 +394,20 @@ export default function AdminUsuariosPage() {
   };
 
   const openEdit = (user: UserRow) => {
+    const allowedSedesRaw =
+      user.allowedSedes ?? (user.sede ? [user.sede] : []);
+    const allowedSedes = allowedSedesRaw.filter((sede) =>
+      USER_SEDE_OPTION_SET.has(sede),
+    );
     setFormState({
       id: user.id,
       username: user.username,
       role: user.role,
-      sede: user.sede ?? inferSedeFromUsername(user.username) ?? "",
-      allowedSedes: user.allowedSedes ?? (user.sede ? [user.sede] : []),
+      sede:
+        user.sede && allowedSedes.includes(user.sede)
+          ? user.sede
+          : (allowedSedes[0] ?? inferSedeFromUsername(user.username) ?? ""),
+      allowedSedes,
       allowedLines: user.allowedLines ?? [],
       allowedDashboards: user.allowedDashboards ?? [],
       allowedSubdashboards: user.allowedSubdashboards ?? [],
@@ -429,13 +440,18 @@ export default function AdminUsuariosPage() {
         );
       }
 
-      const payload = {
-        username: formState.username,
+      const trimmedPassword = formState.password.trim();
+      if (trimmedPassword.length > 0 && trimmedPassword.length < 8) {
+        throw new Error("La contrasena debe tener minimo 8 caracteres.");
+      }
+      const payload: Record<string, unknown> = {
+        username: formState.username.trim(),
         role: formState.role,
         sede:
           formState.role === "admin"
             ? null
-            : (formState.allowedSedes[0] ?? formState.sede ?? null),
+            : (formState.allowedSedes[0] ??
+              (formState.sede.trim() ? formState.sede.trim() : null)),
         allowedSedes:
           formState.role === "admin"
             ? null
@@ -466,9 +482,11 @@ export default function AdminUsuariosPage() {
             : formState.specialRoles.length > 0
               ? formState.specialRoles
               : null,
-        password: formState.password,
         is_active: formState.is_active,
       };
+      if (trimmedPassword.length > 0) {
+        payload.password = trimmedPassword;
+      }
 
       const response = await fetch(
         formState.id ? `/api/admin/users/${formState.id}` : "/api/admin/users",
@@ -1077,7 +1095,7 @@ export default function AdminUsuariosPage() {
                         ? "(obligatoria: 1 o más)"
                         : "(solo user)"}
                       <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
-                        {[ALL_SEDES_VALUE, ...USER_SEDE_OPTIONS].map((sede) => {
+                        {USER_SEDE_OPTIONS.map((sede) => {
                           const checked = formState.allowedSedes.includes(sede);
                           return (
                             <label

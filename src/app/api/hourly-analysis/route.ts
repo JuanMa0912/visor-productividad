@@ -478,6 +478,302 @@ const primaryIdMatchKeyFromAttendance = (
   return token.length > 0 ? token : null;
 };
 
+const normalizeDateKeyIso = (raw: string | null | undefined): string | null => {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (/^\d{8}$/.test(value)) {
+    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  }
+  return null;
+};
+
+type CashierAttendanceHoursLookup = {
+  hoursByPrimaryId: Map<string, number>;
+  cargoByPrimaryId: Map<string, string>;
+  hoursByUnambiguousName: Map<string, number>;
+  cargoByUnambiguousName: Map<string, string>;
+  hoursByPrimaryIdByDate: Map<string, Map<string, number>>;
+  hoursByUnambiguousNameByDate: Map<string, Map<string, number>>;
+};
+
+const buildCashierAttendanceHoursLookup = (
+  rows: Array<{
+    employee_id: string | null;
+    employee_name: string | null;
+    departamento: string | null;
+    worked_date: string | null;
+    total_hours: string | number;
+    cargo: string | null;
+  }>,
+): CashierAttendanceHoursLookup => {
+  const hoursByPrimaryId = new Map<string, number>();
+  const cargoByPrimaryId = new Map<string, string>();
+  const nameSubBuckets = new Map<string, Map<string, number>>();
+  const hoursByPrimaryIdByDate = new Map<string, Map<string, number>>();
+  const nameSubBucketsByDate = new Map<string, Map<string, Map<string, number>>>();
+
+  for (const typed of rows) {
+    const lineId = resolveLineId(typed.departamento ?? "");
+    if (lineId !== "cajas") continue;
+
+    const h = parseHoursValue(typed.total_hours);
+    if (!Number.isFinite(h) || h <= 0) continue;
+
+    const workedDate = normalizeDateKeyIso(typed.worked_date);
+    const primaryId = primaryIdMatchKeyFromAttendance(typed.employee_id ?? undefined);
+    if (primaryId) {
+      hoursByPrimaryId.set(primaryId, (hoursByPrimaryId.get(primaryId) ?? 0) + h);
+      if (workedDate) {
+        if (!hoursByPrimaryIdByDate.has(primaryId)) {
+          hoursByPrimaryIdByDate.set(primaryId, new Map());
+        }
+        const byDate = hoursByPrimaryIdByDate.get(primaryId)!;
+        byDate.set(workedDate, (byDate.get(workedDate) ?? 0) + h);
+      }
+      const cg = typed.cargo?.trim();
+      if (cg) {
+        const prev = cargoByPrimaryId.get(primaryId);
+        if (!prev || cg.length > prev.length) {
+          cargoByPrimaryId.set(primaryId, cg);
+        }
+      }
+    }
+
+    const nameKey = normalizePersonMatchKey(typed.employee_name ?? undefined);
+    if (nameKey) {
+      const subKey = primaryId ?? "__sin_id__";
+      if (!nameSubBuckets.has(nameKey)) {
+        nameSubBuckets.set(nameKey, new Map());
+      }
+      const inner = nameSubBuckets.get(nameKey)!;
+      inner.set(subKey, (inner.get(subKey) ?? 0) + h);
+
+      if (workedDate) {
+        if (!nameSubBucketsByDate.has(nameKey)) {
+          nameSubBucketsByDate.set(nameKey, new Map());
+        }
+        const byDate = nameSubBucketsByDate.get(nameKey)!;
+        if (!byDate.has(workedDate)) {
+          byDate.set(workedDate, new Map());
+        }
+        const innerByDate = byDate.get(workedDate)!;
+        innerByDate.set(subKey, (innerByDate.get(subKey) ?? 0) + h);
+      }
+    }
+  }
+
+  const hoursByUnambiguousName = new Map<string, number>();
+  for (const [nameKey, inner] of nameSubBuckets) {
+    if (inner.size !== 1) continue;
+    const [onlySubKey, onlyHours] = [...inner.entries()][0];
+    if (onlySubKey === "__sin_id__") continue;
+    if (!Number.isFinite(onlyHours) || onlyHours <= 0) continue;
+    hoursByUnambiguousName.set(nameKey, onlyHours);
+  }
+
+  const cargoByUnambiguousName = new Map<string, string>();
+  for (const [nameKey, inner] of nameSubBuckets) {
+    if (inner.size !== 1) continue;
+    const onlySubKey = [...inner.keys()][0];
+    if (onlySubKey === "__sin_id__") continue;
+    const c = cargoByPrimaryId.get(onlySubKey);
+    if (c) cargoByUnambiguousName.set(nameKey, c);
+  }
+
+  const hoursByUnambiguousNameByDate = new Map<string, Map<string, number>>();
+  for (const [nameKey, byDate] of nameSubBucketsByDate) {
+    const dateMap = new Map<string, number>();
+    for (const [workedDate, inner] of byDate) {
+      if (inner.size !== 1) continue;
+      const [onlySubKey, onlyHours] = [...inner.entries()][0];
+      if (onlySubKey === "__sin_id__") continue;
+      if (!Number.isFinite(onlyHours) || onlyHours <= 0) continue;
+      dateMap.set(workedDate, onlyHours);
+    }
+    if (dateMap.size > 0) {
+      hoursByUnambiguousNameByDate.set(nameKey, dateMap);
+    }
+  }
+
+  return {
+    hoursByPrimaryId,
+    cargoByPrimaryId,
+    hoursByUnambiguousName,
+    cargoByUnambiguousName,
+    hoursByPrimaryIdByDate,
+    hoursByUnambiguousNameByDate,
+  };
+};
+
+type CashierAttendanceShiftMarks = {
+  markInMinute: number | null;
+  markOutMinute: number | null;
+  break1Minute: number | null;
+  break2Minute: number | null;
+};
+
+type CashierAttendanceMarksLookup = {
+  marksByPrimaryIdByDate: Map<string, Map<string, CashierAttendanceShiftMarks>>;
+  marksByUnambiguousNameByDate: Map<string, Map<string, CashierAttendanceShiftMarks>>;
+};
+
+const buildCashierAttendanceMarksLookup = (
+  rows: Array<{
+    employee_id: string | null;
+    employee_name: string | null;
+    departamento: string | null;
+    worked_date: string | null;
+    hora_entrada: unknown;
+    hora_intermedia1: unknown;
+    hora_intermedia2: unknown;
+    hora_salida: unknown;
+  }>,
+): CashierAttendanceMarksLookup => {
+  const marksByPrimaryIdByDate = new Map<string, Map<string, CashierAttendanceShiftMarks>>();
+  const nameSubBucketsByDate = new Map<
+    string,
+    Map<string, Map<string, CashierAttendanceShiftMarks>>
+  >();
+
+  for (const typed of rows) {
+    const lineId = resolveLineId(typed.departamento ?? "");
+    if (lineId !== "cajas") continue;
+
+    const workedDate = normalizeDateKeyIso(typed.worked_date);
+    if (!workedDate) continue;
+
+    const marks: CashierAttendanceShiftMarks = {
+      markInMinute: parseMinuteOfDay(typed.hora_entrada),
+      markOutMinute: parseMinuteOfDay(typed.hora_salida),
+      break1Minute: parseMinuteOfDay(typed.hora_intermedia1),
+      break2Minute: parseMinuteOfDay(typed.hora_intermedia2),
+    };
+    if (marks.markInMinute === null || marks.markOutMinute === null) continue;
+
+    const primaryId = primaryIdMatchKeyFromAttendance(typed.employee_id ?? undefined);
+    if (primaryId) {
+      if (!marksByPrimaryIdByDate.has(primaryId)) {
+        marksByPrimaryIdByDate.set(primaryId, new Map());
+      }
+      marksByPrimaryIdByDate.get(primaryId)!.set(workedDate, marks);
+    }
+
+    const nameKey = normalizePersonMatchKey(typed.employee_name ?? undefined);
+    if (nameKey) {
+      const subKey = primaryId ?? "__sin_id__";
+      if (!nameSubBucketsByDate.has(nameKey)) {
+        nameSubBucketsByDate.set(nameKey, new Map());
+      }
+      const byDate = nameSubBucketsByDate.get(nameKey)!;
+      if (!byDate.has(workedDate)) {
+        byDate.set(workedDate, new Map());
+      }
+      byDate.get(workedDate)!.set(subKey, marks);
+    }
+  }
+
+  const marksByUnambiguousNameByDate = new Map<
+    string,
+    Map<string, CashierAttendanceShiftMarks>
+  >();
+  for (const [nameKey, byDate] of nameSubBucketsByDate) {
+    const dateMap = new Map<string, CashierAttendanceShiftMarks>();
+    for (const [workedDate, inner] of byDate) {
+      if (inner.size !== 1) continue;
+      const [onlySubKey, onlyMarks] = [...inner.entries()][0];
+      if (onlySubKey === "__sin_id__") continue;
+      dateMap.set(workedDate, onlyMarks);
+    }
+    if (dateMap.size > 0) {
+      marksByUnambiguousNameByDate.set(nameKey, dateMap);
+    }
+  }
+
+  return { marksByPrimaryIdByDate, marksByUnambiguousNameByDate };
+};
+
+const matchCashierAttendanceShift = (
+  personId: string | null | undefined,
+  personName: string,
+  salesNameKeyCounts: Map<string, number>,
+  lookup: CashierAttendanceMarksLookup,
+  dateIso?: string,
+): CashierAttendanceShiftMarks | null => {
+  const digits = normalizeCedulaDigits(personId ?? undefined);
+  const tokenId = normalizePersonMatchKey(personId ?? undefined);
+  const nameKey = normalizePersonMatchKey(personName);
+
+  if (dateIso) {
+    if (digits.length >= MIN_CEDULA_DIGITS_FOR_MATCH) {
+      const marks = lookup.marksByPrimaryIdByDate.get(digits)?.get(dateIso);
+      if (marks) return marks;
+    }
+    if (tokenId) {
+      const marks = lookup.marksByPrimaryIdByDate.get(tokenId)?.get(dateIso);
+      if (marks) return marks;
+    }
+    if (
+      nameKey &&
+      (salesNameKeyCounts.get(nameKey) ?? 0) === 1 &&
+      lookup.marksByUnambiguousNameByDate.has(nameKey)
+    ) {
+      const marks = lookup.marksByUnambiguousNameByDate.get(nameKey)?.get(dateIso);
+      if (marks) return marks;
+    }
+    return null;
+  }
+
+  return null;
+};
+
+const matchCashierAttendanceHours = (
+  personId: string | null | undefined,
+  personName: string,
+  salesNameKeyCounts: Map<string, number>,
+  lookup: CashierAttendanceHoursLookup,
+  dateIso?: string,
+): { hours: number; mode: "cedula" | "id_texto" | "nombre" } | null => {
+  const digits = normalizeCedulaDigits(personId ?? undefined);
+  const tokenId = normalizePersonMatchKey(personId ?? undefined);
+  const nameKey = normalizePersonMatchKey(personName);
+
+  if (dateIso) {
+    if (digits.length >= MIN_CEDULA_DIGITS_FOR_MATCH) {
+      const h = lookup.hoursByPrimaryIdByDate.get(digits)?.get(dateIso);
+      if (h != null && h > 0) return { hours: h, mode: "cedula" };
+    }
+    if (tokenId) {
+      const h = lookup.hoursByPrimaryIdByDate.get(tokenId)?.get(dateIso);
+      if (h != null && h > 0) return { hours: h, mode: "id_texto" };
+    }
+    if (
+      nameKey &&
+      (salesNameKeyCounts.get(nameKey) ?? 0) === 1 &&
+      lookup.hoursByUnambiguousNameByDate.has(nameKey)
+    ) {
+      const h = lookup.hoursByUnambiguousNameByDate.get(nameKey)?.get(dateIso);
+      if (h != null && h > 0) return { hours: h, mode: "nombre" };
+    }
+    return null;
+  }
+
+  if (digits.length >= MIN_CEDULA_DIGITS_FOR_MATCH && lookup.hoursByPrimaryId.has(digits)) {
+    return { hours: lookup.hoursByPrimaryId.get(digits)!, mode: "cedula" };
+  }
+  if (tokenId && lookup.hoursByPrimaryId.has(tokenId)) {
+    return { hours: lookup.hoursByPrimaryId.get(tokenId)!, mode: "id_texto" };
+  }
+  if (
+    nameKey &&
+    (salesNameKeyCounts.get(nameKey) ?? 0) === 1 &&
+    lookup.hoursByUnambiguousName.has(nameKey)
+  ) {
+    return { hours: lookup.hoursByUnambiguousName.get(nameKey)!, mode: "nombre" };
+  }
+  return null;
+};
+
 const normalizeIncidentValue = (value: string | null | undefined) =>
   (value ?? "")
     .normalize("NFD")
@@ -1475,6 +1771,7 @@ const fetchHourlyData = async (
                   ${employeeIdExpr} AS employee_id,
                   ${employeeNameExpr} AS employee_name,
                   NULLIF(TRIM(CAST(departamento AS text)), '') AS departamento,
+                  fecha::date::text AS worked_date,
                   SUM(COALESCE(total_laborado_horas, 0))::numeric AS total_hours,
                   ${cajasCargoAgg}
                 FROM asistencia_horas
@@ -1482,7 +1779,7 @@ const fetchHourlyData = async (
                   AND fecha::date <= $2::date
                   AND departamento IS NOT NULL
                   AND ${buildNormalizeSedeSql("sede")} = ANY($3::text[])
-                GROUP BY 1, 2, 3
+                GROUP BY 1, 2, 3, fecha::date
               `;
               const cajasHoursResult = await client.query(cajasHoursQuery, [
                 attRangeStart,
@@ -1490,75 +1787,50 @@ const fetchHourlyData = async (
                 selectedAttendanceNames,
               ]);
 
-              /** Horas agregadas solo por clave de id en asistencia (cedula o id texto). */
-              const hoursByPrimaryId = new Map<string, number>();
-              /** Cargo mas descriptivo visto por clave de id (prefiere texto mas largo). */
-              const cargoByPrimaryId = new Map<string, string>();
-              /** nombre_norm -> (clave_id_asistencia -> horas) para detectar nombres ambiguos. */
-              const nameSubBuckets = new Map<string, Map<string, number>>();
-
-              for (const row of cajasHoursResult.rows ?? []) {
-                const typed = row as {
+              const attendanceLookup = buildCashierAttendanceHoursLookup(
+                (cajasHoursResult.rows ?? []) as Array<{
                   employee_id: string | null;
                   employee_name: string | null;
                   departamento: string | null;
+                  worked_date: string | null;
                   total_hours: string | number;
                   cargo: string | null;
-                };
-                const lineId = resolveLineId(typed.departamento ?? "");
-                if (lineId !== "cajas") continue;
+                }>,
+              );
 
-                const h = parseHoursValue(typed.total_hours);
-                if (!Number.isFinite(h) || h <= 0) continue;
-
-                const primaryId = primaryIdMatchKeyFromAttendance(
-                  typed.employee_id ?? undefined,
-                );
-                if (primaryId) {
-                  hoursByPrimaryId.set(
-                    primaryId,
-                    (hoursByPrimaryId.get(primaryId) ?? 0) + h,
-                  );
-                  const cg = typed.cargo?.trim();
-                  if (cg) {
-                    const prev = cargoByPrimaryId.get(primaryId);
-                    if (!prev || cg.length > prev.length) {
-                      cargoByPrimaryId.set(primaryId, cg);
-                    }
-                  }
-                }
-
-                const nameKey = normalizePersonMatchKey(
-                  typed.employee_name ?? undefined,
-                );
-                if (nameKey) {
-                  const subKey = primaryId ?? "__sin_id__";
-                  if (!nameSubBuckets.has(nameKey)) {
-                    nameSubBuckets.set(nameKey, new Map());
-                  }
-                  const inner = nameSubBuckets.get(nameKey)!;
-                  inner.set(subKey, (inner.get(subKey) ?? 0) + h);
-                }
-              }
-
-              /** Nombre usable solo si en asistencia todas las filas cajas con ese nombre comparten la misma clave de id no vacia. */
-              const hoursByUnambiguousName = new Map<string, number>();
-              for (const [nameKey, inner] of nameSubBuckets) {
-                if (inner.size !== 1) continue;
-                const [onlySubKey, onlyHours] = [...inner.entries()][0];
-                if (onlySubKey === "__sin_id__") continue;
-                if (!Number.isFinite(onlyHours) || onlyHours <= 0) continue;
-                hoursByUnambiguousName.set(nameKey, onlyHours);
-              }
-
-              const cargoByUnambiguousName = new Map<string, string>();
-              for (const [nameKey, inner] of nameSubBuckets) {
-                if (inner.size !== 1) continue;
-                const onlySubKey = [...inner.keys()][0];
-                if (onlySubKey === "__sin_id__") continue;
-                const c = cargoByPrimaryId.get(onlySubKey);
-                if (c) cargoByUnambiguousName.set(nameKey, c);
-              }
+              const cajasMarksQuery = `
+                SELECT
+                  ${employeeIdExpr} AS employee_id,
+                  ${employeeNameExpr} AS employee_name,
+                  NULLIF(TRIM(CAST(departamento AS text)), '') AS departamento,
+                  fecha::date::text AS worked_date,
+                  hora_entrada,
+                  hora_intermedia1,
+                  hora_intermedia2,
+                  hora_salida
+                FROM asistencia_horas
+                WHERE fecha::date >= $1::date
+                  AND fecha::date <= $2::date
+                  AND departamento IS NOT NULL
+                  AND ${buildNormalizeSedeSql("sede")} = ANY($3::text[])
+              `;
+              const cajasMarksResult = await client.query(cajasMarksQuery, [
+                attRangeStart,
+                attRangeEnd,
+                selectedAttendanceNames,
+              ]);
+              const attendanceMarksLookup = buildCashierAttendanceMarksLookup(
+                (cajasMarksResult.rows ?? []) as Array<{
+                  employee_id: string | null;
+                  employee_name: string | null;
+                  departamento: string | null;
+                  worked_date: string | null;
+                  hora_entrada: unknown;
+                  hora_intermedia1: unknown;
+                  hora_intermedia2: unknown;
+                  hora_salida: unknown;
+                }>,
+              );
 
               const salesNameKeyCounts = new Map<string, number>();
               for (const p of personContributions) {
@@ -1568,43 +1840,60 @@ const fetchHourlyData = async (
               }
 
               for (const person of personContributions) {
-                const digits = normalizeCedulaDigits(person.personId ?? undefined);
-                const tokenId = normalizePersonMatchKey(person.personId ?? undefined);
-                const nameKey = normalizePersonMatchKey(person.personName);
-
-                let matched: number | null = null;
-                let mode: "cedula" | "id_texto" | "nombre" | null = null;
-
-                if (
-                  digits.length >= MIN_CEDULA_DIGITS_FOR_MATCH &&
-                  hoursByPrimaryId.has(digits)
-                ) {
-                  matched = hoursByPrimaryId.get(digits)!;
-                  mode = "cedula";
-                } else if (tokenId && hoursByPrimaryId.has(tokenId)) {
-                  matched = hoursByPrimaryId.get(tokenId)!;
-                  mode = "id_texto";
-                } else if (
-                  nameKey &&
-                  (salesNameKeyCounts.get(nameKey) ?? 0) === 1 &&
-                  hoursByUnambiguousName.has(nameKey)
-                ) {
-                  matched = hoursByUnambiguousName.get(nameKey)!;
-                  mode = "nombre";
-                }
-
-                if (matched != null && mode != null) {
-                  person.attendanceWorkedHours = matched;
-                  person.attendanceMatchMode = mode;
+                const periodMatch = matchCashierAttendanceHours(
+                  person.personId,
+                  person.personName,
+                  salesNameKeyCounts,
+                  attendanceLookup,
+                );
+                if (periodMatch) {
+                  person.attendanceWorkedHours = periodMatch.hours;
+                  person.attendanceMatchMode = periodMatch.mode;
+                  const digits = normalizeCedulaDigits(person.personId ?? undefined);
+                  const tokenId = normalizePersonMatchKey(person.personId ?? undefined);
+                  const nameKey = normalizePersonMatchKey(person.personName);
                   let cargo: string | null = null;
-                  if (mode === "cedula" && digits) {
-                    cargo = cargoByPrimaryId.get(digits) ?? null;
-                  } else if (mode === "id_texto" && tokenId) {
-                    cargo = cargoByPrimaryId.get(tokenId) ?? null;
-                  } else if (mode === "nombre" && nameKey) {
-                    cargo = cargoByUnambiguousName.get(nameKey) ?? null;
+                  if (periodMatch.mode === "cedula" && digits) {
+                    cargo = attendanceLookup.cargoByPrimaryId.get(digits) ?? null;
+                  } else if (periodMatch.mode === "id_texto" && tokenId) {
+                    cargo = attendanceLookup.cargoByPrimaryId.get(tokenId) ?? null;
+                  } else if (periodMatch.mode === "nombre" && nameKey) {
+                    cargo =
+                      attendanceLookup.cargoByUnambiguousName.get(nameKey) ?? null;
                   }
                   if (cargo) person.personCargo = cargo;
+                }
+
+                if (person.hourlySales.length > 0) {
+                  const singleDayIso =
+                    normalizeDateKeyIso(attRangeEnd) ??
+                    normalizeDateKeyIso(attRangeStart);
+                  if (singleDayIso) {
+                    const shift = matchCashierAttendanceShift(
+                      person.personId,
+                      person.personName,
+                      salesNameKeyCounts,
+                      attendanceMarksLookup,
+                      singleDayIso,
+                    );
+                    if (shift) person.attendanceShift = shift;
+                  }
+                }
+
+                if (!person.dailySales?.length) continue;
+                for (const day of person.dailySales) {
+                  const dateIso = normalizeDateKeyIso(day.date);
+                  if (!dateIso) continue;
+                  const dayMatch = matchCashierAttendanceHours(
+                    person.personId,
+                    person.personName,
+                    salesNameKeyCounts,
+                    attendanceLookup,
+                    dateIso,
+                  );
+                  if (dayMatch) {
+                    day.attendanceWorkedHours = dayMatch.hours;
+                  }
                 }
               }
             } catch (mergeErr) {

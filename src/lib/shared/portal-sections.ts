@@ -93,6 +93,8 @@ const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
   "margenes-operativos": "margenes",
   margenes: "margenes",
   rotacion: "rotacion",
+  "rotacion-dos": "rotacion",
+  "rotacion-v4": "rotacion",
   "consulta-operativa": "consulta-operativa",
   "jornada-extendida": "consulta-operativa",
   "planilla-vs-asistencia": "planilla-vs-asistencia",

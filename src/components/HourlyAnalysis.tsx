@@ -26,6 +26,10 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn, formatDateLabel } from "@/lib/shared/utils";
+import {
+  getCashierSlotLaborHours,
+  type CashierAttendanceShiftMarks,
+} from "@/lib/hourly/cashier-slot-labor";
 import { escapeCsvValue, sanitizeExportText } from "@/lib/shared/export-utils";
 import { DEFAULT_LINES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
@@ -384,9 +388,35 @@ const getCashierLaborMinutes = (
 ) => {
   const att = person.attendanceWorkedHours;
   if (typeof att === "number" && Number.isFinite(att) && att > 0) {
-    return Math.round(att * 60);
+    return decimalHoursToMinutes(att);
   }
   return activeSlotsCount * bucketMinutes;
+};
+
+/** Minutos de un dia en desglose: prioriza asistencia diaria; si no, franjas con venta del dia. */
+const getCashierDayLaborMinutes = (
+  day: NonNullable<HourlyPersonContribution["dailySales"]>[number],
+  bucketMinutes: number,
+) => {
+  const att = day.attendanceWorkedHours;
+  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
+    return decimalHoursToMinutes(att);
+  }
+  return (day.activeSlotsCount ?? 0) * bucketMinutes;
+};
+
+const slotVtaHrFromAttendance = (
+  sales: number,
+  slotStartMinute: number,
+  bucketMinutes: number,
+  shift: CashierAttendanceShiftMarks | null | undefined,
+) => {
+  const laborHours = getCashierSlotLaborHours(
+    slotStartMinute,
+    bucketMinutes,
+    shift,
+  );
+  return calcVtaHr(sales, laborHours);
 };
 
 const cashierLaborHoursSourceTitle = (person: HourlyPersonContribution) => {
@@ -791,8 +821,14 @@ export const HourlyAnalysis = ({
   >(null);
   const [cashierHourDetailSelection, setCashierHourDetailSelection] =
     useState<{ personKey: string; isoDate: string } | null>(null);
-  const [cashierDayHourlySlots, setCashierDayHourlySlots] = useState<
-    Record<string, HourlyPersonSalesSlot[]>
+  const [cashierDayHourlyDetail, setCashierDayHourlyDetail] = useState<
+    Record<
+      string,
+      {
+        slots: HourlyPersonSalesSlot[];
+        attendanceShift?: CashierAttendanceShiftMarks | null;
+      }
+    >
   >({});
   const [cashierDayHourlyError, setCashierDayHourlyError] = useState<
     Record<string, string>
@@ -1495,7 +1531,7 @@ export const HourlyAnalysis = ({
     const { personKey, isoDate } = cashierHourDetailSelection;
     const ck = cashierHourDetailCacheKey(personKey, isoDate);
     if (!isCashierMultiDayRange) return;
-    if (Object.hasOwn(cashierDayHourlySlots, ck)) return;
+    if (Object.hasOwn(cashierDayHourlyDetail, ck)) return;
 
     cashierHourDetailAbortRef.current?.abort();
     const ac = new AbortController();
@@ -1531,7 +1567,13 @@ export const HourlyAnalysis = ({
           contrib?.hourlySales
             ?.filter((s) => s.sales > 0)
             .sort((a, b) => a.slotStartMinute - b.slotStartMinute) ?? [];
-        setCashierDayHourlySlots((prev) => ({ ...prev, [ck]: slots }));
+        setCashierDayHourlyDetail((prev) => ({
+          ...prev,
+          [ck]: {
+            slots,
+            attendanceShift: contrib?.attendanceShift ?? null,
+          },
+        }));
       })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -1552,7 +1594,7 @@ export const HourlyAnalysis = ({
       setCashierDayHourlyLoadingKey((k) => (k === ck ? null : k));
     };
   }, [
-    cashierDayHourlySlots,
+    cashierDayHourlyDetail,
     cashierHourDetailSelection,
     cashierMonthComparison,
     dashboardContext,
@@ -4835,9 +4877,11 @@ export const HourlyAnalysis = ({
                                                     </span>
                                                     <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
                                                       {formatProductivity(
-                                                        calcVtaHr(
+                                                        slotVtaHrFromAttendance(
                                                           slot.sales,
-                                                          bucketMinutes / 60,
+                                                          slot.slotStartMinute,
+                                                          bucketMinutes,
+                                                          person.attendanceShift,
                                                         ),
                                                       )}
                                                     </span>
@@ -4868,8 +4912,10 @@ export const HourlyAnalysis = ({
                                                   day.date,
                                                 );
                                                 const dayLaborMinutes =
-                                                  (day.activeSlotsCount ?? 0) *
-                                                  bucketMinutes;
+                                                  getCashierDayLaborMinutes(
+                                                    day,
+                                                    bucketMinutes,
+                                                  );
                                                 const hourCk =
                                                   cashierHourDetailCacheKey(
                                                     person.personKey,
@@ -4882,6 +4928,12 @@ export const HourlyAnalysis = ({
                                                     person.personKey &&
                                                   cashierHourDetailSelection?.isoDate ===
                                                     iso;
+                                                const dayHourlyDetail =
+                                                  cashierDayHourlyDetail[hourCk];
+                                                const dayAttendanceShift =
+                                                  isCashierMultiDayRange
+                                                    ? dayHourlyDetail?.attendanceShift
+                                                    : person.attendanceShift;
                                                 const hourlySlotsForDay =
                                                   hourOpen && !isCashierMultiDayRange
                                                     ? [...person.hourlySales]
@@ -4896,9 +4948,7 @@ export const HourlyAnalysis = ({
                                                         )
                                                     : hourOpen &&
                                                         isCashierMultiDayRange
-                                                      ? cashierDayHourlySlots[
-                                                          hourCk
-                                                        ] ?? []
+                                                      ? dayHourlyDetail?.slots ?? []
                                                       : [];
                                                 const hourSlotsLoading =
                                                   hourOpen &&
@@ -4978,19 +5028,38 @@ export const HourlyAnalysis = ({
                                                             day.sales,
                                                           )}
                                                         </span>
-                                                        <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                        <span
+                                                          className="text-right font-semibold tabular-nums text-(--cashier-text)"
+                                                          title={
+                                                            typeof day.attendanceWorkedHours ===
+                                                              "number" &&
+                                                            day.attendanceWorkedHours > 0
+                                                              ? cashierLaborHoursSourceTitle(
+                                                                  person,
+                                                                )
+                                                              : "Horas estimadas por franjas con venta del dia"
+                                                          }
+                                                        >
                                                           {formatTotalLaborMinutesLabel(
                                                             dayLaborMinutes,
                                                           )}
                                                         </span>
-                                                        <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
+                                                        <span
+                                                          className="text-right font-semibold tabular-nums text-(--cashier-text)"
+                                                          title={
+                                                            typeof day.attendanceWorkedHours ===
+                                                              "number" &&
+                                                            day.attendanceWorkedHours > 0
+                                                              ? cashierLaborHoursSourceTitle(
+                                                                  person,
+                                                                )
+                                                              : "Horas estimadas por franjas con venta del dia"
+                                                          }
+                                                        >
                                                           {formatProductivity(
                                                             calcVtaHr(
                                                               day.sales,
-                                                              ((day.activeSlotsCount ??
-                                                                0) *
-                                                                bucketMinutes) /
-                                                                60,
+                                                              dayLaborMinutes / 60,
                                                             ),
                                                           )}
                                                         </span>
@@ -5045,10 +5114,11 @@ export const HourlyAnalysis = ({
                                                                 </span>
                                                                 <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
                                                                   {formatProductivity(
-                                                                    calcVtaHr(
+                                                                    slotVtaHrFromAttendance(
                                                                       slot.sales,
-                                                                      bucketMinutes /
-                                                                        60,
+                                                                      slot.slotStartMinute,
+                                                                      bucketMinutes,
+                                                                      dayAttendanceShift,
                                                                     ),
                                                                   )}
                                                                 </span>

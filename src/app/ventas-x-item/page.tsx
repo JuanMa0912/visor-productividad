@@ -126,6 +126,8 @@ export default function VentasXItemPage() {
   const itemsDropdownRef = useRef<HTMLDivElement | null>(null);
   /** Evita solapar dos cargas desde BD (botón + carga automática). */
   const dbLoadInflightRef = useRef(false);
+  const pendingDeepLinkItemRef = useRef<string | null>(null);
+  const deepLinkInitRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -177,6 +179,18 @@ export default function VentasXItemPage() {
       controller.abort();
     };
   }, [router]);
+
+  useEffect(() => {
+    if (deepLinkInitRef.current) return;
+    deepLinkInitRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const start = params.get("start")?.trim();
+    const end = params.get("end")?.trim();
+    const item = params.get("item")?.trim();
+    if (start) setDateStart(start);
+    if (end) setDateEnd(end);
+    if (item) pendingDeepLinkItemRef.current = item;
+  }, []);
 
   useEffect(() => {
     if (!itemsDropdownOpen) return;
@@ -267,6 +281,22 @@ export default function VentasXItemPage() {
     const source = rowsEmpresaFecha.length > 0 ? rowsEmpresaFecha : rowsEmpresa;
     return itemsDisplayList(source);
   }, [rowsEmpresa, rowsEmpresaFecha]);
+
+  useEffect(() => {
+    const itemId = pendingDeepLinkItemRef.current;
+    if (!itemId || rows.length === 0) return;
+    const normalized = itemId.trim();
+    const match = itemOptions.find(
+      (opt) =>
+        opt.startsWith(`${normalized} - `) ||
+        opt.split(" - ", 2)[0]?.trim() === normalized,
+    );
+    const selection = match ?? normalized;
+    setItemsSel([selection]);
+    setItemsOrder([selection]);
+    pendingDeepLinkItemRef.current = null;
+  }, [itemOptions, rows.length]);
+
   const deferredItemSearch = useDeferredValue(itemSearch);
   const selectedItemSet = useMemo(() => new Set(itemsSel), [itemsSel]);
 

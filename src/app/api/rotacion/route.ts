@@ -5,6 +5,7 @@ import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
 } from "@/lib/rotacion/base-fields";
+import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
 import { normalizeRotationCategoriaKey } from "@/lib/rotacion/dimensions";
 
 /** Unifica codigos N1 para filtros (BD a veces devuelve "1" en vez de "01"). */
@@ -154,12 +155,14 @@ const DEFAULT_ABCD_CONFIG: AbcdConfig = {
   cUntilPercent: 98,
 };
 
-let availableBoundsCache:
-  | { value: AvailableBoundsRow | null; expiresAt: number }
-  | null = null;
-let rotationFilterCatalogCache:
-  | { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
-  | null = null;
+const availableBoundsCache = new Map<
+  string,
+  { value: AvailableBoundsRow | null; expiresAt: number }
+>();
+const rotationFilterCatalogCache = new Map<
+  string,
+  { rangeKey: string; value: RotationFilterCatalog; expiresAt: number }
+>();
 let abcdConfigCache: { value: AbcdConfig; expiresAt: number } | null = null;
 const abcdConfigBySedeCache = new Map<
   string,
@@ -669,9 +672,11 @@ const saveRotacionAbcdConfigForSede = async (
 };
 
 const getAvailableBounds = async () => {
+  const sourceTable = getRotacionSourceTable();
   const now = Date.now();
-  if (availableBoundsCache && availableBoundsCache.expiresAt > now) {
-    return availableBoundsCache.value;
+  const cached = availableBoundsCache.get(sourceTable);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
   }
 
   const client = await (await getDbPool()).connect();
@@ -682,7 +687,7 @@ const getAvailableBounds = async () => {
       SELECT
         MIN(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
         MAX(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
-      FROM rotacion_base_item_dia_sede
+      FROM ${getRotacionSourceTable()}
       WHERE ${
         dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
           ? `${dateColumn} IS NOT NULL`
@@ -691,10 +696,10 @@ const getAvailableBounds = async () => {
       `,
     );
     const value = (result.rows?.[0] as AvailableBoundsRow | undefined) ?? null;
-    availableBoundsCache = {
+    availableBoundsCache.set(sourceTable, {
       value,
       expiresAt: now + ROTATION_META_CACHE_TTL_MS,
-    };
+    });
     return value;
   } finally {
     client.release();
@@ -754,15 +759,14 @@ export const getRotationFilterCatalog = async (
   startDateCompact: string,
   endDateCompact: string,
 ): Promise<RotationFilterCatalog> => {
+  const sourceTable = getRotacionSourceTable();
   const now = Date.now();
   const rangeKey = `${startDateCompact}|${endDateCompact}`;
   const snapKey = `snap|${endDateCompact}`;
-  if (rotationFilterCatalogCache && rotationFilterCatalogCache.expiresAt > now) {
-    if (
-      rotationFilterCatalogCache.rangeKey === rangeKey ||
-      rotationFilterCatalogCache.rangeKey === snapKey
-    ) {
-      return rotationFilterCatalogCache.value;
+  const cached = rotationFilterCatalogCache.get(sourceTable);
+  if (cached && cached.expiresAt > now) {
+    if (cached.rangeKey === rangeKey || cached.rangeKey === snapKey) {
+      return cached.value;
     }
   }
 
@@ -775,7 +779,7 @@ export const getRotationFilterCatalog = async (
         ${fields.empresaExpr} AS empresa,
         ${fields.sedeIdExpr} AS sede_id,
         ${fields.sedeNameExpr} AS sede_name
-      FROM rotacion_base_item_dia_sede
+      FROM ${getRotacionSourceTable()}
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
@@ -785,7 +789,7 @@ export const getRotationFilterCatalog = async (
         ${fields.empresaExpr} AS empresa,
         ${fields.sedeIdExpr} AS sede_id,
         ${fields.sedeNameExpr} AS sede_name
-      FROM rotacion_base_item_dia_sede
+      FROM ${getRotacionSourceTable()}
       WHERE ${buildCompactDateEqualsSql(dateColumn)}
         AND ${fields.itemPresentCondition}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
@@ -809,11 +813,11 @@ export const getRotationFilterCatalog = async (
       (result.rows ?? []) as RotationFilterDbRow[],
     );
 
-    rotationFilterCatalogCache = {
+    rotationFilterCatalogCache.set(sourceTable, {
       rangeKey: cacheKey,
       value,
       expiresAt: now + ROTATION_META_CACHE_TTL_MS,
-    };
+    });
 
     return value;
   } finally {
@@ -832,7 +836,7 @@ const queryRotationLineasN1 = async ({
   empresa: string | null;
   sedeId: string;
 }) => {
-  const cacheKey = `${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
+  const cacheKey = `${getRotacionSourceTable()}|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
   const now = Date.now();
   const cached = lineasN1ByRangeCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
@@ -848,7 +852,7 @@ const queryRotationLineasN1 = async ({
         COALESCE(${fields.n1CodeExpr}, '__sin_n1__') AS linea_n1_raw,
         ${fields.lineNullableExpr} AS linea,
         ${fields.nombreLinea01Expr} AS nombre_linea01
-      FROM rotacion_base_item_dia_sede
+      FROM ${getRotacionSourceTable()}
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
         AND ${fields.allowedCategoriaExpr}
@@ -906,7 +910,7 @@ const queryRotationCategoriaBundle = async ({
   empresa: string | null;
   sedeId: string;
 }): Promise<RotationCategoriaBundle> => {
-  const cacheKey = `catbundle|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
+  const cacheKey = `catbundle|${getRotacionSourceTable()}|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
   const now = Date.now();
   const cached = categoriaBundleByRangeCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
@@ -922,7 +926,7 @@ const queryRotationCategoriaBundle = async ({
         ${fields.categoriaKeyExpr} AS categoria_key,
         ${fields.categoriaNameExpr} AS nombre_categoria,
         COALESCE(${fields.n1CodeExpr}, '__sin_n1__') AS linea_n1_raw
-      FROM rotacion_base_item_dia_sede
+      FROM ${getRotacionSourceTable()}
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
         AND ${fields.allowedCategoriaExpr}
@@ -1075,7 +1079,7 @@ const queryRotationRows = async ({
           ${fields.linea01Expr} AS linea01,
           ${fields.nombreLinea01Expr} AS nombre_linea01,
           ${fields.loadTimestampExpr} AS carga_ts
-        FROM rotacion_base_item_dia_sede
+        FROM ${getRotacionSourceTable()}
         WHERE ${buildCompactDateRangeSql(dateColumn)}
           AND ${fields.itemPresentCondition}
           AND ${fields.allowedCategoriaExpr}
@@ -1529,7 +1533,7 @@ export async function GET(request: Request) {
             meta: {
               effectiveRange: { start: "", end: "" },
               availableRange: { min: "", max: "" },
-              sourceTable: "rotacion_base_item_dia_sede",
+              sourceTable: getRotacionSourceTable(),
               maxSalesValue: null,
               abcdConfig,
             },
@@ -1738,7 +1742,7 @@ export async function GET(request: Request) {
                 min: minAvailableDate,
                 max: maxAvailableDate,
               },
-              sourceTable: "rotacion_base_item_dia_sede",
+              sourceTable: getRotacionSourceTable(),
               maxSalesValue,
               abcdConfig: scopedAbcdConfig,
             },
@@ -1771,7 +1775,7 @@ export async function GET(request: Request) {
                 min: minAvailableDate,
                 max: maxAvailableDate,
               },
-              sourceTable: "rotacion_base_item_dia_sede",
+              sourceTable: getRotacionSourceTable(),
               maxSalesValue,
               abcdConfig: scopedAbcdConfig,
             },
@@ -1838,7 +1842,7 @@ export async function GET(request: Request) {
               min: minAvailableDate,
               max: maxAvailableDate,
             },
-            sourceTable: "rotacion_base_item_dia_sede",
+            sourceTable: getRotacionSourceTable(),
             maxSalesValue,
             abcdConfig: scopedAbcdConfig,
           },
@@ -1873,7 +1877,7 @@ export async function GET(request: Request) {
           meta: {
             effectiveRange: { start: "", end: "" },
             availableRange: { min: "", max: "" },
-            sourceTable: "rotacion_base_item_dia_sede",
+            sourceTable: getRotacionSourceTable(),
             maxSalesValue: null,
             abcdConfig: DEFAULT_ABCD_CONFIG,
           },

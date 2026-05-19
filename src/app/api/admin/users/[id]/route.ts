@@ -156,12 +156,8 @@ const resolveValidAllowedLines = (value: unknown) => {
     return { ok: true as const, value: null as string[] | null };
   }
 
-  const invalid = normalized.filter((line) => !ALLOWED_LINE_SET.has(line));
-  if (invalid.length > 0) {
-    return { ok: false as const, error: "Hay lineas no válidas en la selección." };
-  }
-
-  return { ok: true as const, value: normalized };
+  const valid = normalized.filter((line) => ALLOWED_LINE_SET.has(line));
+  return { ok: true as const, value: valid.length > 0 ? valid : null };
 };
 
 const resolveValidAllowedDashboards = (value: unknown) => {
@@ -183,20 +179,7 @@ const resolveValidAllowedDashboards = (value: unknown) => {
     return { ok: true as const, value: null as string[] | null };
   }
 
-  const invalid = value.filter(
-    (board) =>
-      typeof board === "string" &&
-      board.trim() &&
-      !resolvePortalSectionId(board),
-  );
-  if (invalid.length > 0) {
-    return {
-      ok: false as const,
-      error: "Hay secciones no validas en la seleccion.",
-    };
-  }
-
-  return { ok: true as const, value: normalized };
+  return { ok: true as const, value: normalized.length > 0 ? normalized : null };
 };
 
 const resolveValidAllowedSubdashboards = (value: unknown) => {
@@ -216,19 +199,7 @@ const resolveValidAllowedSubdashboards = (value: unknown) => {
   if (!hasMeaningfulEntries || normalized.length === 0) {
     return { ok: true as const, value: null as string[] | null };
   }
-  const invalid = value.filter(
-    (entry) =>
-      typeof entry === "string" &&
-      entry.trim() &&
-      !resolvePortalSubsectionId(entry),
-  );
-  if (invalid.length > 0) {
-    return {
-      ok: false as const,
-      error: "Hay subtableros no validos en la seleccion.",
-    };
-  }
-  return { ok: true as const, value: normalized };
+  return { ok: true as const, value: normalized.length > 0 ? normalized : null };
 };
 
 const resolveValidAllowedSedes = (value: unknown) => {
@@ -251,14 +222,8 @@ const resolveValidAllowedSedes = (value: unknown) => {
   if (normalized.length === 0) {
     return { ok: true as const, value: null as string[] | null };
   }
-  const invalid = normalized.filter((sede) => !ALLOWED_SEDE_SET.has(sede));
-  if (invalid.length > 0) {
-    return {
-      ok: false as const,
-      error: "Hay sedes no válidas en la selección.",
-    };
-  }
-  return { ok: true as const, value: normalized };
+  const valid = normalized.filter((sede) => ALLOWED_SEDE_SET.has(sede));
+  return { ok: true as const, value: valid.length > 0 ? valid : null };
 };
 
 const resolveValidSpecialRoles = (value: unknown) => {
@@ -281,14 +246,8 @@ const resolveValidSpecialRoles = (value: unknown) => {
   if (normalized.length === 0) {
     return { ok: true as const, value: null as string[] | null };
   }
-  const invalid = normalized.filter((role) => !ALLOWED_SPECIAL_ROLE_SET.has(role));
-  if (invalid.length > 0) {
-    return {
-      ok: false as const,
-      error: "Hay roles especiales no validos en la seleccion.",
-    };
-  }
-  return { ok: true as const, value: normalized };
+  const valid = normalized.filter((role) => ALLOWED_SPECIAL_ROLE_SET.has(role));
+  return { ok: true as const, value: valid.length > 0 ? valid : null };
 };
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -332,6 +291,10 @@ export async function PATCH(req: Request, { params }: Params) {
     is_active?: boolean;
     password?: string;
   };
+
+  if (body.sede === "") {
+    body.sede = null;
+  }
 
   const client = await (await getDbPool()).connect();
   try {
@@ -414,7 +377,11 @@ export async function PATCH(req: Request, { params }: Params) {
     );
     const specialRolesResult = resolveValidSpecialRoles(body.specialRoles);
 
-    if (typeof body.sede === "string" && !resolveValidSede(body.sede)) {
+    if (
+      typeof body.sede === "string" &&
+      body.sede.trim() &&
+      !resolveValidSede(body.sede)
+    ) {
       return NextResponse.json(
         { error: "La sede no es valida." },
         { status: 400 },

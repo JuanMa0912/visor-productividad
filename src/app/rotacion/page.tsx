@@ -133,10 +133,15 @@ import {
   formatCompanyLabel,
   displayRotationSedeName,
   mapRotationSedeOptions,
-  ROTACION_LAST_SEDE_STORAGE_KEY,
   readRotationApiForbiddenMessage,
   normalizeGroupZeroEstadoSetFilter,
 } from "./rotacion-preamble";
+import { ROTACION_LEGACY_VIEW } from "@/app/rotacion/rotacion-view-config";
+import {
+  RotacionViewConfigProvider,
+  useRotacionViewConfig,
+} from "@/app/rotacion/rotacion-view-config-provider";
+import { RotacionItemDrilldown } from "@/app/rotacion/rotacion-item-drilldown";
 
 type SurtidoAuditApiRow = {
   id: string;
@@ -167,7 +172,15 @@ const auditChangedAtDateKeyBogota = (changedAtIso: string) =>
     day: "2-digit",
   }).format(new Date(changedAtIso));
 
-export default function RotacionPage() {
+export function RotacionPageInner() {
+  const {
+    apiBasePath,
+    sourceTable,
+    lastSedeStorageKey,
+    pageTitle,
+    pageDescription,
+    exportFilePrefix,
+  } = useRotacionViewConfig();
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -368,16 +381,16 @@ export default function RotacionPage() {
     try {
       if (selectedSedes.length > 0) {
         localStorage.setItem(
-          ROTACION_LAST_SEDE_STORAGE_KEY,
+          lastSedeStorageKey,
           JSON.stringify(selectedSedes),
         );
       } else {
-        localStorage.removeItem(ROTACION_LAST_SEDE_STORAGE_KEY);
+        localStorage.removeItem(lastSedeStorageKey);
       }
     } catch {
       /* ignore quota / private mode */
     }
-  }, [selectedSedes]);
+  }, [selectedSedes, lastSedeStorageKey]);
 
   const canEditAbcdConfig = useMemo(
     () => canEditRotacionAbcdConfig(specialRoles, isAdmin),
@@ -453,7 +466,7 @@ export default function RotacionPage() {
         });
         appendCategoriaParams(params, categoriasForParams, cats);
         const response = await fetch(
-          `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
+          `${apiBasePath}${params.size > 0 ? `?${params.toString()}` : ""}`,
           { cache: "no-store", signal: options?.signal },
         );
         if (response.status === 401) {
@@ -517,6 +530,7 @@ export default function RotacionPage() {
       selectedCategoriaKeys,
       filterCatalog.lineasN1,
       filterCatalog.categorias,
+      apiBasePath,
     ],
   );
 
@@ -625,14 +639,14 @@ export default function RotacionPage() {
                 end: dateRange.end || "",
               },
               availableRange: { min: "", max: "" },
-              sourceTable: "rotacion_base_item_dia_sede",
+              sourceTable: sourceTable,
               maxSalesValue: null,
               abcdConfig: DEFAULT_ABCD_CONFIG,
             },
           };
         } else {
           const response = await fetch(
-            `/api/rotacion${params.size > 0 ? `?${params.toString()}` : ""}`,
+            `${apiBasePath}${params.size > 0 ? `?${params.toString()}` : ""}`,
             {
               cache: "no-store",
             },
@@ -717,7 +731,7 @@ export default function RotacionPage() {
                   end: dateRange.end || "",
                 },
                 availableRange: { min: "", max: "" },
-                sourceTable: "rotacion_base_item_dia_sede",
+                sourceTable: sourceTable,
                 maxSalesValue: null,
                 abcdConfig: DEFAULT_ABCD_CONFIG,
               },
@@ -736,7 +750,7 @@ export default function RotacionPage() {
               );
             });
             const comboResponse = await fetch(
-              `/api/rotacion?${comboParams.toString()}`,
+              `${apiBasePath}?${comboParams.toString()}`,
               { cache: "no-store" },
             );
             if (comboResponse.status === 401) {
@@ -859,6 +873,8 @@ export default function RotacionPage() {
     selectedSedes,
     selectedCompanySet,
     selectedSedeSet,
+    apiBasePath,
+    sourceTable,
   ]);
 
   const daysConsulted = useMemo(
@@ -881,6 +897,14 @@ export default function RotacionPage() {
         })),
     [filterCatalog.companies],
   );
+
+  const showItemDrilldownLinks =
+    apiBasePath === ROTACION_LEGACY_VIEW.apiBasePath;
+  const itemDrilldownDate = useMemo(() => {
+    if (dateRange.end) return dateRange.end;
+    if (availableRange.end) return availableRange.end;
+    return auditChangedAtDateKeyBogota(new Date().toISOString());
+  }, [availableRange.end, dateRange.end]);
 
   const allSedeOptions = useMemo(() => {
     const mapped = filterCatalog.sedes
@@ -1393,7 +1417,7 @@ export default function RotacionPage() {
     if (allSedeOptions.length < 2) return;
 
     try {
-      const raw = localStorage.getItem(ROTACION_LAST_SEDE_STORAGE_KEY);
+      const raw = localStorage.getItem(lastSedeStorageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw) as string[];
       const restored = Array.isArray(parsed)
@@ -1414,7 +1438,13 @@ export default function RotacionPage() {
     } catch {
       /* ignore */
     }
-  }, [ready, isLoadingLineCatalog, selectedSedes, allSedeOptions]);
+  }, [
+    ready,
+    isLoadingLineCatalog,
+    selectedSedes,
+    allSedeOptions,
+    lastSedeStorageKey,
+  ]);
 
   const sortedRows = useMemo(
     () =>
@@ -1618,7 +1648,7 @@ export default function RotacionPage() {
     setError(null);
     try {
       const normalized = normalizeAbcdConfig(abcdDraftConfig);
-      const response = await fetch("/api/rotacion", {
+      const response = await fetch(apiBasePath, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2138,7 +2168,9 @@ export default function RotacionPage() {
     if (exportRowCount === 0 || isExportingPdf) return;
     setIsExportingPdf(true);
     try {
-      buildRotacionPdfDocument().save(`rotacion_${buildExportFileStamp()}.pdf`);
+      buildRotacionPdfDocument().save(
+        `${exportFilePrefix}_${buildExportFileStamp()}.pdf`,
+      );
     } finally {
       setIsExportingPdf(false);
     }
@@ -2245,13 +2277,10 @@ export default function RotacionPage() {
                   Producto
                 </p>
                 <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-                  Rotacion
+                  {pageTitle}
                 </h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
-                  Esta vista toma datos reales desde la base diaria para
-                  detectar productos de baja rotación, agotados y futuros
-                  agotados por sede, usando la venta acumulada del rango
-                  consultado.
+                  {pageDescription}
                 </p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
@@ -2835,7 +2864,7 @@ export default function RotacionPage() {
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 No encontramos items para los filtros actuales en{" "}
                 <span className="font-semibold text-slate-800">
-                  rotacion_base_item_dia_sede
+                  {sourceTable}
                 </span>
                 . Ajusta el rango de fechas o usa el boton{" "}
                 <span className="font-semibold">Venta ≤</span> en la tabla para
@@ -3126,39 +3155,31 @@ export default function RotacionPage() {
                                 <CardTitle className="text-2xl font-black text-slate-900">
                                   {group.sedeName}
                                 </CardTitle>
-                                <CardDescription className="max-w-2xl text-sm leading-6 text-slate-600">
-                                  {targetSedeSelections.length > 1
-                                    ? "Consolidado real de las sedes seleccionadas usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."
-                                    : "Consolidado real por sede usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."}
-                                </CardDescription>
                               </div>
                               <Badge className="shrink-0 border-indigo-200 bg-indigo-50 text-indigo-700">
                                 {group.empresa}
                               </Badge>
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base font-semibold leading-6 text-slate-700">
-                                <span className="whitespace-nowrap">
-                                  Total items:{" "}
-                                  <span className="font-black text-slate-900">
-                                    {infoTotalItems.toLocaleString("es-CO")}
-                                  </span>
-                                </span>
-                                <span className="whitespace-nowrap">
-                                  Total inv:{" "}
-                                  <span className="font-black text-slate-900">
-                                    {formatPriceWithoutSixZeros(infoTotalInv)}
-                                  </span>
-                                </span>
-                              </div>
-                              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                Por categoría
-                              </span>
-                              <div className="flex min-w-0 flex-1 items-start gap-3">
-                                <div className="flex flex-wrap items-end gap-2">
+                            <div className="flex flex-wrap items-start gap-4">
+                              <CardDescription className="min-w-[11rem] max-w-sm flex-1 text-sm leading-6 text-slate-600">
+                                {targetSedeSelections.length > 1
+                                  ? "Consolidado real de las sedes seleccionadas usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."
+                                  : "Consolidado real por sede usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."}
+                              </CardDescription>
+                              <div className="flex w-fit max-w-full shrink-0 flex-wrap gap-2">
+                                  <div className="flex w-fit flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
+                                    <div className="mb-2 space-y-0.5">
+                                      <p className="text-[11px] font-bold tracking-tight text-emerald-950">
+                                        A·B·C · En rotación
+                                      </p>
+                                      <p className="text-[10px] leading-snug text-emerald-800/85">
+                                        Productos que se mueven
+                                      </p>
+                                    </div>
+                                    <div className="grid w-fit grid-cols-3 gap-2 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
-                                    <span className="text-[10px] font-semibold text-emerald-500">
+                                    <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
                                       {abcdConfig.aUntilPercent.toFixed(0)}%
                                     </span>
                                     <Button
@@ -3177,7 +3198,7 @@ export default function RotacionPage() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "A",
@@ -3186,11 +3207,14 @@ export default function RotacionPage() {
                                           : "border-emerald-300 bg-emerald-100 text-emerald-900"
                                       }`}
                                     >
-                                      A: {abcdCounts.A.toLocaleString("es-CO")}
+                                      <span className="text-sm leading-none">A</span>
+                                      <span className="text-[11px] leading-none tabular-nums">
+                                        {abcdCounts.A.toLocaleString("es-CO")}
+                                      </span>
                                     </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                    <span className="text-[10px] font-semibold text-amber-500">
+                                    <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-amber-600">
                                       {(
                                         abcdConfig.bUntilPercent -
                                         abcdConfig.aUntilPercent
@@ -3213,7 +3237,7 @@ export default function RotacionPage() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "B",
@@ -3222,11 +3246,14 @@ export default function RotacionPage() {
                                           : "border-amber-300 bg-amber-100 text-amber-900"
                                       }`}
                                     >
-                                      B: {abcdCounts.B.toLocaleString("es-CO")}
+                                      <span className="text-sm leading-none">B</span>
+                                      <span className="text-[11px] leading-none tabular-nums">
+                                        {abcdCounts.B.toLocaleString("es-CO")}
+                                      </span>
                                     </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                    <span className="text-[10px] font-semibold text-orange-500">
+                                    <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-orange-600">
                                       {(
                                         abcdConfig.cUntilPercent -
                                         abcdConfig.bUntilPercent
@@ -3249,7 +3276,7 @@ export default function RotacionPage() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "C",
@@ -3258,11 +3285,31 @@ export default function RotacionPage() {
                                           : "border-orange-300 bg-orange-100 text-orange-900"
                                       }`}
                                     >
-                                      C: {abcdCounts.C.toLocaleString("es-CO")}
+                                      <span className="text-sm leading-none">C</span>
+                                      <span className="text-[11px] leading-none tabular-nums">
+                                        {abcdCounts.C.toLocaleString("es-CO")}
+                                      </span>
                                     </Button>
                                   </div>
+                                    </div>
+                                    <p className="mt-2 border-l-2 border-emerald-300/80 pl-2 pt-1.5 text-[10px] leading-snug text-emerald-900/75">
+                                      Mantener disponibilidad · surtido y
+                                      abastecimiento
+                                    </p>
+                                  </div>
+
+                                  <div className="flex w-fit flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2.5 shadow-sm ring-1 ring-rose-100/90">
+                                    <div className="mb-2 space-y-0.5">
+                                      <p className="text-[11px] font-bold tracking-tight text-rose-950">
+                                        Críticos · Requieren acción
+                                      </p>
+                                      <p className="text-[10px] leading-snug text-rose-800/85">
+                                        Productos problemáticos
+                                      </p>
+                                    </div>
+                                    <div className="grid w-fit grid-cols-3 gap-2 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
-                                    <span className="text-[10px] font-semibold text-rose-500">
+                                    <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-rose-600">
                                       {(100 - abcdConfig.cUntilPercent).toFixed(
                                         0,
                                       )}
@@ -3284,7 +3331,7 @@ export default function RotacionPage() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "D",
@@ -3293,11 +3340,14 @@ export default function RotacionPage() {
                                           : "border-rose-300 bg-rose-100 text-rose-900"
                                       }`}
                                     >
-                                      D: {abcdCounts.D.toLocaleString("es-CO")}
+                                      <span className="text-sm leading-none">D</span>
+                                      <span className="text-[11px] leading-none tabular-nums">
+                                        {abcdCounts.D.toLocaleString("es-CO")}
+                                      </span>
                                     </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                    <span className="text-[10px] font-semibold text-slate-500">
+                                    <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                                       cero
                                     </span>
                                     <Button
@@ -3317,20 +3367,22 @@ export default function RotacionPage() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         categoryFilter === "0"
                                           ? "border-slate-700 bg-slate-600 text-white shadow-md ring-2 ring-slate-200"
                                           : "border-slate-300 bg-slate-100 text-slate-900"
                                       }`}
                                     >
-                                      0:{" "}
-                                      {ceroRotacionCount.toLocaleString(
-                                        "es-CO",
-                                      )}
+                                      <span className="text-sm leading-none">0</span>
+                                      <span className="text-[11px] leading-none tabular-nums">
+                                        {ceroRotacionCount.toLocaleString(
+                                          "es-CO",
+                                        )}
+                                      </span>
                                     </Button>
                                   </div>
                                   <div className="flex flex-col items-center gap-1">
-                                    <span className="text-[10px] font-semibold text-cyan-600">
+                                    <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-cyan-600">
                                       restock
                                     </span>
                                     <Button
@@ -3352,7 +3404,7 @@ export default function RotacionPage() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`h-7 rounded-full border px-2.5 py-0 text-xs font-bold transition-all ${
+                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         categoryFilter === "S" ||
                                         categoryFilter === "R" ||
                                         categoryFilter === "N"
@@ -3360,11 +3412,43 @@ export default function RotacionPage() {
                                           : "border-cyan-300 bg-cyan-100 text-cyan-900"
                                       }`}
                                     >
-                                      S:{" "}
-                                      {nuevoItemsCount.toLocaleString("es-CO")}
+                                      <span className="text-sm leading-none">S</span>
+                                      <span className="text-[11px] leading-none tabular-nums">
+                                        {nuevoItemsCount.toLocaleString("es-CO")}
+                                      </span>
                                     </Button>
                                   </div>
-                                </div>
+                                    </div>
+                                    <div className="mt-1.5 space-y-1 pt-1.5">
+                                      <p className="border-l-2 border-rose-200 pl-2 text-[10px] leading-snug text-rose-900/70">
+                                        Demanda · descuento, descontinuar,
+                                        devolver
+                                      </p>
+                                      <p className="border-l-2 border-cyan-200 pl-2 text-[10px] leading-snug text-cyan-900/75">
+                                        Abastecimiento · pedido, lead time, ROP
+                                      </p>
+                                    </div>
+                                  </div>
+                              </div>
+                            </div>
+
+                            <div className="flex w-full flex-col gap-3 text-sm">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base font-semibold leading-6 text-slate-700">
+                                <span className="whitespace-nowrap">
+                                  Total items:{" "}
+                                  <span className="font-black text-slate-900">
+                                    {infoTotalItems.toLocaleString("es-CO")}
+                                  </span>
+                                </span>
+                                <span className="whitespace-nowrap">
+                                  Total inv:{" "}
+                                  <span className="font-black text-slate-900">
+                                    {formatPriceWithoutSixZeros(infoTotalInv)}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="flex min-w-0 items-start gap-3">
+
                                 {rowFilter === "none" ? (
                                   <div className="ml-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
                                     <div className="space-y-1">
@@ -3393,6 +3477,7 @@ export default function RotacionPage() {
                                     </div>
                                   </div>
                                 ) : null}
+                                </div>
                               </div>
                               {selectedCategoryLabel ? (
                                 <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
@@ -3713,7 +3798,6 @@ export default function RotacionPage() {
                                 ) : null}
                               </div>
                             </div>
-                          </div>
                         </CardHeader>
                         <div
                           className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-5 py-3 text-xs text-slate-600"
@@ -4224,9 +4308,16 @@ export default function RotacionPage() {
                                             {rowNumber}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
-                                            <span className="text-xs">
-                                              {row.item}
-                                            </span>
+                                            {showItemDrilldownLinks ? (
+                                              <RotacionItemDrilldown
+                                                itemId={row.item}
+                                                date={itemDrilldownDate}
+                                              />
+                                            ) : (
+                                              <span className="text-xs">
+                                                {row.item}
+                                              </span>
+                                            )}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
                                             <Badge
@@ -4335,9 +4426,16 @@ export default function RotacionPage() {
                                             {rowNumber}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-2 py-2 align-top font-semibold text-slate-900">
-                                            <span className="text-xs">
-                                              {row.item}
-                                            </span>
+                                            {showItemDrilldownLinks ? (
+                                              <RotacionItemDrilldown
+                                                itemId={row.item}
+                                                date={itemDrilldownDate}
+                                              />
+                                            ) : (
+                                              <span className="text-xs">
+                                                {row.item}
+                                              </span>
+                                            )}
                                           </TableCell>
                                           <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
                                             <Badge
@@ -4982,5 +5080,13 @@ export default function RotacionPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function RotacionPage() {
+  return (
+    <RotacionViewConfigProvider config={ROTACION_LEGACY_VIEW}>
+      <RotacionPageInner />
+    </RotacionViewConfigProvider>
   );
 }
