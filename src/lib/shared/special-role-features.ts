@@ -1,3 +1,5 @@
+import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
+
 /**
  * Roles especiales (app_users.special_roles) que habilitan funciones concretas.
  * Deben coincidir con los ids permitidos en la API de admin (`ALLOWED_SPECIAL_ROLE_SET`),
@@ -36,15 +38,33 @@ export function canUseLunesScheduleSync(
 
 /**
  * Puede acceder al tablero de rotacion.
- * Los administradores lo tienen siempre; el resto necesita el rol especial `rotacion`.
+ * Los administradores lo tienen siempre.
+ *
+ * Si el caller entrega `allowedSubdashboards`, ese permiso granular manda:
+ * vacio/null significa todos; si hay lista, debe incluir `rotacion`.
+ *
+ * El rol especial `rotacion` queda como compatibilidad para callers antiguos
+ * que todavia no pasan `allowedSubdashboards`.
  */
 export function canAccessRotacionBoard(
   specialRoles: string[] | null | undefined,
   isAdmin = false,
+  allowedSubdashboards?: unknown,
 ): boolean {
   if (isAdmin) return true;
+  if (allowedSubdashboards !== undefined) {
+    return canAccessPortalSubsection(allowedSubdashboards, "rotacion");
+  }
   if (!specialRoles?.length) return false;
   return specialRoles.some((r) => ROTACION_SET.has(r.trim().toLowerCase()));
+}
+
+/**
+ * Puede acceder a Rotacion v4 (tablero de pruebas).
+ * Es un tablero tecnico de validacion, no un permiso granular para usuarios.
+ */
+export function canAccessRotacionV4Board(isAdmin = false): boolean {
+  return isAdmin;
 }
 
 /**

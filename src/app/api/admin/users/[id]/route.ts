@@ -174,12 +174,29 @@ const resolveValidAllowedDashboards = (value: unknown) => {
   const hasMeaningfulEntries = value.some(
     (board) => typeof board === "string" && board.trim(),
   );
-  const normalized = normalizeAllowedPortalSections(value) ?? [];
-  if (!hasMeaningfulEntries || normalized.length === 0) {
+  if (!hasMeaningfulEntries) {
     return { ok: true as const, value: null as string[] | null };
   }
 
-  return { ok: true as const, value: normalized.length > 0 ? normalized : null };
+  const invalid = value.filter(
+    (board) =>
+      typeof board === "string" &&
+      board.trim() &&
+      !resolvePortalSectionId(board),
+  );
+  if (invalid.length > 0) {
+    return {
+      ok: false as const,
+      error: "Hay secciones no validas en la seleccion.",
+    };
+  }
+
+  const normalized = normalizeAllowedPortalSections(value) ?? [];
+  if (normalized.length === 0) {
+    return { ok: true as const, value: null as string[] | null };
+  }
+
+  return { ok: true as const, value: normalized };
 };
 
 const resolveValidAllowedSubdashboards = (value: unknown) => {
@@ -195,11 +212,29 @@ const resolveValidAllowedSubdashboards = (value: unknown) => {
   const hasMeaningfulEntries = value.some(
     (entry) => typeof entry === "string" && entry.trim(),
   );
-  const normalized = normalizeAllowedPortalSubsections(value) ?? [];
-  if (!hasMeaningfulEntries || normalized.length === 0) {
+  if (!hasMeaningfulEntries) {
     return { ok: true as const, value: null as string[] | null };
   }
-  return { ok: true as const, value: normalized.length > 0 ? normalized : null };
+
+  const invalid = value.filter(
+    (entry) =>
+      typeof entry === "string" &&
+      entry.trim() &&
+      !resolvePortalSubsectionId(entry),
+  );
+  if (invalid.length > 0) {
+    return {
+      ok: false as const,
+      error: "Hay subtableros no validos en la seleccion.",
+    };
+  }
+
+  const normalized = normalizeAllowedPortalSubsections(value) ?? [];
+  if (normalized.length === 0) {
+    return { ok: true as const, value: null as string[] | null };
+  }
+
+  return { ok: true as const, value: normalized };
 };
 
 const resolveValidAllowedSedes = (value: unknown) => {

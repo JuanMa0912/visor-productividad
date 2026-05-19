@@ -44,9 +44,11 @@ import {
 } from "@/lib/shared/portal-sections";
 import {
   canAccessRotacionBoard,
+  canAccessRotacionV4Board,
   canEditRotacionAbcdConfig,
   canViewRotacionSinventarioHistorial,
 } from "@/lib/shared/special-role-features";
+import { ROTACION_SOURCE_V4 } from "@/lib/rotacion/source-tables";
 import {
   CERO_ROTACION_ESTADO_LABELS,
   CERO_ROTACION_ESTADO_SORT_ORDER,
@@ -346,6 +348,13 @@ export function RotacionPageInner() {
         setIsAdmin(Boolean(isAdmin));
         setSpecialRoles(payload.user?.specialRoles ?? null);
         if (
+          sourceTable === ROTACION_SOURCE_V4 &&
+          !canAccessRotacionV4Board(isAdmin)
+        ) {
+          router.replace("/productividad");
+          return;
+        }
+        if (
           !isAdmin &&
           (!canAccessPortalSection(
             payload.user?.allowedDashboards,
@@ -359,7 +368,13 @@ export function RotacionPageInner() {
           router.replace("/secciones");
           return;
         }
-        if (!canAccessRotacionBoard(payload.user?.specialRoles, isAdmin)) {
+        if (
+          !canAccessRotacionBoard(
+            payload.user?.specialRoles,
+            isAdmin,
+            payload.user?.allowedSubdashboards,
+          )
+        ) {
           router.replace("/productividad");
           return;
         }
@@ -375,7 +390,7 @@ export function RotacionPageInner() {
       isMounted = false;
       controller.abort();
     };
-  }, [router]);
+  }, [router, sourceTable]);
 
   useEffect(() => {
     try {
@@ -2958,6 +2973,8 @@ export function RotacionPageInner() {
                       sourceRowsForAbcd,
                       categoryByItem,
                     );
+                    const abcRotationTotalItems =
+                      abcdCounts.A + abcdCounts.B + abcdCounts.C;
                     const categoryFilteredRows =
                       categoryFilter === "all"
                         ? filteredRows
@@ -3123,6 +3140,8 @@ export function RotacionPageInner() {
                     const ceroRotacionCount = group.rows.filter((row) =>
                       isCeroRotacionExcludingNuevo(row, dateRange),
                     ).length;
+                    const criticalTotalItems =
+                      abcdCounts.D + ceroRotacionCount + nuevoItemsCount;
                     const totalPages = Math.max(
                       1,
                       Math.ceil(categoryFilteredRows.length / pageSize),
@@ -3292,6 +3311,21 @@ export function RotacionPageInner() {
                                     </Button>
                                   </div>
                                     </div>
+                                    <div className="mt-2 rounded-lg border border-emerald-200/80 bg-white/80 px-2.5 py-2 shadow-sm">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
+                                          Total A+B+C
+                                        </span>
+                                        <span className="text-sm font-black leading-none text-emerald-950 tabular-nums">
+                                          {abcRotationTotalItems.toLocaleString(
+                                            "es-CO",
+                                          )}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-[10px] leading-snug text-emerald-800/70">
+                                        Productos en rotaci&oacute;n
+                                      </p>
+                                    </div>
                                     <p className="mt-2 border-l-2 border-emerald-300/80 pl-2 pt-1.5 text-[10px] leading-snug text-emerald-900/75">
                                       Mantener disponibilidad · surtido y
                                       abastecimiento
@@ -3418,6 +3452,21 @@ export function RotacionPageInner() {
                                       </span>
                                     </Button>
                                   </div>
+                                    </div>
+                                    <div className="mt-2 rounded-lg border border-rose-200/80 bg-white/80 px-2.5 py-2 shadow-sm">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-rose-700">
+                                          Total D+0+S
+                                        </span>
+                                        <span className="text-sm font-black leading-none text-rose-950 tabular-nums">
+                                          {criticalTotalItems.toLocaleString(
+                                            "es-CO",
+                                          )}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-[10px] leading-snug text-rose-800/70">
+                                        Productos para revisar
+                                      </p>
                                     </div>
                                     <div className="mt-1.5 space-y-1 pt-1.5">
                                       <p className="border-l-2 border-rose-200 pl-2 text-[10px] leading-snug text-rose-900/70">

@@ -6,6 +6,7 @@ import {
   type RotacionBaseDateColumn,
 } from "@/lib/rotacion/base-fields";
 import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
+import { ROTACION_SOURCE_V4 } from "@/lib/rotacion/source-tables";
 import { normalizeRotationCategoriaKey } from "@/lib/rotacion/dimensions";
 
 /** Unifica codigos N1 para filtros (BD a veces devuelve "1" en vez de "01"). */
@@ -22,6 +23,7 @@ import {
 } from "@/lib/shared/portal-sections";
 import {
   canAccessRotacionBoard,
+  canAccessRotacionV4Board,
   canEditRotacionAbcdConfig,
 } from "@/lib/shared/special-role-features";
 
@@ -1497,10 +1499,27 @@ export async function GET(request: Request) {
       ),
     );
   }
-  if (!canAccessRotacionBoard(session.user.specialRoles, session.user.role === "admin")) {
+  if (
+    !canAccessRotacionBoard(
+      session.user.specialRoles,
+      session.user.role === "admin",
+      session.user.allowedSubdashboards,
+    )
+  ) {
     return withSession(
       NextResponse.json(
         { error: "No tienes permisos para ver rotacion." },
+        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  if (
+    getRotacionSourceTable() === ROTACION_SOURCE_V4 &&
+    !canAccessRotacionV4Board(session.user.role === "admin")
+  ) {
+    return withSession(
+      NextResponse.json(
+        { error: "Rotacion v4 solo esta disponible para administradores." },
         { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
@@ -1912,6 +1931,30 @@ export async function PUT(request: Request) {
     }
     return response;
   };
+
+  if (
+    session.user.role !== "admin" &&
+    (!canAccessPortalSection(session.user.allowedDashboards, "producto") ||
+      !canAccessPortalSubsection(session.user.allowedSubdashboards, "rotacion"))
+  ) {
+    return withSession(
+      NextResponse.json(
+        { error: "No tienes permisos para esta seccion." },
+        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  if (
+    getRotacionSourceTable() === ROTACION_SOURCE_V4 &&
+    !canAccessRotacionV4Board(session.user.role === "admin")
+  ) {
+    return withSession(
+      NextResponse.json(
+        { error: "Rotacion v4 solo esta disponible para administradores." },
+        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
 
   if (
     !canEditRotacionAbcdConfig(

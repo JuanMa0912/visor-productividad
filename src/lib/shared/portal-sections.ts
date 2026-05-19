@@ -123,10 +123,14 @@ export const normalizeAllowedPortalSections = (
   value: unknown,
 ): PortalSectionId[] | null => {
   if (!Array.isArray(value)) return null;
+  const entries = value.filter(
+    (entry) => typeof entry === "string" && entry.trim(),
+  );
+  if (entries.length === 0) return null;
 
   return Array.from(
     new Set(
-      value
+      entries
         .map((entry) =>
           typeof entry === "string" ? resolvePortalSectionId(entry) : null,
         )
@@ -139,9 +143,14 @@ export const normalizeAllowedPortalSubsections = (
   value: unknown,
 ): PortalSubsectionId[] | null => {
   if (!Array.isArray(value)) return null;
+  const entries = value.filter(
+    (entry) => typeof entry === "string" && entry.trim(),
+  );
+  if (entries.length === 0) return null;
+
   return Array.from(
     new Set(
-      value
+      entries
         .map((entry) =>
           typeof entry === "string" ? resolvePortalSubsectionId(entry) : null,
         )

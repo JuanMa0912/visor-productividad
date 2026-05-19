@@ -87,6 +87,7 @@ const rotacionAuthGate = async (
     !canAccessRotacionBoard(
       session.user.specialRoles,
       session.user.role === "admin",
+      session.user.allowedSubdashboards,
     )
   ) {
     return NextResponse.json(

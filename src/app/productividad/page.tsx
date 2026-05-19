@@ -20,7 +20,10 @@ import {
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
-import { canAccessRotacionBoard } from "@/lib/shared/special-role-features";
+import {
+  canAccessRotacionBoard,
+  canAccessRotacionV4Board,
+} from "@/lib/shared/special-role-features";
 
 const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
   {
@@ -111,7 +114,11 @@ export default function ProductividadHubPage() {
               Boolean(payload.user?.specialRoles?.includes("cronograma")),
           );
           setCanSeeRotacion(
-            canAccessRotacionBoard(payload.user?.specialRoles, userIsAdmin),
+            canAccessRotacionBoard(
+              payload.user?.specialRoles,
+              userIsAdmin,
+              payload.user?.allowedSubdashboards,
+            ),
           );
           setReady(true);
         }
@@ -130,9 +137,12 @@ export default function ProductividadHubPage() {
   const modules = useMemo(() => {
     if (!canSeeRotacion) return BASE_PRODUCTO_MODULES;
     const withRotacion = [...BASE_PRODUCTO_MODULES];
-    withRotacion.splice(2, 0, ROTACION_MODULE, ROTACION_V4_MODULE);
+    withRotacion.splice(2, 0, ROTACION_MODULE);
+    if (canAccessRotacionV4Board(isAdmin)) {
+      withRotacion.splice(3, 0, ROTACION_V4_MODULE);
+    }
     return withRotacion;
-  }, [canSeeRotacion]);
+  }, [canSeeRotacion, isAdmin]);
   const visibleModules = useMemo(
     () =>
       modules.filter((module) => {

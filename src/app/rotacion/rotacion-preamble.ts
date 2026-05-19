@@ -1323,9 +1323,11 @@ const passesCeroRotacionStockDuvGate = (row: RotationRow) => {
   return duvDays === null || duvDays >= EXCLUDE_RECENT_SALE_DAYS;
 };
 
-const hasUltimoIngresoEnPeriodo = (row: RotationRow, range: DateRange) =>
-  Boolean(row.lastMovementDate) &&
-  isDateKeyWithinInclusiveRange(row.lastMovementDate, range);
+const hasUltimoIngresoEnPeriodo = (row: RotationRow, range: DateRange) => {
+  const lastMovementDate = row.lastMovementDate;
+  if (!lastMovementDate) return false;
+  return isDateKeyWithinInclusiveRange(lastMovementDate, range);
+};
 
 /**
  * Cero rotacion con ultimo ingreso dentro del periodo revisado → restock (no "nuevo").
