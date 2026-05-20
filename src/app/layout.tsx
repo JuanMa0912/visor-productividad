@@ -1,6 +1,7 @@
 ﻿import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 
 // ============================================================================
 // CONFIGURACI?"N DE FUENTES
@@ -91,6 +92,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background text-foreground antialiased`}
       >
+        <PresenceHeartbeat />
         <main>{children}</main>
       </body>
     </html>

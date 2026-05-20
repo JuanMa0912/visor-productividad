@@ -25,9 +25,12 @@ import {
   X,
 } from "lucide-react";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
+import { getPathLabel } from "@/lib/shared/path-labels";
 
 const APP_VERSION_LABEL = "UAID V4.0";
 const PAGE_SIZE = 15;
+const PRESENCE_REFRESH_MS = 20_000;
+const PRESENCE_ACTIVE_MAX_MS = 10 * 60_000;
 
 type LogRow = {
   id: number;
@@ -36,6 +39,11 @@ type LogRow = {
   user_agent: string | null;
   user_id: string;
   username: string;
+};
+
+type PresenceEntry = {
+  lastActivityAt: string;
+  lastPath: string | null;
 };
 
 type SortKey = "logged_at" | "username";
@@ -119,6 +127,10 @@ export default function AdminUsuariosAccesosPage() {
   const skipUserDebouncePageReset = useRef(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [presenceByUserId, setPresenceByUserId] = useState<
+    Record<string, PresenceEntry>
+  >({});
+  const [presenceNow, setPresenceNow] = useState<number>(() => Date.now());
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -191,6 +203,54 @@ export default function AdminUsuariosAccesosPage() {
   useEffect(() => {
     void fetchLogs();
   }, [fetchLogs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchPresence = async () => {
+      try {
+        const response = await fetch("/api/admin/user-presence", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          presence?: Array<{
+            userId: string;
+            lastActivityAt: string;
+            lastPath: string | null;
+          }>;
+        };
+        if (cancelled) return;
+        const next: Record<string, PresenceEntry> = {};
+        for (const entry of payload.presence ?? []) {
+          if (entry?.userId && entry.lastActivityAt) {
+            next[entry.userId] = {
+              lastActivityAt: entry.lastActivityAt,
+              lastPath: entry.lastPath ?? null,
+            };
+          }
+        }
+        setPresenceByUserId(next);
+        setPresenceNow(Date.now());
+      } catch {
+        // ignore - retry next tick
+      }
+    };
+
+    void fetchPresence();
+    const intervalId = window.setInterval(fetchPresence, PRESENCE_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const tickId = window.setInterval(() => {
+      setPresenceNow(Date.now());
+    }, 30_000);
+    return () => window.clearInterval(tickId);
+  }, []);
 
   const toggleSort = (column: SortKey) => {
     setPage(1);
@@ -447,7 +507,7 @@ export default function AdminUsuariosAccesosPage() {
                     <th className="px-4 py-3">Usuario</th>
                     <th className="px-4 py-3">Fecha y hora</th>
                     <th className="hidden px-4 py-3 md:table-cell">Relativo</th>
-                    <th className="px-4 py-3">IP</th>
+                    <th className="px-4 py-3">Tablero actual</th>
                     <th className="hidden min-w-[200px] px-4 py-3 lg:table-cell">
                       Navegador / dispositivo
                     </th>
@@ -456,6 +516,19 @@ export default function AdminUsuariosAccesosPage() {
                 <tbody className="divide-y divide-slate-100">
                   {logs.map((log, i) => {
                     const n = (page - 1) * PAGE_SIZE + i + 1;
+                    const presence = presenceByUserId[log.user_id];
+                    const elapsedMs = presence
+                      ? presenceNow -
+                        new Date(presence.lastActivityAt).getTime()
+                      : null;
+                    const isOnline =
+                      presence !== undefined &&
+                      elapsedMs !== null &&
+                      Number.isFinite(elapsedMs) &&
+                      elapsedMs <= PRESENCE_ACTIVE_MAX_MS;
+                    const pathLabel = presence
+                      ? getPathLabel(presence.lastPath)
+                      : "—";
                     return (
                       <tr
                         key={`${log.id}-${log.logged_at}`}
@@ -481,8 +554,24 @@ export default function AdminUsuariosAccesosPage() {
                         >
                           {formatRelativeTime(log.logged_at)}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                          {log.ip ?? "—"}
+                        <td className="whitespace-nowrap px-4 py-3 text-xs">
+                          {isOnline && presence ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 font-semibold text-emerald-700"
+                              title={presence.lastPath ?? undefined}
+                            >
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                              {pathLabel}
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 font-medium text-slate-400"
+                              title="Sin sesion activa"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                              Desconectado
+                            </span>
+                          )}
                         </td>
                         <td className="hidden max-w-md px-4 py-3 text-xs leading-snug text-slate-600 lg:table-cell">
                           <span

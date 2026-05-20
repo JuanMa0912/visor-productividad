@@ -234,6 +234,93 @@ const getCookieValue = (name: string) => {
   return decodeURIComponent(value.split("=").slice(1).join("="));
 };
 
+const PRESENCE_REFRESH_MS = 20_000;
+const PRESENCE_TICK_MS = 30_000;
+const PRESENCE_ACTIVE_MAX_MS = 10 * 60_000;
+const PRESENCE_AWAY_MAX_MS = 30 * 60_000;
+
+type PresenceState =
+  | "active"
+  | "away"
+  | "offline"
+  | "disabled";
+
+type PresenceBadge = {
+  state: PresenceState;
+  label: string;
+  dotClass: string;
+  textClass: string;
+  tooltip: string;
+};
+
+const buildPresenceTooltip = (lastActivityAt: string | null) => {
+  if (!lastActivityAt) return "Sin sesion activa";
+  const eventTime = new Date(lastActivityAt).getTime();
+  if (!Number.isFinite(eventTime)) return "Sin sesion activa";
+  return `Ultima actividad ${formatRelativeTime(lastActivityAt)}`;
+};
+
+const getPresenceBadge = (
+  user: { is_active: boolean },
+  lastActivityAt: string | null,
+  nowMs: number,
+): PresenceBadge => {
+  if (!user.is_active) {
+    return {
+      state: "disabled",
+      label: "Desactivado",
+      dotClass: "bg-rose-500",
+      textClass: "text-rose-600",
+      tooltip: "Cuenta desactivada por el administrador",
+    };
+  }
+  if (!lastActivityAt) {
+    return {
+      state: "offline",
+      label: "Desconectado",
+      dotClass: "bg-slate-400",
+      textClass: "text-slate-500",
+      tooltip: "Sin sesion activa",
+    };
+  }
+  const eventTime = new Date(lastActivityAt).getTime();
+  if (!Number.isFinite(eventTime)) {
+    return {
+      state: "offline",
+      label: "Desconectado",
+      dotClass: "bg-slate-400",
+      textClass: "text-slate-500",
+      tooltip: "Sin sesion activa",
+    };
+  }
+  const elapsed = Math.max(0, nowMs - eventTime);
+  if (elapsed <= PRESENCE_ACTIVE_MAX_MS) {
+    return {
+      state: "active",
+      label: "Activo",
+      dotClass: "bg-emerald-500",
+      textClass: "text-emerald-600",
+      tooltip: buildPresenceTooltip(lastActivityAt),
+    };
+  }
+  if (elapsed <= PRESENCE_AWAY_MAX_MS) {
+    return {
+      state: "away",
+      label: "Ausente",
+      dotClass: "bg-amber-400",
+      textClass: "text-amber-600",
+      tooltip: buildPresenceTooltip(lastActivityAt),
+    };
+  }
+  return {
+    state: "offline",
+    label: "Desconectado",
+    dotClass: "bg-slate-400",
+    textClass: "text-slate-500",
+    tooltip: buildPresenceTooltip(lastActivityAt),
+  };
+};
+
 export default function AdminUsuariosPage() {
   const router = useRouter();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -246,8 +333,15 @@ export default function AdminUsuariosPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "user">("all");
+  const [presenceFilter, setPresenceFilter] = useState<
+    "all" | PresenceState
+  >("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [usersPage, setUsersPage] = useState(1);
+  const [presenceByUserId, setPresenceByUserId] = useState<
+    Record<string, string> | null
+  >(null);
+  const [presenceNow, setPresenceNow] = useState<number>(() => Date.now());
 
   const getCsrfToken = () => getCookieValue("vp_csrf");
 
@@ -307,8 +401,25 @@ export default function AdminUsuariosPage() {
     if (roleFilter !== "all") {
       list = list.filter((u) => u.role === roleFilter);
     }
+    if (presenceFilter !== "all" && presenceByUserId !== null) {
+      list = list.filter(
+        (u) =>
+          getPresenceBadge(
+            u,
+            presenceByUserId[u.id] ?? null,
+            presenceNow,
+          ).state === presenceFilter,
+      );
+    }
     return list;
-  }, [sortedUsers, searchQuery, roleFilter]);
+  }, [
+    sortedUsers,
+    searchQuery,
+    roleFilter,
+    presenceFilter,
+    presenceByUserId,
+    presenceNow,
+  ]);
 
   const usersTotalPages = Math.max(
     1,
@@ -322,7 +433,7 @@ export default function AdminUsuariosPage() {
 
   useEffect(() => {
     setUsersPage(1);
-  }, [searchQuery, roleFilter]);
+  }, [searchQuery, roleFilter, presenceFilter]);
 
   useEffect(() => {
     if (usersPage > usersTotalPages) {
@@ -374,6 +485,50 @@ export default function AdminUsuariosPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+
+    const fetchPresence = async () => {
+      try {
+        const response = await fetch("/api/admin/user-presence", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          presence?: Array<{ userId: string; lastActivityAt: string }>;
+        };
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        for (const entry of payload.presence ?? []) {
+          if (entry?.userId && entry.lastActivityAt) {
+            next[entry.userId] = entry.lastActivityAt;
+          }
+        }
+        setPresenceByUserId(next);
+        setPresenceNow(Date.now());
+      } catch {
+        // ignore - retry next tick
+      }
+    };
+
+    void fetchPresence();
+    const intervalId = window.setInterval(fetchPresence, PRESENCE_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const tickId = window.setInterval(() => {
+      setPresenceNow(Date.now());
+    }, PRESENCE_TICK_MS);
+    return () => window.clearInterval(tickId);
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!formOpen) return;
@@ -717,41 +872,114 @@ export default function AdminUsuariosPage() {
                       type="button"
                       onClick={() => setFiltersOpen((o) => !o)}
                       className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
-                        filtersOpen || roleFilter !== "all"
+                        filtersOpen ||
+                        roleFilter !== "all" ||
+                        presenceFilter !== "all"
                           ? "border-indigo-200 bg-indigo-50 text-indigo-800"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                       }`}
                     >
                       <Filter className="h-4 w-4" />
                       Filtros
+                      {(roleFilter !== "all" || presenceFilter !== "all") && (
+                        <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
+                          {(roleFilter !== "all" ? 1 : 0) +
+                            (presenceFilter !== "all" ? 1 : 0)}
+                        </span>
+                      )}
                     </button>
                   </div>
                 </div>
                 {filtersOpen && (
-                  <div className="flex flex-wrap gap-2 border-b border-slate-100 bg-slate-50/50 px-4 py-3 sm:px-5">
-                    <span className="mr-1 text-xs font-medium text-slate-500">
-                      Rol:
-                    </span>
-                    {(
-                      [
-                        ["all", "Todos"],
-                        ["admin", "Admin"],
-                        ["user", "User"],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setRoleFilter(value)}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                          roleFilter === value
-                            ? "bg-indigo-600 text-white shadow-sm"
-                            : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                  <div className="space-y-2 border-b border-slate-100 bg-slate-50/50 px-4 py-3 sm:px-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="mr-1 text-xs font-medium text-slate-500">
+                        Rol:
+                      </span>
+                      {(
+                        [
+                          ["all", "Todos"],
+                          ["admin", "Admin"],
+                          ["user", "User"],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setRoleFilter(value)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                            roleFilter === value
+                              ? "bg-indigo-600 text-white shadow-sm"
+                              : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="mr-1 text-xs font-medium text-slate-500">
+                        Estado:
+                      </span>
+                      {(
+                        [
+                          ["all", "Todos", null, null],
+                          ["active", "Activos", "bg-emerald-500", "text-emerald-700"],
+                          ["away", "Ausentes", "bg-amber-400", "text-amber-700"],
+                          ["offline", "Desconectados", "bg-slate-400", "text-slate-600"],
+                          ["disabled", "Desactivados", "bg-rose-500", "text-rose-700"],
+                        ] as const
+                      ).map(([value, label, dotClass, textClass]) => {
+                        const isSelected = presenceFilter === value;
+                        const count =
+                          value === "all"
+                            ? null
+                            : presenceByUserId === null
+                              ? null
+                              : users.filter(
+                                  (u) =>
+                                    getPresenceBadge(
+                                      u,
+                                      presenceByUserId[u.id] ?? null,
+                                      presenceNow,
+                                    ).state === value,
+                                ).length;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setPresenceFilter(value)}
+                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                              isSelected
+                                ? "bg-indigo-600 text-white shadow-sm"
+                                : `bg-white ring-1 ring-slate-200 hover:bg-slate-50 ${
+                                    textClass ?? "text-slate-600"
+                                  }`
+                            }`}
+                          >
+                            {dotClass && (
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  isSelected ? "bg-white" : dotClass
+                                }`}
+                              />
+                            )}
+                            {label}
+                            {count !== null && (
+                              <span
+                                className={`ml-0.5 rounded-full px-1.5 text-[10px] font-bold ${
+                                  isSelected
+                                    ? "bg-white/25 text-white"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
                 <div className="overflow-x-auto">
@@ -845,22 +1073,38 @@ export default function AdminUsuariosPage() {
                                   : "—"}
                             </td>
                             <td className="px-3 py-3">
-                              <span
-                                className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                                  user.is_active
-                                    ? "text-emerald-600"
-                                    : "text-rose-600"
-                                }`}
-                              >
+                              {presenceByUserId === null ? (
                                 <span
-                                  className={`h-2 w-2 rounded-full ${
-                                    user.is_active
-                                      ? "bg-emerald-500"
-                                      : "bg-rose-500"
-                                  }`}
-                                />
-                                {user.is_active ? "Activo" : "Inactivo"}
-                              </span>
+                                  title="Cargando estado..."
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400"
+                                >
+                                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-300" />
+                                  Cargando
+                                </span>
+                              ) : (
+                                (() => {
+                                  const badge = getPresenceBadge(
+                                    user,
+                                    presenceByUserId[user.id] ?? null,
+                                    presenceNow,
+                                  );
+                                  return (
+                                    <span
+                                      title={badge.tooltip}
+                                      className={`inline-flex items-center gap-1.5 text-xs font-semibold ${badge.textClass}`}
+                                    >
+                                      <span
+                                        className={`h-2 w-2 rounded-full ${badge.dotClass} ${
+                                          badge.state === "active"
+                                            ? "animate-pulse"
+                                            : ""
+                                        }`}
+                                      />
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()
+                              )}
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="inline-flex gap-1">
@@ -908,7 +1152,9 @@ export default function AdminUsuariosPage() {
                           filteredTableUsers.length,
                         )}{" "}
                         de {filteredTableUsers.length} usuarios
-                        {searchQuery.trim() || roleFilter !== "all"
+                        {searchQuery.trim() ||
+                        roleFilter !== "all" ||
+                        presenceFilter !== "all"
                           ? ` (total ${sortedUsers.length})`
                           : ""}
                       </>

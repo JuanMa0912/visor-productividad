@@ -211,10 +211,39 @@ const refreshSession = async (tokenHash: string, expiresAt: Date) => {
     await client.query(
       `
       UPDATE app_user_sessions
-      SET expires_at = $2
+      SET expires_at = $2,
+          last_activity_at = now()
       WHERE token_hash = $1 AND revoked_at IS NULL
       `,
       [tokenHash, expiresAt.toISOString()],
+    );
+  } finally {
+    client.release();
+  }
+};
+
+const MAX_LAST_PATH_LENGTH = 256;
+
+/**
+ * Marca el `last_path` (tablero actual) de la sesion vigente. Se invoca desde
+ * el endpoint /api/auth/heartbeat cuando el cliente reporta su pathname.
+ */
+export const updateSessionLastPath = async (pathValue: string) => {
+  const token = await getSessionToken();
+  if (!token) return;
+  const trimmed = String(pathValue ?? "").trim();
+  if (!trimmed || !trimmed.startsWith("/")) return;
+  const safePath = trimmed.slice(0, MAX_LAST_PATH_LENGTH);
+  const tokenHash = hashToken(token);
+  const client = await (await getDbPool()).connect();
+  try {
+    await client.query(
+      `
+      UPDATE app_user_sessions
+      SET last_path = $2
+      WHERE token_hash = $1 AND revoked_at IS NULL
+      `,
+      [tokenHash, safePath],
     );
   } finally {
     client.release();

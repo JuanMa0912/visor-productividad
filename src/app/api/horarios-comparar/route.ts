@@ -14,6 +14,11 @@ import {
   type AttendanceCompareInput,
   type PlanillaCompareInput,
 } from "@/lib/horarios/comparar-utils";
+import {
+  HORARIOS_OCULTAR_CEDULA_DIGITS,
+  isHorariosOcultarCedula,
+} from "@/lib/horarios/ocultar-cedulas";
+import { normalizePersonNameKey } from "@/lib/shared/normalize";
 
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const MAX_RANGE_DAYS = 45;
@@ -390,6 +395,64 @@ export async function GET(request: Request) {
           )), '')`
         : "NULL::text";
 
+    const documentoCandidates = [
+      "numero",
+      "identificacion",
+      "cedula",
+      "cedula_empleado",
+      "cedula_colaborador",
+      "documento",
+      "documento_empleado",
+      "documento_colaborador",
+      "id_empleado",
+      "codigo_empleado",
+      "codigo",
+      "nit",
+      "dni",
+      "num_documento",
+      "numero_documento",
+      "nro_documento",
+      "documento_numero",
+    ];
+    const documentoColumn = documentoCandidates
+      .map((candidate) => normalizedToOriginal.get(candidate))
+      .find(Boolean);
+    const documentoExpr = documentoColumn
+      ? `NULLIF(TRIM(CAST(${quoteIdentifier(documentoColumn)} AS text)), '')`
+      : "NULL::text";
+
+    const hiddenCedulasActive = !isAdmin && documentoColumn !== undefined;
+    const hiddenNamesNormalized = new Set<string>();
+    if (hiddenCedulasActive) {
+      try {
+        const hiddenResult = await client.query(
+          `
+          SELECT DISTINCT ${nameExpr} AS emp_name
+          FROM asistencia_horas
+          WHERE fecha::date >= $1::date
+            AND fecha::date <= $2::date
+            AND ${nameExpr} IS NOT NULL
+            AND REGEXP_REPLACE(COALESCE(CAST(${quoteIdentifier(documentoColumn!)} AS text), ''), '\\D', '', 'g') = ANY($3::text[])
+          `,
+          [
+            startParam,
+            endParam,
+            Array.from(HORARIOS_OCULTAR_CEDULA_DIGITS) as string[],
+          ],
+        );
+        for (const raw of hiddenResult.rows ?? []) {
+          const typed = raw as { emp_name: string | null };
+          const key = normalizePersonNameKey(typed.emp_name ?? "");
+          if (key) hiddenNamesNormalized.add(key);
+        }
+      } catch (error) {
+        console.warn(
+          "[horarios-comparar] no se pudieron obtener nombres ocultos:",
+          error,
+        );
+      }
+    }
+
     const planillaResult = await client.query(
       `
       SELECT
@@ -458,6 +521,7 @@ export async function GET(request: Request) {
         fecha::date::text AS worked_date,
         NULLIF(TRIM(CAST(sede AS text)), '') AS raw_sede,
         ${nameExpr} AS emp_name,
+        ${documentoExpr} AS documento,
         COALESCE(TO_CHAR(hora_entrada, 'HH24:MI'), '') AS hora_entrada,
         COALESCE(TO_CHAR(hora_intermedia1, 'HH24:MI'), '') AS hora_intermedia1,
         COALESCE(TO_CHAR(hora_intermedia2, 'HH24:MI'), '') AS hora_intermedia2,
@@ -483,6 +547,7 @@ export async function GET(request: Request) {
         worked_date: string;
         raw_sede: string;
         emp_name: string;
+        documento: string | null;
         hora_entrada: string;
         hora_intermedia1: string;
         hora_intermedia2: string;
@@ -494,6 +559,17 @@ export async function GET(request: Request) {
         !sedesForQuery.some(
           (s) => canonicalizeSedeKey(s.name) === canonicalizeSedeKey(canon),
         )
+      ) {
+        continue;
+      }
+      if (!isAdmin && isHorariosOcultarCedula(typed.documento)) {
+        const key = normalizePersonNameKey(typed.emp_name ?? "");
+        if (key) hiddenNamesNormalized.add(key);
+        continue;
+      }
+      if (
+        hiddenCedulasActive &&
+        hiddenNamesNormalized.has(normalizePersonNameKey(typed.emp_name ?? ""))
       ) {
         continue;
       }
@@ -515,8 +591,17 @@ export async function GET(request: Request) {
       }
     }
 
+    const filteredPlanillaRows = hiddenCedulasActive
+      ? planillaRows.filter(
+          (r) =>
+            !hiddenNamesNormalized.has(
+              normalizePersonNameKey(r.employeeName ?? ""),
+            ),
+        )
+      : planillaRows;
+
     const rows = mergePlanillaWithAttendance(
-      planillaRows,
+      filteredPlanillaRows,
       attendanceByKey,
       (raw) => mapToCanonicalSede(raw),
     );

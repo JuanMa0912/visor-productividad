@@ -338,6 +338,9 @@ Orden recomendado para reflejar el estado actual del codigo:
 7. `db/migrations/20260303_ventas_x_item.sql`
 8. `db/migrations/20260305_user_special_roles.sql`
 9. `db/migrations/20260424_user_allowed_subdashboards.sql`
+10. `db/migrations/20260520_rotacion_v4_perf_indexes.sql` (indices funcionales para `rotacion_v4`; requeridos por `/rotacion-dos` para que las consultas no caigan en seq scan).
+11. `db/migrations/20260520_session_last_activity.sql` (columna `last_activity_at` en `app_user_sessions` para el panel de presencia en `/admin/usuarios`).
+12. `db/migrations/20260520_session_last_path.sql` (columna `last_path` en `app_user_sessions` para mostrar el tablero actual del usuario en `/admin/usuarios/accesos`).
 
 Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy por la aplicacion.
 
