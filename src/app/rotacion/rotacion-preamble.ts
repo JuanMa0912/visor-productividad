@@ -872,24 +872,38 @@ const normalizeAbcdConfig = (raw: AbcdConfig): AbcdConfig => {
   return { aUntilPercent: a, bUntilPercent: b, cUntilPercent: c };
 };
 
+/**
+ * Pareto ABCD por item: agrega `totalSales` por item antes de ordenar y acumular,
+ * para que filas duplicadas (mismo item en distintas presentaciones / fechas) no
+ * generen categorias incoherentes (p.ej. un item con $304k en D y otro con $302k en C
+ * dentro de la misma sede).
+ */
 const buildAbcdCategoryByItem = (
   rows: RotationRow[],
   config: AbcdConfig,
 ): Map<string, AbcdCategory> => {
-  const sortedRows = [...rows].sort((a, b) => b.totalSales - a.totalSales);
-  const totalSales = sortedRows.reduce(
-    (sum, row) => sum + Math.max(0, row.totalSales),
-    0,
-  );
-  let cumulativeSales = 0;
-  const categories = new Map<string, AbcdCategory>();
+  const aggregatedByItem = new Map<string, number>();
+  for (const row of rows) {
+    const safeSales = Math.max(0, row.totalSales);
+    aggregatedByItem.set(
+      row.item,
+      (aggregatedByItem.get(row.item) ?? 0) + safeSales,
+    );
+  }
 
-  for (const row of sortedRows) {
+  const aggregatedItems = Array.from(aggregatedByItem.entries()).sort(
+    (a, b) => b[1] - a[1],
+  );
+  const totalSales = aggregatedItems.reduce((sum, [, sales]) => sum + sales, 0);
+
+  const categories = new Map<string, AbcdCategory>();
+  let cumulativeSales = 0;
+  for (const [itemId, sales] of aggregatedItems) {
     if (totalSales <= 0) {
-      categories.set(row.item, "D");
+      categories.set(itemId, "D");
       continue;
     }
-    cumulativeSales += Math.max(0, row.totalSales);
+    cumulativeSales += sales;
     const cumulativePercent = (cumulativeSales / totalSales) * 100;
     const category: AbcdCategory =
       cumulativePercent <= config.aUntilPercent
@@ -899,18 +913,22 @@ const buildAbcdCategoryByItem = (
           : cumulativePercent <= config.cUntilPercent
             ? "C"
             : "D";
-    categories.set(row.item, category);
+    categories.set(itemId, category);
   }
 
   return categories;
 };
 
+/** Cuenta items unicos por categoria (sin contar duplicados de fila del mismo item). */
 const countAbcdItemsByCategory = (
   rows: RotationRow[],
   categoryByItem: Map<string, AbcdCategory>,
 ): Record<AbcdCategory, number> => {
   const counts: Record<AbcdCategory, number> = { A: 0, B: 0, C: 0, D: 0 };
+  const seen = new Set<string>();
   for (const row of rows) {
+    if (seen.has(row.item)) continue;
+    seen.add(row.item);
     const cat = categoryByItem.get(row.item) ?? "D";
     counts[cat]++;
   }

@@ -83,6 +83,13 @@ export interface HourlyPersonContribution {
     activeSlotsCount?: number;
     /** Horas del dia desde asistencia_horas cuando hubo cruce con el cajero. */
     attendanceWorkedHours?: number | null;
+    /** Marcas del dia (entrada/salida/descansos) cuando hubo cruce con asistencia. */
+    attendanceShift?: {
+      markInMinute: number | null;
+      markOutMinute: number | null;
+      break1Minute: number | null;
+      break2Minute: number | null;
+    } | null;
   }>;
 }
 

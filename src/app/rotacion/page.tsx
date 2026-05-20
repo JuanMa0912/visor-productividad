@@ -4364,7 +4364,7 @@ export function RotacionPageInner() {
                                               : "border-rose-300 bg-rose-200 text-rose-900";
                                   return (
                                     <TableRow
-                                      key={`${group.sedeId}-${row.item}`}
+                                      key={`${group.sedeId}-${row.item}-${rowIndex}`}
                                     >
                                       {isSurtidoTrackingTableView ? (
                                         <>

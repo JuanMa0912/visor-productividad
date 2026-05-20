@@ -3195,6 +3195,42 @@ export default function Home() {
     }
   }, [availableSedesKey, selectedSede, selectedCompanies, orderedSedes]);
 
+  /**
+   * Al abrir la pagina (una sola vez por sesion), forzar el rango por defecto a
+   * "mes corrido del ultimo dia con datos":
+   *   - end = ultima fecha con informacion (tipicamente ayer)
+   *   - start = primer dia del mes de `end`; si `end` es dia 1, se incluye tambien
+   *     el ultimo dia del mes anterior para no mostrar un solo dia.
+   * Cualquier ajuste manual posterior del usuario se respeta hasta el proximo F5.
+   */
+  const monthCorridoDefaultAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!prefsReady) return;
+    if (availableDates.length === 0) return;
+    if (monthCorridoDefaultAppliedRef.current) return;
+    monthCorridoDefaultAppliedRef.current = true;
+
+    const min = availableDates[0];
+    const max = availableDates[availableDates.length - 1];
+    const maxDateObj = new Date(`${max}T12:00:00`);
+    if (Number.isNaN(maxDateObj.getTime())) return;
+
+    const monthStartObj = new Date(
+      maxDateObj.getFullYear(),
+      maxDateObj.getMonth(),
+      1,
+    );
+    let defaultStart = toDateKey(monthStartObj);
+    if (defaultStart === max) {
+      const prevDayObj = new Date(maxDateObj);
+      prevDayObj.setDate(prevDayObj.getDate() - 1);
+      defaultStart = toDateKey(prevDayObj);
+    }
+    if (defaultStart < min) defaultStart = min;
+
+    setDateRange({ start: defaultStart, end: max });
+  }, [availableDates, prefsReady]);
+
   // Si el usuario es sede_*, seleccionar su sede por defecto
   useEffect(() => {
     if (!prefsReady || appliedUserDefault) return;

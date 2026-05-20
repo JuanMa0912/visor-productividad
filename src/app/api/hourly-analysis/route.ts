@@ -1894,6 +1894,16 @@ const fetchHourlyData = async (
                   if (dayMatch) {
                     day.attendanceWorkedHours = dayMatch.hours;
                   }
+                  const dayShift = matchCashierAttendanceShift(
+                    person.personId,
+                    person.personName,
+                    salesNameKeyCounts,
+                    attendanceMarksLookup,
+                    dateIso,
+                  );
+                  if (dayShift) {
+                    day.attendanceShift = dayShift;
+                  }
                 }
               }
             } catch (mergeErr) {

@@ -46,9 +46,16 @@ const LOAD_EMPRESA_OPTIONS = Object.keys(EMPRESA_LABELS).sort();
 
 const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
 
-const DEFAULT_LOAD_DAYS = 30;
-
-/** Últimos `DEFAULT_LOAD_DAYS` días (inclusivo) hasta la última fecha con datos (`max`), sin bajar de `min`. */
+/**
+ * Rango por defecto = mes corrido del ultimo dia con datos (`max`):
+ * - end = `max`
+ * - start = primer dia del mes de `max`
+ *
+ * Cuando `max` es el dia 1 de un mes, retrocedemos al ultimo dia del mes anterior
+ * para no mostrar un rango de un solo dia (ej: `max = 2026-06-01` -> `2026-05-31` a `2026-06-01`).
+ *
+ * `start` nunca baja de `min` (la primera fecha con datos en la BD).
+ */
 const defaultRollingDaysRange = (
   min: string,
   max: string,
@@ -56,12 +63,20 @@ const defaultRollingDaysRange = (
   if (!max || !/^\d{4}-\d{2}-\d{2}$/.test(max)) return null;
   const endAtNoon = new Date(`${max}T12:00:00`);
   if (Number.isNaN(endAtNoon.getTime())) return null;
-  const startDate = new Date(endAtNoon);
-  startDate.setDate(startDate.getDate() - (DEFAULT_LOAD_DAYS - 1));
-  const y = startDate.getFullYear();
-  const m = String(startDate.getMonth() + 1).padStart(2, "0");
-  const d = String(startDate.getDate()).padStart(2, "0");
-  let start = `${y}-${m}-${d}`;
+
+  const formatYMD = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const monthStart = new Date(endAtNoon);
+  monthStart.setDate(1);
+  let start = formatYMD(monthStart);
+
+  if (start === max) {
+    const prev = new Date(endAtNoon);
+    prev.setDate(prev.getDate() - 1);
+    start = formatYMD(prev);
+  }
+
   if (min && /^\d{4}-\d{2}-\d{2}$/.test(min) && start < min) start = min;
   return { start, end: max };
 };
@@ -946,7 +961,7 @@ export default function VentasXItemPage() {
             Carga desde base de datos
           </p>
           <p className="mt-1 text-xs text-slate-600">
-            Al entrar se eligen todas las empresas y los últimos {DEFAULT_LOAD_DAYS} días hasta el último día con datos; la carga arranca sola. Puedes ajustar y repetir con el botón si lo necesitas.
+            Al entrar se eligen todas las empresas y el rango por defecto es el mes corrido (del 1.º hasta el último día con datos; si la última fecha es el día 1, se incluye también el último día del mes anterior). La carga arranca sola. Puedes ajustar y repetir con el botón si lo necesitas.
           </p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">

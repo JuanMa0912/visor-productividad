@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn, formatDateLabel } from "@/lib/shared/utils";
 import {
+  computeSlotWorkedMinutes,
   getCashierSlotLaborHours,
   type CashierAttendanceShiftMarks,
 } from "@/lib/hourly/cashier-slot-labor";
@@ -393,11 +394,36 @@ const getCashierLaborMinutes = (
   return activeSlotsCount * bucketMinutes;
 };
 
-/** Minutos de un dia en desglose: prioriza asistencia diaria; si no, franjas con venta del dia. */
+/** Minutos efectivos del turno a partir de marcas (entrada/salida menos descansos). */
+const computeShiftLaborMinutes = (
+  shift: CashierAttendanceShiftMarks | null | undefined,
+): number | null => {
+  if (!shift) return null;
+  const entry = shift.markInMinute;
+  const exit = shift.markOutMinute;
+  if (entry === null || exit === null) return null;
+  if (entry > exit) return null;
+  let total = exit - entry;
+  const { break1Minute: b1, break2Minute: b2 } = shift;
+  if (b1 !== null && b2 !== null && b1 < b2) {
+    const start = Math.max(entry, b1);
+    const end = Math.min(exit, b2);
+    if (end > start) total -= end - start;
+  }
+  return total > 0 ? total : 0;
+};
+
+/**
+ * Minutos de un dia en desglose: si hay marcas usamos entrada-salida-descansos
+ * (consistente con el calculo por franja). En su defecto, `total_horas_calculadas`
+ * de asistencia o, como ultimo recurso, las franjas con venta.
+ */
 const getCashierDayLaborMinutes = (
   day: NonNullable<HourlyPersonContribution["dailySales"]>[number],
   bucketMinutes: number,
 ) => {
+  const fromMarks = computeShiftLaborMinutes(day.attendanceShift);
+  if (fromMarks !== null && fromMarks > 0) return fromMarks;
   const att = day.attendanceWorkedHours;
   if (typeof att === "number" && Number.isFinite(att) && att > 0) {
     return decimalHoursToMinutes(att);
@@ -417,6 +443,84 @@ const slotVtaHrFromAttendance = (
     shift,
   );
   return calcVtaHr(sales, laborHours);
+};
+
+const minuteOfDayToHHMM = (minute: number | null | undefined): string | null => {
+  if (typeof minute !== "number" || !Number.isFinite(minute) || minute < 0) {
+    return null;
+  }
+  const h = Math.floor(minute / 60) % 24;
+  const m = minute % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+};
+
+const formatSlotWorkedMinutesLabel = (
+  slotStartMinute: number,
+  bucketMinutes: number,
+  shift: CashierAttendanceShiftMarks | null | undefined,
+): string => {
+  if (!shift || shift.markInMinute === null || shift.markOutMinute === null) {
+    return "--";
+  }
+  const minutes = computeSlotWorkedMinutes(slotStartMinute, bucketMinutes, shift);
+  return `${minutes} min`;
+};
+
+const sumWorkedMinutesAcrossSlots = (
+  slots: ReadonlyArray<{ slotStartMinute: number }>,
+  bucketMinutes: number,
+  shift: CashierAttendanceShiftMarks | null | undefined,
+): number => {
+  if (!shift || shift.markInMinute === null || shift.markOutMinute === null) {
+    return 0;
+  }
+  return slots.reduce(
+    (total, slot) =>
+      total +
+      computeSlotWorkedMinutes(slot.slotStartMinute, bucketMinutes, shift),
+    0,
+  );
+};
+
+const buildSlotLaborTooltip = (
+  slotStartMinute: number,
+  bucketMinutes: number,
+  shift: CashierAttendanceShiftMarks | null | undefined,
+): string => {
+  if (!shift) {
+    return "Sin marcas de asistencia: se asume franja completa.";
+  }
+  const minutes = computeSlotWorkedMinutes(slotStartMinute, bucketMinutes, shift);
+  const entry = minuteOfDayToHHMM(shift.markInMinute);
+  const exit = minuteOfDayToHHMM(shift.markOutMinute);
+  const break1 = minuteOfDayToHHMM(shift.break1Minute);
+  const break2 = minuteOfDayToHHMM(shift.break2Minute);
+  const partes: string[] = [];
+  if (entry && exit) partes.push(`Turno ${entry}-${exit}`);
+  if (break1 && break2) partes.push(`descanso ${break1}-${break2}`);
+  if (minutes <= 0) {
+    partes.push(
+      `Franja fuera del turno: se asume ${bucketMinutes} min como respaldo`,
+    );
+  } else {
+    partes.push(`${minutes} min trabajados en la franja`);
+  }
+  return partes.join(" | ");
+};
+
+const formatShiftMarksLabel = (
+  shift: CashierAttendanceShiftMarks | null | undefined,
+): string | null => {
+  if (!shift) return null;
+  const entry = minuteOfDayToHHMM(shift.markInMinute);
+  const exit = minuteOfDayToHHMM(shift.markOutMinute);
+  if (!entry || !exit) return null;
+  const break1 = minuteOfDayToHHMM(shift.break1Minute);
+  const break2 = minuteOfDayToHHMM(shift.break2Minute);
+  if (break1 && break2) {
+    return `Marcas ${entry}-${break1} / ${break2}-${exit}`;
+  }
+  return `Marcas ${entry}-${exit}`;
 };
 
 const cashierLaborHoursSourceTitle = (person: HourlyPersonContribution) => {
@@ -450,7 +554,8 @@ const parseTimeToMinute = (value: string) => {
 
 const OVERTIME_PAGE_SIZE = 150;
 const OVERTIME_PAGE_TAB_WINDOW = 8;
-const CASHIER_PAGE_SIZE = 30;
+const CASHIER_PAGE_SIZE_OPTIONS = [10, 30, 50, 100, 200] as const;
+const CASHIER_PAGE_SIZE_DEFAULT = 30;
 const CASHIER_PAGE_TAB_WINDOW = 8;
 const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
 const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 29;
@@ -775,6 +880,9 @@ export const HourlyAnalysis = ({
     scopeKey: string;
     page: number;
   }>({ scopeKey: "", page: 1 });
+  const [cashierPageSize, setCashierPageSize] = useState<number>(
+    CASHIER_PAGE_SIZE_DEFAULT,
+  );
   const [overtimeSedeOpen, setOvertimeSedeOpen] = useState(false);
   const [overtimeDepartmentOpen, setOvertimeDepartmentOpen] = useState(false);
   const [overtimeSedePopoverPos, setOvertimeSedePopoverPos] = useState<{
@@ -2137,6 +2245,19 @@ export const HourlyAnalysis = ({
       ),
     [filteredPeopleBreakdown],
   );
+  const cashierListTotalLaborMinutes = useMemo(
+    () =>
+      filteredPeopleBreakdown.reduce((sum, person) => {
+        const activeSlots = person.activeSlotsCount ?? 0;
+        return sum + getCashierLaborMinutes(person, activeSlots, bucketMinutes);
+      }, 0),
+    [filteredPeopleBreakdown, bucketMinutes],
+  );
+  const cashierListTotalVtaHr = useMemo(
+    () =>
+      calcVtaHr(cashierListTotalSales, cashierListTotalLaborMinutes / 60),
+    [cashierListTotalSales, cashierListTotalLaborMinutes],
+  );
   const sortedPeopleBreakdown = useMemo(() => {
     const rows = [...filteredPeopleBreakdown];
     rows.sort((a, b) => {
@@ -2194,8 +2315,8 @@ export const HourlyAnalysis = ({
   );
   const cashierTotalPages = useMemo(
     () =>
-      Math.max(1, Math.ceil(sortedPeopleBreakdown.length / CASHIER_PAGE_SIZE)),
-    [sortedPeopleBreakdown.length],
+      Math.max(1, Math.ceil(sortedPeopleBreakdown.length / cashierPageSize)),
+    [sortedPeopleBreakdown.length, cashierPageSize],
   );
   const cashierPage =
     cashierPageState.scopeKey === cashierPaginationScopeKey
@@ -2221,9 +2342,9 @@ export const HourlyAnalysis = ({
     [cashierPaginationScopeKey, cashierTotalPages],
   );
   const pagedCashiers = useMemo(() => {
-    const start = (cashierPage - 1) * CASHIER_PAGE_SIZE;
-    return sortedPeopleBreakdown.slice(start, start + CASHIER_PAGE_SIZE);
-  }, [cashierPage, sortedPeopleBreakdown]);
+    const start = (cashierPage - 1) * cashierPageSize;
+    return sortedPeopleBreakdown.slice(start, start + cashierPageSize);
+  }, [cashierPage, sortedPeopleBreakdown, cashierPageSize]);
   const cashierPageTabs = useMemo(() => {
     const half = Math.floor(CASHIER_PAGE_TAB_WINDOW / 2);
     let start = Math.max(1, cashierPage - half);
@@ -4617,11 +4738,11 @@ export const HourlyAnalysis = ({
                     ) : (
                       <div className="mt-4 space-y-3">
                         <div className="rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-4 py-3 shadow-sm">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
-                            Total listado
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
-                            <p className="text-sm text-(--cashier-muted)">
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                              Total listado
+                            </p>
+                            <p className="text-[11px] text-(--cashier-muted)">
                               Suma de ventas totales de{" "}
                               <span className="font-semibold text-(--cashier-text)">
                                 {filteredPeopleBreakdown.length.toLocaleString(
@@ -4631,62 +4752,124 @@ export const HourlyAnalysis = ({
                               cajero
                               {filteredPeopleBreakdown.length === 1 ? "" : "s"}
                             </p>
-                            <p className="text-lg font-bold tabular-nums text-(--cashier-text)">
-                              {formatCurrencyMillionsOneDecimal(
-                                cashierListTotalSales,
-                              )}
-                            </p>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-stretch divide-x divide-slate-200/80">
+                            <div
+                              className="flex flex-col justify-center pr-4"
+                              title="Suma de ventas totales de los cajeros listados."
+                            >
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                Ventas totales
+                              </span>
+                              <span className="text-lg font-bold tabular-nums text-(--cashier-text)">
+                                {formatCurrencyMillionsOneDecimal(
+                                  cashierListTotalSales,
+                                )}
+                              </span>
+                            </div>
+                            <div
+                              className="flex flex-col justify-center px-4"
+                              title="Suma de horas laboradas de los cajeros listados (asistencia cuando hubo cruce; franjas con venta como respaldo)."
+                            >
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                Horas totales
+                              </span>
+                              <span className="text-sm font-semibold tabular-nums text-(--cashier-text)">
+                                {formatTotalLaborMinutesLabel(
+                                  cashierListTotalLaborMinutes,
+                                )}
+                              </span>
+                            </div>
+                            <div
+                              className="flex flex-col justify-center pl-4"
+                              title="Productividad agregada: ventas totales (millones) / horas totales."
+                            >
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--cashier-muted)">
+                                Vta/Hr total
+                              </span>
+                              <span className="text-sm font-semibold tabular-nums text-(--cashier-text)">
+                                {formatProductivity(cashierListTotalVtaHr)}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        {cashierTotalPages > 1 && (
+                        {sortedPeopleBreakdown.length > 0 && (
                           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-(--cashier-border) bg-(--cashier-surface-soft) px-3 py-2">
                             <div className="flex flex-wrap items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setCashierPage((prev) => Math.max(1, prev - 1))
-                                }
-                                disabled={cashierPage === 1}
-                                className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-text) disabled:opacity-50"
-                              >
-                                Anterior
-                              </button>
-                              {cashierPageTabs.map((tabPage) => (
-                                <button
-                                  key={tabPage}
-                                  type="button"
-                                  onClick={() => setCashierPage(tabPage)}
-                                  className={cn(
-                                    "rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors",
-                                    tabPage === cashierPage
-                                      ? "bg-(--cashier-brand) text-white"
-                                      : "border border-(--cashier-border) bg-(--cashier-surface) text-(--cashier-text) hover:bg-(--cashier-surface-soft)",
-                                  )}
-                                >
-                                  {tabPage}
-                                </button>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setCashierPage((prev) =>
-                                    Math.min(cashierTotalPages, prev + 1),
-                                  )
-                                }
-                                disabled={cashierPage === cashierTotalPages}
-                                className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-text) disabled:opacity-50"
-                              >
-                                Siguiente
-                              </button>
+                              {cashierTotalPages > 1 && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCashierPage((prev) =>
+                                        Math.max(1, prev - 1),
+                                      )
+                                    }
+                                    disabled={cashierPage === 1}
+                                    className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-text) disabled:opacity-50"
+                                  >
+                                    Anterior
+                                  </button>
+                                  {cashierPageTabs.map((tabPage) => (
+                                    <button
+                                      key={tabPage}
+                                      type="button"
+                                      onClick={() => setCashierPage(tabPage)}
+                                      className={cn(
+                                        "rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors",
+                                        tabPage === cashierPage
+                                          ? "bg-(--cashier-brand) text-white"
+                                          : "border border-(--cashier-border) bg-(--cashier-surface) text-(--cashier-text) hover:bg-(--cashier-surface-soft)",
+                                      )}
+                                    >
+                                      {tabPage}
+                                    </button>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCashierPage((prev) =>
+                                        Math.min(cashierTotalPages, prev + 1),
+                                      )
+                                    }
+                                    disabled={cashierPage === cashierTotalPages}
+                                    className="rounded-full border border-(--cashier-border) bg-(--cashier-surface) px-2.5 py-1 text-[11px] font-semibold text-(--cashier-text) disabled:opacity-50"
+                                  >
+                                    Siguiente
+                                  </button>
+                                </>
+                              )}
                             </div>
-                            <span className="text-[11px] font-semibold text-(--cashier-muted)">
-                              Mostrando {(cashierPage - 1) * CASHIER_PAGE_SIZE + 1}–
-                              {Math.min(
-                                cashierPage * CASHIER_PAGE_SIZE,
-                                sortedPeopleBreakdown.length,
-                              )}{" "}
-                              de {sortedPeopleBreakdown.length}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-(--cashier-muted)">
+                                <span>Cajeros por pagina</span>
+                                <select
+                                  value={cashierPageSize}
+                                  onChange={(e) => {
+                                    const next = Number(e.target.value);
+                                    if (!Number.isFinite(next) || next <= 0) return;
+                                    setCashierPageSize(next);
+                                    setCashierPage(1);
+                                  }}
+                                  className="rounded-md border border-(--cashier-border) bg-(--cashier-surface) px-2 py-1 text-[11px] font-semibold text-(--cashier-text) focus:outline-none focus:ring-2 focus:ring-(--cashier-brand)/40"
+                                >
+                                  {CASHIER_PAGE_SIZE_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <span className="text-[11px] font-semibold text-(--cashier-muted)">
+                                Mostrando{" "}
+                                {(cashierPage - 1) * cashierPageSize + 1}–
+                                {Math.min(
+                                  cashierPage * cashierPageSize,
+                                  sortedPeopleBreakdown.length,
+                                )}{" "}
+                                de {sortedPeopleBreakdown.length}
+                              </span>
+                            </div>
                           </div>
                         )}
                         <div className="overflow-x-auto">
@@ -4765,7 +4948,7 @@ export const HourlyAnalysis = ({
                             <tbody>
                               {pagedCashiers.map((person, index) => {
                                 const rank =
-                                  (cashierPage - 1) * CASHIER_PAGE_SIZE + index + 1;
+                                  (cashierPage - 1) * cashierPageSize + index + 1;
                                 const activeSlotsCount =
                                   (typeof person.activeSlotsCount === "number"
                                     ? person.activeSlotsCount
@@ -4838,17 +5021,10 @@ export const HourlyAnalysis = ({
                                           className="bg-(--cashier-surface) px-4 py-3"
                                         >
                                           {!isCashierMultiDayRange ? (
-                                            <div className="space-y-1">
-                                              <div className="grid grid-cols-[minmax(0,1fr)_120px_100px] items-center px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
-                                                <span>Franja</span>
-                                                <span className="text-center">
-                                                  Venta
-                                                </span>
-                                                <span className="text-right">
-                                                  Vta/Hr
-                                                </span>
-                                              </div>
-                                              {[...person.hourlySales]
+                                            (() => {
+                                              const singleDaySlots = [
+                                                ...person.hourlySales,
+                                              ]
                                                 .filter(
                                                   (slot) =>
                                                     slot.sales > 0 &&
@@ -4861,33 +5037,92 @@ export const HourlyAnalysis = ({
                                                   (a, b) =>
                                                     a.slotStartMinute -
                                                     b.slotStartMinute,
-                                                )
-                                                .map((slot) => (
-                                                  <div
-                                                    key={`${person.personKey}-single-${slot.slotStartMinute}`}
-                                                    className="grid grid-cols-[minmax(0,1fr)_120px_100px] items-center gap-2 rounded border border-(--cashier-border)/60 bg-white/80 px-2 py-1.5 text-[11px]"
-                                                  >
-                                                    <span className="font-medium text-(--cashier-muted)">
-                                                      {slot.label}
+                                                );
+                                              const singleDayTotalMinutes =
+                                                sumWorkedMinutesAcrossSlots(
+                                                  singleDaySlots,
+                                                  bucketMinutes,
+                                                  person.attendanceShift,
+                                                );
+                                              return (
+                                                <div className="space-y-1">
+                                                  <div className="grid grid-cols-[minmax(0,1fr)_120px_80px_100px] items-center px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                                                    <span>Franja</span>
+                                                    <span className="text-center">
+                                                      Venta
                                                     </span>
-                                                    <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
-                                                      {formatCurrencyWithoutSixZeros(
-                                                        slot.sales,
-                                                      )}
+                                                    <span className="text-right">
+                                                      Trab.
                                                     </span>
-                                                    <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
-                                                      {formatProductivity(
-                                                        slotVtaHrFromAttendance(
-                                                          slot.sales,
-                                                          slot.slotStartMinute,
-                                                          bucketMinutes,
-                                                          person.attendanceShift,
-                                                        ),
-                                                      )}
+                                                    <span className="text-right">
+                                                      Vta/Hr
                                                     </span>
                                                   </div>
-                                                ))}
-                                            </div>
+                                                  {singleDaySlots.map((slot) => {
+                                                    const slotTooltip =
+                                                      buildSlotLaborTooltip(
+                                                        slot.slotStartMinute,
+                                                        bucketMinutes,
+                                                        person.attendanceShift,
+                                                      );
+                                                    return (
+                                                      <div
+                                                        key={`${person.personKey}-single-${slot.slotStartMinute}`}
+                                                        className="grid grid-cols-[minmax(0,1fr)_120px_80px_100px] items-center gap-2 rounded border border-(--cashier-border)/60 bg-white/80 px-2 py-1.5 text-[11px]"
+                                                        title={slotTooltip}
+                                                      >
+                                                        <span className="font-medium text-(--cashier-muted)">
+                                                          {slot.label}
+                                                        </span>
+                                                        <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
+                                                          {formatCurrencyWithoutSixZeros(
+                                                            slot.sales,
+                                                          )}
+                                                        </span>
+                                                        <span
+                                                          className="text-right font-semibold tabular-nums text-(--cashier-muted)"
+                                                          title={slotTooltip}
+                                                        >
+                                                          {formatSlotWorkedMinutesLabel(
+                                                            slot.slotStartMinute,
+                                                            bucketMinutes,
+                                                            person.attendanceShift,
+                                                          )}
+                                                        </span>
+                                                        <span
+                                                          className="text-right font-semibold tabular-nums text-(--cashier-text)"
+                                                          title={slotTooltip}
+                                                        >
+                                                          {formatProductivity(
+                                                            slotVtaHrFromAttendance(
+                                                              slot.sales,
+                                                              slot.slotStartMinute,
+                                                              bucketMinutes,
+                                                              person.attendanceShift,
+                                                            ),
+                                                          )}
+                                                        </span>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                  {person.attendanceShift &&
+                                                    person.attendanceShift
+                                                      .markInMinute !== null && (
+                                                      <div className="px-2 pt-1 text-[10px] font-medium text-(--cashier-muted)">
+                                                        Total franjas con venta:{" "}
+                                                        {singleDayTotalMinutes} min
+                                                        {(person.attendanceWorkedHours ??
+                                                          0) > 0
+                                                          ? ` | Turno completo: ${Math.round(
+                                                              (person.attendanceWorkedHours ??
+                                                                0) * 60,
+                                                            )} min`
+                                                          : ""}
+                                                      </div>
+                                                    )}
+                                                </div>
+                                              );
+                                            })()
                                           ) : dailyRows.length === 0 ? (
                                             <p className="text-xs text-(--cashier-muted)">
                                               Sin detalle diario para este
@@ -4932,7 +5167,9 @@ export const HourlyAnalysis = ({
                                                   cashierDayHourlyDetail[hourCk];
                                                 const dayAttendanceShift =
                                                   isCashierMultiDayRange
-                                                    ? dayHourlyDetail?.attendanceShift
+                                                    ? dayHourlyDetail?.attendanceShift ??
+                                                      day.attendanceShift ??
+                                                      null
                                                     : person.attendanceShift;
                                                 const hourlySlotsForDay =
                                                   hourOpen && !isCashierMultiDayRange
@@ -5016,12 +5253,26 @@ export const HourlyAnalysis = ({
                                                         )}
                                                       />
                                                       <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_90px_90px_90px] items-center gap-3">
-                                                        <span className="font-medium text-(--cashier-muted) text-left">
-                                                          {formatDateLabel(iso, {
-                                                            day: "2-digit",
-                                                            month: "short",
-                                                            year: "numeric",
-                                                          })}
+                                                        <span className="flex min-w-0 flex-col text-left">
+                                                          <span className="truncate font-medium text-(--cashier-muted)">
+                                                            {formatDateLabel(iso, {
+                                                              day: "2-digit",
+                                                              month: "short",
+                                                              year: "numeric",
+                                                            })}
+                                                          </span>
+                                                          {(() => {
+                                                            const marksLabel =
+                                                              formatShiftMarksLabel(
+                                                                dayAttendanceShift,
+                                                              );
+                                                            if (!marksLabel) return null;
+                                                            return (
+                                                              <span className="truncate text-[10px] font-medium text-(--cashier-muted)/80">
+                                                                {marksLabel}
+                                                              </span>
+                                                            );
+                                                          })()}
                                                         </span>
                                                         <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
                                                           {formatCurrencyWithoutSixZeros(
@@ -5067,10 +5318,13 @@ export const HourlyAnalysis = ({
                                                     </button>
                                                     {hourOpen && (
                                                       <div className="ml-6 space-y-1 border-l border-dashed border-(--cashier-border) pl-4">
-                                                        <div className="grid grid-cols-[minmax(0,1fr)_100px_80px] items-center px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
+                                                        <div className="grid grid-cols-[minmax(0,1fr)_100px_70px_80px] items-center px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-(--cashier-muted)">
                                                           <span>Franja</span>
                                                           <span className="text-center">
                                                             Venta
+                                                          </span>
+                                                          <span className="text-right">
+                                                            Trab.
                                                           </span>
                                                           <span className="text-right">
                                                             Vta/Hr
@@ -5099,31 +5353,74 @@ export const HourlyAnalysis = ({
                                                           )}
                                                         {!hourSlotsLoading &&
                                                           hourlySlotsForDay.map(
-                                                            (slot) => (
-                                                              <div
-                                                                key={`${hourCk}-${slot.slotStartMinute}`}
-                                                                className="grid grid-cols-[minmax(0,1fr)_100px_80px] items-center gap-2 rounded border border-(--cashier-border)/60 bg-white/80 px-2 py-1.5 text-[11px]"
-                                                              >
-                                                                <span className="font-medium text-(--cashier-muted)">
-                                                                  {slot.label}
-                                                                </span>
-                                                                <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
-                                                                  {formatCurrencyWithoutSixZeros(
-                                                                    slot.sales,
-                                                                  )}
-                                                                </span>
-                                                                <span className="text-right font-semibold tabular-nums text-(--cashier-text)">
-                                                                  {formatProductivity(
-                                                                    slotVtaHrFromAttendance(
+                                                            (slot) => {
+                                                              const slotTooltip =
+                                                                buildSlotLaborTooltip(
+                                                                  slot.slotStartMinute,
+                                                                  bucketMinutes,
+                                                                  dayAttendanceShift,
+                                                                );
+                                                              return (
+                                                                <div
+                                                                  key={`${hourCk}-${slot.slotStartMinute}`}
+                                                                  className="grid grid-cols-[minmax(0,1fr)_100px_70px_80px] items-center gap-2 rounded border border-(--cashier-border)/60 bg-white/80 px-2 py-1.5 text-[11px]"
+                                                                  title={slotTooltip}
+                                                                >
+                                                                  <span className="font-medium text-(--cashier-muted)">
+                                                                    {slot.label}
+                                                                  </span>
+                                                                  <span className="text-center font-semibold tabular-nums text-(--cashier-text)">
+                                                                    {formatCurrencyWithoutSixZeros(
                                                                       slot.sales,
+                                                                    )}
+                                                                  </span>
+                                                                  <span
+                                                                    className="text-right font-semibold tabular-nums text-(--cashier-muted)"
+                                                                    title={slotTooltip}
+                                                                  >
+                                                                    {formatSlotWorkedMinutesLabel(
                                                                       slot.slotStartMinute,
                                                                       bucketMinutes,
                                                                       dayAttendanceShift,
-                                                                    ),
-                                                                  )}
-                                                                </span>
-                                                              </div>
-                                                            ),
+                                                                    )}
+                                                                  </span>
+                                                                  <span
+                                                                    className="text-right font-semibold tabular-nums text-(--cashier-text)"
+                                                                    title={slotTooltip}
+                                                                  >
+                                                                    {formatProductivity(
+                                                                      slotVtaHrFromAttendance(
+                                                                        slot.sales,
+                                                                        slot.slotStartMinute,
+                                                                        bucketMinutes,
+                                                                        dayAttendanceShift,
+                                                                      ),
+                                                                    )}
+                                                                  </span>
+                                                                </div>
+                                                              );
+                                                            },
+                                                          )}
+                                                        {!hourSlotsLoading &&
+                                                          dayAttendanceShift &&
+                                                          dayAttendanceShift.markInMinute !==
+                                                            null &&
+                                                          hourlySlotsForDay.length >
+                                                            0 && (
+                                                            <div className="px-2 pt-1 text-[10px] font-medium text-(--cashier-muted)">
+                                                              Total franjas con
+                                                              venta:{" "}
+                                                              {sumWorkedMinutesAcrossSlots(
+                                                                hourlySlotsForDay,
+                                                                bucketMinutes,
+                                                                dayAttendanceShift,
+                                                              )}{" "}
+                                                              min | Turno completo:{" "}
+                                                              {Math.round(
+                                                                dayLaborMinutes,
+                                                              )}{" "}
+                                                              min
+                                                            </div>
                                                           )}
                                                       </div>
                                                     )}
