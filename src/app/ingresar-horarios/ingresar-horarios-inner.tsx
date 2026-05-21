@@ -25,10 +25,15 @@ import {
   loadLunesPresetsFromStorage,
   saveLunesPresetsToStorage,
   presetsToByKey,
+  isBuiltinLunesPresetKey,
+  createCustomLunesPresetKey,
   type LunesSchedulePreset,
   type LunesSchedulePresetKey,
 } from "@/lib/horarios/lunes-schedule-presets";
-import { canUseLunesScheduleSync } from "@/lib/shared/special-role-features";
+import {
+  canUseLunesScheduleSync,
+  canCreateLunesSchedulePresets,
+} from "@/lib/shared/special-role-features";
 import { toJpeg } from "html-to-image";
 
 type DayKey =
@@ -693,6 +698,12 @@ export function IngresarHorariosInner() {
   const [syncLunesToRest, setSyncLunesToRest] = useState(false);
   /** Rol especial "Replicar lunes" (ver special-role-features) */
   const [canLunesScheduleSync, setCanLunesScheduleSync] = useState(false);
+  /**
+   * Rol especial "Crear horario predeterminado". Activa el boton "+" para
+   * agregar presets adicionales y la opcion de eliminar los presets creados.
+   */
+  const [canCreateSchedulePresets, setCanCreateSchedulePresets] =
+    useState(false);
   /** Solo para disparar guardado de borrador al cambiar el mapa de independencia */
   const [lunesIndVersion, setLunesIndVersion] = useState(0);
   /** Etiqueta mostrada en el selector de plantilla por fila (solo UI). */
@@ -740,9 +751,13 @@ export function IngresarHorariosInner() {
       setLunesPresetDefinitions((prev) =>
         prev.map((p) => {
           if (p.key !== key) return p;
-          const def = DEFAULT_LUNES_SCHEDULE_PRESETS.find((d) => d.key === key)!;
           if (field === "label") {
-            const label = raw.trim() || def.label;
+            const def = DEFAULT_LUNES_SCHEDULE_PRESETS.find(
+              (d) => d.key === key,
+            );
+            // Para presets originales caemos al nombre por defecto si quedan
+            // vacios; para los creados conservamos el ultimo valor mostrado.
+            const label = raw.trim() || (def ? def.label : p.label);
             return { ...p, label };
           }
           const t = normalizeScheduleTime(raw);
@@ -751,6 +766,37 @@ export function IngresarHorariosInner() {
       );
     },
     [],
+  );
+
+  /** Solo presets fijos no se pueden borrar; los creados con "+" si. */
+  const addCustomLunesPreset = useCallback(() => {
+    if (!canCreateSchedulePresets) return;
+    setLunesPresetDefinitions((prev) => {
+      const newPreset: LunesSchedulePreset = {
+        key: createCustomLunesPresetKey(),
+        label: `Horario ${prev.length + 1}`,
+        he1: "08:00",
+        hs2: "17:00",
+      };
+      return [...prev, newPreset];
+    });
+  }, [canCreateSchedulePresets]);
+
+  const removeLunesPreset = useCallback(
+    (key: LunesSchedulePresetKey) => {
+      if (!canCreateSchedulePresets) return;
+      if (isBuiltinLunesPresetKey(key)) return;
+      setLunesPresetDefinitions((prev) => prev.filter((p) => p.key !== key));
+      // Limpia la seleccion de filas que apuntaban al preset borrado.
+      setLunesPresetChoiceByRow((prev) => {
+        const next = { ...prev };
+        for (const [rowIdx, presetKey] of Object.entries(prev)) {
+          if (presetKey === key) delete next[Number(rowIdx)];
+        }
+        return next;
+      });
+    },
+    [canCreateSchedulePresets],
   );
 
   useEffect(() => {
@@ -809,6 +855,9 @@ export function IngresarHorariosInner() {
           isAdmin,
         );
         setCanLunesScheduleSync(canSync);
+        setCanCreateSchedulePresets(
+          canCreateLunesSchedulePresets(payload.user?.specialRoles, isAdmin),
+        );
         if (
           !isAdmin &&
           (!canAccessPortalSection(payload.user?.allowedDashboards, "operacion") ||
@@ -1693,72 +1742,101 @@ export function IngresarHorariosInner() {
                     </button>
                   </div>
                   <p className="mt-3 text-[11px] leading-snug text-slate-600">
-                    Tres horarios fijos. Puedes cambiar nombre y horas; se
-                    guardan en este navegador. No se pueden añadir más
-                    horarios.
+                    {canCreateSchedulePresets
+                      ? "Los 3 horarios originales no se pueden eliminar; puedes editar su nombre y horas. Usa el boton + para agregar mas y la × para eliminar los que crees. Se guardan en este navegador."
+                      : `${lunesPresetDefinitions.length} horarios disponibles. Puedes cambiar nombre y horas; se guardan en este navegador.`}
                   </p>
                   <div className="mt-3 space-y-2">
-                    {lunesPresetDefinitions.map((p) => (
-                      <div
-                        key={p.key}
-                        className="flex flex-wrap items-end gap-2 border-b border-slate-200/70 pb-2 last:border-0 last:pb-0 sm:gap-3"
-                      >
-                        <label className="min-w-40 flex-1">
-                          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            Nombre
-                          </span>
-                          <input
-                            type="text"
-                            value={p.label}
-                            onChange={(e) =>
-                              updateLunesPresetField(
-                                p.key,
-                                "label",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-900"
-                          />
-                        </label>
-                        <label>
-                          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            Entrada (1.ª HE)
-                          </span>
-                          <input
-                            type="time"
-                            value={p.he1}
-                            step={60}
-                            onChange={(e) =>
-                              updateLunesPresetField(
-                                p.key,
-                                "he1",
-                                e.target.value,
-                              )
-                            }
-                            className="w-29 rounded border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums"
-                          />
-                        </label>
-                        <label>
-                          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            Salida (2.ª HS)
-                          </span>
-                          <input
-                            type="time"
-                            value={p.hs2}
-                            step={60}
-                            onChange={(e) =>
-                              updateLunesPresetField(
-                                p.key,
-                                "hs2",
-                                e.target.value,
-                              )
-                            }
-                            className="w-29 rounded border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums"
-                          />
-                        </label>
-                      </div>
-                    ))}
+                    {lunesPresetDefinitions.map((p) => {
+                      const isBuiltin = isBuiltinLunesPresetKey(p.key);
+                      return (
+                        <div
+                          key={p.key}
+                          className="flex flex-wrap items-end gap-2 border-b border-slate-200/70 pb-2 last:border-0 last:pb-0 sm:gap-3"
+                        >
+                          <label className="min-w-40 flex-1">
+                            <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Nombre
+                            </span>
+                            <input
+                              type="text"
+                              value={p.label}
+                              onChange={(e) =>
+                                updateLunesPresetField(
+                                  p.key,
+                                  "label",
+                                  e.target.value,
+                                )
+                              }
+                              className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-900"
+                            />
+                          </label>
+                          <label>
+                            <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Entrada (1.ª HE)
+                            </span>
+                            <input
+                              type="time"
+                              value={p.he1}
+                              step={60}
+                              onChange={(e) =>
+                                updateLunesPresetField(
+                                  p.key,
+                                  "he1",
+                                  e.target.value,
+                                )
+                              }
+                              className="w-29 rounded border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums"
+                            />
+                          </label>
+                          <label>
+                            <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Salida (2.ª HS)
+                            </span>
+                            <input
+                              type="time"
+                              value={p.hs2}
+                              step={60}
+                              onChange={(e) =>
+                                updateLunesPresetField(
+                                  p.key,
+                                  "hs2",
+                                  e.target.value,
+                                )
+                              }
+                              className="w-29 rounded border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums"
+                            />
+                          </label>
+                          {canCreateSchedulePresets && !isBuiltin ? (
+                            <button
+                              type="button"
+                              onClick={() => removeLunesPreset(p.key)}
+                              aria-label={`Eliminar horario ${p.label}`}
+                              title="Eliminar este horario"
+                              className="flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-md border border-red-200 bg-white text-red-600 transition hover:bg-red-50"
+                            >
+                              ×
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
+                  {canCreateSchedulePresets ? (
+                    <div className="mt-3 flex justify-start">
+                      <button
+                        type="button"
+                        onClick={addCustomLunesPreset}
+                        className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-[12px] font-semibold text-sky-800 transition hover:bg-sky-100"
+                        aria-label="Agregar nuevo horario predeterminado"
+                      >
+                        <span aria-hidden className="text-base leading-none">
+                          +
+                        </span>
+                        Agregar horario
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
                     <button
                       type="button"

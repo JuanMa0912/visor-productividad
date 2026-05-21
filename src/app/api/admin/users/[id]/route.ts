@@ -38,6 +38,7 @@ const ALLOWED_SPECIAL_ROLE_SET = new Set([
   "comparar_horarios",
   "abcd",
   "historial_sinventario",
+  "crear_horario_predeterminado",
 ]);
 
 const resolveValidSede = (value?: string | null) => {

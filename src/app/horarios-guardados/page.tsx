@@ -92,6 +92,12 @@ const DAY_ORDER: DayKey[] = [
   "sabado",
 ];
 
+const FIRST_DAY_KEY = DAY_ORDER[0];
+
+function dayStartDividerClass(day: DayKey): string {
+  return day === FIRST_DAY_KEY ? "" : "day-group-start";
+}
+
 const normalizeText = (value?: string) =>
   (value ?? "")
     .toLowerCase()
@@ -445,9 +451,9 @@ export default function HorariosGuardadosPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-slate-100 px-4 py-12 text-foreground">
-      <div className="mx-auto w-full max-w-[min(100%,96rem)] rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="min-h-screen overflow-x-hidden bg-slate-100 px-4 py-12 text-foreground print:overflow-visible print:bg-white print:p-0">
+      <div className="mx-auto w-full max-w-[min(100%,96rem)] rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)] print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
+        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
               Horario
@@ -477,7 +483,7 @@ export default function HorariosGuardadosPage() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-2">
+        <div className="mt-6 flex flex-wrap gap-2 print:hidden">
           <button
             type="button"
             onClick={() => setViewMode("plantillas")}
@@ -503,7 +509,7 @@ export default function HorariosGuardadosPage() {
         </div>
 
         {(actionError || actionMessage) && (
-          <div className="mt-4">
+          <div className="mt-4 print:hidden">
             {actionError ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
                 {actionError}
@@ -518,8 +524,8 @@ export default function HorariosGuardadosPage() {
         )}
 
         {viewMode === "plantillas" ? (
-          <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4">
+          <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)] print:mt-0 print:block">
+            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4 print:hidden">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
                   Plantillas
@@ -567,7 +573,7 @@ export default function HorariosGuardadosPage() {
               )}
             </section>
 
-            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_18px_40px_-35px_rgba(15,23,42,0.4)]">
+            <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_18px_40px_-35px_rgba(15,23,42,0.4)] print:rounded-none print:border-0 print:p-0 print:shadow-none">
               {selectedForm === null ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
                   {loadingFormId !== null
@@ -575,8 +581,8 @@ export default function HorariosGuardadosPage() {
                     : "Selecciona una plantilla guardada para verla."}
                 </div>
               ) : (
-                <>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                <div id="horarios-guardados-print">
+                  <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
                         Plantilla #{selectedForm.id}
@@ -606,6 +612,14 @@ export default function HorariosGuardadosPage() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => window.print()}
+                          className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100/70"
+                          title="Imprimir la planilla seleccionada"
+                        >
+                          Imprimir
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void handleDeleteForm(selectedForm.id)}
                           disabled={deletingPlanillaId !== null}
                           className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700 transition-all hover:border-rose-300 hover:bg-rose-100/70 disabled:cursor-not-allowed disabled:opacity-60"
@@ -618,55 +632,91 @@ export default function HorariosGuardadosPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-2xl border border-slate-200/80 [-webkit-overflow-scrolling:touch]">
-                    <table className="w-full min-w-[2100px] border-collapse text-[12px]">
+                  <div className="hidden border border-slate-300 px-3 py-2 print:block print:border-slate-900">
+                    <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b-2 border-slate-900 pb-2">
+                      <div className="text-left text-xs font-bold tracking-wide text-slate-900">
+                        MercaTodo
+                      </div>
+                      <div className="text-center text-xs font-bold tracking-wide text-slate-900">
+                        MERCAMIO S.A.
+                      </div>
+                      <div className="text-right text-xs font-bold uppercase tracking-wide text-slate-900">
+                        Planilla De Programacion Semanal De Horarios
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-5 gap-3 text-[11px]">
+                      <div>
+                        <span className="font-semibold">SEDE:</span>{" "}
+                        {selectedForm.sede || "-"}
+                      </div>
+                      <div>
+                        <span className="font-semibold">SECCION:</span>{" "}
+                        {selectedForm.seccion || "-"}
+                      </div>
+                      <div>
+                        <span className="font-semibold">FECHA INICIAL:</span>{" "}
+                        {selectedForm.fechaInicial || "-"}
+                      </div>
+                      <div>
+                        <span className="font-semibold">FECHA FINAL:</span>{" "}
+                        {selectedForm.fechaFinal || "-"}
+                      </div>
+                      <div>
+                        <span className="font-semibold">MES:</span>{" "}
+                        {selectedForm.mes || "-"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-2xl border border-slate-200/80 [-webkit-overflow-scrolling:touch] print:mt-2 print:overflow-visible print:rounded-none print:border-slate-900">
+                    <table className="planilla-print-table w-full min-w-[2100px] border-collapse text-[12px] print:min-w-0 print:w-full print:max-w-none print:table-fixed print:text-[8px]">
                       <thead>
                         <tr className="bg-slate-100 text-slate-700">
-                          <th className="w-10 border border-slate-200 px-2 py-2 text-center">#</th>
-                          <th className="min-w-48 max-w-56 border border-slate-200 px-2 py-2 text-left">
+                          <th className="w-10 border border-slate-200 px-2 py-2 text-center print:border-slate-900">#</th>
+                          <th className="min-w-48 max-w-56 border border-slate-200 px-2 py-2 text-left print:w-35 print:border-slate-900">
                             Nombre
                           </th>
                           {DAY_ORDER.map((day) => (
                             <th
                               key={day}
                               colSpan={4}
-                              className="border border-slate-200 px-2 py-2 text-center uppercase"
+                              className={`border border-slate-200 px-2 py-2 text-center uppercase print:border-slate-900 ${dayStartDividerClass(day)}`}
                             >
                               <div className="flex items-center justify-center gap-2">
                                 <span>{day}</span>
-                                <span className="rounded-md bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                <span className="rounded-md bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 print:text-[8px]">
                                   {selectedFormDayNumbers[day] ?? "--"}
                                 </span>
                               </div>
                             </th>
                           ))}
-                          <th className="min-w-40 border border-slate-200 px-2 py-2 text-left">
+                          <th className="min-w-40 border border-slate-200 px-2 py-2 text-left print:w-35 print:border-slate-900">
                             Firma empleado
                           </th>
                         </tr>
                         <tr className="bg-white text-[11px] font-semibold text-slate-500">
-                          <th className="border border-slate-200 px-2 py-2" />
-                          <th className="border border-slate-200 px-2 py-2" />
+                          <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
+                          <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
                           {DAY_ORDER.flatMap((day) =>
                             (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                               <th
                                 key={`${day}-${field}`}
-                                className="w-14 min-w-13 border border-slate-200 px-1 py-2 text-center uppercase"
+                                className={`w-14 min-w-13 border border-slate-200 px-1 py-2 text-center uppercase print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
                               >
                                 {field === "he1" || field === "he2" ? "HE" : "HS"}
                               </th>
                             )),
                           )}
-                          <th className="border border-slate-200 px-2 py-2" />
+                          <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
                         </tr>
                       </thead>
                       <tbody>
                         {selectedForm.rows.map((row, rowIndex) => (
                           <tr key={`preview-row-${row.rowIndex ?? rowIndex}`} className="odd:bg-white even:bg-slate-50/40">
-                            <td className="border border-slate-200 px-2 py-1 text-center text-slate-600">
+                            <td className="border border-slate-200 px-2 py-1 text-center text-slate-600 print:border-slate-900">
                               {(typeof row.rowIndex === "number" ? row.rowIndex : rowIndex) + 1}
                             </td>
-                            <td className="border border-slate-200 px-2 py-1 text-slate-900">
+                            <td className="border border-slate-200 px-2 py-1 text-slate-900 print:border-slate-900">
                               {row.nombre || "--"}
                             </td>
                             {DAY_ORDER.flatMap((day) => {
@@ -676,7 +726,7 @@ export default function HorariosGuardadosPage() {
                                   <td
                                     key={`${rowIndex}-${day}-descanso`}
                                     colSpan={4}
-                                    className="border border-slate-200 bg-amber-50/60 px-2 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700"
+                                    className={`border border-slate-200 bg-amber-50/60 px-2 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 print:border-slate-900 print:bg-white print:text-[8px] ${dayStartDividerClass(day)}`}
                                   >
                                     Descanso
                                   </td>,
@@ -686,13 +736,13 @@ export default function HorariosGuardadosPage() {
                               return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                                 <td
                                   key={`${rowIndex}-${day}-${field}`}
-                                  className="border border-slate-200 px-2 py-1 text-center text-slate-700"
+                                  className={`border border-slate-200 px-2 py-1 text-center text-slate-700 print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
                                 >
                                   {renderTimeValue(dayData[field])}
                                 </td>
                               ));
                             })}
-                            <td className="border border-slate-200 px-2 py-1 text-slate-700">
+                            <td className="border border-slate-200 px-2 py-1 text-slate-700 print:border-slate-900">
                               {row.firma || "--"}
                             </td>
                           </tr>
@@ -700,7 +750,7 @@ export default function HorariosGuardadosPage() {
                       </tbody>
                     </table>
                   </div>
-                </>
+                </div>
               )}
             </section>
           </div>
@@ -860,6 +910,89 @@ export default function HorariosGuardadosPage() {
           </div>
         )}
       </div>
+      <style jsx global>{`
+        #horarios-guardados-print table th.day-group-start,
+        #horarios-guardados-print table td.day-group-start {
+          border-left-width: 2px;
+          border-left-color: rgb(30 41 59);
+        }
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 6mm;
+          }
+          html,
+          body {
+            overflow: visible !important;
+            height: auto !important;
+            width: 100% !important;
+            background: white !important;
+          }
+          body * {
+            visibility: hidden;
+          }
+          #horarios-guardados-print,
+          #horarios-guardados-print * {
+            visibility: visible;
+          }
+          #horarios-guardados-print {
+            position: static !important;
+            inset: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: white !important;
+            box-shadow: none !important;
+            border: 0 !important;
+          }
+          #horarios-guardados-print .overflow-x-auto {
+            overflow: visible !important;
+            max-width: 100% !important;
+          }
+          .planilla-print-table {
+            table-layout: fixed !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            font-size: 7px !important;
+            color: #0f172a !important;
+          }
+          .planilla-print-table th,
+          .planilla-print-table td {
+            color: #0f172a !important;
+            border-color: #0f172a !important;
+            background: #ffffff !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            width: auto !important;
+            padding: 1px 2px !important;
+            overflow: hidden !important;
+            word-break: break-word !important;
+          }
+          /* Anchos en rem del primer th (# / Nombre / Firma) deben colapsar tambien */
+          .planilla-print-table thead tr:first-child th:first-child {
+            width: 22px !important;
+          }
+          .planilla-print-table thead tr:first-child th:nth-child(2),
+          .planilla-print-table thead tr:first-child th:last-child {
+            width: 70px !important;
+          }
+          /* Separador vertical entre dias (mas grueso y oscuro que HE/HS internos) */
+          #horarios-guardados-print table th.day-group-start,
+          #horarios-guardados-print table td.day-group-start {
+            border-left-width: 3px !important;
+            border-left-color: #020617 !important;
+          }
+          /* Anchos fijos en rem obligan un ancho minimo enorme y se corta en PDF */
+          .planilla-print-table colgroup col {
+            width: auto !important;
+            min-width: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

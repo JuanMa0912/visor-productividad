@@ -14,6 +14,14 @@ export const ROTACION_ABCD_CONFIG_SPECIAL_ROLES = ["abcd"] as const;
 export const ROTACION_SINVENTARIO_HISTORIAL_SPECIAL_ROLES = [
   "historial_sinventario",
 ] as const;
+/**
+ * Crear nuevos horarios predeterminados (el boton "+") en el modal de
+ * "Horarios predeterminados" de Ingresar horarios. Editar y aplicar los
+ * 3 originales sigue rigiendose por `replicar_lunes`.
+ */
+export const CREATE_LUNES_PRESET_SPECIAL_ROLES = [
+  "crear_horario_predeterminado",
+] as const;
 
 const LUNES_SYNC_SET = new Set<string>(LUNES_SCHEDULE_SYNC_SPECIAL_ROLES);
 const ROTACION_SET = new Set<string>(ROTACION_SPECIAL_ROLES);
@@ -21,6 +29,9 @@ const COMPARAR_HORARIOS_SET = new Set<string>(COMPARAR_HORARIOS_SPECIAL_ROLES);
 const ROTACION_ABCD_CONFIG_SET = new Set<string>(ROTACION_ABCD_CONFIG_SPECIAL_ROLES);
 const ROTACION_SINVENTARIO_HISTORIAL_SET = new Set<string>(
   ROTACION_SINVENTARIO_HISTORIAL_SPECIAL_ROLES,
+);
+const CREATE_LUNES_PRESET_SET = new Set<string>(
+  CREATE_LUNES_PRESET_SPECIAL_ROLES,
 );
 
 /**
@@ -111,5 +122,22 @@ export function canViewRotacionSinventarioHistorial(
   if (!specialRoles?.length) return false;
   return specialRoles.some((r) =>
     ROTACION_SINVENTARIO_HISTORIAL_SET.has(r.trim().toLowerCase()),
+  );
+}
+
+/**
+ * Puede crear nuevos "Horarios predeterminados" (boton "+") en Ingresar
+ * horarios. Implica `replicar_lunes` (necesita ver el modal para crear), pero
+ * el boton solo aparece para administradores o quienes tengan
+ * `crear_horario_predeterminado`.
+ */
+export function canCreateLunesSchedulePresets(
+  specialRoles: string[] | null | undefined,
+  isAdmin = false,
+): boolean {
+  if (isAdmin) return true;
+  if (!specialRoles?.length) return false;
+  return specialRoles.some((r) =>
+    CREATE_LUNES_PRESET_SET.has(r.trim().toLowerCase()),
   );
 }

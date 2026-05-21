@@ -185,6 +185,10 @@ const SPECIAL_ROLE_OPTIONS = [
     id: "historial_sinventario",
     label: "Historial S.inventario (rotacion)",
   },
+  {
+    id: "crear_horario_predeterminado",
+    label: "Crear horario predeterminado",
+  },
 ];
 
 const formatAllowedLines = (allowedLines: string[] | null) => {

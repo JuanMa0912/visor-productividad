@@ -15,7 +15,12 @@ export function planMatchesLunesPreset(
   return he1 === preset.he1 && hs2 === preset.hs2;
 }
 
-export type LunesSchedulePresetKey = "1" | "2" | "3";
+/**
+ * Llaves de los presets. Las tres originales son "1" | "2" | "3" y nunca se
+ * pueden eliminar; los presets creados por usuarios con el rol especial
+ * `crear_horario_predeterminado` reciben llaves `c-<timestamp>-<rand>`.
+ */
+export type LunesSchedulePresetKey = string;
 
 export type LunesSchedulePreset = {
   key: LunesSchedulePresetKey;
@@ -27,6 +32,12 @@ export type LunesSchedulePreset = {
 };
 
 export const LUNES_PRESETS_STORAGE_KEY = "vp:ingresar-horarios:lunes-presets-v1";
+
+export const BUILTIN_LUNES_PRESET_KEYS: readonly LunesSchedulePresetKey[] = [
+  "1",
+  "2",
+  "3",
+];
 
 export const DEFAULT_LUNES_SCHEDULE_PRESETS: readonly LunesSchedulePreset[] = [
   {
@@ -57,21 +68,42 @@ export const LUNES_PRESET_BY_KEY: Record<
   LunesSchedulePreset
 > = Object.fromEntries(
   DEFAULT_LUNES_SCHEDULE_PRESETS.map((p) => [p.key, { ...p }]),
-) as Record<LunesSchedulePresetKey, LunesSchedulePreset>;
+);
 
 export function presetsToByKey(
   presets: readonly LunesSchedulePreset[],
 ): Record<LunesSchedulePresetKey, LunesSchedulePreset> {
-  return Object.fromEntries(
-    presets.map((p) => [p.key, { ...p }]),
-  ) as Record<LunesSchedulePresetKey, LunesSchedulePreset>;
+  return Object.fromEntries(presets.map((p) => [p.key, { ...p }]));
 }
 
-function isPresetKey(k: unknown): k is LunesSchedulePresetKey {
-  return k === "1" || k === "2" || k === "3";
+const BUILTIN_KEY_SET = new Set<LunesSchedulePresetKey>(
+  BUILTIN_LUNES_PRESET_KEYS,
+);
+
+/** Solo los presets fijos originales no se pueden eliminar. */
+export function isBuiltinLunesPresetKey(key: string): boolean {
+  return BUILTIN_KEY_SET.has(key);
 }
 
-/** Combina lo guardado con los valores por defecto; siempre 3 claves fijas. */
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
+/**
+ * Genera una llave estable para un preset creado en runtime (no original).
+ * Formato: `c-<timestamp>-<random>` para que sea facil de identificar.
+ */
+export function createCustomLunesPresetKey(): LunesSchedulePresetKey {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `c-${ts}-${rand}`;
+}
+
+/**
+ * Combina lo guardado con los valores por defecto:
+ * - Los 3 presets originales siempre estan presentes (pueden tener nombre/horas
+ *   editados).
+ * - Cualquier preset adicional que se haya guardado se conserva al final.
+ */
 export function mergeLunesPresetsWithDefaults(
   stored: unknown,
 ): LunesSchedulePreset[] {
@@ -79,24 +111,38 @@ export function mergeLunesPresetsWithDefaults(
   if (!Array.isArray(stored)) {
     return defaults;
   }
-  const fromStore = new Map<LunesSchedulePresetKey, Partial<LunesSchedulePreset>>();
+  const builtinOverrides = new Map<
+    LunesSchedulePresetKey,
+    Partial<LunesSchedulePreset>
+  >();
+  const customs: LunesSchedulePreset[] = [];
+  const seenCustomKeys = new Set<string>();
   for (const item of stored) {
     if (!item || typeof item !== "object") continue;
-    const key = (item as LunesSchedulePreset).key;
-    if (!isPresetKey(key)) continue;
-    fromStore.set(key, item as LunesSchedulePreset);
+    const raw = item as Partial<LunesSchedulePreset>;
+    const key = raw.key;
+    if (!isNonEmptyString(key)) continue;
+    if (isBuiltinLunesPresetKey(key)) {
+      builtinOverrides.set(key, raw);
+      continue;
+    }
+    if (seenCustomKeys.has(key)) continue;
+    const label = isNonEmptyString(raw.label) ? raw.label.trim() : "";
+    const he1 = normalizeScheduleTime(raw.he1 ?? "");
+    const hs2 = normalizeScheduleTime(raw.hs2 ?? "");
+    if (!label || !he1 || !hs2) continue;
+    seenCustomKeys.add(key);
+    customs.push({ key, label, he1, hs2 });
   }
-  return defaults.map((d) => {
-    const s = fromStore.get(d.key);
+  const mergedBuiltins = defaults.map((d) => {
+    const s = builtinOverrides.get(d.key);
     if (!s) return d;
-    const label =
-      typeof s.label === "string" && s.label.trim().length > 0
-        ? s.label.trim()
-        : d.label;
+    const label = isNonEmptyString(s.label) ? s.label.trim() : d.label;
     const he1 = normalizeScheduleTime(s.he1 ?? "") || d.he1;
     const hs2 = normalizeScheduleTime(s.hs2 ?? "") || d.hs2;
     return { ...d, label, he1, hs2 };
   });
+  return [...mergedBuiltins, ...customs];
 }
 
 export function loadLunesPresetsFromStorage(): LunesSchedulePreset[] | null {
