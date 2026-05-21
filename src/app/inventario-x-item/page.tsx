@@ -3359,37 +3359,6 @@ export default function InventarioXItemPage() {
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot>
-                    <tr className="bg-amber-50/90">
-                      <td className="sticky left-0 z-10 w-max max-w-52 rounded-bl-2xl border-t-2 border-r border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-black uppercase tracking-[0.12em] text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]">
-                        Total general
-                      </td>
-                      {summaryRows.flatMap((row) => {
-                        const cells: ReactNode[] = [];
-                        if (jpgExportMode !== "di-only") {
-                          cells.push(
-                            <td
-                              key={`matrix-total-${row.item}-inv`}
-                              title={`Total ${row.item}: ${formatUnits(matrixTotalsByItem[row.item] ?? 0)}`}
-                              className={`${matrixItemColMinClass} border-t-2 border-l-2 border-r border-amber-300 bg-amber-50 px-2 py-1.5 text-right text-sm font-black text-slate-900 tabular-nums`}
-                            >
-                              {formatUnits(matrixTotalsByItem[row.item] ?? 0)}
-                            </td>,
-                          );
-                        }
-                        cells.push(
-                          <td
-                            key={`matrix-total-${row.item}-di`}
-                            title={`DI ${row.item}: ${formatDi(row.rotationDays)}`}
-                            className={`${matrixItemColMinClass} border-t-2 border-t-amber-300 border-l-2 border-l-violet-100 border-r-2 border-r-violet-100 bg-violet-50/90 px-2 py-1.5 text-right text-xs font-black text-slate-900 tabular-nums`}
-                          >
-                            {formatDi(row.rotationDays)}
-                          </td>,
-                        );
-                        return cells;
-                      })}
-                    </tr>
-                  </tfoot>
                 </table>
                 </div>
 

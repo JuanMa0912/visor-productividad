@@ -704,7 +704,7 @@ export default function HorariosGuardadosPage() {
                     </div>
                   </div>
 
-                  <div className="hidden border border-slate-300 px-3 py-2 print:block print:border-slate-900">
+                  <div className="mt-4 border border-slate-300 px-3 py-2 print:mt-0 print:border-slate-900">
                     <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b-2 border-slate-900 pb-2">
                       <div className="text-left text-xs font-bold tracking-wide text-slate-900">
                         MercaTodo
@@ -716,7 +716,7 @@ export default function HorariosGuardadosPage() {
                         Planilla De Programacion Semanal De Horarios
                       </div>
                     </div>
-                    <div className="mt-2 grid grid-cols-5 gap-3 text-[11px]">
+                    <div className="mt-2 grid grid-cols-2 gap-3 text-[11px] sm:grid-cols-5">
                       <div>
                         <span className="font-semibold">SEDE:</span>{" "}
                         {selectedForm.sede || "-"}
@@ -740,45 +740,45 @@ export default function HorariosGuardadosPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-2xl border border-slate-200/80 [-webkit-overflow-scrolling:touch] print:mt-2 print:overflow-visible print:rounded-none print:border-slate-900">
-                    <table className="planilla-print-table w-full min-w-[2100px] border-collapse text-[12px] print:min-w-0 print:w-full print:max-w-none print:table-fixed print:text-[8px]">
+                  <div className="mt-2 max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-none border border-slate-300 [-webkit-overflow-scrolling:touch] print:mt-2 print:overflow-visible print:border-slate-900">
+                    <table className="planilla-print-table w-full table-fixed border-collapse text-[9px] leading-tight print:min-w-0 print:w-full print:max-w-none print:table-fixed print:text-[8px]">
                       <thead>
                         <tr className="bg-slate-100 text-slate-700">
-                          <th className="w-10 border border-slate-200 px-2 py-2 text-center print:border-slate-900">#</th>
-                          <th className="min-w-48 max-w-56 border border-slate-200 px-2 py-2 text-left print:w-35 print:border-slate-900">
+                          <th className="planilla-col-index border border-slate-300 px-1 py-1 text-center print:border-slate-900">#</th>
+                          <th className="planilla-col-nombre border border-slate-300 px-1 py-1 text-left print:border-slate-900">
                             Nombre
                           </th>
                           {DAY_ORDER.map((day) => (
                             <th
                               key={day}
                               colSpan={dayColSpan(day)}
-                              className={`border border-slate-200 px-2 py-2 text-center uppercase print:border-slate-900 ${dayStartDividerClass(day)}`}
+                              className={`border border-slate-300 px-1 py-1 text-center uppercase print:border-slate-900 ${dayStartDividerClass(day)}`}
                             >
                               <div
-                                className={`flex items-center justify-center gap-1 ${dayAllDescanso[day] ? "print:flex-col print:gap-0" : "print:gap-0.5"}`}
+                                className={`flex items-center justify-center gap-0.5 ${dayAllDescanso[day] ? "flex-col gap-0" : ""}`}
                               >
                                 <span className="planilla-day-name whitespace-nowrap">
                                   {day}
                                 </span>
-                                <span className="planilla-day-number rounded-md bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 print:px-1 print:text-[8px]">
+                                <span className="planilla-day-number rounded-md bg-white px-1 py-0 text-[8px] font-semibold text-slate-600 print:px-1 print:text-[8px]">
                                   {selectedFormDayNumbers[day] ?? "--"}
                                 </span>
                               </div>
                             </th>
                           ))}
-                          <th className="min-w-40 border border-slate-200 px-2 py-2 text-left print:w-35 print:border-slate-900">
+                          <th className="planilla-col-firma border border-slate-300 px-1 py-1 text-left print:border-slate-900">
                             Firma empleado
                           </th>
                         </tr>
-                        <tr className="bg-white text-[11px] font-semibold text-slate-500">
-                          <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
-                          <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
+                        <tr className="bg-white text-[8px] font-semibold text-slate-500">
+                          <th className="border border-slate-300 px-1 py-1 print:border-slate-900" />
+                          <th className="border border-slate-300 px-1 py-1 print:border-slate-900" />
                           {DAY_ORDER.flatMap((day) => {
                             if (dayAllDescanso[day]) {
                               return [
                                 <th
                                   key={`${day}-empty`}
-                                  className={`border border-slate-200 px-1 py-2 text-center uppercase print:border-slate-900 ${dayStartDividerClass(day)}`}
+                                  className={`border border-slate-300 px-1 py-1 text-center uppercase print:border-slate-900 ${dayStartDividerClass(day)}`}
                                 />,
                               ];
                             }
@@ -790,22 +790,22 @@ export default function HorariosGuardadosPage() {
                             return fields.map((field) => (
                               <th
                                 key={`${day}-${field}`}
-                                className={`w-14 min-w-13 border border-slate-200 px-1 py-2 text-center uppercase print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
+                                className={`border border-slate-300 px-1 py-1 text-center uppercase print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
                               >
                                 {field === "he1" || field === "he2" ? "HE" : "HS"}
                               </th>
                             ));
                           })}
-                          <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
+                          <th className="border border-slate-300 px-1 py-1 print:border-slate-900" />
                         </tr>
                       </thead>
                       <tbody>
                         {selectedForm.rows.map((row, rowIndex) => (
                           <tr key={`preview-row-${row.rowIndex ?? rowIndex}`} className="odd:bg-white even:bg-slate-50/40">
-                            <td className="border border-slate-200 px-2 py-1 text-center text-slate-600 print:border-slate-900">
+                            <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600 print:border-slate-900">
                               {(typeof row.rowIndex === "number" ? row.rowIndex : rowIndex) + 1}
                             </td>
-                            <td className="border border-slate-200 px-2 py-1 text-slate-900 print:border-slate-900">
+                            <td className="planilla-cell-nombre border border-slate-300 px-1 py-0.5 text-slate-900 print:border-slate-900">
                               {row.nombre || "--"}
                             </td>
                             {DAY_ORDER.flatMap((day) => {
@@ -816,7 +816,7 @@ export default function HorariosGuardadosPage() {
                                   <td
                                     key={`${rowIndex}-${day}-descanso`}
                                     colSpan={cols}
-                                    className={`border border-slate-200 bg-amber-50/60 px-2 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 print:border-slate-900 print:bg-white print:px-0.5 print:text-[5px] print:tracking-normal ${dayStartDividerClass(day)}`}
+                                    className={`border border-slate-300 px-0.5 py-0.5 text-center text-[8px] font-semibold uppercase tracking-normal text-slate-700 print:border-slate-900 print:bg-white print:px-0.5 print:text-[7px] ${dayStartDividerClass(day)}`}
                                   >
                                     Descanso
                                   </td>,
@@ -831,13 +831,13 @@ export default function HorariosGuardadosPage() {
                               return fields.map((field) => (
                                 <td
                                   key={`${rowIndex}-${day}-${field}`}
-                                  className={`border border-slate-200 px-2 py-1 text-center text-slate-700 print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
+                                  className={`border border-slate-300 px-0.5 py-0.5 text-center text-slate-700 print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
                                 >
                                   {renderTimeValue(dayData[field])}
                                 </td>
                               ));
                             })}
-                            <td className="border border-slate-200 px-2 py-1 text-slate-700 print:border-slate-900">
+                            <td className="border border-slate-300 px-1 py-0.5 text-slate-700 print:border-slate-900">
                               {row.firma || "--"}
                             </td>
                           </tr>
@@ -1011,6 +1011,23 @@ export default function HorariosGuardadosPage() {
           border-left-width: 2px;
           border-left-color: rgb(30 41 59);
         }
+        /* Anchos en pantalla para la preview (table-layout: fixed). Replican
+           las mismas proporciones que se usan al imprimir para que lo que
+           ves en pantalla sea identico al PDF. */
+        .planilla-print-table .planilla-col-index {
+          width: 2.25rem;
+        }
+        .planilla-print-table .planilla-col-nombre {
+          width: 9rem;
+        }
+        .planilla-print-table .planilla-col-firma {
+          width: 9.5rem;
+        }
+        .planilla-print-table .planilla-cell-nombre {
+          white-space: normal;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
         @media print {
           @page {
             size: A4 landscape;
@@ -1089,13 +1106,17 @@ export default function HorariosGuardadosPage() {
           /* Anchos fijos en pantalla (rem) del primer th (# / Nombre / Firma)
              deben colapsar a px concretos para que en A4 horizontal queden
              chicos y el resto de columnas (HE/HS) reciban el ancho restante
-             distribuido equitativamente por table-layout: fixed. */
+             distribuido equitativamente por table-layout: fixed.
+             La columna de Firma se deja mas ancha para que el empleado tenga
+             suficiente espacio para firmar al imprimir la planilla. */
           .planilla-print-table thead tr:first-child th:first-child {
             width: 22px !important;
           }
-          .planilla-print-table thead tr:first-child th:nth-child(2),
-          .planilla-print-table thead tr:first-child th:last-child {
+          .planilla-print-table thead tr:first-child th:nth-child(2) {
             width: 70px !important;
+          }
+          .planilla-print-table thead tr:first-child th:last-child {
+            width: 130px !important;
           }
           /* Separador vertical entre dias (mas grueso y oscuro que HE/HS internos) */
           #horarios-guardados-print table th.day-group-start,
