@@ -624,28 +624,29 @@ function mergeLoadedPlanillaRows(
     days?: RowSchedule["days"];
   }>,
 ): RowSchedule[] {
-  const base = Array.from({ length: INITIAL_ROW_COUNT }, () =>
-    createEmptyRow(),
-  );
-  apiRows.forEach((r, i) => {
+  // Calcular cuantas filas necesitamos para incluir todas las que vienen del API.
+  // Antes se truncaba a INITIAL_ROW_COUNT (16) y se perdian los registros extra
+  // al editar una planilla con mas de 16 empleados.
+  const maxRowIndex = apiRows.reduce<number>((acc, r, i) => {
     const idx =
-      typeof r.rowIndex === "number" &&
-      r.rowIndex >= 0 &&
-      r.rowIndex < INITIAL_ROW_COUNT
-        ? r.rowIndex
-        : i < INITIAL_ROW_COUNT
-          ? i
-          : -1;
-    if (idx < 0) return;
+      typeof r.rowIndex === "number" && r.rowIndex >= 0 ? r.rowIndex : i;
+    return Math.max(acc, idx);
+  }, -1);
+  const totalRows = Math.max(INITIAL_ROW_COUNT, maxRowIndex + 1);
+  const base = Array.from({ length: totalRows }, () => createEmptyRow());
+  apiRows.forEach((r, i) => {
+    const candidateIdx =
+      typeof r.rowIndex === "number" && r.rowIndex >= 0 ? r.rowIndex : i;
+    if (candidateIdx < 0 || candidateIdx >= totalRows) return;
     const empty = createEmptyRow();
-    base[idx] = {
+    base[candidateIdx] = {
       nombre: typeof r.nombre === "string" ? r.nombre : "",
       firma: typeof r.firma === "string" ? r.firma : "",
       days: { ...empty.days },
     };
     for (const dk of DAY_ORDER) {
       const src = r.days?.[dk];
-      base[idx].days[dk] = {
+      base[candidateIdx].days[dk] = {
         he1: typeof src?.he1 === "string" ? normalizeScheduleTime(src.he1) : "",
         hs1: typeof src?.hs1 === "string" ? normalizeScheduleTime(src.hs1) : "",
         he2: typeof src?.he2 === "string" ? normalizeScheduleTime(src.he2) : "",
