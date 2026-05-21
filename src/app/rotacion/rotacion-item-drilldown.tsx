@@ -91,9 +91,10 @@ export function RotacionItemDrilldown({
             rel="noopener noreferrer"
             onClick={closePopover}
             role="menuitem"
+            title="Abrir inventario por sede"
             className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-sky-50 hover:text-sky-700 focus-visible:bg-sky-50 focus-visible:outline-none"
           >
-            <span>Inventario x item</span>
+            <span>Inventario x sede</span>
             <ExternalLink className="h-3.5 w-3.5 text-slate-400" aria-hidden />
           </a>
         </div>

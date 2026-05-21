@@ -440,6 +440,78 @@ export default function HorariosGuardadosPage() {
     [selectedForm],
   );
 
+  // Para cada dia, indica si alguna fila usa break (hs1 o he2 con dato real).
+  // Si un dia no tiene break alguno, ocultamos esas dos columnas intermedias
+  // en la impresion para que las columnas restantes se vean mas grandes.
+  const dayHasBreaks = useMemo(() => {
+    const result: Record<DayKey, boolean> = {
+      domingo: false,
+      lunes: false,
+      martes: false,
+      miercoles: false,
+      jueves: false,
+      viernes: false,
+      sabado: false,
+    };
+    if (!selectedForm) return result;
+    const hasContent = (value: string | undefined | null) =>
+      Boolean(value && value.trim() && value.trim() !== "--");
+    for (const row of selectedForm.rows) {
+      for (const day of DAY_ORDER) {
+        const dayData = row.days[day];
+        if (!dayData || dayData.conDescanso) continue;
+        if (hasContent(dayData.hs1) || hasContent(dayData.he2)) {
+          result[day] = true;
+        }
+      }
+    }
+    return result;
+  }, [selectedForm]);
+
+  // Indica si el dia esta integramente compuesto por Descanso (entre las filas
+  // con algun dato). En esos dias el bloque se reduce a una sola columna
+  // estrecha para liberar ancho a los dias con horario real.
+  const dayAllDescanso = useMemo(() => {
+    const result: Record<DayKey, boolean> = {
+      domingo: false,
+      lunes: false,
+      martes: false,
+      miercoles: false,
+      jueves: false,
+      viernes: false,
+      sabado: false,
+    };
+    if (!selectedForm) return result;
+    const hasTimeData = (value: string | undefined | null) =>
+      Boolean(value && value.trim() && value.trim() !== "--");
+    const populatedRows = selectedForm.rows.filter((row) => {
+      if (row.nombre && row.nombre.trim()) return true;
+      if (row.firma && row.firma.trim()) return true;
+      return DAY_ORDER.some((d) => {
+        const dd = row.days[d];
+        if (!dd) return false;
+        return (
+          dd.conDescanso ||
+          hasTimeData(dd.he1) ||
+          hasTimeData(dd.hs1) ||
+          hasTimeData(dd.he2) ||
+          hasTimeData(dd.hs2)
+        );
+      });
+    });
+    if (populatedRows.length === 0) return result;
+    for (const day of DAY_ORDER) {
+      result[day] = populatedRows.every(
+        (row) => row.days[day]?.conDescanso === true,
+      );
+    }
+    return result;
+  }, [selectedForm]);
+
+  // Numero efectivo de columnas que ocupa cada dia en impresion (1, 2 o 4).
+  const dayColSpan = (day: DayKey) =>
+    dayAllDescanso[day] ? 1 : dayHasBreaks[day] ? 4 : 2;
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
@@ -679,12 +751,16 @@ export default function HorariosGuardadosPage() {
                           {DAY_ORDER.map((day) => (
                             <th
                               key={day}
-                              colSpan={4}
+                              colSpan={dayColSpan(day)}
                               className={`border border-slate-200 px-2 py-2 text-center uppercase print:border-slate-900 ${dayStartDividerClass(day)}`}
                             >
-                              <div className="flex items-center justify-center gap-2">
-                                <span>{day}</span>
-                                <span className="rounded-md bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 print:text-[8px]">
+                              <div
+                                className={`flex items-center justify-center gap-1 ${dayAllDescanso[day] ? "print:flex-col print:gap-0" : "print:gap-0.5"}`}
+                              >
+                                <span className="planilla-day-name whitespace-nowrap">
+                                  {day}
+                                </span>
+                                <span className="planilla-day-number rounded-md bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 print:px-1 print:text-[8px]">
                                   {selectedFormDayNumbers[day] ?? "--"}
                                 </span>
                               </div>
@@ -697,16 +773,29 @@ export default function HorariosGuardadosPage() {
                         <tr className="bg-white text-[11px] font-semibold text-slate-500">
                           <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
                           <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
-                          {DAY_ORDER.flatMap((day) =>
-                            (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
+                          {DAY_ORDER.flatMap((day) => {
+                            if (dayAllDescanso[day]) {
+                              return [
+                                <th
+                                  key={`${day}-empty`}
+                                  className={`border border-slate-200 px-1 py-2 text-center uppercase print:border-slate-900 ${dayStartDividerClass(day)}`}
+                                />,
+                              ];
+                            }
+                            const fields = (
+                              dayHasBreaks[day]
+                                ? (["he1", "hs1", "he2", "hs2"] as const)
+                                : (["he1", "hs2"] as const)
+                            );
+                            return fields.map((field) => (
                               <th
                                 key={`${day}-${field}`}
                                 className={`w-14 min-w-13 border border-slate-200 px-1 py-2 text-center uppercase print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
                               >
                                 {field === "he1" || field === "he2" ? "HE" : "HS"}
                               </th>
-                            )),
-                          )}
+                            ));
+                          })}
                           <th className="border border-slate-200 px-2 py-2 print:border-slate-900" />
                         </tr>
                       </thead>
@@ -721,19 +810,25 @@ export default function HorariosGuardadosPage() {
                             </td>
                             {DAY_ORDER.flatMap((day) => {
                               const dayData = row.days[day];
+                              const cols = dayColSpan(day);
                               if (dayData.conDescanso) {
                                 return [
                                   <td
                                     key={`${rowIndex}-${day}-descanso`}
-                                    colSpan={4}
-                                    className={`border border-slate-200 bg-amber-50/60 px-2 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 print:border-slate-900 print:bg-white print:text-[8px] ${dayStartDividerClass(day)}`}
+                                    colSpan={cols}
+                                    className={`border border-slate-200 bg-amber-50/60 px-2 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 print:border-slate-900 print:bg-white print:px-0.5 print:text-[5px] print:tracking-normal ${dayStartDividerClass(day)}`}
                                   >
                                     Descanso
                                   </td>,
                                 ];
                               }
 
-                              return (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
+                              const fields = (
+                                dayHasBreaks[day]
+                                  ? (["he1", "hs1", "he2", "hs2"] as const)
+                                  : (["he1", "hs2"] as const)
+                              );
+                              return fields.map((field) => (
                                 <td
                                   key={`${rowIndex}-${day}-${field}`}
                                   className={`border border-slate-200 px-2 py-1 text-center text-slate-700 print:border-slate-900 ${field === "he1" ? dayStartDividerClass(day) : ""}`}
@@ -957,8 +1052,27 @@ export default function HorariosGuardadosPage() {
             width: 100% !important;
             max-width: 100% !important;
             min-width: 0 !important;
-            font-size: 7px !important;
+            font-size: 9px !important;
             color: #0f172a !important;
+          }
+          .planilla-print-table tbody td {
+            font-size: 9px !important;
+            line-height: 1.15 !important;
+          }
+          .planilla-print-table thead th {
+            font-size: 9px !important;
+          }
+          /* Nombre del dia en el header (DOMINGO, LUNES, ...): un poco mas
+             chico y siempre en una sola linea para que no se parta cuando la
+             columna del dia es estrecha (caso Descanso = 1 col). */
+          .planilla-print-table thead th .planilla-day-name {
+            font-size: 7px !important;
+            white-space: nowrap !important;
+            letter-spacing: 0 !important;
+          }
+          .planilla-print-table thead th .planilla-day-number {
+            font-size: 7px !important;
+            white-space: nowrap !important;
           }
           .planilla-print-table th,
           .planilla-print-table td {
@@ -972,7 +1086,10 @@ export default function HorariosGuardadosPage() {
             overflow: hidden !important;
             word-break: break-word !important;
           }
-          /* Anchos en rem del primer th (# / Nombre / Firma) deben colapsar tambien */
+          /* Anchos fijos en pantalla (rem) del primer th (# / Nombre / Firma)
+             deben colapsar a px concretos para que en A4 horizontal queden
+             chicos y el resto de columnas (HE/HS) reciban el ancho restante
+             distribuido equitativamente por table-layout: fixed. */
           .planilla-print-table thead tr:first-child th:first-child {
             width: 22px !important;
           }
@@ -985,11 +1102,6 @@ export default function HorariosGuardadosPage() {
           #horarios-guardados-print table td.day-group-start {
             border-left-width: 3px !important;
             border-left-color: #020617 !important;
-          }
-          /* Anchos fijos en rem obligan un ancho minimo enorme y se corta en PDF */
-          .planilla-print-table colgroup col {
-            width: auto !important;
-            min-width: 0 !important;
           }
         }
       `}</style>
