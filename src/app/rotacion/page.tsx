@@ -281,6 +281,13 @@ export function RotacionPageInner() {
   const [ventaHastaInputByGroup, setVentaHastaInputByGroup] = useState<
     Record<string, string>
   >({});
+  /** Piso de unidades de inventario al pulsar «Inv ≥» (independiente del filtro de venta). */
+  const [invMinCapByGroup, setInvMinCapByGroup] = useState<
+    Record<string, number | undefined>
+  >({});
+  const [invMinInputByGroup, setInvMinInputByGroup] = useState<
+    Record<string, string>
+  >({});
   const [abcdFilterByGroup, setAbcdFilterByGroup] = useState<
     Record<string, GroupAbcdFilter>
   >({});
@@ -920,6 +927,11 @@ export function RotacionPageInner() {
     if (availableRange.end) return availableRange.end;
     return auditChangedAtDateKeyBogota(new Date().toISOString());
   }, [availableRange.end, dateRange.end]);
+  const itemDrilldownDateStart = useMemo(() => {
+    if (dateRange.start) return dateRange.start;
+    if (availableRange.start) return availableRange.start;
+    return "";
+  }, [availableRange.start, dateRange.start]);
 
   const allSedeOptions = useMemo(() => {
     const mapped = filterCatalog.sedes
@@ -1767,6 +1779,27 @@ export function RotacionPageInner() {
     setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
   };
 
+  /**
+   * Filtro de piso de unidades de inventario. Es ortogonal a los filtros de
+   * rotacion/venta: se aplica como capa adicional sobre las filas para que el
+   * usuario pueda esconder items con inventario por debajo del minimo elegido
+   * (p.ej. para ignorar items practicamente agotados al revisar A/B/C).
+   */
+  const applyOrToggleInvMinFilter = (groupKey: string) => {
+    const currentCap = invMinCapByGroup[groupKey];
+    if (currentCap != null) {
+      setInvMinCapByGroup((prev) => ({ ...prev, [groupKey]: undefined }));
+      setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+      return;
+    }
+    const raw = invMinInputByGroup[groupKey] ?? "";
+    const parsedRaw = Number(sanitizeNumericInput(raw));
+    if (Number.isNaN(parsedRaw)) return;
+    const parsed = Math.max(0, parsedRaw);
+    setInvMinCapByGroup((prev) => ({ ...prev, [groupKey]: parsed }));
+    setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+  };
+
   const setGroupPage = (
     groupKey: string,
     nextPage: number,
@@ -1842,12 +1875,19 @@ export function RotacionPageInner() {
         const estadoMapForFilter = isCeroTableContext
           ? ceroEstadoByKey
           : restockEstadoByKey;
-        const quickFilteredRows = applyRowsQuickFilter(
+        const quickFilteredRowsBeforeInvMin = applyRowsQuickFilter(
           group.rows,
           rowFilter,
           ventaHastaCap,
           dateRange,
         );
+        const invMinCap = invMinCapByGroup[groupKey] ?? null;
+        const quickFilteredRows =
+          invMinCap == null
+            ? quickFilteredRowsBeforeInvMin
+            : quickFilteredRowsBeforeInvMin.filter(
+                (row) => row.inventoryUnits >= invMinCap,
+              );
         const zeroEstadoSet = normalizeGroupZeroEstadoSetFilter(
           ceroEstadoFilterByGroup[groupKey],
         );
@@ -1957,6 +1997,7 @@ export function RotacionPageInner() {
       restockEstadoByKey,
       ceroEstadoFilterByGroup,
       dateRange,
+      invMinCapByGroup,
       isAbcdFilterableRow,
       isNuevoItemInSelectedRange,
       rowsBySede,
@@ -2950,12 +2991,19 @@ export function RotacionPageInner() {
                     const estadoMapForFilter = isCeroTableContext
                       ? ceroEstadoByKey
                       : restockEstadoByKey;
-                    const quickFilteredRows = applyRowsQuickFilter(
+                    const quickFilteredRowsBeforeInvMin = applyRowsQuickFilter(
                       group.rows,
                       rowFilter,
                       ventaHastaCap,
                       dateRange,
                     );
+                    const invMinCap = invMinCapByGroup[groupKey] ?? null;
+                    const quickFilteredRows =
+                      invMinCap == null
+                        ? quickFilteredRowsBeforeInvMin
+                        : quickFilteredRowsBeforeInvMin.filter(
+                            (row) => row.inventoryUnits >= invMinCap,
+                          );
                     const zeroEstadoSet = normalizeGroupZeroEstadoSetFilter(
                       ceroEstadoFilterByGroup[groupKey],
                     );
@@ -3152,6 +3200,21 @@ export function RotacionPageInner() {
                               : row.totalSales >= 1 &&
                                   row.totalSales <= ventaHastaParsedPreview;
                           }).length;
+                    const invMinInput = invMinInputByGroup[groupKey] ?? "";
+                    const invMinDigits = sanitizeNumericInput(invMinInput);
+                    const invMinParsedPreviewRaw = Number(invMinDigits);
+                    const invMinParsedPreview = Math.max(
+                      0,
+                      invMinParsedPreviewRaw,
+                    );
+                    const invMinAppliedCap = invMinCapByGroup[groupKey] ?? null;
+                    const invMinPreviewCount =
+                      invMinDigits.length === 0 ||
+                      Number.isNaN(invMinParsedPreviewRaw)
+                        ? null
+                        : quickFilteredRowsBeforeInvMin.filter(
+                            (row) => row.inventoryUnits >= invMinParsedPreview,
+                          ).length;
                     const ceroRotacionCount = group.rows.filter((row) =>
                       isCeroRotacionExcludingNuevo(row, dateRange),
                     ).length;
@@ -3196,7 +3259,7 @@ export function RotacionPageInner() {
                             </div>
 
                             <div className="flex flex-wrap items-start gap-4">
-                              <CardDescription className="min-w-[11rem] max-w-sm flex-1 text-sm leading-6 text-slate-600">
+                              <CardDescription className="min-w-44 max-w-sm flex-1 text-sm leading-6 text-slate-600">
                                 {targetSedeSelections.length > 1
                                   ? "Consolidado real de las sedes seleccionadas usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."
                                   : "Consolidado real por sede usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."}
@@ -3232,7 +3295,7 @@ export function RotacionPageInner() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                      className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "A",
@@ -3271,7 +3334,7 @@ export function RotacionPageInner() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                      className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "B",
@@ -3310,7 +3373,7 @@ export function RotacionPageInner() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                      className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "C",
@@ -3380,7 +3443,7 @@ export function RotacionPageInner() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                      className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         isAbcdLetterFilterActive(
                                           categoryFilter,
                                           "D",
@@ -3416,7 +3479,7 @@ export function RotacionPageInner() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                      className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         categoryFilter === "0"
                                           ? "border-slate-700 bg-slate-600 text-white shadow-md ring-2 ring-slate-200"
                                           : "border-slate-300 bg-slate-100 text-slate-900"
@@ -3453,7 +3516,7 @@ export function RotacionPageInner() {
                                           [groupKey]: 1,
                                         }));
                                       }}
-                                      className={`mx-auto flex aspect-square h-[4.5rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                      className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
                                         categoryFilter === "S" ||
                                         categoryFilter === "R" ||
                                         categoryFilter === "N"
@@ -3833,6 +3896,47 @@ export function RotacionPageInner() {
                                         }))
                                       }
                                       className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-300 focus:ring-1 focus:ring-amber-100"
+                                    />
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
+                                    <Button
+                                      type="button"
+                                      variant={
+                                        invMinAppliedCap != null
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      title="Mostrar solo items con unidades de inventario mayores o iguales al valor ingresado"
+                                      className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
+                                        invMinAppliedCap != null
+                                          ? "bg-sky-700 text-white hover:bg-sky-800"
+                                          : ""
+                                      }`}
+                                      onClick={() =>
+                                        applyOrToggleInvMinFilter(groupKey)
+                                      }
+                                    >
+                                      {invMinAppliedCap != null
+                                        ? `Inv ≥ ${invMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
+                                        : invMinPreviewCount != null
+                                          ? `Inv ≥ (${invMinPreviewCount})`
+                                          : "Inv ≥"}
+                                    </Button>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="UND"
+                                      aria-label="Piso unidades de inventario para filtrar"
+                                      value={invMinInput}
+                                      onChange={(e) =>
+                                        setInvMinInputByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]: sanitizeNumericInput(
+                                            e.target.value,
+                                          ),
+                                        }))
+                                      }
+                                      className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-100"
                                     />
                                   </div>
                                 </div>
@@ -4376,6 +4480,7 @@ export function RotacionPageInner() {
                                               <RotacionItemDrilldown
                                                 itemId={row.item}
                                                 date={itemDrilldownDate}
+                                                dateStart={itemDrilldownDateStart}
                                               />
                                             ) : (
                                               <span className="text-xs">
@@ -4494,6 +4599,7 @@ export function RotacionPageInner() {
                                               <RotacionItemDrilldown
                                                 itemId={row.item}
                                                 date={itemDrilldownDate}
+                                                dateStart={itemDrilldownDateStart}
                                               />
                                             ) : (
                                               <span className="text-xs">

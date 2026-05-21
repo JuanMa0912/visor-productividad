@@ -167,7 +167,6 @@ const isAbsenceIncident = (value: string | null | undefined) =>
 const HOURS_7_20 = 7 + 29 / 60;
 const HOURS_9_20 = 9 + 20 / 60;
 const NO_STORE_CACHE_CONTROL = "no-store, private";
-const ALEX_REPORT_MAX_RANGE_DAYS = 31;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
@@ -354,12 +353,10 @@ export async function GET(request: Request) {
       );
     }
     const rangeDays = getInclusiveDateRangeDays(startDate, endDate);
-    if (!rangeDays || rangeDays > ALEX_REPORT_MAX_RANGE_DAYS) {
+    if (!rangeDays) {
       return withSession(
         NextResponse.json(
-          {
-            error: `El rango del reporte Alex no puede superar ${ALEX_REPORT_MAX_RANGE_DAYS} dias.`,
-          },
+          { error: "Rango de fechas invalido." },
           { status: 400 },
         ),
       );

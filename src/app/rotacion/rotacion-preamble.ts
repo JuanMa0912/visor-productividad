@@ -756,31 +756,46 @@ const clampPercent = (value: number) =>
 const safeNumber = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
+/**
+ * Filas "vacias": sin venta, sin costo y sin inventario en el periodo. No aportan
+ * informacion utilil (ni a la tabla ni al Pareto ABCD) y suelen ser items que ya
+ * salieron del catalogo activo o que cargaron una sola foto en cero.
+ */
+const isEmptyRotationRow = (row: RotationRow) =>
+  !(row.totalSales > 0) &&
+  !(row.totalCost > 0) &&
+  !(row.inventoryUnits > 0) &&
+  !(row.inventoryValue > 0);
+
 const normalizeRotationRows = (rows: RotationRow[]) =>
-  rows.map((row) => {
-    return {
-    ...row,
-    totalUnits: safeNumber(
-      (row as RotationRow & { totalUnits?: number }).totalUnits,
-    ),
-    marginDailyAvgPct: safeNumber(
-      (row as RotationRow & { marginDailyAvgPct?: number }).marginDailyAvgPct,
-    ),
-    openingInventoryUnits: safeNumber(
-      (row as RotationRow & { openingInventoryUnits?: number })
-        .openingInventoryUnits,
-    ),
-    minInventoryUnits: safeNumber(
-      (row as RotationRow & { minInventoryUnits?: number }).minInventoryUnits,
-    ),
-    bodega: row.bodega ?? null,
-    nombreBodega: row.nombreBodega ?? null,
-    categoria: row.categoria ?? null,
-    nombreCategoria: row.nombreCategoria ?? null,
-    linea01: row.linea01 ?? null,
-    nombreLinea01: row.nombreLinea01 ?? null,
-  };
-  });
+  rows
+    .map((row) => {
+      return {
+        ...row,
+        totalUnits: safeNumber(
+          (row as RotationRow & { totalUnits?: number }).totalUnits,
+        ),
+        marginDailyAvgPct: safeNumber(
+          (row as RotationRow & { marginDailyAvgPct?: number })
+            .marginDailyAvgPct,
+        ),
+        openingInventoryUnits: safeNumber(
+          (row as RotationRow & { openingInventoryUnits?: number })
+            .openingInventoryUnits,
+        ),
+        minInventoryUnits: safeNumber(
+          (row as RotationRow & { minInventoryUnits?: number })
+            .minInventoryUnits,
+        ),
+        bodega: row.bodega ?? null,
+        nombreBodega: row.nombreBodega ?? null,
+        categoria: row.categoria ?? null,
+        nombreCategoria: row.nombreCategoria ?? null,
+        linea01: row.linea01 ?? null,
+        nombreLinea01: row.nombreLinea01 ?? null,
+      };
+    })
+    .filter((row) => !isEmptyRotationRow(row));
 
 /** Categorias a enviar en query: null = sin filtro (todo el catalogo o vacio). */
 const buildCategoriaQueryKeys = (

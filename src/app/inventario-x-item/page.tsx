@@ -8,17 +8,20 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toJpeg } from "html-to-image";
+import * as ExcelJS from "exceljs";
 import {
   ArrowUp,
   ArrowUpDown,
   Building2,
   CalendarDays,
   Check,
+  ChevronDown,
   Database,
   Filter,
   Loader2,
@@ -137,6 +140,35 @@ const dateLabelOptions: Intl.DateTimeFormatOptions = {
   day: "2-digit",
   month: "long",
   year: "numeric",
+};
+
+/**
+ * Rango por defecto: 1 mes corrido hacia atras (misma logica que `/rotacion`)
+ * para que DI calce exactamente con el DIC sin necesidad de entrar por deep
+ * link. Es `end - 1 mes calendario + 1 dia`, p.ej. `2026-05-20` -> `2026-04-21`.
+ *
+ * Nunca devuelve un `start` anterior a `min` (limite real de datos) ni un
+ * rango invertido.
+ */
+const defaultRollingMonthBackRange = (
+  min: string,
+  max: string,
+): { start: string; end: string } | null => {
+  if (!max || !/^\d{4}-\d{2}-\d{2}$/.test(max)) return null;
+  const endAtNoon = new Date(`${max}T12:00:00`);
+  if (Number.isNaN(endAtNoon.getTime())) return null;
+
+  const formatYMD = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const oneMonthBack = new Date(endAtNoon);
+  oneMonthBack.setMonth(oneMonthBack.getMonth() - 1);
+  oneMonthBack.setDate(oneMonthBack.getDate() + 1);
+  let start = formatYMD(oneMonthBack);
+
+  if (start > max) start = max;
+  if (min && /^\d{4}-\d{2}-\d{2}$/.test(min) && start < min) start = min;
+  return { start, end: max };
 };
 
 const compareText = (left: string, right: string) =>
@@ -610,6 +642,13 @@ export default function InventarioXItemPage() {
   const [loadingMatrix, setLoadingMatrix] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingJpg, setExportingJpg] = useState(false);
+  /** Variante visual usada SOLO durante la generacion del JPG. */
+  const [jpgExportMode, setJpgExportMode] = useState<"full" | "di-only">("full");
+  const [jpgMenuOpen, setJpgMenuOpen] = useState(false);
+  const jpgMenuRef = useRef<HTMLDivElement | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [excelMenuOpen, setExcelMenuOpen] = useState(false);
+  const excelMenuRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [rows, setRows] = useState<InventarioSummaryRow[]>([]);
@@ -650,6 +689,12 @@ export default function InventarioXItemPage() {
     needsScope: boolean;
   } | null>(null);
   const inventarioDeepLinkInitRef = useRef(false);
+  /** Marca si ya seleccionamos automaticamente todas las empresas/sedes al
+   * cargar los filtros iniciales (default: todas, el usuario solo elige items). */
+  const autoScopeAppliedRef = useRef(false);
+  /** Marca si ya aplicamos el default "mes corrido" al cargar metadatos por
+   * primera vez. Evita pisar selecciones manuales del usuario en recargas. */
+  const monthToDateDefaultAppliedRef = useRef(false);
 
   const persistItemPresetsRemote = useCallback(
     async (presets: ItemPreset[]): Promise<boolean> => {
@@ -921,6 +966,26 @@ export default function InventarioXItemPage() {
         setAvailableDateStart(payload.meta?.availableDateStart ?? "");
         setAvailableDateEnd(payload.meta?.availableDateEnd ?? "");
         const meta = payload.meta;
+
+        const shouldApplyMonthToDateDefault =
+          !monthToDateDefaultAppliedRef.current &&
+          !selectedDateStartState &&
+          !selectedDateEndState &&
+          !pendingInventarioDeepLinkRef.current?.item &&
+          Boolean(meta?.availableDateEnd);
+        if (shouldApplyMonthToDateDefault) {
+          const rolling = defaultRollingMonthBackRange(
+            meta?.availableDateStart ?? "",
+            meta?.availableDateEnd ?? "",
+          );
+          if (rolling) {
+            setSelectedDateStartState(rolling.start);
+            setSelectedDateEndState(rolling.end);
+            monthToDateDefaultAppliedRef.current = true;
+            return;
+          }
+        }
+
         if (meta?.selectedDateStart) {
           setSelectedDateStartState(meta.selectedDateStart);
         } else if (!selectedDateStartState) {
@@ -934,6 +999,7 @@ export default function InventarioXItemPage() {
           const end = meta?.availableDateEnd ?? meta?.availableDateStart ?? "";
           if (end) setSelectedDateEndState(end);
         }
+        monthToDateDefaultAppliedRef.current = true;
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setFilters({
@@ -1023,20 +1089,22 @@ export default function InventarioXItemPage() {
   );
 
   useEffect(() => {
-    const pending = pendingInventarioDeepLinkRef.current;
-    if (!ready || !pending?.needsScope) return;
+    if (!ready) return;
+    if (autoScopeAppliedRef.current) return;
     if (filters.companies.length === 0 || filters.sedes.length === 0) return;
-    if (selectedCompanyState.length > 0) {
-      pending.needsScope = false;
-      return;
+    if (selectedCompanyState.length === 0) {
+      setSelectedCompanyState([...filters.companies]);
+      setSelectedSedeState(
+        filters.sedes.map((sede) =>
+          buildSedeOptionValue(sede.empresa, sede.sedeId),
+        ),
+      );
     }
-    setSelectedCompanyState([...filters.companies]);
-    setSelectedSedeState(
-      filters.sedes.map((sede) =>
-        buildSedeOptionValue(sede.empresa, sede.sedeId),
-      ),
-    );
-    pending.needsScope = false;
+    autoScopeAppliedRef.current = true;
+    const pending = pendingInventarioDeepLinkRef.current;
+    if (pending) {
+      pending.needsScope = false;
+    }
   }, [
     filters.companies,
     filters.sedes,
@@ -2126,51 +2194,397 @@ export default function InventarioXItemPage() {
     summaryRows,
   ]);
 
-  const handleDownloadMatrixJpg = useCallback(async () => {
-    if (!matrixImageRef.current || summaryRows.length === 0 || sortedMatrixRowsBySede.length === 0) {
-      return;
-    }
+  useEffect(() => {
+    if (!jpgMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!jpgMenuRef.current) return;
+      if (!jpgMenuRef.current.contains(event.target as Node)) {
+        setJpgMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setJpgMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [jpgMenuOpen]);
 
-    setExportingJpg(true);
+  useEffect(() => {
+    if (!excelMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!excelMenuRef.current) return;
+      if (!excelMenuRef.current.contains(event.target as Node)) {
+        setExcelMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExcelMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [excelMenuOpen]);
 
-    try {
-      const node = matrixImageRef.current;
-      // html-to-image usa clientWidth por defecto; con max-w-full la tabla se recorta al ancho
-      // visible del scroll horizontal. scrollWidth/scrollHeight incluyen todo el contenido.
-      const width = node.scrollWidth;
-      const height = node.scrollHeight;
-      const dataUrl = await toJpeg(node, {
-        quality: 0.95,
-        pixelRatio: 2,
-        backgroundColor: "#ffffff",
-        cacheBust: true,
-        width,
-        height,
-        style: {
-          width: `${width}px`,
-          height: `${height}px`,
-          maxWidth: "none",
-          overflow: "visible",
-        },
-      });
+  const handleDownloadMatrixJpg = useCallback(
+    async (variant: "full" | "di-only" = "full") => {
+      if (
+        !matrixImageRef.current ||
+        summaryRows.length === 0 ||
+        sortedMatrixRowsBySede.length === 0
+      ) {
+        return;
+      }
 
-      const link = document.createElement("a");
-      const safeCompany =
-        selectedCompanyState.length === 1
-          ? selectedCompanyState[0].toLowerCase()
-          : selectedCompanyState.length > 1
-            ? "multiples-empresas"
-            : "todas";
-      const safeSede = selectedSedeLabel.toLowerCase().replace(/\s+/g, "-");
-      link.href = dataUrl;
-      link.download = `inventario-x-item-${safeCompany}-${safeSede}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } finally {
-      setExportingJpg(false);
-    }
-  }, [selectedCompanyState, selectedSedeLabel, sortedMatrixRowsBySede.length, summaryRows.length]);
+      setJpgMenuOpen(false);
+      setExportingJpg(true);
+      setJpgExportMode(variant);
+
+      try {
+        // Espera dos frames para que React commitee el cambio de columnas
+        // antes de capturar la imagen.
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+
+        const node = matrixImageRef.current;
+        if (!node) return;
+        // html-to-image usa clientWidth por defecto; con max-w-full la tabla se recorta al ancho
+        // visible del scroll horizontal. scrollWidth/scrollHeight incluyen todo el contenido.
+        const width = node.scrollWidth;
+        const height = node.scrollHeight;
+        const dataUrl = await toJpeg(node, {
+          quality: 0.95,
+          pixelRatio: 2,
+          backgroundColor: "#ffffff",
+          cacheBust: true,
+          width,
+          height,
+          style: {
+            width: `${width}px`,
+            height: `${height}px`,
+            maxWidth: "none",
+            overflow: "visible",
+          },
+        });
+
+        const link = document.createElement("a");
+        const safeCompany =
+          selectedCompanyState.length === 1
+            ? selectedCompanyState[0].toLowerCase()
+            : selectedCompanyState.length > 1
+              ? "multiples-empresas"
+              : "todas";
+        const safeSede = selectedSedeLabel.toLowerCase().replace(/\s+/g, "-");
+        const variantSuffix = variant === "di-only" ? "-solo-di" : "";
+        link.href = dataUrl;
+        link.download = `inventario-x-item-${safeCompany}-${safeSede}${variantSuffix}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } finally {
+        setJpgExportMode("full");
+        setExportingJpg(false);
+      }
+    },
+    [
+      selectedCompanyState,
+      selectedSedeLabel,
+      sortedMatrixRowsBySede.length,
+      summaryRows.length,
+    ],
+  );
+
+  const handleDownloadMatrixExcel = useCallback(
+    async (variant: "full" | "di-only" = "full") => {
+      if (summaryRows.length === 0 || sortedMatrixRowsBySede.length === 0) {
+        return;
+      }
+
+      setExcelMenuOpen(false);
+      setExportingExcel(true);
+
+      try {
+        const includeInv = variant !== "di-only";
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.created = new Date();
+        const sheet = workbook.addWorksheet("Inventario x Item");
+        sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 5, xSplit: 1 }];
+
+        const colsPerItem = includeInv ? 2 : 1;
+        const totalDataCols = summaryRows.length * colsPerItem;
+        const totalCols = 1 + totalDataCols; // sede + items
+        const lastColLetter = sheet.getColumn(totalCols).letter;
+
+        const thinBorder = {
+          top: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+          left: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+          bottom: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+          right: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+        };
+
+        const titleParts = [
+          `Empresa: ${effectiveCompanyLabel}`,
+          `Sede: ${selectedSedeLabel}`,
+          `Corte: ${selectedDateLabel}`,
+        ];
+        sheet.mergeCells(`A1:${lastColLetter}1`);
+        const titleCell = sheet.getCell("A1");
+        titleCell.value =
+          variant === "di-only"
+            ? "Inventario x Item - Solo DI"
+            : "Inventario x Item";
+        titleCell.font = { bold: true, color: { argb: "FF0F172A" }, size: 14 };
+        titleCell.alignment = { horizontal: "center", vertical: "middle" };
+        titleCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF1F5F9" },
+        };
+        sheet.getRow(1).height = 22;
+
+        sheet.mergeCells(`A2:${lastColLetter}2`);
+        const subtitleCell = sheet.getCell("A2");
+        subtitleCell.value = titleParts.join(" | ");
+        subtitleCell.font = { italic: true, color: { argb: "FF475569" }, size: 10 };
+        subtitleCell.alignment = { horizontal: "center", vertical: "middle" };
+        sheet.getRow(2).height = 18;
+
+        // Filas 3 (codigo item), 4 (descripcion), 5 (sub-encabezados)
+        const itemHeaderRow = 3;
+        const descHeaderRow = 4;
+        const subHeaderRow = 5;
+        const dataStartRow = 6;
+
+        // Sede (rowSpan 3)
+        sheet.mergeCells(itemHeaderRow, 1, subHeaderRow, 1);
+        const sedeHeader = sheet.getCell(itemHeaderRow, 1);
+        sedeHeader.value = "Sede";
+        sedeHeader.font = { bold: true, color: { argb: "FF0F172A" } };
+        sedeHeader.alignment = { horizontal: "left", vertical: "middle" };
+        sedeHeader.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFE2E8F0" },
+        };
+        sedeHeader.border = thinBorder;
+
+        summaryRows.forEach((row, index) => {
+          const startCol = 2 + index * colsPerItem;
+          const endCol = startCol + colsPerItem - 1;
+          if (colsPerItem > 1) sheet.mergeCells(itemHeaderRow, startCol, itemHeaderRow, endCol);
+          const codeCell = sheet.getCell(itemHeaderRow, startCol);
+          codeCell.value = row.item;
+          codeCell.font = { bold: true, color: { argb: "FF0F172A" }, size: 11 };
+          codeCell.alignment = { horizontal: "center", vertical: "middle" };
+          codeCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFDBEAFE" },
+          };
+          for (let c = startCol; c <= endCol; c += 1) {
+            sheet.getCell(itemHeaderRow, c).border = thinBorder;
+          }
+
+          if (colsPerItem > 1) sheet.mergeCells(descHeaderRow, startCol, descHeaderRow, endCol);
+          const descCell = sheet.getCell(descHeaderRow, startCol);
+          descCell.value = row.descripcion ?? "";
+          descCell.font = { color: { argb: "FF475569" }, size: 9 };
+          descCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+          descCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFEFF6FF" },
+          };
+          for (let c = startCol; c <= endCol; c += 1) {
+            sheet.getCell(descHeaderRow, c).border = thinBorder;
+          }
+
+          if (includeInv) {
+            const invSub = sheet.getCell(subHeaderRow, startCol);
+            invSub.value = "Inventario";
+            invSub.font = { bold: true, size: 9, color: { argb: "FF0C4A6E" } };
+            invSub.alignment = { horizontal: "center", vertical: "middle" };
+            invSub.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFF0F9FF" },
+            };
+            invSub.border = thinBorder;
+          }
+          const diSub = sheet.getCell(subHeaderRow, endCol);
+          diSub.value = "DI";
+          diSub.font = { bold: true, size: 9, color: { argb: "FF4C1D95" } };
+          diSub.alignment = { horizontal: "center", vertical: "middle" };
+          diSub.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF5F3FF" },
+          };
+          diSub.border = thinBorder;
+        });
+
+        sheet.getRow(itemHeaderRow).height = 22;
+        sheet.getRow(descHeaderRow).height = 28;
+        sheet.getRow(subHeaderRow).height = 18;
+
+        // Cuerpo
+        sortedMatrixRowsBySede.forEach((row, rowIndex) => {
+          const excelRow = dataStartRow + rowIndex;
+          const sedeCell = sheet.getCell(excelRow, 1);
+          const sedeText = multipleCompaniesInMatrix
+            ? `${row.empresa.toUpperCase()} - ${row.displayName}`
+            : row.displayName;
+          sedeCell.value = sedeText;
+          sedeCell.font = { bold: true, color: { argb: "FF0F172A" } };
+          sedeCell.alignment = { horizontal: "left", vertical: "middle" };
+          sedeCell.border = thinBorder;
+          if (rowIndex % 2 === 1) {
+            sedeCell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFF8FAFC" },
+            };
+          }
+
+          summaryRows.forEach((itemRow, itemIndex) => {
+            const startCol = 2 + itemIndex * colsPerItem;
+            const cellValue = row.items[itemRow.item] ?? {
+              inventoryUnits: 0,
+              diDays: 0,
+            };
+            const rowFill: ExcelJS.FillPattern | undefined =
+              rowIndex % 2 === 1
+                ? {
+                    type: "pattern",
+                    pattern: "solid",
+                    fgColor: { argb: "FFF8FAFC" },
+                  }
+                : undefined;
+            if (includeInv) {
+              const invCell = sheet.getCell(excelRow, startCol);
+              invCell.value = cellValue.inventoryUnits;
+              invCell.numFmt = "#,##0";
+              invCell.alignment = { horizontal: "right", vertical: "middle" };
+              invCell.border = thinBorder;
+              if (cellValue.inventoryUnits === 0) {
+                invCell.font = { color: { argb: "FFCBD5E1" } };
+              }
+              if (rowFill) invCell.fill = rowFill;
+            }
+            const diCol = startCol + colsPerItem - 1;
+            const diCell = sheet.getCell(excelRow, diCol);
+            diCell.value = cellValue.diDays;
+            diCell.numFmt = "0.0";
+            diCell.alignment = { horizontal: "right", vertical: "middle" };
+            diCell.border = thinBorder;
+            if (rowFill) diCell.fill = rowFill;
+          });
+        });
+
+        // Total general
+        const totalRow = dataStartRow + sortedMatrixRowsBySede.length;
+        const totalLabelCell = sheet.getCell(totalRow, 1);
+        totalLabelCell.value = "Total general";
+        totalLabelCell.font = {
+          bold: true,
+          color: { argb: "FF0F172A" },
+          size: 11,
+        };
+        totalLabelCell.alignment = { horizontal: "left", vertical: "middle" };
+        totalLabelCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFEF3C7" },
+        };
+        totalLabelCell.border = thinBorder;
+
+        summaryRows.forEach((row, itemIndex) => {
+          const startCol = 2 + itemIndex * colsPerItem;
+          if (includeInv) {
+            const invTotalCell = sheet.getCell(totalRow, startCol);
+            invTotalCell.value = matrixTotalsByItem[row.item] ?? 0;
+            invTotalCell.numFmt = "#,##0";
+            invTotalCell.font = { bold: true };
+            invTotalCell.alignment = { horizontal: "right", vertical: "middle" };
+            invTotalCell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFEF3C7" },
+            };
+            invTotalCell.border = thinBorder;
+          }
+          const diCol = startCol + colsPerItem - 1;
+          const diTotalCell = sheet.getCell(totalRow, diCol);
+          diTotalCell.value = row.rotationDays;
+          diTotalCell.numFmt = "0.0";
+          diTotalCell.font = { bold: true };
+          diTotalCell.alignment = { horizontal: "right", vertical: "middle" };
+          diTotalCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFFDE68A" },
+          };
+          diTotalCell.border = thinBorder;
+        });
+
+        // Anchos de columna
+        sheet.getColumn(1).width = 32;
+        for (let i = 0; i < summaryRows.length; i += 1) {
+          const startCol = 2 + i * colsPerItem;
+          if (includeInv) {
+            sheet.getColumn(startCol).width = 13;
+            sheet.getColumn(startCol + 1).width = 9;
+          } else {
+            sheet.getColumn(startCol).width = 11;
+          }
+        }
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const safeCompany =
+          selectedCompanyState.length === 1
+            ? selectedCompanyState[0].toLowerCase()
+            : selectedCompanyState.length > 1
+              ? "multiples-empresas"
+              : "todas";
+        const safeSede = selectedSedeLabel.toLowerCase().replace(/\s+/g, "-");
+        const variantSuffix = variant === "di-only" ? "-solo-di" : "";
+        link.href = url;
+        link.download = `inventario-x-item-${safeCompany}-${safeSede}${variantSuffix}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } finally {
+        setExportingExcel(false);
+      }
+    },
+    [
+      effectiveCompanyLabel,
+      matrixTotalsByItem,
+      multipleCompaniesInMatrix,
+      selectedCompanyState,
+      selectedDateLabel,
+      selectedSedeLabel,
+      sortedMatrixRowsBySede,
+      summaryRows,
+    ],
+  );
 
   const subcategoryOptions = useMemo<SelectOption[]>(
     () => [
@@ -2555,14 +2969,90 @@ export default function InventarioXItemPage() {
               >
                 {exportingPdf ? "Generando PDF..." : "PDF"}
               </button>
-              <button
-                type="button"
-                onClick={() => void handleDownloadMatrixJpg()}
-                disabled={!hasAppliedCurrentFilters || summaryRows.length === 0 || exportingJpg}
-                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {exportingJpg ? "Generando JPG..." : "JPG"}
-              </button>
+              <div ref={excelMenuRef} className="relative inline-block">
+                <button
+                  type="button"
+                  onClick={() => setExcelMenuOpen((open) => !open)}
+                  disabled={
+                    !hasAppliedCurrentFilters ||
+                    summaryRows.length === 0 ||
+                    exportingExcel
+                  }
+                  aria-haspopup="menu"
+                  aria-expanded={excelMenuOpen}
+                  className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportingExcel ? "Generando Excel..." : "Excel"}
+                  {!exportingExcel && (
+                    <ChevronDown className="h-3 w-3" aria-hidden />
+                  )}
+                </button>
+                {excelMenuOpen && !exportingExcel && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-30 mt-1 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void handleDownloadMatrixExcel("full")}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
+                    >
+                      Todo completo
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void handleDownloadMatrixExcel("di-only")}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
+                    >
+                      Solo DI
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div ref={jpgMenuRef} className="relative inline-block">
+                <button
+                  type="button"
+                  onClick={() => setJpgMenuOpen((open) => !open)}
+                  disabled={
+                    !hasAppliedCurrentFilters ||
+                    summaryRows.length === 0 ||
+                    exportingJpg
+                  }
+                  aria-haspopup="menu"
+                  aria-expanded={jpgMenuOpen}
+                  className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportingJpg ? "Generando JPG..." : "JPG"}
+                  {!exportingJpg && (
+                    <ChevronDown className="h-3 w-3" aria-hidden />
+                  )}
+                </button>
+                {jpgMenuOpen && !exportingJpg && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-30 mt-1 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void handleDownloadMatrixJpg("full")}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
+                    >
+                      Todo completo
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void handleDownloadMatrixJpg("di-only")}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
+                    >
+                      Solo DI
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -2737,7 +3227,7 @@ export default function InventarioXItemPage() {
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-head-${row.item}`}
-                          colSpan={2}
+                          colSpan={jpgExportMode === "di-only" ? 1 : 2}
                           className={`sticky top-0 z-20 ${matrixItemColMinClass} border-b border-x-2 border-slate-300 bg-sky-100 px-2.5 py-2`}
                         >
                           <button
@@ -2774,7 +3264,7 @@ export default function InventarioXItemPage() {
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-subhead-${row.item}`}
-                          colSpan={2}
+                          colSpan={jpgExportMode === "di-only" ? 1 : 2}
                           className={`sticky top-[54px] z-20 ${matrixItemColMinClass} border-b border-x-2 border-slate-300 bg-sky-50 px-2.5 py-1.5 text-center align-middle`}
                           title={row.descripcion}
                         >
@@ -2792,20 +3282,28 @@ export default function InventarioXItemPage() {
                       ))}
                     </tr>
                     <tr className="h-[32px] text-center text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
-                      {summaryRows.flatMap((row) => [
-                        <th
-                          key={`matrix-col-inv-${row.item}`}
-                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/90 bg-sky-50/70 px-2 py-1 text-sky-900/80`}
-                        >
-                          Inventario
-                        </th>,
-                        <th
-                          key={`matrix-col-di-${row.item}`}
-                          className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-r-2 border-l border-violet-100/90 bg-violet-50/80 px-2 py-1 font-semibold tracking-[0.06em] text-violet-950`}
-                        >
-                          DI
-                        </th>,
-                      ])}
+                      {summaryRows.flatMap((row) => {
+                        const cells: ReactNode[] = [];
+                        if (jpgExportMode !== "di-only") {
+                          cells.push(
+                            <th
+                              key={`matrix-col-inv-${row.item}`}
+                              className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/90 bg-sky-50/70 px-2 py-1 text-sky-900/80`}
+                            >
+                              Inventario
+                            </th>,
+                          );
+                        }
+                        cells.push(
+                          <th
+                            key={`matrix-col-di-${row.item}`}
+                            className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-r-2 border-l border-violet-100/90 bg-violet-50/80 px-2 py-1 font-semibold tracking-[0.06em] text-violet-950`}
+                          >
+                            DI
+                          </th>,
+                        );
+                        return cells;
+                      })}
                     </tr>
                   </thead>
                   <tbody>
@@ -2833,16 +3331,21 @@ export default function InventarioXItemPage() {
                             diDays: 0,
                           };
                           const isZero = cellValue.inventoryUnits === 0;
-                          return [
-                            <td
-                              key={`${row.key}-${itemRow.item}-inv`}
-                              title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Inv ${formatUnits(cellValue.inventoryUnits)}`}
-                              className={`${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/70 bg-sky-50/35 px-2 py-1.5 text-right text-sm font-semibold tabular-nums ${
-                                isZero ? "text-slate-300" : "text-slate-700"
-                              }`}
-                            >
-                              {formatUnits(cellValue.inventoryUnits)}
-                            </td>,
+                          const cells: ReactNode[] = [];
+                          if (jpgExportMode !== "di-only") {
+                            cells.push(
+                              <td
+                                key={`${row.key}-${itemRow.item}-inv`}
+                                title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Inv ${formatUnits(cellValue.inventoryUnits)}`}
+                                className={`${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/70 bg-sky-50/35 px-2 py-1.5 text-right text-sm font-semibold tabular-nums ${
+                                  isZero ? "text-slate-300" : "text-slate-700"
+                                }`}
+                              >
+                                {formatUnits(cellValue.inventoryUnits)}
+                              </td>,
+                            );
+                          }
+                          cells.push(
                             <td
                               key={`${row.key}-${itemRow.item}-di`}
                               title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: DI ${formatDi(cellValue.diDays)}`}
@@ -2850,7 +3353,8 @@ export default function InventarioXItemPage() {
                             >
                               {formatDi(cellValue.diDays)}
                             </td>,
-                          ];
+                          );
+                          return cells;
                         })}
                       </tr>
                     ))}
@@ -2860,14 +3364,20 @@ export default function InventarioXItemPage() {
                       <td className="sticky left-0 z-10 w-max max-w-52 rounded-bl-2xl border-t-2 border-r border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-black uppercase tracking-[0.12em] text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]">
                         Total general
                       </td>
-                      {summaryRows.flatMap((row) => [
-                          <td
-                            key={`matrix-total-${row.item}-inv`}
-                            title={`Total ${row.item}: ${formatUnits(matrixTotalsByItem[row.item] ?? 0)}`}
-                            className={`${matrixItemColMinClass} border-t-2 border-l-2 border-r border-amber-300 bg-amber-50 px-2 py-1.5 text-right text-sm font-black text-slate-900 tabular-nums`}
-                          >
-                            {formatUnits(matrixTotalsByItem[row.item] ?? 0)}
-                          </td>,
+                      {summaryRows.flatMap((row) => {
+                        const cells: ReactNode[] = [];
+                        if (jpgExportMode !== "di-only") {
+                          cells.push(
+                            <td
+                              key={`matrix-total-${row.item}-inv`}
+                              title={`Total ${row.item}: ${formatUnits(matrixTotalsByItem[row.item] ?? 0)}`}
+                              className={`${matrixItemColMinClass} border-t-2 border-l-2 border-r border-amber-300 bg-amber-50 px-2 py-1.5 text-right text-sm font-black text-slate-900 tabular-nums`}
+                            >
+                              {formatUnits(matrixTotalsByItem[row.item] ?? 0)}
+                            </td>,
+                          );
+                        }
+                        cells.push(
                           <td
                             key={`matrix-total-${row.item}-di`}
                             title={`DI ${row.item}: ${formatDi(row.rotationDays)}`}
@@ -2875,7 +3385,9 @@ export default function InventarioXItemPage() {
                           >
                             {formatDi(row.rotationDays)}
                           </td>,
-                      ])}
+                        );
+                        return cells;
+                      })}
                     </tr>
                   </tfoot>
                 </table>

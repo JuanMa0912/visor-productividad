@@ -31,7 +31,6 @@ const LINE_TABLES = [
 const LINE_IDS = new Set<string>(LINE_TABLES.map((line) => line.id));
 const normalizeLineId = (value: string) => value.trim().toLowerCase();
 const NO_STORE_CACHE_CONTROL = "no-store, private";
-const OVERTIME_MAX_RANGE_DAYS = 31;
 /** Rango maximo (inclusive) para agregar aporte por cajero en varias fechas. */
 const PEOPLE_RANGE_MAX_DAYS = 62;
 type DashboardContext = "productividad" | "jornada-extendida";
@@ -2240,12 +2239,10 @@ export async function GET(request: Request) {
       overtimeDateStartParam,
       overtimeDateEndParam,
     );
-    if (!overtimeRangeDays || overtimeRangeDays > OVERTIME_MAX_RANGE_DAYS) {
+    if (!overtimeRangeDays) {
       return withSession(
         NextResponse.json(
-          {
-            error: `El rango de overtime no puede superar ${OVERTIME_MAX_RANGE_DAYS} dias.`,
-          },
+          { error: "Rango de overtime invalido." },
           { status: 400 },
         ),
       );

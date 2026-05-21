@@ -1,6 +1,20 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/*
+ * Tokens "editoriales" usados por la vista Top 5 pareada (HourlyAnalysis).
+ * Registrados como `@theme inline` para que Tailwind v4 los exponga como
+ * utilidades (text-accent-up, bg-accent-up/10, font-display, font-mono, etc.).
+ */
+@theme inline {
+  --color-accent-up: oklch(0.72 0.17 152);
+  --color-accent-down: oklch(0.63 0.22 25);
+  --color-accent-stable: oklch(0.62 0.18 250);
+  --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
+  --font-display: var(--font-geist-sans), "Geist", "Inter", sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
 :root {
   --radius: 0.75rem;
   --background: oklch(0.985 0.006 240);

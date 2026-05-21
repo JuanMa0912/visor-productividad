@@ -3197,38 +3197,30 @@ export default function Home() {
 
   /**
    * Al abrir la pagina (una sola vez por sesion), forzar el rango por defecto a
-   * "mes corrido del ultimo dia con datos":
-   *   - end = ultima fecha con informacion (tipicamente ayer)
-   *   - start = primer dia del mes de `end`; si `end` es dia 1, se incluye tambien
-   *     el ultimo dia del mes anterior para no mostrar un solo dia.
-   * Cualquier ajuste manual posterior del usuario se respeta hasta el proximo F5.
+   * "el dia de ayer" (dia anterior al actual). Si la app no tiene aun datos de
+   * ayer, caemos al ultimo dia con informacion disponible. Cualquier ajuste
+   * manual posterior del usuario se respeta hasta el proximo F5.
    */
-  const monthCorridoDefaultAppliedRef = useRef(false);
+  const yesterdayDefaultAppliedRef = useRef(false);
   useEffect(() => {
     if (!prefsReady) return;
     if (availableDates.length === 0) return;
-    if (monthCorridoDefaultAppliedRef.current) return;
-    monthCorridoDefaultAppliedRef.current = true;
+    if (yesterdayDefaultAppliedRef.current) return;
+    yesterdayDefaultAppliedRef.current = true;
 
     const min = availableDates[0];
     const max = availableDates[availableDates.length - 1];
-    const maxDateObj = new Date(`${max}T12:00:00`);
-    if (Number.isNaN(maxDateObj.getTime())) return;
 
-    const monthStartObj = new Date(
-      maxDateObj.getFullYear(),
-      maxDateObj.getMonth(),
-      1,
-    );
-    let defaultStart = toDateKey(monthStartObj);
-    if (defaultStart === max) {
-      const prevDayObj = new Date(maxDateObj);
-      prevDayObj.setDate(prevDayObj.getDate() - 1);
-      defaultStart = toDateKey(prevDayObj);
-    }
-    if (defaultStart < min) defaultStart = min;
+    const todayObj = new Date();
+    todayObj.setHours(12, 0, 0, 0);
+    const yesterdayObj = new Date(todayObj);
+    yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+    let target = toDateKey(yesterdayObj);
 
-    setDateRange({ start: defaultStart, end: max });
+    if (target > max) target = max;
+    if (target < min) target = min;
+
+    setDateRange({ start: target, end: target });
   }, [availableDates, prefsReady]);
 
   // Si el usuario es sede_*, seleccionar su sede por defecto
