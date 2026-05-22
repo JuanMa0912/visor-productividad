@@ -881,6 +881,8 @@ export const HourlyAnalysis = ({
   const [overtimeAlertOnly, setOvertimeAlertOnly] = useState(false);
   const [overtimeAbsenceOnly, setOvertimeAbsenceOnly] = useState(false);
   const [overtimeOddMarksOnly, setOvertimeOddMarksOnly] = useState(false);
+  /** Filtro rapido para `estado_asistencia` que contiene "incidente". */
+  const [overtimeIncidenceOnly, setOvertimeIncidenceOnly] = useState(false);
   const [overtimeAlertMode, setOvertimeAlertMode] = useState<
     "920" | "720-2marks"
   >("920");
@@ -2813,6 +2815,15 @@ export const HourlyAnalysis = ({
     overtimeRangeMax,
   ]);
   const filteredOvertimeEmployees = useMemo(() => {
+    /** Match laxo: estado contiene "incid" (cubre "Laborado con Incidencia",
+     *  "Incidente", "Incidentes", etc., con/sin acentos). */
+    const hasIncidenceEstado = (employee: OvertimeEmployee) => {
+      const estado = (employee.estadoAsistencia ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+      return estado.includes("incid");
+    };
     const filtered = overtimeAbsenceOnly
       ? baseFilteredOvertimeEmployees.filter(
           (employee) =>
@@ -2823,7 +2834,9 @@ export const HourlyAnalysis = ({
             const marks = employee.marksCount ?? 0;
             return marks > 0 && marks % 2 !== 0;
           })
-        : overtimeAlertOnly
+        : overtimeIncidenceOnly
+          ? baseFilteredOvertimeEmployees.filter(hasIncidenceEstado)
+          : overtimeAlertOnly
           ? baseFilteredOvertimeEmployees.filter((employee) => {
               const employeeMinutes = decimalHoursToMinutes(
                 employee.workedHours,
@@ -2922,6 +2935,7 @@ export const HourlyAnalysis = ({
     overtimeOddMarksOnly,
     overtimeAlertOnly,
     overtimeAlertMode,
+    overtimeIncidenceOnly,
     overtimeSortDirection,
     overtimeSortField,
   ]);
@@ -2962,11 +2976,23 @@ export const HourlyAnalysis = ({
       }).length,
     [baseFilteredOvertimeEmployees],
   );
+  const incidenceCount = useMemo(
+    () =>
+      baseFilteredOvertimeEmployees.filter((employee) => {
+        const estado = (employee.estadoAsistencia ?? "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        return estado.includes("incid");
+      }).length,
+    [baseFilteredOvertimeEmployees],
+  );
 
   const displayOvertimeAbsenceCount = overtimeAbsenceCount;
   const displayOddMarksCount = oddMarksCount;
   const displayAlexAlertCount920 = alexAlertCount920;
   const displayAlexAlertCount720 = alexAlertCount720;
+  const displayIncidenceCount = incidenceCount;
   useEffect(() => {
     if (!isAlexStrictMode) return;
     setOvertimeSedeFilter([]);
@@ -3572,6 +3598,7 @@ export const HourlyAnalysis = ({
                     setOvertimeAbsenceOnly((prev) => !prev);
                     setOvertimeOddMarksOnly(false);
                     setOvertimeAlertOnly(false);
+                    setOvertimeIncidenceOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
                   }}
@@ -3589,6 +3616,7 @@ export const HourlyAnalysis = ({
                     setOvertimeAbsenceOnly(false);
                     setOvertimeOddMarksOnly((prev) => !prev);
                     setOvertimeAlertOnly(false);
+                    setOvertimeIncidenceOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
                   }}
@@ -3605,6 +3633,25 @@ export const HourlyAnalysis = ({
                   onClick={() => {
                     setOvertimeAbsenceOnly(false);
                     setOvertimeOddMarksOnly(false);
+                    setOvertimeAlertOnly(false);
+                    setOvertimeRangeMin("");
+                    setOvertimeRangeMax("");
+                    setOvertimeIncidenceOnly((prev) => !prev);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
+                    overtimeIncidenceOnly
+                      ? "bg-orange-600 text-white shadow-sm"
+                      : "border border-orange-200/70 bg-orange-50 text-orange-700 hover:border-orange-300 hover:bg-orange-100"
+                  }`}
+                >
+                  {`Ver laborado con incidencia (${displayIncidenceCount})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOvertimeAbsenceOnly(false);
+                    setOvertimeOddMarksOnly(false);
+                    setOvertimeIncidenceOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
                     setOvertimeAlertMode("920");
@@ -3625,6 +3672,7 @@ export const HourlyAnalysis = ({
                   onClick={() => {
                     setOvertimeAbsenceOnly(false);
                     setOvertimeOddMarksOnly(false);
+                    setOvertimeIncidenceOnly(false);
                     setOvertimeRangeMin("");
                     setOvertimeRangeMax("");
                     setOvertimeAlertMode("720-2marks");
