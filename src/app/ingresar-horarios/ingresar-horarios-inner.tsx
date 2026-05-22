@@ -10,6 +10,14 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ArrowLeft,
+  Eraser,
+  FileText,
+  FolderOpen,
+  ImageIcon,
+  Save,
+} from "lucide-react";
 import { isSamePlanillaSede } from "@/lib/horarios/planilla-sede";
 import { normalizePersonNameKey } from "@/lib/shared/normalize";
 import {
@@ -662,6 +670,7 @@ export function IngresarHorariosInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planillaQueryIdRaw = searchParams.get("planilla");
+  const duplicarQueryIdRaw = searchParams.get("duplicar");
   const [ready, setReady] = useState(false);
   const [currentUsername, setCurrentUsername] = useState("");
   const [sede, setSede] = useState("");
@@ -887,8 +896,10 @@ export function IngresarHorariosInner() {
         const username = payload.user?.username?.trim() || "anon";
         const draft = readScheduleDraft(username);
         const planillaIdFromUrl = Number(planillaQueryIdRaw);
+        const duplicarIdFromUrl = Number(duplicarQueryIdRaw);
         const skipDraftForPlanilla =
-          Number.isInteger(planillaIdFromUrl) && planillaIdFromUrl > 0;
+          (Number.isInteger(planillaIdFromUrl) && planillaIdFromUrl > 0) ||
+          (Number.isInteger(duplicarIdFromUrl) && duplicarIdFromUrl > 0);
 
         setCurrentUsername(username);
         setSedesOptions(nextSedes);
@@ -924,7 +935,7 @@ export function IngresarHorariosInner() {
       isMounted = false;
       controller.abort();
     };
-  }, [router, planillaQueryIdRaw]);
+  }, [router, planillaQueryIdRaw, duplicarQueryIdRaw]);
 
   useEffect(() => {
     const normalizedSede = normalizeText(sede);
@@ -1003,20 +1014,25 @@ export function IngresarHorariosInner() {
   ]);
 
   useEffect(() => {
-    const id = Number(planillaQueryIdRaw);
-    if (!Number.isInteger(id) || id <= 0) {
+    const editId = Number(planillaQueryIdRaw);
+    const duplicateId = Number(duplicarQueryIdRaw);
+    const isEdit = Number.isInteger(editId) && editId > 0;
+    const isDuplicate =
+      !isEdit && Number.isInteger(duplicateId) && duplicateId > 0;
+    if (!isEdit && !isDuplicate) {
       setEditingPlanillaId(null);
       setLoadingPlanillaEdit(false);
       return;
     }
 
+    const sourceId = isEdit ? editId : duplicateId;
     let cancelled = false;
     setLoadingPlanillaEdit(true);
     setSaveError(null);
 
     const load = async () => {
       try {
-        const res = await fetch(`/api/ingresar-horarios/forms/${id}`, {
+        const res = await fetch(`/api/ingresar-horarios/forms/${sourceId}`, {
           cache: "no-store",
         });
         const data = (await res.json()) as {
@@ -1038,7 +1054,10 @@ export function IngresarHorariosInner() {
         if (!res.ok || !data.form) {
           if (!cancelled) {
             setSaveError(
-              data.error ?? "No se pudo cargar la planilla para editar.",
+              data.error ??
+                (isDuplicate
+                  ? "No se pudo cargar la planilla para duplicar."
+                  : "No se pudo cargar la planilla para editar."),
             );
             setLoadingPlanillaEdit(false);
           }
@@ -1047,18 +1066,26 @@ export function IngresarHorariosInner() {
         if (cancelled) return;
 
         const f = data.form;
-        setEditingPlanillaId(id);
+        // En duplicar: NO seteamos editingPlanillaId, asi Guardar crea una
+        // planilla nueva (POST) sin sobreescribir la original. Limpiamos las
+        // fechas para forzar a elegir el nuevo rango.
+        setEditingPlanillaId(isDuplicate ? null : sourceId);
         setSede(f.sede);
         setSeccion(f.seccion);
-        setFechaInicial(f.fechaInicial ?? "");
-        setFechaFinal(f.fechaFinal ?? "");
-        setMes(f.mes ?? "");
+        setFechaInicial(isDuplicate ? "" : (f.fechaInicial ?? ""));
+        setFechaFinal(isDuplicate ? "" : (f.fechaFinal ?? ""));
+        setMes(isDuplicate ? "" : (f.mes ?? ""));
         setRows(mergeLoadedPlanillaRows(f.rows ?? []));
         setLunesPresetChoiceByRow({});
         lunesIndependenceRef.current.clear();
         setSyncLunesToRest(false);
         setLunesIndVersion((n) => n + 1);
         setEmployeeDuplicateError(null);
+        if (isDuplicate) {
+          setDraftMessage(
+            `Duplicado de planilla #${sourceId}. Elige las fechas y guarda para crear una planilla nueva (la original no se modifica).`,
+          );
+        }
 
         const u = currentUsername;
         if (u) {
@@ -1066,7 +1093,11 @@ export function IngresarHorariosInner() {
         }
       } catch {
         if (!cancelled) {
-          setSaveError("No se pudo cargar la planilla para editar.");
+          setSaveError(
+            isDuplicate
+              ? "No se pudo cargar la planilla para duplicar."
+              : "No se pudo cargar la planilla para editar.",
+          );
         }
       } finally {
         if (!cancelled) setLoadingPlanillaEdit(false);
@@ -1077,7 +1108,7 @@ export function IngresarHorariosInner() {
     return () => {
       cancelled = true;
     };
-  }, [planillaQueryIdRaw, currentUsername]);
+  }, [planillaQueryIdRaw, duplicarQueryIdRaw, currentUsername]);
 
   const updateRowField = useCallback(
     (
@@ -1369,6 +1400,51 @@ export function IngresarHorariosInner() {
     });
   }, []);
 
+  const handleRemoveLastRow = useCallback(() => {
+    setRows((prev) => {
+      // Permitimos quitar hasta dejar solo 1 fila (incluso por debajo de las
+      // 16 iniciales) para planillas con pocos empleados.
+      if (prev.length <= 1) return prev;
+      const lastIndex = prev.length - 1;
+      const last = prev[lastIndex];
+      const hasContent =
+        (last.nombre && last.nombre.trim()) ||
+        (last.firma && last.firma.trim()) ||
+        DAY_ORDER.some((d) => {
+          const day = last.days[d];
+          if (!day) return false;
+          return (
+            day.conDescanso ||
+            (day.he1 && day.he1.trim()) ||
+            (day.hs1 && day.hs1.trim()) ||
+            (day.he2 && day.he2.trim()) ||
+            (day.hs2 && day.hs2.trim())
+          );
+        });
+      if (
+        hasContent &&
+        typeof window !== "undefined" &&
+        !window.confirm(
+          `La fila ${lastIndex + 1} contiene datos. ¿Seguro que quieres eliminarla?`,
+        )
+      ) {
+        return prev;
+      }
+      // Limpiar estado asociado al indice removido para que no quede
+      // referenciado al volver a agregar otra fila.
+      setLunesPresetChoiceByRow((choices) => {
+        if (!(lastIndex in choices)) return choices;
+        const next = { ...choices };
+        delete next[lastIndex];
+        return next;
+      });
+      lunesIndependenceRef.current.delete(lastIndex);
+      return prev.slice(0, lastIndex);
+    });
+  }, []);
+
+  const canRemoveLastRow = rows.length > 1;
+
   const handleClearDraft = useCallback(() => {
     if (!currentUsername) return;
     if (draftSaveTimeoutRef.current !== null) {
@@ -1632,50 +1708,81 @@ export function IngresarHorariosInner() {
               </p>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Accion primaria: Guardar (filled, mas prominente) */}
             <button
               type="button"
               onClick={() => void handleSaveForm()}
               disabled={savingForm || loadingPlanillaEdit}
-              className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70 disabled:cursor-not-allowed disabled:opacity-60"
+              title={
+                editingPlanillaId !== null
+                  ? `Actualizar planilla #${editingPlanillaId}`
+                  : "Guardar como planilla nueva"
+              }
+              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_20px_-12px_rgba(15,23,42,0.6)] transition-all hover:bg-slate-800 hover:shadow-[0_10px_24px_-12px_rgba(15,23,42,0.6)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
             >
+              <Save className="h-3.5 w-3.5" aria-hidden />
               {savingForm ? "Guardando..." : "Guardar"}
             </button>
+
+            {/* Accion secundaria: limpiar borrador (ghost) */}
             <button
               type="button"
               onClick={handleClearDraft}
-              className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700 transition-all hover:border-amber-300 hover:bg-amber-100/70"
+              title="Vaciar el formulario y descartar el borrador local"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
             >
-              Limpiar borrador
+              <Eraser className="h-3.5 w-3.5" aria-hidden />
+              Limpiar
             </button>
-            <button
-              type="button"
-              onClick={handleExportPdf}
-              className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100/70"
-            >
-              Exportar PDF
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleExportJpg()}
-              disabled={exportingJpg}
-              className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100/70 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {exportingJpg ? "Generando JPG..." : "Exportar JPG"}
-            </button>
+
+            {/* Separador visual */}
+            <span className="hidden h-6 w-px bg-slate-200 sm:inline-block" aria-hidden />
+
+            {/* Grupo de exportacion (segmentado) */}
+            <div className="inline-flex overflow-hidden rounded-full border border-emerald-200 bg-emerald-50/40 shadow-sm">
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                title="Imprimir o guardar como PDF"
+                className="inline-flex items-center gap-1.5 border-r border-emerald-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 transition-colors hover:bg-emerald-100/70"
+              >
+                <FileText className="h-3.5 w-3.5" aria-hidden />
+                PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleExportJpg()}
+                disabled={exportingJpg}
+                title="Descargar como imagen JPG"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 transition-colors hover:bg-emerald-100/70 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <ImageIcon className="h-3.5 w-3.5" aria-hidden />
+                {exportingJpg ? "JPG..." : "JPG"}
+              </button>
+            </div>
+
+            {/* Separador visual */}
+            <span className="hidden h-6 w-px bg-slate-200 sm:inline-block" aria-hidden />
+
+            {/* Navegacion */}
             <button
               type="button"
               onClick={() => router.push("/horarios-guardados")}
-              className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
+              title="Ver planillas guardadas anteriormente"
+              className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
             >
+              <FolderOpen className="h-3.5 w-3.5" aria-hidden />
               Ver guardados
             </button>
             <button
               type="button"
               onClick={() => router.push("/horario")}
-              className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
+              title="Regresar al tablero de Horario"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
             >
-              Volver a Horario
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              Horario
             </button>
           </div>
         </div>
@@ -2107,7 +2214,21 @@ export function IngresarHorariosInner() {
             </datalist>
           ))}
         </div>
-        <div className="mt-2 flex justify-center print:hidden">
+        <div className="mt-2 flex items-center justify-center gap-2 print:hidden">
+          <button
+            type="button"
+            onClick={handleRemoveLastRow}
+            disabled={!canRemoveLastRow}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-300 bg-rose-50 text-lg font-bold leading-none text-rose-700 transition-all hover:border-rose-400 hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:hover:border-slate-200 disabled:hover:bg-slate-50"
+            title={
+              canRemoveLastRow
+                ? `Quitar fila ${rows.length}`
+                : "Debe quedar al menos 1 fila"
+            }
+            aria-label="Quitar la ultima fila agregada"
+          >
+            −
+          </button>
           <button
             type="button"
             onClick={handleAddRows}

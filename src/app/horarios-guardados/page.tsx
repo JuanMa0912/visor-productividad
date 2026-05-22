@@ -684,6 +684,18 @@ export default function HorariosGuardadosPage() {
                         </button>
                         <button
                           type="button"
+                          onClick={() =>
+                            router.push(
+                              `/ingresar-horarios?duplicar=${selectedForm.id}`,
+                            )
+                          }
+                          title="Crear una planilla nueva con los mismos empleados y horarios (la original no se modifica)"
+                          className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-violet-700 transition-all hover:border-violet-300 hover:bg-violet-100/70"
+                        >
+                          Duplicar
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => window.print()}
                           className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100/70"
                           title="Imprimir la planilla seleccionada"
@@ -844,6 +856,24 @@ export default function HorariosGuardadosPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Bloque de firmas (solo impresion): JEFE DE AREA y V.B. ADMINISTRADOR. */}
+                  <div className="planilla-print-signatures hidden break-inside-avoid print:mt-5 print:block">
+                    <div className="flex justify-start gap-8 pl-2">
+                      <div className="flex w-44 flex-col items-center">
+                        <div className="h-8 w-full border-b border-slate-900" />
+                        <div className="mt-0.5 text-center text-[8px] font-bold uppercase tracking-wide text-slate-900">
+                          Jefe de Área
+                        </div>
+                      </div>
+                      <div className="flex w-44 flex-col items-center">
+                        <div className="h-8 w-full border-b border-slate-900" />
+                        <div className="mt-0.5 text-center text-[8px] font-bold uppercase tracking-wide text-slate-900">
+                          V.B. Administrador
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1079,16 +1109,19 @@ export default function HorariosGuardadosPage() {
           .planilla-print-table thead th {
             font-size: 9px !important;
           }
-          /* Nombre del dia en el header (DOMINGO, LUNES, ...): un poco mas
-             chico y siempre en una sola linea para que no se parta cuando la
-             columna del dia es estrecha (caso Descanso = 1 col). */
+          /* Nombre del dia en el header (DOMINGO, LUNES, ...) y numero del
+             dia (17, 18, ...) a mayor tamaño para que se lean comodos. La
+             columna estrecha de Descanso usa flex-col arriba para apilarlos
+             en 2 lineas y aun asi caber. */
           .planilla-print-table thead th .planilla-day-name {
-            font-size: 7px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
             white-space: nowrap !important;
             letter-spacing: 0 !important;
           }
           .planilla-print-table thead th .planilla-day-number {
-            font-size: 7px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
             white-space: nowrap !important;
           }
           .planilla-print-table th,
@@ -1113,10 +1146,20 @@ export default function HorariosGuardadosPage() {
             width: 22px !important;
           }
           .planilla-print-table thead tr:first-child th:nth-child(2) {
-            width: 70px !important;
+            width: 120px !important;
           }
           .planilla-print-table thead tr:first-child th:last-child {
             width: 130px !important;
+          }
+          /* La columna Nombre lleva tipografia mas grande que el resto del
+             body para que los nombres largos se lean comodos sin afectar
+             las columnas de horas ni la firma. */
+          .planilla-print-table tbody td.planilla-cell-nombre,
+          .planilla-print-table thead tr:first-child th:nth-child(2) {
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            line-height: 1.1 !important;
+            text-align: left !important;
           }
           /* Separador vertical entre dias (mas grueso y oscuro que HE/HS internos) */
           #horarios-guardados-print table th.day-group-start,
