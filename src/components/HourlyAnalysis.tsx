@@ -98,6 +98,7 @@ type OvertimeSortField =
   | "horas"
   | "marcaciones"
   | "incidencia"
+  | "estado"
   | "nomina"
   | "departamento";
 type OvertimeSortDirection = "asc" | "desc";
@@ -594,6 +595,9 @@ const getOvertimeDateTimestamp = (employee: OvertimeEmployee) => {
 const getOvertimeIncidentValue = (employee: OvertimeEmployee) =>
   employee.incident?.trim() ?? "";
 
+const getOvertimeEstadoValue = (employee: OvertimeEmployee) =>
+  employee.estadoAsistencia?.trim() ?? "";
+
 const getOvertimeNominaValue = (employee: OvertimeEmployee) =>
   employee.nomina?.trim() ?? "";
 
@@ -873,6 +877,7 @@ export const HourlyAnalysis = ({
   const [overtimeEmployeeTypeFilter, setOvertimeEmployeeTypeFilter] =
     useState("all");
   const [overtimeMarksFilter, setOvertimeMarksFilter] = useState("all");
+  const [overtimeEstadoFilter, setOvertimeEstadoFilter] = useState("all");
   const [overtimeAlertOnly, setOvertimeAlertOnly] = useState(false);
   const [overtimeAbsenceOnly, setOvertimeAbsenceOnly] = useState(false);
   const [overtimeOddMarksOnly, setOvertimeOddMarksOnly] = useState(false);
@@ -987,7 +992,10 @@ export const HourlyAnalysis = ({
     cashierMonthComparison && cashierMonthShowImprove;
   const topSectionRef = useRef<HTMLDivElement | null>(null);
   const contributionSectionRef = useRef<HTMLDivElement | null>(null);
+  const overtimeTableRef = useRef<HTMLDivElement | null>(null);
   const [showFloatingContributionBack, setShowFloatingContributionBack] =
+    useState(false);
+  const [showFloatingOvertimeBack, setShowFloatingOvertimeBack] =
     useState(false);
 
   const minuteRangeStepSeconds = useMemo(
@@ -1505,6 +1513,33 @@ export const HourlyAnalysis = ({
   }, [showPersonBreakdown]);
   const floatingContributionBackVisible =
     showPersonBreakdown && showFloatingContributionBack;
+
+  /** Boton flotante "Inicio de tabla": se muestra cuando el usuario ha bajado
+   *  mas alla del header de la tabla de overtime. */
+  useEffect(() => {
+    const updateOvertimeFloatingBack = () => {
+      const section = overtimeTableRef.current;
+      if (!section) {
+        setShowFloatingOvertimeBack(false);
+        return;
+      }
+      const rect = section.getBoundingClientRect();
+      /** Visible cuando el inicio del bloque ya quedo por encima del viewport
+       *  y todavia hay parte de la tabla visible debajo. */
+      const shouldShow = rect.top < -120 && rect.bottom > 200;
+      setShowFloatingOvertimeBack(shouldShow);
+    };
+
+    updateOvertimeFloatingBack();
+    window.addEventListener("scroll", updateOvertimeFloatingBack, {
+      passive: true,
+    });
+    window.addEventListener("resize", updateOvertimeFloatingBack);
+    return () => {
+      window.removeEventListener("scroll", updateOvertimeFloatingBack);
+      window.removeEventListener("resize", updateOvertimeFloatingBack);
+    };
+  }, []);
 
   const fetchHourly = async (
     date: string,
@@ -2572,6 +2607,13 @@ export const HourlyAnalysis = ({
     });
   }, []);
 
+  const handleScrollToOvertimeTableStart = useCallback(() => {
+    overtimeTableRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
+
   const selectedLineLabel =
     effectiveSelectedLine &&
     lineOptions.find((line) => line.id === effectiveSelectedLine)?.name;
@@ -2661,6 +2703,22 @@ export const HourlyAnalysis = ({
     () => ["36 horas", "Tiempo completo", "Medio tiempo"],
     [],
   );
+  /** Opciones para el filtro "Estado" derivadas de los datos cargados; valores
+   *  vienen de `asistencia_horas.estado_asistencia` (ej. "Laborado",
+   *  "Laborado con Incidente"). */
+  const overtimeEstadoOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const employee of overtimeEmployeesResolved) {
+      const raw = employee.estadoAsistencia?.trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (!seen.has(key)) seen.set(key, raw);
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      a.localeCompare(b, "es", { sensitivity: "base" }),
+    );
+  }, [overtimeEmployeesResolved]);
+  const hasEstadoData = overtimeEstadoOptions.length > 0;
   const baseFilteredOvertimeEmployees = useMemo(() => {
     const validMinMinutes = isAlexStrictMode
       ? null
@@ -2688,6 +2746,14 @@ export const HourlyAnalysis = ({
       if (effectiveMarksFilter !== "all") {
         const marks = employee.marksCount ?? 0;
         if (marks !== Number(effectiveMarksFilter)) return false;
+      }
+      if (!isAlexStrictMode && overtimeEstadoFilter !== "all") {
+        const employeeEstado = employee.estadoAsistencia?.trim() ?? "";
+        if (
+          employeeEstado.toLowerCase() !== overtimeEstadoFilter.toLowerCase()
+        ) {
+          return false;
+        }
       }
       if (
         !isAlexStrictMode &&
@@ -2739,6 +2805,7 @@ export const HourlyAnalysis = ({
     overtimeDepartmentFilter,
     overtimeEmployeeTypeFilter,
     overtimeMarksFilter,
+    overtimeEstadoFilter,
     isAlexStrictMode,
     hasEmployeeTypeData,
     overtimePersonFilter,
@@ -2786,6 +2853,14 @@ export const HourlyAnalysis = ({
         getOvertimeIncidentValue(left),
         getOvertimeIncidentValue(right),
       );
+    const compareByEstado = (
+      left: OvertimeEmployee,
+      right: OvertimeEmployee,
+    ) =>
+      compareOvertimeText(
+        getOvertimeEstadoValue(left),
+        getOvertimeEstadoValue(right),
+      );
     const compareByNomina = (left: OvertimeEmployee, right: OvertimeEmployee) =>
       compareOvertimeText(
         getOvertimeNominaValue(left),
@@ -2812,9 +2887,11 @@ export const HourlyAnalysis = ({
               ? compareByMarks(a, b)
               : overtimeSortField === "incidencia"
                 ? compareByIncident(a, b)
-                : overtimeSortField === "nomina"
-                  ? compareByNomina(a, b)
-                  : compareByDepartment(a, b);
+                : overtimeSortField === "estado"
+                  ? compareByEstado(a, b)
+                  : overtimeSortField === "nomina"
+                    ? compareByNomina(a, b)
+                    : compareByDepartment(a, b);
       if (primaryDiff !== 0) {
         return overtimeSortDirection === "asc" ? primaryDiff : -primaryDiff;
       }
@@ -2938,6 +3015,7 @@ export const HourlyAnalysis = ({
         department: [...overtimeDepartmentFilter].sort(),
         employeeType: overtimeEmployeeTypeFilter,
         marks: overtimeMarksFilter,
+        estado: overtimeEstadoFilter,
         person: overtimePersonFilter.trim().toLowerCase(),
         sortField: overtimeSortField,
         sortDirection: overtimeSortDirection,
@@ -2954,6 +3032,7 @@ export const HourlyAnalysis = ({
       overtimeAbsenceOnly,
       overtimeDepartmentFilter,
       overtimeEmployeeTypeFilter,
+      overtimeEstadoFilter,
       overtimeMarksFilter,
       overtimeOddMarksOnly,
       overtimePersonFilter,
@@ -3061,6 +3140,7 @@ export const HourlyAnalysis = ({
       { header: "Sede", key: "sede", width: 20 },
       { header: "Cargo", key: "role", width: 22 },
       { header: "Incidencia", key: "incident", width: 18 },
+      { header: "Estado", key: "estadoAsistencia", width: 22 },
       { header: "Nomina", key: "nomina", width: 18 },
       { header: "Departamento", key: "department", width: 22 },
       { header: "Fecha", key: "workedDate", width: 16 },
@@ -3083,6 +3163,7 @@ export const HourlyAnalysis = ({
         sede: employee.sede ?? "",
         role: employee.role ?? "",
         incident: employee.incident ?? "",
+        estadoAsistencia: employee.estadoAsistencia ?? "",
         nomina: employee.nomina ?? "",
         department: employee.department ?? employee.lineName ?? "",
         workedDate:
@@ -3625,8 +3706,8 @@ export const HourlyAnalysis = ({
               <div
                 className={`mt-3 grid gap-3 ${
                   showDepartmentFilterInOvertime
-                    ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
-                    : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+                    ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8"
+                    : "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
                 }`}
               >
                 <label className="block">
@@ -3720,6 +3801,30 @@ export const HourlyAnalysis = ({
                         <option value="4">4</option>
                       </>
                     )}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-700">
+                    Estado
+                  </span>
+                  <select
+                    value={overtimeEstadoFilter}
+                    disabled={isAlexStrictMode || !hasEstadoData}
+                    onChange={(e) => setOvertimeEstadoFilter(e.target.value)}
+                    className={`${overtimeFilterControlClass} ${
+                      hasEstadoData
+                        ? "bg-white text-slate-900"
+                        : "cursor-not-allowed bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    <option value="all">
+                      {hasEstadoData ? "Todos" : "Sin datos"}
+                    </option>
+                    {overtimeEstadoOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 {showDepartmentFilterInOvertime && (
@@ -3902,7 +4007,8 @@ export const HourlyAnalysis = ({
                 </p>
               ) : (
                 <div
-                  className={`mt-3 overflow-hidden rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white`}
+                  ref={overtimeTableRef}
+                  className={`mt-3 overflow-hidden rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white scroll-mt-24`}
                 >
                   <div
                     className={`flex flex-wrap items-center justify-between gap-2 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/70 px-2 py-2`}
@@ -3952,7 +4058,7 @@ export const HourlyAnalysis = ({
                     </span>
                   </div>
                   <div
-                    className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500`}
+                    className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500`}
                   >
                     <span className="text-center whitespace-nowrap">#</span>
                     <span className="text-center whitespace-nowrap">Excel</span>
@@ -3963,6 +4069,7 @@ export const HourlyAnalysis = ({
                     {renderOvertimeSortHeader("marcaciones", "Mar.", "center")}
                     <span className="whitespace-nowrap">Cargo</span>
                     {renderOvertimeSortHeader("incidencia", "Incid.")}
+                    {renderOvertimeSortHeader("estado", "Estado")}
                     {renderOvertimeSortHeader("nomina", "Nomina", "center")}
                     {renderOvertimeSortHeader(
                       "departamento",
@@ -3980,7 +4087,7 @@ export const HourlyAnalysis = ({
                     return (
                       <div
                         key={employeeKey}
-                        className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1fr_1.2fr] items-start gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} px-2 py-2 text-[12px] last:border-b-0 ${
+                        className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr_1fr_1.2fr] items-start gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} px-2 py-2 text-[12px] last:border-b-0 ${
                           isAbsence
                             ? "bg-red-50/80"
                             : (employee.marksCount ?? 0) % 2 !== 0 ||
@@ -4026,6 +4133,21 @@ export const HourlyAnalysis = ({
                         </span>
                         <span className="text-xs font-semibold text-slate-700 leading-tight wrap-break-word">
                           {employee.incident ?? "-"}
+                        </span>
+                        <span
+                          className={`text-xs font-semibold leading-tight wrap-break-word ${
+                            (employee.estadoAsistencia ?? "")
+                              .toLowerCase()
+                              .includes("incidente")
+                              ? "text-amber-700"
+                              : (employee.estadoAsistencia ?? "")
+                                    .toLowerCase()
+                                    .includes("laborado")
+                                ? "text-emerald-700"
+                                : "text-slate-700"
+                          }`}
+                        >
+                          {employee.estadoAsistencia ?? "-"}
                         </span>
                         <span className="text-center text-xs font-semibold text-slate-700 leading-tight wrap-break-word">
                           {employee.nomina ?? "-"}
@@ -5423,16 +5545,29 @@ export const HourlyAnalysis = ({
               </p>
             ))}
 
-          {floatingContributionBackVisible && (
+          {(floatingContributionBackVisible || showFloatingOvertimeBack) && (
             <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={handleScrollToContributionStart}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-900/90 bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.75)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
-              >
-                <ArrowUp className="h-4 w-4" />
-                Volver a la seccion
-              </button>
+              {floatingContributionBackVisible && (
+                <button
+                  type="button"
+                  onClick={handleScrollToContributionStart}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-900/90 bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_18px_40px_-20px_rgba(15,23,42,0.75)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                  Volver a la seccion
+                </button>
+              )}
+              {showFloatingOvertimeBack && (
+                <button
+                  type="button"
+                  onClick={handleScrollToOvertimeTableStart}
+                  className="inline-flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-amber-800 shadow-[0_18px_40px_-20px_rgba(217,119,6,0.45)] transition-all hover:-translate-y-0.5 hover:bg-amber-100"
+                  title="Volver al encabezado de la tabla"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                  Inicio de tabla
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleScrollToTop}

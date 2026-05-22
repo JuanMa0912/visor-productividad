@@ -1558,6 +1558,11 @@ const fetchHourlyData = async (
               : "NULL::text";
           const overtimeStart = overtimeDateStart ?? attendanceDateUsed ?? dateISO;
           const overtimeEnd = overtimeDateEnd ?? overtimeStart;
+          /** estado_asistencia es opcional: si la columna no existe en la BD,
+           *  exponemos NULL para que el frontend muestre "-" sin romper el SELECT. */
+          const estadoAsistenciaExpr = attendanceColumnSet.has("estado_asistencia")
+            ? `NULLIF(TRIM(CAST(estado_asistencia AS text)), '')`
+            : "NULL::text";
           const overtimeQuery = `
             WITH raw AS (
               SELECT
@@ -1568,6 +1573,7 @@ const fetchHourlyData = async (
                 NULLIF(TRIM(CAST(departamento AS text)), '') AS departamento,
                 NULLIF(TRIM(CAST(cargo AS text)), '') AS cargo,
                 NULLIF(TRIM(CAST(incidencia AS text)), '') AS incidencia,
+                ${estadoAsistenciaExpr} AS estado_asistencia,
                 ${
                   nominaIdentifier
                     ? `NULLIF(TRIM(CAST(${nominaIdentifier} AS text)), '')`
@@ -1615,6 +1621,7 @@ const fetchHourlyData = async (
                 MAX(departamento) AS departamento,
                 MAX(cargo) AS cargo,
                 MAX(incidencia) AS incidencia,
+                MAX(estado_asistencia) AS estado_asistencia,
                 MAX(nomina) AS nomina,
                 MAX(hora_entrada) AS hora_entrada,
                 MAX(hora_intermedia1) AS hora_intermedia1,
@@ -1632,6 +1639,7 @@ const fetchHourlyData = async (
               departamento,
               cargo,
               incidencia,
+              estado_asistencia,
               nomina,
               hora_entrada,
               hora_intermedia1,
@@ -1660,6 +1668,7 @@ const fetchHourlyData = async (
               departamento: string;
               cargo?: string | null;
               incidencia?: string | null;
+              estado_asistencia?: string | null;
               nomina?: string | null;
               hora_entrada?: string | null;
               hora_intermedia1?: string | null;
@@ -1726,6 +1735,7 @@ const fetchHourlyData = async (
               role,
               employeeType,
               incident,
+              estadoAsistencia: typedRow.estado_asistencia?.trim() || undefined,
               markIn: typedRow.hora_entrada?.trim() || undefined,
               markBreak1: typedRow.hora_intermedia1?.trim() || undefined,
               markBreak2: typedRow.hora_intermedia2?.trim() || undefined,

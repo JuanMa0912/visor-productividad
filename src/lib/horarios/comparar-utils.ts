@@ -21,6 +21,8 @@ export type AttendanceCompareInput = {
   horaIntermedia1: string;
   horaIntermedia2: string;
   horaSalida: string;
+  /** Estado real registrado en `asistencia_horas.estado_asistencia` (ej. "Laborado", "Laborado con Incidente"). */
+  estadoAsistencia: string | null;
 };
 
 export type ComparisonRow = {
@@ -41,6 +43,8 @@ export type ComparisonRow = {
     horaIntermedia1: string;
     horaIntermedia2: string;
     horaSalida: string;
+    /** Estado tal cual viene de `asistencia_horas.estado_asistencia`. */
+    estadoAsistencia: string | null;
   } | null;
   diffMin: {
     entrada: number | null;
@@ -196,6 +200,7 @@ export function mergePlanillaWithAttendance(
             horaIntermedia1: att.horaIntermedia1,
             horaIntermedia2: att.horaIntermedia2,
             horaSalida: att.horaSalida,
+            estadoAsistencia: att.estadoAsistencia,
           }
         : null;
       const diffMin = {
@@ -231,6 +236,7 @@ export function mergePlanillaWithAttendance(
           horaIntermedia1: att.horaIntermedia1,
           horaIntermedia2: att.horaIntermedia2,
           horaSalida: att.horaSalida,
+          estadoAsistencia: att.estadoAsistencia,
         }
       : null;
 
@@ -270,6 +276,7 @@ export function mergePlanillaWithAttendance(
       horaIntermedia1: att.horaIntermedia1,
       horaIntermedia2: att.horaIntermedia2,
       horaSalida: att.horaSalida,
+      estadoAsistencia: att.estadoAsistencia,
     };
     const diffMin = {
       entrada: null,

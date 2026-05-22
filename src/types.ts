@@ -106,6 +106,8 @@ export interface OvertimeEmployee {
   marksCount?: number;
   role?: string;
   incident?: string;
+  /** Valor crudo de `asistencia_horas.estado_asistencia` (ej. "Laborado", "Laborado con Incidente"). */
+  estadoAsistencia?: string;
   markIn?: string;
   markBreak1?: string;
   markBreak2?: string;

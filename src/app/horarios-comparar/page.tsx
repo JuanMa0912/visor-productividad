@@ -58,6 +58,71 @@ function statusLabel(status: ComparisonRow["status"]): string {
   }
 }
 
+/**
+ * Color y abreviatura para el estado real de `asistencia_horas.estado_asistencia`.
+ * Mantenemos el texto crudo, pero asignamos un color segun categoria (laborado,
+ * incidente, ausente, etc.) para que el operador escanee la columna rapido.
+ */
+function estadoAsistenciaTone(raw: string | null | undefined): {
+  bg: string;
+  text: string;
+  border: string;
+} {
+  const t = (raw ?? "").trim().toLowerCase();
+  if (!t) {
+    return {
+      bg: "bg-slate-100",
+      text: "text-slate-500",
+      border: "border-slate-200",
+    };
+  }
+  if (t.includes("incidente") || t.includes("novedad")) {
+    return {
+      bg: "bg-amber-50",
+      text: "text-amber-800",
+      border: "border-amber-200",
+    };
+  }
+  if (
+    t.includes("ausent") ||
+    t.includes("falta") ||
+    t.includes("no laboro") ||
+    t.includes("no laboró")
+  ) {
+    return {
+      bg: "bg-rose-50",
+      text: "text-rose-700",
+      border: "border-rose-200",
+    };
+  }
+  if (t.includes("permiso") || t.includes("licencia") || t.includes("vacacion")) {
+    return {
+      bg: "bg-violet-50",
+      text: "text-violet-700",
+      border: "border-violet-200",
+    };
+  }
+  if (t.includes("incapacid")) {
+    return {
+      bg: "bg-sky-50",
+      text: "text-sky-700",
+      border: "border-sky-200",
+    };
+  }
+  if (t.includes("labor")) {
+    return {
+      bg: "bg-emerald-50",
+      text: "text-emerald-800",
+      border: "border-emerald-200",
+    };
+  }
+  return {
+    bg: "bg-slate-50",
+    text: "text-slate-700",
+    border: "border-slate-200",
+  };
+}
+
 function isEntradaOutOfPolicy(diff: number | null): boolean {
   if (diff === null) return false;
   return (
@@ -325,6 +390,7 @@ export default function HorariosCompararPage() {
         { header: "Asist int1", key: "aI1", width: 11 },
         { header: "Asist int2", key: "aI2", width: 11 },
         { header: "Asist salida", key: "aSal", width: 11 },
+        { header: "Estado BD", key: "estadoBd", width: 22 },
         { header: "Diff entrada", key: "dEnt", width: 12 },
         { header: "Diff int1", key: "dI1", width: 12 },
         { header: "Diff int2", key: "dI2", width: 12 },
@@ -345,6 +411,7 @@ export default function HorariosCompararPage() {
           aI1: r.attendance?.horaIntermedia1 ?? "",
           aI2: r.attendance?.horaIntermedia2 ?? "",
           aSal: r.attendance?.horaSalida ?? "",
+          estadoBd: r.attendance?.estadoAsistencia ?? "",
           dEnt: formatDiff(r.diffMin.entrada),
           dI1: formatDiff(r.diffMin.intermedia1),
           dI2: formatDiff(r.diffMin.intermedia2),
@@ -369,7 +436,8 @@ export default function HorariosCompararPage() {
       });
       const planCols = [6, 7, 8, 9];
       const attendanceCols = [10, 11, 12, 13];
-      const diffCols = [14, 15, 16, 17];
+      const estadoBdCol = 14;
+      const diffCols = [15, 16, 17, 18];
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) {
           planCols.forEach((idx) => {
@@ -380,6 +448,12 @@ export default function HorariosCompararPage() {
             const c = row.getCell(idx);
             c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
           });
+          /** Cabecera "Estado BD" en ambar claro para distinguirla del estado calculado. */
+          row.getCell(estadoBdCol).fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFFEF3C7" },
+          };
           diffCols.forEach((idx) => {
             const c = row.getCell(idx);
             c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEDE9FE" } };
@@ -404,6 +478,13 @@ export default function HorariosCompararPage() {
           c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0FDF4" } };
           c.alignment = { horizontal: "center" };
         });
+        const estadoBdCell = row.getCell(estadoBdCol);
+        estadoBdCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFFFBEB" },
+        };
+        estadoBdCell.alignment = { horizontal: "center" };
         diffCols.forEach((idx) => {
           const c = row.getCell(idx);
           c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFAF5FF" } };
@@ -470,6 +551,7 @@ export default function HorariosCompararPage() {
           "A.I1",
           "A.I2",
           "A.Sal",
+          "Estado BD",
           "D.Ent",
           "D.I1",
           "D.I2",
@@ -489,6 +571,7 @@ export default function HorariosCompararPage() {
           r.attendance?.horaIntermedia1 || "—",
           r.attendance?.horaIntermedia2 || "—",
           r.attendance?.horaSalida || "—",
+          r.attendance?.estadoAsistencia || "—",
           formatDiff(r.diffMin.entrada),
           formatDiff(r.diffMin.intermedia1),
           formatDiff(r.diffMin.intermedia2),
@@ -500,13 +583,15 @@ export default function HorariosCompararPage() {
           if (data.section === "head") {
             if (col >= 5 && col <= 8) data.cell.styles.fillColor = [224, 242, 254];
             if (col >= 9 && col <= 12) data.cell.styles.fillColor = [220, 252, 231];
-            if (col >= 13 && col <= 16) data.cell.styles.fillColor = [237, 233, 254];
+            if (col === 13) data.cell.styles.fillColor = [254, 243, 199];
+            if (col >= 14 && col <= 17) data.cell.styles.fillColor = [237, 233, 254];
             return;
           }
           if (data.section !== "body") return;
           if (col >= 5 && col <= 8) data.cell.styles.fillColor = [240, 249, 255];
           if (col >= 9 && col <= 12) data.cell.styles.fillColor = [240, 253, 244];
-          if (col >= 13 && col <= 16) data.cell.styles.fillColor = [250, 245, 255];
+          if (col === 13) data.cell.styles.fillColor = [255, 251, 235];
+          if (col >= 14 && col <= 17) data.cell.styles.fillColor = [250, 245, 255];
           if (col === 4) {
             const status = String(data.cell.raw ?? "");
             data.cell.styles.fontStyle = "bold";
@@ -786,7 +871,7 @@ export default function HorariosCompararPage() {
 
             <div className="overflow-hidden rounded-2xl border border-border/70 shadow-xs">
               <div className="overflow-x-auto">
-                <table className="min-w-[1180px] border-collapse text-left text-[11px]">
+                <table className="min-w-[1320px] border-collapse text-left text-[11px]">
                   <thead className="sticky top-[73px] z-30 bg-white shadow-xs">
                     <tr className="border-b border-border/70">
                       <th className="bg-white px-3 py-3 font-semibold text-foreground">Fecha</th>
@@ -799,6 +884,9 @@ export default function HorariosCompararPage() {
                       </th>
                       <th colSpan={4} className="bg-emerald-100 px-3 py-3 text-center font-semibold text-emerald-700">
                         Asistencia
+                      </th>
+                      <th className="bg-amber-100 px-3 py-3 text-center font-semibold text-amber-800">
+                        Estado BD
                       </th>
                       <th colSpan={4} className="bg-slate-100 px-3 py-3 text-center font-semibold text-slate-600">
                         Diferencia
@@ -818,6 +906,7 @@ export default function HorariosCompararPage() {
                       <th className="bg-emerald-50 px-3 py-2 text-center">Int1</th>
                       <th className="bg-emerald-50 px-3 py-2 text-center">Int2</th>
                       <th className="bg-emerald-50 px-3 py-2 text-center">Sal</th>
+                      <th className="bg-amber-50 px-3 py-2 text-center">Estado</th>
                       <th className="bg-slate-100 px-3 py-2 text-center">D1</th>
                       <th className="bg-slate-100 px-3 py-2 text-center">D2</th>
                       <th className="bg-slate-100 px-3 py-2 text-center">D3</th>
@@ -827,20 +916,20 @@ export default function HorariosCompararPage() {
                   <tbody>
                     {rows.length === 0 && !loading ? (
                       <tr>
-                        <td colSpan={17} className="px-4 py-10 text-center text-slate-500">
+                        <td colSpan={18} className="px-4 py-10 text-center text-slate-500">
                           No hay filas en este rango. Ajusta fechas o sede.
                         </td>
                       </tr>
                     ) : rows.length === 0 && loading ? (
                       <tr>
-                        <td colSpan={17} className="px-4 py-10 text-center text-slate-500">
+                        <td colSpan={18} className="px-4 py-10 text-center text-slate-500">
                           Cargando...
                         </td>
                       </tr>
                     ) : filteredRows.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={17}
+                          colSpan={18}
                           className="bg-amber-50/50 px-4 py-10 text-center text-sm text-amber-900"
                         >
                           Ningún registro coincide con los filtros de nombre o estado.
@@ -900,6 +989,23 @@ export default function HorariosCompararPage() {
                             <td className="bg-emerald-50 px-3 py-2.5 text-center font-mono">{r.attendance?.horaIntermedia1 || "—"}</td>
                             <td className="bg-emerald-50 px-3 py-2.5 text-center font-mono">{r.attendance?.horaIntermedia2 || "—"}</td>
                             <td className="bg-emerald-50 px-3 py-2.5 text-center font-mono">{r.attendance?.horaSalida || "—"}</td>
+                            <td className="bg-amber-50/40 px-3 py-2.5 text-center">
+                              {(() => {
+                                const raw = r.attendance?.estadoAsistencia ?? null;
+                                if (!raw) {
+                                  return <span className="text-[10px] text-slate-400">—</span>;
+                                }
+                                const tone = estadoAsistenciaTone(raw);
+                                return (
+                                  <span
+                                    title={raw}
+                                    className={`inline-flex max-w-[140px] truncate rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] ${tone.bg} ${tone.text} ${tone.border}`}
+                                  >
+                                    {raw}
+                                  </span>
+                                );
+                              })()}
+                            </td>
                             <td
                               className={`relative bg-slate-100/80 px-3 py-2.5 text-center font-mono ${
                                 highlightEntrada
