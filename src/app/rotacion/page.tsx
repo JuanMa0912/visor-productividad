@@ -187,6 +187,9 @@ export function RotacionPageInner() {
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
+  const [userAllowedSedes, setUserAllowedSedes] = useState<string[] | null>(
+    null,
+  );
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
   const [surtidoAuditRows, setSurtidoAuditRows] = useState<SurtidoAuditApiRow[]>(
@@ -346,6 +349,7 @@ export function RotacionPageInner() {
         const payload = (await response.json()) as {
           user?: {
             role?: string;
+            allowedSedes?: string[] | null;
             allowedDashboards?: string[] | null;
             allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
@@ -354,6 +358,7 @@ export function RotacionPageInner() {
         const isAdmin = payload.user?.role === "admin";
         setIsAdmin(Boolean(isAdmin));
         setSpecialRoles(payload.user?.specialRoles ?? null);
+        setUserAllowedSedes(payload.user?.allowedSedes ?? null);
         if (
           sourceTable === ROTACION_SOURCE_V4 &&
           !canAccessRotacionV4Board(isAdmin)
@@ -1435,14 +1440,46 @@ export function RotacionPageInner() {
     });
   }, [sedeOptions]);
 
+  /**
+   * Usuario "scoped": tiene un `allowedSedes` concreto en su perfil (no vacio
+   * y no incluye "Todas"). Esos perfiles deben arrancar con sus sedes
+   * pre-cargadas; obligarlos a marcarlas a mano cada vez es regresivo.
+   */
+  const isUserScopedToSpecificSedes = useMemo(() => {
+    if (!Array.isArray(userAllowedSedes)) return false;
+    const normalized = userAllowedSedes
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value) => value.length > 0)
+      .map((value) => value.toLowerCase());
+    if (normalized.length === 0) return false;
+    if (normalized.includes("todas")) return false;
+    return true;
+  }, [userAllowedSedes]);
+
   useEffect(() => {
     if (selectedSedes.length > 0) return;
     if (isLoadingLineCatalog) return;
-    if (allSedeOptions.length !== 1) return;
-    const only = allSedeOptions[0];
-    setSelectedSedes([only.value]);
-    setSelectedCompanies([only.empresa]);
-  }, [allSedeOptions, isLoadingLineCatalog, selectedSedes.length]);
+    if (allSedeOptions.length === 0) return;
+    /** Auto-seleccionar todas las sedes visibles cuando:
+     *  (a) solo hay 1 sede en el catalogo,
+     *  (b) el usuario no es admin (el catalogo ya viene scopeado por el backend), o
+     *  (c) el usuario tiene un `allowedSedes` concreto en su perfil. */
+    const shouldAutoSelectAll =
+      allSedeOptions.length === 1 ||
+      !isAdmin ||
+      isUserScopedToSpecificSedes;
+    if (!shouldAutoSelectAll) return;
+    setSelectedSedes(allSedeOptions.map((option) => option.value));
+    setSelectedCompanies(
+      Array.from(new Set(allSedeOptions.map((option) => option.empresa))),
+    );
+  }, [
+    allSedeOptions,
+    isAdmin,
+    isLoadingLineCatalog,
+    isUserScopedToSpecificSedes,
+    selectedSedes.length,
+  ]);
 
   useEffect(() => {
     if (!ready || isLoadingLineCatalog) return;
@@ -3240,7 +3277,7 @@ export function RotacionPageInner() {
                         className="rotacion-whatsapp-export-card gap-0 overflow-visible border-slate-200/80 bg-white py-0 shadow-[0_24px_50px_-42px_rgba(15,23,42,0.65)]"
                       >
                         <CardHeader
-                          className="border-b border-slate-100 bg-slate-50/70"
+                          className="border-b border-slate-100 bg-slate-50/70 pt-6"
                           {...{ [WHATSAPP_TABLE_EXCLUDE]: "" }}
                         >
                           <div className="flex flex-col gap-5">
@@ -3259,11 +3296,55 @@ export function RotacionPageInner() {
                             </div>
 
                             <div className="flex flex-wrap items-start gap-4">
-                              <CardDescription className="min-w-44 max-w-sm flex-1 text-sm leading-6 text-slate-600">
-                                {targetSedeSelections.length > 1
-                                  ? "Consolidado real de las sedes seleccionadas usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."
-                                  : "Consolidado real por sede usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."}
-                              </CardDescription>
+                              <div className="flex min-w-44 max-w-sm flex-1 flex-col gap-3">
+                                <CardDescription className="text-sm leading-6 text-slate-600">
+                                  {targetSedeSelections.length > 1
+                                    ? "Consolidado real de las sedes seleccionadas usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."
+                                    : "Consolidado real por sede usando ventas sin impuesto, inventario de cierre y ultimo ingreso sobre el rango seleccionado."}
+                                </CardDescription>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base font-semibold leading-6 text-slate-700">
+                                  <span className="whitespace-nowrap">
+                                    Total items:{" "}
+                                    <span className="font-black text-slate-900">
+                                      {infoTotalItems.toLocaleString("es-CO")}
+                                    </span>
+                                  </span>
+                                  <span className="whitespace-nowrap">
+                                    Total inv:{" "}
+                                    <span className="font-black text-slate-900">
+                                      {formatPriceWithoutSixZeros(infoTotalInv)}
+                                    </span>
+                                  </span>
+                                </div>
+                                {rowFilter === "none" ? (
+                                  <div className="w-fit rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+                                    <div className="space-y-1">
+                                      <div className="whitespace-nowrap">
+                                        Total venta:{" "}
+                                        <span className="font-black text-slate-900">
+                                          {formatPriceWithoutSixZeros(
+                                            infoTotalSales,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div className="whitespace-nowrap">
+                                        Margen de venta %:{" "}
+                                        <span className="font-black text-slate-900">
+                                          {formatPercent(infoMarginPct)}
+                                        </span>
+                                      </div>
+                                      <div className="whitespace-nowrap">
+                                        Dias de inventario:{" "}
+                                        <span className="font-black text-slate-900">
+                                          {formatRotationOneDecimal(
+                                            infoSalesCoverageDays,
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
                               <div className="flex w-fit max-w-full shrink-0 flex-wrap gap-2">
                                   <div className="flex w-fit flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
                                     <div className="mb-2 space-y-0.5">
@@ -3560,52 +3641,7 @@ export function RotacionPageInner() {
                             </div>
 
                             <div className="flex w-full flex-col gap-3 text-sm">
-                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base font-semibold leading-6 text-slate-700">
-                                <span className="whitespace-nowrap">
-                                  Total items:{" "}
-                                  <span className="font-black text-slate-900">
-                                    {infoTotalItems.toLocaleString("es-CO")}
-                                  </span>
-                                </span>
-                                <span className="whitespace-nowrap">
-                                  Total inv:{" "}
-                                  <span className="font-black text-slate-900">
-                                    {formatPriceWithoutSixZeros(infoTotalInv)}
-                                  </span>
-                                </span>
-                              </div>
-                              <div className="flex min-w-0 items-start gap-3">
-
-                                {rowFilter === "none" ? (
-                                  <div className="ml-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
-                                    <div className="space-y-1">
-                                      <div className="whitespace-nowrap">
-                                        Total venta:{" "}
-                                        <span className="font-black text-slate-900">
-                                          {formatPriceWithoutSixZeros(
-                                            infoTotalSales,
-                                          )}
-                                        </span>
-                                      </div>
-                                      <div className="whitespace-nowrap">
-                                        Margen de venta %:{" "}
-                                        <span className="font-black text-slate-900">
-                                          {formatPercent(infoMarginPct)}
-                                        </span>
-                                      </div>
-                                      <div className="whitespace-nowrap">
-                                        Dias de inventario:{" "}
-                                        <span className="font-black text-slate-900">
-                                          {formatRotationOneDecimal(
-                                            infoSalesCoverageDays,
-                                          )}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : null}
-                                </div>
-                              </div>
+                            </div>
                               {selectedCategoryLabel ? (
                                 <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
                                   <div className="min-w-0 space-y-1">

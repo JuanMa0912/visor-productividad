@@ -26,6 +26,13 @@ import {
   canAccessRotacionV4Board,
   canEditRotacionAbcdConfig,
 } from "@/lib/shared/special-role-features";
+import { mapRawSedeToCanonical } from "@/lib/horarios/planilla-sede";
+import {
+  SEDE_ORDER,
+  SEDE_ORDER_INDEX_MAP,
+  stripSedeLabelPrefixes,
+} from "@/lib/shared/constants";
+import { normalizeKeyCompact } from "@/lib/shared/normalize";
 
 type AvailableBoundsRow = {
   min_date: string | null;
@@ -300,15 +307,52 @@ const normalizeKey = (value: string) =>
     .replace(/[^a-z0-9]+/g, "")
     .trim();
 
+/**
+ * Mapea cualquier texto de sede (canonico, alias, abreviado, con prefijo) a la
+ * key normalizada (sin espacios, alfanumerica) de su sede canonica. Combina:
+ *  - planilla-sede.mapRawSedeToCanonical (aliases largos / con prefijos)
+ *  - SEDE_ORDER_INDEX_MAP (alias cortos: "CL 5", "Cra 39", etc.)
+ *  - stripSedeLabelPrefixes (remueve "Mercamio ", "Merkmios ", "Sede ").
+ */
+const canonicalSedeKey = (value: string): string => {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  /** 1) Probar mapRawSedeToCanonical (maneja aliases largos y prefijos). */
+  const mapped = mapRawSedeToCanonical(trimmed);
+  if (mapped && mapped !== trimmed) {
+    return normalizeKey(mapped);
+  }
+
+  /** 2) Probar el indice global por alias cortos / prefijos. */
+  const stripped = stripSedeLabelPrefixes(trimmed);
+  const compactKey = normalizeKeyCompact(stripped);
+  const orderIndex = SEDE_ORDER_INDEX_MAP.get(compactKey);
+  if (orderIndex !== undefined && SEDE_ORDER[orderIndex]) {
+    return normalizeKey(SEDE_ORDER[orderIndex]);
+  }
+
+  /** 3) Sin mapeo: regresar la key del texto tal cual. */
+  return normalizeKey(trimmed);
+};
+
 /** Coincide sede de catalogo con claves permitidas (exacta o por subcadena; nombres en BD suelen traer prefijos). */
 const MIN_SUBSTRING_TOKEN_LEN = 5;
 
 const catalogSedeMatchesAllowedKeys = (
   sede: { sedeName: string; sedeId: string },
   allowedKeys: Set<string>,
+  canonicalAllowedKeys: Set<string>,
 ): boolean => {
   const nameK = normalizeKey(sede.sedeName);
   const idK = normalizeKey(sede.sedeId);
+  /** Forma canonica del nombre / id: cubre aliases como "CL 5" -> "Calle 5ta",
+   *  "Cra 39" -> "La 39", "Mercatodo Floralia" -> "Floralia", etc. */
+  const nameCanon = canonicalSedeKey(sede.sedeName);
+  const idCanon = canonicalSedeKey(sede.sedeId);
+  if (nameCanon && canonicalAllowedKeys.has(nameCanon)) return true;
+  if (idCanon && canonicalAllowedKeys.has(idCanon)) return true;
   for (const token of allowedKeys) {
     if (!token) continue;
     if (token === normalizeKey("Todas")) continue;
@@ -318,6 +362,9 @@ const catalogSedeMatchesAllowedKeys = (
     }
     if (token.length >= MIN_SUBSTRING_TOKEN_LEN) {
       if (nameK.includes(token) || idK.includes(token)) return true;
+      /** Tambien probamos la direccion inversa: token "calle5ta" vs nameK "cl5". */
+      if (nameK.length >= 2 && token.includes(nameK)) return true;
+      if (idK.length >= 2 && token.includes(idK)) return true;
     }
   }
   return false;
@@ -344,6 +391,10 @@ export const resolveVisibleSedes = (
   const normalizedAllowed = new Set(
     rawAllowed.map((sede) => normalizeKey(sede)).filter(Boolean),
   );
+  /** Set canonico paralelo (aliases): "Calle 5ta" / "CL 5" / "Cl5" -> misma key. */
+  const canonicalAllowed = new Set(
+    rawAllowed.map((sede) => canonicalSedeKey(sede)).filter(Boolean),
+  );
 
   if (normalizedAllowed.has(normalizeKey("Todas"))) {
     return {
@@ -353,7 +404,7 @@ export const resolveVisibleSedes = (
   }
 
   const visibleFromAllowed = catalog.sedes.filter((sede) =>
-    catalogSedeMatchesAllowedKeys(sede, normalizedAllowed),
+    catalogSedeMatchesAllowedKeys(sede, normalizedAllowed, canonicalAllowed),
   );
 
   /** Lista explicita en perfil: siempre autorizado; la lista puede quedar vacia si aun no hay filas en BD para esas sedes. */
@@ -366,9 +417,13 @@ export const resolveVisibleSedes = (
 
   if (sessionUser.sede) {
     const legacyKey = normalizeKey(sessionUser.sede ?? "");
+    const legacyCanon = canonicalSedeKey(sessionUser.sede ?? "");
     const legacySet = legacyKey ? new Set([legacyKey]) : new Set<string>();
+    const legacyCanonSet = legacyCanon ? new Set([legacyCanon]) : new Set<string>();
     const legacyVisible = catalog.sedes.filter((sede) =>
-      legacyKey ? catalogSedeMatchesAllowedKeys(sede, legacySet) : false,
+      legacyKey
+        ? catalogSedeMatchesAllowedKeys(sede, legacySet, legacyCanonSet)
+        : false,
     );
     if (legacyVisible.length > 0) {
       return {

@@ -2,6 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  Copy,
+  Files,
+  Loader2,
+  Pencil,
+  PenLine,
+  Printer,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 
 type DayKey =
@@ -537,46 +550,60 @@ export default function HorariosGuardadosPage() {
               Consulta las plantillas registradas o revisa el historial diario por empleado.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => router.push("/ingresar-horarios")}
-              className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
+              title="Ir al editor para crear o modificar una planilla"
+              className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
             >
-              Volver a registro
+              <PenLine className="h-3.5 w-3.5" aria-hidden />
+              Registrar planilla
             </button>
             <button
               type="button"
               onClick={() => router.push("/horario")}
-              className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
+              title="Regresar al tablero de Horario"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
             >
-              Volver a Horario
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              Horario
             </button>
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-2 print:hidden">
+        <div
+          role="tablist"
+          aria-label="Vista de horarios guardados"
+          className="mt-6 inline-flex w-fit rounded-full border border-slate-200 bg-slate-50/80 p-1 print:hidden"
+        >
           <button
             type="button"
+            role="tab"
+            aria-selected={viewMode === "plantillas"}
             onClick={() => setViewMode("plantillas")}
-            className={`inline-flex items-center rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all ${
               viewMode === "plantillas"
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-200/70 bg-slate-100 text-slate-700 hover:border-slate-300 hover:bg-slate-200/70"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            Plantillas guardadas
+            <Files className="h-3.5 w-3.5" aria-hidden />
+            Plantillas
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={viewMode === "personas"}
             onClick={() => setViewMode("personas")}
-            className={`inline-flex items-center rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all ${
               viewMode === "personas"
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-200/70 bg-slate-100 text-slate-700 hover:border-slate-300 hover:bg-slate-200/70"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            Listado por persona
+            <Users className="h-3.5 w-3.5" aria-hidden />
+            Por persona
           </button>
         </div>
 
@@ -598,13 +625,21 @@ export default function HorariosGuardadosPage() {
         {viewMode === "plantillas" ? (
           <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)] print:mt-0 print:block">
             <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4 print:hidden">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                  Plantillas
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Selecciona una planilla para ver su contenido completo.
-                </p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                    Plantillas
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Selecciona una para ver su contenido.
+                  </p>
+                </div>
+                {forms.length > 0 ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                    <Files className="h-3 w-3" aria-hidden />
+                    {forms.length}
+                  </span>
+                ) : null}
               </div>
               {formsError ? (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
@@ -612,36 +647,110 @@ export default function HorariosGuardadosPage() {
                 </div>
               ) : null}
               {forms.length === 0 ? (
-                <p className="mt-4 text-sm text-slate-500">Aun no hay plantillas guardadas.</p>
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
+                  <Files className="mx-auto h-6 w-6 text-slate-400" aria-hidden />
+                  <p className="mt-2 text-sm font-semibold text-slate-700">
+                    Aun no hay plantillas
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Crea una nueva desde &quot;Registrar planilla&quot;.
+                  </p>
+                </div>
               ) : (
-                <div className="mt-4 space-y-2">
+                <ul className="mt-4 space-y-2" role="list">
                   {forms.map((form) => {
                     const isActive = selectedFormId === form.id;
+                    const isLoading = loadingFormId === form.id;
                     return (
-                      <button
-                        key={form.id}
-                        type="button"
-                        onClick={() => void handleViewForm(form.id)}
-                        className={`w-full rounded-2xl border px-4 py-3 text-left transition-all ${
-                          isActive
-                            ? "border-sky-300 bg-sky-50"
-                            : "border-slate-200/70 bg-white hover:border-slate-300 hover:bg-slate-50"
-                        }`}
-                      >
-                        <p className="text-sm font-semibold text-slate-900">
-                          #{form.id} · {form.sede} · {form.seccion}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {formatDateLabel(form.fechaInicial)} a {formatDateLabel(form.fechaFinal)} ·{" "}
-                          {form.mes || "Sin mes"}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {form.employeeCount} empleado(s) · {form.detailCount} registro(s)
-                        </p>
-                      </button>
+                      <li key={form.id}>
+                        <button
+                          type="button"
+                          onClick={() => void handleViewForm(form.id)}
+                          aria-pressed={isActive}
+                          className={`group relative w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all ${
+                            isActive
+                              ? "border-sky-300 bg-sky-50 shadow-[0_8px_24px_-18px_rgba(14,165,233,0.55)]"
+                              : "border-slate-200/70 bg-white hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          {/* Acento lateral cuando esta activa */}
+                          {isActive ? (
+                            <span
+                              className="absolute inset-y-0 left-0 w-1 bg-sky-500"
+                              aria-hidden
+                            />
+                          ) : null}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white">
+                                  #{form.id}
+                                </span>
+                                {form.mes ? (
+                                  <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                                    {form.mes}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-1.5 truncate text-sm font-semibold text-slate-900">
+                                {form.sede}
+                              </p>
+                              <p className="truncate text-xs text-slate-500">
+                                {form.seccion}
+                              </p>
+                            </div>
+                            {isActive ? (
+                              <span
+                                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white"
+                                aria-label="Plantilla seleccionada"
+                              >
+                                {isLoading ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                                ) : (
+                                  <Check className="h-3 w-3" aria-hidden />
+                                )}
+                              </span>
+                            ) : isLoading ? (
+                              <Loader2
+                                className="h-4 w-4 shrink-0 animate-spin text-slate-400"
+                                aria-hidden
+                              />
+                            ) : null}
+                          </div>
+                          <div className="mt-2 flex flex-col gap-1 text-[11px] text-slate-500">
+                            <span className="inline-flex items-center gap-1.5">
+                              <CalendarDays
+                                className="h-3 w-3 text-slate-400"
+                                aria-hidden
+                              />
+                              <span className="tabular-nums">
+                                {formatDateLabel(form.fechaInicial)}
+                              </span>
+                              <span className="text-slate-400">&rarr;</span>
+                              <span className="tabular-nums">
+                                {formatDateLabel(form.fechaFinal)}
+                              </span>
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Users
+                                className="h-3 w-3 text-slate-400"
+                                aria-hidden
+                              />
+                              <span className="font-semibold tabular-nums text-slate-700">
+                                {form.employeeCount}
+                              </span>
+                              <span>
+                                {form.employeeCount === 1
+                                  ? "empleado"
+                                  : "empleados"}
+                              </span>
+                            </span>
+                          </div>
+                        </button>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               )}
             </section>
 
@@ -667,10 +776,13 @@ export default function HorariosGuardadosPage() {
                         {formatDateLabel(selectedForm.fechaFinal)} · {selectedForm.mes || "Sin mes"}
                       </p>
                     </div>
-                    <div className="text-right text-xs text-slate-500">
-                      <p>Guardada por {selectedForm.createdByUsername || "--"}</p>
-                      <p>{formatDateTimeLabel(selectedForm.createdAt)}</p>
-                      <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <div className="flex flex-col items-end gap-2 text-right text-xs text-slate-500">
+                      <div>
+                        <p>Guardada por {selectedForm.createdByUsername || "--"}</p>
+                        <p>{formatDateTimeLabel(selectedForm.createdAt)}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {/* Accion primaria */}
                         <button
                           type="button"
                           onClick={() =>
@@ -678,39 +790,57 @@ export default function HorariosGuardadosPage() {
                               `/ingresar-horarios?planilla=${selectedForm.id}`,
                             )
                           }
-                          className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
+                          title="Abrir esta planilla en el editor para modificarla"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_20px_-12px_rgba(15,23,42,0.6)] transition-all hover:bg-slate-800 active:translate-y-px"
                         >
+                          <Pencil className="h-3 w-3" aria-hidden />
                           Editar
                         </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            router.push(
-                              `/ingresar-horarios?duplicar=${selectedForm.id}`,
-                            )
-                          }
-                          title="Crear una planilla nueva con los mismos empleados y horarios (la original no se modifica)"
-                          className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-violet-700 transition-all hover:border-violet-300 hover:bg-violet-100/70"
-                        >
-                          Duplicar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => window.print()}
-                          className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100/70"
-                          title="Imprimir la planilla seleccionada"
-                        >
-                          Imprimir
-                        </button>
+
+                        {/* Grupo de acciones secundarias (segmentado) */}
+                        <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white shadow-sm">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(
+                                `/ingresar-horarios?duplicar=${selectedForm.id}`,
+                              )
+                            }
+                            title="Crear una planilla nueva con los mismos empleados y horarios (la original no se modifica)"
+                            className="inline-flex items-center gap-1.5 border-r border-slate-200 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition-colors hover:bg-violet-50 hover:text-violet-700"
+                          >
+                            <Copy className="h-3 w-3" aria-hidden />
+                            Duplicar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => window.print()}
+                            title="Imprimir o guardar como PDF"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                          >
+                            <Printer className="h-3 w-3" aria-hidden />
+                            Imprimir
+                          </button>
+                        </div>
+
+                        {/* Separador visual */}
+                        <span
+                          className="hidden h-5 w-px bg-slate-200 sm:inline-block"
+                          aria-hidden
+                        />
+
+                        {/* Accion destructiva */}
                         <button
                           type="button"
                           onClick={() => void handleDeleteForm(selectedForm.id)}
                           disabled={deletingPlanillaId !== null}
-                          className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700 transition-all hover:border-rose-300 hover:bg-rose-100/70 disabled:cursor-not-allowed disabled:opacity-60"
+                          title="Eliminar definitivamente esta planilla y todos sus registros"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700 transition-all hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
+                          <Trash2 className="h-3 w-3" aria-hidden />
                           {deletingPlanillaId === selectedForm.id
                             ? "Eliminando..."
-                            : "Eliminar planilla"}
+                            : "Eliminar"}
                         </button>
                       </div>
                     </div>
