@@ -8,6 +8,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
   ArrowLeft,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
   Download,
@@ -197,6 +198,35 @@ export default function HorariosCompararPage() {
   );
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  // Muestra el boton flotante "Volver arriba" cuando el usuario hizo suficiente
+  // scroll vertical como para perder de vista los filtros y el header sticky.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateVisibility = () => {
+      setShowBackToTop(window.scrollY > 400);
+    };
+
+    updateVisibility();
+    window.addEventListener("scroll", updateVisibility, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", updateVisibility);
+    };
+  }, []);
+
+  const handleScrollToTop = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const prefersReducedMotion = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -1104,6 +1134,23 @@ export default function HorariosCompararPage() {
           </div>
         </section>
       </main>
+
+      {/* Boton flotante para volver al inicio. Aparece tras 400px de scroll
+          vertical para que no estorbe al cargar la pagina, y respeta
+          prefers-reduced-motion al desplazarse. */}
+      <button
+        type="button"
+        onClick={handleScrollToTop}
+        aria-label="Volver arriba"
+        title="Volver arriba"
+        className={`fixed bottom-6 right-6 z-50 inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-elevated transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-floating focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 ${
+          showBackToTop
+            ? "pointer-events-auto translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-3 opacity-0"
+        }`}
+      >
+        <ArrowUp className="h-5 w-5" aria-hidden />
+      </button>
     </div>
   );
 }

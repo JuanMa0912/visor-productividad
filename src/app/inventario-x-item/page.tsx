@@ -3372,18 +3372,6 @@ export default function InventarioXItemPage() {
           )}
         </div>
 
-        <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-4 text-sm leading-6 text-slate-600">
-          Esta primera version del modulo usa el ultimo corte disponible de la
-          tabla base de rotacion para darte una lectura rapida del inventario
-          por referencia. El listado de lineas e items al elegir alcance usa el
-          ultimo dia del rango para cargar rapido; la matriz usa todo el rango.
-          El DI replica la logica de Rotacion: inventario de cierre en la ultima
-          fecha con dato por empresa/sede/item, dias con dato en el periodo y
-          ventas del periodo (sin venta = 999999). En la siguiente
-          iteracion podemos profundizar con columnas adicionales, comportamiento
-          por sede o comparativos.
-        </div>
-
         <div className="pointer-events-none fixed bottom-6 right-6 z-40">
           <button
             type="button"

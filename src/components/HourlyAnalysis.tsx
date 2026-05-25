@@ -578,8 +578,17 @@ const OVERTIME_PAGE_TAB_WINDOW = 8;
 const CASHIER_PAGE_SIZE_OPTIONS = [10, 30, 50, 100, 200] as const;
 const CASHIER_PAGE_SIZE_DEFAULT = 30;
 const CASHIER_PAGE_TAB_WINDOW = 8;
-const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
-const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 29;
+// Umbrales para los botones "Ver personas >X:YYh".
+// Se usa `>` (estricto), asi que las constantes apuntan al ultimo minuto
+// excluido. La etiqueta del boton se mantiene en X:20 por convencion del
+// negocio, pero el filtro arranca un minuto despues del numero redondo (X:30)
+// para no contar a quienes terminan exactamente en X:30h (jornada esperada
+// + tiempo de gracia clavado al minuto 30).
+const ALERT_THRESHOLD_MINUTES = 9 * 60 + 30; // >9:30 -> arranca en 9:31
+const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 30; // >7:30 -> arranca en 7:31
+// Limite superior del rango ">7:20H con 2 marcaciones" (inclusivo). Se queda
+// en 9:20 para no solaparse conceptualmente con el boton ">9:20H".
+const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = 9 * 60 + 20;
 const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";
 const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-200";
 
@@ -2845,7 +2854,7 @@ export const HourlyAnalysis = ({
                 const marks = employee.marksCount ?? 0;
                 return (
                   employeeMinutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
-                  employeeMinutes <= ALERT_THRESHOLD_MINUTES &&
+                  employeeMinutes <= TWO_MARKS_ALERT_UPPER_BOUND_MINUTES &&
                   marks === 2
                 );
               }
@@ -2954,7 +2963,7 @@ export const HourlyAnalysis = ({
         const marks = employee.marksCount ?? 0;
         return (
           minutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
-          minutes <= ALERT_THRESHOLD_MINUTES &&
+          minutes <= TWO_MARKS_ALERT_UPPER_BOUND_MINUTES &&
           marks === 2
         );
       }).length,

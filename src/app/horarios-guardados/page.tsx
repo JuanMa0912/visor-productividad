@@ -6,12 +6,16 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Files,
+  Filter,
   Loader2,
   Pencil,
   PenLine,
   Printer,
+  RotateCcw,
   Trash2,
   Users,
 } from "lucide-react";
@@ -105,6 +109,8 @@ const DAY_ORDER: DayKey[] = [
   "sabado",
 ];
 
+const EMPLOYEES_PER_PAGE = 5;
+
 const FIRST_DAY_KEY = DAY_ORDER[0];
 
 function dayStartDividerClass(day: DayKey): string {
@@ -182,6 +188,7 @@ export default function HorariosGuardadosPage() {
   const [people, setPeople] = useState<EmployeeSummary[]>([]);
   const [peopleError, setPeopleError] = useState<string | null>(null);
   const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeePage, setEmployeePage] = useState(1);
   const [selectedEmployeeName, setSelectedEmployeeName] = useState<string | null>(null);
   const [loadingEmployeeName, setLoadingEmployeeName] = useState<string | null>(null);
   const [deletingPlanillaId, setDeletingPlanillaId] = useState<number | null>(null);
@@ -190,6 +197,12 @@ export default function HorariosGuardadosPage() {
   const [employeeRecordsByName, setEmployeeRecordsByName] = useState<
     Record<string, EmployeeRecord[]>
   >({});
+  // Filtros para el historial "Por persona". Se resetean al cambiar de empleado
+  // para no arrastrar rangos que pertenecen a otro periodo.
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterDayKey, setFilterDayKey] = useState<"" | DayKey>("");
+  const [filterSede, setFilterSede] = useState("");
 
   const selectedForm = selectedFormId !== null ? formDetailsById[selectedFormId] ?? null : null;
   const selectedEmployeeRecords =
@@ -260,7 +273,15 @@ export default function HorariosGuardadosPage() {
 
   const handleViewEmployee = useCallback(
     async (employeeName: string) => {
-      setSelectedEmployeeName(employeeName);
+      setSelectedEmployeeName((prev) => {
+        if (prev !== employeeName) {
+          setFilterDateFrom("");
+          setFilterDateTo("");
+          setFilterDayKey("");
+          setFilterSede("");
+        }
+        return employeeName;
+      });
       if (employeeRecordsByName[employeeName]) return;
 
       setLoadingEmployeeName(employeeName);
@@ -444,6 +465,90 @@ export default function HorariosGuardadosPage() {
     if (!search) return people;
     return people.filter((person) => normalizeText(person.name).includes(search));
   }, [employeeSearch, people]);
+
+  const employeeTotalPages = Math.max(
+    1,
+    Math.ceil(filteredPeople.length / EMPLOYEES_PER_PAGE),
+  );
+
+  // Mantener la pagina dentro del rango valido cuando cambia la lista filtrada
+  // (busqueda o eliminacion de empleados puede reducir el total de paginas).
+  useEffect(() => {
+    if (employeePage > employeeTotalPages) {
+      setEmployeePage(employeeTotalPages);
+    }
+  }, [employeePage, employeeTotalPages]);
+
+  const paginatedPeople = useMemo(() => {
+    const start = (employeePage - 1) * EMPLOYEES_PER_PAGE;
+    return filteredPeople.slice(start, start + EMPLOYEES_PER_PAGE);
+  }, [employeePage, filteredPeople]);
+
+  const employeeRangeStart =
+    filteredPeople.length === 0
+      ? 0
+      : (employeePage - 1) * EMPLOYEES_PER_PAGE + 1;
+  const employeeRangeEnd = Math.min(
+    employeePage * EMPLOYEES_PER_PAGE,
+    filteredPeople.length,
+  );
+
+  const availableSedesForEmployee = useMemo(() => {
+    const set = new Set<string>();
+    for (const record of selectedEmployeeRecords) {
+      const sede = (record.sede ?? "").trim();
+      if (sede) set.add(sede);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }, [selectedEmployeeRecords]);
+
+  const employeeDateBounds = useMemo(() => {
+    if (selectedEmployeeRecords.length === 0) return { min: "", max: "" };
+    let min = selectedEmployeeRecords[0].workedDate;
+    let max = selectedEmployeeRecords[0].workedDate;
+    for (const record of selectedEmployeeRecords) {
+      if (!record.workedDate) continue;
+      if (record.workedDate < min) min = record.workedDate;
+      if (record.workedDate > max) max = record.workedDate;
+    }
+    return { min, max };
+  }, [selectedEmployeeRecords]);
+
+  const filteredEmployeeRecords = useMemo(() => {
+    return selectedEmployeeRecords.filter((record) => {
+      const workedDate = (record.workedDate ?? "").trim();
+      if (filterDateFrom && (!workedDate || workedDate < filterDateFrom)) {
+        return false;
+      }
+      if (filterDateTo && (!workedDate || workedDate > filterDateTo)) {
+        return false;
+      }
+      if (filterDayKey && record.dayKey !== filterDayKey) {
+        return false;
+      }
+      if (filterSede && record.sede !== filterSede) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    selectedEmployeeRecords,
+    filterDateFrom,
+    filterDateTo,
+    filterDayKey,
+    filterSede,
+  ]);
+
+  const employeeFiltersActive = Boolean(
+    filterDateFrom || filterDateTo || filterDayKey || filterSede,
+  );
+
+  const clearEmployeeFilters = useCallback(() => {
+    setFilterDateFrom("");
+    setFilterDateTo("");
+    setFilterDayKey("");
+    setFilterSede("");
+  }, []);
 
   const selectedFormDayNumbers = useMemo(
     () =>
@@ -1021,7 +1126,10 @@ export default function HorariosGuardadosPage() {
               <input
                 type="text"
                 value={employeeSearch}
-                onChange={(e) => setEmployeeSearch(e.target.value)}
+                onChange={(e) => {
+                  setEmployeeSearch(e.target.value);
+                  setEmployeePage(1);
+                }}
                 placeholder="Buscar empleado"
                 className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
               />
@@ -1033,32 +1141,69 @@ export default function HorariosGuardadosPage() {
               {filteredPeople.length === 0 ? (
                 <p className="mt-4 text-sm text-slate-500">No hay empleados para mostrar.</p>
               ) : (
-                <div className="mt-4 space-y-2">
-                  {filteredPeople.map((person) => {
-                    const isActive = selectedEmployeeName === person.name;
-                    return (
+                <>
+                  <div className="mt-4 space-y-2">
+                    {paginatedPeople.map((person) => {
+                      const isActive = selectedEmployeeName === person.name;
+                      return (
+                        <button
+                          key={person.name}
+                          type="button"
+                          onClick={() => void handleViewEmployee(person.name)}
+                          className={`w-full rounded-2xl border px-4 py-3 text-left transition-all ${
+                            isActive
+                              ? "border-sky-300 bg-sky-50"
+                              : "border-slate-200/70 bg-white hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-slate-900">{person.name}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {person.recordCount} dia(s) · {person.formCount} planilla(s)
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatDateLabel(person.firstWorkedDate)} a{" "}
+                            {formatDateLabel(person.lastWorkedDate)}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {employeeTotalPages > 1 ? (
+                    <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200/70 bg-white px-3 py-2">
                       <button
-                        key={person.name}
                         type="button"
-                        onClick={() => void handleViewEmployee(person.name)}
-                        className={`w-full rounded-2xl border px-4 py-3 text-left transition-all ${
-                          isActive
-                            ? "border-sky-300 bg-sky-50"
-                            : "border-slate-200/70 bg-white hover:border-slate-300 hover:bg-slate-50"
-                        }`}
+                        onClick={() => setEmployeePage((p) => Math.max(1, p - 1))}
+                        disabled={employeePage === 1}
+                        title="Pagina anterior"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
                       >
-                        <p className="text-sm font-semibold text-slate-900">{person.name}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {person.recordCount} dia(s) · {person.formCount} planilla(s)
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {formatDateLabel(person.firstWorkedDate)} a{" "}
-                          {formatDateLabel(person.lastWorkedDate)}
-                        </p>
+                        <ChevronLeft className="h-4 w-4" aria-hidden />
+                        <span className="sr-only">Anterior</span>
                       </button>
-                    );
-                  })}
-                </div>
+                      <div className="flex flex-col items-center text-[11px] leading-tight text-slate-600">
+                        <span className="font-semibold tabular-nums text-slate-900">
+                          Pagina {employeePage} de {employeeTotalPages}
+                        </span>
+                        <span className="text-slate-500 tabular-nums">
+                          {employeeRangeStart}-{employeeRangeEnd} de {filteredPeople.length}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEmployeePage((p) => Math.min(employeeTotalPages, p + 1))
+                        }
+                        disabled={employeePage === employeeTotalPages}
+                        title="Pagina siguiente"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+                      >
+                        <ChevronRight className="h-4 w-4" aria-hidden />
+                        <span className="sr-only">Siguiente</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </section>
 
@@ -1078,7 +1223,9 @@ export default function HorariosGuardadosPage() {
                         {selectedEmployeeName}
                       </h2>
                       <p className="mt-1 text-sm text-slate-500">
-                        {selectedEmployeeRecords.length} registro(s) diario(s) guardados.
+                        {employeeFiltersActive
+                          ? `${filteredEmployeeRecords.length} de ${selectedEmployeeRecords.length} registro(s) (filtro activo).`
+                          : `${selectedEmployeeRecords.length} registro(s) diario(s) guardados.`}
                       </p>
                     </div>
                     {loadingEmployeeName === selectedEmployeeName ? (
@@ -1086,9 +1233,106 @@ export default function HorariosGuardadosPage() {
                     ) : null}
                   </div>
 
+                  {selectedEmployeeRecords.length > 0 ? (
+                    <div className="mt-4 rounded-2xl border border-slate-200/70 bg-slate-50/70 p-3">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="flex items-center gap-1.5 self-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                          <Filter className="h-3.5 w-3.5" aria-hidden />
+                          Filtros
+                        </div>
+
+                        <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                          Desde
+                          <input
+                            type="date"
+                            value={filterDateFrom}
+                            min={employeeDateBounds.min || undefined}
+                            max={employeeDateBounds.max || undefined}
+                            onChange={(e) => setFilterDateFrom(e.target.value)}
+                            className="w-[150px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                          />
+                        </label>
+
+                        <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                          Hasta
+                          <input
+                            type="date"
+                            value={filterDateTo}
+                            min={filterDateFrom || employeeDateBounds.min || undefined}
+                            max={employeeDateBounds.max || undefined}
+                            onChange={(e) => setFilterDateTo(e.target.value)}
+                            className="w-[150px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                          />
+                        </label>
+
+                        <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                          Dia
+                          <select
+                            value={filterDayKey}
+                            onChange={(e) =>
+                              setFilterDayKey(e.target.value as "" | DayKey)
+                            }
+                            className="w-[140px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium tracking-normal capitalize text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                          >
+                            <option value="">Todos</option>
+                            {DAY_ORDER.map((day) => (
+                              <option key={day} value={day} className="capitalize">
+                                {day}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        {availableSedesForEmployee.length > 1 ? (
+                          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                            Sede
+                            <select
+                              value={filterSede}
+                              onChange={(e) => setFilterSede(e.target.value)}
+                              className="w-[180px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                            >
+                              <option value="">Todas</option>
+                              {availableSedesForEmployee.map((sede) => (
+                                <option key={sede} value={sede}>
+                                  {sede}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+
+                        {employeeFiltersActive ? (
+                          <button
+                            type="button"
+                            onClick={clearEmployeeFilters}
+                            title="Quitar todos los filtros aplicados"
+                            className="inline-flex items-center gap-1.5 self-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800"
+                          >
+                            <RotateCcw className="h-3 w-3" aria-hidden />
+                            Limpiar
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {selectedEmployeeRecords.length === 0 ? (
                     <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
                       No hay registros diarios para este empleado.
+                    </div>
+                  ) : filteredEmployeeRecords.length === 0 ? (
+                    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                      Ningun registro coincide con los filtros aplicados.
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={clearEmployeeFilters}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800"
+                        >
+                          <RotateCcw className="h-3 w-3" aria-hidden />
+                          Limpiar filtros
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="mt-4 max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-2xl border border-slate-200/80 [-webkit-overflow-scrolling:touch]">
@@ -1109,7 +1353,7 @@ export default function HorariosGuardadosPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {selectedEmployeeRecords.map((record, index) => (
+                          {filteredEmployeeRecords.map((record, index) => (
                             <tr key={`${record.planillaId}-${record.workedDate}-${index}`} className="odd:bg-white even:bg-slate-50/40">
                               <td className="border border-slate-200 px-2 py-1 text-slate-700">
                                 {formatDateLabel(record.workedDate)}
