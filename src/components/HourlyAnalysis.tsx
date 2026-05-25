@@ -2106,6 +2106,10 @@ export const HourlyAnalysis = ({
       ]);
     });
     sheet.getRow(1).font = { bold: true };
+    // Formato moneda/numero para que Excel haga autosuma y se lean bonitas.
+    sheet.getColumn("sales").numFmt = '"$"#,##0';
+    sheet.getColumn("employees").numFmt = "#,##0";
+    sheet.getColumn("productivity").numFmt = "#,##0.000";
     const buffer = await workbook.xlsx.writeBuffer();
     const url = URL.createObjectURL(
       new Blob([buffer], {

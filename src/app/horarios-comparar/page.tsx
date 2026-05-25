@@ -426,8 +426,15 @@ export default function HorariosCompararPage() {
         { header: "Diff int2", key: "dI2", width: 12 },
         { header: "Diff salida", key: "dSal", width: 12 },
       ];
+      // Las columnas de diferencias se escriben como NUMEROS (minutos enteros con
+      // signo, null si no hay dato) y se les aplica un numFmt con sufijo " min"
+      // para que sigan leyendose en estilo "+15 min" / "-30 min" pero Excel las
+      // pueda sumar y autosumar.
+      const DIFF_NUM_FMT = '+0" min";-0" min";0" min";@';
+      const diffCellCols = ["dEnt", "dI1", "dI2", "dSal"] as const;
+
       for (const r of filteredRows) {
-        sheet.addRow({
+        const addedRow = sheet.addRow({
           fecha: r.workedDate,
           sede: r.sede,
           empleado: r.employeeName,
@@ -442,10 +449,16 @@ export default function HorariosCompararPage() {
           aI2: r.attendance?.horaIntermedia2 ?? "",
           aSal: r.attendance?.horaSalida ?? "",
           estadoBd: r.attendance?.estadoAsistencia ?? "",
-          dEnt: formatDiff(r.diffMin.entrada),
-          dI1: formatDiff(r.diffMin.intermedia1),
-          dI2: formatDiff(r.diffMin.intermedia2),
-          dSal: formatDiff(r.diffMin.salida),
+          dEnt: r.diffMin.entrada,
+          dI1: r.diffMin.intermedia1,
+          dI2: r.diffMin.intermedia2,
+          dSal: r.diffMin.salida,
+        });
+        diffCellCols.forEach((key) => {
+          const cell = addedRow.getCell(key);
+          if (typeof cell.value === "number") {
+            cell.numFmt = DIFF_NUM_FMT;
+          }
         });
       }
       const headerRow = sheet.getRow(1);

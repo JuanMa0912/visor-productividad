@@ -157,6 +157,13 @@ const toAlexTotalsSnapshot = (
 
 const formatAlexMetric = (value: number) => (value === 0 ? "-" : value);
 
+/**
+ * Para Excel siempre devolvemos el numero crudo (incluido 0). Con un numFmt
+ * `0;-0;"-"` Excel pinta el 0 como "-" pero la celda sigue siendo numerica,
+ * asi `SUMA` y la autosuma funcionan en toda la columna sin huecos de texto.
+ */
+const ALEX_EXCEL_NUM_FMT = '0;-0;"-"';
+
 const sanitizeExcelText = (value: string) => {
   const normalized = value.replace(/\r?\n/g, " ").trim();
   return /^[=+\-@\t]/.test(normalized) ? `'${normalized}` : normalized;
@@ -677,7 +684,7 @@ export default function JornadaExtendidaPage() {
     rows.forEach((row) => {
       const dataRow = sheet.addRow([
         sanitizeExcelText(row.sede),
-        ...alexIncludedFields.map((field) => formatAlexMetric(row[field.key])),
+        ...alexIncludedFields.map((field) => row[field.key] ?? 0),
       ]);
       dataRow.eachCell((cell, colNumber) => {
         cell.border = {
@@ -689,12 +696,15 @@ export default function JornadaExtendidaPage() {
           vertical: "middle",
           horizontal: colNumber === 1 ? "left" : "right",
         };
+        if (colNumber > 1) {
+          cell.numFmt = ALEX_EXCEL_NUM_FMT;
+        }
       });
     });
 
     const totalRow = sheet.addRow([
       "TOTAL",
-      ...alexIncludedFields.map((field) => totals[field.key]),
+      ...alexIncludedFields.map((field) => totals[field.key] ?? 0),
     ]);
     totalRow.eachCell((cell, colNumber) => {
       cell.font = { bold: true, color: { argb: "FF0F172A" } };
@@ -713,6 +723,9 @@ export default function JornadaExtendidaPage() {
         vertical: "middle",
         horizontal: colNumber === 1 ? "left" : "right",
       };
+      if (colNumber > 1) {
+        cell.numFmt = ALEX_EXCEL_NUM_FMT;
+      }
     });
 
     sheet.views = [{ state: "frozen", ySplit: headerRow.number }];
@@ -911,7 +924,8 @@ export default function JornadaExtendidaPage() {
         const periodTwoColumnIndex = periodOneColumnIndex + 1;
 
         const leftCell = sheet.getCell(rowNumber, periodOneColumnIndex);
-        leftCell.value = formatAlexMetric(periodOneRow?.[column.key] ?? 0);
+        leftCell.value = periodOneRow?.[column.key] ?? 0;
+        leftCell.numFmt = ALEX_EXCEL_NUM_FMT;
         leftCell.fill = {
           type: "pattern",
           pattern: "solid",
@@ -925,7 +939,8 @@ export default function JornadaExtendidaPage() {
         leftCell.alignment = { vertical: "middle", horizontal: "right" };
 
         const rightCell = sheet.getCell(rowNumber, periodTwoColumnIndex);
-        rightCell.value = formatAlexMetric(periodTwoRow?.[column.key] ?? 0);
+        rightCell.value = periodTwoRow?.[column.key] ?? 0;
+        rightCell.numFmt = ALEX_EXCEL_NUM_FMT;
         rightCell.fill = {
           type: "pattern",
           pattern: "solid",
@@ -963,6 +978,7 @@ export default function JornadaExtendidaPage() {
 
       const leftCell = sheet.getCell(totalRowNumber, periodOneColumnIndex);
       leftCell.value = periodOneTotals[column.key];
+      leftCell.numFmt = ALEX_EXCEL_NUM_FMT;
       leftCell.font = { bold: true, color: { argb: "FF0F172A" } };
       leftCell.fill = {
         type: "pattern",
@@ -979,6 +995,7 @@ export default function JornadaExtendidaPage() {
 
       const rightCell = sheet.getCell(totalRowNumber, periodTwoColumnIndex);
       rightCell.value = periodTwoTotals[column.key];
+      rightCell.numFmt = ALEX_EXCEL_NUM_FMT;
       rightCell.font = { bold: true, color: { argb: "FF0F172A" } };
       rightCell.fill = {
         type: "pattern",
