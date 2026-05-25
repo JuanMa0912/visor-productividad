@@ -2159,6 +2159,19 @@ export function RotacionPageInner() {
       sheet.getColumn(2).width = 8;
       sheet.getColumn(3).width = 40;
 
+      // Formatos contables: con `$` y separador de miles para que Excel
+      // sume/autosume y para conservar la legibilidad. Se aplican a celdas
+      // que reciben numeros crudos (no strings preformateados).
+      const COP_NUM_FMT = '"$"#,##0;[Red]-"$"#,##0';
+      const INT_NUM_FMT = "#,##0";
+
+      // Indices de columna (1-based) con formato numerico segun vista.
+      // surtido: 5 = Venta periodo, 7 = V. inv.
+      // general: 4 = Venta, 5 = Costo, 8 = U. vend., 9 = V. inv.
+      const SURTIDO_CURRENCY_COLS = [5, 7];
+      const GENERAL_CURRENCY_COLS = [4, 5, 9];
+      const GENERAL_INT_COLS = [8];
+
       exportGroups.forEach((group) => {
         const titleRow = sheet.addRow([
           `${group.empresa} - ${group.sede} | Vista: ${
@@ -2215,37 +2228,47 @@ export function RotacionPageInner() {
         });
 
         group.rows.forEach((row) => {
+          let dataRow: ExcelJS.Row;
           if (group.isSurtidoTrackingTableView) {
-            sheet.addRow([
+            dataRow = sheet.addRow([
               row.item,
               row.categoria,
               row.ceroEstado,
               row.descripcion,
-              formatPrice(row.ventaPeriodo),
+              row.ventaPeriodo,
               `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
-              formatPrice(row.valorInventario),
+              row.valorInventario,
               row.diDesdeIngreso,
               row.duv,
               row.fechaUltimaVenta,
               row.ultimoIngreso,
             ]);
+            SURTIDO_CURRENCY_COLS.forEach((col) => {
+              dataRow.getCell(col).numFmt = COP_NUM_FMT;
+            });
           } else {
-            sheet.addRow([
+            dataRow = sheet.addRow([
               row.item,
               row.categoria,
               row.descripcion,
-              formatPrice(row.ventaPeriodo),
-              formatPrice(row.costoPeriodo),
+              row.ventaPeriodo,
+              row.costoPeriodo,
               row.margenPorcentaje,
               `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
-              row.unidadesVendidas.toLocaleString("es-CO"),
-              formatPrice(row.valorInventario),
+              row.unidadesVendidas,
+              row.valorInventario,
               row.rotacion,
               row.diaInventarioEfectivo,
               row.diaVentaEfectivo,
               row.fechaUltimaVenta,
               row.ultimoIngreso,
             ]);
+            GENERAL_CURRENCY_COLS.forEach((col) => {
+              dataRow.getCell(col).numFmt = COP_NUM_FMT;
+            });
+            GENERAL_INT_COLS.forEach((col) => {
+              dataRow.getCell(col).numFmt = INT_NUM_FMT;
+            });
           }
         });
         sheet.addRow([]);
