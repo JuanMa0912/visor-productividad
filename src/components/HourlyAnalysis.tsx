@@ -584,11 +584,12 @@ const CASHIER_PAGE_TAB_WINDOW = 8;
 // negocio, pero el filtro arranca un minuto despues del numero redondo (X:30)
 // para no contar a quienes terminan exactamente en X:30h (jornada esperada
 // + tiempo de gracia clavado al minuto 30).
-const ALERT_THRESHOLD_MINUTES = 9 * 60 + 30; // >9:30 -> arranca en 9:31
+// >9:19 -> arranca en 9:20 (umbral inclusivo: cuenta desde 9:20h en adelante).
+const ALERT_THRESHOLD_MINUTES = 9 * 60 + 19;
 const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 30; // >7:30 -> arranca en 7:31
 // Limite superior del rango ">7:20H con 2 marcaciones" (inclusivo). Se queda
-// en 9:20 para no solaparse conceptualmente con el boton ">9:20H".
-const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = 9 * 60 + 20;
+// en 9:19 para no solaparse con el boton ">9:20H" (que ahora arranca en 9:20).
+const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = 9 * 60 + 19;
 const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";
 const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-200";
 
@@ -3678,7 +3679,7 @@ export const HourlyAnalysis = ({
                       : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
                   }`}
                 >
-                  {`Ver personas >9:20h (${displayAlexAlertCount920})`}
+                  {`Ver personas 9:20h (${displayAlexAlertCount920})`}
                 </button>
                 <button
                   type="button"
@@ -3950,7 +3951,7 @@ export const HourlyAnalysis = ({
               {isAlexStrictMode && (
                 <p className="mt-2 text-xs font-semibold text-amber-700">
                   Modo Alex activo: el listado usa exactamente la misma regla
-                  del reporte (superior a 9:20h) y bloquea filtros que cambian
+                  del reporte (9:20h) y bloquea filtros que cambian
                   el conteo.
                 </p>
               )}

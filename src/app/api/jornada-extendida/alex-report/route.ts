@@ -165,7 +165,10 @@ const isAbsenceIncident = (value: string | null | undefined) =>
 
 // Se conserva la etiqueta visible 7:20h, pero el filtro interno usa 7:29h.
 const HOURS_7_20 = 7 + 29 / 60;
-const HOURS_9_20 = 9 + 20 / 60;
+// Umbral interno para "+9:20h": 9 + 19.5/60. Con `>` arranca exactamente en 9:20,
+// tolerando representaciones decimales (9.33, 9.333, 9.3333...) que vienen de
+// la BD; y con `<=` en el rango anterior se evita el solape en el caso 9:20.
+const HOURS_9_20 = 9 + 19.5 / 60;
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;

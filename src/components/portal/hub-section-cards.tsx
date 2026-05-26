@@ -192,7 +192,7 @@ export function PortalHubModuleCard({
       <span className="relative z-1 mt-3 block text-sm leading-relaxed text-slate-600">
         {item.description}
       </span>
-      <div className="relative z-1 mt-8 flex items-center justify-between gap-3 pt-1">
+      <div className="relative z-1 mt-auto flex items-center justify-between gap-3 pt-8">
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
           Abrir modulo
         </span>

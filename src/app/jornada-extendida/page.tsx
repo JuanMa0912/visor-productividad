@@ -113,10 +113,10 @@ const ALEX_EXPORT_FIELDS: AlexExportField[] = [
   },
   {
     key: "moreThan92",
-    header: "+ 9:20h",
-    toggleLabel: "+ 9:20h",
+    header: "9:20h",
+    toggleLabel: "9:20h",
     width: 18,
-    comparisonHeader: "Mas 9.2",
+    comparisonHeader: "9:20",
   },
   {
     key: "oddMarks",
@@ -1358,7 +1358,7 @@ export default function JornadaExtendidaPage() {
                       Tablero de tiempos
                     </p>
                     <h2 className="mt-1 text-lg font-bold leading-tight text-slate-900 sm:text-[1.6rem]">
-                      + 7:20h con 2 marcaciones, + 9:20h, marc. impares e
+                      + 7:20h con 2 marcaciones, 9:20h, marc. impares e
                       inasistencias
                     </h2>
                     {alexRangeLabel && (
@@ -1732,7 +1732,7 @@ export default function JornadaExtendidaPage() {
                               >
                                 {renderAlexSortHeader(
                                   "moreThan92",
-                                  "+ 9:20h",
+                                  "9:20h",
                                   "right",
                                 )}
                               </th>
