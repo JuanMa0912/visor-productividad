@@ -5,9 +5,6 @@ import { ArrowLeft, CalendarDays, Sparkles, Users } from "lucide-react";
 
 export const PORTAL_APP_VERSION = "v4.0";
 
-const CRONOGRAMA_NOTION_URL =
-  "https://www.notion.so/Cronograma-de-Proyectos-UAID-00e49a2ceb6b83f58fc1010dd253ae67";
-
 export type PortalBrandingHeaderProps = {
   canAccessCronograma: boolean;
   isAdmin: boolean;
@@ -62,13 +59,7 @@ export function PortalBrandingHeader({
               {canAccessCronograma && (
                 <button
                   type="button"
-                  onClick={() =>
-                    window.open(
-                      CRONOGRAMA_NOTION_URL,
-                      "_blank",
-                      "noopener,noreferrer",
-                    )
-                  }
+                  onClick={() => router.push("/cronograma")}
                   className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 >
                   <CalendarDays className="h-3.5 w-3.5 shrink-0" />
