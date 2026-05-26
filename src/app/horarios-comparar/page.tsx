@@ -23,6 +23,7 @@ import {
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 import {
   HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN,
   HORARIOS_COMPARAR_SALIDA_EXTRA_MAX_MIN,
@@ -692,34 +693,10 @@ export default function HorariosCompararPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-foreground antialiased">
-      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-3.5 lg:px-8">
-          <Link href="/portal" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-linear-to-br from-indigo-600 to-indigo-700 shadow-elevated">
-              <Sparkles className="h-4.5 w-4.5 text-white" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Operación · UAID
-              </span>
-              <span className="font-display text-[15px] font-semibold leading-tight tracking-tight text-foreground">
-                Comparar horarios
-              </span>
-            </div>
-          </Link>
-          <button
-            type="button"
-            onClick={() => router.push("/horario")}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground shadow-xs transition-all hover:border-foreground/20 hover:shadow-soft"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Volver a Horario
-          </button>
-        </div>
-      </header>
+      <AppTopBar backHref="/horario" backLabel="Volver a horarios" />
 
       <main className="mx-auto max-w-[1400px] px-6 py-8 lg:px-8 lg:py-10">
-        <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs">
+        <section className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white shadow-[0_20px_60px_-40px_rgba(15,23,42,0.18)]">
           <div className="h-[3px] w-full bg-rose-600" />
           <div className="space-y-6 p-5 lg:p-6">
             <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
@@ -759,7 +736,7 @@ export default function HorariosCompararPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4 lg:grid-cols-[140px_140px_1fr_auto] lg:items-end">
+            <div className="grid gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4 lg:grid-cols-[140px_140px_1fr_auto] lg:items-end">
               <label className="space-y-1.5">
                 <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Desde
@@ -912,7 +889,7 @@ export default function HorariosCompararPage() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-border/70 shadow-xs">
+            <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-xs">
               <div className="overflow-x-auto">
                 <table className="min-w-[1320px] border-collapse text-left text-[11px]">
                   <thead className="sticky top-[73px] z-30 bg-white shadow-xs">

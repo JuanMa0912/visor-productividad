@@ -35,6 +35,7 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 import {
   escapeCsvValue,
   formatPdfDate,
@@ -5119,18 +5120,10 @@ export default function Home() {
 
   // Render
   return (
-    <div className="min-h-screen bg-background px-3 pb-8 pt-4 text-foreground sm:px-4 sm:pb-12 sm:pt-6 md:px-8 md:pb-16 md:pt-10">
+    <div className="min-h-screen bg-background text-foreground">
+      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
+      <div className="px-3 pb-8 pt-4 sm:px-4 sm:pb-12 sm:pt-6 md:px-8 md:pb-16 md:pt-10">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 sm:gap-6 md:gap-10">
-        {isAdmin && (
-          <div className="flex justify-end">
-            <Link
-              href="/admin/usuarios"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-900/90 bg-slate-900 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_14px_30px_-16px_rgba(15,23,42,0.6)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
-            >
-              Administrar usuarios
-            </Link>
-          </div>
-        )}
         <TopBar
           title="Productividad por Línea"
           selectedSede={selectedSede}
@@ -5438,6 +5431,7 @@ export default function Home() {
 
           </div>
         )}
+      </div>
       </div>
     </div>
   );

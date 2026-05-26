@@ -26,6 +26,7 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 type DateRange = {
   start: string;
@@ -667,31 +668,7 @@ export default function MargenesPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
-      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-3 lg:px-8">
-          <Link href="/portal" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-linear-to-br from-indigo-500 to-violet-500 shadow-elevated">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Producto · UAID
-              </span>
-              <span className="font-display text-[15px] font-semibold leading-tight tracking-tight text-foreground">
-                Márgenes
-              </span>
-            </div>
-          </Link>
-          <button
-            type="button"
-            onClick={() => router.push("/secciones")}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground shadow-xs transition-all hover:border-foreground/20 hover:shadow-soft"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Volver a producto
-          </button>
-        </div>
-      </header>
+      <AppTopBar />
 
       <main className="mx-auto max-w-[1400px] px-6 py-8 lg:px-8 lg:py-10">
         <section className="overflow-hidden rounded-2xl border border-foreground/15 bg-card shadow-xs">

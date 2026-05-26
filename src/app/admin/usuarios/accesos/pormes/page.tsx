@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, LayoutGrid, LogOut, Search, Sparkles } from "lucide-react";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 const APP_VERSION_LABEL = "UAID V4.0";
 const USER_FILTER_DEBOUNCE_MS = 400;
@@ -111,8 +112,10 @@ export default function AdminUsuariosAccesosPorMesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[min(100%,72rem)] flex-col gap-6">
+    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
+      <AppTopBar backHref="/admin/usuarios/accesos" backLabel="Volver a accesos" />
+      <div className="px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[min(100%,72rem)] flex-col gap-6">
         <header className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-emerald-600 to-emerald-700 text-white shadow-lg shadow-emerald-600/25">
@@ -242,6 +245,7 @@ export default function AdminUsuariosAccesosPorMesPage() {
             )}
           </div>
         </section>
+        </div>
       </div>
     </div>
   );

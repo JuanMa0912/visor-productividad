@@ -22,6 +22,7 @@ import {
   type VentasXItemPreparedRow,
   type VentasXItemRawRow,
 } from "@/lib/ventas/x-item";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 const EMPRESA_LABELS: Record<string, string> = {
   mercamio: "MERCAMIO",
@@ -915,7 +916,9 @@ export default function VentasXItemPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 px-4 py-8 text-foreground lg:px-6">
+    <div className="min-h-screen bg-slate-100 text-foreground">
+      <AppTopBar backHref="/venta" backLabel="Volver a venta" />
+      <div className="px-4 py-8 lg:px-6">
       <div className="mx-auto w-full max-w-7xl">
         <div className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1427,6 +1430,7 @@ export default function VentasXItemPage() {
           </>
         )}
         </div>
+      </div>
       </div>
     </div>
   );

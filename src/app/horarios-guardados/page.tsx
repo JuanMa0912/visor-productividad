@@ -20,6 +20,7 @@ import {
   Users,
 } from "lucide-react";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 type DayKey =
   | "domingo"
@@ -642,6 +643,7 @@ export default function HorariosGuardadosPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-100 px-4 py-12 text-foreground print:overflow-visible print:bg-white print:p-0">
+      <AppTopBar />
       <div className="mx-auto w-full max-w-[min(100%,96rem)] rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)] print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div>

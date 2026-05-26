@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   Filter,
@@ -27,6 +28,7 @@ import {
   resolvePortalSectionId,
 } from "@/lib/shared/portal-sections";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [
@@ -727,8 +729,10 @@ export default function AdminUsuariosPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[min(100%,112rem)] flex-col gap-6">
+    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
+      <AppTopBar showBack={false} />
+      <div className="px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[min(100%,112rem)] flex-col gap-6">
         <header className="flex flex-col gap-6 rounded-xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
@@ -1112,6 +1116,13 @@ export default function AdminUsuariosPage() {
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="inline-flex gap-1">
+                                <Link
+                                  href={`/admin/usuarios/${user.id}/metricas`}
+                                  className="rounded-lg p-1.5 text-emerald-600 transition hover:bg-emerald-50"
+                                  title="Ver métricas de uso"
+                                >
+                                  <BarChart3 className="h-4 w-4" />
+                                </Link>
                                 <button
                                   type="button"
                                   onClick={() => openEdit(user)}
@@ -1602,6 +1613,7 @@ export default function AdminUsuariosPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

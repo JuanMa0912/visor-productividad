@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 export default function PrediccionPedidosPage() {
   const router = useRouter();
@@ -62,6 +63,7 @@ export default function PrediccionPedidosPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.14),transparent_52%),linear-gradient(180deg,#fffdf8,#fff7e8)] px-4 py-12 text-foreground">
+      <AppTopBar />
       <div className="mx-auto w-full max-w-4xl rounded-[30px] border border-slate-200/70 bg-white p-8 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.35)]">
         <div className="rounded-3xl border border-amber-200/80 bg-linear-to-br from-amber-100 via-white to-yellow-50 p-6 shadow-[0_18px_35px_-30px_rgba(245,158,11,0.35)]">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

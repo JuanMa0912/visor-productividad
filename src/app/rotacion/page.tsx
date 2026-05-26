@@ -144,6 +144,7 @@ import {
   useRotacionViewConfig,
 } from "@/app/rotacion/rotacion-view-config-provider";
 import { RotacionItemDrilldown } from "@/app/rotacion/rotacion-item-drilldown";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 type SurtidoAuditApiRow = {
   id: string;
@@ -5315,6 +5316,7 @@ export function RotacionPageInner() {
 export default function RotacionPage() {
   return (
     <RotacionViewConfigProvider config={ROTACION_LEGACY_VIEW}>
+      <AppTopBar />
       <RotacionPageInner />
     </RotacionViewConfigProvider>
   );

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   applySessionCookies,
   getUserSession,
+  recordUserActivity,
   updateSessionLastPath,
 } from "@/lib/auth";
 
@@ -33,6 +34,11 @@ export async function POST(request: Request) {
       await updateSessionLastPath(path);
     } catch (error) {
       console.warn("[heartbeat] no se pudo guardar last_path", error);
+    }
+    try {
+      await recordUserActivity(path);
+    } catch (error) {
+      console.warn("[heartbeat] no se pudo registrar la actividad", error);
     }
   }
 

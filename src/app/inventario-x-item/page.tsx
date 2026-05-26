@@ -46,6 +46,7 @@ import {
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
 import { formatDateLabel } from "@/lib/shared/utils";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 type InventarioSummaryRow = {
   lineKey: string;
@@ -2648,7 +2649,9 @@ export default function InventarioXItemPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_55%),linear-gradient(180deg,#f8fafc,#eef4ff)] px-4 py-10 text-foreground">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_55%),linear-gradient(180deg,#f8fafc,#eef4ff)] text-foreground">
+      <AppTopBar backHref="/venta" backLabel="Volver a venta" />
+      <div className="px-4 py-10">
       <div className="mx-auto w-full max-w-7xl rounded-[30px] border border-slate-200/70 bg-white p-8 shadow-[0_30px_80px_-55px_rgba(15,23,42,0.45)]">
         <div className="rounded-3xl border border-blue-200/80 bg-linear-to-br from-blue-100 via-white to-indigo-100 p-6 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.45)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -3382,6 +3385,7 @@ export default function InventarioXItemPage() {
             Volver arriba
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

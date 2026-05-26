@@ -250,6 +250,47 @@ export const updateSessionLastPath = async (pathValue: string) => {
   }
 };
 
+/**
+ * Inserta una fila en `app_user_activity_log` con el path actual del usuario.
+ * Se invoca desde el heartbeat. Para evitar duplicados (si el cliente envia
+ * varios heartbeats por minuto), descarta la insercion si ya hay una fila
+ * con el mismo `(session_id, path)` en los ultimos 45 segundos.
+ */
+export const recordUserActivity = async (pathValue: string) => {
+  const token = await getSessionToken();
+  if (!token) return;
+  const trimmed = String(pathValue ?? "").trim();
+  if (!trimmed || !trimmed.startsWith("/")) return;
+  const safePath = trimmed.slice(0, MAX_LAST_PATH_LENGTH);
+  const tokenHash = hashToken(token);
+  const client = await (await getDbPool()).connect();
+  try {
+    await client.query(
+      `
+      WITH current_session AS (
+        SELECT id, user_id
+        FROM app_user_sessions
+        WHERE token_hash = $1 AND revoked_at IS NULL
+        LIMIT 1
+      )
+      INSERT INTO app_user_activity_log (user_id, session_id, path)
+      SELECT cs.user_id, cs.id, $2
+      FROM current_session cs
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM app_user_activity_log a
+        WHERE a.session_id = cs.id
+          AND a.path = $2
+          AND a.observed_at > now() - interval '45 seconds'
+      )
+      `,
+      [tokenHash, safePath],
+    );
+  } finally {
+    client.release();
+  }
+};
+
 export const getSessionCookieOptions = (expiresAt?: Date) => ({
   httpOnly: true,
   sameSite: "lax" as const,

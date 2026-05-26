@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 export default function CambiarContrasenaPage() {
   const router = useRouter();
@@ -76,6 +77,8 @@ export default function CambiarContrasenaPage() {
   };
 
   return (
+    <>
+      <AppTopBar />
     <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
       <div className="mx-auto w-full max-w-xl rounded-3xl border border-slate-200/70 bg-white p-7 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -150,5 +153,6 @@ export default function CambiarContrasenaPage() {
         </form>
       </div>
     </div>
+    </>
   );
 }

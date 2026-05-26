@@ -9,6 +9,7 @@ import { DEFAULT_SEDES, type Sede } from "@/lib/shared/constants";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 import { normalizeKeyCompact } from "@/lib/shared/normalize";
 import type { DailyProductivity } from "@/types";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 type AuthPayload = {
   user?: {
@@ -236,6 +237,7 @@ export default function ProductividadCajasPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
+      <AppTopBar />
       <div className="mx-auto w-full max-w-6xl">
         <div className="mb-5 flex flex-col gap-4 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)] md:flex-row md:items-start md:justify-between">
           <div>

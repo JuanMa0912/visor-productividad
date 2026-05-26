@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 import { cn } from "@/lib/shared/utils";
 import type {
   CronogramaDatabase,
@@ -981,6 +982,7 @@ export default function CronogramaPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <AppTopBar />
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { IngresarHorariosInner } from "./ingresar-horarios-inner";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 
 export default function IngresarHorariosPage() {
   return (
@@ -10,6 +11,7 @@ export default function IngresarHorariosPage() {
         </div>
       }
     >
+      <AppTopBar />
       <IngresarHorariosInner />
     </Suspense>
   );
