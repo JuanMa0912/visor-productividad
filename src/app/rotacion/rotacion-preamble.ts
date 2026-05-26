@@ -233,7 +233,7 @@ const ROTACION_ZERO_TABLE_COL_WIDTHS = [
   "11%",
   "8%",
 ] as const;
-const ROTACION_FLOATING_HEADER_TOP_PX = 0;
+const ROTACION_FLOATING_HEADER_TOP_PX = 57;
 const ROTACION_FLOATING_HEADER_COLUMNS = [
   { label: "#", align: "right" as const },
   { label: "Item", align: "left" as const, field: "item" as const },
