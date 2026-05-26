@@ -18,6 +18,8 @@ export type AppTopBarProps = {
 type AuthSnapshot = {
   isAdmin: boolean;
   canAccessCronograma: boolean;
+  username: string | null;
+  sede: string | null;
 };
 
 /**
@@ -45,7 +47,9 @@ export function AppTopBar({
         if (!response.ok) return;
         const payload = (await response.json()) as {
           user?: {
+            username?: string;
             role?: string;
+            sede?: string | null;
             specialRoles?: string[] | null;
           };
         };
@@ -53,7 +57,12 @@ export function AppTopBar({
         const canAccessCronograma =
           isAdmin ||
           Boolean(payload.user?.specialRoles?.includes("cronograma"));
-        setSnapshot({ isAdmin, canAccessCronograma });
+        setSnapshot({
+          isAdmin,
+          canAccessCronograma,
+          username: payload.user?.username ?? null,
+          sede: payload.user?.sede ?? null,
+        });
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
       }
@@ -79,6 +88,8 @@ export function AppTopBar({
       canAccessCronograma={snapshot.canAccessCronograma}
       isAdmin={snapshot.isAdmin}
       compact={compact}
+      username={snapshot.username}
+      sede={snapshot.sede}
       {...(showBack
         ? {
             onBackToSecciones: () => router.push(backHref),

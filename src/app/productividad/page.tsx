@@ -75,6 +75,8 @@ export default function ProductividadHubPage() {
   const [allowedSubdashboards, setAllowedSubdashboards] = useState<
     string[] | null
   >(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [sede, setSede] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -96,6 +98,8 @@ export default function ProductividadHubPage() {
             allowedDashboards?: string[] | null;
             allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
+            username?: string | null;
+            sede?: string | null;
           };
         };
         const userIsAdmin = payload.user?.role === "admin";
@@ -108,6 +112,8 @@ export default function ProductividadHubPage() {
         }
         if (isMounted) {
           setIsAdmin(userIsAdmin);
+          setUsername(payload.user?.username ?? null);
+          setSede(payload.user?.sede ?? null);
           setAllowedSubdashboards(payload.user?.allowedSubdashboards ?? null);
           setCanAccessCronograma(
             userIsAdmin ||
@@ -175,6 +181,8 @@ export default function ProductividadHubPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
+        username={username}
+        sede={sede}
         onBackToSecciones={() => router.push("/secciones")}
       />
       <PortalHubShell>

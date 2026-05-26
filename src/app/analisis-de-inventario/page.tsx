@@ -15,6 +15,8 @@ export default function AnalisisDeInventarioPage() {
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [canAccessCronograma, setCanAccessCronograma] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
+  const [sede, setSede] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -36,6 +38,8 @@ export default function AnalisisDeInventarioPage() {
             allowedDashboards?: string[] | null;
             allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
+            username?: string | null;
+            sede?: string | null;
           };
         };
         const userIsAdmin = payload.user?.role === "admin";
@@ -52,6 +56,8 @@ export default function AnalisisDeInventarioPage() {
         }
         if (isMounted) {
           setIsAdmin(userIsAdmin);
+          setUsername(payload.user?.username ?? null);
+          setSede(payload.user?.sede ?? null);
           setCanAccessCronograma(
             userIsAdmin ||
               Boolean(payload.user?.specialRoles?.includes("cronograma")),
@@ -85,6 +91,8 @@ export default function AnalisisDeInventarioPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
+        username={username}
+        sede={sede}
         onBackToSecciones={() => router.push("/secciones")}
       />
       <div className="mx-auto w-full max-w-3xl px-4 py-8 lg:px-6">

@@ -52,6 +52,8 @@ export default function VentaHubPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [canAccessCronograma, setCanAccessCronograma] = useState(false);
   const [visibleModules, setVisibleModules] = useState<HubModuleItem[]>([]);
+  const [username, setUsername] = useState<string | null>(null);
+  const [sede, setSede] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -73,6 +75,8 @@ export default function VentaHubPage() {
             allowedDashboards?: string[] | null;
             allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
+            username?: string | null;
+            sede?: string | null;
           };
         };
         const userIsAdmin = payload.user?.role === "admin";
@@ -86,6 +90,8 @@ export default function VentaHubPage() {
         if (isMounted) {
           const allowedSubdashboards = payload.user?.allowedSubdashboards;
           setIsAdmin(userIsAdmin);
+          setUsername(payload.user?.username ?? null);
+          setSede(payload.user?.sede ?? null);
           setCanAccessCronograma(
             userIsAdmin ||
               Boolean(payload.user?.specialRoles?.includes("cronograma")),
@@ -133,6 +139,8 @@ export default function VentaHubPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
+        username={username}
+        sede={sede}
         onBackToSecciones={() => router.push("/secciones")}
       />
       <PortalHubShell>

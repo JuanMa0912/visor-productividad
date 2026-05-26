@@ -57,6 +57,8 @@ export default function HorarioHubPage() {
   const [allowedSubdashboards, setAllowedSubdashboards] = useState<
     string[] | null
   >(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [sede, setSede] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -78,6 +80,8 @@ export default function HorarioHubPage() {
             allowedDashboards?: string[] | null;
             allowedSubdashboards?: string[] | null;
             specialRoles?: string[] | null;
+            username?: string | null;
+            sede?: string | null;
           };
         };
         const userIsAdmin = payload.user?.role === "admin";
@@ -90,6 +94,8 @@ export default function HorarioHubPage() {
         }
         if (isMounted) {
           setIsAdmin(userIsAdmin);
+          setUsername(payload.user?.username ?? null);
+          setSede(payload.user?.sede ?? null);
           setAllowedSubdashboards(payload.user?.allowedSubdashboards ?? null);
           setCanAccessCronograma(
             userIsAdmin ||
@@ -152,6 +158,8 @@ export default function HorarioHubPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
+        username={username}
+        sede={sede}
         onBackToSecciones={() => router.push("/secciones")}
       />
       <PortalHubShell>

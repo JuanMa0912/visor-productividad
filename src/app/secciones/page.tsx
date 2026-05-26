@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Activity,
-  BarChart3,
-  Boxes,
-  ChevronRight,
-  KeyRound,
-  UserCog,
-} from "lucide-react";
+import { Activity, BarChart3, Boxes, ChevronRight } from "lucide-react";
 import {
   PORTAL_APP_VERSION,
   PortalBrandingHeader,
@@ -89,24 +82,10 @@ export default function SeccionesPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isSwitchingUser, setIsSwitchingUser] = useState(false);
   const [allowedDashboards, setAllowedDashboards] = useState<string[] | null>(null);
   const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
   const [username, setUsername] = useState<string | null>(null);
-
-  const getCookieValue = (name: string) => {
-    if (typeof document === "undefined") return null;
-    const value = document.cookie
-      .split("; ")
-      .find((entry) => entry.startsWith(`${name}=`));
-    if (!value) return null;
-    return decodeURIComponent(value.split("=").slice(1).join("="));
-  };
-
-  const requireCsrfToken = () => {
-    const token = getCookieValue("vp_csrf");
-    return token ?? null;
-  };
+  const [sede, setSede] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,6 +107,7 @@ export default function SeccionesPage() {
             allowedDashboards?: string[] | null;
             specialRoles?: string[] | null;
             username?: string | null;
+            sede?: string | null;
           };
         };
         if (!isMounted) return;
@@ -135,6 +115,7 @@ export default function SeccionesPage() {
         setAllowedDashboards(payload.user?.allowedDashboards ?? null);
         setSpecialRoles(payload.user?.specialRoles ?? null);
         setUsername(payload.user?.username ?? null);
+        setSede(payload.user?.sede ?? null);
         setReady(true);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -150,20 +131,6 @@ export default function SeccionesPage() {
       controller.abort();
     };
   }, [router]);
-
-  const handleSwitchUser = async () => {
-    if (isSwitchingUser) return;
-    setIsSwitchingUser(true);
-    try {
-      const csrfToken = requireCsrfToken();
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        headers: csrfToken ? { "x-csrf-token": csrfToken } : undefined,
-      });
-    } finally {
-      router.replace("/login");
-    }
-  };
 
   if (!ready) {
     return (
@@ -188,45 +155,10 @@ export default function SeccionesPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
+        username={username}
+        sede={sede}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 lg:px-6">
-        <div className="rounded-2xl border border-slate-200/70 bg-white/90 shadow-[0_8px_30px_-24px_rgba(15,23,42,0.2)] backdrop-blur-sm">
-          <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900">Cuenta</p>
-              <p className="text-xs text-slate-500">Ajustes rápidos de sesión.</p>
-              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                <span>Sesión · {username?.toLowerCase() || "usuario"}</span>
-                <span className="hidden text-slate-300 sm:inline" aria-hidden>
-                  |
-                </span>
-                <span>
-                  Ciclo {new Date().getFullYear()} · 04
-                </span>
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:pt-0.5">
-              <button
-                type="button"
-                onClick={handleSwitchUser}
-                disabled={isSwitchingUser}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <UserCog className="h-3.5 w-3.5" />
-                {isSwitchingUser ? "Saliendo..." : "Cambiar usuario"}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/cuenta/contrasena")}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-white"
-              >
-                <KeyRound className="h-3.5 w-3.5" />
-                Cambiar contraseña
-              </button>
-            </div>
-          </div>
-        </div>
-
         <p className="max-w-5xl text-sm leading-6 text-slate-600">
           El Portal UAID integra en un solo entorno la vision completa del
           negocio a traves de tres dimensiones clave:{" "}

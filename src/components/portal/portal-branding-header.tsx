@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CalendarDays, Sparkles, Users } from "lucide-react";
+import { UserMenu } from "./user-menu";
 
 export const PORTAL_APP_VERSION = "v4.0";
 
@@ -13,6 +14,9 @@ export type PortalBrandingHeaderProps = {
   backLabel?: string;
   /** Reduce padding y tamaños para no chocar con el contenido inmediatamente debajo. */
   compact?: boolean;
+  /** Usuario actual; si se provee se muestra el avatar con menu (cambiar contrasena / cerrar sesion). */
+  username?: string | null;
+  sede?: string | null;
 };
 
 export function PortalBrandingHeader({
@@ -21,6 +25,8 @@ export function PortalBrandingHeader({
   onBackToSecciones,
   backLabel = "Volver a secciones",
   compact = false,
+  username = null,
+  sede = null,
 }: PortalBrandingHeaderProps) {
   const router = useRouter();
   const showSegment = !onBackToSecciones && (canAccessCronograma || isAdmin);
@@ -127,6 +133,13 @@ export function PortalBrandingHeader({
                 </button>
               )}
             </div>
+          ) : null}
+          {username !== null ? (
+            <UserMenu
+              username={username}
+              role={isAdmin ? "admin" : "user"}
+              sede={sede}
+            />
           ) : null}
         </div>
       </div>
