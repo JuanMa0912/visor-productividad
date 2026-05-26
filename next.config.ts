@@ -75,6 +75,7 @@ const nextConfig: NextConfig = {
   reactCompiler: enableReactCompiler,
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
+  serverExternalPackages: ["@notionhq/client"],
   experimental: {
     // Lower peak memory during webpack; slightly slower compile (Next 15+).
     webpackMemoryOptimizations: true,
