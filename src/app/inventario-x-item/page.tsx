@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Fragment,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -16,17 +17,23 @@ import autoTable from "jspdf-autotable";
 import { toJpeg } from "html-to-image";
 import * as ExcelJS from "exceljs";
 import {
+  ArrowLeft,
   ArrowUp,
   ArrowUpDown,
+  Bookmark,
   Building2,
   CalendarDays,
   Check,
   ChevronDown,
   Database,
+  Download,
   Filter,
   Loader2,
   MapPin,
+  Maximize2,
+  Minimize2,
   PackageSearch,
+  RefreshCcw,
   Search,
 } from "lucide-react";
 import {
@@ -187,6 +194,38 @@ const formatUnits = (value: number) =>
   new Intl.NumberFormat("es-CO", {
     maximumFractionDigits: value % 1 === 0 ? 0 : 2,
   }).format(value);
+
+/** Normaliza una descripcion de item para mostrar en headers:
+ *  - reemplaza `*` por espacio (asi se evita el ruido tipo "ACEITE*3000ml")
+ *  - colapsa espacios repetidos
+ *  - pasa todo a minusculas y capitaliza solo la primera letra (sentence case)
+ *  Ej: "ACEITE MERCAMIO*3000ml SOYA" -> "Aceite mercamio 3000ml soya".
+ */
+const prettifyItemDescription = (raw: string | null | undefined): string => {
+  if (!raw) return "";
+  const cleaned = String(raw).replace(/\*/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  const lower = cleaned.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+};
+
+/** Devuelve clases tailwind para una pildora de DI segun el rango de dias.
+ * Convencion (alineada con la leyenda visual):
+ *  - <15 d: rotacion alta (verde)
+ *  - 15-35 d: normal (azul/celeste)
+ *  - 35-60 d: revisar (amarillo)
+ *  - >60 d: sobrestock (rosa/rojo)
+ *  - sin venta: gris discreto.
+ */
+const getDiPillClasses = (diDays: number): string => {
+  if (!Number.isFinite(diDays) || diDays >= NO_SALES_DI_VALUE) {
+    return "bg-slate-100 text-slate-400";
+  }
+  if (diDays < 15) return "bg-emerald-50 text-emerald-700";
+  if (diDays < 35) return "bg-sky-50 text-sky-700";
+  if (diDays < 60) return "bg-amber-100 text-amber-800";
+  return "bg-rose-100 text-rose-700";
+};
 
 const formatDi = (value: number) => {
   if (!Number.isFinite(value)) return "Sin venta";
@@ -679,6 +718,9 @@ export default function InventarioXItemPage() {
     useState<LineSelectionMode>("all");
   const [showValidation, setShowValidation] = useState(false);
   const [appliedMatrixKey, setAppliedMatrixKey] = useState("");
+  const [matrixSearchQuery, setMatrixSearchQuery] = useState("");
+  const [matrixExpanded, setMatrixExpanded] = useState(false);
+  const [matrixExportMenuOpen, setMatrixExportMenuOpen] = useState(false);
   const [matrixSortField, setMatrixSortField] = useState<MatrixSortField>("sede");
   const [matrixSortDirection, setMatrixSortDirection] =
     useState<MatrixSortDirection>("asc");
@@ -1884,6 +1926,26 @@ export default function InventarioXItemPage() {
     });
   }, [matrixRowsBySede, matrixSortDirection, matrixSortField]);
 
+  /** Filtra las filas por sede o empresa (buscador del toolbar). */
+  const filteredSortedMatrixRows = useMemo(() => {
+    const query = matrixSearchQuery.trim().toLowerCase();
+    if (!query) return sortedMatrixRowsBySede;
+    return sortedMatrixRowsBySede.filter((row) => {
+      const sede = row.displayName?.toLowerCase() ?? "";
+      const empresa = row.empresa?.toLowerCase() ?? "";
+      return sede.includes(query) || empresa.includes(query);
+    });
+  }, [matrixSearchQuery, sortedMatrixRowsBySede]);
+
+  /** Cuenta de sedes por empresa para los headers de grupo. */
+  const matrixGroupCountsByCompany = useMemo(() => {
+    const counts = new Map<string, number>();
+    filteredSortedMatrixRows.forEach((row) => {
+      counts.set(row.empresa, (counts.get(row.empresa) ?? 0) + 1);
+    });
+    return counts;
+  }, [filteredSortedMatrixRows]);
+
   /** Carga la matriz cuando los filtros obligatorios estan listos (sin boton manual). */
   useEffect(() => {
     if (!canBuildMatrix) return;
@@ -2596,38 +2658,6 @@ export default function InventarioXItemPage() {
     ],
     [],
   );
-  const companyHelperText =
-    showValidation && !hasCompanySelection
-      ? "Selecciona una o varias empresas."
-      : "Puedes seleccionar multiples empresas.";
-  const sedeHelperText =
-    !hasCompanySelection && !hasSedeSelection
-      ? "Selecciona una o varias empresas primero y luego define sedes."
-      : showValidation && !hasSedeSelection
-        ? "Selecciona una o varias sedes."
-        : "Puedes seleccionar multiples sedes.";
-  const lineHelperText = !hasScopeSelection
-    ? "Primero define empresa y sede."
-    : loadingCatalog
-      ? "Consultando lineas disponibles para el alcance seleccionado..."
-      : !hasLineOptions
-        ? "No encontramos lineas con inventario para ese alcance."
-        : showValidation && !hasLineSelection
-          ? "Selecciona una o varias lineas, o usa 'Todas las lineas'."
-          : "Este filtro es obligatorio para cargar la matriz.";
-  const subcategoryHelperText = !hasScopeSelection
-    ? "Primero define empresa y sede."
-    : showValidation && !hasSubcategorySelection
-      ? "Selecciona una subcategoria puntual o marca 'Todas'."
-      : "Este filtro es obligatorio para cargar la matriz.";
-  const itemHelperText = !hasScopeSelection
-    ? "Los items se habilitan despues de definir empresa y sede."
-    : !hasLineSelection || !hasSubcategorySelection
-      ? "Primero define lineas y subcategoria para habilitar la lista de items."
-      : selectedItems.length > 0
-        ? `Toca la zona de chips para abrir el listado y cambiar la seleccion (maximo ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS}).`
-        : `Haz clic o foco en Buscar para abrir el listado; elige entre 1 y ${INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items.`;
-
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
@@ -2654,33 +2684,51 @@ export default function InventarioXItemPage() {
       <AppTopBar backHref="/venta" backLabel="Volver a venta" />
       <div className="px-4 py-10">
       <div className="mx-auto w-full max-w-7xl rounded-[30px] border border-slate-200/70 bg-white p-8 shadow-[0_30px_80px_-55px_rgba(15,23,42,0.45)]">
-        <div className="rounded-3xl border border-blue-200/80 bg-linear-to-br from-blue-100 via-white to-indigo-100 p-6 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.45)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="relative overflow-hidden rounded-3xl border border-blue-200/70 bg-linear-to-br from-blue-100 via-blue-50/40 to-white p-6 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-blue-500">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(59,130,246,0.32),transparent_60%)]"
+          />
+          <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-blue-700">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-600">
                 Venta
               </p>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
                 Inventario x item
               </h1>
-              <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-[15px]">
+              <p className="mt-2 text-sm leading-6 text-slate-600">
                 Filtra empresa, sede, linea, subcategoria e items para resumir
                 el inventario vigente por referencia usando el ultimo corte
                 disponible de la tabla base de rotacion.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full border border-blue-200/80 bg-white/90 px-3 py-1 text-xs font-semibold text-blue-700">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-700">
                   <CalendarDays className="h-3.5 w-3.5" />
-                  Rango disponible: {availableRangeLabel}
+                  Rango: {availableRangeLabel}
                 </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-600">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/80 px-3 py-1 text-xs font-semibold text-violet-700">
                   <CalendarDays className="h-3.5 w-3.5" />
                   Seleccionado: {selectedDateLabel}
                 </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white/90 px-3 py-1 text-xs font-semibold text-slate-600">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                   <Database className="h-3.5 w-3.5" />
                   Fuente: rotacion
                 </span>
+              </div>
+              <div className="mt-2">
+                {selectedItems.length > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    <Check className="h-3.5 w-3.5" />
+                    {selectedItems.length} de{" "}
+                    {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items seleccionados
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                    <Loader2 className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                    Items pendientes
+                  </span>
+                )}
               </div>
             </div>
 
@@ -2688,19 +2736,21 @@ export default function InventarioXItemPage() {
               <button
                 type="button"
                 onClick={handleReload}
-                className="inline-flex items-center rounded-full border border-blue-200/80 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700 transition-all hover:border-blue-300 hover:bg-blue-50"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
               >
+                <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
                 Recargar
               </button>
               <Link
                 href="/venta"
-                className="inline-flex items-center rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
               >
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 Volver a venta
               </Link>
               <Link
                 href="/secciones"
-                className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition-all hover:bg-blue-700"
+                className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-blue-700"
               >
                 Cambiar seccion
               </Link>
@@ -2708,34 +2758,9 @@ export default function InventarioXItemPage() {
           </div>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-slate-200/70 bg-slate-50/70 p-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.2)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-500">
-                Filtros
-              </p>
-              <h2 className="mt-1 text-xl font-semibold text-slate-900">
-                Configura la tabla
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Empresa y sede filtran el alcance; lineas y subcategoria
-                refinan la lectura. Escoge hasta{" "}
-                {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items; al completar los
-                filtros la matriz se consulta sola.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
-                <Filter className="h-3.5 w-3.5 text-blue-600" />
-                {selectedItems.length > 0
-                  ? `${selectedItems.length} item(s) seleccionados`
-                  : "Items pendientes por seleccionar"}
-              </div>
-            </div>
-          </div>
-
+        <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white px-4 py-4 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.18)]">
           {showValidation && !hasRequiredFilters && (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Completa los filtros obligatorios para ver la matriz. Puedes
               escoger una opcion puntual o seleccionar {"\"Todas\""} cuando
               quieras ampliar el alcance.
@@ -2744,12 +2769,12 @@ export default function InventarioXItemPage() {
 
           {loadingFilters && (
             <div
-              className="mt-4 flex items-center gap-3 rounded-2xl border border-blue-200/80 bg-blue-50/90 px-4 py-3 text-sm text-blue-900"
+              className="mb-3 flex items-center gap-2 rounded-xl border border-blue-200/80 bg-blue-50/90 px-3 py-2 text-xs text-blue-900"
               role="status"
               aria-live="polite"
             >
               <Loader2
-                className="h-5 w-5 shrink-0 animate-spin text-blue-700 motion-reduce:animate-none"
+                className="h-4 w-4 shrink-0 animate-spin text-blue-700 motion-reduce:animate-none"
                 strokeWidth={2}
                 aria-hidden
               />
@@ -2759,10 +2784,10 @@ export default function InventarioXItemPage() {
             </div>
           )}
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-12">
+            <label className="block xl:col-span-2">
+              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <CalendarDays className="h-3 w-3 text-blue-500" />
                 Fecha desde
               </span>
               <input
@@ -2772,12 +2797,12 @@ export default function InventarioXItemPage() {
                 min={availableDateStart || undefined}
                 max={availableDateEnd || undefined}
                 disabled={loadingFilters || !availableDateEnd}
-                className="w-full rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </label>
-            <label className="block">
-              <span className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
+            <label className="block xl:col-span-2">
+              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <CalendarDays className="h-3 w-3 text-blue-500" />
                 Fecha hasta
               </span>
               <input
@@ -2787,276 +2812,296 @@ export default function InventarioXItemPage() {
                 min={availableDateStart || undefined}
                 max={availableDateEnd || undefined}
                 disabled={loadingFilters || !availableDateEnd}
-                className="w-full rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </label>
-          </div>
-
-          <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr_1.2fr_1fr_1.5fr]">
-            <MultiSelectField
-              icon={Building2}
-              label="Empresa"
-              values={selectedCompanyState}
-              options={companyOptions}
-              onChange={handleCompanyChange}
-              emptyLabel="Selecciona empresas"
-              allLabel="Todas las empresas"
-              selectAllLabel="Seleccionar todas"
-              onSelectAll={() => handleCompanyChange(filters.companies)}
-              onClearSelection={() => handleCompanyChange([])}
-              disabled={loadingFilters}
-              invalid={showValidation && !hasCompanySelection}
-              helperText={companyHelperText}
-            />
-            <MultiSelectField
-              icon={MapPin}
-              label="Sede"
-              values={selectedSede}
-              options={sedeOptions}
-              onChange={handleSedeChange}
-              emptyLabel="Selecciona sedes"
-              allLabel="Todas las sedes"
-              selectAllLabel="Seleccionar todas"
-              onSelectAll={() =>
-                handleSedeChange(
-                  availableSedeOptions.map((sede) =>
-                    buildSedeOptionValue(sede.empresa, sede.sedeId),
-                  ),
-                )
-              }
-              onClearSelection={() => handleSedeChange([])}
-              disabled={loadingFilters || !hasCompanySelection}
-              invalid={showValidation && !hasSedeSelection}
-              helperText={sedeHelperText}
-            />
-            <MultiSelectField
-              icon={Filter}
-              label="Lineas"
-              values={selectedLines}
-              options={lineOptions}
-              onChange={handleLineSelectionChange}
-              emptyLabel="Selecciona lineas"
-              allLabel="Todas las lineas"
-              selectAllLabel="Seleccionar todas las lineas"
-              onSelectAll={hasLineOptions ? handleSelectAllLines : undefined}
-              onClearSelection={handleClearLines}
-              allSelected={lineSelectionMode === "all" && hasLineOptions}
-              disabled={!hasScopeSelection || loadingCatalog || !hasLineOptions}
-              invalid={showValidation && !hasLineSelection}
-              helperText={lineHelperText}
-            />
-            <SelectField
-              icon={Filter}
-              label="Subcategoria"
-              value={selectedSubcategoryState}
-              options={subcategoryOptions}
-              onChange={handleSubcategoryChange}
-              emptyLabel="Selecciona subcategoria"
-              disabled={!hasScopeSelection || loadingCatalog || !hasLineOptions}
-              invalid={showValidation && !hasSubcategorySelection}
-              helperText={subcategoryHelperText}
-            />
-            <MultiSelectField
-              icon={PackageSearch}
-              label="Items"
-              values={selectedItems}
-              options={itemOptions}
-              visibleOptions={itemDropdownState.visibleOptions}
-              onChange={handleItemsChange}
-              emptyLabel="Selecciona items"
-              maxSelected={INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS}
-              searchable
-              searchValue={itemSearch}
-              onSearchChange={setItemSearch}
-              totalResultsCount={itemDropdownState.totalResults}
-              truncatedResults={itemDropdownState.truncated}
-              onClearSelection={handleClearItems}
-              clearLabel="Borrar todo"
-              disabled={
-                !hasScopeSelection ||
-                loadingCatalog ||
-                !hasLineSelection ||
-                !hasSubcategorySelection ||
-                itemOptions.length === 0
-              }
-              invalid={showValidation && selectedItems.length === 0}
-              helperText={itemHelperText}
-            />
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Presets de items
-            </p>
-            <div className="mt-2 grid gap-3 lg:grid-cols-[1.15fr_1fr]">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={presetNameInput}
-                  onChange={(event) => setPresetNameInput(event.target.value)}
-                  placeholder="Nombre del preset"
-                  className="min-w-56 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveItemsPreset}
-                  disabled={presetNameInput.trim().length === 0 || selectedItems.length === 0}
-                  className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Guardar busqueda
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={selectedPresetId}
-                  onChange={(event) => handleApplyItemsPreset(event.target.value)}
-                  className="min-w-56 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="">Selecciona un preset</option>
-                  {itemPresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name} ({preset.items.length} items)
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleDeleteItemsPreset}
-                  disabled={!selectedPresetId}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Eliminar
-                </button>
-              </div>
+            <div className="xl:col-span-4">
+              <MultiSelectField
+                icon={Building2}
+                label="Empresa"
+                values={selectedCompanyState}
+                options={companyOptions}
+                onChange={handleCompanyChange}
+                emptyLabel="Selecciona empresas"
+                allLabel="Todas las empresas"
+                selectAllLabel="Seleccionar todas"
+                onSelectAll={() => handleCompanyChange(filters.companies)}
+                onClearSelection={() => handleCompanyChange([])}
+                disabled={loadingFilters}
+                invalid={showValidation && !hasCompanySelection}
+              />
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Cada usuario tiene sus propios presets (hasta {MAX_ITEM_PRESETS},{" "}
-              {INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS} items c/u); se guardan en el servidor y
-              siguen disponibles al cerrar el navegador. Si tenias presets viejos en este
-              equipo, la primera vez se copian a tu cuenta.
-            </p>
+            <div className="xl:col-span-4">
+              <MultiSelectField
+                icon={MapPin}
+                label="Sede"
+                values={selectedSede}
+                options={sedeOptions}
+                onChange={handleSedeChange}
+                emptyLabel="Selecciona sedes"
+                allLabel="Todas las sedes"
+                selectAllLabel="Seleccionar todas"
+                onSelectAll={() =>
+                  handleSedeChange(
+                    availableSedeOptions.map((sede) =>
+                      buildSedeOptionValue(sede.empresa, sede.sedeId),
+                    ),
+                  )
+                }
+                onClearSelection={() => handleSedeChange([])}
+                disabled={loadingFilters || !hasCompanySelection}
+                invalid={showValidation && !hasSedeSelection}
+              />
+            </div>
+            <div className="xl:col-span-3">
+              <MultiSelectField
+                icon={Filter}
+                label="Lineas"
+                values={selectedLines}
+                options={lineOptions}
+                onChange={handleLineSelectionChange}
+                emptyLabel="Selecciona lineas"
+                allLabel="Todas las lineas"
+                selectAllLabel="Seleccionar todas las lineas"
+                onSelectAll={hasLineOptions ? handleSelectAllLines : undefined}
+                onClearSelection={handleClearLines}
+                allSelected={lineSelectionMode === "all" && hasLineOptions}
+                disabled={!hasScopeSelection || loadingCatalog || !hasLineOptions}
+                invalid={showValidation && !hasLineSelection}
+              />
+            </div>
+            <div className="xl:col-span-3">
+              <SelectField
+                icon={Filter}
+                label="Subcategoria"
+                value={selectedSubcategoryState}
+                options={subcategoryOptions}
+                onChange={handleSubcategoryChange}
+                emptyLabel="Selecciona subcategoria"
+                disabled={!hasScopeSelection || loadingCatalog || !hasLineOptions}
+                invalid={showValidation && !hasSubcategorySelection}
+              />
+            </div>
+            <div className="xl:col-span-6">
+              <MultiSelectField
+                icon={PackageSearch}
+                label="Items"
+                values={selectedItems}
+                options={itemOptions}
+                visibleOptions={itemDropdownState.visibleOptions}
+                onChange={handleItemsChange}
+                emptyLabel="Selecciona items"
+                maxSelected={INVENTARIO_X_ITEM_MAX_SELECTED_ITEMS}
+                searchable
+                searchValue={itemSearch}
+                onSearchChange={setItemSearch}
+                totalResultsCount={itemDropdownState.totalResults}
+                truncatedResults={itemDropdownState.truncated}
+                onClearSelection={handleClearItems}
+                clearLabel="Borrar todo"
+                disabled={
+                  !hasScopeSelection ||
+                  loadingCatalog ||
+                  !hasLineSelection ||
+                  !hasSubcategorySelection ||
+                  itemOptions.length === 0
+                }
+                invalid={showValidation && selectedItems.length === 0}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 sm:flex-nowrap">
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em]">
+              <Bookmark className="h-3 w-3 text-blue-500" aria-hidden />
+              Presets
+            </span>
+            <input
+              type="text"
+              value={presetNameInput}
+              onChange={(event) => setPresetNameInput(event.target.value)}
+              placeholder="Nombre del preset"
+              className="h-8 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            />
+            <button
+              type="button"
+              onClick={handleSaveItemsPreset}
+              disabled={
+                presetNameInput.trim().length === 0 ||
+                selectedItems.length === 0
+              }
+              className="h-8 shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 text-[11px] font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Guardar
+            </button>
+            <span className="hidden h-5 w-px shrink-0 bg-slate-200 sm:block" aria-hidden />
+            <select
+              value={selectedPresetId}
+              onChange={(event) => handleApplyItemsPreset(event.target.value)}
+              className="h-8 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="">Aplicar preset...</option>
+              {itemPresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name} ({preset.items.length})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleDeleteItemsPreset}
+              disabled={!selectedPresetId}
+              className="h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Eliminar
+            </button>
           </div>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.18)]">
+        <div
+          className={
+            matrixExpanded
+              ? "fixed inset-2 z-50 overflow-auto rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_30px_60px_-20px_rgba(15,23,42,0.35)]"
+              : "mt-6 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.18)]"
+          }
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-                Matriz por sede
-              </p>
-              <h2 className="mt-1 text-xl font-semibold text-slate-900">
-                Existencias por sede x item
+              <h2 className="text-xl font-semibold text-slate-900">
+                Matriz de inventario
               </h2>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Esta tabla usa los mismos filtros del modulo y distribuye por
-                sede las existencias en unidades de los items visibles.
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                {hasAppliedCurrentFilters ? matrixRowsBySede.length : 0} sedes ·{" "}
+                {hasAppliedCurrentFilters ? summaryRows.length : 0} items · datos
+                al corte
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-              <span className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1">
-                Empresa: {effectiveCompanyLabel}
-              </span>
-              <span className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1">
-                Sede: {selectedSedeLabel}
-              </span>
-              <span className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1">
-                Columnas: {hasAppliedCurrentFilters ? summaryRows.length : 0}
-              </span>
-              <span className="rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1">
-                Sedes: {hasAppliedCurrentFilters ? matrixRowsBySede.length : 0}
-              </span>
-              <button
-                type="button"
-                onClick={handleDownloadMatrixPdf}
-                disabled={!hasAppliedCurrentFilters || summaryRows.length === 0 || exportingPdf}
-                className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {exportingPdf ? "Generando PDF..." : "PDF"}
-              </button>
-              <div ref={excelMenuRef} className="relative inline-block">
-                <button
-                  type="button"
-                  onClick={() => setExcelMenuOpen((open) => !open)}
-                  disabled={
-                    !hasAppliedCurrentFilters ||
-                    summaryRows.length === 0 ||
-                    exportingExcel
-                  }
-                  aria-haspopup="menu"
-                  aria-expanded={excelMenuOpen}
-                  className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800 transition-colors hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {exportingExcel ? "Generando Excel..." : "Excel"}
-                  {!exportingExcel && (
-                    <ChevronDown className="h-3 w-3" aria-hidden />
-                  )}
-                </button>
-                {excelMenuOpen && !exportingExcel && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 top-full z-30 mt-1 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => void handleDownloadMatrixExcel("full")}
-                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
-                    >
-                      Todo completo
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => void handleDownloadMatrixExcel("di-only")}
-                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
-                    >
-                      Solo DI
-                    </button>
-                  </div>
-                )}
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                  aria-hidden
+                />
+                <input
+                  type="search"
+                  value={matrixSearchQuery}
+                  onChange={(event) => setMatrixSearchQuery(event.target.value)}
+                  placeholder="Buscar sede o empresa"
+                  disabled={!hasAppliedCurrentFilters || summaryRows.length === 0}
+                  className="h-9 w-56 rounded-full border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                />
               </div>
-              <div ref={jpgMenuRef} className="relative inline-block">
+              <div className="relative inline-block">
                 <button
                   type="button"
-                  onClick={() => setJpgMenuOpen((open) => !open)}
+                  onClick={() => setMatrixExportMenuOpen((open) => !open)}
                   disabled={
                     !hasAppliedCurrentFilters ||
                     summaryRows.length === 0 ||
+                    exportingPdf ||
+                    exportingExcel ||
                     exportingJpg
                   }
                   aria-haspopup="menu"
-                  aria-expanded={jpgMenuOpen}
-                  className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-expanded={matrixExportMenuOpen}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {exportingJpg ? "Generando JPG..." : "JPG"}
-                  {!exportingJpg && (
-                    <ChevronDown className="h-3 w-3" aria-hidden />
-                  )}
+                  <Download className="h-3.5 w-3.5" aria-hidden />
+                  {exportingPdf
+                    ? "Generando PDF..."
+                    : exportingExcel
+                      ? "Generando Excel..."
+                      : exportingJpg
+                        ? "Generando JPG..."
+                        : "Exportar"}
+                  <ChevronDown
+                    className={`h-3 w-3 transition-transform ${matrixExportMenuOpen ? "rotate-180" : ""}`}
+                    aria-hidden
+                  />
                 </button>
-                {jpgMenuOpen && !exportingJpg && (
+                {matrixExportMenuOpen && (
                   <div
                     role="menu"
-                    className="absolute right-0 top-full z-30 mt-1 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    className="absolute right-0 top-full z-30 mt-1 min-w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                    onMouseLeave={() => setMatrixExportMenuOpen(false)}
                   >
                     <button
                       type="button"
                       role="menuitem"
-                      onClick={() => void handleDownloadMatrixJpg("full")}
-                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
+                      onClick={() => {
+                        setMatrixExportMenuOpen(false);
+                        handleDownloadMatrixPdf();
+                      }}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      Todo completo
+                      PDF
                     </button>
                     <button
                       type="button"
                       role="menuitem"
-                      onClick={() => void handleDownloadMatrixJpg("di-only")}
-                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-emerald-50"
+                      onClick={() => {
+                        setMatrixExportMenuOpen(false);
+                        void handleDownloadMatrixExcel("full");
+                      }}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      Solo DI
+                      Excel · completo
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMatrixExportMenuOpen(false);
+                        void handleDownloadMatrixExcel("di-only");
+                      }}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Excel · solo DI
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMatrixExportMenuOpen(false);
+                        void handleDownloadMatrixJpg("full");
+                      }}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      JPG · completo
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMatrixExportMenuOpen(false);
+                        void handleDownloadMatrixJpg("di-only");
+                      }}
+                      className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      JPG · solo DI
                     </button>
                   </div>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => setMatrixExpanded((expanded) => !expanded)}
+                disabled={!hasAppliedCurrentFilters || summaryRows.length === 0}
+                aria-pressed={matrixExpanded}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {matrixExpanded ? (
+                  <>
+                    <Minimize2 className="h-3.5 w-3.5" aria-hidden />
+                    Contraer
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                    Expandir
+                  </>
+                )}
+              </button>
             </div>
           </div>
 
@@ -3187,18 +3232,18 @@ export default function InventarioXItemPage() {
               </p>
             </div>
           ) : (
-            <div className="relative mt-6 overflow-visible rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_60px_-42px_rgba(15,23,42,0.28)]">
-              <div className="overflow-x-auto overflow-y-visible bg-[linear-gradient(180deg,rgba(248,250,252,0.8),rgba(255,255,255,1))]">
+            <div className="relative mt-6 overflow-visible rounded-3xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto overflow-y-visible rounded-3xl bg-white">
                 <div
                   ref={matrixImageRef}
-                  className="mx-auto inline-block w-max max-w-full bg-white px-2 py-2"
+                  className="mx-auto inline-block w-max max-w-full rounded-3xl bg-white px-3 py-3"
                 >
                   <table className="w-max border-separate border-spacing-0">
                   <thead>
-                    <tr className="h-[54px] text-center text-sm font-black uppercase text-slate-900">
+                    <tr className="text-center text-slate-900">
                       <th
-                        rowSpan={3}
-                        className="sticky top-0 left-0 z-30 w-max max-w-52 rounded-tl-2xl border-b border-r border-slate-300 bg-slate-100 px-3 py-2 text-left align-middle shadow-[8px_0_16px_-14px_rgba(15,23,42,0.25)]"
+                        rowSpan={2}
+                        className="sticky top-0 left-0 z-30 w-max max-w-52 border-b border-r border-slate-200 bg-white px-3 py-2 text-left align-middle"
                       >
                         <button
                           type="button"
@@ -3212,19 +3257,19 @@ export default function InventarioXItemPage() {
                                 : "Ordenar por sede (listado estandar)"
                           }
                         >
-                          <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                             Sede
                           </span>
                           {matrixSortField === "sede" ? (
                             <ArrowUp
-                              className={`h-3.5 w-3.5 ${
+                              className={`h-3 w-3 ${
                                 matrixSortDirection === "asc"
-                                  ? "text-slate-900"
-                                  : "rotate-180 text-slate-900"
+                                  ? "text-slate-700"
+                                  : "rotate-180 text-slate-700"
                               }`}
                             />
                           ) : (
-                            <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                            <ArrowUpDown className="h-3 w-3 text-slate-300" />
                           )}
                         </button>
                       </th>
@@ -3232,12 +3277,13 @@ export default function InventarioXItemPage() {
                         <th
                           key={`matrix-head-${row.item}`}
                           colSpan={jpgExportMode === "di-only" ? 1 : 2}
-                          className={`sticky top-0 z-20 ${matrixItemColMinClass} border-b border-x-2 border-slate-300 bg-sky-100 px-2.5 py-2`}
+                          className={`sticky top-0 z-20 ${matrixItemColMinClass} border-b border-r border-slate-100 bg-white px-2.5 py-3 align-bottom`}
+                          title={row.descripcion}
                         >
                           <button
                             type="button"
                             onClick={() => handleMatrixSort(row.item)}
-                            className="flex w-full items-center justify-center gap-2"
+                            className="flex w-full flex-col items-center justify-center gap-1"
                             title={
                               matrixSortField === row.item && matrixSortDirection === "asc"
                                 ? `Orden actual de ${row.item}: menor a mayor. Click para cambiar a mayor a menor`
@@ -3246,53 +3292,42 @@ export default function InventarioXItemPage() {
                                   : `Ordenar por ${row.item}`
                             }
                           >
-                            <div className="text-base font-black text-slate-900">
+                            <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold tabular-nums text-blue-600">
                               {row.item}
-                            </div>
-                            {matrixSortField === row.item ? (
-                              <ArrowUp
-                                className={`h-3.5 w-3.5 ${
-                                  matrixSortDirection === "asc"
-                                    ? "text-sky-700"
-                                    : "rotate-180 text-sky-700"
-                                }`}
-                              />
-                            ) : (
-                              <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
-                            )}
+                              {matrixSortField === row.item ? (
+                                <ArrowUp
+                                  className={`h-3 w-3 ${
+                                    matrixSortDirection === "asc"
+                                      ? "text-blue-500"
+                                      : "rotate-180 text-blue-500"
+                                  }`}
+                                />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 text-slate-300" />
+                              )}
+                            </span>
+                            <span
+                              className="mx-auto max-w-56 overflow-hidden text-center text-sm font-medium leading-snug text-slate-700"
+                              style={{
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                              }}
+                            >
+                              {prettifyItemDescription(row.descripcion)}
+                            </span>
                           </button>
                         </th>
                       ))}
                     </tr>
-                    <tr className="h-[42px] text-center text-xs font-bold uppercase tracking-[0.04em] text-slate-700">
-                      {summaryRows.map((row) => (
-                        <th
-                          key={`matrix-subhead-${row.item}`}
-                          colSpan={jpgExportMode === "di-only" ? 1 : 2}
-                          className={`sticky top-[54px] z-20 ${matrixItemColMinClass} border-b border-x-2 border-slate-300 bg-sky-50 px-2.5 py-1.5 text-center align-middle`}
-                          title={row.descripcion}
-                        >
-                          <div
-                            className="mx-auto max-w-56 overflow-hidden text-center text-[10px] font-bold leading-snug tracking-[0.04em] text-slate-600"
-                            style={{
-                              display: "-webkit-box",
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: "vertical",
-                            }}
-                          >
-                            {row.descripcion}
-                          </div>
-                        </th>
-                      ))}
-                    </tr>
-                    <tr className="h-[32px] text-center text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600">
+                    <tr className="h-[28px] text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                       {summaryRows.flatMap((row) => {
                         const cells: ReactNode[] = [];
                         if (jpgExportMode !== "di-only") {
                           cells.push(
                             <th
                               key={`matrix-col-inv-${row.item}`}
-                              className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/90 bg-sky-50/70 px-2 py-1 text-sky-900/80`}
+                              className={`sticky top-[88px] z-20 ${matrixItemColMinClass} border-b border-r border-dashed border-r-slate-200 bg-white px-2 py-1`}
                             >
                               Inventario
                             </th>,
@@ -3301,7 +3336,7 @@ export default function InventarioXItemPage() {
                         cells.push(
                           <th
                             key={`matrix-col-di-${row.item}`}
-                            className={`sticky top-[96px] z-20 ${matrixItemColMinClass} border-b border-r-2 border-l border-violet-100/90 bg-violet-50/80 px-2 py-1 font-semibold tracking-[0.06em] text-violet-950`}
+                            className={`sticky top-[88px] z-20 ${matrixItemColMinClass} border-b border-r border-slate-100 bg-white px-2 py-1`}
                           >
                             DI
                           </th>,
@@ -3311,66 +3346,169 @@ export default function InventarioXItemPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedMatrixRowsBySede.map((row, index) => (
-                      <tr
-                        key={row.key}
-                        className={index % 2 === 0 ? "bg-white" : "bg-slate-50/80"}
-                      >
+                    {filteredSortedMatrixRows.length === 0 ? (
+                      <tr>
                         <td
-                          className="sticky left-0 z-10 w-max max-w-52 border-b border-r border-slate-200 bg-inherit px-3 py-1.5 text-sm font-bold text-slate-900 shadow-[8px_0_16px_-14px_rgba(15,23,42,0.2)]"
-                          title={row.displayName}
-                        >
-                          <div className="max-w-52">
-                            {multipleCompaniesInMatrix && (
-                              <span className="mb-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-                                {row.empresa}
-                              </span>
-                            )}
-                            <div className="truncate">{row.displayName}</div>
-                          </div>
-                        </td>
-                        {summaryRows.flatMap((itemRow) => {
-                          const cellValue = row.items[itemRow.item] ?? {
-                            inventoryUnits: 0,
-                            diDays: 0,
-                          };
-                          const isZero = cellValue.inventoryUnits === 0;
-                          const cells: ReactNode[] = [];
-                          if (jpgExportMode !== "di-only") {
-                            cells.push(
-                              <td
-                                key={`${row.key}-${itemRow.item}-inv`}
-                                title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Inv ${formatUnits(cellValue.inventoryUnits)}`}
-                                className={`${matrixItemColMinClass} border-b border-l-2 border-r border-sky-100/70 bg-sky-50/35 px-2 py-1.5 text-right text-sm font-semibold tabular-nums ${
-                                  isZero ? "text-slate-300" : "text-slate-700"
-                                }`}
-                              >
-                                {formatUnits(cellValue.inventoryUnits)}
-                              </td>,
-                            );
+                          colSpan={
+                            1 +
+                            summaryRows.length *
+                              (jpgExportMode === "di-only" ? 1 : 2)
                           }
+                          className="px-4 py-8 text-center text-sm text-slate-500"
+                        >
+                          No hay sedes que coincidan con &quot;{matrixSearchQuery}&quot;.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredSortedMatrixRows.map((row, index) => {
+                        const prevRow = filteredSortedMatrixRows[index - 1];
+                        const isFirstOfCompany =
+                          multipleCompaniesInMatrix &&
+                          (!prevRow || prevRow.empresa !== row.empresa);
+                        const companyCount =
+                          matrixGroupCountsByCompany.get(row.empresa) ?? 0;
+                        return (
+                          <Fragment key={row.key}>
+                            {isFirstOfCompany && (
+                              <tr className="bg-slate-50/70">
+                                <td
+                                  colSpan={
+                                    1 +
+                                    summaryRows.length *
+                                      (jpgExportMode === "di-only" ? 1 : 2)
+                                  }
+                                  className="sticky left-0 z-10 border-t border-b border-slate-200 bg-slate-50/70 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500"
+                                >
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                    {row.empresa}
+                                    <span className="text-slate-400">
+                                      · {companyCount} sede
+                                      {companyCount === 1 ? "" : "s"}
+                                    </span>
+                                  </span>
+                                </td>
+                              </tr>
+                            )}
+                            <tr
+                              className={`group transition-colors hover:bg-sky-50/50 ${
+                                index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                              }`}
+                            >
+                              <td
+                                className="sticky left-0 z-10 w-max max-w-52 border-b border-r border-slate-100 bg-inherit px-3 py-1.5 text-sm font-semibold text-slate-900"
+                                title={row.displayName}
+                              >
+                                <div className="max-w-52 truncate">
+                                  {row.displayName}
+                                </div>
+                              </td>
+                              {summaryRows.flatMap((itemRow) => {
+                                const cellValue = row.items[itemRow.item] ?? {
+                                  inventoryUnits: 0,
+                                  diDays: 0,
+                                };
+                                const isZero = cellValue.inventoryUnits === 0;
+                                const cells: ReactNode[] = [];
+                                if (jpgExportMode !== "di-only") {
+                                  cells.push(
+                                    <td
+                                      key={`${row.key}-${itemRow.item}-inv`}
+                                      title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Inv ${formatUnits(cellValue.inventoryUnits)}`}
+                                      className={`${matrixItemColMinClass} border-b border-r border-dashed border-r-slate-200 bg-inherit px-2 py-1.5 text-center text-sm font-medium tabular-nums ${
+                                        isZero ? "text-slate-300" : "text-slate-800"
+                                      }`}
+                                    >
+                                      {formatUnits(cellValue.inventoryUnits)}
+                                    </td>,
+                                  );
+                                }
+                                cells.push(
+                                  <td
+                                    key={`${row.key}-${itemRow.item}-di`}
+                                    title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: DI ${formatDi(cellValue.diDays)}`}
+                                    className={`${matrixItemColMinClass} border-b border-r border-r-slate-100 bg-inherit px-2 py-1.5 text-center text-xs font-semibold tabular-nums`}
+                                  >
+                                    {isZero ? (
+                                      <span className="text-slate-300">
+                                        {formatDi(cellValue.diDays)}
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${getDiPillClasses(cellValue.diDays)}`}
+                                      >
+                                        {formatDi(cellValue.diDays)}
+                                      </span>
+                                    )}
+                                  </td>,
+                                );
+                                return cells;
+                              })}
+                            </tr>
+                          </Fragment>
+                        );
+                      })
+                    )}
+                    <tr className="bg-slate-50">
+                      <td className="sticky left-0 z-10 border-t-2 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-700">
+                        Total
+                      </td>
+                      {summaryRows.flatMap((itemRow) => {
+                        const totalUnits = matrixTotalsByItem[itemRow.item] ?? 0;
+                        const cells: ReactNode[] = [];
+                        if (jpgExportMode !== "di-only") {
                           cells.push(
                             <td
-                              key={`${row.key}-${itemRow.item}-di`}
-                              title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: DI ${formatDi(cellValue.diDays)}`}
-                              className={`${matrixItemColMinClass} border-b border-slate-200/80 border-l-2 border-l-violet-100 border-r-2 border-r-violet-100 bg-violet-50/45 px-2 py-1.5 text-right text-xs font-semibold tabular-nums text-slate-800`}
+                              key={`total-${itemRow.item}-inv`}
+                              className={`${matrixItemColMinClass} border-t-2 border-b border-r border-dashed border-r-slate-200 border-t-slate-200 bg-slate-50 px-2 py-2 text-center text-sm font-bold tabular-nums text-slate-900`}
                             >
-                              {formatDi(cellValue.diDays)}
+                              {formatUnits(totalUnits)}
                             </td>,
                           );
-                          return cells;
-                        })}
-                      </tr>
-                    ))}
+                        }
+                        cells.push(
+                          <td
+                            key={`total-${itemRow.item}-di`}
+                            className={`${matrixItemColMinClass} border-t-2 border-b border-r border-r-slate-100 border-t-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-bold text-slate-400`}
+                          >
+                            —
+                          </td>,
+                        );
+                        return cells;
+                      })}
+                    </tr>
                   </tbody>
                 </table>
                 </div>
 
-                {summaryRows.length > 2 ? (
-                  <div className="border-t border-slate-200/80 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Desplaza horizontalmente para ver todos los items.
-                  </div>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200/80 bg-slate-50/60 px-5 py-3 text-[11px] font-semibold text-slate-600">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                      DI
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                    &lt; 15 d · rotacion alta
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-sky-400" />
+                    15 - 35 d · normal
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+                    35 - 60 d · revisar
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-400" />
+                    &gt; 60 d · sobrestock
+                  </span>
+                  {summaryRows.length > 2 ? (
+                    <span className="ml-auto text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Desplaza horizontalmente para ver todos los items
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
           )}
