@@ -10,8 +10,9 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUp } from "lucide-react";
+import { ArrowLeft, ArrowUp, Clock, Database, MapPin } from "lucide-react";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { DEFAULT_SEDES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
@@ -1306,39 +1307,77 @@ export default function JornadaExtendidaPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-foreground">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(244,63,94,0.10),transparent_55%),linear-gradient(180deg,#f8fafc,#fff1f2)] text-foreground">
       <AppTopBar backHref="/horario" backLabel="Volver a horario" />
       <div className="px-4 py-10">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="mb-5 flex flex-col gap-4 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)] md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-500">
-              Operacion
-            </p>
-            <h1 className="mt-1 text-xl font-bold text-slate-900">Horarios</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Consulta horarios, detecta jornadas extendidas y revisa novedades
-              operativas como marcaciones impares, inasistencias y consolidados
-              por sede en un mismo lugar.
-            </p>
-          </div>
-          <div className="flex flex-col gap-3 md:items-end">
-            <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2">
-              <div className="flex items-center gap-3">
-                <Image
-                  src="/logos/mercamio.jpeg"
-                  alt="Logo Mercamio"
-                  width={164}
-                  height={52}
-                  className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
-                />
-                <Image
-                  src="/logos/mercatodo.jpeg"
-                  alt="Logo Mercatodo"
-                  width={164}
-                  height={52}
-                  className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
-                />
+        <div className="relative mb-5 overflow-hidden rounded-3xl border border-rose-200/70 bg-linear-to-br from-rose-100 via-rose-50/40 to-white p-7 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.32)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-rose-500">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(244,63,94,0.32),transparent_60%)]"
+          />
+          <div className="relative flex flex-wrap items-start gap-x-6 gap-y-5">
+            <div className="min-w-0 flex-1 basis-md">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-600">
+                Operacion
+              </p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+                Horarios
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+                Consulta horarios, detecta jornadas extendidas y revisa novedades
+                operativas como marcaciones impares, inasistencias y consolidados
+                por sede en un mismo lugar.
+              </p>
+              <div className="mt-5 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/80 bg-rose-50/80 px-3 py-1 text-xs font-semibold text-rose-700">
+                  <Clock className="h-3.5 w-3.5" />
+                  Modulo: Horarios y marcaciones
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/80 bg-amber-50/80 px-3 py-1 text-xs font-semibold text-amber-700">
+                  <MapPin className="h-3.5 w-3.5" />
+                  Cobertura: Todas las sedes
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                  <Database className="h-3.5 w-3.5" />
+                  Fuente: marcaciones · API v1
+                </span>
+              </div>
+            </div>
+
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Link
+                  href="/horario"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+                  Volver a operacion
+                </Link>
+                <Link
+                  href="/secciones"
+                  className="inline-flex items-center rounded-full bg-rose-600 px-5 py-2 text-xs font-semibold text-white transition-all hover:bg-rose-700"
+                >
+                  Cambiar seccion
+                </Link>
+              </div>
+              <div className="rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
+                <div className="flex items-center gap-3">
+                  <Image
+                    src="/logos/mercamio.jpeg"
+                    alt="Logo Mercamio"
+                    width={160}
+                    height={48}
+                    className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm"
+                  />
+                  <Image
+                    src="/logos/mercatodo.jpeg"
+                    alt="Logo Mercatodo"
+                    width={160}
+                    height={48}
+                    className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm"
+                  />
+                </div>
               </div>
             </div>
           </div>

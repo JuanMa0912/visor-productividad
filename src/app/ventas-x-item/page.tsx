@@ -2,9 +2,17 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  CalendarDays,
+  Check,
+  Database,
+  Info,
+  Loader2,
+  RefreshCcw,
+} from "lucide-react";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { BarChart } from "@mui/x-charts/BarChart";
 import * as ExcelJS from "exceljs";
@@ -258,15 +266,6 @@ export default function VentasXItemPage() {
       ),
     );
   }, [dbMaxDate, validRows]);
-  const empresasCargaLabel = useMemo(() => {
-    if (empresasCargaSel.length === 0) return "todas las empresas";
-    const labels = empresasCargaSel.map(
-      (empresa) => EMPRESA_LABELS[empresa] ?? empresa.toUpperCase(),
-    );
-    if (labels.length === 1) return labels[0];
-    if (labels.length === 2) return `${labels[0]} y ${labels[1]}`;
-    return `${labels.slice(0, -1).join(", ")} y ${labels[labels.length - 1]}`;
-  }, [empresasCargaSel]);
 
   const empresasDisponibles = useMemo(
     () => Array.from(new Set(rows.map((row) => row.empresa_norm))).sort(),
@@ -915,173 +914,219 @@ export default function VentasXItemPage() {
     );
   }
 
+  const rangeLabel = dateStart && dateEnd ? `${dateStart} — ${dateEnd}` : "Sin rango";
+  const availableRangeLabel =
+    minDateKey && maxDateKey ? `${minDateKey} a ${maxDateKey}` : "no disponible";
+  const dataLoadedChip = rows.length > 0;
+
   return (
-    <div className="min-h-screen bg-slate-100 text-foreground">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_55%),linear-gradient(180deg,#f8fafc,#eef4ff)] text-foreground">
       <AppTopBar backHref="/venta" backLabel="Volver a venta" />
       <div className="px-4 py-8 lg:px-6">
       <div className="mx-auto w-full max-w-7xl">
-        <div className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-              Ventas X item
-            </p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-900">Ventas por ítem(s) x sedes</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Consulta el comportamiento diario por empresa, sede e item con el mismo estilo visual del portal.
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-2">
-            <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2">
-            <div className="flex items-center gap-3">
-              <Image
-                src="/logos/mercamio.jpeg"
-                alt="Logo Mercamio"
-                width={164}
-                height={52}
-                className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
-              />
-              <Image
-                src="/logos/mercatodo.jpeg"
-                alt="Logo Mercatodo"
-                width={164}
-                height={52}
-                className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
-              />
+        <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
+        <div className="relative overflow-hidden rounded-3xl border border-blue-200/70 bg-linear-to-br from-blue-100 via-blue-50/40 to-white p-6 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-blue-500">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(59,130,246,0.32),transparent_60%)]"
+          />
+          <div className="relative flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-600">
+                Venta
+              </p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+                Ventas por ítem(s) x sedes
+              </h1>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Consulta el comportamiento diario por empresa, sede e ítem con el mismo estilo visual del portal.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-700">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Rango: {rangeLabel}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/80 px-3 py-1 text-xs font-semibold text-violet-700">
+                  <Building2 className="h-3.5 w-3.5" />
+                  Empresas: {empresasCargaSel.length} cargadas
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                  <Database className="h-3.5 w-3.5" />
+                  Fuente: ventas_diarias · API {USE_V2_API ? "v2" : "v1"}
+                </span>
+                {dataLoadedChip ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    <Check className="h-3.5 w-3.5" />
+                    Datos cargados
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                    <Loader2
+                      className={`h-3.5 w-3.5 ${loadingDb ? "animate-spin text-blue-600 motion-reduce:animate-none" : "text-slate-400"}`}
+                      aria-hidden
+                    />
+                    {loadingDb ? "Cargando..." : "Sin datos"}
+                  </span>
+                )}
+              </div>
             </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/venta"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+                Volver a venta
+              </Link>
+              <Link
+                href="/secciones"
+                className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-blue-700"
+              >
+                Cambiar seccion
+              </Link>
             </div>
-            <Link
-              href="/venta"
-              className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-200/70"
-            >
-              Volver a venta
-            </Link>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/70 bg-slate-50 p-4">
-          <p className="text-sm font-semibold text-slate-800">
-            Carga desde base de datos
-          </p>
-          <p className="mt-1 text-xs text-slate-600">
-            Al entrar se eligen todas las empresas y el rango por defecto es el mes corrido (del 1.º hasta el último día con datos; si la última fecha es el día 1, se incluye también el último día del mes anterior). La carga arranca sola. Puedes ajustar y repetir con el botón si lo necesitas.
-          </p>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Fecha inicio
+        <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white px-4 py-4 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.18)]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+              <Database className="h-3.5 w-3.5 text-blue-500" aria-hidden />
+              Carga desde base de datos
+              <span
+                className="inline-flex items-center text-slate-400"
+                title="Al entrar se eligen todas las empresas y el rango por defecto es el mes corrido. La carga arranca sola; ajusta y repite con Recargar si lo necesitas."
+              >
+                <Info className="h-3.5 w-3.5" aria-hidden />
+              </span>
+            </p>
+            <p className="text-[11px] font-medium text-slate-500">
+              Rango disponible: <span className="font-semibold text-slate-700">{availableRangeLabel}</span>
+            </p>
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_2fr]">
+            <label className="block">
+              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <CalendarDays className="h-3 w-3 text-blue-500" />
+                Fecha inicio
+              </span>
               <input
                 type="date"
                 value={dateStart}
                 min={minDateKey || undefined}
                 max={maxDateKey || undefined}
                 onChange={(e) => setDateStart(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                disabled={loadingDb}
+                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </label>
-            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Fecha fin
+            <label className="block">
+              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <CalendarDays className="h-3 w-3 text-blue-500" />
+                Fecha fin
+              </span>
               <input
                 type="date"
                 value={dateEnd}
                 min={minDateKey || undefined}
                 max={maxDateKey || undefined}
                 onChange={(e) => setDateEnd(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                disabled={loadingDb}
+                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </label>
-          </div>
-          <div className="mt-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Empresa(s) a cargar
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {LOAD_EMPRESA_OPTIONS.map((empresa) => {
-                const selected = empresasCargaSel.includes(empresa);
-                return (
-                  <button
-                    key={empresa}
-                    type="button"
-                    onClick={() =>
-                      setEmpresasCargaSel((prev) =>
+            <div className="block">
+              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <Building2 className="h-3 w-3 text-blue-500" />
+                Empresa(s) a cargar
+              </span>
+              <div className="flex h-9 w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
+                {LOAD_EMPRESA_OPTIONS.map((empresa) => {
+                  const selected = empresasCargaSel.includes(empresa);
+                  return (
+                    <button
+                      key={empresa}
+                      type="button"
+                      onClick={() =>
+                        setEmpresasCargaSel((prev) =>
+                          selected
+                            ? prev.filter((value) => value !== empresa)
+                            : [...prev, empresa],
+                        )
+                      }
+                      disabled={loadingDb}
+                      className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                         selected
-                          ? prev.filter((value) => value !== empresa)
-                          : [...prev, empresa],
-                      )
-                    }
-                    disabled={loadingDb}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                      selected
-                        ? "border-emerald-300 bg-emerald-100 text-emerald-800"
-                        : "border-slate-300 bg-white text-slate-700"
-                    }`}
-                  >
-                    {EMPRESA_LABELS[empresa] ?? empresa.toUpperCase()}
-                  </button>
-                );
-              })}
+                          ? "border-blue-300 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      {EMPRESA_LABELS[empresa] ?? empresa.toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-          <div className="mt-3">
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
             <button
               type="button"
               onClick={() => void onLoadFromDb()}
               disabled={loadingDb || !dateStart || !dateEnd || empresasCargaSel.length === 0}
-              className="inline-flex items-center rounded-full border border-emerald-300/80 bg-emerald-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800 transition-all hover:border-emerald-400 hover:bg-emerald-200/80 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loadingDb ? "Cargando BD..." : "Volver a cargar desde BD"}
+              <RefreshCcw className={`h-3.5 w-3.5 ${loadingDb ? "animate-spin motion-reduce:animate-none" : ""}`} aria-hidden />
+              {loadingDb ? "Cargando BD..." : "Recargar datos"}
             </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">
-            {fileName
-              ? `Fuente actual: ${fileName}`
-              : "Ajusta fecha o empresas si quieres otro rango; la carga arranca sola al tener rango valido."}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {minDateKey && maxDateKey
-              ? `Rango disponible para ${empresasCargaLabel}: ${minDateKey} a ${maxDateKey}.`
-              : `Aun no hay rango disponible para ${empresasCargaLabel}.`}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-500">
-            API activa: {USE_V2_API ? "v2 (controlada por flag)" : "v1 (estable)"}
-          </p>
-          {lastLoadedAt && (
-            <p className="mt-1 text-[11px] text-slate-500">
-              Ultima actualizacion:{" "}
-              {new Intl.DateTimeFormat("es-CO", {
-                dateStyle: "short",
-                timeStyle: "short",
-              }).format(new Date(lastLoadedAt))}
+            <p className="text-[11px] text-slate-500">
+              {fileName
+                ? `Fuente actual: ${fileName}`
+                : "Ajusta fecha o empresas si quieres otro rango. La carga arranca sola al tener un rango válido."}
             </p>
-          )}
-          {USE_V2_API && rows.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void onCheckParity()}
-                disabled={parityLoading || loadingDb}
-                className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 disabled:opacity-50"
-              >
-                {parityLoading ? "Validando..." : "Validar paridad con v1"}
-              </button>
-              {parityResult && (
-                <p
-                  className={`text-[11px] ${
-                    parityResult.ok ? "text-emerald-700" : "text-amber-700"
-                  }`}
-                >
-                  {parityResult.ok
-                    ? `Paridad OK | filas ${parityResult.v2Rows}/${parityResult.v1Rows}`
-                    : `Paridad con diferencias | filas ${parityResult.v2Rows}/${parityResult.v1Rows}`}
-                </p>
+          </div>
+
+          {(lastLoadedAt || (USE_V2_API && rows.length > 0)) && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+              {lastLoadedAt && (
+                <span>
+                  Última actualización:{" "}
+                  {new Intl.DateTimeFormat("es-CO", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  }).format(new Date(lastLoadedAt))}
+                </span>
+              )}
+              {USE_V2_API && rows.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void onCheckParity()}
+                    disabled={parityLoading || loadingDb}
+                    className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {parityLoading ? "Validando..." : "Validar paridad con v1"}
+                  </button>
+                  {parityResult && (
+                    <span className={parityResult.ok ? "text-emerald-700" : "text-amber-700"}>
+                      {parityResult.ok
+                        ? `Paridad OK · filas ${parityResult.v2Rows}/${parityResult.v1Rows}`
+                        : `Paridad con diferencias · filas ${parityResult.v2Rows}/${parityResult.v1Rows}`}
+                    </span>
+                  )}
+                </>
               )}
             </div>
           )}
+
           {USE_V2_API && parityResult && (
             <p className="mt-1 text-[11px] text-slate-500">
-              v2 unidades: {parityResult.v2Units.toFixed(1)} | v1 unidades:{" "}
-              {parityResult.v1Units.toFixed(1)} | v2 venta: {parityResult.v2Sales.toFixed(0)} | v1
+              v2 unidades: {parityResult.v2Units.toFixed(1)} · v1 unidades:{" "}
+              {parityResult.v1Units.toFixed(1)} · v2 venta: {parityResult.v2Sales.toFixed(0)} · v1
               venta: {parityResult.v1Sales.toFixed(0)}
-              {parityResult.message ? ` | detalle: ${parityResult.message}` : ""}
+              {parityResult.message ? ` · detalle: ${parityResult.message}` : ""}
             </p>
           )}
           {error && (

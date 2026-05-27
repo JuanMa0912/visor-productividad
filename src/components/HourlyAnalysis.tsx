@@ -14,10 +14,11 @@ import { createPortal } from "react-dom";
 import {
   Users,
   ArrowLeftRight,
+  CalendarDays,
   ChevronDown,
   Clock,
-  Sparkles,
   Download,
+  MapPin,
   Search,
   TrendingUp,
   TrendingDown,
@@ -1242,7 +1243,7 @@ export const HourlyAnalysis = ({
     [hourlyRequestKey],
   );
   const overtimeFilterControlClass =
-    "mt-1 w-full rounded-full border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-all focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100";
+    "mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition-all focus:border-rose-300 focus:ring-2 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
 
   const toggleSede = (sedeName: string) => {
     setSelectedSedes((prev) =>
@@ -3251,26 +3252,16 @@ export const HourlyAnalysis = ({
     <div
       ref={topSectionRef}
       data-animate="hourly-card"
-      className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-linear-to-br from-white via-slate-50 to-amber-50/40 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.2)]"
+      className="relative rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.2)]"
     >
-      <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-amber-200/40 blur-3xl" />
-      <div className="pointer-events-none absolute -left-12 -bottom-16 h-44 w-44 rounded-full bg-mercamio-200/30 blur-3xl" />
-
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-200/70 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-amber-700 shadow-sm">
-            <Sparkles className="h-3.5 w-3.5" />
-            {badgeLabel}
-          </div>
-          <h3 className="mt-1 text-lg font-semibold text-slate-900">
-            {panelTitle}
-          </h3>
-          <p className="mt-1 text-xs text-slate-600">{panelDescription}</p>
-        </div>
-        <div className="flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
-          <Clock className="h-4 w-4 text-mercamio-600" />
-          Vista horaria
-        </div>
+      <div className="mb-6">
+        <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-rose-600">
+          {badgeLabel}
+        </p>
+        <h3 className="mt-1 text-2xl font-bold text-slate-900">
+          {panelTitle}
+        </h3>
+        <p className="mt-1 text-sm text-slate-600">{panelDescription}</p>
       </div>
 
       {(showTopDateFilter || showTopLineFilter || showTimeFilters) && (
@@ -3542,190 +3533,221 @@ export const HourlyAnalysis = ({
           )}
 
           {showOvertimeSection && hourlySection === "overtime" && (
-            <div className="mb-6 overflow-visible rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Horario
-                </p>
-                <p className="text-sm font-semibold text-slate-900">
-                  Consulta horarios y total de horas trabajadas
-                </p>
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <div className="mb-6 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
+                  <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-600">
+                    <CalendarDays className="h-3.5 w-3.5" aria-hidden />
                     Fecha
                   </p>
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
                     {formatDateLabel(
                       activeHourlyData.date,
                       hourlyDateLabelOptions,
                     )}
                   </p>
                 </div>
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
+                  <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-600">
+                    <MapPin className="h-3.5 w-3.5" aria-hidden />
                     Alcance
                   </p>
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
                     {activeHourlyData.scopeLabel}
                   </p>
                 </div>
-                <div className="rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
+                  <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-600">
+                    <Clock className="h-3.5 w-3.5" aria-hidden />
                     Rango
                   </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {minuteToTime(minuteRangeStart)} -{" "}
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {minuteToTime(minuteRangeStart)} —{" "}
                     {minuteToTime(minuteRangeEnd)}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {selectedLineLabel && (
-                  <span className="rounded-full bg-mercamio-50 px-3 py-1 text-xs font-semibold text-mercamio-700 ring-1 ring-mercamio-200/70">
-                    Linea: {selectedLineLabel}
-                  </span>
-                )}
-                {activeHourlyData.attendanceDateUsed &&
+              {(selectedLineLabel ||
+                (activeHourlyData.attendanceDateUsed &&
                   activeHourlyData.attendanceDateUsed !==
-                    activeHourlyData.date && (
-                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
-                      Asistencia usada: {activeHourlyData.attendanceDateUsed}
+                    activeHourlyData.date) ||
+                (activeHourlyData.salesDateUsed &&
+                  activeHourlyData.salesDateUsed !==
+                    activeHourlyData.date)) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedLineLabel && (
+                    <span className="rounded-full bg-mercamio-50 px-3 py-1 text-xs font-semibold text-mercamio-700 ring-1 ring-mercamio-200/70">
+                      Linea: {selectedLineLabel}
                     </span>
                   )}
-                {activeHourlyData.salesDateUsed &&
-                  activeHourlyData.salesDateUsed !== activeHourlyData.date && (
-                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
-                      Ventas usadas: {activeHourlyData.salesDateUsed}
-                    </span>
-                  )}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200/70">
-                  {visibleOvertimeEmployees.length} empleado(s)
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOvertimeAbsenceOnly((prev) => !prev);
-                    setOvertimeOddMarksOnly(false);
-                    setOvertimeAlertOnly(false);
-                    setOvertimeIncidenceOnly(false);
-                    setOvertimeRangeMin("");
-                    setOvertimeRangeMax("");
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
-                    overtimeAbsenceOnly
-                      ? "bg-amber-600 text-white shadow-sm"
-                      : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
-                  }`}
-                >
-                  {`Ver inasistencias (${displayOvertimeAbsenceCount})`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOvertimeAbsenceOnly(false);
-                    setOvertimeOddMarksOnly((prev) => !prev);
-                    setOvertimeAlertOnly(false);
-                    setOvertimeIncidenceOnly(false);
-                    setOvertimeRangeMin("");
-                    setOvertimeRangeMax("");
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
-                    overtimeOddMarksOnly
-                      ? "bg-amber-600 text-white shadow-sm"
-                      : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
-                  }`}
-                >
-                  {`Ver marcaciones impares (${displayOddMarksCount})`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOvertimeAbsenceOnly(false);
-                    setOvertimeOddMarksOnly(false);
-                    setOvertimeAlertOnly(false);
-                    setOvertimeRangeMin("");
-                    setOvertimeRangeMax("");
-                    setOvertimeIncidenceOnly((prev) => !prev);
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
-                    overtimeIncidenceOnly
-                      ? "bg-orange-600 text-white shadow-sm"
-                      : "border border-orange-200/70 bg-orange-50 text-orange-700 hover:border-orange-300 hover:bg-orange-100"
-                  }`}
-                >
-                  {`Ver laborado con incidencia (${displayIncidenceCount})`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOvertimeAbsenceOnly(false);
-                    setOvertimeOddMarksOnly(false);
-                    setOvertimeIncidenceOnly(false);
-                    setOvertimeRangeMin("");
-                    setOvertimeRangeMax("");
-                    setOvertimeAlertMode("920");
-                    setOvertimeAlertOnly((prev) =>
-                      prev && overtimeAlertMode === "920" ? false : true,
-                    );
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
-                    overtimeAlertOnly && overtimeAlertMode === "920"
-                      ? "bg-red-600 text-white shadow-sm"
-                      : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
-                  }`}
-                >
-                  {`Ver personas 9:20h (${displayAlexAlertCount920})`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOvertimeAbsenceOnly(false);
-                    setOvertimeOddMarksOnly(false);
-                    setOvertimeIncidenceOnly(false);
-                    setOvertimeRangeMin("");
-                    setOvertimeRangeMax("");
-                    setOvertimeAlertMode("720-2marks");
-                    setOvertimeAlertOnly((prev) =>
-                      prev && overtimeAlertMode === "720-2marks" ? false : true,
-                    );
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] transition-all ${
-                    overtimeAlertOnly && overtimeAlertMode === "720-2marks"
-                      ? "bg-red-600 text-white shadow-sm"
-                      : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
-                  }`}
-                >
-                  {`Ver personas >7:20h con 2 marcaciones (${displayAlexAlertCount720})`}
-                </button>
-                {overtimeExcludedIds.size > 0 && (
+                  {activeHourlyData.attendanceDateUsed &&
+                    activeHourlyData.attendanceDateUsed !==
+                      activeHourlyData.date && (
+                      <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/70">
+                        Asistencia usada: {activeHourlyData.attendanceDateUsed}
+                      </span>
+                    )}
+                  {activeHourlyData.salesDateUsed &&
+                    activeHourlyData.salesDateUsed !==
+                      activeHourlyData.date && (
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                        Ventas usadas: {activeHourlyData.salesDateUsed}
+                      </span>
+                    )}
+                </div>
+              )}
+
+              <div className="overflow-visible rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                    Filtros rapidos
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Toca uno para enfocar el listado
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
                   <button
                     type="button"
-                    onClick={() => setOvertimeExcludedIds(new Set())}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/70 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeAlertOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      !overtimeAbsenceOnly &&
+                      !overtimeOddMarksOnly &&
+                      !overtimeAlertOnly &&
+                      !overtimeIncidenceOnly &&
+                      !overtimeRangeMin &&
+                      !overtimeRangeMax
+                        ? "bg-rose-600 text-white shadow-sm"
+                        : "border border-rose-200/70 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100"
+                    }`}
                   >
-                    Restaurar ocultos
+                    {`Todos ${baseFilteredOvertimeEmployees.length}`}
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void handleExportOvertimeXlsx()}
-                  disabled={filteredOvertimeEmployees.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Exportar Excel
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly((prev) => !prev);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeAlertOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeAbsenceOnly
+                        ? "bg-amber-600 text-white shadow-sm"
+                        : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
+                    }`}
+                  >
+                    {`Inasistencias ${displayOvertimeAbsenceCount}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly((prev) => !prev);
+                      setOvertimeAlertOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeOddMarksOnly
+                        ? "bg-amber-600 text-white shadow-sm"
+                        : "border border-amber-200/70 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
+                    }`}
+                  >
+                    {`Marcaciones impares ${displayOddMarksCount}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeAlertOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                      setOvertimeIncidenceOnly((prev) => !prev);
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeIncidenceOnly
+                        ? "bg-orange-600 text-white shadow-sm"
+                        : "border border-orange-200/70 bg-orange-50 text-orange-700 hover:border-orange-300 hover:bg-orange-100"
+                    }`}
+                  >
+                    {`Con incidencia ${displayIncidenceCount}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                      setOvertimeAlertMode("920");
+                      setOvertimeAlertOnly((prev) =>
+                        prev && overtimeAlertMode === "920" ? false : true,
+                      );
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeAlertOnly && overtimeAlertMode === "920"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
+                    }`}
+                  >
+                    {`Jornada 9:20h ${displayAlexAlertCount920}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                      setOvertimeAlertMode("720-2marks");
+                      setOvertimeAlertOnly((prev) =>
+                        prev && overtimeAlertMode === "720-2marks" ? false : true,
+                      );
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeAlertOnly && overtimeAlertMode === "720-2marks"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
+                    }`}
+                  >
+                    {`>7:20h con 2 marcaciones ${displayAlexAlertCount720}`}
+                  </button>
+                  {overtimeExcludedIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setOvertimeExcludedIds(new Set())}
+                      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200/70 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      Restaurar ocultos
+                    </button>
+                  )}
+                </div>
               </div>
 
+              <div className="overflow-visible rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm">
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                  Filtros
+                </p>
+
               {enableOvertimeDateRange && isOvertimeOnlyMode && (
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="mb-3 grid gap-3 sm:grid-cols-2">
                   <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">
+                    <span className="text-xs font-medium text-slate-600">
                       Fecha desde
                     </span>
                     <input
@@ -3740,11 +3762,11 @@ export const HourlyAnalysis = ({
                           prev && prev < next ? next : prev,
                         );
                       }}
-                      className="mt-1 w-full rounded-2xl border border-slate-200/70 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-all focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                      className={overtimeFilterControlClass}
                     />
                   </label>
                   <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">
+                    <span className="text-xs font-medium text-slate-600">
                       Fecha hasta
                     </span>
                     <input
@@ -3766,14 +3788,14 @@ export const HourlyAnalysis = ({
               )}
 
               <div
-                className={`mt-3 grid gap-3 ${
+                className={`grid gap-3 ${
                   showDepartmentFilterInOvertime
                     ? "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8"
                     : "sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
                 }`}
               >
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">
+                  <span className="text-xs font-medium text-slate-600">
                     Sede
                   </span>
                   <button
@@ -3795,7 +3817,7 @@ export const HourlyAnalysis = ({
                   </button>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">
+                  <span className="text-xs font-medium text-slate-600">
                     Empleado
                   </span>
                   <input
@@ -3817,7 +3839,7 @@ export const HourlyAnalysis = ({
                   </datalist>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">
+                  <span className="text-xs font-medium text-slate-600">
                     Tipo de empleado
                   </span>
                   <select
@@ -3843,7 +3865,7 @@ export const HourlyAnalysis = ({
                   </select>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">
+                  <span className="text-xs font-medium text-slate-600">
                     Marcaciones
                   </span>
                   <select
@@ -3866,7 +3888,7 @@ export const HourlyAnalysis = ({
                   </select>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">
+                  <span className="text-xs font-medium text-slate-600">
                     Estado
                   </span>
                   <select
@@ -3891,7 +3913,7 @@ export const HourlyAnalysis = ({
                 </label>
                 {showDepartmentFilterInOvertime && (
                   <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">
+                    <span className="text-xs font-medium text-slate-600">
                       Departamento
                     </span>
                     <button
@@ -3916,8 +3938,8 @@ export const HourlyAnalysis = ({
                   </label>
                 )}
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">
-                    Horas min
+                  <span className="text-xs font-medium text-slate-600">
+                    Horas min.
                   </span>
                   <input
                     type="number"
@@ -3932,8 +3954,8 @@ export const HourlyAnalysis = ({
                   />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">
-                    Horas max
+                  <span className="text-xs font-medium text-slate-600">
+                    Horas máx.
                   </span>
                   <input
                     type="number"
@@ -3955,6 +3977,7 @@ export const HourlyAnalysis = ({
                   el conteo.
                 </p>
               )}
+              </div>
 
               {overtimeSedeOpen &&
                 overtimeSedePopoverPos &&
@@ -4070,10 +4093,10 @@ export const HourlyAnalysis = ({
               ) : (
                 <div
                   ref={overtimeTableRef}
-                  className={`mt-3 overflow-hidden rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white scroll-mt-24`}
+                  className={`mt-3 rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white scroll-mt-24`}
                 >
                   <div
-                    className={`flex flex-wrap items-center justify-between gap-2 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/70 px-2 py-2`}
+                    className={`sticky top-[57px] z-30 flex flex-wrap items-center justify-between gap-2 rounded-t-xl border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/95 px-2 py-2 backdrop-blur`}
                   >
                     <div className="flex flex-wrap items-center gap-1">
                       <button
@@ -4112,6 +4135,15 @@ export const HourlyAnalysis = ({
                       >
                         Siguiente
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleExportOvertimeXlsx()}
+                        disabled={filteredOvertimeEmployees.length === 0}
+                        className="ml-1 inline-flex items-center gap-1 rounded-full border border-emerald-200/70 bg-emerald-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-widest text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Download className="h-3 w-3" />
+                        Exportar Excel
+                      </button>
                     </div>
                     <span className="text-[11px] font-semibold text-slate-600">
                       Pagina {overtimePage} de {overtimeTotalPages} | Mostrando{" "}
@@ -4120,7 +4152,7 @@ export const HourlyAnalysis = ({
                     </span>
                   </div>
                   <div
-                    className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500`}
+                    className={`sticky top-[97px] z-20 grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/95 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 backdrop-blur`}
                   >
                     <span className="text-center whitespace-nowrap">#</span>
                     <span className="text-center whitespace-nowrap">Excel</span>
