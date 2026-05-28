@@ -950,10 +950,6 @@ export default function VentasXItemPage() {
                   <Building2 className="h-3.5 w-3.5" />
                   Empresas: {empresasCargaSel.length} cargadas
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  <Database className="h-3.5 w-3.5" />
-                  Fuente: ventas_diarias · API {USE_V2_API ? "v2" : "v1"}
-                </span>
                 {dataLoadedChip ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
                     <Check className="h-3.5 w-3.5" />

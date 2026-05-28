@@ -10,9 +10,8 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowUp, Clock, Database, MapPin } from "lucide-react";
+import { ArrowUp, Clock, MapPin } from "lucide-react";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { DEFAULT_SEDES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
@@ -1338,29 +1337,10 @@ export default function JornadaExtendidaPage() {
                   <MapPin className="h-3.5 w-3.5" />
                   Cobertura: Todas las sedes
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  <Database className="h-3.5 w-3.5" />
-                  Fuente: marcaciones · API v1
-                </span>
               </div>
             </div>
 
             <div className="ml-auto flex shrink-0 flex-col items-end gap-3">
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <Link
-                  href="/horario"
-                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-                  Volver a operacion
-                </Link>
-                <Link
-                  href="/secciones"
-                  className="inline-flex items-center rounded-full bg-rose-600 px-5 py-2 text-xs font-semibold text-white transition-all hover:bg-rose-700"
-                >
-                  Cambiar seccion
-                </Link>
-              </div>
               <div className="rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
                 <div className="flex items-center gap-3">
                   <Image

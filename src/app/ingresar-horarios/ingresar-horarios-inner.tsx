@@ -8,15 +8,22 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
+  Building2,
+  CalendarDays,
+  ChevronDown,
+  Download,
   Eraser,
   FileText,
+  FilePlus,
   FolderOpen,
   ImageIcon,
+  Pencil,
   Save,
+  Users,
 } from "lucide-react";
 import { isSamePlanillaSede } from "@/lib/horarios/planilla-sede";
 import { normalizePersonNameKey } from "@/lib/shared/normalize";
@@ -43,6 +50,8 @@ import {
   canCreateLunesSchedulePresets,
 } from "@/lib/shared/special-role-features";
 import { toJpeg } from "html-to-image";
+import { Stepper, StepperStep } from "@/components/ui/stepper";
+import { PlanillaPreview } from "./planilla-preview";
 
 type DayKey =
   | "domingo"
@@ -247,6 +256,24 @@ const sanitizeTimeTyping = (raw: string) => {
   return `${left}:${right}`.slice(0, 5);
 };
 
+const handleScheduleEnterAdvance = (
+  event: ReactKeyboardEvent<HTMLInputElement>,
+) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const row = event.currentTarget.closest("tr");
+  if (!row) return;
+  const inputs = Array.from(
+    row.querySelectorAll<HTMLInputElement>('input[data-schedule-time="1"]'),
+  );
+  const currentIdx = inputs.indexOf(event.currentTarget);
+  const afterCurrent = inputs.slice(currentIdx + 1);
+  const nextEmpty =
+    afterCurrent.find((i) => !i.value.trim()) ??
+    inputs.find((i) => !i.value.trim() && i !== event.currentTarget);
+  if (nextEmpty) nextEmpty.focus();
+};
+
 const formatTimeForDisplay = (value?: string) => {
   const t = (value ?? "").trim();
   if (!t) return "";
@@ -277,6 +304,7 @@ type RowScheduleRowProps = {
   employeeListId: string;
   canLunesPresetPerRow: boolean;
   lunesSyncActive: boolean;
+  duplicateMessage?: string | null;
   onRowField: (
     rowIndex: number,
     field: keyof Pick<RowSchedule, "nombre" | "firma">,
@@ -310,6 +338,7 @@ function rowScheduleRowPropsAreEqual(
     prev.employeeListId === next.employeeListId &&
     prev.canLunesPresetPerRow === next.canLunesPresetPerRow &&
     prev.lunesSyncActive === next.lunesSyncActive &&
+    prev.duplicateMessage === next.duplicateMessage &&
     prev.selectedLunesPreset === next.selectedLunesPreset &&
     prev.onRowField === next.onRowField &&
     prev.onRowDayField === next.onRowDayField &&
@@ -328,6 +357,7 @@ const RowScheduleRow = memo(
     employeeListId,
     canLunesPresetPerRow,
     lunesSyncActive,
+    duplicateMessage,
     onRowField,
     onRowDayField,
     onDescanso,
@@ -339,11 +369,13 @@ const RowScheduleRow = memo(
   }: RowScheduleRowProps) => (
     <tr className="odd:bg-white even:bg-slate-50/40">
       <td
-        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1.5 py-0.5 align-top text-center text-[11px] leading-tight text-slate-600`}
+        className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-0 z-10 bg-white px-1.5 py-0.5 align-top text-center text-[11px] leading-tight text-slate-600 shadow-[1px_0_0_0_rgb(203_213_225)] print:static print:bg-transparent print:shadow-none`}
       >
         {rowIndex + 1}
       </td>
-      <td className={`${SCHEDULE_CELL_BORDER_CLASS} align-top px-1.5 py-0.5`}>
+      <td
+        className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-11 z-10 bg-white align-top px-1.5 py-0.5 shadow-[1px_0_0_0_rgb(203_213_225)] print:static print:bg-transparent print:shadow-none`}
+      >
         <input
           type="text"
           list={employeeListId}
@@ -352,8 +384,18 @@ const RowScheduleRow = memo(
             onRowField(rowIndex, "nombre", e.target.value.trimStart())
           }
           placeholder="Escribir o seleccionar empleado"
-          className="w-full min-w-70 rounded border border-slate-200 px-1.5 py-0.5 text-[11px] leading-tight focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 print:hidden"
+          aria-invalid={Boolean(duplicateMessage)}
+          className={`w-full min-w-70 rounded border px-1.5 py-0.5 text-[11px] leading-tight focus:outline-none focus:ring-1 print:hidden ${
+            duplicateMessage
+              ? "border-rose-300 bg-rose-50 focus:border-rose-400 focus:ring-rose-100"
+              : "border-slate-200 focus:border-sky-300 focus:ring-sky-100"
+          }`}
         />
+        {duplicateMessage ? (
+          <p className="mt-0.5 text-[10px] font-medium leading-tight text-rose-600 print:hidden">
+            {duplicateMessage}
+          </p>
+        ) : null}
         <span className="hidden text-[8px] leading-tight text-slate-900 print:block print:leading-tight">
           {row.nombre}
         </span>
@@ -436,6 +478,7 @@ const RowScheduleRow = memo(
                   placeholder="HH:mm"
                   title="24 h: horas 00 a 23, minutos 00 a 59. Ej: 08:30, 21:30 o 1430"
                   maxLength={5}
+                  data-schedule-time="1"
                   value={(dayData[field] as string | undefined) ?? ""}
                   onChange={(e) =>
                     onRowDayField(
@@ -445,6 +488,7 @@ const RowScheduleRow = memo(
                       sanitizeTimeTyping(e.target.value),
                     )
                   }
+                  onKeyDown={handleScheduleEnterAdvance}
                   onBlur={(e) =>
                     onRowDayField(
                       rowIndex,
@@ -469,6 +513,7 @@ const RowScheduleRow = memo(
                   placeholder="HH:mm"
                   title="24 h: horas 00 a 23, minutos 00 a 59. Ej: 08:30, 21:30 o 1430"
                   maxLength={5}
+                  data-schedule-time="1"
                   value={(dayData[field] as string | undefined) ?? ""}
                   onChange={(e) =>
                     onRowDayField(
@@ -478,6 +523,7 @@ const RowScheduleRow = memo(
                       sanitizeTimeTyping(e.target.value),
                     )
                   }
+                  onKeyDown={handleScheduleEnterAdvance}
                   onBlur={(e) =>
                     onRowDayField(
                       rowIndex,
@@ -691,7 +737,7 @@ export function IngresarHorariosInner() {
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const [employeeDuplicateError, setEmployeeDuplicateError] = useState<
-    string | null
+    { rowIndex: number; message: string } | null
   >(null);
   const [rows, setRows] = useState<RowSchedule[]>(
     Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow()),
@@ -724,6 +770,63 @@ export function IngresarHorariosInner() {
     LunesSchedulePreset[]
   >(() => [...DEFAULT_LUNES_SCHEDULE_PRESETS]);
   const [lunesPresetsModalOpen, setLunesPresetsModalOpen] = useState(false);
+  const lunesModalRef = useRef<HTMLDivElement | null>(null);
+  const lunesModalPreviousFocusRef = useRef<HTMLElement | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const [openSteps, setOpenSteps] = useState<{
+    config: boolean;
+    detalle: boolean;
+  }>({ config: true, detalle: true });
+  const theadRow1Ref = useRef<HTMLTableRowElement | null>(null);
+  const [theadRow1Height, setTheadRow1Height] = useState(38);
+
+  useEffect(() => {
+    const el = theadRow1Ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const h = el.offsetHeight;
+      if (h > 0) setTheadRow1Height(h);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const toggleStep = useCallback(
+    (key: "config" | "detalle") =>
+      setOpenSteps((prev) => ({ ...prev, [key]: !prev[key] })),
+    [],
+  );
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!exportMenuRef.current) return;
+      if (!exportMenuRef.current.contains(event.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [exportMenuOpen]);
+
+  useEffect(() => {
+    if (editingPlanillaId === null) return;
+    setOpenSteps({ config: false, detalle: true });
+  }, [editingPlanillaId]);
+
+  useEffect(() => {
+    if (!saveSuccess) return;
+    const timeout = window.setTimeout(() => setSaveSuccess(null), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [saveSuccess]);
+
+  useEffect(() => {
+    if (!draftMessage) return;
+    const timeout = window.setTimeout(() => setDraftMessage(null), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [draftMessage]);
 
   const lunesSyncActive = canLunesScheduleSync && syncLunesToRest;
 
@@ -1124,9 +1227,11 @@ export function IngresarHorariosInner() {
               i !== rowIndex && normalizePersonNameKey(r.nombre) === key,
           );
           if (duplicate) {
-            setEmployeeDuplicateError(
-              "Este empleado ya esta en otra fila. Quita el nombre en la otra fila o elige otro.",
-            );
+            setEmployeeDuplicateError({
+              rowIndex,
+              message:
+                "Este empleado ya esta en otra fila. Quita el nombre en la otra fila o elige otro.",
+            });
             return;
           }
         }
@@ -1462,6 +1567,68 @@ export function IngresarHorariosInner() {
     setDraftMessage("Borrador local eliminado.");
   }, [currentUsername, router]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (!savingForm && !loadingPlanillaEdit) {
+          void handleSaveForm();
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        if (lunesPresetsModalOpen) {
+          setLunesPresetsModalOpen(false);
+          return;
+        }
+        if (exportMenuOpen) {
+          setExportMenuOpen(false);
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [
+    handleSaveForm,
+    savingForm,
+    loadingPlanillaEdit,
+    lunesPresetsModalOpen,
+    exportMenuOpen,
+  ]);
+
+  useEffect(() => {
+    if (!lunesPresetsModalOpen) return;
+    lunesModalPreviousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const root = lunesModalRef.current;
+    if (!root) return;
+    const focusables = root.querySelectorAll<HTMLElement>(
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    );
+    const first = focusables[0];
+    first?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      if (focusables.length === 0) return;
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    root.addEventListener("keydown", onKeyDown);
+    return () => {
+      root.removeEventListener("keydown", onKeyDown);
+      lunesModalPreviousFocusRef.current?.focus();
+    };
+  }, [lunesPresetsModalOpen]);
+
   const handleExportJpg = useCallback(async () => {
     if (!jpgExportRef.current) return;
     setExportingJpg(true);
@@ -1523,303 +1690,308 @@ export function IngresarHorariosInner() {
         className="mx-auto w-full max-w-384 rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)] print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none"
       >
         <div className="pointer-events-none fixed -left-[100000px] top-0 opacity-0">
-          <div
-            ref={jpgExportRef}
-            className="inline-block bg-white p-1 text-slate-900"
-          >
-            <div className={`${SCHEDULE_OUTER_BORDER_CLASS} px-2 py-1`}>
-              <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b-2 border-slate-900 pb-1">
-                <div className="text-left text-xs font-bold tracking-wide text-slate-900">
-                  MercaTodo
-                </div>
-                <div className="text-center text-xs font-bold tracking-wide text-slate-900">
-                  MERCAMIO S.A.
-                </div>
-                <div className="text-right text-xs font-bold uppercase tracking-wide text-slate-900">
-                  Planilla De Programacion Semanal De Horarios
-                </div>
-              </div>
-              <div className="mt-1 grid grid-cols-5 gap-2 text-[10px] leading-tight">
-                <div>
-                  <span className="font-semibold">SEDE:</span> {sede || "-"}
-                </div>
-                <div>
-                  <span className="font-semibold">SECCION:</span>{" "}
-                  {seccion || "-"}
-                </div>
-                <div>
-                  <span className="font-semibold">FECHA INICIAL:</span>{" "}
-                  {fechaInicial || "-"}
-                </div>
-                <div>
-                  <span className="font-semibold">FECHA FINAL:</span>{" "}
-                  {fechaFinal || "-"}
-                </div>
-                <div>
-                  <span className="font-semibold">MES:</span> {mes || "-"}
-                </div>
-              </div>
-            </div>
-
-            <div className={`mt-1 rounded-none ${SCHEDULE_OUTER_BORDER_CLASS}`}>
-              <table className="w-88rem table-fixed border-collapse text-[9px] leading-tight">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700">
-                    <th
-                      className={`w-8 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center`}
-                    >
-                      #
-                    </th>
-                    <th
-                      className={`w-44 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}
-                    >
-                      Nombre
-                    </th>
-                    {DAY_ORDER.map((day) => (
-                      <th
-                        key={`jpg-${day}`}
-                        colSpan={4}
-                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-center uppercase ${dayStartDividerClass(day)}`}
-                      >
-                        <div className="flex items-center justify-center gap-1">
-                          <span>{day}</span>
-                          <span className="rounded-md bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-600">
-                            {dayNumbersByKey[day] ?? "--"}
-                          </span>
-                        </div>
-                      </th>
-                    ))}
-                    <th
-                      className={`w-40 ${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1.5 text-left`}
-                    >
-                      Firma empleado
-                    </th>
-                  </tr>
-                  <tr className="bg-white text-[9px] font-semibold text-slate-500">
-                    <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1`} />
-                    <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1`} />
-                    {DAY_ORDER.flatMap((day) =>
-                      (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
-                        <th
-                          key={`jpg-${day}-${field}`}
-                          className={[
-                            "w-12",
-                            SCHEDULE_CELL_BORDER_CLASS,
-                            "px-0.5 py-1 text-center uppercase",
-                            field === "he1" ? dayStartDividerClass(day) : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                        >
-                          {field === "he1" || field === "he2" ? "HE" : "HS"}
-                        </th>
-                      )),
-                    )}
-                    <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1`} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, rowIndex) => (
-                    <tr
-                      key={`jpg-row-${rowIndex}`}
-                      className="odd:bg-white even:bg-slate-50/40"
-                    >
-                      <td
-                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 text-center align-top text-slate-600`}
-                      >
-                        {rowIndex + 1}
-                      </td>
-                      <td
-                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-900 wrap-break-words`}
-                      >
-                        {row.nombre || "--"}
-                      </td>
-                      {DAY_ORDER.flatMap((day) => {
-                        const dayData = row.days[day];
-                        if (dayData.conDescanso) {
-                          return [
-                            <td
-                              key={`jpg-${rowIndex}-${day}-descanso`}
-                              colSpan={4}
-                              className={`${SCHEDULE_CELL_BORDER_CLASS} bg-amber-50/60 px-1 py-1 text-center text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-700 ${dayStartDividerClass(day)}`}
-                            >
-                              Descanso
-                            </td>,
-                          ];
-                        }
-
-                        return (["he1", "hs1", "he2", "hs2"] as const).map(
-                          (field) => (
-                            <td
-                              key={`jpg-${rowIndex}-${day}-${field}`}
-                              className={[
-                                "w-12",
-                                SCHEDULE_CELL_BORDER_CLASS,
-                                "px-0.5 py-1 text-center text-slate-700",
-                                field === "he1" ? dayStartDividerClass(day) : "",
-                              ]
-                                .filter(Boolean)
-                                .join(" ")}
-                            >
-                              {formatTimeForDisplay(dayData[field]) || "--"}
-                            </td>
-                          ),
-                        );
-                      })}
-                      <td
-                        className={`${SCHEDULE_CELL_BORDER_CLASS} px-1 py-1 align-top text-slate-700 wrap-break-words`}
-                      >
-                        {row.firma || "--"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <PlanillaPreview
+            containerRef={jpgExportRef}
+            rows={rows}
+            sede={sede}
+            seccion={seccion}
+            fechaInicial={fechaInicial}
+            fechaFinal={fechaFinal}
+            mes={mes}
+            dayNumbersByKey={dayNumbersByKey}
+            mode="jpg"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-              Horario
-            </p>
-            <h1 className="mt-2 text-2xl font-bold text-slate-900">
-              Ingresar horarios
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Planilla de programacion semanal de horarios.
-            </p>
-            {loadingPlanillaEdit ? (
-              <p className="mt-2 text-sm font-medium text-sky-700">
-                Cargando planilla para editar...
-              </p>
-            ) : null}
-            {editingPlanillaId !== null && !loadingPlanillaEdit ? (
-              <p className="mt-2 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-                Editando planilla{" "}
-                <span className="font-mono font-semibold">
-                  #{editingPlanillaId}
-                </span>
-                . Al guardar se actualiza este registro (no se crea otro).
-                Despues el formulario se vacia para cargar una planilla nueva;
-                para volver a editar esta, entra en Horarios guardados y usa
-                Editar.
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Accion primaria: Guardar (filled, mas prominente) */}
-            <button
-              type="button"
-              onClick={() => void handleSaveForm()}
-              disabled={savingForm || loadingPlanillaEdit}
-              title={
-                editingPlanillaId !== null
-                  ? `Actualizar planilla #${editingPlanillaId}`
-                  : "Guardar como planilla nueva"
-              }
-              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_20px_-12px_rgba(15,23,42,0.6)] transition-all hover:bg-slate-800 hover:shadow-[0_10px_24px_-12px_rgba(15,23,42,0.6)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-            >
-              <Save className="h-3.5 w-3.5" aria-hidden />
-              {savingForm ? "Guardando..." : "Guardar"}
-            </button>
-
-            {/* Accion secundaria: limpiar borrador (ghost) */}
-            <button
-              type="button"
-              onClick={handleClearDraft}
-              title="Vaciar el formulario y descartar el borrador local"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
-            >
-              <Eraser className="h-3.5 w-3.5" aria-hidden />
-              Limpiar
-            </button>
-
-            {/* Separador visual */}
-            <span className="hidden h-6 w-px bg-slate-200 sm:inline-block" aria-hidden />
-
-            {/* Grupo de exportacion (segmentado) */}
-            <div className="inline-flex overflow-hidden rounded-full border border-emerald-200 bg-emerald-50/40 shadow-sm">
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                title="Imprimir o guardar como PDF"
-                className="inline-flex items-center gap-1.5 border-r border-emerald-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 transition-colors hover:bg-emerald-100/70"
-              >
-                <FileText className="h-3.5 w-3.5" aria-hidden />
-                PDF
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleExportJpg()}
-                disabled={exportingJpg}
-                title="Descargar como imagen JPG"
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 transition-colors hover:bg-emerald-100/70 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <ImageIcon className="h-3.5 w-3.5" aria-hidden />
-                {exportingJpg ? "JPG..." : "JPG"}
-              </button>
-            </div>
-
-            {/* Separador visual */}
-            <span className="hidden h-6 w-px bg-slate-200 sm:inline-block" aria-hidden />
-
-            {/* Navegacion */}
-            <button
-              type="button"
-              onClick={() => router.push("/horarios-guardados")}
-              title="Ver planillas guardadas anteriormente"
-              className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-100/70"
-            >
-              <FolderOpen className="h-3.5 w-3.5" aria-hidden />
-              Ver guardados
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/horario")}
-              title="Regresar al tablero de Horario"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-              Horario
-            </button>
-          </div>
-        </div>
-
-        {canLunesScheduleSync ? (
-          <div className="mt-3 flex flex-col gap-2 print:hidden sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-2">
-            <label
-              className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-200/90 bg-slate-50/90 px-2.5 py-1.5 text-[12px] text-slate-600 transition-colors hover:bg-slate-50"
-              title="Por fila: lo del lunes se copia al resto de los dias. Si editas otro dia, ese queda aparte. Desactivar no borra datos."
-            >
-              <input
-                type="checkbox"
-                checked={syncLunesToRest}
-                onChange={(e) => setSyncLunesToRest(e.target.checked)}
-                className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-slate-600 focus:ring-slate-300"
+        {(() => {
+          const sedeNombre = sedesOptions.find((s) => s.id === sede)?.name ?? sede;
+          const empleadosCargados = rows.filter((r) => r.nombre.trim().length > 0).length;
+          const isEditing = editingPlanillaId !== null;
+          return (
+            <div className="relative overflow-hidden rounded-3xl border border-rose-200/70 bg-linear-to-br from-rose-100 via-rose-50/40 to-white p-7 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.32)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-rose-500 print:hidden">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(244,63,94,0.32),transparent_60%)]"
               />
-              <span className="select-none">Mismo horario que lunes</span>
-            </label>
-            <span className="text-[12px] text-slate-600">
-              Usa la casilla <span className="font-semibold">Horario</span> en
-              cada fila para aplicar un predeterminado solo a ese empleado.
-            </span>
-          </div>
-        ) : null}
+              <div className="relative flex flex-wrap items-start gap-x-6 gap-y-5">
+                <div className="min-w-0 flex-1 basis-md">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-600">
+                    Operacion
+                  </p>
+                  <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+                    Ingresar horarios
+                  </h1>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+                    Planilla de programacion semanal de horarios por sede y
+                    seccion.
+                  </p>
+                  <div className="mt-5 flex flex-wrap items-center gap-2">
+                    {isEditing ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/80 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                        <Pencil className="h-3.5 w-3.5" aria-hidden />
+                        Editando planilla #{editingPlanillaId}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200/80 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                        <FilePlus className="h-3.5 w-3.5" aria-hidden />
+                        Nueva planilla
+                      </span>
+                    )}
+                    {sedeNombre ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/80 bg-rose-50/80 px-3 py-1 text-xs font-semibold text-rose-700">
+                        <Building2 className="h-3.5 w-3.5" aria-hidden />
+                        {sedeNombre}
+                        {seccion ? ` · ${seccion}` : ""}
+                      </span>
+                    ) : null}
+                    {fechaInicial && fechaFinal ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/80 px-3 py-1 text-xs font-semibold text-violet-700">
+                        <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+                        {fechaInicial} — {fechaFinal}
+                      </span>
+                    ) : null}
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                      <Users className="h-3.5 w-3.5" aria-hidden />
+                      {empleadosCargados} empleado{empleadosCargados === 1 ? "" : "s"}
+                    </span>
+                    {loadingPlanillaEdit ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200/80 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                        Cargando planilla...
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/horarios-guardados")}
+                    title="Ver planillas guardadas anteriormente"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" aria-hidden />
+                    Ver guardados
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearDraft}
+                    title="Vaciar el formulario y descartar el borrador local"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
+                  >
+                    <Eraser className="h-3.5 w-3.5" aria-hidden />
+                    Limpiar
+                  </button>
+                  <div ref={exportMenuRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setExportMenuOpen((prev) => !prev)}
+                      aria-haspopup="menu"
+                      aria-expanded={exportMenuOpen}
+                      disabled={exportingJpg}
+                      title="Exportar planilla"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      {exportingJpg ? "Exportando..." : "Exportar"}
+                      <ChevronDown
+                        className={`h-3 w-3 transition-transform ${exportMenuOpen ? "rotate-180" : ""}`}
+                        aria-hidden
+                      />
+                    </button>
+                    {exportMenuOpen ? (
+                      <div
+                        role="menu"
+                        className="absolute right-0 top-full z-30 mt-1 min-w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setExportMenuOpen(false);
+                            handleExportPdf();
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <FileText className="h-3.5 w-3.5 text-rose-500" aria-hidden />
+                          PDF (imprimir)
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setExportMenuOpen(false);
+                            void handleExportJpg();
+                          }}
+                          disabled={exportingJpg}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <ImageIcon className="h-3.5 w-3.5 text-rose-500" aria-hidden />
+                          JPG (imagen)
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveForm()}
+                    disabled={savingForm || loadingPlanillaEdit}
+                    title={
+                      isEditing
+                        ? `Actualizar planilla #${editingPlanillaId}`
+                        : "Guardar como planilla nueva"
+                    }
+                    className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-5 py-2 text-xs font-semibold text-white shadow-[0_8px_20px_-12px_rgba(244,63,94,0.6)] transition-all hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                  >
+                    <Save className="h-3.5 w-3.5" aria-hidden />
+                    {savingForm ? "Guardando..." : "Guardar"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        <Stepper className="mt-5 print:hidden">
+          <StepperStep
+            index={1}
+            title="Configuracion"
+            description="Sede, seccion y periodo"
+            isCompleted={Boolean(sede && fechaInicial && fechaFinal && mes)}
+            isOpen={openSteps.config}
+            onToggle={() => toggleStep("config")}
+            summary={
+              <span>
+                {sede || "Sin sede"} · {seccion || "Sin seccion"}
+                {fechaInicial && fechaFinal
+                  ? ` · ${fechaInicial} → ${fechaFinal}`
+                  : ""}
+                {mes ? ` · ${mes}` : ""}
+              </span>
+            }
+          >
+            <div className="grid gap-3 md:grid-cols-5">
+              <div className="block">
+                <label
+                  htmlFor="ih-sede"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"
+                >
+                  Sede
+                </label>
+                <select
+                  id="ih-sede"
+                  value={sede}
+                  onChange={(e) => setSede(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                >
+                  {sedesOptions.map((option) => (
+                    <option key={option.id} value={option.name}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="block">
+                <label
+                  htmlFor="ih-seccion"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"
+                >
+                  Seccion
+                </label>
+                <input
+                  id="ih-seccion"
+                  type="text"
+                  value={seccion}
+                  onChange={(e) => setSeccion(e.target.value)}
+                  disabled
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                />
+              </div>
+              <div className="block">
+                <label
+                  htmlFor="ih-fecha-inicial"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"
+                >
+                  Fecha inicial
+                </label>
+                <input
+                  id="ih-fecha-inicial"
+                  type="date"
+                  value={fechaInicial}
+                  onChange={(e) => setFechaInicial(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                />
+              </div>
+              <div className="block">
+                <label
+                  htmlFor="ih-fecha-final"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"
+                >
+                  Fecha final
+                </label>
+                <input
+                  id="ih-fecha-final"
+                  type="date"
+                  value={fechaFinal}
+                  onChange={(e) => setFechaFinal(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                />
+              </div>
+              <div className="block">
+                <label
+                  htmlFor="ih-mes"
+                  className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"
+                >
+                  Mes
+                </label>
+                <select
+                  id="ih-mes"
+                  value={mes}
+                  onChange={(e) => setMes(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                >
+                  <option value="">Selecciona mes</option>
+                  {MONTH_OPTIONS.map((month) => (
+                    <option key={month} value={month}>
+                      {month}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {canLunesScheduleSync ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+                <label
+                  className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-slate-200/90 bg-slate-50/90 px-2.5 py-1.5 text-[12px] text-slate-600 transition-colors hover:bg-slate-50"
+                  title="Por fila: lo del lunes se copia al resto de los dias. Si editas otro dia, ese queda aparte. Desactivar no borra datos."
+                >
+                  <input
+                    type="checkbox"
+                    checked={syncLunesToRest}
+                    onChange={(e) => setSyncLunesToRest(e.target.checked)}
+                    className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-slate-600 focus:ring-slate-300"
+                  />
+                  <span className="select-none">Mismo horario que lunes</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setLunesPresetsModalOpen(true)}
+                  className="rounded-lg border border-slate-200/90 bg-white px-3 py-2 text-[12px] font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                >
+                  Horarios predeterminados
+                </button>
+                <p className="basis-full text-[11px] text-slate-500">
+                  Usa la casilla <span className="font-semibold">Horario</span>{" "}
+                  en cada fila para aplicar un predeterminado solo a ese
+                  empleado.
+                </p>
+              </div>
+            ) : null}
+          </StepperStep>
+        </Stepper>
 
         {canLunesScheduleSync ? (
           <>
-            <div className="mt-2 print:hidden">
-              <button
-                type="button"
-                onClick={() => setLunesPresetsModalOpen(true)}
-                className="rounded-lg border border-slate-200/90 bg-white px-3 py-2 text-left text-[12px] font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
-              >
-                Horarios predeterminados
-              </button>
-            </div>
-
             {lunesPresetsModalOpen ? (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
@@ -1827,6 +1999,7 @@ export function IngresarHorariosInner() {
                 onClick={() => setLunesPresetsModalOpen(false)}
               >
                 <div
+                  ref={lunesModalRef}
                   role="dialog"
                   aria-modal="true"
                   aria-labelledby="lunes-presets-modal-title"
@@ -1960,141 +2133,101 @@ export function IngresarHorariosInner() {
           </>
         ) : null}
 
-        <div className="mt-5 grid gap-3 md:grid-cols-5 print:hidden">
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Sede
-            </span>
-            <select
-              value={sede}
-              onChange={(e) => setSede(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+        {(() => {
+          const toast: {
+            tone: "error" | "warning" | "success" | "info";
+            message: string;
+            onDismiss: () => void;
+          } | null = saveError
+            ? {
+                tone: "error",
+                message: saveError,
+                onDismiss: () => setSaveError(null),
+              }
+            : employeeDuplicateError
+              ? {
+                  tone: "warning",
+                  message: `Fila ${employeeDuplicateError.rowIndex + 1}: ${employeeDuplicateError.message}`,
+                  onDismiss: () => setEmployeeDuplicateError(null),
+                }
+              : saveSuccess
+                ? {
+                    tone: "success",
+                    message: saveSuccess,
+                    onDismiss: () => setSaveSuccess(null),
+                  }
+                : draftMessage
+                  ? {
+                      tone: "info",
+                      message: draftMessage,
+                      onDismiss: () => setDraftMessage(null),
+                    }
+                  : null;
+          if (!toast) return null;
+          const toneClasses: Record<typeof toast.tone, string> = {
+            error: "border-rose-200 bg-rose-50 text-rose-800",
+            warning: "border-amber-200 bg-amber-50 text-amber-900",
+            success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+            info: "border-sky-200 bg-sky-50 text-sky-800",
+          };
+          return (
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-none fixed inset-x-4 bottom-4 z-40 flex justify-end sm:inset-x-auto sm:right-6 print:hidden"
             >
-              {sedesOptions.map((option) => (
-                <option key={option.id} value={option.name}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Seccion
-            </span>
-            <input
-              type="text"
-              value={seccion}
-              onChange={(e) => setSeccion(e.target.value)}
-              disabled
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Fecha inicial
-            </span>
-            <input
-              type="date"
-              value={fechaInicial}
-              onChange={(e) => setFechaInicial(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Fecha final
-            </span>
-            <input
-              type="date"
-              value={fechaFinal}
-              onChange={(e) => setFechaFinal(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-              Mes
-            </span>
-            <select
-              value={mes}
-              onChange={(e) => setMes(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-            >
-              <option value="">Selecciona mes</option>
-              {MONTH_OPTIONS.map((month) => (
-                <option key={month} value={month}>
-                  {month}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+              <div
+                className={`pointer-events-auto flex max-w-md items-start gap-3 rounded-2xl border px-4 py-3 text-sm font-medium shadow-[0_18px_40px_-20px_rgba(15,23,42,0.35)] ${toneClasses[toast.tone]}`}
+              >
+                <p className="flex-1 leading-snug">{toast.message}</p>
+                <button
+                  type="button"
+                  onClick={toast.onDismiss}
+                  aria-label="Cerrar notificacion"
+                  className="-mt-0.5 -mr-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-current/70 transition-colors hover:bg-black/5"
+                >
+                  <span aria-hidden className="text-base leading-none">
+                    ×
+                  </span>
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
-        {(saveError ||
-          saveSuccess ||
-          draftMessage ||
-          employeeDuplicateError) && (
-          <div className="mt-4 print:hidden">
-            {saveError ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
-                {saveError}
-              </div>
-            ) : null}
-            {saveSuccess ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
-                {saveSuccess}
-              </div>
-            ) : null}
-            {draftMessage ? (
-              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-700">
-                {draftMessage}
-              </div>
-            ) : null}
-            {employeeDuplicateError ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
-                {employeeDuplicateError}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        <div
-          className={`mt-5 hidden ${SCHEDULE_OUTER_BORDER_CLASS} px-3 py-2 print:block`}
+        <Stepper className="mt-5">
+        <StepperStep
+          index={2}
+          title="Detalle"
+          description="Empleados y horarios por dia"
+          isCompleted={rows.some((r) => r.nombre.trim().length > 0)}
+          isOpen={openSteps.detalle}
+          onToggle={() => toggleStep("detalle")}
+          summary={
+            <span>
+              {rows.filter((r) => r.nombre.trim().length > 0).length} empleado
+              {rows.filter((r) => r.nombre.trim().length > 0).length === 1
+                ? ""
+                : "s"}{" "}
+              cargado(s)
+            </span>
+          }
         >
-          <div className="grid grid-cols-[1fr_1fr_1fr] items-center border-b-2 border-slate-900 pb-2">
-            <div className="text-left text-xs font-bold tracking-wide text-slate-900">
-              MercaTodo
-            </div>
-            <div className="text-center text-xs font-bold tracking-wide text-slate-900">
-              MERCAMIO S.A.
-            </div>
-            <div className="text-right text-xs font-bold uppercase tracking-wide text-slate-900">
-              Planilla De Programacion Semanal De Horarios
-            </div>
-          </div>
-          <div className="mt-2 grid grid-cols-5 gap-3 text-[11px]">
-            <div>
-              <span className="font-semibold">SEDE:</span> {sede || "-"}
-            </div>
-            <div>
-              <span className="font-semibold">SECCION:</span> {seccion || "-"}
-            </div>
-            <div>
-              <span className="font-semibold">FECHA INICIAL:</span>{" "}
-              {fechaInicial || "-"}
-            </div>
-            <div>
-              <span className="font-semibold">FECHA FINAL:</span>{" "}
-              {fechaFinal || "-"}
-            </div>
-            <div>
-              <span className="font-semibold">MES:</span> {mes || "-"}
-            </div>
-          </div>
+        <div className="hidden print:block">
+          <PlanillaPreview
+            rows={rows}
+            sede={sede}
+            seccion={seccion}
+            fechaInicial={fechaInicial}
+            fechaFinal={fechaFinal}
+            mes={mes}
+            dayNumbersByKey={dayNumbersByKey}
+            mode="print"
+          />
         </div>
 
         <div
-          className={`mt-5 overflow-x-auto overflow-y-visible rounded-2xl ${SCHEDULE_OUTER_BORDER_CLASS} print:overflow-visible print:rounded-none`}
+          className={`mt-5 max-h-[calc(100vh-200px)] overflow-auto rounded-2xl ${SCHEDULE_OUTER_BORDER_CLASS} print:hidden`}
         >
           <table className="planilla-print-table table-fixed w-max max-w-none border-collapse text-[12px] print:min-w-0 print:w-full print:max-w-none print:text-[8px]">
             <colgroup>
@@ -2114,20 +2247,20 @@ export function IngresarHorariosInner() {
               <col style={{ width: COL_W_SIGN }} />
             </colgroup>
             <thead>
-              <tr className="bg-slate-100 text-slate-700">
+              <tr ref={theadRow1Ref} className="bg-slate-100 text-slate-700">
                 <th
-                  className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center`}
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-0 top-0 z-30 bg-slate-100 px-2 py-2 text-center print:static print:bg-slate-100`}
                 >
                   #
                 </th>
                 <th
-                  className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-11 top-0 z-30 bg-slate-100 px-2 py-2 text-left print:static print:bg-slate-100 print:w-35`}
                 >
                   Nombre
                 </th>
                 {canLunesScheduleSync ? (
                   <th
-                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left whitespace-nowrap print:hidden`}
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} sticky top-0 z-20 bg-slate-100 px-2 py-2 text-left whitespace-nowrap print:static print:hidden`}
                     style={lunesPresetColumnStyle}
                   >
                     Horario
@@ -2137,7 +2270,7 @@ export function IngresarHorariosInner() {
                   <th
                     key={day}
                     colSpan={4}
-                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-center uppercase ${dayStartDividerClass(day)}`}
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} sticky top-0 z-20 bg-slate-100 px-2 py-2 text-center uppercase print:static ${dayStartDividerClass(day)}`}
                   >
                     <div className="flex items-center justify-center gap-2">
                       <span>{day}</span>
@@ -2148,25 +2281,39 @@ export function IngresarHorariosInner() {
                   </th>
                 ))}
                 <th
-                  className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 text-left print:w-35`}
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} sticky top-0 z-20 bg-slate-100 px-2 py-2 text-left print:static print:w-35`}
                 >
                   Firma empleado
                 </th>
               </tr>
               <tr className="bg-white text-[11px] font-semibold text-slate-500">
-                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
-                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
+                <th
+                  style={{ top: theadRow1Height - 1 }}
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-0 z-30 bg-white px-2 py-2 print:static`}
+                />
+                <th
+                  style={{ top: theadRow1Height - 1 }}
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-11 z-30 bg-white px-2 py-2 print:static`}
+                />
                 {canLunesScheduleSync ? (
                   <th
-                    className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2 print:hidden`}
-                    style={lunesPresetColumnStyle}
+                    style={{
+                      ...lunesPresetColumnStyle,
+                      top: theadRow1Height - 1,
+                    }}
+                    className={`${SCHEDULE_CELL_BORDER_CLASS} sticky z-20 bg-white px-2 py-2 print:static print:hidden`}
                   />
                 ) : null}
                 {DAY_ORDER.flatMap((day) =>
                   (["he1", "hs1", "he2", "hs2"] as const).map((field) => (
                     <th
                       key={`${day}-${field}`}
-                      className={[TIME_SLOT_TH_CLASS, field === "he1" ? dayStartDividerClass(day) : ""]
+                      style={{ top: theadRow1Height - 1 }}
+                      className={[
+                        TIME_SLOT_TH_CLASS,
+                        "sticky z-20 bg-white print:static",
+                        field === "he1" ? dayStartDividerClass(day) : "",
+                      ]
                         .filter(Boolean)
                         .join(" ")}
                     >
@@ -2174,7 +2321,10 @@ export function IngresarHorariosInner() {
                     </th>
                   )),
                 )}
-                <th className={`${SCHEDULE_CELL_BORDER_CLASS} px-2 py-2`} />
+                <th
+                  style={{ top: theadRow1Height - 1 }}
+                  className={`${SCHEDULE_CELL_BORDER_CLASS} sticky z-20 bg-white px-2 py-2 print:static`}
+                />
               </tr>
             </thead>
             <tbody>
@@ -2186,6 +2336,11 @@ export function IngresarHorariosInner() {
                   employeeListId={`ingresar-horarios-emp-${rowIndex}`}
                   canLunesPresetPerRow={canLunesScheduleSync}
                   lunesSyncActive={lunesSyncActive}
+                  duplicateMessage={
+                    employeeDuplicateError?.rowIndex === rowIndex
+                      ? employeeDuplicateError.message
+                      : null
+                  }
                   onRowField={updateRowField}
                   onRowDayField={updateRowDayField}
                   onDescanso={updateDescanso}
@@ -2260,6 +2415,8 @@ export function IngresarHorariosInner() {
             lista, deja de mostrarse en las demas hasta que borres ese nombre.
           </p>
         </div>
+        </StepperStep>
+        </Stepper>
         <style jsx global>{`
           #planilla-print table th.day-group-start,
           #planilla-print table td.day-group-start {
