@@ -668,7 +668,7 @@ export default function MargenesPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
-      <AppTopBar />
+      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
 
       <main className="mx-auto max-w-[1400px] px-6 py-8 lg:px-8 lg:py-10">
         <section className="overflow-hidden rounded-2xl border border-foreground/15 bg-card shadow-xs">
@@ -852,13 +852,6 @@ export default function MargenesPage() {
                     className="h-10 w-full rounded-lg border border-input bg-card py-2 pl-9 pr-3 text-[12px] shadow-xs placeholder:text-muted-foreground"
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => router.push("/secciones")}
-                  className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-3.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground shadow-xs transition-all hover:shadow-soft"
-                >
-                  Cambiar sección
-                </button>
                 <button
                   type="button"
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-positive/30 bg-positive/10 px-3.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-positive shadow-xs transition-all hover:shadow-soft"

@@ -141,7 +141,7 @@ export default function VentaHubPage() {
         isAdmin={isAdmin}
         username={username}
         sede={sede}
-        onBackToSecciones={() => router.push("/secciones")}
+        showSeccionesShortcut
       />
       <PortalHubShell>
       <PortalHubHeroCard

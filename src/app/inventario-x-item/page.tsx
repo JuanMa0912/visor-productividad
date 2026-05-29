@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   Fragment,
   useCallback,
@@ -17,7 +16,6 @@ import autoTable from "jspdf-autotable";
 import { toJpeg } from "html-to-image";
 import * as ExcelJS from "exceljs";
 import {
-  ArrowLeft,
   ArrowUp,
   ArrowUpDown,
   Bookmark,
@@ -2212,19 +2210,6 @@ export default function InventarioXItemPage() {
                 <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
                 Recargar
               </button>
-              <Link
-                href="/venta"
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-                Volver a venta
-              </Link>
-              <Link
-                href="/secciones"
-                className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-blue-700"
-              >
-                Cambiar seccion
-              </Link>
             </div>
           </div>
         </div>

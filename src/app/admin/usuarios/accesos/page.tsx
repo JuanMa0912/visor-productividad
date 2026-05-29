@@ -18,7 +18,6 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  LayoutGrid,
   LogOut,
   Search,
   Sparkles,
@@ -330,13 +329,6 @@ export default function AdminUsuariosAccesosPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <Link
-              href="/secciones"
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              <LayoutGrid className="h-4 w-4 text-slate-500" />
-              Ir a secciones
-            </Link>
             <button
               type="button"
               onClick={() => void handleLogout()}

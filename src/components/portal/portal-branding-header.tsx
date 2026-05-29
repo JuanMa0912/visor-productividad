@@ -9,9 +9,19 @@ export const PORTAL_APP_VERSION = "v4.0";
 export type PortalBrandingHeaderProps = {
   canAccessCronograma: boolean;
   isAdmin: boolean;
-  /** Si está definido, muestra el botón outline con flecha (hubs) en lugar del bloque Cronograma/Usuarios. */
+  /**
+   * Si se provee, muestra un boton "Volver a X" (flecha + texto) que ejecuta
+   * este callback. Ideal para paginas internas que quieren volver al hub
+   * padre (ej. /venta) ademas del atajo global a /secciones.
+   */
   onBackToSecciones?: () => void;
+  /** Texto del boton "Volver". Default "Volver a secciones". */
   backLabel?: string;
+  /**
+   * Si es `true`, muestra el boton-icono cuadricula (2x2) que va a `/secciones`.
+   * Coexiste con el boton "Volver a X" cuando ambos estan activos.
+   */
+  showSeccionesShortcut?: boolean;
   /** Reduce padding y tamaños para no chocar con el contenido inmediatamente debajo. */
   compact?: boolean;
   /** Usuario actual; si se provee se muestra el avatar con menu (cambiar contrasena / cerrar sesion). */
@@ -24,12 +34,17 @@ export function PortalBrandingHeader({
   isAdmin,
   onBackToSecciones,
   backLabel = "Volver a secciones",
+  showSeccionesShortcut = false,
   compact = false,
   username = null,
   sede = null,
 }: PortalBrandingHeaderProps) {
   const router = useRouter();
-  const showSegment = !onBackToSecciones && (canAccessCronograma || isAdmin);
+  // Cronograma/Usuarios solo en /secciones (cuando no hay ningun shortcut/back).
+  const showSegment =
+    !showSeccionesShortcut &&
+    !onBackToSecciones &&
+    (canAccessCronograma || isAdmin);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/70 backdrop-blur-xl">
@@ -90,6 +105,43 @@ export function PortalBrandingHeader({
                 strokeWidth={2.25}
               />
               {backLabel}
+            </button>
+          ) : null}
+          {showSeccionesShortcut ? (
+            <button
+              type="button"
+              onClick={() => router.push("/secciones")}
+              title="Ir a secciones"
+              aria-label="Ir a secciones"
+              className={
+                compact
+                  ? "group/grid relative inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-300 bg-linear-to-br from-white to-slate-100 text-slate-900 shadow-[0_1px_3px_-1px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:border-slate-400 hover:from-slate-50 hover:to-slate-200/80 hover:shadow-[0_6px_14px_-6px_rgba(15,23,42,0.35)] active:translate-y-0 active:scale-[0.96]"
+                  : "group/grid relative inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-linear-to-br from-white to-slate-100 text-slate-900 shadow-[0_2px_6px_-2px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-slate-400 hover:from-slate-50 hover:to-slate-200/80 hover:shadow-[0_10px_22px_-10px_rgba(15,23,42,0.4)] active:translate-y-0 active:scale-[0.97]"
+              }
+            >
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 -translate-x-full bg-linear-to-r from-transparent via-white/70 to-transparent opacity-0 transition-all duration-500 ease-out group-hover/grid:translate-x-full group-hover/grid:opacity-100"
+              />
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={
+                  compact
+                    ? "relative h-4 w-4 shrink-0 transition-transform duration-200 group-hover/grid:scale-105"
+                    : "relative h-5 w-5 shrink-0 transition-transform duration-200 group-hover/grid:scale-105"
+                }
+              >
+                <rect x="2" y="2" width="9" height="9" rx="1.5" />
+                <rect x="13" y="2" width="9" height="9" rx="1.5" />
+                <rect x="2" y="13" width="9" height="9" rx="1.5" />
+                <rect x="13" y="13" width="9" height="9" rx="1.5" />
+              </svg>
             </button>
           ) : null}
           {showSegment ? (

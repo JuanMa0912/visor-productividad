@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { PortalBrandingHeader } from "./portal-branding-header";
 
 export type AppTopBarProps = {
-  /** Si `false`, no muestra el boton "Volver a secciones". Default true. */
+  /**
+   * Si `false`, oculta tanto el boton "Volver a X" como el icono Grid2x2 que
+   * va a `/secciones`. Default true.
+   */
   showBack?: boolean;
-  /** Texto del boton de volver. Default "Volver a secciones". */
+  /** Texto del boton "Volver a X". Default "Volver a secciones". */
   backLabel?: string;
-  /** Ruta a la que apunta el boton de volver. Default "/secciones". */
+  /** Ruta destino del boton "Volver a X". Default "/secciones". */
   backHref?: string;
   /** Variante compacta para paginas con contenido cercano al header. */
   compact?: boolean;
@@ -83,6 +86,11 @@ export function AppTopBar({
     );
   }
 
+  // Solo mostramos el boton "Volver a X" cuando apunta a un hub distinto a
+  // `/secciones` (ej. `/venta`, `/horario`). Si apunta a `/secciones`, el icono
+  // Grid2x2 ya cumple esa funcion y no duplicamos.
+  const hasDistinctBack = showBack && backHref !== "/secciones";
+
   return (
     <PortalBrandingHeader
       canAccessCronograma={snapshot.canAccessCronograma}
@@ -90,7 +98,8 @@ export function AppTopBar({
       compact={compact}
       username={snapshot.username}
       sede={snapshot.sede}
-      {...(showBack
+      showSeccionesShortcut={showBack}
+      {...(hasDistinctBack
         ? {
             onBackToSecciones: () => router.push(backHref),
             backLabel,

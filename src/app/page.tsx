@@ -10,7 +10,6 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { animate, remove } from "animejs";
 import {
@@ -2455,8 +2454,6 @@ export default function Home() {
           onEndDateChange={handleEndDateChange}
           onExportClick={openExportModal}
           isExportDisabled={dailyDataSet.length === 0}
-          backHref="/productividad"
-          backLabel="Volver a Productividad"
         />
 
         {exportModalOpen && (

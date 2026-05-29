@@ -1,10 +1,8 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Building2,
   CalendarDays,
   Check,
@@ -967,21 +965,6 @@ export default function VentasXItemPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/venta"
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-                Volver a venta
-              </Link>
-              <Link
-                href="/secciones"
-                className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-blue-700"
-              >
-                Cambiar seccion
-              </Link>
-            </div>
           </div>
         </div>
 

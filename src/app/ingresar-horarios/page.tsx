@@ -11,7 +11,7 @@ export default function IngresarHorariosPage() {
         </div>
       }
     >
-      <AppTopBar />
+      <AppTopBar backHref="/horario" backLabel="Volver a horario" />
       <IngresarHorariosInner />
     </Suspense>
   );

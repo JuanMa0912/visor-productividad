@@ -183,7 +183,7 @@ export default function ProductividadHubPage() {
         isAdmin={isAdmin}
         username={username}
         sede={sede}
-        onBackToSecciones={() => router.push("/secciones")}
+        showSeccionesShortcut
       />
       <PortalHubShell>
       <PortalHubHeroCard

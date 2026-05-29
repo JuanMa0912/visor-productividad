@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as ExcelJS from "exceljs";
 import { toJpeg, toPng } from "html-to-image";
@@ -9,7 +8,6 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
   AlertCircle,
-  ArrowLeft,
   Building2,
   CalendarDays,
   ChevronDown,
@@ -2413,24 +2411,6 @@ export function RotacionPageInner() {
                 </p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    asChild
-                    variant="outline"
-                    className="rounded-full border-slate-200 bg-white/90 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 hover:bg-slate-50"
-                  >
-                    <Link href="/productividad">
-                      <ArrowLeft className="h-4 w-4" />
-                      Volver a producto
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    className="rounded-full bg-amber-600 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-white hover:bg-amber-700"
-                  >
-                    <Link href="/secciones">Cambiar seccion</Link>
-                  </Button>
-                </div>
                 <div className="flex w-full flex-wrap justify-end gap-2">
                   {canViewSurtidoHistorial ? (
                     <Button
@@ -5316,7 +5296,7 @@ export function RotacionPageInner() {
 export default function RotacionPage() {
   return (
     <RotacionViewConfigProvider config={ROTACION_LEGACY_VIEW}>
-      <AppTopBar />
+      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
       <RotacionPageInner />
     </RotacionViewConfigProvider>
   );

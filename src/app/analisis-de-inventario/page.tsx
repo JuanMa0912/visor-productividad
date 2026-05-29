@@ -93,7 +93,7 @@ export default function AnalisisDeInventarioPage() {
         isAdmin={isAdmin}
         username={username}
         sede={sede}
-        onBackToSecciones={() => router.push("/secciones")}
+        showSeccionesShortcut
       />
       <div className="mx-auto w-full max-w-3xl px-4 py-8 lg:px-6">
         <Link
