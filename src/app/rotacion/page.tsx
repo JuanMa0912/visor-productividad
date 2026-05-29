@@ -53,7 +53,6 @@ import {
   CERO_ROTACION_ESTADO_VALUES,
   DEFAULT_CERO_ROTACION_ESTADO,
   makeCeroRotacionEstadoKey,
-  parseCeroRotacionEstado,
   type CeroRotacionEstado,
   type RotacionSurtidoEstadoContext,
 } from "@/lib/rotacion/cero-estado";
@@ -143,35 +142,9 @@ import {
 } from "@/app/rotacion/rotacion-view-config-provider";
 import { RotacionItemDrilldown } from "@/app/rotacion/rotacion-item-drilldown";
 import { AppTopBar } from "@/components/portal/app-top-bar";
-
-type SurtidoAuditApiRow = {
-  id: string;
-  sede_id: string;
-  item: string;
-  context: string;
-  estado_anterior: string | null;
-  estado_nuevo: string;
-  changed_at: string;
-  changed_by: string | null;
-  username: string | null;
-};
-
-const formatAuditEstadoLabel = (raw: string | null): string => {
-  if (!raw) return "—";
-  const parsed = parseCeroRotacionEstado(raw);
-  return parsed ? CERO_ROTACION_ESTADO_LABELS[parsed] : raw;
-};
-
-const formatAuditContextLabel = (raw: string) =>
-  raw === "restock" ? "Restock" : "Cero rot.";
-
-const auditChangedAtDateKeyBogota = (changedAtIso: string) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Bogota",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(changedAtIso));
+import { AbcdConfigModal } from "./abcd-config-modal";
+import { auditChangedAtDateKeyBogota } from "./audit-utils";
+import { SurtidoAuditModal } from "./surtido-audit-modal";
 
 export function RotacionPageInner() {
   const {
@@ -191,23 +164,6 @@ export function RotacionPageInner() {
   );
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
-  const [surtidoAuditRows, setSurtidoAuditRows] = useState<SurtidoAuditApiRow[]>(
-    [],
-  );
-  const [surtidoAuditLoading, setSurtidoAuditLoading] = useState(false);
-  const [surtidoAuditError, setSurtidoAuditError] = useState<string | null>(null);
-  const [surtidoAuditFilterDateFrom, setSurtidoAuditFilterDateFrom] =
-    useState("");
-  const [surtidoAuditFilterDateTo, setSurtidoAuditFilterDateTo] = useState("");
-  const [surtidoAuditFilterUser, setSurtidoAuditFilterUser] = useState("");
-  const [surtidoAuditFilterItem, setSurtidoAuditFilterItem] = useState("");
-  const [surtidoAuditFilterSede, setSurtidoAuditFilterSede] = useState("");
-  const [surtidoAuditFilterContext, setSurtidoAuditFilterContext] = useState<
-    "" | "cero" | "restock"
-  >("");
-  const [surtidoAuditFilterAntes, setSurtidoAuditFilterAntes] = useState("");
-  const [surtidoAuditFilterDespues, setSurtidoAuditFilterDespues] =
-    useState("");
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -230,11 +186,6 @@ export function RotacionPageInner() {
     [],
   );
   const [abcdConfig, setAbcdConfig] = useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
-  const [abcdDraftConfig, setAbcdDraftConfig] =
-    useState<AbcdConfig>(DEFAULT_ABCD_CONFIG);
-  const [abcdSaveScope, setAbcdSaveScope] = useState<"global" | "sede">(
-    "global",
-  );
   const [filterCatalog, setFilterCatalog] = useState<
     RotationApiResponse["filters"]
   >({
@@ -276,14 +227,14 @@ export function RotacionPageInner() {
   const [ceroEstadoFilterByGroup, setCeroEstadoFilterByGroup] = useState<
     Record<string, CeroRotacionEstado[]>
   >({});
-  /** Valor aplicado al pulsar «Venta ≤» (tope de venta periodo en COP). */
+  /** Valor aplicado al pulsar Â«Venta â‰¤Â» (tope de venta periodo en COP). */
   const [ventaHastaCapByGroup, setVentaHastaCapByGroup] = useState<
     Record<string, number | undefined>
   >({});
   const [ventaHastaInputByGroup, setVentaHastaInputByGroup] = useState<
     Record<string, string>
   >({});
-  /** Piso de unidades de inventario al pulsar «Inv ≥» (independiente del filtro de venta). */
+  /** Piso de unidades de inventario al pulsar Â«Inv â‰¥Â» (independiente del filtro de venta). */
   const [invMinCapByGroup, setInvMinCapByGroup] = useState<
     Record<string, number | undefined>
   >({});
@@ -519,7 +470,6 @@ export function RotacionPageInner() {
         ) {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
-          setAbcdDraftConfig(normalizedConfig);
         }
         rotacionRowsFetchKeyRef.current = buildRotacionRowsKey({
           start: dateRange.start ?? "",
@@ -818,7 +768,6 @@ export function RotacionPageInner() {
         if (payload.meta?.abcdConfig) {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
-          setAbcdDraftConfig(normalizedConfig);
         }
 
         if (payload.meta?.availableRange) {
@@ -1082,139 +1031,10 @@ export function RotacionPageInner() {
   }, [ready, router, dateRange.start, dateRange.end, targetSedeSelections]);
 
   useEffect(() => {
-    if (!surtidoAuditModalOpen) return;
-    if (!canViewSurtidoHistorial) {
+    if (surtidoAuditModalOpen && !canViewSurtidoHistorial) {
       setSurtidoAuditModalOpen(false);
-      return;
     }
-    if (!dateRange.start || !dateRange.end) return;
-    if (targetSedeSelections.length === 0) return;
-    const controller = new AbortController();
-    setSurtidoAuditLoading(true);
-    setSurtidoAuditError(null);
-    void (async () => {
-      try {
-        const params = new URLSearchParams();
-        params.set("start", dateRange.start);
-        params.set("end", dateRange.end);
-        targetSedeSelections.forEach((s) => params.append("sedeScope", s.value));
-        const res = await fetch(
-          `/api/rotacion/cero-estados/audit?${params.toString()}`,
-          { signal: controller.signal, cache: "no-store" },
-        );
-        if (res.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        const data = (await res.json()) as {
-          rows?: SurtidoAuditApiRow[];
-          auditTableMissing?: boolean;
-          message?: string;
-          error?: string;
-        };
-        if (!res.ok) {
-          throw new Error(data.error ?? "No fue posible cargar el historial.");
-        }
-        setSurtidoAuditRows(data.rows ?? []);
-        if (data.auditTableMissing && data.message) {
-          setSurtidoAuditError(data.message);
-        } else {
-          setSurtidoAuditError(null);
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setSurtidoAuditError(
-          err instanceof Error ? err.message : "Error cargando historial.",
-        );
-        setSurtidoAuditRows([]);
-      } finally {
-        if (!controller.signal.aborted) {
-          setSurtidoAuditLoading(false);
-        }
-      }
-    })();
-    return () => controller.abort();
-  }, [
-    surtidoAuditModalOpen,
-    canViewSurtidoHistorial,
-    dateRange.start,
-    dateRange.end,
-    targetSedeSelections,
-    router,
-  ]);
-
-  useEffect(() => {
-    if (!surtidoAuditModalOpen) return;
-    setSurtidoAuditFilterDateFrom("");
-    setSurtidoAuditFilterDateTo("");
-    setSurtidoAuditFilterUser("");
-    setSurtidoAuditFilterItem("");
-    setSurtidoAuditFilterSede("");
-    setSurtidoAuditFilterContext("");
-    setSurtidoAuditFilterAntes("");
-    setSurtidoAuditFilterDespues("");
-  }, [surtidoAuditModalOpen]);
-
-  const surtidoAuditSedeOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of surtidoAuditRows) {
-      if (r.sede_id) set.add(r.sede_id);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
-  }, [surtidoAuditRows]);
-
-  const surtidoAuditFilteredRows = useMemo(() => {
-    const itemQ = surtidoAuditFilterItem.trim().toLowerCase();
-    const userQ = surtidoAuditFilterUser.trim().toLowerCase();
-    const sedeVal = surtidoAuditFilterSede.trim();
-    const from = surtidoAuditFilterDateFrom.trim();
-    const to = surtidoAuditFilterDateTo.trim();
-    const ctx = surtidoAuditFilterContext;
-    const antes = surtidoAuditFilterAntes.trim();
-    const desp = surtidoAuditFilterDespues.trim();
-
-    return surtidoAuditRows.filter((r) => {
-      if (from) {
-        const dk = auditChangedAtDateKeyBogota(r.changed_at);
-        if (dk < from) return false;
-      }
-      if (to) {
-        const dk = auditChangedAtDateKeyBogota(r.changed_at);
-        if (dk > to) return false;
-      }
-      if (itemQ && !r.item.toLowerCase().includes(itemQ)) return false;
-      if (userQ) {
-        const u = (r.username ?? "").trim().toLowerCase();
-        if (!u.includes(userQ)) return false;
-      }
-      if (sedeVal && r.sede_id !== sedeVal) return false;
-      if (ctx && r.context !== ctx) return false;
-      if (antes === "__vacio__") {
-        if (r.estado_anterior != null && String(r.estado_anterior).trim() !== "")
-          return false;
-      } else if (antes) {
-        const parsed = parseCeroRotacionEstado(r.estado_anterior ?? "");
-        const norm = (parsed ?? r.estado_anterior) as string;
-        if (norm !== antes) return false;
-      }
-      if (desp) {
-        const parsed = parseCeroRotacionEstado(r.estado_nuevo);
-        const norm = (parsed ?? r.estado_nuevo) as string;
-        if (norm !== desp) return false;
-      }
-      return true;
-    });
-  }, [
-    surtidoAuditRows,
-    surtidoAuditFilterDateFrom,
-    surtidoAuditFilterDateTo,
-    surtidoAuditFilterUser,
-    surtidoAuditFilterItem,
-    surtidoAuditFilterSede,
-    surtidoAuditFilterContext,
-    surtidoAuditFilterAntes,
-    surtidoAuditFilterDespues,
-  ]);
+  }, [surtidoAuditModalOpen, canViewSurtidoHistorial]);
 
   const persistRotacionSurtidoEstado = useCallback(
     async (
@@ -1706,9 +1526,12 @@ export function RotacionPageInner() {
     void reloadRotacionRows();
   };
 
-  const handleSaveAbcdConfig = async () => {
+  const handleSaveAbcdConfig = async (
+    draft: AbcdConfig,
+    scope: "global" | "sede",
+  ) => {
     if (!canEditAbcdConfig || isSavingAbcdConfig) return;
-    if (abcdSaveScope === "sede" && !singleSelectedSedeTarget) {
+    if (scope === "sede" && !singleSelectedSedeTarget) {
       setError(
         "Para guardar por sede selecciona una sola sede en los filtros principales.",
       );
@@ -1717,19 +1540,19 @@ export function RotacionPageInner() {
     setIsSavingAbcdConfig(true);
     setError(null);
     try {
-      const normalized = normalizeAbcdConfig(abcdDraftConfig);
+      const normalized = normalizeAbcdConfig(draft);
       const response = await fetch(apiBasePath, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...normalized,
-          saveScope: abcdSaveScope,
+          saveScope: scope,
           empresa:
-            abcdSaveScope === "sede"
+            scope === "sede"
               ? (singleSelectedSedeTarget?.empresa ?? "")
               : undefined,
           sedeId:
-            abcdSaveScope === "sede"
+            scope === "sede"
               ? (singleSelectedSedeTarget?.sedeId ?? "")
               : undefined,
         }),
@@ -1745,7 +1568,6 @@ export function RotacionPageInner() {
       }
       const saved = normalizeAbcdConfig(payload.config ?? normalized);
       setAbcdConfig(saved);
-      setAbcdDraftConfig(saved);
       setIsAbcdModalOpen(false);
     } catch (err) {
       setError(
@@ -1938,7 +1760,7 @@ export function RotacionPageInner() {
               return zeroEstadoSet.includes(estado);
             })
           : quickFilteredRows;
-        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
+        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta â‰¤). */
         const sourceRowsForAbcd =
           baseRowsBySedeByKey.get(groupKey) ?? group.rows;
         const sourceRowsForAbcdFilterable =
@@ -2440,11 +2262,7 @@ export function RotacionPageInner() {
                       type="button"
                       variant="outline"
                       className="rounded-full border-emerald-300 bg-emerald-50/90 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 hover:bg-emerald-100"
-                      onClick={() => {
-                        setAbcdDraftConfig(abcdConfig);
-                        setAbcdSaveScope("global");
-                        setIsAbcdModalOpen(true);
-                      }}
+                      onClick={() => setIsAbcdModalOpen(true)}
                     >
                       Configurar ABCD
                     </Button>
@@ -2464,7 +2282,7 @@ export function RotacionPageInner() {
               </CardTitle>
               <CardDescription>
                 Puedes elegir varias empresas y varias sedes para evaluarlas en
-                conjunto. Para acotar por venta del periodo usa el boton Venta ≤
+                conjunto. Para acotar por venta del periodo usa el boton Venta â‰¤
                 en la tabla.
               </CardDescription>
             </CardHeader>
@@ -2648,7 +2466,7 @@ export function RotacionPageInner() {
                       accentClassName="text-violet-700"
                     />
                     <p className="max-w-xl text-[11px] leading-snug text-slate-500">
-                      Al cambiar lineas N1 o categorías, la tabla se actualiza
+                      Al cambiar lineas N1 o categorÃ­as, la tabla se actualiza
                       sola en unos instantes. Usa{" "}
                       <span className="font-medium text-slate-600">
                         Actualizar ahora
@@ -2938,8 +2756,8 @@ export function RotacionPageInner() {
                 Cargando filtros de la seleccion
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Estamos trayendo lineas N1, categorías y el rango disponible. En
-                cuanto termine, la tabla se consultará sola con los filtros
+                Estamos trayendo lineas N1, categorÃ­as y el rango disponible. En
+                cuanto termine, la tabla se consultarÃ¡ sola con los filtros
                 seleccionados.
               </p>
             </CardContent>
@@ -2955,9 +2773,9 @@ export function RotacionPageInner() {
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Pulsa <span className="font-semibold">Actualizar ahora</span>{" "}
-                para repetir la consulta. Al cambiar lineas N1 o categorías, la
+                para repetir la consulta. Al cambiar lineas N1 o categorÃ­as, la
                 tabla suele actualizarse sola en unos instantes sin necesidad de
-                ese botón.
+                ese botÃ³n.
               </p>
             </CardContent>
           </Card>
@@ -2976,7 +2794,7 @@ export function RotacionPageInner() {
                   {sourceTable}
                 </span>
                 . Ajusta el rango de fechas o usa el boton{" "}
-                <span className="font-semibold">Venta ≤</span> en la tabla para
+                <span className="font-semibold">Venta â‰¤</span> en la tabla para
                 filtrar por debajo de un valor.
               </p>
             </CardContent>
@@ -3063,7 +2881,7 @@ export function RotacionPageInner() {
                           return zeroEstadoSet.includes(estado);
                         })
                       : quickFilteredRows;
-                    /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
+                    /** Misma regla que export: letra ABCD segÃºn ventas del conjunto filtrado arriba, sin filtros rÃ¡pidos de tabla. */
                     const sourceRowsForAbcd =
                       baseRowsBySedeByKey.get(groupKey) ?? group.rows;
                     const sourceRowsForAbcdFilterable =
@@ -3288,7 +3106,7 @@ export function RotacionPageInner() {
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0 flex-1 space-y-2">
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                                  Información
+                                  InformaciÃ³n
                                 </p>
                                 <CardTitle className="text-2xl font-black text-slate-900">
                                   {group.sedeName}
@@ -3353,7 +3171,7 @@ export function RotacionPageInner() {
                                   <div className="flex w-fit flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
                                     <div className="mb-2 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-emerald-950">
-                                        A·B·C · En rotación
+                                        AÂ·BÂ·C Â· En rotaciÃ³n
                                       </p>
                                       <p className="text-[10px] leading-snug text-emerald-800/85">
                                         Productos que se mueven
@@ -3490,7 +3308,7 @@ export function RotacionPageInner() {
                                       </p>
                                     </div>
                                     <p className="mt-2 border-l-2 border-emerald-300/80 pl-2 pt-1.5 text-[10px] leading-snug text-emerald-900/75">
-                                      Mantener disponibilidad · surtido y
+                                      Mantener disponibilidad Â· surtido y
                                       abastecimiento
                                     </p>
                                   </div>
@@ -3498,10 +3316,10 @@ export function RotacionPageInner() {
                                   <div className="flex w-fit flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2.5 shadow-sm ring-1 ring-rose-100/90">
                                     <div className="mb-2 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-rose-950">
-                                        Críticos · Requieren acción
+                                        CrÃ­ticos Â· Requieren acciÃ³n
                                       </p>
                                       <p className="text-[10px] leading-snug text-rose-800/85">
-                                        Productos problemáticos
+                                        Productos problemÃ¡ticos
                                       </p>
                                     </div>
                                     <div className="grid w-fit grid-cols-3 gap-2 justify-items-center">
@@ -3633,11 +3451,11 @@ export function RotacionPageInner() {
                                     </div>
                                     <div className="mt-1.5 space-y-1 pt-1.5">
                                       <p className="border-l-2 border-rose-200 pl-2 text-[10px] leading-snug text-rose-900/70">
-                                        Demanda · descuento, descontinuar,
+                                        Demanda Â· descuento, descontinuar,
                                         devolver
                                       </p>
                                       <p className="border-l-2 border-cyan-200 pl-2 text-[10px] leading-snug text-cyan-900/75">
-                                        Abastecimiento · pedido, lead time, ROP
+                                        Abastecimiento Â· pedido, lead time, ROP
                                       </p>
                                     </div>
                                   </div>
@@ -3916,10 +3734,10 @@ export function RotacionPageInner() {
                                       {(rowFilter === "venta_hasta" ||
                                         rowFilter === "both") &&
                                       ventaHastaCapByGroup[groupKey] != null
-                                        ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
+                                        ? `Venta â‰¤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
                                         : ventaHastaPreviewCount != null
-                                          ? `Venta ≤ (${ventaHastaPreviewCount})`
-                                          : "Venta ≤"}
+                                          ? `Venta â‰¤ (${ventaHastaPreviewCount})`
+                                          : "Venta â‰¤"}
                                     </Button>
                                     <input
                                       type="text"
@@ -3957,10 +3775,10 @@ export function RotacionPageInner() {
                                       }
                                     >
                                       {invMinAppliedCap != null
-                                        ? `Inv ≥ ${invMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
+                                        ? `Inv â‰¥ ${invMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
                                         : invMinPreviewCount != null
-                                          ? `Inv ≥ (${invMinPreviewCount})`
-                                          : "Inv ≥"}
+                                          ? `Inv â‰¥ (${invMinPreviewCount})`
+                                          : "Inv â‰¥"}
                                     </Button>
                                     <input
                                       type="text"
@@ -4107,7 +3925,7 @@ export function RotacionPageInner() {
                                       void handleWhatsAppShare("png")
                                     }
                                   >
-                                    Imagen PNG (sin pérdida)
+                                    Imagen PNG (sin pÃ©rdida)
                                   </button>
                                   <button
                                     type="button"
@@ -4139,10 +3957,10 @@ export function RotacionPageInner() {
                                   </button>
                                 </div>
                                 <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
-                                  Imagen: solo la tabla (paginación por sede),
-                                  captura ampliada y alta densidad de píxeles.
+                                  Imagen: solo la tabla (paginaciÃ³n por sede),
+                                  captura ampliada y alta densidad de pÃ­xeles.
                                   JPG usa calidad 98%; WhatsApp puede volver a
-                                  comprimir al enviar — si no se lee bien,
+                                  comprimir al enviar â€” si no se lee bien,
                                   prueba PNG o PDF. PDF: todas las filas
                                   filtradas, igual que &quot;Descargar
                                   PDF&quot;.{" "}
@@ -4245,7 +4063,7 @@ export function RotacionPageInner() {
                                           align="right"
                                           label={
                                             <span className="block text-[11px] leading-tight">
-                                              Venta período
+                                              Venta perÃ­odo
                                             </span>
                                           }
                                           activeField={tableSortField}
@@ -4874,420 +4692,22 @@ export function RotacionPageInner() {
       })()}
 
       {surtidoAuditModalOpen && canViewSurtidoHistorial ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="rotacion-surtido-audit-title"
-          onClick={() => setSurtidoAuditModalOpen(false)}
-        >
-          <div
-            className="relative flex max-h-[82vh] w-full max-w-5xl flex-col rounded-2xl border border-amber-200 bg-white p-5 shadow-xl sm:p-6"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="absolute right-3 top-3 rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-              onClick={() => setSurtidoAuditModalOpen(false)}
-              aria-label="Cerrar"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <h2
-              id="rotacion-surtido-audit-title"
-              className="pr-10 text-lg font-bold text-slate-900"
-            >
-              Historial S.inventario
-            </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              {formattedRange} · {targetSedeSelections.length} sede
-              {targetSedeSelections.length === 1 ? "" : "s"} seleccionada
-              {targetSedeSelections.length === 1 ? "" : "s"}.
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Incluye cambios hasta la fecha de hoy (America/Bogota), aunque el
-              periodo del tablero termine antes.
-            </p>
-            {surtidoAuditError ? (
-              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                {surtidoAuditError}
-              </div>
-            ) : null}
-            {!surtidoAuditLoading && surtidoAuditRows.length > 0 ? (
-              <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:p-4">
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Filtros
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 border-slate-300 text-xs"
-                    onClick={() => {
-                      setSurtidoAuditFilterDateFrom("");
-                      setSurtidoAuditFilterDateTo("");
-                      setSurtidoAuditFilterUser("");
-                      setSurtidoAuditFilterItem("");
-                      setSurtidoAuditFilterSede("");
-                      setSurtidoAuditFilterContext("");
-                      setSurtidoAuditFilterAntes("");
-                      setSurtidoAuditFilterDespues("");
-                    }}
-                  >
-                    Limpiar filtros
-                  </Button>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Fecha desde
-                    <input
-                      type="date"
-                      value={surtidoAuditFilterDateFrom}
-                      onChange={(e) =>
-                        setSurtidoAuditFilterDateFrom(e.target.value)
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Fecha hasta
-                    <input
-                      type="date"
-                      value={surtidoAuditFilterDateTo}
-                      onChange={(e) =>
-                        setSurtidoAuditFilterDateTo(e.target.value)
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Usuario
-                    <input
-                      type="search"
-                      placeholder="Contiene…"
-                      value={surtidoAuditFilterUser}
-                      onChange={(e) =>
-                        setSurtidoAuditFilterUser(e.target.value)
-                      }
-                      autoComplete="off"
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Item
-                    <input
-                      type="search"
-                      placeholder="Codigo o parte…"
-                      value={surtidoAuditFilterItem}
-                      onChange={(e) =>
-                        setSurtidoAuditFilterItem(e.target.value)
-                      }
-                      autoComplete="off"
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
-                  </label>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Sede
-                    <select
-                      value={surtidoAuditFilterSede}
-                      onChange={(e) => setSurtidoAuditFilterSede(e.target.value)}
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    >
-                      <option value="">Todas</option>
-                      {surtidoAuditSedeOptions.map((id) => (
-                        <option key={id} value={id}>
-                          {id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Origen
-                    <select
-                      value={surtidoAuditFilterContext}
-                      onChange={(e) =>
-                        setSurtidoAuditFilterContext(
-                          e.target.value as "" | "cero" | "restock",
-                        )
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    >
-                      <option value="">Todos</option>
-                      <option value="cero">Cero rot.</option>
-                      <option value="restock">Restock</option>
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Antes
-                    <select
-                      value={surtidoAuditFilterAntes}
-                      onChange={(e) =>
-                        setSurtidoAuditFilterAntes(e.target.value)
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    >
-                      <option value="">Cualquiera</option>
-                      <option value="__vacio__">Sin valor anterior</option>
-                      {CERO_ROTACION_ESTADO_VALUES.map((v) => (
-                        <option key={v} value={v}>
-                          {CERO_ROTACION_ESTADO_LABELS[v]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-0.5 text-xs font-semibold text-slate-700">
-                    Después
-                    <select
-                      value={surtidoAuditFilterDespues}
-                      onChange={(e) =>
-                        setSurtidoAuditFilterDespues(e.target.value)
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    >
-                      <option value="">Cualquiera</option>
-                      {CERO_ROTACION_ESTADO_VALUES.map((v) => (
-                        <option key={v} value={v}>
-                          {CERO_ROTACION_ESTADO_LABELS[v]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <p className="text-xs text-slate-600">
-                  Mostrando{" "}
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    {surtidoAuditFilteredRows.length}
-                  </span>{" "}
-                  de{" "}
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    {surtidoAuditRows.length}
-                  </span>
-                  .
-                </p>
-              </div>
-            ) : null}
-            <div className="mt-4 min-h-[140px] flex-1 overflow-auto rounded-lg border border-slate-200">
-              {surtidoAuditLoading ? (
-                <div className="flex items-center justify-center gap-2 p-10 text-slate-600">
-                  <Loader2 className="h-6 w-6 shrink-0 animate-spin" />
-                  Cargando historial…
-                </div>
-              ) : surtidoAuditRows.length === 0 ? (
-                <p className="p-8 text-center text-sm text-slate-600">
-                  Sin cambios registrados para estas sedes en el intervalo del
-                  periodo (desde el inicio hasta hoy en Colombia).
-                </p>
-              ) : surtidoAuditFilteredRows.length === 0 ? (
-                <p className="p-8 text-center text-sm text-slate-600">
-                  Ningún registro coincide con los filtros. Ajusta o limpia los
-                  filtros.
-                </p>
-              ) : (
-                <Table className="min-w-208 text-sm">
-                  <TableHeader>
-                    <TableRow className="bg-slate-50/90 hover:bg-slate-50/90">
-                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Fecha y hora
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Usuario
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Sede
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Item
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Origen
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Antes
-                      </TableHead>
-                      <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Después
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {surtidoAuditFilteredRows.map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="whitespace-nowrap tabular-nums text-slate-800">
-                          {new Date(r.changed_at).toLocaleString("es-CO", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </TableCell>
-                        <TableCell className="max-w-40 truncate font-medium text-slate-900">
-                          {r.username?.trim() || "—"}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-slate-700">
-                          {r.sede_id}
-                        </TableCell>
-                        <TableCell className="max-w-48 truncate font-mono text-xs text-slate-900">
-                          {r.item}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-slate-600">
-                          {formatAuditContextLabel(r.context)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-slate-700">
-                          {formatAuditEstadoLabel(r.estado_anterior)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap font-semibold text-slate-900">
-                          {formatAuditEstadoLabel(r.estado_nuevo)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
-          </div>
-        </div>
+        <SurtidoAuditModal
+          onClose={() => setSurtidoAuditModalOpen(false)}
+          dateRange={dateRange}
+          targetSedeSelections={targetSedeSelections}
+          formattedRange={formattedRange}
+        />
       ) : null}
 
       {isAbcdModalOpen && canEditAbcdConfig ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="rotacion-abcd-modal-title"
-          onClick={() => setIsAbcdModalOpen(false)}
-        >
-          <div
-            className="relative w-full max-w-md rounded-2xl border border-emerald-200 bg-white p-6 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="absolute right-3 top-3 rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-              onClick={() => setIsAbcdModalOpen(false)}
-              aria-label="Cerrar"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <h2
-              id="rotacion-abcd-modal-title"
-              className="pr-10 text-lg font-bold text-emerald-900"
-            >
-              Clasificacion ABCD
-            </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Umbrales por venta acumulada del periodo (D llega hasta 100%).
-            </p>
-            <div className="mt-4 space-y-2 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3">
-              <p className="text-xs font-semibold text-emerald-900">
-                Guardar configuracion para:
-              </p>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="abcd-save-scope"
-                  checked={abcdSaveScope === "global"}
-                  onChange={() => setAbcdSaveScope("global")}
-                  className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-200"
-                />
-                <span>Todas las sedes</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="abcd-save-scope"
-                  checked={abcdSaveScope === "sede"}
-                  onChange={() => setAbcdSaveScope("sede")}
-                  disabled={!singleSelectedSedeTarget}
-                  className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-200 disabled:opacity-50"
-                />
-                <span>
-                  Solo esta sede
-                  {singleSelectedSedeTarget
-                    ? ` (${singleSelectedSedeTarget.sedeName})`
-                    : " (selecciona una sola sede)"}
-                </span>
-              </label>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <label className="text-xs font-semibold text-emerald-900">
-                A hasta %
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={abcdDraftConfig.aUntilPercent}
-                  onChange={(event) =>
-                    setAbcdDraftConfig((prev) =>
-                      normalizeAbcdConfig({
-                        ...prev,
-                        aUntilPercent: Number(event.target.value || 0),
-                      }),
-                    )
-                  }
-                  className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-              <label className="text-xs font-semibold text-emerald-900">
-                B hasta %
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={abcdDraftConfig.bUntilPercent}
-                  onChange={(event) =>
-                    setAbcdDraftConfig((prev) =>
-                      normalizeAbcdConfig({
-                        ...prev,
-                        bUntilPercent: Number(event.target.value || 0),
-                      }),
-                    )
-                  }
-                  className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-              <label className="text-xs font-semibold text-emerald-900">
-                C hasta %
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={abcdDraftConfig.cUntilPercent}
-                  onChange={(event) =>
-                    setAbcdDraftConfig((prev) =>
-                      normalizeAbcdConfig({
-                        ...prev,
-                        cUntilPercent: Number(event.target.value || 0),
-                      }),
-                    )
-                  }
-                  className="mt-1 h-9 w-full rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-            </div>
-            <div className="mt-6 flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-full"
-                onClick={() => setIsAbcdModalOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                className="rounded-full bg-emerald-700 text-white hover:bg-emerald-800"
-                disabled={
-                  isSavingAbcdConfig ||
-                  (abcdSaveScope === "sede" && !singleSelectedSedeTarget)
-                }
-                onClick={() => void handleSaveAbcdConfig()}
-              >
-                {isSavingAbcdConfig ? "Guardando..." : "Guardar"}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <AbcdConfigModal
+          onClose={() => setIsAbcdModalOpen(false)}
+          initialConfig={abcdConfig}
+          singleSelectedSedeTarget={singleSelectedSedeTarget}
+          isSaving={isSavingAbcdConfig}
+          onSave={(draft, scope) => handleSaveAbcdConfig(draft, scope)}
+        />
       ) : null}
     </div>
   );

@@ -8,813 +8,102 @@ import {
   useMemo,
   useRef,
   useState,
-  type MutableRefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  Users,
   ArrowLeftRight,
+  ArrowUp,
   CalendarDays,
   ChevronDown,
   Clock,
   Download,
+  Loader2,
   MapPin,
   Search,
-  TrendingUp,
   TrendingDown,
-  ArrowUp,
-  Loader2,
+  TrendingUp,
 } from "lucide-react";
 import { cn, formatDateLabel } from "@/lib/shared/utils";
 import { EditorialTop5 } from "@/components/cashier/EditorialTop5";
-import {
-  computeSlotWorkedMinutes,
-  getCashierSlotLaborHours,
-  type CashierAttendanceShiftMarks,
-} from "@/lib/hourly/cashier-slot-labor";
+import type { CashierAttendanceShiftMarks } from "@/lib/hourly/cashier-slot-labor";
 import { escapeCsvValue, sanitizeExportText } from "@/lib/shared/export-utils";
 import { DEFAULT_LINES } from "@/lib/shared/constants";
-import type { Sede } from "@/lib/shared/constants";
 import type {
   HourlyAnalysisData,
-  HourlyPersonContribution,
   HourlyPersonSalesSlot,
 } from "@/types";
-
-type HourlyAnalysisDashboardContext = "productividad" | "jornada-extendida";
-
-interface HourlyAnalysisProps {
-  availableDates: string[];
-  availableSedes: Sede[];
-  allowedLineIds?: string[];
-  defaultDate?: string;
-  defaultSede?: string;
-  defaultLine?: string;
-  sections?: Array<"map" | "overtime">;
-  defaultSection?: "map" | "overtime";
-  showTimeFilters?: boolean;
-  showTopDateFilter?: boolean;
-  showTopLineFilter?: boolean;
-  showSedeFilters?: boolean;
-  showDepartmentFilterInOvertime?: boolean;
-  enableOvertimeDateRange?: boolean;
-  alexConsistencyMode?: boolean;
-  showComparison?: boolean;
-  badgeLabel?: string;
-  panelTitle?: string;
-  panelDescription?: string;
-  showPersonBreakdown?: boolean;
-  defaultPersonBreakdownView?: PersonBreakdownView;
-  hidePersonBreakdownTabs?: boolean;
-  dashboardContext?: HourlyAnalysisDashboardContext;
-  alexTotalsOverride?: {
-    moreThan72With2: number;
-    moreThan92: number;
-    oddMarks: number;
-    absences: number;
-  };
-  exportRef?: MutableRefObject<HourlyAnalysisExportHandle | null>;
-  /** Rango del filtro global (p. ej. productividad). Si hay mas de un dia, el ranking de cajeros se agrega en el servidor; el detalle por franja solo aplica con un dia. */
-  cashierDateRange?: { start: string; end: string };
-  /** Compara ventas totales por cajero: mes anterior (completo) vs mes en curso hasta la fecha fin del filtro. */
-  cashierMonthComparison?: boolean;
-  onCashierMonthComparisonToggle?: () => void;
-  /** Cuando el bloque de cajeros termina de cargar tras un cambio de modo (p. ej. aviso al padre para quitar overlay). */
-  onCashierViewReady?: () => void;
-}
-
-const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
-  weekday: "long",
-  day: "2-digit",
-  month: "long",
-  year: "numeric",
-};
-
-type OvertimeEmployee = NonNullable<
-  HourlyAnalysisData["overtimeEmployees"]
->[number];
-type PersonBreakdownView = "individual" | "franjas";
-type OvertimeSortField =
-  | "fecha"
-  | "horas"
-  | "marcaciones"
-  | "incidencia"
-  | "estado"
-  | "nomina"
-  | "departamento";
-type OvertimeSortDirection = "asc" | "desc";
-type CashierSortField = "totalSales" | "workedHours" | "vtaHr";
-
-export type HourlyAnalysisExportHandle = {
-  exportCsv: () => boolean;
-  exportXlsx: () => Promise<boolean>;
-};
-
-const CASHIER_MONTH_TOP_N = 5;
-/** Valor interno del `<select>` para filtrar cajeros sin cargo (no usar como cargo real). */
-const CASHIER_CARGO_SELECT_EMPTY = "__sin_cargo__";
-
-/**
- * Cargos estandar del area de cajas que SIEMPRE deben aparecer en el filtro
- * "Cargo" del bloque "Por cajeros", aunque para el usuario actual no haya
- * personas visibles de ese cargo (p. ej. cedulas ocultas). Se unifican con
- * cualquier cargo extra que llegue dinamicamente desde la data.
- */
-const CASHIER_FIXED_CARGOS: readonly string[] = [
-  "CAJERO 36 HORAS",
-  "CAJERO MEDIO TIEMPO",
-  "CAJEROS",
-  "SUPERVISOR (A) DE CAJA",
-];
-
-const totalPersonContributionSales = (person: HourlyPersonContribution) => {
-  if (person.periodTotalSales != null) return person.periodTotalSales;
-  return person.hourlySales.reduce((sum, slot) => sum + slot.sales, 0);
-};
-
-const getContributionLaborMinutes = (
-  person: HourlyPersonContribution,
-  bucketMinutes: number,
-) => {
-  const att = person.attendanceWorkedHours;
-  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
-    return Math.round(att * 60);
-  }
-  const slots =
-    (typeof person.activeSlotsCount === "number"
-      ? person.activeSlotsCount
-      : person.hourlySales.length) || 0;
-  return slots * bucketMinutes;
-};
-
-const rankTopCashiers = (
-  people: HourlyPersonContribution[] | undefined,
-  limit: number,
-  bucketMinutes: number,
-): Array<{
-  personKey: string;
-  personName: string;
-  personId: string | null;
-  sales: number;
-  hours: number;
-  vtaHr: number;
-}> => {
-  if (!people?.length) return [];
-  const withMetrics = people.map((p) => {
-    const sales = totalPersonContributionSales(p);
-    const minutes = getContributionLaborMinutes(p, bucketMinutes);
-    const hours = minutes / 60;
-    const vtaHr = hours > 0 ? sales / 1_000_000 / hours : 0;
-    return {
-      personKey: p.personKey,
-      personName: p.personName,
-      personId: p.personId?.trim() ? p.personId : null,
-      sales,
-      hours,
-      vtaHr,
-    };
-  });
-  withMetrics.sort((a, b) => {
-    if (b.vtaHr !== a.vtaHr) return b.vtaHr - a.vtaHr;
-    return b.sales - a.sales;
-  });
-  return withMetrics
-    .filter((r) => r.sales > 0 && r.hours > 0)
-    .slice(0, limit);
-};
-
-const rankImproveCashiers = (
-  people: HourlyPersonContribution[] | undefined,
-  limit: number,
-  bucketMinutes: number,
-): Array<{
-  personKey: string;
-  personName: string;
-  personId: string | null;
-  sales: number;
-  hours: number;
-  vtaHr: number;
-}> => {
-  if (!people?.length) return [];
-  const withMetrics = people.map((p) => {
-    const sales = totalPersonContributionSales(p);
-    const minutes = getContributionLaborMinutes(p, bucketMinutes);
-    const hours = minutes / 60;
-    const vtaHr = hours > 0 ? sales / 1_000_000 / hours : 0;
-    return {
-      personKey: p.personKey,
-      personName: p.personName,
-      personId: p.personId?.trim() ? p.personId : null,
-      sales,
-      hours,
-      vtaHr,
-    };
-  });
-  withMetrics.sort((a, b) => {
-    if (a.vtaHr !== b.vtaHr) return a.vtaHr - b.vtaHr;
-    return b.sales - a.sales;
-  });
-  return withMetrics
-    .filter((r) => r.sales > 0 && r.hours > 0)
-    .slice(0, limit);
-};
-
-/** Mes calendario anterior (completo) vs mes que contiene `anchorISO`, desde el dia 1 hasta `anchorISO` (o fin de mes si es menor). */
-const getCashierMonthComparisonRanges = (anchorISO: string) => {
-  const [y, m, d] = anchorISO.split("-").map(Number);
-  const anchor = new Date(y, m - 1, d);
-  const yi = anchor.getFullYear();
-  const mi = anchor.getMonth();
-
-  const prevMonthLast = new Date(yi, mi, 0);
-  const prevMonthFirst = new Date(yi, mi - 1, 1);
-  const currMonthFirst = new Date(yi, mi, 1);
-  const currMonthLast = new Date(yi, mi + 1, 0);
-
-  const toKey = (dt: Date) => {
-    const mm = String(dt.getMonth() + 1).padStart(2, "0");
-    const dd = String(dt.getDate()).padStart(2, "0");
-    return `${dt.getFullYear()}-${mm}-${dd}`;
-  };
-
-  const currentEnd = new Date(
-    Math.min(anchor.getTime(), currMonthLast.getTime()),
-  );
-
-  const labelPrevious = `${formatDateLabel(toKey(prevMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(
-    toKey(prevMonthLast),
-    {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    },
-  )}`;
-  const labelCurrent = `${formatDateLabel(toKey(currMonthFirst), { day: "2-digit", month: "short" })} – ${formatDateLabel(
-    toKey(currentEnd),
-    {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    },
-  )}`;
-
-  return {
-    previous: { start: toKey(prevMonthFirst), end: toKey(prevMonthLast) },
-    current: { start: toKey(currMonthFirst), end: toKey(currentEnd) },
-    labelPrevious,
-    labelCurrent,
-  };
-};
-
-const PERSON_BREAKDOWN_VIEW_OPTIONS: Array<{
-  value: PersonBreakdownView;
-  label: string;
-  hint: string;
-}> = [
-  {
-    value: "individual",
-    label: "Aporte individual",
-    hint: "Cajeros, aporte y picos",
-  },
-  {
-    value: "franjas",
-    label: "Desglose por franjas",
-    hint: "Horas, ventas y variaciones",
-  },
-];
-
-const getHeatColor = (ratioPercent: number) => {
-  if (ratioPercent >= 110) return "#16a34a";
-  if (ratioPercent >= 100) return "#facc15";
-  if (ratioPercent >= 90) return "#f97316";
-  return "#dc2626";
-};
-
-const formatProductivity = (value: number) => value.toFixed(3);
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(value);
-
-const formatCurrencyWithoutSixZeros = (value: number) =>
-  `$ ${(value / 1_000_000).toLocaleString("es-CO", {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  })}`;
-
-const formatCurrencyMillionsOneDecimal = (value: number) =>
-  `$ ${(value / 1_000_000).toLocaleString("es-CO", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })}`;
-
-const normalizeDateKeyForDisplay = (raw: string) => {
-  const value = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  if (/^\d{8}$/.test(value)) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-  return value;
-};
-
-const cashierHourDetailCacheKey = (personKey: string, isoDate: string) =>
-  `${personKey}|||${isoDate}`;
-
-const loadExcelJs = () => import("exceljs");
-
-const formatHoursBase60 = (value: number) => {
-  if (!Number.isFinite(value)) return "0.00";
-  const sign = value < 0 ? "-" : "";
-  const abs = Math.abs(value);
-  let hours = Math.floor(abs);
-  let minutes = Math.round((abs - hours) * 60);
-  if (minutes >= 60) {
-    hours += 1;
-    minutes = 0;
-  }
-  return `${sign}${hours}.${String(minutes).padStart(2, "0")}`;
-};
-
-/** Horas desde minutos totales; maximo 2 decimales (tabla cajeros). */
-const formatTotalLaborMinutesLabel = (totalMinutes: number) => {
-  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return "0,00h";
-  const hoursVal = totalMinutes / 60;
-  const rounded = Math.round(hoursVal * 100) / 100;
-  const str = rounded.toLocaleString("es-CO", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-    useGrouping: true,
-  });
-  return `${str}h`;
-};
-
-const decimalHoursToMinutes = (value: number) => {
-  if (!Number.isFinite(value)) return 0;
-  return Math.round(value * 60);
-};
-
-const parseBase60HoursInputToMinutes = (value: string): number | null => {
-  const raw = value.trim();
-  if (!raw) return null;
-
-  const normalized = raw.replace(",", ".");
-  const [hoursPartRaw, minutesPartRaw] = normalized.split(".");
-  const hours = Number(hoursPartRaw);
-  if (!Number.isFinite(hours) || hours < 0) return null;
-
-  if (minutesPartRaw === undefined) {
-    return Math.round(hours * 60);
-  }
-
-  const onlyDigits = minutesPartRaw.replace(/\D/g, "");
-  if (!onlyDigits) return Math.round(hours * 60);
-
-  // 9.2 -> 9:20, 9.12 -> 9:12
-  const paddedMinutes =
-    onlyDigits.length === 1 ? `${onlyDigits}0` : onlyDigits.slice(0, 2);
-  const minutes = Number(paddedMinutes);
-  if (!Number.isFinite(minutes)) return null;
-
-  return Math.round(hours) * 60 + Math.min(59, Math.max(0, minutes));
-};
-
-const calcVtaHr = (sales: number, laborHours: number) =>
-  laborHours > 0 ? sales / 1_000_000 / laborHours : 0;
-
-/** Minutos laborales: prioriza `asistencia_horas` si el API cruzó cedula/nombre; si no, franjas con venta. */
-const getCashierLaborMinutes = (
-  person: HourlyPersonContribution,
-  activeSlotsCount: number,
-  bucketMinutes: number,
-) => {
-  const att = person.attendanceWorkedHours;
-  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
-    return decimalHoursToMinutes(att);
-  }
-  return activeSlotsCount * bucketMinutes;
-};
-
-/** Minutos efectivos del turno a partir de marcas (entrada/salida menos descansos). */
-const computeShiftLaborMinutes = (
-  shift: CashierAttendanceShiftMarks | null | undefined,
-): number | null => {
-  if (!shift) return null;
-  const entry = shift.markInMinute;
-  const exit = shift.markOutMinute;
-  if (entry === null || exit === null) return null;
-  if (entry > exit) return null;
-  let total = exit - entry;
-  const { break1Minute: b1, break2Minute: b2 } = shift;
-  if (b1 !== null && b2 !== null && b1 < b2) {
-    const start = Math.max(entry, b1);
-    const end = Math.min(exit, b2);
-    if (end > start) total -= end - start;
-  }
-  return total > 0 ? total : 0;
-};
-
-/**
- * Minutos de un dia en desglose: si hay marcas usamos entrada-salida-descansos
- * (consistente con el calculo por franja). En su defecto, `total_horas_calculadas`
- * de asistencia o, como ultimo recurso, las franjas con venta.
- */
-const getCashierDayLaborMinutes = (
-  day: NonNullable<HourlyPersonContribution["dailySales"]>[number],
-  bucketMinutes: number,
-) => {
-  const fromMarks = computeShiftLaborMinutes(day.attendanceShift);
-  if (fromMarks !== null && fromMarks > 0) return fromMarks;
-  const att = day.attendanceWorkedHours;
-  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
-    return decimalHoursToMinutes(att);
-  }
-  return (day.activeSlotsCount ?? 0) * bucketMinutes;
-};
-
-const slotVtaHrFromAttendance = (
-  sales: number,
-  slotStartMinute: number,
-  bucketMinutes: number,
-  shift: CashierAttendanceShiftMarks | null | undefined,
-) => {
-  const laborHours = getCashierSlotLaborHours(
-    slotStartMinute,
-    bucketMinutes,
-    shift,
-  );
-  return calcVtaHr(sales, laborHours);
-};
-
-const minuteOfDayToHHMM = (minute: number | null | undefined): string | null => {
-  if (typeof minute !== "number" || !Number.isFinite(minute) || minute < 0) {
-    return null;
-  }
-  const h = Math.floor(minute / 60) % 24;
-  const m = minute % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-};
-
-const formatSlotWorkedMinutesLabel = (
-  slotStartMinute: number,
-  bucketMinutes: number,
-  shift: CashierAttendanceShiftMarks | null | undefined,
-): string => {
-  if (!shift || shift.markInMinute === null || shift.markOutMinute === null) {
-    return "--";
-  }
-  const minutes = computeSlotWorkedMinutes(slotStartMinute, bucketMinutes, shift);
-  return `${minutes} min`;
-};
-
-const sumWorkedMinutesAcrossSlots = (
-  slots: ReadonlyArray<{ slotStartMinute: number }>,
-  bucketMinutes: number,
-  shift: CashierAttendanceShiftMarks | null | undefined,
-): number => {
-  if (!shift || shift.markInMinute === null || shift.markOutMinute === null) {
-    return 0;
-  }
-  return slots.reduce(
-    (total, slot) =>
-      total +
-      computeSlotWorkedMinutes(slot.slotStartMinute, bucketMinutes, shift),
-    0,
-  );
-};
-
-const buildSlotLaborTooltip = (
-  slotStartMinute: number,
-  bucketMinutes: number,
-  shift: CashierAttendanceShiftMarks | null | undefined,
-): string => {
-  if (!shift) {
-    return "Sin marcas de asistencia: se asume franja completa.";
-  }
-  const minutes = computeSlotWorkedMinutes(slotStartMinute, bucketMinutes, shift);
-  const entry = minuteOfDayToHHMM(shift.markInMinute);
-  const exit = minuteOfDayToHHMM(shift.markOutMinute);
-  const break1 = minuteOfDayToHHMM(shift.break1Minute);
-  const break2 = minuteOfDayToHHMM(shift.break2Minute);
-  const partes: string[] = [];
-  if (entry && exit) partes.push(`Turno ${entry}-${exit}`);
-  if (break1 && break2) partes.push(`descanso ${break1}-${break2}`);
-  if (minutes <= 0) {
-    partes.push(
-      `Franja fuera del turno: se asume ${bucketMinutes} min como respaldo`,
-    );
-  } else {
-    partes.push(`${minutes} min trabajados en la franja`);
-  }
-  return partes.join(" | ");
-};
-
-const formatShiftMarksLabel = (
-  shift: CashierAttendanceShiftMarks | null | undefined,
-): string | null => {
-  if (!shift) return null;
-  const entry = minuteOfDayToHHMM(shift.markInMinute);
-  const exit = minuteOfDayToHHMM(shift.markOutMinute);
-  if (!entry || !exit) return null;
-  const break1 = minuteOfDayToHHMM(shift.break1Minute);
-  const break2 = minuteOfDayToHHMM(shift.break2Minute);
-  if (break1 && break2) {
-    return `Marcas ${entry}-${break1} / ${break2}-${exit}`;
-  }
-  return `Marcas ${entry}-${exit}`;
-};
-
-/**
- * Linea compacta con las marcas de asistencia del dia, mismo formato que el
- * usado debajo de cada fecha en el detalle por rango (p. ej.
- * "Marcas 07:30-12:34 / 16:31-20:08"). Si no hay marcas utiles, no pinta nada.
- */
-const CashierShiftMarks = ({
-  shift,
-}: {
-  shift: CashierAttendanceShiftMarks | null | undefined;
-}) => {
-  const marksLabel = formatShiftMarksLabel(shift);
-  if (!marksLabel) return null;
-  return (
-    <p className="px-2 pb-1 text-[10px] font-medium text-(--cashier-muted)/80">
-      {marksLabel}
-    </p>
-  );
-};
-
-const cashierLaborHoursSourceTitle = (person: HourlyPersonContribution) => {
-  const m = person.attendanceMatchMode;
-  if (m === "cedula") {
-    return "Horas desde asistencia (total_laborado_horas), cruce por cedula.";
-  }
-  if (m === "id_texto") {
-    return "Horas desde asistencia, cruce por identificador (no numerico o corto).";
-  }
-  if (m === "nombre") {
-    return "Horas desde asistencia, cruce por nombre unico en ventas y en asistencia con una sola cedula.";
-  }
-  return "Horas estimadas por franjas con venta; sin match fiable en asistencia.";
-};
-
-const parseTimeToMinute = (value: string) => {
-  const [hours, minutes] = value.split(":").map(Number);
-  if (
-    Number.isNaN(hours) ||
-    Number.isNaN(minutes) ||
-    hours < 0 ||
-    hours > 23 ||
-    minutes < 0 ||
-    minutes > 59
-  ) {
-    return 0;
-  }
-  return hours * 60 + minutes;
-};
-
-const OVERTIME_PAGE_SIZE = 150;
-const OVERTIME_PAGE_TAB_WINDOW = 8;
-const CASHIER_PAGE_SIZE_OPTIONS = [10, 30, 50, 100, 200] as const;
-const CASHIER_PAGE_SIZE_DEFAULT = 30;
-const CASHIER_PAGE_TAB_WINDOW = 8;
-// Umbrales para los botones "Ver personas >X:YYh".
-// Se usa `>` (estricto), asi que las constantes apuntan al ultimo minuto
-// excluido. La etiqueta del boton se mantiene en X:20 por convencion del
-// negocio, pero el filtro arranca un minuto despues del numero redondo (X:30)
-// para no contar a quienes terminan exactamente en X:30h (jornada esperada
-// + tiempo de gracia clavado al minuto 30).
-// >9:19 -> arranca en 9:20 (umbral inclusivo: cuenta desde 9:20h en adelante).
-const ALERT_THRESHOLD_MINUTES = 9 * 60 + 19;
-const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 30; // >7:30 -> arranca en 7:31
-// Limite superior del rango ">7:20H con 2 marcaciones" (inclusivo). Se queda
-// en 9:19 para no solaparse con el boton ">9:20H" (que ahora arranca en 9:20).
-const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = 9 * 60 + 19;
-const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";
-const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-200";
-
-const compareOvertimeText = (left: string, right: string) =>
-  left.localeCompare(right, "es", { sensitivity: "base" });
-
-const getOvertimeDateTimestamp = (employee: OvertimeEmployee) => {
-  if (!employee.workedDate) return 0;
-  const timestamp = new Date(employee.workedDate).getTime();
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-};
-
-const getOvertimeIncidentValue = (employee: OvertimeEmployee) =>
-  employee.incident?.trim() ?? "";
-
-const getOvertimeEstadoValue = (employee: OvertimeEmployee) =>
-  employee.estadoAsistencia?.trim() ?? "";
-
-const getOvertimeNominaValue = (employee: OvertimeEmployee) =>
-  employee.nomina?.trim() ?? "";
-
-const getOvertimeDepartmentValue = (employee: OvertimeEmployee) =>
-  employee.department?.trim() || employee.lineName?.trim() || "";
-
-const minuteToTime = (value: number) => {
-  const safe = Math.max(0, Math.min(1439, value));
-  const hour = Math.floor(safe / 60);
-  const minute = safe % 60;
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-};
-
-const normalizeSedeValue = (value: string) =>
-  value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, " ");
-
-const canonicalizeSedeValue = (value: string) => {
-  const normalized = normalizeSedeValue(value);
-  const compact = normalized.replace(/\s+/g, "");
-  if (
-    normalized === "calle 5a" ||
-    normalized === "la 5a" ||
-    normalized === "calle 5" ||
-    compact === "calle5a" ||
-    compact === "la5a" ||
-    compact === "calle5"
-  ) {
-    return normalizeSedeValue("Calle 5ta");
-  }
-  return normalized;
-};
-
-const PPT_SEDE_KEYS = new Set([
-  "panificadora",
-  "planta desposte mixto",
-  "planta desprese pollo",
-]);
-
-const isPptSede = (sedeName: string) =>
-  PPT_SEDE_KEYS.has(canonicalizeSedeValue(sedeName));
-
-const normalizeIncidentValue = (value: string | null | undefined) =>
-  (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, " ");
-
-const isAbsenceIncident = (value: string | null | undefined) =>
-  normalizeIncidentValue(value).includes("inasistencia");
-
-const normalizeEmployeeType = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "");
-
-const HourlyLoadingSkeleton = () => (
-  <div className="space-y-3 animate-pulse">
-    {Array.from({ length: 14 }).map((_, i) => (
-      <div key={i} className="flex items-center gap-3">
-        <div className="h-4 w-16 shrink-0 rounded-full bg-slate-200/70" />
-        <div className="h-9 flex-1 rounded-full bg-slate-200/70" />
-        <div className="h-4 w-24 shrink-0 rounded-full bg-slate-200/70" />
-      </div>
-    ))}
-  </div>
-);
-
-const HourBar = ({
-  label,
-  productivity,
-  totalSales,
-  employeesPresent,
-  maxProductivity,
-  isExpanded,
-  onToggle,
-  lines,
-  employeesByLine,
-  heatColor,
-  bucketMinutes,
-}: {
-  label: string;
-  productivity: number;
-  totalSales: number;
-  employeesPresent: number;
-  maxProductivity: number;
-  isExpanded: boolean;
-  onToggle: () => void;
-  lines: HourlyAnalysisData["hours"][number]["lines"];
-  employeesByLine?: Record<string, number>;
-  heatColor: string;
-  bucketMinutes: number;
-}) => {
-  const percentage =
-    maxProductivity > 0 ? (productivity / maxProductivity) * 100 : 0;
-  const hasActivity = totalSales > 0 || employeesPresent > 0;
-
-  return (
-    <div className="group rounded-2xl border border-slate-200/60 bg-white/80 p-2 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.35)] transition-all hover:-translate-y-0.5 hover:border-amber-200/70 hover:bg-white">
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={!hasActivity}
-        className="flex w-full items-center gap-3 text-left transition-opacity disabled:opacity-40"
-      >
-        <div className="w-26 shrink-0 text-right">
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700 ring-1 ring-slate-200/60">
-            {label}
-          </span>
-        </div>
-
-        <div className="relative h-9 flex-1 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200/70">
-          {percentage > 0 && (
-            <div
-              className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
-              style={{
-                width: `${Math.max(percentage, 2)}%`,
-                backgroundColor: heatColor,
-              }}
-            />
-          )}
-          {hasActivity && (
-            <div className="absolute inset-0 flex items-center justify-between px-3">
-              <span className="inline-flex items-center rounded-full bg-white/90 px-2 py-0.5 text-xs font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200/60">
-                Vta/Hr: {formatProductivity(productivity)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex w-64 shrink-0 items-center justify-end gap-2">
-          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
-            {formatCurrency(totalSales)}
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-200/70">
-            <Users className="h-3.5 w-3.5" />
-            {employeesPresent}
-          </span>
-          {hasActivity && (
-            <ChevronDown
-              className={`h-3.5 w-3.5 text-slate-400 transition-transform group-hover:text-mercamio-600 ${
-                isExpanded ? "rotate-180" : ""
-              }`}
-            />
-          )}
-        </div>
-      </button>
-
-      {isExpanded && hasActivity && (
-        <div className="mt-2 ml-26 mr-64 rounded-2xl border border-slate-200/70 bg-white/90 p-3 shadow-sm">
-          <div className="grid grid-cols-12 gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500 ring-1 ring-slate-200/60">
-            <span className="col-span-8">Linea</span>
-            <span className="col-span-4 text-right">Vta/Hr</span>
-          </div>
-          <div className="mt-2 space-y-2">
-            {lines
-              .filter((l) => l.sales > 0)
-              .sort((a, b) => b.sales - a.sales)
-              .map((line) => {
-                const lineEmployees = employeesByLine?.[line.lineId] ?? 0;
-                const lineLaborHours = lineEmployees * (bucketMinutes / 60);
-                const lineProductivity = calcVtaHr(line.sales, lineLaborHours);
-                return (
-                  <div
-                    key={line.lineId}
-                    className="grid grid-cols-12 items-center gap-2 rounded-xl border border-slate-200/60 bg-white px-3 py-2 text-sm shadow-[0_6px_20px_-16px_rgba(15,23,42,0.35)]"
-                  >
-                    <div className="col-span-8">
-                      <p className="font-semibold text-slate-900">
-                        {line.lineName}
-                      </p>
-                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: "100%",
-                            backgroundColor: heatColor,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <span className="col-span-4 text-right font-semibold text-slate-800">
-                      {formatProductivity(lineProductivity)}
-                    </span>
-                  </div>
-                );
-              })}
-          </div>
-          {lines.every((l) => l.sales === 0) && (
-            <p className="py-2 text-center text-xs text-slate-500">
-              Sin ventas registradas en esta hora
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
+import type {
+  CashierSortField,
+  HourlyAnalysisDashboardContext,
+  HourlyAnalysisProps,
+  OvertimeEmployee,
+  OvertimeSortDirection,
+  OvertimeSortField,
+  PersonBreakdownView,
+} from "@/components/hourly-analysis/types";
+export type { HourlyAnalysisExportHandle } from "@/components/hourly-analysis/types";
+import {
+  ALERT_THRESHOLD_MINUTES,
+  CASHIER_CARGO_SELECT_EMPTY,
+  CASHIER_FIXED_CARGOS,
+  CASHIER_MONTH_TOP_N,
+  CASHIER_PAGE_SIZE_DEFAULT,
+  CASHIER_PAGE_SIZE_OPTIONS,
+  CASHIER_PAGE_TAB_WINDOW,
+  hourlyDateLabelOptions,
+  OVERTIME_PAGE_SIZE,
+  OVERTIME_PAGE_TAB_WINDOW,
+  OVERTIME_TABLE_INNER_BORDER_CLASS,
+  OVERTIME_TABLE_OUTER_BORDER_CLASS,
+  PERSON_BREAKDOWN_VIEW_OPTIONS,
+  TWO_MARKS_ALERT_THRESHOLD_MINUTES,
+  TWO_MARKS_ALERT_UPPER_BOUND_MINUTES,
+} from "@/components/hourly-analysis/hourly-constants";
+import {
+  calcVtaHr,
+  cashierHourDetailCacheKey,
+  decimalHoursToMinutes,
+  formatCurrency,
+  formatCurrencyMillionsOneDecimal,
+  formatCurrencyWithoutSixZeros,
+  formatHoursBase60,
+  formatProductivity,
+  formatTotalLaborMinutesLabel,
+  getHeatColor,
+  loadExcelJs,
+  minuteToTime,
+  normalizeDateKeyForDisplay,
+  parseBase60HoursInputToMinutes,
+  parseTimeToMinute,
+} from "@/components/hourly-analysis/hourly-formatters";
+import {
+  buildSlotLaborTooltip,
+  cashierLaborHoursSourceTitle,
+  formatShiftMarksLabel,
+  formatSlotWorkedMinutesLabel,
+  getCashierDayLaborMinutes,
+  getCashierLaborMinutes,
+  getCashierMonthComparisonRanges,
+  rankImproveCashiers,
+  rankTopCashiers,
+  slotVtaHrFromAttendance,
+  sumWorkedMinutesAcrossSlots,
+} from "@/components/hourly-analysis/cashier-utils";
+import {
+  canonicalizeSedeValue,
+  compareOvertimeText,
+  getOvertimeDateTimestamp,
+  getOvertimeDepartmentValue,
+  getOvertimeEstadoValue,
+  getOvertimeIncidentValue,
+  getOvertimeNominaValue,
+  isAbsenceIncident,
+  isPptSede,
+  normalizeEmployeeType,
+} from "@/components/hourly-analysis/overtime-sede-utils";
+import { CashierShiftMarks } from "@/components/hourly-analysis/CashierShiftMarks";
+import { HourBar } from "@/components/hourly-analysis/HourBar";
+import { HourlyLoadingSkeleton } from "@/components/hourly-analysis/HourlyLoadingSkeleton";
 
 export const HourlyAnalysis = ({
   availableDates,
