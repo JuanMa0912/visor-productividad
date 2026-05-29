@@ -82,6 +82,21 @@ const nextConfig: NextConfig = {
     serverSourceMaps: false,
   },
   allowedDevOrigins,
+  // Silencia logs de incoming requests muy ruidosos en consola de dev.
+  // Solo afecta `npm run dev`; no impacta produccion.
+  // - auth/heartbeat y auth/me se ejecutan en bucle (polling de sesion)
+  // - inventario-x-item, ventas-x-item y rotacion mandan TODAS las sedes/lineas/items
+  //   por query string y generan URLs de varios miles de chars
+  logging: {
+    incomingRequests: {
+      ignore: [
+        /^\/api\/auth\/(heartbeat|me)$/,
+        /^\/api\/inventario-x-item/,
+        /^\/api\/ventas-x-item/,
+        /^\/api\/rotacion/,
+      ],
+    },
+  },
   turbopack: {
     root: process.cwd(),
   },
