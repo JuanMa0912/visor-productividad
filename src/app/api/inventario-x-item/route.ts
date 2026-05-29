@@ -16,6 +16,7 @@ import {
 import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
+  type RotacionBaseSqlFields,
 } from "@/lib/rotacion/base-fields";
 
 type DateRangeRow = {
@@ -121,6 +122,25 @@ const HIDDEN_SEDE_KEYS = new Set([
   "importados",
 ]);
 
+/**
+ * Filtro SQL equivalente a `HIDDEN_SEDE_KEYS` (sedes administrativas / centros de distribucion
+ * que el usuario nunca quiere ver). Aplicarlo en SQL evita procesar y transferir filas que
+ * luego se descartan en Node, ademas de aligerar window functions y aggregations.
+ *
+ * Recibe la expresion textual que produce `sedeNameExpr` (ya viene COALESCE'd y casteada).
+ */
+const buildHiddenSedeWhereClause = (sedeNameExpr: string) =>
+  `LOWER(REGEXP_REPLACE(
+    TRANSLATE(
+      ${sedeNameExpr},
+      'áéíóúÁÉÍÓÚñÑ',
+      'aeiouAEIOUnN'
+    ),
+    '[^a-zA-Z0-9]+',
+    '',
+    'g'
+  )) NOT IN ('adm', 'cedicavasa', 'centrodistribucioncavasa', 'importados')`;
+
 let dateRangeCache:
   | { value: { min: string | null; max: string | null }; expiresAt: number }
   | null = null;
@@ -215,6 +235,7 @@ const getAvailableDateRange = async () => {
 
 const getInventoryFilterCatalog = async (
   dateRangeCompact: { start: string; end: string },
+  precomputedFields?: RotacionBaseSqlFields,
 ): Promise<InventoryFilterCatalog> => {
   const now = Date.now();
   const dateKey = `${dateRangeCompact.start}-${dateRangeCompact.end}`;
@@ -228,7 +249,7 @@ const getInventoryFilterCatalog = async (
 
   const client = await (await getDbPool()).connect();
   try {
-    const fields = await resolveRotacionBaseSqlFields(client);
+    const fields = precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
     const dateColumn = fields.dateColumn;
     const result = await client.query(
       `
@@ -239,11 +260,14 @@ const getInventoryFilterCatalog = async (
       FROM rotacion_base_item_dia_sede
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
+        AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
       `,
       [dateRangeCompact.start, dateRangeCompact.end],
     );
 
+    // Red de seguridad: el WHERE SQL ya filtra las sedes ocultas, pero conservamos
+    // este filter como defensa por si alguna sede futura cae fuera del TRANSLATE basico.
     const sedes = ((result.rows ?? []) as InventoryFilterDbRow[])
       .map((row) => ({
         empresa: row.empresa,
@@ -305,14 +329,17 @@ const queryInventoryCatalogRows = async ({
   dateRangeCompact,
   empresas,
   sedes,
+  precomputedFields,
 }: {
   dateRangeCompact: { start: string; end: string };
   empresas: string[];
   sedes: string[];
+  precomputedFields?: RotacionBaseSqlFields;
 }): Promise<InventorySummaryRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
-    const fields = await resolveRotacionBaseSqlFields(client);
+    const fields =
+      precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
     const dateColumn = fields.dateColumn;
     const result = await client.query(
       `
@@ -343,6 +370,7 @@ const queryInventoryCatalogRows = async ({
         AND ${fields.itemPresentCondition}
         AND ($2::text[] IS NULL OR ${fields.empresaExpr} = ANY($2::text[]))
         AND ($3::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($3::text[]))
+        AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
       GROUP BY
         ${fields.lineExpr},
         ${fields.n1CodeExpr},
@@ -375,14 +403,17 @@ const queryInventorySummaryRows = async ({
   dateRangeCompact,
   empresas,
   sedes,
+  precomputedFields,
 }: {
   dateRangeCompact: { start: string; end: string };
   empresas: string[];
   sedes: string[];
+  precomputedFields?: RotacionBaseSqlFields;
 }): Promise<InventorySummaryRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
-    const fields = await resolveRotacionBaseSqlFields(client);
+    const fields =
+      precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
     const dateColumn = fields.dateColumn;
     const result = await client.query(
       `
@@ -405,13 +436,11 @@ const queryInventorySummaryRows = async ({
           AND ${fields.itemPresentCondition}
           AND ($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))
           AND ($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))
+          AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
       ),
       ranked AS (
         SELECT
           *,
-          MIN(consulta_date) OVER (
-            PARTITION BY empresa, sede_id, item
-          ) AS first_consulta_date,
           MAX(consulta_date) OVER (
             PARTITION BY empresa, sede_id, item
           ) AS latest_consulta_date
@@ -539,6 +568,7 @@ const queryInventoryMatrixRows = async ({
   lines,
   subcategory,
   items,
+  precomputedFields,
 }: {
   dateRangeCompact: { start: string; end: string };
   empresas: string[];
@@ -546,10 +576,12 @@ const queryInventoryMatrixRows = async ({
   lines: InventoryLineFilter[];
   subcategory: InventarioSubcategoryKey | null;
   items: string[];
+  precomputedFields?: RotacionBaseSqlFields;
 }): Promise<InventoryMatrixRow[]> => {
   const client = await (await getDbPool()).connect();
   try {
-    const fields = await resolveRotacionBaseSqlFields(client);
+    const fields =
+      precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
     const dateColumn = fields.dateColumn;
     const params: Array<string | string[] | null> = [
       dateRangeCompact.start,
@@ -563,6 +595,9 @@ const queryInventoryMatrixRows = async ({
       fields.itemPresentCondition,
       `($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))`,
       `($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))`,
+      // Excluye sedes administrativas / centros de distribucion antes del window function,
+      // alineado con HIDDEN_SEDE_KEYS y el filtro defensivo posterior en Node.
+      buildHiddenSedeWhereClause(fields.sedeNameExpr),
     ];
 
     if (subcategory === "perecederos") {
@@ -604,6 +639,29 @@ const queryInventoryMatrixRows = async ({
         return params.length;
       })() : null;
 
+    // Cuando el usuario ya filtro por items concretos, no tiene sentido evaluar el
+    // CTE `top_items` (un GROUP BY + ORDER BY SUM(...) DESC sobre `ranked`).
+    // En ese caso lo omitimos por completo y filtramos directo en `aggregated`.
+    const topItemsCte = itemFilterParam
+      ? ""
+      : `,
+      top_items AS (
+        SELECT item
+        FROM ranked
+        WHERE consulta_date = latest_consulta_date
+        GROUP BY item
+        ORDER BY SUM(inventory_value) DESC NULLS LAST, item ASC
+        LIMIT 10
+      )`;
+
+    const itemMembershipClause = itemFilterParam
+      ? `item = ANY($${itemFilterParam}::text[])`
+      : "item IN (SELECT item FROM top_items)";
+
+    // Window function: para el dataset real (millones de filas con muchos PARTITION BY),
+    // resulta mas rapida que un GROUP BY + INNER JOIN porque Postgres resuelve MAX OVER
+    // en un solo pass ordenado y evita el hash join sobre tablas materializadas grandes.
+    // Probamos la variante con CTE `latest_dates` + JOIN y resulto 6x mas lenta.
     const result = await client.query(
       `
       WITH scoped AS (
@@ -627,22 +685,11 @@ const queryInventoryMatrixRows = async ({
       ranked AS (
         SELECT
           *,
-          MIN(consulta_date) OVER (
-            PARTITION BY empresa, sede_id, item
-          ) AS first_consulta_date,
           MAX(consulta_date) OVER (
             PARTITION BY empresa, sede_id, item
           ) AS latest_consulta_date
         FROM scoped
-      ),
-      top_items AS (
-        SELECT item
-        FROM ranked
-        WHERE consulta_date = latest_consulta_date
-        GROUP BY item
-        ORDER BY SUM(inventory_value) DESC NULLS LAST, item ASC
-        LIMIT ${itemFilterParam ? "999999" : "10"}
-      ),
+      )${topItemsCte},
       aggregated AS (
         SELECT
           empresa,
@@ -668,11 +715,7 @@ const queryInventoryMatrixRows = async ({
             END
           )::numeric AS inventory_value
         FROM ranked
-        WHERE ${
-          itemFilterParam
-            ? `item = ANY($${itemFilterParam}::text[])`
-            : "item IN (SELECT item FROM top_items)"
-        }
+        WHERE ${itemMembershipClause}
         GROUP BY
           empresa,
           sede_id,
@@ -888,16 +931,31 @@ export async function GET(request: Request) {
       ),
     ).slice(0, 10);
 
+    // Resolvemos los exprs de la tabla rotacion_base_item_dia_sede una sola vez por
+    // request. Antes cada helper abria su propio cliente y los resolvia, lo que
+    // implicaba 3 lookups y 3 reconstrucciones de exprs cuando se llamaba a las 3 en
+    // paralelo. La cache interna de columnas (5 min) ya estaba, pero el armado de
+    // expresiones se repetia y los pool.connect() de cada llamada se acumulaban.
+    const pool = await getDbPool();
+    const fieldsClient = await pool.connect();
+    let precomputedFields: RotacionBaseSqlFields;
+    try {
+      precomputedFields = await resolveRotacionBaseSqlFields(fieldsClient);
+    } finally {
+      fieldsClient.release();
+    }
+
     const [filters, rows, matrixRows] = await Promise.all([
-      getInventoryFilterCatalog({
-        start: dateStartCompact,
-        end: dateEndCompact,
-      }),
+      getInventoryFilterCatalog(
+        { start: dateStartCompact, end: dateEndCompact },
+        precomputedFields,
+      ),
       mode === "catalog"
         ? queryInventoryCatalogRows({
             dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
             empresas: requestedCompanies,
             sedes: requestedSedes,
+            precomputedFields,
           })
         : mode === "table" || mode === "filters"
           ? Promise.resolve<InventorySummaryRow[]>([])
@@ -905,6 +963,7 @@ export async function GET(request: Request) {
               dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },
               empresas: requestedCompanies,
               sedes: requestedSedes,
+              precomputedFields,
             }),
       mode === "catalog" || mode === "filters"
         ? Promise.resolve<InventoryMatrixRow[]>([])
@@ -915,6 +974,7 @@ export async function GET(request: Request) {
             lines,
             subcategory,
             items,
+            precomputedFields,
           }),
     ]);
 

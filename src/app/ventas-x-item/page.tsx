@@ -150,6 +150,8 @@ export default function VentasXItemPage() {
   const dbLoadInflightRef = useRef(false);
   const pendingDeepLinkItemRef = useRef<string | null>(null);
   const deepLinkInitRef = useRef(false);
+  /** Garantiza que `onLoadMeta` se llame una sola vez por montaje (min/max globales son estables). */
+  const metaLoadedRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -591,66 +593,51 @@ export default function VentasXItemPage() {
     dbLoadInflightRef.current = true;
     setLoadingDb(true);
     try {
-      const batchSize = USE_V2_API ? 300000 : 500000;
-      const collectedRows: VentasXItemRawRow[] = [];
-      let nextOffset = 0;
       let loadedStart = dateStart;
       let loadedEnd = dateEnd;
 
-      while (true) {
-        const params = new URLSearchParams({
-          start: dateStart,
-          end: dateEnd,
-          maxRows: String(batchSize),
-          offset: String(nextOffset),
-        });
-        params.set("empresa", empresasCargaSel.join(","));
-        const response = await fetch(
-          `${VENTAS_X_ITEM_API_BASE}?${params.toString()}`,
-          {
-            cache: "no-store",
-          },
-        );
-        const payload = (await response.json()) as {
-          rows?: VentasXItemRawRow[];
-          range?: { start?: string; end?: string };
-          hasMore?: boolean;
-          nextOffset?: number;
-          error?: string;
-          code?: string;
-          requestedStart?: string;
-          requestedEnd?: string;
-          availableStart?: string | null;
-          availableEnd?: string | null;
-          missingBoundary?: string;
-        };
-        if (!response.ok) {
-          if (payload.code === "DATE_NOT_FOUND") {
-            const availableRange =
-              payload.availableStart && payload.availableEnd
-                ? ` Rango disponible: ${payload.availableStart} a ${payload.availableEnd}.`
-                : "";
-            throw new Error(
-              `${payload.error ?? "La fecha solicitada no existe en la base de datos."}${availableRange}`,
-            );
-          }
-          throw new Error(payload.error ?? "No se pudo cargar datos desde base de datos.");
+      // Carga agregada (mode=summary): el backend ya agrega por (empresa, fecha, id_co, id_item),
+      // por lo que el payload es 5-20x menor que el de filas crudas y no requiere paginacion.
+      const params = new URLSearchParams({
+        mode: "summary",
+        start: dateStart,
+        end: dateEnd,
+      });
+      params.set("empresa", empresasCargaSel.join(","));
+      const response = await fetch(
+        `${VENTAS_X_ITEM_API_BASE}?${params.toString()}`,
+        {
+          cache: "no-store",
+        },
+      );
+      const payload = (await response.json()) as {
+        rows?: VentasXItemRawRow[];
+        range?: { start?: string; end?: string };
+        error?: string;
+        code?: string;
+        requestedStart?: string;
+        requestedEnd?: string;
+        availableStart?: string | null;
+        availableEnd?: string | null;
+        missingBoundary?: string;
+      };
+      if (!response.ok) {
+        if (payload.code === "DATE_NOT_FOUND") {
+          const availableRange =
+            payload.availableStart && payload.availableEnd
+              ? ` Rango disponible: ${payload.availableStart} a ${payload.availableEnd}.`
+              : "";
+          throw new Error(
+            `${payload.error ?? "La fecha solicitada no existe en la base de datos."}${availableRange}`,
+          );
         }
-
-        const batchRows = payload.rows ?? [];
-        for (const row of batchRows) {
-          collectedRows.push(row);
-        }
-        loadedStart = payload.range?.start ?? loadedStart;
-        loadedEnd = payload.range?.end ?? loadedEnd;
-
-        if (!payload.hasMore || !payload.nextOffset || payload.nextOffset <= nextOffset) {
-          break;
-        }
-        nextOffset = payload.nextOffset;
+        throw new Error(payload.error ?? "No se pudo cargar datos desde base de datos.");
       }
 
-      const prepared = prepareDataframe(collectedRows);
+      loadedStart = payload.range?.start ?? loadedStart;
+      loadedEnd = payload.range?.end ?? loadedEnd;
+
+      const prepared = prepareDataframe(payload.rows ?? []);
       const hasValidDates = prepared.some((row) => row.fecha !== null);
       if (!hasValidDates) throw new Error("La base de datos no tiene fechas válidas.");
       const empresas = Array.from(new Set(prepared.map((row) => row.empresa_norm))).sort();
@@ -692,8 +679,9 @@ export default function VentasXItemPage() {
     setParityLoading(true);
     setError(null);
     try {
+      // Comparamos summary v1 vs summary v2 para ser consistentes con la nueva carga (mismo nivel de agregacion).
       const v1Response = await fetch(
-        `/api/ventas-x-item?start=${encodeURIComponent(dateStart)}&end=${encodeURIComponent(dateEnd)}&maxRows=300000`,
+        `/api/ventas-x-item?mode=summary&start=${encodeURIComponent(dateStart)}&end=${encodeURIComponent(dateEnd)}&empresa=${encodeURIComponent(empresasCargaSel.join(","))}`,
         { cache: "no-store" },
       );
       const v1Payload = (await v1Response.json()) as {
@@ -742,6 +730,10 @@ export default function VentasXItemPage() {
 
   useEffect(() => {
     if (!ready) return;
+    if (metaLoadedRef.current) return;
+    metaLoadedRef.current = true;
+    // min/max globales de la tabla no cambian al ajustar empresasCargaSel,
+    // asi que evitamos re-fetch cada vez que el usuario toca chips.
     void onLoadMeta(empresasCargaSel);
   }, [ready, empresasCargaSel, onLoadMeta]);
 

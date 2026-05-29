@@ -227,14 +227,14 @@ export function RotacionPageInner() {
   const [ceroEstadoFilterByGroup, setCeroEstadoFilterByGroup] = useState<
     Record<string, CeroRotacionEstado[]>
   >({});
-  /** Valor aplicado al pulsar Â«Venta â‰¤Â» (tope de venta periodo en COP). */
+  /** Valor aplicado al pulsar «Venta �0�» (tope de venta periodo en COP). */
   const [ventaHastaCapByGroup, setVentaHastaCapByGroup] = useState<
     Record<string, number | undefined>
   >({});
   const [ventaHastaInputByGroup, setVentaHastaInputByGroup] = useState<
     Record<string, string>
   >({});
-  /** Piso de unidades de inventario al pulsar Â«Inv â‰¥Â» (independiente del filtro de venta). */
+  /** Piso de unidades de inventario al pulsar «Inv �0�» (independiente del filtro de venta). */
   const [invMinCapByGroup, setInvMinCapByGroup] = useState<
     Record<string, number | undefined>
   >({});
@@ -1760,7 +1760,7 @@ export function RotacionPageInner() {
               return zeroEstadoSet.includes(estado);
             })
           : quickFilteredRows;
-        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta â‰¤). */
+        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta �0�). */
         const sourceRowsForAbcd =
           baseRowsBySedeByKey.get(groupKey) ?? group.rows;
         const sourceRowsForAbcdFilterable =
@@ -2282,7 +2282,7 @@ export function RotacionPageInner() {
               </CardTitle>
               <CardDescription>
                 Puedes elegir varias empresas y varias sedes para evaluarlas en
-                conjunto. Para acotar por venta del periodo usa el boton Venta â‰¤
+                conjunto. Para acotar por venta del periodo usa el boton Venta �0�
                 en la tabla.
               </CardDescription>
             </CardHeader>
@@ -2466,7 +2466,7 @@ export function RotacionPageInner() {
                       accentClassName="text-violet-700"
                     />
                     <p className="max-w-xl text-[11px] leading-snug text-slate-500">
-                      Al cambiar lineas N1 o categorÃ­as, la tabla se actualiza
+                      Al cambiar lineas N1 o categorías, la tabla se actualiza
                       sola en unos instantes. Usa{" "}
                       <span className="font-medium text-slate-600">
                         Actualizar ahora
@@ -2756,8 +2756,8 @@ export function RotacionPageInner() {
                 Cargando filtros de la seleccion
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Estamos trayendo lineas N1, categorÃ­as y el rango disponible. En
-                cuanto termine, la tabla se consultarÃ¡ sola con los filtros
+                Estamos trayendo lineas N1, categorías y el rango disponible. En
+                cuanto termine, la tabla se consultará sola con los filtros
                 seleccionados.
               </p>
             </CardContent>
@@ -2773,9 +2773,9 @@ export function RotacionPageInner() {
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Pulsa <span className="font-semibold">Actualizar ahora</span>{" "}
-                para repetir la consulta. Al cambiar lineas N1 o categorÃ­as, la
+                para repetir la consulta. Al cambiar lineas N1 o categorías, la
                 tabla suele actualizarse sola en unos instantes sin necesidad de
-                ese botÃ³n.
+                ese botón.
               </p>
             </CardContent>
           </Card>
@@ -2794,7 +2794,7 @@ export function RotacionPageInner() {
                   {sourceTable}
                 </span>
                 . Ajusta el rango de fechas o usa el boton{" "}
-                <span className="font-semibold">Venta â‰¤</span> en la tabla para
+                <span className="font-semibold">Venta �0�</span> en la tabla para
                 filtrar por debajo de un valor.
               </p>
             </CardContent>
@@ -2881,7 +2881,7 @@ export function RotacionPageInner() {
                           return zeroEstadoSet.includes(estado);
                         })
                       : quickFilteredRows;
-                    /** Misma regla que export: letra ABCD segÃºn ventas del conjunto filtrado arriba, sin filtros rÃ¡pidos de tabla. */
+                    /** Misma regla que export: letra ABCD según ventas del conjunto filtrado arriba, sin filtros rápidos de tabla. */
                     const sourceRowsForAbcd =
                       baseRowsBySedeByKey.get(groupKey) ?? group.rows;
                     const sourceRowsForAbcdFilterable =
@@ -3106,7 +3106,7 @@ export function RotacionPageInner() {
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0 flex-1 space-y-2">
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                                  InformaciÃ³n
+                                  Información
                                 </p>
                                 <CardTitle className="text-2xl font-black text-slate-900">
                                   {group.sedeName}
@@ -3171,7 +3171,7 @@ export function RotacionPageInner() {
                                   <div className="flex w-fit flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
                                     <div className="mb-2 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-emerald-950">
-                                        AÂ·BÂ·C Â· En rotaciÃ³n
+                                        A·B·C · En rotación
                                       </p>
                                       <p className="text-[10px] leading-snug text-emerald-800/85">
                                         Productos que se mueven
@@ -3308,7 +3308,7 @@ export function RotacionPageInner() {
                                       </p>
                                     </div>
                                     <p className="mt-2 border-l-2 border-emerald-300/80 pl-2 pt-1.5 text-[10px] leading-snug text-emerald-900/75">
-                                      Mantener disponibilidad Â· surtido y
+                                      Mantener disponibilidad · surtido y
                                       abastecimiento
                                     </p>
                                   </div>
@@ -3316,10 +3316,10 @@ export function RotacionPageInner() {
                                   <div className="flex w-fit flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2.5 shadow-sm ring-1 ring-rose-100/90">
                                     <div className="mb-2 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-rose-950">
-                                        CrÃ­ticos Â· Requieren acciÃ³n
+                                        Críticos · Requieren acción
                                       </p>
                                       <p className="text-[10px] leading-snug text-rose-800/85">
-                                        Productos problemÃ¡ticos
+                                        Productos problemáticos
                                       </p>
                                     </div>
                                     <div className="grid w-fit grid-cols-3 gap-2 justify-items-center">
@@ -3451,11 +3451,11 @@ export function RotacionPageInner() {
                                     </div>
                                     <div className="mt-1.5 space-y-1 pt-1.5">
                                       <p className="border-l-2 border-rose-200 pl-2 text-[10px] leading-snug text-rose-900/70">
-                                        Demanda Â· descuento, descontinuar,
+                                        Demanda · descuento, descontinuar,
                                         devolver
                                       </p>
                                       <p className="border-l-2 border-cyan-200 pl-2 text-[10px] leading-snug text-cyan-900/75">
-                                        Abastecimiento Â· pedido, lead time, ROP
+                                        Abastecimiento · pedido, lead time, ROP
                                       </p>
                                     </div>
                                   </div>
@@ -3734,10 +3734,10 @@ export function RotacionPageInner() {
                                       {(rowFilter === "venta_hasta" ||
                                         rowFilter === "both") &&
                                       ventaHastaCapByGroup[groupKey] != null
-                                        ? `Venta â‰¤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
+                                        ? `Venta �0� ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
                                         : ventaHastaPreviewCount != null
-                                          ? `Venta â‰¤ (${ventaHastaPreviewCount})`
-                                          : "Venta â‰¤"}
+                                          ? `Venta �0� (${ventaHastaPreviewCount})`
+                                          : "Venta �0�"}
                                     </Button>
                                     <input
                                       type="text"
@@ -3775,10 +3775,10 @@ export function RotacionPageInner() {
                                       }
                                     >
                                       {invMinAppliedCap != null
-                                        ? `Inv â‰¥ ${invMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
+                                        ? `Inv �0� ${invMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
                                         : invMinPreviewCount != null
-                                          ? `Inv â‰¥ (${invMinPreviewCount})`
-                                          : "Inv â‰¥"}
+                                          ? `Inv �0� (${invMinPreviewCount})`
+                                          : "Inv �0�"}
                                     </Button>
                                     <input
                                       type="text"
@@ -3925,7 +3925,7 @@ export function RotacionPageInner() {
                                       void handleWhatsAppShare("png")
                                     }
                                   >
-                                    Imagen PNG (sin pÃ©rdida)
+                                    Imagen PNG (sin pérdida)
                                   </button>
                                   <button
                                     type="button"
@@ -3957,10 +3957,10 @@ export function RotacionPageInner() {
                                   </button>
                                 </div>
                                 <p className="mt-2 border-t border-slate-100 px-2 pt-2 text-[11px] leading-snug text-slate-500">
-                                  Imagen: solo la tabla (paginaciÃ³n por sede),
-                                  captura ampliada y alta densidad de pÃ­xeles.
+                                  Imagen: solo la tabla (paginación por sede),
+                                  captura ampliada y alta densidad de píxeles.
                                   JPG usa calidad 98%; WhatsApp puede volver a
-                                  comprimir al enviar â€” si no se lee bien,
+                                  comprimir al enviar � si no se lee bien,
                                   prueba PNG o PDF. PDF: todas las filas
                                   filtradas, igual que &quot;Descargar
                                   PDF&quot;.{" "}
@@ -4063,7 +4063,7 @@ export function RotacionPageInner() {
                                           align="right"
                                           label={
                                             <span className="block text-[11px] leading-tight">
-                                              Venta perÃ­odo
+                                              Venta período
                                             </span>
                                           }
                                           activeField={tableSortField}

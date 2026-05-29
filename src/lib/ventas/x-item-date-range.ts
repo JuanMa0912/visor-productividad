@@ -155,31 +155,50 @@ export const getVentasXItemDateAvailability = async (
   requestedRange?: { startCompact: string; endCompact: string },
 ): Promise<VentasXItemDateAvailability> => {
   const params = [...(filter.params ?? [])];
-  /** Hay al menos un `fecha_dcto` dentro del rango compacto (no exige que existan todos los días calendario). */
+  const baseWhere = filter.whereClauses ?? [];
+  /**
+   * Cuando se pide un rango, lo unico que necesita la app es saber si EXISTE al menos
+   * una fila en ese rango (para mode=default y mode=summary). Antes haciamos un
+   * `COUNT(*) FILTER (...)` sobre toda la tabla, lo que forzaba un seq scan caro por
+   * cada pagina cargada. Con `EXISTS (... LIMIT 1)` el planner se corta en cuanto
+   * encuentra una fila y aprovecha los indices `(fecha_dcto, empresa_norm)`.
+   *
+   * Para el caso `mode=meta` (sin rango pedido), conservamos el `COUNT(*)` completo
+   * porque la UI usa `totalRows` y no hay un filtro acotador.
+   */
   let hasStartSql = "FALSE";
   let hasEndSql = "FALSE";
+  let totalRowsSql = "COUNT(*) AS total_rows";
 
   if (requestedRange) {
+    const existsClauses = [
+      ...baseWhere,
+      `fecha_dcto >= $${params.length + 1}::text`,
+      `fecha_dcto <= $${params.length + 2}::text`,
+    ];
     params.push(requestedRange.startCompact);
-    const startParamIndex = params.length;
     params.push(requestedRange.endCompact);
-    const endParamIndex = params.length;
-    const inRange = `COUNT(*) FILTER (WHERE fecha_dcto >= $${startParamIndex}::text AND fecha_dcto <= $${endParamIndex}::text) > 0`;
-    hasStartSql = inRange;
-    hasEndSql = inRange;
+    const existsSql = `EXISTS (
+      SELECT 1
+      FROM ventas_item_diario
+      WHERE ${existsClauses.join(" AND ")}
+      LIMIT 1
+    )`;
+    hasStartSql = existsSql;
+    hasEndSql = existsSql;
+    // En mode=default/summary no se usa total_rows; evitamos el COUNT(*) global.
+    totalRowsSql = "0::bigint AS total_rows";
   }
 
   const whereSql =
-    (filter.whereClauses?.length ?? 0) > 0
-      ? `WHERE ${filter.whereClauses?.join(" AND ")}`
-      : "";
+    baseWhere.length > 0 ? `WHERE ${baseWhere.join(" AND ")}` : "";
 
   const result = await client.query(
     `
     SELECT
       MIN(fecha_dcto)::text AS min_fecha,
       MAX(fecha_dcto)::text AS max_fecha,
-      COUNT(*) AS total_rows,
+      ${totalRowsSql},
       ${hasStartSql} AS has_start,
       ${hasEndSql} AS has_end
     FROM ventas_item_diario

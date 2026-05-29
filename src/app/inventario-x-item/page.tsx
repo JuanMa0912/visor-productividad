@@ -23,6 +23,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  Clock,
   Download,
   Filter,
   Loader2,
@@ -85,6 +86,16 @@ import {
 } from "./inventario-utils";
 import { SelectField, MultiSelectField } from "./select-fields";
 
+/** Formatea milisegundos a un string corto y legible para el cronometro. */
+const formatLoadDuration = (ms: number): string => {
+  if (!Number.isFinite(ms) || ms < 0) return "0.0s";
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+};
+
 
 export default function InventarioXItemPage() {
   const router = useRouter();
@@ -92,6 +103,14 @@ export default function InventarioXItemPage() {
   const [loadingFilters, setLoadingFilters] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [loadingMatrix, setLoadingMatrix] = useState(false);
+  /**
+   * Cronometro de carga de la matriz: timestamp del fetch en curso (null cuando no hay carga),
+   * milisegundos transcurridos (actualizado por intervalo) y duracion de la ultima carga
+   * terminada (para mostrar un chip persistente con el tiempo final).
+   */
+  const [matrixLoadStartedAt, setMatrixLoadStartedAt] = useState<number | null>(null);
+  const [matrixLoadElapsedMs, setMatrixLoadElapsedMs] = useState(0);
+  const [matrixLastLoadDurationMs, setMatrixLastLoadDurationMs] = useState<number | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingJpg, setExportingJpg] = useState(false);
   /** Variante visual usada SOLO durante la generacion del JPG. */
@@ -569,17 +588,45 @@ export default function InventarioXItemPage() {
 
   useEffect(() => {
     if (!ready) return;
+    // Debounce para evitar fetches encadenados cuando el usuario toca varios filtros
+    // (ej: cambia el slider de fechas en pasos rapidos). El AbortController cancela la
+    // peticion previa si se reprograma antes de tiempo.
     const controller = new AbortController();
-    void loadFilterOptions(controller.signal);
-    return () => controller.abort();
+    const timer = window.setTimeout(() => {
+      void loadFilterOptions(controller.signal);
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [loadFilterOptions, ready, selectedDateEnd, selectedDateStart]);
 
   useEffect(() => {
     if (!ready || !hasScopeSelection) return;
     const controller = new AbortController();
-    void loadCatalogData(controller.signal);
-    return () => controller.abort();
+    const timer = window.setTimeout(() => {
+      void loadCatalogData(controller.signal);
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [hasScopeSelection, loadCatalogData, ready]);
+
+  /**
+   * Cronometro de carga de la matriz: actualiza `matrixLoadElapsedMs` cada 100ms mientras
+   * hay una carga en curso. Cuando termina, el interval se desmonta y la duracion final
+   * queda registrada en `matrixLastLoadDurationMs` (escrita en el finally de loadMatrixData).
+   */
+  useEffect(() => {
+    if (matrixLoadStartedAt == null) return;
+    const update = () => {
+      setMatrixLoadElapsedMs(performance.now() - matrixLoadStartedAt);
+    };
+    update();
+    const id = window.setInterval(update, 100);
+    return () => window.clearInterval(id);
+  }, [matrixLoadStartedAt]);
 
   const companyOptions = useMemo<SelectOption[]>(
     () =>
@@ -1031,6 +1078,11 @@ export default function InventarioXItemPage() {
       setLoadingMatrix(true);
       setError(null);
       setMessage(null);
+      // Cronometro: marcamos inicio, reseteamos contador en vivo y la duracion previa.
+      const matrixLoadStartTs = performance.now();
+      setMatrixLoadStartedAt(matrixLoadStartTs);
+      setMatrixLoadElapsedMs(0);
+      setMatrixLastLoadDurationMs(null);
 
       try {
         const params = new URLSearchParams();
@@ -1086,6 +1138,13 @@ export default function InventarioXItemPage() {
         );
       } finally {
         setLoadingMatrix(false);
+        // Cerramos el cronometro y guardamos la duracion final si la carga NO fue abortada
+        // (en caso de abort dejamos `matrixLastLoadDurationMs` como estaba: la nueva carga
+        // que reemplazo a esta sera la que muestre su tiempo).
+        if (!signal?.aborted) {
+          setMatrixLastLoadDurationMs(performance.now() - matrixLoadStartTs);
+        }
+        setMatrixLoadStartedAt(null);
       }
     },
     [
@@ -2431,6 +2490,15 @@ export default function InventarioXItemPage() {
                 {hasAppliedCurrentFilters ? summaryRows.length : 0} items · datos
                 al corte
               </p>
+              {matrixLastLoadDurationMs != null && !loadingMatrix && (
+                <span
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-emerald-700"
+                  title="Tiempo desde que la pagina envio la peticion hasta que recibio la respuesta y actualizo la tabla."
+                >
+                  <Clock className="h-3 w-3" aria-hidden />
+                  Tabla cargada en {formatLoadDuration(matrixLastLoadDurationMs)}
+                </span>
+              )}
             </div>
             {hasAppliedCurrentFilters && selectedDateLabel ? (
               <div className="order-2 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900 lg:order-0">
@@ -2672,6 +2740,13 @@ export default function InventarioXItemPage() {
               <p className="max-w-md text-sm text-slate-600">
                 Construyendo matriz de existencias...
               </p>
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1 font-mono text-xs font-semibold tabular-nums text-slate-700 shadow-sm"
+                aria-label={`Tiempo transcurrido: ${formatLoadDuration(matrixLoadElapsedMs)}`}
+              >
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" aria-hidden />
+                {formatLoadDuration(matrixLoadElapsedMs)}
+              </span>
             </div>
           ) : summaryRows.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-12 text-center">
