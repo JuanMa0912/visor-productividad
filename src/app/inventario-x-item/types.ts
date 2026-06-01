@@ -77,6 +77,8 @@ export type MatrixSortField = "sede" | string;
 
 export type MatrixCellValue = {
   inventoryUnits: number;
+  /** Valor monetario del inventario (suma del COP $ por sede x item). */
+  inventoryValue: number;
   soldUnits: number;
   diDays: number;
 };

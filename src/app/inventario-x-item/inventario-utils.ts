@@ -21,32 +21,56 @@ export const getCookieValue = (name: string) => {
 };
 
 /**
- * Rango por defecto: 1 mes corrido hacia atras (misma logica que `/rotacion`)
- * para que DI calce exactamente con el DIC sin necesidad de entrar por deep
- * link. Es `end - 1 mes calendario + 1 dia`, p.ej. `2026-05-20` -> `2026-04-21`.
+ * Rango por defecto: MES CALENDARIO ANTERIOR COMPLETO (dia 1 → ultimo dia),
+ * acotado a los datos disponibles. Misma logica que `/rotacion` para mantener
+ * consistencia entre ambos modulos. La longitud varia segun los dias del mes:
+ *   - Hoy = 2026-06-01 → May 01 .. May 31 (31 dias).
+ *   - Hoy = 2026-07-15 → Jun 01 .. Jun 30 (30 dias).
+ *   - Hoy = 2026-03-10 → Feb 01 .. Feb 28 (28 dias).
  *
- * Nunca devuelve un `start` anterior a `min` (limite real de datos) ni un
- * rango invertido.
+ * Antes calculaba "max menos un mes calendario + 1 dia". Eso terminaba dando
+ * SIEMPRE 30 dias por overflow de `Date.setMonth()` en meses cortos (p.ej.
+ * May 31 → April 31 no existe → desborda a May 1 → +1 dia → May 2 → solo
+ * 30 dias en vez de 31).
+ *
+ * Devuelve `null` si `max` no es valido (sin datos para calcular el rango).
  */
 export const defaultRollingMonthBackRange = (
   min: string,
   max: string,
 ): { start: string; end: string } | null => {
   if (!max || !/^\d{4}-\d{2}-\d{2}$/.test(max)) return null;
-  const endAtNoon = new Date(`${max}T12:00:00`);
-  if (Number.isNaN(endAtNoon.getTime())) return null;
 
   const formatYMD = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-  const oneMonthBack = new Date(endAtNoon);
-  oneMonthBack.setMonth(oneMonthBack.getMonth() - 1);
-  oneMonthBack.setDate(oneMonthBack.getDate() + 1);
-  let start = formatYMD(oneMonthBack);
+  const today = new Date();
+  // `new Date(y, m, 0)` devuelve el ultimo dia del mes m-1 (truco clasico
+  // de la API de Date: el dia 0 de un mes es el ultimo del mes anterior).
+  const lastDayPrevMonth = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    0,
+  );
+  const firstDayPrevMonth = new Date(
+    lastDayPrevMonth.getFullYear(),
+    lastDayPrevMonth.getMonth(),
+    1,
+  );
 
-  if (start > max) start = max;
-  if (min && /^\d{4}-\d{2}-\d{2}$/.test(min) && start < min) start = min;
-  return { start, end: max };
+  let end = formatYMD(lastDayPrevMonth);
+  let start = formatYMD(firstDayPrevMonth);
+
+  // Acotamos a los datos realmente disponibles. Comparar strings funciona
+  // porque YYYY-MM-DD ordena alfabeticamente igual que cronologicamente.
+  if (end > max) end = max;
+  if (min && /^\d{4}-\d{2}-\d{2}$/.test(min)) {
+    if (start < min) start = min;
+    if (end < min) end = min;
+  }
+  if (start > end) start = end;
+
+  return { start, end };
 };
 
 export const compareText = (left: string, right: string) =>

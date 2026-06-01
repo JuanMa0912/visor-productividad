@@ -13,6 +13,7 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
+import { getCanonicalSedeName } from "@/lib/shared/sede-names";
 import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
@@ -266,15 +267,41 @@ const getInventoryFilterCatalog = async (
       [dateRangeCompact.start, dateRangeCompact.end],
     );
 
-    // Red de seguridad: el WHERE SQL ya filtra las sedes ocultas, pero conservamos
-    // este filter como defensa por si alguna sede futura cae fuera del TRANSLATE basico.
-    const sedes = ((result.rows ?? []) as InventoryFilterDbRow[])
-      .map((row) => ({
-        empresa: row.empresa,
-        sedeId: row.sede_id,
-        sedeName: row.sede_name,
-      }))
-      .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+    // 1. Red de seguridad: el WHERE SQL ya filtra las sedes ocultas, pero
+    //    conservamos este filter como defensa por si alguna sede futura cae
+    //    fuera del TRANSLATE basico.
+    // 2. Resolucion del nombre y deduplicacion por `(empresa, sedeId)`:
+    //    a) Si la combinacion esta en el catalogo canonico de la app
+    //       (`getCanonicalSedeName`), usamos ese nombre como verdad oficial
+    //       (ej. "001|mercamio" → "Calle 5ta"). Asi se ven nombres lindos
+    //       aunque la BD traiga `nombre_sede` NULL o solo el ID.
+    //    b) Si no esta en el catalogo (sedes nuevas o codigos como PPT),
+    //       caemos al `sede_name` de la BD y conservamos la variante MAS
+    //       LARGA (es la mas descriptiva: "Mercamio 001 Principal" > "001").
+    //
+    //    Sin esta dedup el cliente repetia filas con la misma clave React
+    //    `${empresa}::${sedeId}` y mostraba warnings tipo
+    //    "Encountered two children with the same key, mercamio::003".
+    const sedeByKey = new Map<string, { empresa: string; sedeId: string; sedeName: string }>();
+    for (const row of (result.rows ?? []) as InventoryFilterDbRow[]) {
+      if (HIDDEN_SEDE_KEYS.has(normalizeKey(row.sede_name))) continue;
+      const key = `${row.empresa}::${row.sede_id}`;
+      // El canonico depende solo de `(empresa, sedeId)`, asi que todas las
+      // filas con la misma clave producen el MISMO `sedeName` y la dedup por
+      // longitud no afecta. Solo cuando no hay canonico (sedes nuevas no
+      // catalogadas) la comparacion por longitud decide cual variante de la
+      // BD conservar: la mas larga = mas descriptiva.
+      const sedeName = getCanonicalSedeName(row.sede_id, row.empresa) ?? row.sede_name;
+      const current = sedeByKey.get(key);
+      if (!current || sedeName.length > current.sedeName.length) {
+        sedeByKey.set(key, {
+          empresa: row.empresa,
+          sedeId: row.sede_id,
+          sedeName,
+        });
+      }
+    }
+    const sedes = Array.from(sedeByKey.values());
 
     const companies = Array.from(new Set(sedes.map((row) => row.empresa))).sort(
       (left, right) => left.localeCompare(right, "es"),
@@ -760,10 +787,16 @@ const queryInventoryMatrixRows = async ({
     return ((result.rows ?? []) as InventoryMatrixDbRow[])
       .map((row) => {
         const subcategory = getInventarioSubcategory(row.linea_n1_codigo);
+        // Mismo override que en `getFilterCatalog`: el nombre canonico de la
+        // app gana sobre `nombre_sede` de la BD. Asi la tabla de la matriz
+        // muestra "Calle 5ta" en vez de "001" cuando la columna nombre_sede
+        // viene NULL o pobre.
+        const sedeName =
+          getCanonicalSedeName(row.sede_id, row.empresa) ?? row.sede_name;
         return {
           empresa: row.empresa,
           sedeId: row.sede_id,
-          sedeName: row.sede_name,
+          sedeName,
           lineKey: buildInventarioLineKey({
             linea: row.linea,
             lineaN1Codigo: row.linea_n1_codigo,

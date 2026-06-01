@@ -159,8 +159,9 @@ export default function InventarioXItemPage() {
   /** Marca si ya seleccionamos automaticamente todas las empresas/sedes al
    * cargar los filtros iniciales (default: todas, el usuario solo elige items). */
   const autoScopeAppliedRef = useRef(false);
-  /** Marca si ya aplicamos el default "mes corrido" al cargar metadatos por
-   * primera vez. Evita pisar selecciones manuales del usuario en recargas. */
+  /** Marca si ya aplicamos el default "mes anterior completo" al cargar
+   * metadatos por primera vez. Evita pisar selecciones manuales del usuario
+   * en recargas. */
   const monthToDateDefaultAppliedRef = useRef(false);
 
   const persistItemPresetsRemote = useCallback(
@@ -1215,6 +1216,7 @@ export default function InventarioXItemPage() {
   const matrixRowsBySede = useMemo(() => {
     type CellAgg = {
       inventoryUnits: number;
+      inventoryValue: number;
       soldUnits: number;
       diWeightedNum: number;
       diWeightedDen: number;
@@ -1243,12 +1245,14 @@ export default function InventarioXItemPage() {
 
       const agg = cellAggs.get(cellKey) ?? {
         inventoryUnits: 0,
+        inventoryValue: 0,
         soldUnits: 0,
         diWeightedNum: 0,
         diWeightedDen: 0,
         anyNoSalesDi: false,
       };
       agg.inventoryUnits += row.inventoryUnits;
+      agg.inventoryValue += row.inventoryValue;
       agg.soldUnits += row.totalUnits;
       agg.anyNoSalesDi = agg.anyNoSalesDi || rowNoSales;
       if (!rowNoSales && row.totalUnits > 0) {
@@ -1298,6 +1302,7 @@ export default function InventarioXItemPage() {
 
       current.items[item] = {
         inventoryUnits: agg.inventoryUnits,
+        inventoryValue: agg.inventoryValue,
         soldUnits: agg.soldUnits,
         diDays,
       };
@@ -1315,10 +1320,18 @@ export default function InventarioXItemPage() {
   }, [filteredMatrixRows]);
 
   const matrixTotalsByItem = useMemo(() => {
-    const totals: Record<string, { inventoryUnits: number; soldUnits: number }> = {};
+    const totals: Record<
+      string,
+      { inventoryUnits: number; inventoryValue: number; soldUnits: number }
+    > = {};
     filteredMatrixRows.forEach((row) => {
-      const acc = totals[row.item] ?? { inventoryUnits: 0, soldUnits: 0 };
+      const acc = totals[row.item] ?? {
+        inventoryUnits: 0,
+        inventoryValue: 0,
+        soldUnits: 0,
+      };
       acc.inventoryUnits += row.inventoryUnits;
+      acc.inventoryValue += row.inventoryValue;
       acc.soldUnits += row.totalUnits;
       totals[row.item] = acc;
     });
@@ -1499,19 +1512,23 @@ export default function InventarioXItemPage() {
         return `${trimmed.slice(0, Math.max(0, max - 1))}…`;
       };
 
-      /** Misma estructura que la matriz en pantalla: ítem + descripción, luego Inventario, Vendido y DI por referencia. */
+      /** Misma estructura que la matriz en pantalla: ítem + descripción, luego Inventario, Valor inv., Vendido y DI por referencia. */
       const head = [
         [
           { content: "Sede", rowSpan: 2, styles: { valign: "middle" as const } },
           ...summaryRows.map((row) => ({
             content: `${row.item}\n${truncatePdfDesc(row.descripcion)}`,
-            colSpan: 3,
+            colSpan: 4,
             styles: { halign: "center" as const, valign: "middle" as const },
           })),
         ],
         summaryRows.flatMap((row) => [
           {
             content: "Inventario",
+            styles: { halign: "center" as const, fontStyle: "normal" as const },
+          },
+          {
+            content: "Valor inv.",
             styles: { halign: "center" as const, fontStyle: "normal" as const },
           },
           {
@@ -1533,11 +1550,13 @@ export default function InventarioXItemPage() {
         ...summaryRows.flatMap((itemRow) => {
           const cell = row.items[itemRow.item] ?? {
             inventoryUnits: 0,
+            inventoryValue: 0,
             soldUnits: 0,
             diDays: 0,
           };
           return [
             formatUnits(cell.inventoryUnits),
+            formatPrice(cell.inventoryValue),
             formatUnits(cell.soldUnits),
             formatDi(cell.diDays),
           ];
@@ -1550,10 +1569,12 @@ export default function InventarioXItemPage() {
           ...summaryRows.flatMap((row) => {
             const itemTotals = matrixTotalsByItem[row.item] ?? {
               inventoryUnits: 0,
+              inventoryValue: 0,
               soldUnits: 0,
             };
             return [
               formatUnits(itemTotals.inventoryUnits),
+              formatPrice(itemTotals.inventoryValue),
               formatUnits(itemTotals.soldUnits),
               formatDi(row.rotationDays),
             ];
@@ -1563,7 +1584,7 @@ export default function InventarioXItemPage() {
 
       const marginX = 10;
       const pdfSedeColMm = 42;
-      const dataColCount = summaryRows.length * 3;
+      const dataColCount = summaryRows.length * 4;
       const usableWidthMm = pageWidth - marginX * 2 - pdfSedeColMm;
       /** Ancho por columna numérica: si no cabe en una página, autotable reparte con salto horizontal. */
       const pdfDataColMm = Math.max(8.5, usableWidthMm / Math.max(1, dataColCount));
@@ -1625,7 +1646,7 @@ export default function InventarioXItemPage() {
         columnStyles: pdfColumnStyles,
         didParseCell: (data) => {
           const col = data.column.index;
-          const isPdfDiColumn = col > 0 && (col - 1) % 3 === 2;
+          const isPdfDiColumn = col > 0 && (col - 1) % 4 === 3;
 
           if (
             data.section === "head" &&
@@ -1829,7 +1850,7 @@ export default function InventarioXItemPage() {
         const sheet = workbook.addWorksheet("Inventario x Item");
         sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 5, xSplit: 1 }];
 
-        const colsPerItem = includeInv ? 3 : 1;
+        const colsPerItem = includeInv ? 4 : 1;
         const totalDataCols = summaryRows.length * colsPerItem;
         const totalCols = 1 + totalDataCols; // sede + items
         const lastColLetter = sheet.getColumn(totalCols).letter;
@@ -1930,7 +1951,18 @@ export default function InventarioXItemPage() {
             };
             invSub.border = thinBorder;
 
-            const soldSub = sheet.getCell(subHeaderRow, startCol + 1);
+            const valSub = sheet.getCell(subHeaderRow, startCol + 1);
+            valSub.value = "Valor inv.";
+            valSub.font = { bold: true, size: 9, color: { argb: "FF0C4A6E" } };
+            valSub.alignment = { horizontal: "center", vertical: "middle" };
+            valSub.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFF0F9FF" },
+            };
+            valSub.border = thinBorder;
+
+            const soldSub = sheet.getCell(subHeaderRow, startCol + 2);
             soldSub.value = `Vendido${row.unidad ? ` (${row.unidad})` : ""}`;
             soldSub.font = { bold: true, size: 9, color: { argb: "FF065F46" } };
             soldSub.alignment = { horizontal: "center", vertical: "middle" };
@@ -1980,6 +2012,7 @@ export default function InventarioXItemPage() {
             const startCol = 2 + itemIndex * colsPerItem;
             const cellValue = row.items[itemRow.item] ?? {
               inventoryUnits: 0,
+              inventoryValue: 0,
               soldUnits: 0,
               diDays: 0,
             };
@@ -2002,7 +2035,17 @@ export default function InventarioXItemPage() {
               }
               if (rowFill) invCell.fill = rowFill;
 
-              const soldCell = sheet.getCell(excelRow, startCol + 1);
+              const valCell = sheet.getCell(excelRow, startCol + 1);
+              valCell.value = cellValue.inventoryValue;
+              valCell.numFmt = '"$"#,##0';
+              valCell.alignment = { horizontal: "right", vertical: "middle" };
+              valCell.border = thinBorder;
+              if (cellValue.inventoryValue <= 0) {
+                valCell.font = { color: { argb: "FFCBD5E1" } };
+              }
+              if (rowFill) valCell.fill = rowFill;
+
+              const soldCell = sheet.getCell(excelRow, startCol + 2);
               soldCell.value = cellValue.soldUnits;
               soldCell.numFmt = "#,##0";
               soldCell.alignment = { horizontal: "right", vertical: "middle" };
@@ -2043,6 +2086,7 @@ export default function InventarioXItemPage() {
           const startCol = 2 + itemIndex * colsPerItem;
           const itemTotals = matrixTotalsByItem[row.item] ?? {
             inventoryUnits: 0,
+            inventoryValue: 0,
             soldUnits: 0,
           };
           if (includeInv) {
@@ -2058,7 +2102,19 @@ export default function InventarioXItemPage() {
             };
             invTotalCell.border = thinBorder;
 
-            const soldTotalCell = sheet.getCell(totalRow, startCol + 1);
+            const valTotalCell = sheet.getCell(totalRow, startCol + 1);
+            valTotalCell.value = itemTotals.inventoryValue;
+            valTotalCell.numFmt = '"$"#,##0';
+            valTotalCell.font = { bold: true };
+            valTotalCell.alignment = { horizontal: "right", vertical: "middle" };
+            valTotalCell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFEF3C7" },
+            };
+            valTotalCell.border = thinBorder;
+
+            const soldTotalCell = sheet.getCell(totalRow, startCol + 2);
             soldTotalCell.value = itemTotals.soldUnits;
             soldTotalCell.numFmt = "#,##0";
             soldTotalCell.font = { bold: true };
@@ -2089,9 +2145,10 @@ export default function InventarioXItemPage() {
         for (let i = 0; i < summaryRows.length; i += 1) {
           const startCol = 2 + i * colsPerItem;
           if (includeInv) {
-            sheet.getColumn(startCol).width = 13;
-            sheet.getColumn(startCol + 1).width = 13;
-            sheet.getColumn(startCol + 2).width = 9;
+            sheet.getColumn(startCol).width = 12;
+            sheet.getColumn(startCol + 1).width = 15;
+            sheet.getColumn(startCol + 2).width = 13;
+            sheet.getColumn(startCol + 3).width = 9;
           } else {
             sheet.getColumn(startCol).width = 11;
           }
@@ -2748,7 +2805,7 @@ export default function InventarioXItemPage() {
                       {summaryRows.map((row) => (
                         <th
                           key={`matrix-head-${row.item}`}
-                          colSpan={jpgExportMode === "di-only" ? 1 : 3}
+                          colSpan={jpgExportMode === "di-only" ? 1 : 4}
                           className={`sticky top-0 z-20 ${matrixItemColMinClass} border-b border-r border-slate-100 bg-white px-2.5 py-3 align-bottom`}
                           title={row.descripcion}
                         >
@@ -2806,6 +2863,14 @@ export default function InventarioXItemPage() {
                           );
                           cells.push(
                             <th
+                              key={`matrix-col-val-${row.item}`}
+                              className={`sticky top-[88px] z-20 ${matrixItemColMinClass} border-b border-r border-dashed border-r-slate-200 bg-white px-2 py-1`}
+                            >
+                              Valor Inv.
+                            </th>,
+                          );
+                          cells.push(
+                            <th
                               key={`matrix-col-sold-${row.item}`}
                               className={`sticky top-[88px] z-20 ${matrixItemColMinClass} border-b border-r border-dashed border-r-slate-200 bg-white px-2 py-1`}
                             >
@@ -2832,7 +2897,7 @@ export default function InventarioXItemPage() {
                           colSpan={
                             1 +
                             summaryRows.length *
-                              (jpgExportMode === "di-only" ? 1 : 3)
+                              (jpgExportMode === "di-only" ? 1 : 4)
                           }
                           className="px-4 py-8 text-center text-sm text-slate-500"
                         >
@@ -2855,7 +2920,7 @@ export default function InventarioXItemPage() {
                                   colSpan={
                                     1 +
                                     summaryRows.length *
-                                      (jpgExportMode === "di-only" ? 1 : 3)
+                                      (jpgExportMode === "di-only" ? 1 : 4)
                                   }
                                   className="sticky left-0 z-10 border-t border-b border-slate-200 bg-slate-50/70 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500"
                                 >
@@ -2886,10 +2951,12 @@ export default function InventarioXItemPage() {
                               {summaryRows.flatMap((itemRow) => {
                                 const cellValue = row.items[itemRow.item] ?? {
                                   inventoryUnits: 0,
+                                  inventoryValue: 0,
                                   soldUnits: 0,
                                   diDays: 0,
                                 };
                                 const isZero = cellValue.inventoryUnits === 0;
+                                const noValue = cellValue.inventoryValue <= 0;
                                 const noSold = cellValue.soldUnits === 0;
                                 const cells: ReactNode[] = [];
                                 if (jpgExportMode !== "di-only") {
@@ -2902,6 +2969,17 @@ export default function InventarioXItemPage() {
                                       }`}
                                     >
                                       {formatUnits(cellValue.inventoryUnits)}
+                                    </td>,
+                                  );
+                                  cells.push(
+                                    <td
+                                      key={`${row.key}-${itemRow.item}-val`}
+                                      title={`${row.displayName} | ${itemRow.item} | ${itemRow.descripcion}: Valor inventario ${formatPrice(cellValue.inventoryValue)}`}
+                                      className={`${matrixItemColMinClass} border-b border-r border-dashed border-r-slate-200 bg-inherit px-2 py-1.5 text-center text-sm font-medium tabular-nums ${
+                                        noValue ? "text-slate-300" : "text-slate-800"
+                                      }`}
+                                    >
+                                      {formatPrice(cellValue.inventoryValue)}
                                     </td>,
                                   );
                                   cells.push(
@@ -2954,6 +3032,7 @@ export default function InventarioXItemPage() {
                       {summaryRows.flatMap((itemRow) => {
                         const itemTotals = matrixTotalsByItem[itemRow.item] ?? {
                           inventoryUnits: 0,
+                          inventoryValue: 0,
                           soldUnits: 0,
                         };
                         const cells: ReactNode[] = [];
@@ -2964,6 +3043,14 @@ export default function InventarioXItemPage() {
                               className={`${matrixItemColMinClass} border-t-2 border-b border-r border-dashed border-r-slate-200 border-t-slate-200 bg-slate-50 px-2 py-2 text-center text-sm font-bold tabular-nums text-slate-900`}
                             >
                               {formatUnits(itemTotals.inventoryUnits)}
+                            </td>,
+                          );
+                          cells.push(
+                            <td
+                              key={`total-${itemRow.item}-val`}
+                              className={`${matrixItemColMinClass} border-t-2 border-b border-r border-dashed border-r-slate-200 border-t-slate-200 bg-slate-50 px-2 py-2 text-center text-sm font-bold tabular-nums text-slate-900`}
+                            >
+                              {formatPrice(itemTotals.inventoryValue)}
                             </td>,
                           );
                           cells.push(
