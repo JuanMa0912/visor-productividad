@@ -435,21 +435,43 @@ const clampDateKeyToBounds = (key: string, min: string, max: string) => {
   return key;
 };
 
-/** Fin = ayer (o tope de datos); inicio = mismo día un mes calendario atrás +1 día, acotado a datos disponibles. */
+/**
+ * Rango por defecto = MES CALENDARIO ANTERIOR COMPLETO (dia 1 → ultimo dia),
+ * acotado a los datos disponibles. La longitud varia segun los dias del mes:
+ *   - Hoy = 2026-06-01 → May 01 .. May 31 (31 dias).
+ *   - Hoy = 2026-07-15 → Jun 01 .. Jun 30 (30 dias).
+ *   - Hoy = 2026-03-10 → Feb 01 .. Feb 28 (28 dias).
+ *
+ * Antes calculaba "ayer menos un mes calendario + 1 dia". Eso terminaba dando
+ * SIEMPRE 30 dias por el overflow de `Date.setMonth()` en meses cortos:
+ *   - May 31 .setMonth(3 = Abril) → April 31 no existe → JS desborda a May 1.
+ *   - +1 dia → May 2.
+ *   - Resultado: May 2 .. May 31 = 30 dias en vez de los 31 dias reales de Mayo.
+ */
 const getRollingMonthBackRange = (
   minAvailable: string,
   maxAvailable: string,
 ): DateRange => {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = toDateKey(yesterday);
-  const endKey = clampDateKeyToBounds(yesterdayKey, minAvailable, maxAvailable);
-  const endDate = parseDateKey(endKey);
-  const startDate = new Date(endDate);
-  startDate.setMonth(startDate.getMonth() - 1);
-  startDate.setDate(startDate.getDate() + 1);
+  const today = new Date();
+  // `new Date(y, m, 0)` devuelve el ultimo dia del mes m-1 (truco clasico
+  // de la API de Date: el dia 0 de un mes es el ultimo del mes anterior).
+  const lastDayPrevMonth = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    0,
+  );
+  const firstDayPrevMonth = new Date(
+    lastDayPrevMonth.getFullYear(),
+    lastDayPrevMonth.getMonth(),
+    1,
+  );
+  const endKey = clampDateKeyToBounds(
+    toDateKey(lastDayPrevMonth),
+    minAvailable,
+    maxAvailable,
+  );
   let startKey = clampDateKeyToBounds(
-    toDateKey(startDate),
+    toDateKey(firstDayPrevMonth),
     minAvailable,
     maxAvailable,
   );

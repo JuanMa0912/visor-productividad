@@ -2624,9 +2624,12 @@ export function RotacionPageInner() {
                 Periodo de consulta
               </CardTitle>
               <CardDescription>
-                Por defecto el periodo va desde el mismo dia del mes anterior
-                hasta <span className="font-medium text-slate-700">ayer</span>{" "}
-                (acotado a los datos disponibles). Puedes cambiarlo cuando
+                Por defecto se muestra el{" "}
+                <span className="font-medium text-slate-700">
+                  mes anterior completo
+                </span>{" "}
+                (del dia 1 al ultimo dia, segun cuantos dias tenga ese mes),
+                acotado a los datos disponibles. Puedes cambiarlo cuando
                 quieras, con un maximo de 2 meses por consulta.
               </CardDescription>
             </CardHeader>
