@@ -6,7 +6,13 @@ import {
   Building2,
   CalendarDays,
   Check,
+  ChevronDown,
   Database,
+  Download,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileType,
   Info,
   Loader2,
   RefreshCcw,
@@ -14,6 +20,9 @@ import {
 import { LineChart } from "@mui/x-charts/LineChart";
 import { BarChart } from "@mui/x-charts/BarChart";
 import * as ExcelJS from "exceljs";
+import { toJpeg } from "html-to-image";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   buildDailyTableAllRange,
@@ -141,6 +150,11 @@ export default function VentasXItemPage() {
   const [summaryRows, setSummaryRows] = useState<VentasXItemPreparedRow[]>([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [exportingXlsx, setExportingXlsx] = useState(false);
+  const [exportingJpg, setExportingJpg] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const tableImageRef = useRef<HTMLDivElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [parityLoading, setParityLoading] = useState(false);
   const [parityResult, setParityResult] = useState<ParityCheckResult | null>(null);
@@ -196,6 +210,31 @@ export default function VentasXItemPage() {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [itemsDropdownOpen]);
+
+  // Cierra el menú "Exportar" al hacer click afuera o al presionar Esc.
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (exportMenuRef.current?.contains(target)) return;
+      setExportMenuOpen(false);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExportMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [exportMenuOpen]);
 
   const validRows = useMemo(
     () => rows.filter((row) => row.fecha !== null),
@@ -788,7 +827,11 @@ export default function VentasXItemPage() {
 
           if (isNumber) {
             cell.value = value;
-            cell.numFmt = "#,##0.##";
+            // `#,##0.##` siempre dibuja el separador decimal aunque no haya
+            // decimales (en es-CO eso pinta la coma colgante "45,"). Para los
+            // casos típicos de unidades enteras usamos `#,##0`; sólo dejamos
+            // decimales cuando el valor realmente los tiene (ventas por peso).
+            cell.numFmt = Number.isInteger(value) ? "#,##0" : "#,##0.##";
           } else {
             cell.value = String(value ?? "");
           }
@@ -848,6 +891,230 @@ export default function VentasXItemPage() {
       setExportingXlsx(false);
     }
   };
+
+  /**
+   * Slug seguro para nombres de archivo derivados del título de la tabla:
+   * primer item seleccionado (o "todos") en minúscula, sin tildes ni símbolos.
+   */
+  const exportFileSlug = useMemo(() => {
+    const base = itemsOrder[0] ?? "todos";
+    return base
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "ventas";
+  }, [itemsOrder]);
+
+  const handleDownloadJpg = useCallback(async () => {
+    if (!tableImageRef.current || tableRows.length === 0) return;
+    setExportingJpg(true);
+    try {
+      // Dos frames para asegurar que React commiteó cualquier render pendiente.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+      const node = tableImageRef.current;
+      if (!node) return;
+      // scrollWidth/scrollHeight para capturar la tabla completa aunque tenga scroll horizontal.
+      const width = node.scrollWidth;
+      const height = node.scrollHeight;
+      const dataUrl = await toJpeg(node, {
+        quality: 0.95,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+        width,
+        height,
+        style: {
+          width: `${width}px`,
+          height: `${height}px`,
+          maxWidth: "none",
+          overflow: "visible",
+        },
+      });
+
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `ventas-x-item-${exportFileSlug}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setExportingJpg(false);
+    }
+  }, [exportFileSlug, tableRows.length]);
+
+  const handleDownloadPdf = useCallback(() => {
+    if (tableRows.length === 0 || tableColumns.length === 0) return;
+    setExportingPdf(true);
+
+    try {
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const itemsLabel = itemsOrder.length === 0 ? "Todos" : itemsOrder.join(" | ");
+      const rangeLabel =
+        loadedDateStart && loadedDateEnd
+          ? loadedDateStart === loadedDateEnd
+            ? loadedDateStart
+            : `${loadedDateStart} a ${loadedDateEnd}`
+          : "";
+      const empresasLabel = empresasSel.length === 0
+        ? "Todas"
+        : empresasSel.map((e) => EMPRESA_LABELS[e] ?? e.toUpperCase()).join(", ");
+
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageWidth, 18, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text("Ventas x item - Consolidado diario", 14, 11.5);
+
+      doc.setTextColor(51, 65, 85);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.text(`Ítems: ${itemsLabel}`, 14, 25);
+      doc.text(`Empresas: ${empresasLabel}`, 14, 30.5);
+      if (rangeLabel) doc.text(`Rango: ${rangeLabel}`, 14, 36);
+      doc.text(
+        `Generado: ${new Intl.DateTimeFormat("es-CO", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }).format(new Date())}`,
+        14,
+        41.5,
+      );
+
+      const tDiaIdx = tableColumns.findIndex((col) => col === "T. Dia");
+
+      const head = [tableColumns.map((c) => c)];
+      // La última fila de tableRows es el acumulado del rango: la pongo en `foot`.
+      const dataRows = tableRows.slice(0, Math.max(0, tableRows.length - 1));
+      const totalRow = tableRows[tableRows.length - 1];
+
+      const body = dataRows.map((row) =>
+        tableColumns.map((col) => {
+          const val = row[col];
+          return typeof val === "number" ? val.toLocaleString("es-CO") : String(val ?? "");
+        }),
+      );
+      const foot = totalRow
+        ? [
+            tableColumns.map((col) => {
+              const val = totalRow[col];
+              return typeof val === "number"
+                ? val.toLocaleString("es-CO")
+                : String(val ?? "");
+            }),
+          ]
+        : undefined;
+
+      const pdfFontSize = Math.max(
+        5.5,
+        Math.min(8, 8 - Math.max(0, tableColumns.length - 8) * 0.2),
+      );
+
+      autoTable(doc, {
+        startY: 46,
+        head,
+        body,
+        foot,
+        theme: "grid",
+        margin: { left: 10, right: 10, top: 10, bottom: 12 },
+        styles: {
+          fontSize: pdfFontSize,
+          cellPadding: 1.4,
+          lineColor: [203, 213, 225],
+          lineWidth: 0.1,
+          valign: "middle",
+          halign: "center",
+        },
+        headStyles: {
+          fillColor: [219, 234, 254],
+          textColor: [15, 23, 42],
+          fontStyle: "bold",
+          halign: "center",
+        },
+        bodyStyles: {
+          textColor: [51, 65, 85],
+          halign: "right",
+        },
+        footStyles: {
+          fillColor: [219, 234, 254],
+          textColor: [15, 23, 42],
+          fontStyle: "bold",
+          halign: "right",
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+        columnStyles: {
+          0: { halign: "left", fontStyle: "bold", cellWidth: 22 },
+        },
+        didParseCell: (data) => {
+          const col = data.column.index;
+
+          // T. Dia en negrita en todo el cuerpo.
+          if (data.section === "body" && tDiaIdx >= 0 && col === tDiaIdx) {
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.textColor = [15, 23, 42];
+          }
+
+          // Filas con "/dom" en la columna Fecha => toda la fila en rojo y bold.
+          if (data.section === "body" && col === 0) {
+            const text = String(data.cell.raw ?? "");
+            if (text.includes("/dom")) {
+              data.cell.styles.textColor = [185, 28, 28];
+              data.cell.styles.fontStyle = "bold";
+            }
+          }
+          if (data.section === "body" && col > 0) {
+            // `data.row.raw` puede ser RowInput o HTMLTableRowElement; aquí solo
+            // pasamos arrays homogéneos (string[]), así que el acceso por índice
+            // es seguro tras este cast.
+            const rawRow = data.row.raw as unknown as unknown[];
+            const fechaCell = String(rawRow[0] ?? "");
+            if (fechaCell.includes("/dom")) {
+              data.cell.styles.textColor = [185, 28, 28];
+              data.cell.styles.fontStyle = "bold";
+            }
+          }
+        },
+        showHead: "everyPage",
+        horizontalPageBreak: true,
+        horizontalPageBreakRepeat: 0,
+        didDrawPage: () => {
+          const pageHeight = doc.internal.pageSize.getHeight();
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(
+            "Visor de Productividad | Ventas x item",
+            pageWidth - 14,
+            pageHeight - 6,
+            { align: "right" },
+          );
+        },
+      });
+
+      doc.save(`ventas-x-item-${exportFileSlug}.pdf`);
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [
+    empresasSel,
+    exportFileSlug,
+    itemsOrder,
+    loadedDateEnd,
+    loadedDateStart,
+    tableColumns,
+    tableRows,
+  ]);
 
   if (!ready) {
     return (
@@ -1077,27 +1344,102 @@ export default function VentasXItemPage() {
                   className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                 />
               </label>
-              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                Descargas
-                <div className="mt-1 flex gap-2">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                  Descargas
+                </span>
+                <div ref={exportMenuRef} className="relative self-start">
                   <button
                     type="button"
-                    onClick={handleDownloadCsv}
-                    disabled={tableRows.length === 0}
-                    className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                    onClick={() => setExportMenuOpen((open) => !open)}
+                    disabled={
+                      tableRows.length === 0 ||
+                      exportingXlsx ||
+                      exportingJpg ||
+                      exportingPdf
+                    }
+                    aria-haspopup="menu"
+                    aria-expanded={exportMenuOpen}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    CSV
+                    <Download className="h-3.5 w-3.5" aria-hidden />
+                    <span>
+                      {exportingXlsx
+                        ? "Generando XLSX..."
+                        : exportingJpg
+                          ? "Generando JPG..."
+                          : exportingPdf
+                            ? "Generando PDF..."
+                            : "Exportar"}
+                    </span>
+                    <ChevronDown
+                      className={`h-3 w-3 transition-transform ${
+                        exportMenuOpen ? "rotate-180" : ""
+                      }`}
+                      aria-hidden
+                    />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDownloadXlsx()}
-                    disabled={tableRows.length === 0 || exportingXlsx}
-                    className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                  >
-                    {exportingXlsx ? "Generando..." : "XLSX"}
-                  </button>
+                  {exportMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute left-0 top-full z-30 mt-2 min-w-52 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          handleDownloadCsv();
+                        }}
+                        disabled={tableRows.length === 0}
+                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                      >
+                        <FileType className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
+                        <span>CSV</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          void handleDownloadXlsx();
+                        }}
+                        disabled={tableRows.length === 0 || exportingXlsx}
+                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                      >
+                        <FileSpreadsheet className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
+                        <span>Excel (XLSX)</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          void handleDownloadJpg();
+                        }}
+                        disabled={tableRows.length === 0 || exportingJpg}
+                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                      >
+                        <FileImage className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
+                        <span>Imagen (JPG)</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          handleDownloadPdf();
+                        }}
+                        disabled={tableRows.length === 0 || exportingPdf}
+                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                      >
+                        <FileText className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
+                        <span>PDF</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <p className="mt-1 text-[11px] normal-case tracking-normal text-slate-500">
+                <p className="text-[11px] text-slate-500">
                   Cambia el rango arriba y luego carga desde BD.
                 </p>
               </div>
@@ -1222,7 +1564,10 @@ export default function VentasXItemPage() {
               </div>
             </div>
 
-            <div className="relative mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
+            <div
+              ref={tableImageRef}
+              className="relative mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
+            >
               <h2 className="text-base font-bold text-slate-900">{title}</h2>
               <div
                 className={`relative mt-3 ${
