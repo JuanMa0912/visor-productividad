@@ -153,7 +153,10 @@ export default function VentasXItemPage() {
   const [exportingJpg, setExportingJpg] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const tableImageRef = useRef<HTMLDivElement | null>(null);
+  /** Nodo oculto fuera de pantalla que renderiza la versión "bonita" de la
+   * tabla; lo capturamos con html-to-image para que el JPG salga con look
+   * Excel sin alterar la tabla visible de la app. */
+  const jpgStageRef = useRef<HTMLDivElement | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [parityLoading, setParityLoading] = useState(false);
@@ -908,18 +911,27 @@ export default function VentasXItemPage() {
   }, [itemsOrder]);
 
   const handleDownloadJpg = useCallback(async () => {
-    if (!tableImageRef.current || tableRows.length === 0) return;
+    if (!jpgStageRef.current || tableRows.length === 0) return;
     setExportingJpg(true);
     try {
-      // Dos frames para asegurar que React commiteó cualquier render pendiente.
+      // Cuatro frames para asegurar layout completo del stage off-screen.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-      const node = tableImageRef.current;
+      const node = jpgStageRef.current;
       if (!node) return;
-      // scrollWidth/scrollHeight para capturar la tabla completa aunque tenga scroll horizontal.
-      const width = node.scrollWidth;
-      const height = node.scrollHeight;
+      // Combinamos varias mediciones (cada una mide algo distinto) y sumamos un
+      // buffer de seguridad para evitar el recorte de las últimas filas que
+      // ocurre cuando html-to-image redondea o cuando hay sub-pixel rendering.
+      const rect = node.getBoundingClientRect();
+      const width = Math.ceil(
+        Math.max(node.scrollWidth, node.offsetWidth, rect.width),
+      );
+      const height = Math.ceil(
+        Math.max(node.scrollHeight, node.offsetHeight, rect.height) + 32,
+      );
       const dataUrl = await toJpeg(node, {
         quality: 0.95,
         pixelRatio: 2,
@@ -932,6 +944,10 @@ export default function VentasXItemPage() {
           height: `${height}px`,
           maxWidth: "none",
           overflow: "visible",
+          // Anulamos el offset del stage para que la imagen no quede vacía.
+          left: "0",
+          top: "0",
+          position: "static",
         },
       });
 
@@ -1565,7 +1581,6 @@ export default function VentasXItemPage() {
             </div>
 
             <div
-              ref={tableImageRef}
               className="relative mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
             >
               <h2 className="text-base font-bold text-slate-900">{title}</h2>
@@ -1741,6 +1756,129 @@ export default function VentasXItemPage() {
                     />
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Stage oculto FUERA de pantalla con la versión "look Excel" de
+                la tabla, exclusivo para la captura JPG. Mantiene layout real
+                (html-to-image lo necesita) pero no afecta la UI visible.
+                `display: inline-block` hace que el fondo blanco y el padding
+                se ajusten al ancho de la tabla en vez de extenderse. */}
+            {tableRows.length > 0 && (
+              <div
+                ref={jpgStageRef}
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  left: "-10000px",
+                  top: 0,
+                  pointerEvents: "none",
+                  width: "max-content",
+                }}
+                className="bg-white p-4"
+              >
+                <table className="border-collapse text-[11px] text-slate-800">
+                  <thead>
+                    {/* Título + metadatos como una fila de cabecera (colSpan
+                        = total de columnas). Esto evita los problemas de
+                        medición de <caption> y queda anclado al ancho real de
+                        la tabla, wrappeando texto si es necesario. */}
+                    <tr>
+                      <th
+                        colSpan={tableColumns.length}
+                        className="border-x border-t-2 border-slate-400 bg-white px-2 pt-2 pb-1.5 text-center"
+                      >
+                        {/* `max-w` fuerza el wrap del título en varias líneas
+                            para que NO sea él quien determine el ancho de la
+                            tabla (sólo lo deben hacer las columnas). */}
+                        <span className="mx-auto block max-w-[520px] text-[11px] font-bold leading-tight text-red-600">
+                          {title.toUpperCase()}
+                        </span>
+                        {(loadedDateStart || empresasSel.length > 0) && (
+                          <span className="mx-auto mt-1 block max-w-[520px] text-[9px] font-medium leading-snug text-slate-600">
+                            {loadedDateStart && loadedDateEnd
+                              ? loadedDateStart === loadedDateEnd
+                                ? `Rango: ${loadedDateStart}`
+                                : `Rango: ${loadedDateStart} a ${loadedDateEnd}`
+                              : ""}
+                            {loadedDateStart && empresasSel.length > 0
+                              ? "  ·  "
+                              : ""}
+                            {empresasSel.length > 0
+                              ? `Empresas: ${empresasSel
+                                  .map((e) => EMPRESA_LABELS[e] ?? e.toUpperCase())
+                                  .join(", ")}`
+                              : ""}
+                          </span>
+                        )}
+                      </th>
+                    </tr>
+                    <tr className="bg-slate-100">
+                      {tableColumns.map((column, idx) => {
+                        const isFecha = idx === 0;
+                        const isTDia = column === "T. Dia";
+                        return (
+                          <th
+                            key={column}
+                            className={`border border-slate-400 py-1 text-[10px] font-bold uppercase tracking-tight leading-tight ${
+                              isFecha ? "px-1.5 text-left" : "px-1 text-center"
+                            } ${
+                              isTDia
+                                ? "bg-slate-200 text-slate-900"
+                                : "text-slate-700"
+                            }`}
+                          >
+                            {column}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map((row, index) => {
+                      const isTotal = index === tableRows.length - 1;
+                      const isSunday =
+                        typeof row["Fecha"] === "string" &&
+                        row["Fecha"].includes("/dom") &&
+                        !isTotal;
+                      const rowBase = isTotal
+                        ? "bg-blue-50 font-bold text-slate-900"
+                        : index % 2 === 1
+                          ? "bg-slate-50"
+                          : "bg-white";
+                      return (
+                        <tr
+                          key={`jpg-${String(row["Fecha"])}-${index}`}
+                          className={rowBase}
+                        >
+                          {tableColumns.map((column, colIdx) => {
+                            const value = row[column];
+                            const tDia = column === "T. Dia";
+                            const isFecha = colIdx === 0;
+                            return (
+                              <td
+                                key={column}
+                                className={`border border-slate-300 py-0.5 text-[11px] leading-snug tabular-nums ${
+                                  isFecha ? "px-1.5 text-left" : "px-1 text-center"
+                                } ${
+                                  isSunday ? "font-bold text-red-600" : ""
+                                } ${
+                                  tDia && !isTotal
+                                    ? "bg-slate-50 font-bold text-slate-900"
+                                    : ""
+                                } ${
+                                  isTotal && tDia ? "bg-blue-100 font-bold" : ""
+                                } ${isTotal ? "border-t-2 border-t-blue-400" : ""}`}
+                              >
+                                {String(value)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </>
