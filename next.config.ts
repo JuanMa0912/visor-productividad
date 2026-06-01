@@ -8,6 +8,11 @@ const skipTypecheckInBuild = process.env.NEXT_BUILD_SKIP_TYPECHECK === "1";
 const enableUpgradeInsecure =
   process.env.UPGRADE_INSECURE_REQUESTS === "true";
 const allowUnsafeEval = process.env.CSP_UNSAFE_EVAL === "true";
+// Cross-Origin-Opener-Policy requiere HTTPS (o localhost). Si el despliegue
+// corre por HTTP plano, `same-origin` se ignora con un warning en consola.
+// Set `COOP_DISABLED=true` para servir el valor permisivo (`unsafe-none`) y
+// evitar el ruido. Recomendado solo mientras no haya HTTPS configurado.
+const coopDisabled = process.env.COOP_DISABLED === "true";
 const allowedDevOrigins = (
   process.env.ALLOWED_DEV_ORIGINS ??
   "192.168.80.173"
@@ -50,7 +55,7 @@ const securityHeaders = [
   },
   {
     key: "Cross-Origin-Opener-Policy",
-    value: isDev ? "unsafe-none" : "same-origin",
+    value: isDev || coopDisabled ? "unsafe-none" : "same-origin",
   },
   {
     key: "Cross-Origin-Resource-Policy",

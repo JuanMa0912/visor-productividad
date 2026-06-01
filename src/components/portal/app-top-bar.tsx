@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PortalBrandingHeader } from "./portal-branding-header";
+import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 
 export type AppTopBarProps = {
   /**
@@ -18,17 +18,12 @@ export type AppTopBarProps = {
   compact?: boolean;
 };
 
-type AuthSnapshot = {
-  isAdmin: boolean;
-  canAccessCronograma: boolean;
-  username: string | null;
-  sede: string | null;
-};
-
 /**
- * Header global autonomo: lee la sesion via /api/auth/me y renderiza
- * `PortalBrandingHeader` con los permisos correctos. Pensado para usar en
- * todas las paginas para mantener una navegacion consistente.
+ * Header global autonomo: consume la sesion via `useAuth()` (el RootLayout
+ * monta el provider, asi que la informacion ya viene cacheada). Antes hacia
+ * su propio `fetch('/api/auth/me')` en cada montaje, lo que generaba un
+ * parpadeo del header en cada navegacion y una llamada redundante (la
+ * pagina tambien la hacia). Ahora es instantaneo si el provider ya cargo.
  */
 export function AppTopBar({
   showBack = true,
@@ -37,44 +32,14 @@ export function AppTopBar({
   compact = false,
 }: AppTopBarProps) {
   const router = useRouter();
-  const [snapshot, setSnapshot] = useState<AuthSnapshot | null>(null);
+  const { user, status } = useAuth();
+  const { isAdmin, hasSpecialRole } = usePermissions();
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            username?: string;
-            role?: string;
-            sede?: string | null;
-            specialRoles?: string[] | null;
-          };
-        };
-        const isAdmin = payload.user?.role === "admin";
-        const canAccessCronograma =
-          isAdmin ||
-          Boolean(payload.user?.specialRoles?.includes("cronograma"));
-        setSnapshot({
-          isAdmin,
-          canAccessCronograma,
-          username: payload.user?.username ?? null,
-          sede: payload.user?.sede ?? null,
-        });
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
-    void load();
-    return () => controller.abort();
-  }, []);
-
-  if (!snapshot) {
+  // Mientras la sesion esta cargando, mostramos solo la barra vacia para
+  // mantener el layout estable (sin CLS). Si no hay sesion (unauthenticated),
+  // tambien renderizamos la barra vacia: el usuario sera redirigido a /login
+  // por la pagina que use `useRequireAuth()`.
+  if (status === "loading" || !user) {
     return (
       <header
         className={
@@ -86,6 +51,8 @@ export function AppTopBar({
     );
   }
 
+  const canAccessCronograma = hasSpecialRole("cronograma");
+
   // Solo mostramos el boton "Volver a X" cuando apunta a un hub distinto a
   // `/secciones` (ej. `/venta`, `/horario`). Si apunta a `/secciones`, el icono
   // Grid2x2 ya cumple esa funcion y no duplicamos.
@@ -93,11 +60,11 @@ export function AppTopBar({
 
   return (
     <PortalBrandingHeader
-      canAccessCronograma={snapshot.canAccessCronograma}
-      isAdmin={snapshot.isAdmin}
+      canAccessCronograma={canAccessCronograma}
+      isAdmin={isAdmin}
       compact={compact}
-      username={snapshot.username}
-      sede={snapshot.sede}
+      username={user.username ?? null}
+      sede={user.sede}
       showSeccionesShortcut={showBack}
       {...(hasDistinctBack
         ? {

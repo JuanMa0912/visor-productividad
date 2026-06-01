@@ -14,10 +14,7 @@ import {
 import { LineChart } from "@mui/x-charts/LineChart";
 import { BarChart } from "@mui/x-charts/BarChart";
 import * as ExcelJS from "exceljs";
-import {
-  canAccessPortalSection,
-  canAccessPortalSubsection,
-} from "@/lib/shared/portal-sections";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   buildDailyTableAllRange,
   buildNumericPivotRange,
@@ -119,7 +116,9 @@ type ParityCheckResult = {
 
 export default function VentasXItemPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const { status: authStatus } = useRequireAuth();
+  const { hasSection, hasSubsection } = usePermissions();
+  const ready = authStatus === "authenticated";
   const [loadingDb, setLoadingDb] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<VentasXItemPreparedRow[]>([]);
@@ -154,55 +153,11 @@ export default function VentasXItemPage() {
   const metaLoadedRef = useRef(false);
 
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-          };
-        };
-        const userIsAdmin = payload.user?.role === "admin";
-        if (
-          !userIsAdmin &&
-          (!canAccessPortalSection(payload.user?.allowedDashboards, "venta") ||
-            !canAccessPortalSubsection(
-              payload.user?.allowedSubdashboards,
-              "ventas-x-item",
-            ))
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-
-        if (isMounted) {
-          setReady(true);
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
-
-    void loadUser();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
+    if (authStatus !== "authenticated") return;
+    if (!hasSection("venta") || !hasSubsection("ventas-x-item")) {
+      router.replace("/secciones");
+    }
+  }, [authStatus, hasSection, hasSubsection, router]);
 
   useEffect(() => {
     if (deepLinkInitRef.current) return;

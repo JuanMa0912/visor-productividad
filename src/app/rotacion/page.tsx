@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -17,6 +17,7 @@ import {
   Loader2,
   MapPin,
   PackageSearch,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -36,10 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  canAccessPortalSection,
-  canAccessPortalSubsection,
-} from "@/lib/shared/portal-sections";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   canAccessRotacionBoard,
   canAccessRotacionV4Board,
@@ -146,6 +144,19 @@ import { AbcdConfigModal } from "./abcd-config-modal";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
 
+/**
+ * Formatea milisegundos a un string legible para el log de consola del
+ * cronometro de carga de la tabla de rotacion. No se renderiza en la UI.
+ */
+const formatLoadDuration = (ms: number): string => {
+  if (!Number.isFinite(ms) || ms < 0) return "0.0s";
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+};
+
 export function RotacionPageInner() {
   const {
     apiBasePath,
@@ -156,12 +167,11 @@ export function RotacionPageInner() {
     exportFilePrefix,
   } = useRotacionViewConfig();
   const router = useRouter();
+  const { user: authUser, status: authStatus } = useRequireAuth();
+  const { isAdmin, hasSection, hasSubsection } = usePermissions();
+  const specialRoles = authUser?.specialRoles ?? null;
+  const userAllowedSedes = authUser?.allowedSedes ?? null;
   const [ready, setReady] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
-  const [userAllowedSedes, setUserAllowedSedes] = useState<string[] | null>(
-    null,
-  );
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -227,14 +237,14 @@ export function RotacionPageInner() {
   const [ceroEstadoFilterByGroup, setCeroEstadoFilterByGroup] = useState<
     Record<string, CeroRotacionEstado[]>
   >({});
-  /** Valor aplicado al pulsar «Venta �0�» (tope de venta periodo en COP). */
+  /** Valor aplicado al pulsar «Venta ≤» (tope de venta periodo en COP). */
   const [ventaHastaCapByGroup, setVentaHastaCapByGroup] = useState<
     Record<string, number | undefined>
   >({});
   const [ventaHastaInputByGroup, setVentaHastaInputByGroup] = useState<
     Record<string, string>
   >({});
-  /** Piso de unidades de inventario al pulsar «Inv �0�» (independiente del filtro de venta). */
+  /** Piso de unidades de inventario al pulsar «Inv ≥» (independiente del filtro de venta). */
   const [invMinCapByGroup, setInvMinCapByGroup] = useState<
     Record<string, number | undefined>
   >({});
@@ -282,77 +292,38 @@ export function RotacionPageInner() {
   );
 
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            allowedSedes?: string[] | null;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-            specialRoles?: string[] | null;
-          };
-        };
-        const isAdmin = payload.user?.role === "admin";
-        setIsAdmin(Boolean(isAdmin));
-        setSpecialRoles(payload.user?.specialRoles ?? null);
-        setUserAllowedSedes(payload.user?.allowedSedes ?? null);
-        if (
-          sourceTable === ROTACION_SOURCE_V4 &&
-          !canAccessRotacionV4Board(isAdmin)
-        ) {
-          router.replace("/productividad");
-          return;
-        }
-        if (
-          !isAdmin &&
-          (!canAccessPortalSection(
-            payload.user?.allowedDashboards,
-            "producto",
-          ) ||
-            !canAccessPortalSubsection(
-              payload.user?.allowedSubdashboards,
-              "rotacion",
-            ))
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-        if (
-          !canAccessRotacionBoard(
-            payload.user?.specialRoles,
-            isAdmin,
-            payload.user?.allowedSubdashboards,
-          )
-        ) {
-          router.replace("/productividad");
-          return;
-        }
-
-        if (isMounted) setReady(true);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
-
-    void loadUser();
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router, sourceTable]);
+    if (authStatus !== "authenticated" || !authUser) return;
+    if (
+      sourceTable === ROTACION_SOURCE_V4 &&
+      !canAccessRotacionV4Board(isAdmin)
+    ) {
+      router.replace("/productividad");
+      return;
+    }
+    if (!hasSection("producto") || !hasSubsection("rotacion")) {
+      router.replace("/secciones");
+      return;
+    }
+    if (
+      !canAccessRotacionBoard(
+        authUser.specialRoles,
+        isAdmin,
+        authUser.allowedSubdashboards,
+      )
+    ) {
+      router.replace("/productividad");
+      return;
+    }
+    setReady(true);
+  }, [
+    authStatus,
+    authUser,
+    hasSection,
+    hasSubsection,
+    isAdmin,
+    router,
+    sourceTable,
+  ]);
 
   useEffect(() => {
     try {
@@ -417,6 +388,15 @@ export function RotacionPageInner() {
 
       setIsLoadingData(true);
       setError(null);
+
+      // Cronometro en consola: tick cada 250ms mientras la carga este en curso.
+      // No se renderiza en la UI, solo se loguea para diagnosticos de rendimiento.
+      const reloadStartTs = performance.now();
+      console.log("[rotacion] Iniciando carga de tabla...");
+      const tickerId = window.setInterval(() => {
+        const elapsedMs = performance.now() - reloadStartTs;
+        console.log(`[rotacion] Cargando... ${formatLoadDuration(elapsedMs)}`);
+      }, 250);
 
       try {
         if (
@@ -492,7 +472,16 @@ export function RotacionPageInner() {
         );
         return false;
       } finally {
+        window.clearInterval(tickerId);
         setIsLoadingData(false);
+        // Solo logueamos el tiempo final cuando la carga NO fue abortada
+        // (los aborts nunca llegan a recibir respuesta, asi que su tiempo no aporta).
+        if (!options?.signal?.aborted) {
+          const elapsedMs = performance.now() - reloadStartTs;
+          console.log(
+            `[rotacion] Tabla cargada en ${formatLoadDuration(elapsedMs)} (${elapsedMs.toFixed(0)} ms).`,
+          );
+        }
       }
     },
     [
@@ -807,16 +796,18 @@ export function RotacionPageInner() {
 
         if (generation !== catalogLoadGenerationRef.current) return;
 
-        if (targetSedeSelectionsForQuery.length > 0) {
-          await reloadRotacionRowsRef.current(
-            {
-              lineasN1: allLineasN1,
-              categoriaKeys: defaultCategoriaKeys,
-              categoriasCatalog: allCategorias,
-            },
-            { signal: rowsController.signal },
-          );
-        }
+        // NO disparamos aqui la carga de filas: lo deja para el useEffect
+        // dependiente de `filterCatalog.lineasN1`, `selectedLineaN1Values`,
+        // `selectedCategoriaKeys`, etc., que ya tiene su propia clave/dedupe.
+        //
+        // Antes haciamos `await reloadRotacionRowsRef.current({...overrides})`
+        // aqui mismo, pero eso provocaba **doble fetch** al primer load: la
+        // version de `reloadRotacionRows` que estaba en el ref capturaba el
+        // closure VIEJO con `filterCatalog.lineasN1 = []` (los setStates de
+        // arriba aun no se habian commiteado). Esa primera invocacion escribia
+        // en `rotacionRowsFetchKeyRef.current` una clave calculada con catalogo
+        // vacio; despues el otro useEffect calculaba la clave con el catalogo
+        // ya aplicado y como no coincidian, disparaba una segunda carga.
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (generation !== catalogLoadGenerationRef.current) return;
@@ -1760,7 +1751,7 @@ export function RotacionPageInner() {
               return zeroEstadoSet.includes(estado);
             })
           : quickFilteredRows;
-        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta �0�). */
+        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
         const sourceRowsForAbcd =
           baseRowsBySedeByKey.get(groupKey) ?? group.rows;
         const sourceRowsForAbcdFilterable =
@@ -2250,20 +2241,26 @@ export function RotacionPageInner() {
                             ? "Seleccione al menos una sede"
                             : "Cambios de S.inventario en el periodo y sedes actuales"
                       }
-                      className="rounded-full border-slate-300 bg-white/90 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                      className="group h-9 gap-2 rounded-full border-amber-200/70 bg-white/85 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900 shadow-sm backdrop-blur-xs transition hover:border-amber-300 hover:bg-amber-50 hover:shadow-md disabled:opacity-50 disabled:hover:border-amber-200/70 disabled:hover:bg-white/85 disabled:hover:shadow-sm"
                       onClick={() => setSurtidoAuditModalOpen(true)}
                     >
-                      <History className="mr-2 inline h-4 w-4 align-text-bottom" />
+                      <History
+                        className="h-4 w-4 text-amber-600 transition group-hover:text-amber-700"
+                        aria-hidden
+                      />
                       Historial S.inventario
                     </Button>
                   ) : null}
                   {canEditAbcdConfig ? (
                     <Button
                       type="button"
-                      variant="outline"
-                      className="rounded-full border-emerald-300 bg-emerald-50/90 px-4 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-900 hover:bg-emerald-100"
+                      className="group h-9 gap-2 rounded-full bg-amber-600 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_22px_-10px_rgba(217,119,6,0.7)] transition hover:bg-amber-700 hover:shadow-[0_12px_26px_-10px_rgba(180,83,9,0.75)]"
                       onClick={() => setIsAbcdModalOpen(true)}
                     >
+                      <SlidersHorizontal
+                        className="h-4 w-4 transition group-hover:rotate-90"
+                        aria-hidden
+                      />
                       Configurar ABCD
                     </Button>
                   ) : null}
@@ -2282,7 +2279,7 @@ export function RotacionPageInner() {
               </CardTitle>
               <CardDescription>
                 Puedes elegir varias empresas y varias sedes para evaluarlas en
-                conjunto. Para acotar por venta del periodo usa el boton Venta �0�
+                conjunto. Para acotar por venta del periodo usa el boton Venta ≤
                 en la tabla.
               </CardDescription>
             </CardHeader>
@@ -2794,7 +2791,7 @@ export function RotacionPageInner() {
                   {sourceTable}
                 </span>
                 . Ajusta el rango de fechas o usa el boton{" "}
-                <span className="font-semibold">Venta �0�</span> en la tabla para
+                <span className="font-semibold">Venta ≤</span> en la tabla para
                 filtrar por debajo de un valor.
               </p>
             </CardContent>
@@ -3734,10 +3731,10 @@ export function RotacionPageInner() {
                                       {(rowFilter === "venta_hasta" ||
                                         rowFilter === "both") &&
                                       ventaHastaCapByGroup[groupKey] != null
-                                        ? `Venta �0� ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
+                                        ? `Venta ≤ ${formatPrice(ventaHastaCapByGroup[groupKey]!)} (${categoryFilteredRows.length})`
                                         : ventaHastaPreviewCount != null
-                                          ? `Venta �0� (${ventaHastaPreviewCount})`
-                                          : "Venta �0�"}
+                                          ? `Venta ≤ (${ventaHastaPreviewCount})`
+                                          : "Venta ≤"}
                                     </Button>
                                     <input
                                       type="text"
@@ -3775,10 +3772,10 @@ export function RotacionPageInner() {
                                       }
                                     >
                                       {invMinAppliedCap != null
-                                        ? `Inv �0� ${invMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
+                                        ? `Inv ≥ ${invMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
                                         : invMinPreviewCount != null
-                                          ? `Inv �0� (${invMinPreviewCount})`
-                                          : "Inv �0�"}
+                                          ? `Inv ≥ (${invMinPreviewCount})`
+                                          : "Inv ≥"}
                                     </Button>
                                     <input
                                       type="text"
@@ -3960,7 +3957,7 @@ export function RotacionPageInner() {
                                   Imagen: solo la tabla (paginación por sede),
                                   captura ampliada y alta densidad de píxeles.
                                   JPG usa calidad 98%; WhatsApp puede volver a
-                                  comprimir al enviar � si no se lee bien,
+                                  comprimir al enviar — si no se lee bien,
                                   prueba PNG o PDF. PDF: todas las filas
                                   filtradas, igual que &quot;Descargar
                                   PDF&quot;.{" "}

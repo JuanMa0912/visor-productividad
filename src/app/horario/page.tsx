@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, GitCompareArrows } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
@@ -11,11 +11,11 @@ import {
   type HubModuleItem,
 } from "@/components/portal/hub-section-cards";
 import {
-  canAccessPortalSection,
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 
 const BASE_OPERACION_MODULES: HubModuleItem[] = [
   {
@@ -50,81 +50,29 @@ const COMPARAR_MODULE: HubModuleItem = {
 
 export default function HorarioHubPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [canSeeCompararHorarios, setCanSeeCompararHorarios] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [canAccessCronograma, setCanAccessCronograma] = useState(false);
-  const [allowedSubdashboards, setAllowedSubdashboards] = useState<
-    string[] | null
-  >(null);
-  const [username, setUsername] = useState<string | null>(null);
-  const [sede, setSede] = useState<string | null>(null);
+  const { user, status } = useRequireAuth();
+  const { isAdmin, hasSection, hasSpecialRole } = usePermissions();
 
+  // Si el usuario esta autenticado pero no tiene la seccion `operacion`,
+  // lo mandamos al hub raiz (`/secciones`).
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
+    if (status === "authenticated" && !hasSection("operacion")) {
+      router.replace("/secciones");
+    }
+  }, [status, hasSection, router]);
 
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-            specialRoles?: string[] | null;
-            username?: string | null;
-            sede?: string | null;
-          };
-        };
-        const userIsAdmin = payload.user?.role === "admin";
-        if (
-          !userIsAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "operacion")
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-        if (isMounted) {
-          setIsAdmin(userIsAdmin);
-          setUsername(payload.user?.username ?? null);
-          setSede(payload.user?.sede ?? null);
-          setAllowedSubdashboards(payload.user?.allowedSubdashboards ?? null);
-          setCanAccessCronograma(
-            userIsAdmin ||
-              Boolean(payload.user?.specialRoles?.includes("cronograma")),
-          );
-          setCanSeeCompararHorarios(
-            canAccessHorariosCompararBoard(
-              payload.user?.specialRoles,
-              userIsAdmin,
-            ),
-          );
-          setReady(true);
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
-
-    void loadUser();
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
+  const canSeeCompararHorarios = useMemo(
+    () =>
+      canAccessHorariosCompararBoard(user?.specialRoles ?? null, isAdmin),
+    [user?.specialRoles, isAdmin],
+  );
 
   const modules = useMemo(() => {
     if (!canSeeCompararHorarios) return BASE_OPERACION_MODULES;
     return [BASE_OPERACION_MODULES[0], COMPARAR_MODULE, BASE_OPERACION_MODULES[1]];
   }, [canSeeCompararHorarios]);
+
+  const allowedSubdashboards = user?.allowedSubdashboards ?? null;
   const visibleModules = useMemo(
     () => {
       return modules.filter((module) => {
@@ -138,12 +86,14 @@ export default function HorarioHubPage() {
   );
 
   useEffect(() => {
-    if (ready && visibleModules.length === 0) {
+    if (status === "authenticated" && visibleModules.length === 0) {
       router.replace("/secciones");
     }
-  }, [ready, router, visibleModules.length]);
+  }, [status, router, visibleModules.length]);
 
-  if (!ready) {
+  const canAccessCronograma = hasSpecialRole("cronograma");
+
+  if (status !== "authenticated" || !user) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
@@ -158,8 +108,8 @@ export default function HorarioHubPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
-        username={username}
-        sede={sede}
+        username={user.username}
+        sede={user.sede}
         showSeccionesShortcut
       />
       <PortalHubShell>

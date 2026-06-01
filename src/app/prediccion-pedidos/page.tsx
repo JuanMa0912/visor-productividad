@@ -1,57 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 
 export default function PrediccionPedidosPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const { status } = useRequireAuth();
+  const { hasSection } = usePermissions();
 
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
+    if (status === "authenticated" && !hasSection("producto")) {
+      router.replace("/secciones");
+    }
+  }, [status, hasSection, router]);
 
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
-        };
-        const isAdmin = payload.user?.role === "admin";
-        if (
-          !isAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "producto")
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-
-        if (isMounted) setReady(true);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
-
-    void loadUser();
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
-
-  if (!ready) {
+  if (status !== "authenticated") {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">

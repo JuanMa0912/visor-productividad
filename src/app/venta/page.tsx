@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Package, PieChart } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
@@ -11,10 +11,10 @@ import {
   type HubModuleItem,
 } from "@/components/portal/hub-section-cards";
 import {
-  canAccessPortalSection,
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 
 const VENTA_MODULES: HubModuleItem[] = [
   {
@@ -48,83 +48,38 @@ const VENTA_MODULES: HubModuleItem[] = [
 
 export default function VentaHubPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [canAccessCronograma, setCanAccessCronograma] = useState(false);
-  const [visibleModules, setVisibleModules] = useState<HubModuleItem[]>([]);
-  const [username, setUsername] = useState<string | null>(null);
-  const [sede, setSede] = useState<string | null>(null);
+  const { user, status } = useRequireAuth();
+  const { isAdmin, hasSection, hasSpecialRole } = usePermissions();
+
+  // Si esta autenticado pero no tiene acceso a la seccion `venta`,
+  // lo mandamos al hub raiz.
+  useEffect(() => {
+    if (status === "authenticated" && !hasSection("venta")) {
+      router.replace("/secciones");
+    }
+  }, [status, hasSection, router]);
+
+  const allowedSubdashboards = user?.allowedSubdashboards ?? null;
+  const visibleModules = useMemo(
+    () =>
+      VENTA_MODULES.filter((module) => {
+        if (isAdmin) return true;
+        const subId = resolvePortalSubsectionId(module.id);
+        if (!subId) return false;
+        return canAccessPortalSubsection(allowedSubdashboards, subId);
+      }),
+    [allowedSubdashboards, isAdmin],
+  );
 
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
+    if (status === "authenticated" && visibleModules.length === 0) {
+      router.replace("/secciones");
+    }
+  }, [status, router, visibleModules.length]);
 
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-            specialRoles?: string[] | null;
-            username?: string | null;
-            sede?: string | null;
-          };
-        };
-        const userIsAdmin = payload.user?.role === "admin";
-        if (
-          !userIsAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "venta")
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-        if (isMounted) {
-          const allowedSubdashboards = payload.user?.allowedSubdashboards;
-          setIsAdmin(userIsAdmin);
-          setUsername(payload.user?.username ?? null);
-          setSede(payload.user?.sede ?? null);
-          setCanAccessCronograma(
-            userIsAdmin ||
-              Boolean(payload.user?.specialRoles?.includes("cronograma")),
-          );
-          const nextVisibleModules = VENTA_MODULES.filter((module) =>
-            userIsAdmin
-              ? true
-              : (() => {
-                  const subId = resolvePortalSubsectionId(module.id);
-                  if (!subId) return false;
-                  return canAccessPortalSubsection(allowedSubdashboards, subId);
-                })(),
-          );
-          if (nextVisibleModules.length === 0) {
-            router.replace("/secciones");
-            return;
-          }
-          setVisibleModules(nextVisibleModules);
-          setReady(true);
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
+  const canAccessCronograma = hasSpecialRole("cronograma");
 
-    void loadUser();
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
-
-  if (!ready) {
+  if (status !== "authenticated" || !user) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
@@ -139,8 +94,8 @@ export default function VentaHubPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
-        username={username}
-        sede={sede}
+        username={user.username}
+        sede={user.sede}
         showSeccionesShortcut
       />
       <PortalHubShell>

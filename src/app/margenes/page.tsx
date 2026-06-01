@@ -22,11 +22,8 @@ import {
 } from "@/lib/shared/constants";
 import { normalizeKeyCompact } from "@/lib/shared/normalize";
 import { formatCOP } from "@/lib/shared/calc";
-import {
-  canAccessPortalSection,
-  canAccessPortalSubsection,
-} from "@/lib/shared/portal-sections";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 
 type DateRange = {
   start: string;
@@ -184,9 +181,13 @@ const toMonthBounds = (dateKey: string) => {
 export default function MargenesPage() {
   const LINE_PAGE_SIZE = 25;
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [authLoaded, setAuthLoaded] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
+  const { user, status } = useRequireAuth();
+  const { hasSection, hasSubsection } = usePermissions();
+  // `ready` y `authLoaded` se mapean ahora al estado del provider, pero los
+  // mantenemos como variables locales para no tocar el resto del archivo.
+  const ready = status === "authenticated";
+  const authLoaded = status !== "loading";
+  const username = user?.username ?? null;
   const [prefsReady, setPrefsReady] = useState(false);
   const [pendingSedeKey, setPendingSedeKey] = useState<string | null>(null);
   const [allowedLineIds, setAllowedLineIds] = useState<string[]>([]);
@@ -232,61 +233,14 @@ export default function MargenesPage() {
   };
 
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            username?: string;
-            allowedLines?: string[] | null;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-          };
-        };
-        if (!isMounted) return;
-        const isUserAdmin = payload.user?.role === "admin";
-        if (
-          !isUserAdmin &&
-          (!canAccessPortalSection(payload.user?.allowedDashboards, "producto") ||
-            !canAccessPortalSubsection(
-              payload.user?.allowedSubdashboards,
-              "margenes",
-            ))
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-        setUsername(payload.user?.username ?? null);
-        setPendingSedeKey(resolveUsernameSedeKey(payload.user?.username));
-        setAllowedLineIds(resolveAllowedLineIds(payload.user?.allowedLines));
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      } finally {
-        if (isMounted) {
-          setReady(true);
-          setAuthLoaded(true);
-        }
-      }
-    };
-
-    void loadUser();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
+    if (status !== "authenticated" || !user) return;
+    if (!hasSection("producto") || !hasSubsection("margenes")) {
+      router.replace("/secciones");
+      return;
+    }
+    setPendingSedeKey(resolveUsernameSedeKey(user.username));
+    setAllowedLineIds(resolveAllowedLineIds(user.allowedLines));
+  }, [status, user, hasSection, hasSubsection, router]);
 
   useEffect(() => {
     if (!ready) return;

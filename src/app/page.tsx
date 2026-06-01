@@ -12,11 +12,8 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 import { animate, remove } from "animejs";
-import {
-  canAccessPortalSection,
-  canAccessPortalSubsection,
-} from "@/lib/shared/portal-sections";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   escapeCsvValue,
   formatPdfDate,
@@ -231,9 +228,11 @@ const filterLinesByStatus = (
 export default function Home() {
   // Estado para controlar hidratación
   const [mounted, setMounted] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [authLoaded, setAuthLoaded] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
+  const { user: authUser, status: authStatus } = useRequireAuth();
+  const { isAdmin, hasSection, hasSubsection } = usePermissions();
+  // `authLoaded` y `username` se derivan ahora del provider central.
+  const authLoaded = authStatus !== "loading";
+  const username = authUser?.username ?? null;
   const [prefsReady, setPrefsReady] = useState(false);
   const [pendingSedeKey, setPendingSedeKey] = useState<string | null>(null);
   const [allowedLineIds, setAllowedLineIds] = useState<string[]>([]);
@@ -967,64 +966,22 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            username?: string;
-            allowedLines?: string[] | null;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-          };
-        };
-        if (!isMounted) return;
-        const isUserAdmin = payload.user?.role === "admin";
-        if (
-          !isUserAdmin &&
-          (!canAccessPortalSection(
-            payload.user?.allowedDashboards,
-            "producto",
-          ) ||
-            !canAccessPortalSubsection(
-              payload.user?.allowedSubdashboards,
-              "mix-y-linea",
-            ))
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-        setIsAdmin(isUserAdmin);
-        setUsername(payload.user?.username ?? null);
-        setPendingSedeKey(resolveUsernameSedeKey(payload.user?.username));
-        setAllowedLineIds(resolveAllowedLineIds(payload.user?.allowedLines));
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          return;
-        }
-      } finally {
-        if (isMounted) setAuthLoaded(true);
-      }
-    };
-
-    void loadUser();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [resolveAllowedLineIds, resolveUsernameSedeKey, router]);
+    if (authStatus !== "authenticated" || !authUser) return;
+    if (!hasSection("producto") || !hasSubsection("mix-y-linea")) {
+      router.replace("/secciones");
+      return;
+    }
+    setPendingSedeKey(resolveUsernameSedeKey(authUser.username));
+    setAllowedLineIds(resolveAllowedLineIds(authUser.allowedLines));
+  }, [
+    authStatus,
+    authUser,
+    hasSection,
+    hasSubsection,
+    resolveAllowedLineIds,
+    resolveUsernameSedeKey,
+    router,
+  ]);
 
   const handleCompaniesChange = useCallback((value: string[]) => {
     const next = value.slice(0, 2);

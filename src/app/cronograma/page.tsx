@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { useRequireAuth } from "@/lib/auth/auth-context";
 import { cn } from "@/lib/shared/utils";
 import type {
   CronogramaDatabase,
@@ -856,7 +857,8 @@ const ViewToggleButton = ({
 
 export default function CronogramaPage() {
   const router = useRouter();
-  const [authReady, setAuthReady] = useState(false);
+  const { status: authStatus } = useRequireAuth();
+  const authReady = authStatus === "authenticated";
   const [payload, setPayload] = useState<CronogramaPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -868,31 +870,6 @@ export default function CronogramaPage() {
     projects: [],
     showEmptyColumns: false,
   });
-
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    const verifyAuth = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      } finally {
-        if (!cancelled) setAuthReady(true);
-      }
-    };
-    void verifyAuth();
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [router]);
 
   const loadCronograma = useCallback(
     async (signal?: AbortSignal) => {

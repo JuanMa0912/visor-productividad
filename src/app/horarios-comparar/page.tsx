@@ -17,12 +17,9 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
-import {
-  canAccessPortalSection,
-  canAccessPortalSubsection,
-} from "@/lib/shared/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { ScrollToTopButton } from "@/components/ui/scroll-to-top-button";
 import {
   HORARIOS_COMPARAR_ENTRADA_ANTICIPO_MAX_MIN,
@@ -181,6 +178,8 @@ function normalizeNameForFilter(value: string): string {
 
 export default function HorariosCompararPage() {
   const router = useRouter();
+  const { user: authUser, status: authStatus } = useRequireAuth();
+  const { isAdmin: authIsAdmin, hasSection, hasSubsection } = usePermissions();
   const [ready, setReady] = useState(false);
   const [{ start, end }, setRange] = useState(defaultDateRange);
   const [sede, setSede] = useState("");
@@ -201,55 +200,20 @@ export default function HorariosCompararPage() {
   const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-            specialRoles?: string[] | null;
-          };
-        };
-        const isAdmin = payload.user?.role === "admin";
-        if (
-          !isAdmin &&
-          (!canAccessPortalSection(payload.user?.allowedDashboards, "operacion") ||
-            !canAccessPortalSubsection(
-              payload.user?.allowedSubdashboards,
-              "planilla-vs-asistencia",
-            ))
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-        if (!canAccessHorariosCompararBoard(payload.user?.specialRoles, isAdmin)) {
-          router.replace("/horario");
-          return;
-        }
-        if (isMounted) setReady(true);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      }
-    };
-
-    void loadUser();
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
+    if (authStatus !== "authenticated" || !authUser) return;
+    if (
+      !hasSection("operacion") ||
+      !hasSubsection("planilla-vs-asistencia")
+    ) {
+      router.replace("/secciones");
+      return;
+    }
+    if (!canAccessHorariosCompararBoard(authUser.specialRoles, authIsAdmin)) {
+      router.replace("/horario");
+      return;
+    }
+    setReady(true);
+  }, [authStatus, authUser, authIsAdmin, hasSection, hasSubsection, router]);
 
   const loadComparison = useCallback(async () => {
     setLoading(true);

@@ -20,6 +20,7 @@ import {
   Users,
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTION_LABEL_BY_ID,
@@ -329,6 +330,8 @@ const getPresenceBadge = (
 
 export default function AdminUsuariosPage() {
   const router = useRouter();
+  const { status: authStatus } = useRequireAuth();
+  const { isAdmin } = usePermissions();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -336,7 +339,6 @@ export default function AdminUsuariosPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [formState, setFormState] = useState<UserFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "user">("all");
   const [presenceFilter, setPresenceFilter] = useState<
@@ -451,18 +453,6 @@ export default function AdminUsuariosPage() {
     setLoading(true);
     setError(null);
     try {
-      const meRes = await fetch("/api/auth/me");
-      if (!meRes.ok) {
-        handleAuthFailure(meRes.status);
-        return;
-      }
-      const mePayload = (await meRes.json()) as { user?: { role?: string } };
-      if (mePayload.user?.role !== "admin") {
-        router.replace("/secciones");
-        return;
-      }
-      setIsAdmin(true);
-
       const [usersRes, logsRes] = await Promise.all([
         fetch("/api/admin/users"),
         fetch(`/api/admin/login-logs?limit=${RECENT_ACCESS_LOGS_LIMIT}`),
@@ -486,11 +476,18 @@ export default function AdminUsuariosPage() {
     } finally {
       setLoading(false);
     }
-  }, [handleAuthFailure, router]);
+  }, [handleAuthFailure]);
 
   useEffect(() => {
+    // Esperamos a que el AuthProvider confirme la sesion. Si el usuario no es
+    // admin, lo enviamos al hub de secciones. Si lo es, disparamos la carga.
+    if (authStatus !== "authenticated") return;
+    if (!isAdmin) {
+      router.replace("/secciones");
+      return;
+    }
     void loadData();
-  }, [loadData]);
+  }, [authStatus, isAdmin, loadData, router]);
 
   useEffect(() => {
     if (!isAdmin) return;

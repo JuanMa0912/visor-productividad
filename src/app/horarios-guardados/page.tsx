@@ -20,7 +20,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { canAccessPortalSection } from "@/lib/shared/portal-sections";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 
 type DayKey =
@@ -178,6 +178,8 @@ const getCookieValue = (name: string) => {
 
 export default function HorariosGuardadosPage() {
   const router = useRouter();
+  const { status: authStatus } = useRequireAuth();
+  const { hasSection } = usePermissions();
   const [ready, setReady] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("plantillas");
   const [forms, setForms] = useState<SavedScheduleFormSummary[]>([]);
@@ -393,32 +395,17 @@ export default function HorariosGuardadosPage() {
   );
 
   useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    if (!hasSection("operacion")) {
+      router.replace("/secciones");
+      return;
+    }
+
     let isMounted = true;
     const controller = new AbortController();
 
     const loadPage = async () => {
       try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as {
-          user?: { role?: string; allowedDashboards?: string[] | null };
-        };
-        const isAdmin = payload.user?.role === "admin";
-        if (
-          !isAdmin &&
-          !canAccessPortalSection(payload.user?.allowedDashboards, "operacion")
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-
         await Promise.all([
           loadForms(controller.signal).catch((err) => {
             if (!(err instanceof DOMException && err.name === "AbortError")) {
@@ -448,7 +435,7 @@ export default function HorariosGuardadosPage() {
       isMounted = false;
       controller.abort();
     };
-  }, [loadForms, loadPeople, router]);
+  }, [authStatus, hasSection, loadForms, loadPeople, router]);
 
   useEffect(() => {
     if (forms.length > 0 && selectedFormId === null) {

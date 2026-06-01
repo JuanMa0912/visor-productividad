@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const ACTIVITY_WINDOW_MS = 60_000;
@@ -12,9 +13,15 @@ const ACTIVITY_WINDOW_MS = 60_000;
  *   en el ultimo minuto (mouse / teclado / scroll / focus / touch).
  * - Forzado tambien al cambiar de ruta (asi `last_path` queda al dia aunque el
  *   usuario lleve un rato sin tocar nada) y al regresar la pestana al frente.
+ *
+ * IMPORTANTE: solo se activa cuando hay sesion (`status === "authenticated"`).
+ * Antes este componente disparaba el POST en /login y en cualquier estado
+ * intermedio, lo que generaba errores 401 (Unauthorized) en consola.
  */
 export default function PresenceHeartbeat() {
   const pathname = usePathname();
+  const { status } = useAuth();
+  const isAuthenticated = status === "authenticated";
   const lastActivityRef = useRef<number>(
     typeof window === "undefined" ? 0 : Date.now(),
   );
@@ -55,6 +62,9 @@ export default function PresenceHeartbeat() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Sin sesion no hay nada que reportar; evitamos el 401 en consola y la
+    // carga innecesaria al backend (ej. mientras el usuario esta en /login).
+    if (!isAuthenticated) return;
     cancelledRef.current = false;
 
     const markActive = () => {
@@ -96,13 +106,14 @@ export default function PresenceHeartbeat() {
         window.removeEventListener(event, markActive),
       );
     };
-  }, [sendHeartbeat]);
+  }, [sendHeartbeat, isAuthenticated]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!isAuthenticated) return;
     lastActivityRef.current = Date.now();
     void sendHeartbeat(true);
-  }, [pathname, sendHeartbeat]);
+  }, [pathname, sendHeartbeat, isAuthenticated]);
 
   return null;
 }

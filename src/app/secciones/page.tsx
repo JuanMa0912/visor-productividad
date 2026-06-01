@@ -1,16 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, BarChart3, Boxes, ChevronRight } from "lucide-react";
-import {
-  PORTAL_APP_VERSION,
-  PortalBrandingHeader,
-} from "@/components/portal/portal-branding-header";
+import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PORTAL_SECTIONS,
   type PortalSectionId,
 } from "@/lib/shared/portal-sections";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 
 const SECTION_STYLES: Record<
   PortalSectionId,
@@ -80,59 +77,10 @@ const SECTION_ICONS: Record<PortalSectionId, typeof BarChart3> = {
 
 export default function SeccionesPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [allowedDashboards, setAllowedDashboards] = useState<string[] | null>(null);
-  const [specialRoles, setSpecialRoles] = useState<string[] | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
-  const [sede, setSede] = useState<string | null>(null);
+  const { user, status } = useRequireAuth();
+  const { isAdmin, hasSpecialRole } = usePermissions();
 
-  useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const loadUser = async () => {
-      try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            allowedDashboards?: string[] | null;
-            specialRoles?: string[] | null;
-            username?: string | null;
-            sede?: string | null;
-          };
-        };
-        if (!isMounted) return;
-        setIsAdmin(payload.user?.role === "admin");
-        setAllowedDashboards(payload.user?.allowedDashboards ?? null);
-        setSpecialRoles(payload.user?.specialRoles ?? null);
-        setUsername(payload.user?.username ?? null);
-        setSede(payload.user?.sede ?? null);
-        setReady(true);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          return;
-        }
-      }
-    };
-
-    void loadUser();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [router]);
-
-  if (!ready) {
+  if (status !== "authenticated" || !user) {
     return (
       <div className="min-h-screen bg-background px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-md rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
@@ -142,12 +90,12 @@ export default function SeccionesPage() {
     );
   }
 
+  const allowedDashboards = user.allowedDashboards;
   const visibleSections =
     isAdmin || allowedDashboards === null
       ? PORTAL_SECTIONS
       : PORTAL_SECTIONS.filter((section) => allowedDashboards.includes(section.id));
-  const canAccessCronograma =
-    isAdmin || Boolean(specialRoles?.includes("cronograma"));
+  const canAccessCronograma = hasSpecialRole("cronograma");
   const sectionCount = visibleSections.length;
 
   return (
@@ -155,8 +103,8 @@ export default function SeccionesPage() {
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
-        username={username}
-        sede={sede}
+        username={user.username}
+        sede={user.sede}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 lg:px-6">
         <p className="max-w-5xl text-sm leading-6 text-slate-600">
@@ -240,15 +188,6 @@ export default function SeccionesPage() {
             Tu usuario no tiene secciones asignadas en este momento.
           </div>
         )}
-
-        <footer className="mt-2 flex flex-col gap-2 border-t border-slate-200/70 pt-8 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p className="font-medium text-slate-600">
-            Portal UAID <span className="text-slate-400">{PORTAL_APP_VERSION}</span>
-          </p>
-          <p className="text-slate-400">
-            © {new Date().getFullYear()} · Herramientas internas de seguimiento
-          </p>
-        </footer>
       </div>
     </div>
   );

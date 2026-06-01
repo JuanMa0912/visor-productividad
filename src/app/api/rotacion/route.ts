@@ -4,6 +4,7 @@ import { getDbPool, withPoolClient } from "@/lib/db";
 import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
+  type RotacionBaseSqlFields,
 } from "@/lib/rotacion/base-fields";
 import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
 import { ROTACION_SOURCE_V4 } from "@/lib/rotacion/source-tables";
@@ -158,6 +159,27 @@ const HIDDEN_SEDE_KEYS = new Set([
   "centrodistribucioncavasa",
   "importados",
 ]);
+
+/**
+ * Filtro SQL equivalente a `HIDDEN_SEDE_KEYS` (sedes administrativas / centros de
+ * distribucion que nunca se muestran). Aplicarlo en el WHERE evita procesar y
+ * transferir filas que despues se descartan en Node, ademas de aligerar window
+ * functions y agregaciones.
+ *
+ * Recibe la expresion textual que produce `sedeNameExpr` (ya viene COALESCE'd y
+ * casteada). El `.filter()` posterior en JS se conserva como red de seguridad.
+ */
+const buildHiddenSedeWhereClause = (sedeNameExpr: string) =>
+  `LOWER(REGEXP_REPLACE(
+    TRANSLATE(
+      ${sedeNameExpr},
+      'áéíóúÁÉÍÓÚñÑ',
+      'aeiouAEIOUnN'
+    ),
+    '[^a-zA-Z0-9]+',
+    '',
+    'g'
+  )) NOT IN ('adm', 'cedicavasa', 'centrodistribucioncavasa', 'importados')`;
 const DEFAULT_ABCD_CONFIG: AbcdConfig = {
   aUntilPercent: 70,
   bUntilPercent: 85,
@@ -1089,6 +1111,7 @@ const queryRotationRows = async ({
   sedeId,
   lineasN1,
   categoriaKeys,
+  precomputedFields,
 }: {
   startDate: string;
   endDate: string;
@@ -1097,11 +1120,19 @@ const queryRotationRows = async ({
   sedeId: string | null;
   lineasN1: string[] | null;
   categoriaKeys: string[] | null;
+  /**
+   * Si el caller ya resolvio los campos via `resolveRotacionBaseSqlFields`, se
+   * pasan aqui para evitar volver a hacer la introspeccion del esquema en cada
+   * sede (cuando hay N sedes, esto ahorra N - 1 round-trips).
+   */
+  precomputedFields?: RotacionBaseSqlFields;
 }): Promise<RotationRow[]> => {
   const fetchRows = async (): Promise<RotationRow[]> =>
     withPoolClient(async (client) => {
-      const fields = await resolveRotacionBaseSqlFields(client);
+      const fields =
+        precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
       const dateColumn = fields.dateColumn;
+      const sqlStartTs = performance.now();
       const result = await client.query(
       `
       WITH scoped AS (
@@ -1144,6 +1175,7 @@ const queryRotationRows = async ({
           AND ($6::text IS NULL OR ${fields.sedeIdExpr} = $6)
           AND ($7::text[] IS NULL OR COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = ANY($7::text[]))
           AND ($10::text[] IS NULL OR ${fields.categoriaKeyExpr} = ANY($10::text[]))
+          AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
       ),
       ranked AS (
         SELECT
@@ -1472,6 +1504,15 @@ const queryRotationRows = async ({
         LOW_ROTATION_DAYS_THRESHOLD,
         categoriaKeys,
       ],
+    );
+
+    // Log de timing por sede para diagnostico. Permite ver en `npm run dev` si
+    // la lentitud esta concentrada en una sede grande o repartida.
+    const sqlElapsedMs = performance.now() - sqlStartTs;
+    console.info(
+      `[rotacion API] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
+        result.rows?.length ?? 0
+      } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
     );
 
     return ((result.rows ?? []) as RotationDbRow[])
@@ -1882,6 +1923,19 @@ export async function GET(request: Request) {
         ? null
         : validatedCategoriaKeys;
 
+    // Resolvemos los campos del esquema UNA sola vez por request y los pasamos
+    // a todas las queries por sede. Antes cada `queryRotationRows` ejecutaba su
+    // propio `resolveRotacionBaseSqlFields` (introspeccion del esquema), lo que
+    // se traducia en N round-trips innecesarios cuando el usuario seleccionaba
+    // varias sedes.
+    const precomputedFields = await withPoolClient((client) =>
+      resolveRotacionBaseSqlFields(client),
+    );
+
+    const totalStartTs = performance.now();
+    console.info(
+      `[rotacion API] iniciando fetch de filas para ${selectedVisibleSedes.length} sede(s)`,
+    );
     const rowsBySede = await mapWithConcurrency(
       selectedVisibleSedes,
       3,
@@ -1894,9 +1948,14 @@ export async function GET(request: Request) {
           sedeId: sede.sedeId,
           lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
           categoriaKeys: categoriaKeysForQuery,
+          precomputedFields,
         }),
     );
     const rows = rowsBySede.flat();
+    const totalElapsedMs = performance.now() - totalStartTs;
+    console.info(
+      `[rotacion API] fetch completo en ${(totalElapsedMs / 1000).toFixed(2)}s (${rows.length} filas totales)`,
+    );
 
     const stats = {
       evaluatedSedes: new Set(rows.map((row) => row.sedeName)).size,

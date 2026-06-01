@@ -10,20 +10,11 @@ import {
   normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
 
-export type AuthUser = {
-  id: string;
-  username: string;
-  role: "admin" | "user";
-  sede: string | null;
-  allowedSedes: string[] | null;
-  allowedLines: string[] | null;
-  allowedDashboards: string[] | null;
-  allowedSubdashboards: string[] | null;
-  specialRoles: string[] | null;
-  is_active: boolean;
-  last_login_at: string | null;
-  last_login_ip: string | null;
-};
+// La definicion del tipo vive en ./types.ts para que sea importable desde
+// codigo cliente sin arrastrar dependencias de Node. Aqui lo importamos para
+// usarlo internamente y lo re-exportamos para mantener la API publica intacta.
+import type { AuthUser, AuthRole, AuthUserPublic } from "./types";
+export type { AuthUser, AuthRole, AuthUserPublic };
 
 const SESSION_COOKIE = "vp_session";
 const CSRF_COOKIE = "vp_csrf";

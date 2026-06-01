@@ -2,9 +2,11 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
+import { AuthProvider } from "@/lib/auth/auth-context";
+import { PortalFooter } from "@/components/portal/portal-footer";
 
 // ============================================================================
-// CONFIGURACI?"N DE FUENTES
+// CONFIGURACIÓN DE FUENTES
 // ============================================================================
 
 const geistSans = Geist({
@@ -90,10 +92,14 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background text-foreground antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} flex min-h-screen flex-col bg-background text-foreground antialiased`}
       >
-        <PresenceHeartbeat />
-        <main>{children}</main>
+        <AuthProvider>
+          <PresenceHeartbeat />
+          {/* `flex-1` empuja al footer hacia abajo cuando la pagina es corta. */}
+          <main className="flex-1">{children}</main>
+          <PortalFooter />
+        </AuthProvider>
       </body>
     </html>
   );

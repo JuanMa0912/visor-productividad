@@ -24,10 +24,7 @@ import {
   Users,
 } from "lucide-react";
 import { normalizePersonNameKey } from "@/lib/shared/normalize";
-import {
-  canAccessPortalSection,
-  canAccessPortalSubsection,
-} from "@/lib/shared/portal-sections";
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   normalizeScheduleRowsForSave,
   normalizeScheduleTime,
@@ -97,6 +94,8 @@ export function IngresarHorariosInner() {
   const searchParams = useSearchParams();
   const planillaQueryIdRaw = searchParams.get("planilla");
   const duplicarQueryIdRaw = searchParams.get("duplicar");
+  const { user: authUser, status: authStatus } = useRequireAuth();
+  const { isAdmin: authIsAdmin, hasSection, hasSubsection } = usePermissions();
   const [ready, setReady] = useState(false);
   const [currentUsername, setCurrentUsername] = useState("");
   const [sede, setSede] = useState("");
@@ -320,48 +319,26 @@ export function IngresarHorariosInner() {
   }, [canLunesScheduleSync]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated" || !authUser) return;
+    if (
+      !hasSection("operacion") ||
+      !hasSubsection("registro-de-horarios")
+    ) {
+      router.replace("/secciones");
+      return;
+    }
+
     let isMounted = true;
     const controller = new AbortController();
 
-    const loadUser = async () => {
+    const canSync = canUseLunesScheduleSync(authUser.specialRoles, authIsAdmin);
+    setCanLunesScheduleSync(canSync);
+    setCanCreateSchedulePresets(
+      canCreateLunesSchedulePresets(authUser.specialRoles, authIsAdmin),
+    );
+
+    const loadOptions = async () => {
       try {
-        const response = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          user?: {
-            role?: string;
-            username?: string;
-            allowedDashboards?: string[] | null;
-            allowedSubdashboards?: string[] | null;
-            specialRoles?: string[] | null;
-          };
-        };
-        const isAdmin = payload.user?.role === "admin";
-        const canSync = canUseLunesScheduleSync(
-          payload.user?.specialRoles,
-          isAdmin,
-        );
-        setCanLunesScheduleSync(canSync);
-        setCanCreateSchedulePresets(
-          canCreateLunesSchedulePresets(payload.user?.specialRoles, isAdmin),
-        );
-        if (
-          !isAdmin &&
-          (!canAccessPortalSection(payload.user?.allowedDashboards, "operacion") ||
-            !canAccessPortalSubsection(
-              payload.user?.allowedSubdashboards,
-              "registro-de-horarios",
-            ))
-        ) {
-          router.replace("/secciones");
-          return;
-        }
         const optionsResponse = await fetch("/api/ingresar-horarios/options", {
           signal: controller.signal,
         });
@@ -376,7 +353,7 @@ export function IngresarHorariosInner() {
           (await optionsResponse.json()) as HorariosOptionsResponse;
         if (!isMounted) return;
         const nextSedes = optionsPayload.sedes ?? [];
-        const username = payload.user?.username?.trim() || "anon";
+        const username = authUser.username?.trim() || "anon";
         const draft = readScheduleDraft(username);
         const planillaIdFromUrl = Number(planillaQueryIdRaw);
         const duplicarIdFromUrl = Number(duplicarQueryIdRaw);
@@ -413,12 +390,21 @@ export function IngresarHorariosInner() {
       }
     };
 
-    void loadUser();
+    void loadOptions();
     return () => {
       isMounted = false;
       controller.abort();
     };
-  }, [router, planillaQueryIdRaw, duplicarQueryIdRaw]);
+  }, [
+    authStatus,
+    authUser,
+    authIsAdmin,
+    hasSection,
+    hasSubsection,
+    router,
+    planillaQueryIdRaw,
+    duplicarQueryIdRaw,
+  ]);
 
   useEffect(() => {
     const normalizedSede = normalizeText(sede);

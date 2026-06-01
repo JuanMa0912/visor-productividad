@@ -6,19 +6,10 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { DEFAULT_SEDES, type Sede } from "@/lib/shared/constants";
-import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 import { normalizeKeyCompact } from "@/lib/shared/normalize";
 import type { DailyProductivity } from "@/types";
 import { AppTopBar } from "@/components/portal/app-top-bar";
-
-type AuthPayload = {
-  user?: {
-    role?: string;
-    username?: string;
-    allowedLines?: string[] | null;
-    allowedDashboards?: string[] | null;
-  } | null;
-};
+import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 
 type ProductivityPayload = {
   dailyData?: DailyProductivity[];
@@ -74,6 +65,8 @@ const sortSedes = (sedes: Sede[]) =>
 
 export default function ProductividadCajasPage() {
   const router = useRouter();
+  const { user, status } = useRequireAuth();
+  const { hasSection } = usePermissions();
   const [ready, setReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +76,14 @@ export default function ProductividadCajasPage() {
   const [allowedLineIds, setAllowedLineIds] = useState<string[]>([]);
 
   useEffect(() => {
+    // Esperamos a que el AuthProvider termine de cargar la sesion antes de
+    // disparar la consulta de productividad.
+    if (status !== "authenticated" || !user) return;
+    if (!hasSection("producto")) {
+      router.replace("/secciones");
+      return;
+    }
+
     let isMounted = true;
     const controller = new AbortController();
 
@@ -91,28 +92,7 @@ export default function ProductividadCajasPage() {
       setError(null);
 
       try {
-        const authResponse = await fetch("/api/auth/me", {
-          signal: controller.signal,
-        });
-        if (authResponse.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!authResponse.ok) {
-          throw new Error("No se pudo validar la sesion.");
-        }
-
-        const authPayload = (await authResponse.json()) as AuthPayload;
-        const isAdmin = authPayload.user?.role === "admin";
-        if (
-          !isAdmin &&
-          !canAccessPortalSection(authPayload.user?.allowedDashboards, "producto")
-        ) {
-          router.replace("/secciones");
-          return;
-        }
-
-        const nextAllowedLineIds = resolveAllowedLineIds(authPayload.user?.allowedLines);
+        const nextAllowedLineIds = resolveAllowedLineIds(user.allowedLines);
         const productivityResponse = await fetch("/api/productivity", {
           signal: controller.signal,
         });
@@ -149,7 +129,7 @@ export default function ProductividadCajasPage() {
             return !HIDDEN_SEDE_KEYS.has(idKey) && !HIDDEN_SEDE_KEYS.has(nameKey);
           }),
         );
-        const preferredSedeKey = resolveUsernameSedeKey(authPayload.user?.username);
+        const preferredSedeKey = resolveUsernameSedeKey(user.username);
         const preferredSede = preferredSedeKey
           ? visibleSedes.find((sede) => {
               const idKey = normalizeSedeKey(sede.id || sede.name);
@@ -184,7 +164,7 @@ export default function ProductividadCajasPage() {
       isMounted = false;
       controller.abort();
     };
-  }, [router]);
+  }, [status, user, hasSection, router]);
 
   const defaultDate = useMemo(
     () => (availableDates.length > 0 ? availableDates[availableDates.length - 1] : ""),
