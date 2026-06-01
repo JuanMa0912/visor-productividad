@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth/auth-context";
+import type { AuthUser } from "@/lib/auth/types";
 
 /**
  * Solo permitimos redirecciones a rutas internas del propio portal para
@@ -30,7 +31,7 @@ const sanitizeFrom = (raw: string | null): string => {
 function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { refresh } = useAuth();
+  const { signIn } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,17 +49,27 @@ function LoginPageInner() {
         body: JSON.stringify({ username, password }),
       });
 
+      const payload = (await response.json()) as {
+        user?: AuthUser;
+        error?: string;
+      };
+
       if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
         throw new Error(payload.error ?? "No se pudo iniciar sesión.");
       }
 
-      // El AuthProvider hace UNA sola llamada a /api/auth/me al montar el
-      // RootLayout. Despues del login la cookie es nueva, asi que hay que
-      // forzar un re-fetch para que `useRequireAuth()` de las paginas
-      // protegidas vea `status === "authenticated"` y NO redirija de vuelta
-      // a /login (que era el sintoma "el login funciona pero no salta").
-      await refresh();
+      if (!payload.user) {
+        throw new Error("Respuesta de login invalida (falta usuario).");
+      }
+
+      // CRITICO: actualizamos el contexto SINCRONICAMENTE con la data que el
+      // server ya nos devolvio (la cookie esta lista y el payload trae el
+      // usuario completo). Hacer `await refresh()` aqui crea una race
+      // condition: el `setState` se procesa async, pero `router.push` arranca
+      // la navegacion antes de que el contexto refleje "authenticated", y
+      // `useRequireAuth` en /secciones rebota al usuario de vuelta a /login.
+      // `signIn` usa `flushSync` para garantizar el orden correcto.
+      signIn(payload.user);
 
       // Si el usuario fue redirigido aqui desde otra ruta (ej. /margenes),
       // honramos el `?from=...` para llevarlo a donde estaba yendo.

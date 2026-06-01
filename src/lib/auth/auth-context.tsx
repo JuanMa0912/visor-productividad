@@ -24,6 +24,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   canAccessPortalSection,
@@ -43,10 +44,27 @@ export type AuthContextValue = {
   user: AuthUser | null;
   status: AuthStatus;
   error: string | null;
-  /** Re-fetch /api/auth/me. Util tras cambios de permisos o login manual. */
+  /** Re-fetch /api/auth/me. Util tras cambios de permisos. */
   refresh: () => Promise<void>;
   /**
-   * Cierra sesion en el server (POST /api/auth/logout) y limpia el state local.
+   * Marca al usuario como autenticado de forma SINCRONA con la data que ya
+   * vino en la respuesta del POST /api/auth/login. Pensado para llamarse desde
+   * la pagina de /login para evitar la race condition entre el `setState`
+   * (asincrono) y el `router.push` (que monta la siguiente pagina antes de
+   * que React procese el cambio de estado y manda al usuario de vuelta a
+   * /login porque `useRequireAuth` aun ve `status === "unauthenticated"`).
+   *
+   * Internamente usa `flushSync` para garantizar que el estado quede
+   * commiteado antes de que el caller siga ejecutando codigo (ej. navegacion).
+   */
+  signIn: (user: AuthUser) => void;
+  /**
+   * Cierra sesion: limpia el state local SINCRONICAMENTE (con `flushSync`) y
+   * dispara `POST /api/auth/logout` en segundo plano. Si la red esta lenta o
+   * el endpoint cuelga, el usuario igual ve la UI desautenticada al instante
+   * y es redirigido a /login (antes el `await fetch` podia colgar el boton
+   * en "Cerrando sesion..." indefinidamente).
+   *
    * Por defecto redirige a `/login`; pasa `redirectTo: null` para no redirigir.
    */
   logout: (options?: { redirectTo?: string | null }) => Promise<void>;
@@ -119,22 +137,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => abortRef.current?.abort();
   }, [fetchSession]);
 
+  const signIn = useCallback<AuthContextValue["signIn"]>((nextUser) => {
+    // `flushSync` obliga a React a procesar el cambio de estado AHORA, no en
+    // el siguiente tick. Sin esto, el caller (ej. login/page.tsx) puede
+    // llamar a `router.push("/secciones")` antes de que el contexto refleje
+    // `status === "authenticated"`, y /secciones rebota a /login.
+    flushSync(() => {
+      setUser(nextUser);
+      setStatus("authenticated");
+      setError(null);
+    });
+  }, []);
+
   const logout = useCallback<AuthContextValue["logout"]>(
     async (options) => {
+      // 1. Limpia el state local DE INMEDIATO. Si el fetch al server cuelga
+      //    (red lenta, servidor caido) el usuario ya ve la UI desautenticada
+      //    y puede navegar a /login. Antes este `await` bloqueaba el boton
+      //    "Cerrando sesion..." cuando la red se quedaba pegada.
+      flushSync(() => {
+        setUser(null);
+        setStatus("unauthenticated");
+        setError(null);
+      });
+
+      // 2. Notifica al server en background. No esperamos la respuesta porque
+      //    no necesitamos su resultado para mostrar UI; el server simplemente
+      //    revoca la sesion en su tabla.
       const csrf = readCookie("vp_csrf");
-      try {
-        await fetch("/api/auth/logout", {
-          method: "POST",
-          credentials: "include",
-          headers: csrf ? { "x-csrf-token": csrf } : undefined,
-        });
-      } catch {
-        // Aunque falle el server, limpiamos el state local para no dejar al
-        // usuario "atrapado" en una sesion fantasma.
-      }
-      setUser(null);
-      setStatus("unauthenticated");
-      setError(null);
+      void fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: csrf ? { "x-csrf-token": csrf } : undefined,
+        keepalive: true,
+      }).catch(() => {
+        // best-effort: la cookie va a vencer eventualmente por inactividad
+      });
+
+      // 3. Redirige.
       const redirect =
         options?.redirectTo === null ? null : options?.redirectTo ?? "/login";
       if (redirect) router.replace(redirect);
@@ -143,8 +183,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, error, refresh: fetchSession, logout }),
-    [user, status, error, fetchSession, logout],
+    () => ({ user, status, error, refresh: fetchSession, signIn, logout }),
+    [user, status, error, fetchSession, signIn, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

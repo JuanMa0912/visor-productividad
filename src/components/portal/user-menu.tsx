@@ -4,20 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, KeyRound, LogOut, ShieldCheck, User } from "lucide-react";
 import { cn } from "@/lib/shared/utils";
+import { useAuth } from "@/lib/auth/auth-context";
 
 export type UserMenuProps = {
   username: string | null;
   role: "admin" | "user" | null;
   sede?: string | null;
-};
-
-const getCookieValue = (name: string): string | null => {
-  if (typeof document === "undefined") return null;
-  const value = document.cookie
-    .split("; ")
-    .find((entry) => entry.startsWith(`${name}=`));
-  if (!value) return null;
-  return decodeURIComponent(value.split("=").slice(1).join("="));
 };
 
 const initialsFor = (name: string | null): string => {
@@ -47,6 +39,7 @@ const colorClassesFor = (name: string | null) => {
 
 export function UserMenu({ username, role, sede }: UserMenuProps) {
   const router = useRouter();
+  const { logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -71,18 +64,12 @@ export function UserMenu({ username, role, sede }: UserMenuProps) {
   const handleLogout = useCallback(async () => {
     if (loggingOut) return;
     setLoggingOut(true);
-    try {
-      const csrfToken = getCookieValue("vp_csrf");
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        headers: csrfToken ? { "x-csrf-token": csrfToken } : undefined,
-      });
-    } catch {
-      // best-effort; igual redirigimos al login para forzar cierre.
-    } finally {
-      router.replace("/login");
-    }
-  }, [loggingOut, router]);
+    // `logout()` del AuthProvider limpia el state SINCRONAMENTE (flushSync) y
+    // dispara el fetch al server en background. Asi el boton no queda colgado
+    // en "Cerrando sesion..." si la red al server esta lenta o caida; el
+    // redirect a /login y el cambio de UI son inmediatos.
+    await logout();
+  }, [loggingOut, logout]);
 
   const colors = colorClassesFor(username);
   const initials = initialsFor(username);

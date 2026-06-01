@@ -18,9 +18,13 @@ export type AuthUser = {
   allowedDashboards: string[] | null;
   allowedSubdashboards: string[] | null;
   specialRoles: string[] | null;
-  is_active: boolean;
-  last_login_at: string | null;
-  last_login_ip: string | null;
+  // Metadatos opcionales: GET /api/auth/me los devuelve siempre, pero el POST
+  // /api/auth/login devuelve solo el subset "publico" para no obligar a una
+  // segunda query. Mantenerlos opcionales permite que `signIn(user)` acepte
+  // cualquiera de las dos respuestas sin gimnasia de tipos.
+  is_active?: boolean;
+  last_login_at?: string | null;
+  last_login_ip?: string | null;
 };
 
 /** Subset compacto util para la mayoria de UIs (no expone metadatos de login). */
