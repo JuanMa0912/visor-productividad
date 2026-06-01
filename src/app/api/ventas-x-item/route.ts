@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { AUTH_MESSAGES } from "@/lib/shared/messages";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
   const session = await requireAuthSession();
   if (!session) {
     return NextResponse.json(
-      { error: "No autorizado." },
+      { error: AUTH_MESSAGES.unauthorized },
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -103,7 +104,7 @@ export async function GET(request: Request) {
   ) {
     return withSession(
       NextResponse.json(
-        { error: "No tienes permisos para esta seccion." },
+        { error: AUTH_MESSAGES.forbiddenSection },
         { status: 403 },
       ),
     );

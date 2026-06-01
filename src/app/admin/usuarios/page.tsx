@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   BarChart3,
   ChevronLeft,
@@ -335,7 +336,6 @@ export default function AdminUsuariosPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [formState, setFormState] = useState<UserFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -356,7 +356,7 @@ export default function AdminUsuariosPage() {
   const requireCsrfToken = () => {
     const token = getCsrfToken();
     if (!token) {
-      setError("No se pudo validar la sesión. Recarga la página.");
+      toast.error("No se pudo validar la sesión. Recarga la página.");
       return null;
     }
     return token;
@@ -365,13 +365,13 @@ export default function AdminUsuariosPage() {
   const handleAuthFailure = useCallback(
     (status: number) => {
       if (status === 401) {
-        setError("Tu sesion expiro. Inicia sesion de nuevo para continuar.");
+        toast.error("Tu sesión expiró. Inicia sesión de nuevo para continuar.");
         router.replace("/login");
         return true;
       }
       if (status === 403) {
-        setError(
-          "Tu usuario no tiene permisos de administracion en este momento.",
+        toast.error(
+          "Tu usuario no tiene permisos de administración en este momento.",
         );
         router.replace("/secciones");
         return true;
@@ -451,7 +451,6 @@ export default function AdminUsuariosPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
       const [usersRes, logsRes] = await Promise.all([
         fetch("/api/admin/users"),
@@ -472,7 +471,7 @@ export default function AdminUsuariosPage() {
       setUsers(usersPayload.users ?? []);
       setLogs(logsPayload.logs ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error inesperado.");
+      toast.error(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
       setLoading(false);
     }
@@ -584,7 +583,7 @@ export default function AdminUsuariosPage() {
   const handleSave = async () => {
     if (saving) return;
     setSaving(true);
-    setError(null);
+    const isUpdate = Boolean(formState.id);
     try {
       const csrfToken = requireCsrfToken();
       if (!csrfToken) {
@@ -667,9 +666,14 @@ export default function AdminUsuariosPage() {
       }
 
       closeForm();
+      toast.success(
+        isUpdate
+          ? "Usuario actualizado correctamente."
+          : "Usuario creado correctamente.",
+      );
       void loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error inesperado.");
+      toast.error(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
       setSaving(false);
     }
@@ -677,7 +681,6 @@ export default function AdminUsuariosPage() {
 
   const handleDelete = async (userId: string) => {
     if (!confirm("¿Seguro que deseas eliminar este usuario?")) return;
-    setError(null);
     const csrfToken = requireCsrfToken();
     if (!csrfToken) return;
     const response = await fetch(`/api/admin/users/${userId}`, {
@@ -689,10 +692,11 @@ export default function AdminUsuariosPage() {
     }
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
-      setError(data.error ?? "No se pudo eliminar el usuario.");
+      toast.error(data.error ?? "No se pudo eliminar el usuario.");
       return;
     }
     await loadData();
+    toast.success("Usuario eliminado correctamente.");
   };
 
   const handleLogout = async () => {
@@ -707,7 +711,6 @@ export default function AdminUsuariosPage() {
 
   const handleClearLogs = async () => {
     if (!confirm("¿Deseas borrar todos los accesos recientes?")) return;
-    setError(null);
     const csrfToken = requireCsrfToken();
     if (!csrfToken) return;
     const response = await fetch("/api/admin/login-logs", {
@@ -719,10 +722,11 @@ export default function AdminUsuariosPage() {
     }
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
-      setError(data.error ?? "No se pudieron borrar los accesos.");
+      toast.error(data.error ?? "No se pudieron borrar los accesos.");
       return;
     }
     await loadData();
+    toast.success("Accesos recientes borrados.");
   };
 
   return (
@@ -775,12 +779,6 @@ export default function AdminUsuariosPage() {
             </button>
           </div>
         </header>
-
-        {error && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            {error}
-          </div>
-        )}
 
         {loading ? (
           <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">

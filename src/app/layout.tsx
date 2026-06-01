@@ -4,6 +4,7 @@ import "./globals.css";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { PortalFooter } from "@/components/portal/portal-footer";
+import { PortalToaster } from "@/components/portal/portal-toaster";
 
 // ============================================================================
 // CONFIGURACIÓN DE FUENTES
@@ -99,6 +100,8 @@ export default function RootLayout({ children }: RootLayoutProps) {
           {/* `flex-1` empuja al footer hacia abajo cuando la pagina es corta. */}
           <main className="flex-1">{children}</main>
           <PortalFooter />
+          {/* Toaster global: cualquier componente puede llamar `toast(...)`. */}
+          <PortalToaster />
         </AuthProvider>
       </body>
     </html>

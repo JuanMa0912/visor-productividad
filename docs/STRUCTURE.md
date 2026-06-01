@@ -30,6 +30,8 @@ Código compartido sin UI. Punto de entrada habitual: `index.ts` en `auth/` y `d
 | Archivo | Rol |
 | --- | --- |
 | `index.ts` | Sesiones (`app_user_sessions`), cookie `vp_session`, hash de contraseña, `getClientIp`, `getAuditNetworkId`, `requireAuthSession`, `requireAdminSession` |
+| `types.ts` | Tipos puros (`AuthUser`, `AuthRole`, `AuthUserPublic`). Importable desde código cliente sin arrastrar dependencias de Node (`crypto`, `pg`). |
+| `auth-context.tsx` | `AuthProvider`, `useAuth()`, `useRequireAuth()`, `usePermissions()`. Centraliza la sesión del cliente: una sola llamada a `/api/auth/me` al montar el RootLayout, todo el resto del portal lee de aquí. |
 
 ### `db/`
 
@@ -50,6 +52,9 @@ Código compartido sin UI. Punto de entrada habitual: `index.ts` en `auth/` y `d
 | `rate-limit.ts` | Límites por IP en memoria del proceso |
 | `export-utils.ts` | Utilidades para exportar tablas/gráficos |
 | `agent-debug-log.ts` | Logging opcional de depuración para agentes |
+| `messages.ts` | Catálogo de mensajes estandarizados (`AUTH_MESSAGES`, `DATA_MESSAGES`, `ACTION_MESSAGES`, `VALIDATION_MESSAGES`) + helpers (`extractErrorMessage`, `couldNotLoad`, etc.). Incluye guía de estilo (tuteo, tildes, sin exclamaciones). |
+| `path-labels.ts` | Mapa `pathname → label legible` para mostrar en panel de presencia y bitácora de accesos (`/ventas-x-item` → "Ventas por ítem", etc.). |
+| `item-drilldown-links.ts` | Construcción de URLs para navegar entre módulos manteniendo filtros (drilldown desde rotación a ventas-x-item, etc.). |
 
 ### `horarios/`
 
@@ -115,12 +120,12 @@ Código compartido sin UI. Punto de entrada habitual: `index.ts` en `auth/` y `d
 
 | Sección | Rutas UI notables |
 | --- | --- |
-| Portal | `/login`, `/secciones`, `/tableros` (redirect), `/venta`, `/horario`, `/cuenta/contrasena` |
+| Portal | `/login`, `/secciones`, `/tableros` (redirect), `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
 | Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario` |
-| Producto | `/`, `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
+| Producto | `/`, `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/rotacion-dos` (variante V4), `/kardex`, `/prediccion-pedidos` |
 | Operación | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
-| Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes` |
-| Otros | `/ExcelDian` |
+| Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/[id]/metricas` |
+| Otros | `/ExcelDian` (nota: PascalCase histórico; URL queda `/ExcelDian`) |
 
 ### APIs (`src/app/api/`)
 
@@ -181,13 +186,26 @@ Componentes React reutilizables entre páginas.
 | --- | --- |
 | `HourlyAnalysis.tsx` | Análisis por hora embebido en productividad/jornada (filtros, mapa, cajeros paginados, horas extra) |
 | `LineCard.tsx`, `LineComparisonTable.tsx`, `SelectionSummary.tsx` | Productividad / comparativos |
-| `TopBar.tsx` | Barra superior común |
-| `portal/portal-branding-header.tsx` | Cabecera UAID, cuenta, navegación |
+| `TopBar.tsx` | Barra superior usada dentro de la home `/` junto al `AppTopBar` global (no confundir: `TopBar` ≠ `AppTopBar`) |
+| `PresenceHeartbeat.tsx` | Ping a `/api/auth/heartbeat` para alimentar el panel de presencia. Solo dispara cuando `useAuth().status === "authenticated"`. |
+| `portal/app-top-bar.tsx` | Header global del portal. Consume `useAuth()`; aparece en todas las páginas con sesión. |
+| `portal/portal-branding-header.tsx` | Cabecera UAID, cuenta, navegación (usado internamente por `app-top-bar.tsx`) |
+| `portal/portal-footer.tsx` | Pie de página global (versión + copyright). Montado una vez en `RootLayout`. |
+| `portal/portal-toaster.tsx` | Toaster global (sonner). Cualquier componente puede llamar `toast.success/error/info/warning` o `toast.promise(...)`. Reemplaza `alert()` y `<div>` rojos inline para notificar resultados de acciones. |
 | `portal/hub-section-cards.tsx` | Tarjetas de hubs (`/venta`, etc.) |
-| `productividad/*` | Skeleton, búsqueda, toggle de vista, empty state |
-| `ui/*` | Primitivos (button, card, table, select, badge) |
+| `portal/user-menu.tsx` | Menú de usuario (cambiar contraseña, logout) |
+| `productividad/*` | Componentes UI específicos: skeleton, búsqueda, toggle de vista, empty state |
+| `hourly-analysis/*` | Componentes y utilidades del análisis horario embebido |
+| `cashier/EditorialTop5.tsx` | Top 5 de cajeros (usado por `HourlyAnalysis`) |
+| `ui/*` | Primitivos shadcn/ui (button, card, table, select, badge, stepper, scroll-to-top-button) |
 
 **Regla:** lógica de negocio que no sea puramente visual → mover a `src/lib/` o al `route.ts` de la API.
+
+**Nota sobre dualidad `components/` vs `features/`:** algunos dominios (como `productividad`) aparecen en ambos lugares de forma intencional:
+- `components/productividad/*` → UI presentacional reutilizable (skeleton, controles).
+- `features/productividad/*` → lógica del módulo (hooks, formatters, vista pesada `line-trends`).
+
+Esta separación se mantiene **solo cuando el módulo crece**. Módulos pequeños viven solo en `components/` o solo en `app/<ruta>/`.
 
 ---
 
@@ -279,6 +297,65 @@ Añadir un `*.test.ts` junto al módulo cuando la regla sea fácil de romper (fe
 
 ---
 
+## Convenciones de naming
+
+El repo creció con dos estilos mezclados. Esta es la **convención preferida hacia adelante** (aplicar a archivos nuevos; no migrar masivamente los existentes):
+
+| Tipo de archivo | Convención | Ejemplo |
+| --- | --- | --- |
+| Componente React (`.tsx`) | **PascalCase** O **kebab-case** consistente dentro del subdirectorio | `LineCard.tsx` o `app-top-bar.tsx` |
+| Utilidad / helper / config (`.ts`) | **kebab-case** | `portal-sections.ts`, `messages.ts` |
+| Hook (`.ts` o `.tsx`) | **kebab-case** con prefijo `use-` | `use-productivity-data.ts` |
+| Test | **co-located** junto al archivo probado, sufijo `.test.ts` | `x-item-date-range.test.ts` |
+| Tipos de un módulo | `types.ts` adentro del módulo | `features/kardex/types.ts` |
+| Carpeta de páginas / rutas | **kebab-case** | `/inventario-x-item`, `/horarios-comparar` |
+| Carpeta de componentes / lib | **kebab-case** | `components/portal/`, `lib/excel-dian/` |
+| Constantes exportadas | **UPPER_SNAKE_CASE** | `AUTH_MESSAGES`, `PORTAL_APP_VERSION` |
+
+**Excepciones históricas conscientes:**
+- `app/ExcelDian/` → PascalCase. Cambiar rompería URLs guardadas. Mantener hasta que haya una buena razón para migrar (con redirect 301).
+- `components/` mezcla PascalCase (`HourlyAnalysis.tsx`, `TopBar.tsx`) y kebab-case (`portal/app-top-bar.tsx`). Aceptable mientras cada subcarpeta sea internamente consistente.
+
+---
+
+## Dualidad `src/types.ts` vs `src/types/`
+
+A primera vista parece accidental, pero son cosas diferentes:
+
+| Ubicación | Propósito | Cómo se usa |
+| --- | --- | --- |
+| `src/types.ts` (archivo) | Tipos de **dominio** del negocio (`Linekey`, `HourlyAnalysisData`, `OvertimeEmployee`, etc.). | `import type { ... } from "@/types"` |
+| `src/types/*.d.ts` (carpeta) | **Ambient declarations** para librerías externas sin tipos propios (ej. `animejs.d.ts`). | Las recoge TypeScript automáticamente; no se importan. |
+
+Si `types.ts` crece demasiado, partirlo en archivos por dominio dentro de `src/types/domain/` o moverlo a `src/lib/<dominio>/types.ts`. Mientras tanto, **dejar como está** evita romper 15+ imports.
+
+---
+
+## Mantenimiento del repo
+
+### Archivos a revisar periódicamente para detectar huérfanos
+
+Después de refactors grandes (como el de Auth Context de jun/2026) algunos archivos pueden quedar sin uso. Verificar con grep si están sin importar antes de borrar:
+
+- Componentes en `src/components/` raíz (los más propensos a quedar abandonados al moverse lógica a `features/`).
+- Helpers en `src/lib/shared/` (mismo riesgo).
+- Páginas en `src/app/` con nombres similares a otras (ej. `rotacion` vs `rotacion-dos`).
+
+**Cómo verificar:**
+
+```bash
+# ¿Algún archivo importa este símbolo o este path?
+rg "from ['\"]@/components/NombreDelArchivo['\"]"
+```
+
+Si no aparece nada, es candidato a borrado (revisar dos veces: puede usarse vía `dynamic import` o `React.lazy`).
+
+### Archivos generados por agentes IA
+
+Cuando un agente IA propone un componente que después se descarta (como pasó con `portal-breadcrumbs.tsx` en jun/2026), borrarlo en la misma conversación. Si quedó por error, aparecerá como huérfano en la revisión periódica.
+
+---
+
 ## Cuándo actualizar este archivo
 
 Actualizar `docs/STRUCTURE.md` cuando:
@@ -286,8 +363,9 @@ Actualizar `docs/STRUCTURE.md` cuando:
 - se cree una carpeta nueva en `src/lib/`, `src/features/` o un módulo API relevante;
 - se mueva lógica entre `page.tsx`, `lib/` y `api/`;
 - se añada una migración en `db/migrations/`;
-- un handler pase a ser “punto central” de un dominio (mencionarlo en la tabla de APIs).
+- un handler pase a ser “punto central” de un dominio (mencionarlo en la tabla de APIs);
+- se introduzca un patrón nuevo (como `AuthProvider` global) que cambia la forma de hacer algo en el portal.
 
 No duplicar aquí tablas de permisos ni variables de entorno: enlazar al [`README.md`](../README.md).
 
-*Referencia de código: mayo 2026.*
+*Referencia de código: junio 2026.*

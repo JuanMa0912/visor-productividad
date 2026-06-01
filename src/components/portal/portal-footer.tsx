@@ -1,46 +1,32 @@
 import Link from "next/link";
-import { Mail } from "lucide-react";
 import { PORTAL_APP_VERSION } from "./portal-branding-header";
-
-// TODO: confirmar email de soporte real con el equipo UAID.
-// Si cambia, modifica solo aqui y aparecera actualizado en todo el portal.
-const SUPPORT_EMAIL = "uaid@mercamio.co";
 
 /**
  * Pie de pagina global del Portal UAID.
  *
  * Se renderiza una sola vez en el RootLayout y aparece automaticamente en
  * todas las paginas. Contiene:
- *   - Nombre y version del portal (para soporte y debugging).
- *   - Canal de contacto para reportar problemas o pedir accesos.
+ *   - Nombre y version del portal (util para soporte y debugging).
  *   - Anio dinamico y autoria institucional.
  *
  * Diseno discreto en tonos slate para no competir con el contenido principal.
+ *
+ * NOTA: el bloque de "Soporte UAID" se removio porque ese canal de contacto
+ * todavia no existe. Si en el futuro se habilita un email/canal de soporte,
+ * agregar aqui un `<a href="mailto:...">` para que aparezca en todo el portal.
  */
 export function PortalFooter() {
   const year = new Date().getFullYear();
 
   return (
     <footer className="mt-auto border-t border-slate-200/70 bg-white/70 backdrop-blur-sm">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 py-4 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between lg:px-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-4 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between lg:px-6">
         <p className="font-medium text-slate-600">
           Portal UAID{" "}
           <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500">
             {PORTAL_APP_VERSION}
           </span>
         </p>
-
-        <a
-          href={`mailto:${SUPPORT_EMAIL}?subject=Soporte%20Portal%20UAID`}
-          className="inline-flex items-center gap-1.5 text-slate-600 transition-colors hover:text-blue-700"
-        >
-          <Mail className="h-3 w-3" aria-hidden />
-          <span>Soporte UAID</span>
-          <span className="hidden text-slate-400 sm:inline">·</span>
-          <span className="hidden font-mono text-slate-400 sm:inline">
-            {SUPPORT_EMAIL}
-          </span>
-        </a>
 
         <p className="text-slate-400">
           &copy; {year} Mercamio &middot; Herramientas internas de seguimiento

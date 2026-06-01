@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  AUTH_MESSAGES,
+  VALIDATION_MESSAGES,
+  extractErrorMessage,
+} from "@/lib/shared/messages";
 
 export default function CambiarContrasenaPage() {
   const router = useRouter();
@@ -10,8 +16,6 @@ export default function CambiarContrasenaPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const getCookieValue = (name: string) => {
     if (typeof document === "undefined") return null;
@@ -25,7 +29,7 @@ export default function CambiarContrasenaPage() {
   const requireCsrfToken = () => {
     const token = getCookieValue("vp_csrf");
     if (!token) {
-      setError("No se pudo validar la sesión. Recarga la página.");
+      toast.error(AUTH_MESSAGES.sessionCheckFailed);
       return null;
     }
     return token;
@@ -33,15 +37,13 @@ export default function CambiarContrasenaPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError(null);
-    setSuccess(null);
 
     if (newPassword.length < 8) {
-      setError("La nueva contraseña debe tener mínimo 8 caracteres.");
+      toast.error(VALIDATION_MESSAGES.passwordTooShort);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("La confirmación no coincide con la nueva contraseña.");
+      toast.error(VALIDATION_MESSAGES.passwordsDoNotMatch);
       return;
     }
 
@@ -60,17 +62,21 @@ export default function CambiarContrasenaPage() {
         },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
       if (!response.ok) {
-        throw new Error(payload.error ?? "No se pudo cambiar la contraseña.");
+        throw new Error(
+          extractErrorMessage(payload, "No se pudo cambiar la contraseña."),
+        );
       }
 
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setSuccess("Contraseña actualizada correctamente.");
+      toast.success("Contraseña actualizada correctamente.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error inesperado.");
+      toast.error(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
       setIsSaving(false);
     }
@@ -131,17 +137,6 @@ export default function CambiarContrasenaPage() {
               className="mt-1 w-full rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
             />
           </label>
-
-          {error && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
-              {success}
-            </div>
-          )}
 
           <button
             type="submit"
