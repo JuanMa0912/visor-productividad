@@ -1,11 +1,30 @@
 ﻿"use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import { useAuth } from "@/lib/auth/auth-context";
+
+/**
+ * Solo permitimos redirecciones a rutas internas del propio portal para
+ * evitar "open redirect" (alguien podria mandar /login?from=https://evil.com
+ * y, tras loguear al usuario, llevarlo afuera). La regla:
+ *   - Debe empezar con "/" pero NO con "//" (esto ultimo se interpreta
+ *     como protocolo-relativo y permite saltar a otro host).
+ *   - No debe contener ":" (descarta esquemas como `javascript:`).
+ */
+const sanitizeFrom = (raw: string | null): string => {
+  if (!raw) return "/secciones";
+  if (!raw.startsWith("/")) return "/secciones";
+  if (raw.startsWith("//")) return "/secciones";
+  if (raw.includes(":")) return "/secciones";
+  return raw;
+};
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { refresh } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,7 +47,18 @@ export default function LoginPage() {
         throw new Error(payload.error ?? "No se pudo iniciar sesión.");
       }
 
-      router.push("/secciones");
+      // El AuthProvider hace UNA sola llamada a /api/auth/me al montar el
+      // RootLayout. Despues del login la cookie es nueva, asi que hay que
+      // forzar un re-fetch para que `useRequireAuth()` de las paginas
+      // protegidas vea `status === "authenticated"` y NO redirija de vuelta
+      // a /login (que era el sintoma "el login funciona pero no salta").
+      await refresh();
+
+      // Si el usuario fue redirigido aqui desde otra ruta (ej. /margenes),
+      // honramos el `?from=...` para llevarlo a donde estaba yendo.
+      // Default `/secciones`.
+      const destination = sanitizeFrom(searchParams.get("from"));
+      router.push(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado.");
     } finally {

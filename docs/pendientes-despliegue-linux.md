@@ -10,6 +10,7 @@
 | 1 | Warning de Cross-Origin-Opener-Policy | Switch agregado | Setear `COOP_DISABLED=true` en `.env` y reiniciar |
 | 2 | CSP bloquea `unsafe-eval` (rompe exportaciones) | Switch ya existia | Setear `CSP_UNSAFE_EVAL=true` en `.env` y reiniciar |
 | 3 | 401 en `/api/auth/heartbeat` | **Arreglado** en codigo | Hacer deploy del fix |
+| 4 | **Loop infinito en login** (cookie Secure sobre HTTP) | Switch ya existia | Setear `SESSION_COOKIE_SECURE=false` en `.env` y reiniciar |
 
 Todos los cambios de `.env` requieren reiniciar el proceso (systemd / pm2 / npm).
 
@@ -100,6 +101,41 @@ una migracion de varias semanas.
 
 ---
 
+## 4. Loop infinito en `/login` (cookie Secure rechazada en HTTP)
+
+**Sintoma:** El usuario ingresa credenciales correctas en `/login`, el server
+responde OK, pero el browser inmediatamente redirige de vuelta a
+`/login?from=/secciones`. Pareciera que el login no funciona.
+
+**Causa identificada:** En produccion (`NODE_ENV=production`) la cookie de
+sesion `vp_session` se emite con el flag `Secure`. Ese flag le dice al
+navegador "esta cookie solo se acepta en HTTPS". Como el server esta
+sirviendo por HTTP plano, **el navegador descarta la cookie silenciosamente**.
+Sin cookie, el proxy del proximo request detecta "no hay sesion" y redirige
+otra vez al login -> bucle infinito.
+
+**Severidad:** Critica. **Bloquea completamente el acceso al portal.**
+
+**Fix:**
+
+En el `.env` del servidor agregar:
+
+```bash
+SESSION_COOKIE_SECURE=false
+```
+
+Esto fuerza a que la cookie se emita SIN el flag `Secure`, lo que la hace
+aceptable en HTTP.
+
+**Trade-off de seguridad:** sin HTTPS, las cookies viajan en texto plano
+de todas formas. Marcarlas como `Secure` no las hace mas seguras en HTTP,
+solo las hace inutilizables. La proteccion real viene de HTTPS.
+
+**Cuando habilitar HTTPS:** revertir a `SESSION_COOKIE_SECURE=true` (o
+simplemente quitar la linea para que use el default de produccion).
+
+---
+
 ## 3. 401 en `/api/auth/heartbeat`
 
 **Sintoma en consola:**
@@ -135,9 +171,10 @@ ensuciaba la consola y consumia ciclos del backend para nada.
    nano .env
    ```
 
-   Agregar (o cambiar) estas dos lineas:
+   Agregar (o cambiar) estas TRES lineas:
 
    ```bash
+   SESSION_COOKIE_SECURE=false
    CSP_UNSAFE_EVAL=true
    COOP_DISABLED=true
    ```
