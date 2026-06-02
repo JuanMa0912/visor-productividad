@@ -1490,7 +1490,7 @@ export default function HorariosGuardadosPage() {
              vertical a la tabla y evitar que la ultima fila quede cortada. */
           @page {
             size: A4 landscape;
-            margin: 0 0 5mm 0;
+            margin: 0 0 4mm 0;
             @bottom-left {
               content: "";
             }
@@ -1527,11 +1527,11 @@ export default function HorariosGuardadosPage() {
             max-width: 100% !important;
             height: auto !important;
             overflow: visible !important;
-            /* Padding-top reducido al minimo necesario para acomodar el
-               encabezado fijo (Portal UAID) sin desplazar la tabla mas
-               abajo de lo necesario y mantener todas las filas dentro de
-               la hoja. */
-            padding: 6mm 5mm 0 5mm !important;
+            /* padding-top reservado para el encabezado "Portal UAID" fijo.
+               Compensamos parte de este espacio reduciendo el margen
+               inferior del @page, asi la tabla pierde solo ~1mm respecto
+               a su altura original sin header. */
+            padding: 8mm 5mm 0 5mm !important;
             margin: 0 !important;
             background: white !important;
             box-shadow: none !important;
@@ -1542,36 +1542,38 @@ export default function HorariosGuardadosPage() {
              dentro de #horarios-guardados-print pasa el filtro de
              visibility y se repite automaticamente en cada pagina impresa
              (comportamiento estandar de position: fixed en print).
-             top: 2mm separa el logo del borde fisico del papel para que las
-             impresoras/visores que recortan ~2-3mm por seguridad no lo
-             corten. La altura total (top + height = 6mm) coincide con el
-             padding-top del contenedor, asi que la tabla no se desplaza. */
+             top: 1.5mm separa el logo del borde fisico del papel para que
+             las impresoras que recortan ~2-3mm por seguridad no lo corten.
+             top + height = 8mm coincide con el padding-top del contenedor,
+             asi el logo termina justo donde inicia la tabla. */
           .planilla-print-portal-header {
             display: flex !important;
             position: fixed !important;
-            top: 2mm !important;
+            top: 1.5mm !important;
             left: 0 !important;
             right: 0 !important;
             align-items: center !important;
             justify-content: center !important;
-            gap: 1.5mm !important;
-            height: 4mm !important;
+            gap: 2mm !important;
+            height: 6.5mm !important;
             color: #0f172a !important;
             background: white !important;
             z-index: 9999 !important;
           }
           .planilla-print-portal-icon {
-            width: 3mm !important;
-            height: 3mm !important;
+            width: 5mm !important;
+            height: 5mm !important;
             color: #6d28d9 !important;
+            stroke-width: 2.25 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           .planilla-print-portal-name {
             font-family: "Helvetica Neue", Arial, sans-serif !important;
-            font-size: 8pt !important;
-            font-weight: 700 !important;
-            letter-spacing: 0.3px !important;
+            font-size: 13pt !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.5px !important;
+            color: #0f172a !important;
           }
           #horarios-guardados-print .overflow-x-auto {
             overflow: visible !important;
