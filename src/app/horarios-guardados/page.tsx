@@ -1541,31 +1541,35 @@ export default function HorariosGuardadosPage() {
           /* Encabezado de impresion: posicion fija sobre la hoja. Como esta
              dentro de #horarios-guardados-print pasa el filtro de
              visibility y se repite automaticamente en cada pagina impresa
-             (comportamiento estandar de position: fixed en print). */
+             (comportamiento estandar de position: fixed en print).
+             top: 2mm separa el logo del borde fisico del papel para que las
+             impresoras/visores que recortan ~2-3mm por seguridad no lo
+             corten. La altura total (top + height = 6mm) coincide con el
+             padding-top del contenedor, asi que la tabla no se desplaza. */
           .planilla-print-portal-header {
             display: flex !important;
             position: fixed !important;
-            top: 0 !important;
+            top: 2mm !important;
             left: 0 !important;
             right: 0 !important;
             align-items: center !important;
             justify-content: center !important;
             gap: 1.5mm !important;
-            height: 5.5mm !important;
+            height: 4mm !important;
             color: #0f172a !important;
             background: white !important;
             z-index: 9999 !important;
           }
           .planilla-print-portal-icon {
-            width: 3.5mm !important;
-            height: 3.5mm !important;
+            width: 3mm !important;
+            height: 3mm !important;
             color: #6d28d9 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           .planilla-print-portal-name {
             font-family: "Helvetica Neue", Arial, sans-serif !important;
-            font-size: 9pt !important;
+            font-size: 8pt !important;
             font-weight: 700 !important;
             letter-spacing: 0.3px !important;
           }
