@@ -1790,9 +1790,13 @@ export function IngresarHorariosInner() {
             border-left-color: rgb(30 41 59);
           }
           @media print {
+            /* margin: 0 evita que el navegador inyecte sus propios encabezados
+               y pies (titulo, fecha/hora, URL/IP, numero de pagina) dentro
+               del margen de @page. Compensamos con padding interno en el
+               contenedor para mantener un respiro alrededor del contenido. */
             @page {
               size: A4 landscape;
-              margin: 6mm;
+              margin: 0;
             }
             html,
             body {
@@ -1816,6 +1820,8 @@ export function IngresarHorariosInner() {
               max-width: 100% !important;
               height: auto !important;
               overflow: visible !important;
+              padding: 6mm !important;
+              box-sizing: border-box !important;
             }
             #planilla-print .overflow-x-auto {
               overflow: visible !important;

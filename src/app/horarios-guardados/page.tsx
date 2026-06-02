@@ -1454,9 +1454,13 @@ export default function HorariosGuardadosPage() {
           overflow-wrap: anywhere;
         }
         @media print {
+          /* margin: 0 elimina los encabezados/pies del navegador (titulo,
+             fecha/hora, URL/IP, numeracion) que el agente de impresion
+             coloca dentro del margen del @page. Compensamos con padding
+             interno en el contenedor para mantener un respiro visual. */
           @page {
             size: A4 landscape;
-            margin: 6mm;
+            margin: 0;
           }
           html,
           body {
@@ -1479,11 +1483,12 @@ export default function HorariosGuardadosPage() {
             max-width: 100% !important;
             height: auto !important;
             overflow: visible !important;
-            padding: 0 !important;
+            padding: 6mm !important;
             margin: 0 !important;
             background: white !important;
             box-shadow: none !important;
             border: 0 !important;
+            box-sizing: border-box !important;
           }
           #horarios-guardados-print .overflow-x-auto {
             overflow: visible !important;
