@@ -1482,13 +1482,15 @@ export default function HorariosGuardadosPage() {
         @media print {
           /* Eliminamos los encabezados/pies por defecto del navegador
              (titulo, fecha/hora, URL/IP) anulando los margenes superior y
-             laterales. Reservamos un margen inferior pequeño y declaramos
+             laterales. Reservamos un margen inferior compacto y declaramos
              explicitamente las cajas @bottom-* para colocar nuestro contador
              "Pagina X de Y" en la esquina inferior derecha y bloquear que el
-             navegador inserte algo en bottom-left/bottom-center. */
+             navegador inserte algo en bottom-left/bottom-center.
+             Mantenemos los margenes muy pequeños para no robarle altura
+             vertical a la tabla y evitar que la ultima fila quede cortada. */
           @page {
             size: A4 landscape;
-            margin: 0 0 10mm 0;
+            margin: 0 0 5mm 0;
             @bottom-left {
               content: "";
             }
@@ -1498,9 +1500,9 @@ export default function HorariosGuardadosPage() {
             @bottom-right {
               content: "Pagina " counter(page) " de " counter(pages);
               font-family: "Helvetica Neue", Arial, sans-serif;
-              font-size: 8pt;
-              color: #475569;
-              padding: 0 6mm 3mm 0;
+              font-size: 7pt;
+              color: #64748b;
+              padding: 0 4mm 1mm 0;
               vertical-align: bottom;
             }
           }
@@ -1525,9 +1527,11 @@ export default function HorariosGuardadosPage() {
             max-width: 100% !important;
             height: auto !important;
             overflow: visible !important;
-            /* padding-top mas amplio para dejar espacio al encabezado fijo
-               (Portal UAID) que se monta sobre la zona superior de la hoja. */
-            padding: 12mm 6mm 4mm 6mm !important;
+            /* Padding-top reducido al minimo necesario para acomodar el
+               encabezado fijo (Portal UAID) sin desplazar la tabla mas
+               abajo de lo necesario y mantener todas las filas dentro de
+               la hoja. */
+            padding: 6mm 5mm 0 5mm !important;
             margin: 0 !important;
             background: white !important;
             box-shadow: none !important;
@@ -1546,24 +1550,24 @@ export default function HorariosGuardadosPage() {
             right: 0 !important;
             align-items: center !important;
             justify-content: center !important;
-            gap: 2mm !important;
-            height: 10mm !important;
+            gap: 1.5mm !important;
+            height: 5.5mm !important;
             color: #0f172a !important;
             background: white !important;
             z-index: 9999 !important;
           }
           .planilla-print-portal-icon {
-            width: 5mm !important;
-            height: 5mm !important;
+            width: 3.5mm !important;
+            height: 3.5mm !important;
             color: #6d28d9 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           .planilla-print-portal-name {
             font-family: "Helvetica Neue", Arial, sans-serif !important;
-            font-size: 11pt !important;
+            font-size: 9pt !important;
             font-weight: 700 !important;
-            letter-spacing: 0.4px !important;
+            letter-spacing: 0.3px !important;
           }
           #horarios-guardados-print .overflow-x-auto {
             overflow: visible !important;
