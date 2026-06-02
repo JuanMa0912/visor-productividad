@@ -1055,6 +1055,27 @@ export function IngresarHorariosInner() {
         ref={planillaRef}
         className="mx-auto w-full max-w-384 rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)] print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none"
       >
+        {/* Encabezado solo de impresion (Portal UAID + icono) que se posiciona
+            fijo en la parte superior central de cada hoja al imprimir. Sustituye
+            al titulo/fecha que el navegador colocaba en su encabezado por defecto. */}
+        <div className="planilla-print-portal-header" aria-hidden="true">
+          <svg
+            className="planilla-print-portal-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+            <path d="M20 3v4" />
+            <path d="M22 5h-4" />
+            <path d="M4 17v2" />
+            <path d="M5 18H3" />
+          </svg>
+          <span className="planilla-print-portal-name">Portal UAID</span>
+        </div>
         <div className="pointer-events-none fixed -left-[100000px] top-0 opacity-0">
           <PlanillaPreview
             containerRef={jpgExportRef}
@@ -1789,14 +1810,34 @@ export function IngresarHorariosInner() {
             border-left-width: 2px;
             border-left-color: rgb(30 41 59);
           }
+          /* El encabezado de impresion solo se muestra al imprimir. */
+          .planilla-print-portal-header {
+            display: none;
+          }
           @media print {
-            /* margin: 0 evita que el navegador inyecte sus propios encabezados
-               y pies (titulo, fecha/hora, URL/IP, numero de pagina) dentro
-               del margen de @page. Compensamos con padding interno en el
-               contenedor para mantener un respiro alrededor del contenido. */
+            /* Eliminamos los encabezados/pies por defecto del navegador
+               (titulo, fecha/hora, URL/IP) anulando los margenes superior
+               y laterales. Reservamos un margen inferior pequeño y
+               declaramos las cajas @bottom-* para colocar nuestro contador
+               "Pagina X de Y" en la esquina inferior derecha y bloquear que
+               el navegador inserte algo en bottom-left/bottom-center. */
             @page {
               size: A4 landscape;
-              margin: 0;
+              margin: 0 0 10mm 0;
+              @bottom-left {
+                content: "";
+              }
+              @bottom-center {
+                content: "";
+              }
+              @bottom-right {
+                content: "Pagina " counter(page) " de " counter(pages);
+                font-family: "Helvetica Neue", Arial, sans-serif;
+                font-size: 8pt;
+                color: #475569;
+                padding: 0 6mm 3mm 0;
+                vertical-align: bottom;
+              }
             }
             html,
             body {
@@ -1820,8 +1861,41 @@ export function IngresarHorariosInner() {
               max-width: 100% !important;
               height: auto !important;
               overflow: visible !important;
-              padding: 6mm !important;
+              /* padding-top mas amplio para dejar libre la franja superior
+                 donde se ubica el encabezado fijo "Portal UAID". */
+              padding: 12mm 6mm 4mm 6mm !important;
               box-sizing: border-box !important;
+            }
+            /* Encabezado de impresion: posicion fija sobre la hoja para que
+               se repita en cada pagina (comportamiento estandar de
+               position: fixed al imprimir). Va dentro de #planilla-print
+               para conservar visibility:visible bajo el filtro de impresion. */
+            .planilla-print-portal-header {
+              display: flex !important;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              align-items: center !important;
+              justify-content: center !important;
+              gap: 2mm !important;
+              height: 10mm !important;
+              color: #0f172a !important;
+              background: white !important;
+              z-index: 9999 !important;
+            }
+            .planilla-print-portal-icon {
+              width: 5mm !important;
+              height: 5mm !important;
+              color: #6d28d9 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .planilla-print-portal-name {
+              font-family: "Helvetica Neue", Arial, sans-serif !important;
+              font-size: 11pt !important;
+              font-weight: 700 !important;
+              letter-spacing: 0.4px !important;
             }
             #planilla-print .overflow-x-auto {
               overflow: visible !important;

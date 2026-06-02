@@ -888,6 +888,28 @@ export default function HorariosGuardadosPage() {
                 </div>
               ) : (
                 <div id="horarios-guardados-print">
+                  {/* Encabezado solo de impresion: aparece arriba centrado en
+                      cada hoja gracias a position:fixed dentro del area de
+                      impresion. Sustituye al titulo/fecha/URL que el navegador
+                      colocaba por defecto en los margenes. */}
+                  <div className="planilla-print-portal-header" aria-hidden="true">
+                    <svg
+                      className="planilla-print-portal-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+                      <path d="M20 3v4" />
+                      <path d="M22 5h-4" />
+                      <path d="M4 17v2" />
+                      <path d="M5 18H3" />
+                    </svg>
+                    <span className="planilla-print-portal-name">Portal UAID</span>
+                  </div>
                   <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
@@ -1436,6 +1458,10 @@ export default function HorariosGuardadosPage() {
           border-left-width: 2px;
           border-left-color: rgb(30 41 59);
         }
+        /* El encabezado de impresion solo se muestra al imprimir. */
+        .planilla-print-portal-header {
+          display: none;
+        }
         /* Anchos en pantalla para la preview (table-layout: fixed). Replican
            las mismas proporciones que se usan al imprimir para que lo que
            ves en pantalla sea identico al PDF. */
@@ -1454,13 +1480,29 @@ export default function HorariosGuardadosPage() {
           overflow-wrap: anywhere;
         }
         @media print {
-          /* margin: 0 elimina los encabezados/pies del navegador (titulo,
-             fecha/hora, URL/IP, numeracion) que el agente de impresion
-             coloca dentro del margen del @page. Compensamos con padding
-             interno en el contenedor para mantener un respiro visual. */
+          /* Eliminamos los encabezados/pies por defecto del navegador
+             (titulo, fecha/hora, URL/IP) anulando los margenes superior y
+             laterales. Reservamos un margen inferior pequeño y declaramos
+             explicitamente las cajas @bottom-* para colocar nuestro contador
+             "Pagina X de Y" en la esquina inferior derecha y bloquear que el
+             navegador inserte algo en bottom-left/bottom-center. */
           @page {
             size: A4 landscape;
-            margin: 0;
+            margin: 0 0 10mm 0;
+            @bottom-left {
+              content: "";
+            }
+            @bottom-center {
+              content: "";
+            }
+            @bottom-right {
+              content: "Pagina " counter(page) " de " counter(pages);
+              font-family: "Helvetica Neue", Arial, sans-serif;
+              font-size: 8pt;
+              color: #475569;
+              padding: 0 6mm 3mm 0;
+              vertical-align: bottom;
+            }
           }
           html,
           body {
@@ -1483,12 +1525,45 @@ export default function HorariosGuardadosPage() {
             max-width: 100% !important;
             height: auto !important;
             overflow: visible !important;
-            padding: 6mm !important;
+            /* padding-top mas amplio para dejar espacio al encabezado fijo
+               (Portal UAID) que se monta sobre la zona superior de la hoja. */
+            padding: 12mm 6mm 4mm 6mm !important;
             margin: 0 !important;
             background: white !important;
             box-shadow: none !important;
             border: 0 !important;
             box-sizing: border-box !important;
+          }
+          /* Encabezado de impresion: posicion fija sobre la hoja. Como esta
+             dentro de #horarios-guardados-print pasa el filtro de
+             visibility y se repite automaticamente en cada pagina impresa
+             (comportamiento estandar de position: fixed en print). */
+          .planilla-print-portal-header {
+            display: flex !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 2mm !important;
+            height: 10mm !important;
+            color: #0f172a !important;
+            background: white !important;
+            z-index: 9999 !important;
+          }
+          .planilla-print-portal-icon {
+            width: 5mm !important;
+            height: 5mm !important;
+            color: #6d28d9 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .planilla-print-portal-name {
+            font-family: "Helvetica Neue", Arial, sans-serif !important;
+            font-size: 11pt !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.4px !important;
           }
           #horarios-guardados-print .overflow-x-auto {
             overflow: visible !important;
