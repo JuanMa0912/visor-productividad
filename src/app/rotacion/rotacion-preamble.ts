@@ -436,37 +436,39 @@ const clampDateKeyToBounds = (key: string, min: string, max: string) => {
 };
 
 /**
- * Rango por defecto = MES CALENDARIO ANTERIOR COMPLETO (dia 1 → ultimo dia),
- * acotado a los datos disponibles. La longitud varia segun los dias del mes:
- *   - Hoy = 2026-06-01 → May 01 .. May 31 (31 dias).
- *   - Hoy = 2026-07-15 → Jun 01 .. Jun 30 (30 dias).
- *   - Hoy = 2026-03-10 → Feb 01 .. Feb 28 (28 dias).
+ * Rango por defecto al entrar al modulo:
+ *   - end = ULTIMO DIA CON DATOS DISPONIBLES (`maxAvailable`). Tipicamente
+ *     es "ayer" porque los datos del dia actual todavia no estan ingresados
+ *     en el data warehouse. Asi el usuario siempre arranca viendo el dato
+ *     mas reciente registrado.
+ *   - start = dia 1 del mes calendario anterior a hoy. Eso incluye un mes
+ *     completo de historico mas los dias parciales del mes en curso con
+ *     datos.
  *
- * Antes calculaba "ayer menos un mes calendario + 1 dia". Eso terminaba dando
- * SIEMPRE 30 dias por el overflow de `Date.setMonth()` en meses cortos:
- *   - May 31 .setMonth(3 = Abril) → April 31 no existe → JS desborda a May 1.
- *   - +1 dia → May 2.
- *   - Resultado: May 2 .. May 31 = 30 dias en vez de los 31 dias reales de Mayo.
+ * Ambos extremos quedan acotados a `[minAvailable, maxAvailable]`.
+ *
+ * Ejemplos (asumiendo maxAvailable = ayer):
+ *   - Hoy = 2026-06-02, maxAvailable = 2026-06-01 → May 01 .. Jun 01 (32 d).
+ *   - Hoy = 2026-06-01, maxAvailable = 2026-05-31 → May 01 .. May 31 (31 d).
+ *   - Hoy = 2026-07-15, maxAvailable = 2026-07-14 → Jun 01 .. Jul 14 (44 d).
+ *   - Hoy = 2026-03-10, maxAvailable = 2026-03-09 → Feb 01 .. Mar 09 (37 d).
+ *
+ * Antes el end era "ultimo dia del mes calendario anterior" (ej. May 31),
+ * por lo que aunque ya hubiera datos del 1 de junio, el rango se quedaba
+ * cerrado en mayo y no avanzaba con la realidad de los datos cargados.
  */
 const getRollingMonthBackRange = (
   minAvailable: string,
   maxAvailable: string,
 ): DateRange => {
   const today = new Date();
-  // `new Date(y, m, 0)` devuelve el ultimo dia del mes m-1 (truco clasico
-  // de la API de Date: el dia 0 de un mes es el ultimo del mes anterior).
-  const lastDayPrevMonth = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    0,
-  );
   const firstDayPrevMonth = new Date(
-    lastDayPrevMonth.getFullYear(),
-    lastDayPrevMonth.getMonth(),
+    today.getFullYear(),
+    today.getMonth() - 1,
     1,
   );
   const endKey = clampDateKeyToBounds(
-    toDateKey(lastDayPrevMonth),
+    maxAvailable,
     minAvailable,
     maxAvailable,
   );
