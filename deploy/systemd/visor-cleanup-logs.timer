@@ -1,0 +1,15 @@
+[Unit]
+Description=Visor - timer semanal de limpieza (domingos 03:00 hora local)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Todos los domingos a las 03:00 (hora del sistema)
+OnCalendar=Sun *-*-* 03:00:00
+# Si la VM estaba apagada en ese momento, ejecutar al arrancar
+Persistent=true
+# Dispersa la ejecucion para evitar picos
+RandomizedDelaySec=120
+Unit=visor-cleanup-logs.service
+
+[Install]
+WantedBy=timers.target

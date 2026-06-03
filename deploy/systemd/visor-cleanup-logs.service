@@ -1,0 +1,19 @@
+[Unit]
+Description=Visor - limpieza semanal de logs y sesiones
+Documentation=file:///opt/visor-productividad/scripts/cleanup-logs.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=visor
+Group=visor
+WorkingDirectory=/opt/visor-productividad
+ExecStart=/opt/visor-productividad/scripts/cleanup-logs.sh
+StandardOutput=journal
+StandardError=journal
+# Endurecimientos basicos
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
