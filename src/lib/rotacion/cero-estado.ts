@@ -37,8 +37,20 @@ export const CERO_ROTACION_ESTADO_SORT_ORDER: Record<CeroRotacionEstado, number>
     surtido: 2,
   };
 
-export const makeCeroRotacionEstadoKey = (sedeId: string, item: string) =>
-  `${sedeId}\u001f${item}`;
+/**
+ * Clave unica para indexar el estado S.inventario de un item en una sede.
+ *
+ * Incluye `empresa` porque `sedeId` NO es unico entre empresas (ej. Mercamio
+ * 001 = Calle 5ta, Mercatodo 001 = Floresta, Merkmios 001 = Bogota). Si solo
+ * usaramos sedeId, los cambios de un admin se mostrarian/aplicarian a otras
+ * sedes que comparten el mismo numero. El separador `\u001f` (Unit Separator)
+ * evita colisiones con caracteres validos en empresa, sedeId o item.
+ */
+export const makeCeroRotacionEstadoKey = (
+  empresa: string,
+  sedeId: string,
+  item: string,
+) => `${empresa}\u001f${sedeId}\u001f${item}`;
 
 export const parseCeroRotacionEstado = (
   raw: string | null | undefined,

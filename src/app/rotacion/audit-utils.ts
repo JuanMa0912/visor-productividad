@@ -5,6 +5,13 @@ import {
 
 export type SurtidoAuditApiRow = {
   id: string;
+  /**
+   * Empresa de la sede del cambio. Acompaña a `sede_id` porque el id de
+   * sede no es unico entre empresas (Mercamio 001 != Mercatodo 001 !=
+   * Merkmios 001). Sin este campo dos sedes distintas con el mismo numero
+   * apareceran mezcladas al filtrar.
+   */
+  empresa: string;
   sede_id: string;
   item: string;
   context: string;

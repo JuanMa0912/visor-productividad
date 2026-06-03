@@ -106,12 +106,23 @@ export const SurtidoAuditModal = ({
     return () => controller.abort();
   }, [dateRange.start, dateRange.end, targetSedeSelections, router]);
 
+  // Las opciones del filtro de sede deben tener llave (empresa, sede_id)
+  // porque el numero de sede no es unico entre empresas (ej. Mercatodo 001
+  // vs Mercamio 001). Si solo deduplicaramos por sede_id, "001" filtraria
+  // simultaneamente a Floresta y Calle 5ta cuando un admin tiene acceso a
+  // ambas. Usamos el separador "::" tanto como `value` del <option> como
+  // como `key` para diferenciarlas.
   const sedeOptions = useMemo(() => {
-    const set = new Set<string>();
+    const map = new Map<string, { value: string; label: string }>();
     for (const r of rows) {
-      if (r.sede_id) set.add(r.sede_id);
+      if (!r.sede_id) continue;
+      const value = `${r.empresa ?? ""}::${r.sede_id}`;
+      const label = r.empresa ? `${r.empresa} · ${r.sede_id}` : r.sede_id;
+      if (!map.has(value)) map.set(value, { value, label });
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+    return Array.from(map.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, "es"),
+    );
   }, [rows]);
 
   const filteredRows = useMemo(() => {
@@ -138,7 +149,10 @@ export const SurtidoAuditModal = ({
         const u = (r.username ?? "").trim().toLowerCase();
         if (!u.includes(userQ)) return false;
       }
-      if (sedeVal && r.sede_id !== sedeVal) return false;
+      if (sedeVal) {
+        const rowKey = `${r.empresa ?? ""}::${r.sede_id}`;
+        if (rowKey !== sedeVal) return false;
+      }
       if (ctx && r.context !== ctx) return false;
       if (antes === "__vacio__") {
         if (
@@ -286,9 +300,9 @@ export const SurtidoAuditModal = ({
                   className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 >
                   <option value="">Todas</option>
-                  {sedeOptions.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
+                  {sedeOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
@@ -410,7 +424,7 @@ export const SurtidoAuditModal = ({
                       {r.username?.trim() || "—"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-slate-700">
-                      {r.sede_id}
+                      {r.empresa ? `${r.empresa} · ${r.sede_id}` : r.sede_id}
                     </TableCell>
                     <TableCell className="max-w-48 truncate font-mono text-xs text-slate-900">
                       {r.item}

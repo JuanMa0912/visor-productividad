@@ -62,6 +62,7 @@ const MIGRATION_RESTOCK_CONTEXT_HINT =
 
 const readEstadoAnterior = async (
   pool: Pool,
+  empresa: string,
   sedeId: string,
   item: string,
   context: RotacionSurtidoEstadoContext,
@@ -71,9 +72,9 @@ const readEstadoAnterior = async (
       `
       SELECT estado
       FROM rotacion_cero_item_estado
-      WHERE sede_id = $1 AND item = $2 AND context = $3
+      WHERE empresa = $1 AND sede_id = $2 AND item = $3 AND context = $4
       `,
-      [sedeId, item, context],
+      [empresa, sedeId, item, context],
     );
     return r.rows[0]?.estado ?? null;
   } catch (error) {
@@ -82,9 +83,9 @@ const readEstadoAnterior = async (
       `
       SELECT estado
       FROM rotacion_cero_item_estado
-      WHERE sede_id = $1 AND item = $2
+      WHERE empresa = $1 AND sede_id = $2 AND item = $3
       `,
-      [sedeId, item],
+      [empresa, sedeId, item],
     );
     return r2.rows[0]?.estado ?? null;
   }
@@ -93,6 +94,7 @@ const readEstadoAnterior = async (
 const tryInsertSurtidoAudit = async (
   pool: Pool,
   params: {
+    empresa: string;
     sedeId: string;
     item: string;
     context: RotacionSurtidoEstadoContext;
@@ -105,10 +107,11 @@ const tryInsertSurtidoAudit = async (
     await pool.query(
       `
       INSERT INTO rotacion_cero_item_estado_audit (
-        sede_id, item, context, estado_anterior, estado_nuevo, changed_by
-      ) VALUES ($1, $2, $3, $4, $5, $6::uuid)
+        empresa, sede_id, item, context, estado_anterior, estado_nuevo, changed_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::uuid)
       `,
       [
+        params.empresa,
         params.sedeId,
         params.item,
         params.context,
@@ -201,7 +204,7 @@ const resolveAuthorizedScopesForRequest = async (
   end: string,
   sedeScopeRaw: string[],
 ): Promise<
-  | { ok: true; sedeIds: string[] }
+  | { ok: true; scopes: Array<{ empresa: string; sedeId: string }> }
   | { ok: false; response: NextResponse }
 > => {
   const catalog = await getRotationFilterCatalog(start, end);
@@ -214,14 +217,19 @@ const resolveAuthorizedScopesForRequest = async (
     .map(parseSedeScope)
     .filter((v): v is { empresa: string; sedeId: string } => v !== null);
 
-  const authorizedSedeIds = new Set<string>();
+  // Mantenemos la tupla (empresa, sedeId): sedeId NO es unico entre empresas
+  // (Mercamio 001 vs Mercatodo 001 vs Merkmios 001 son sedes distintas).
+  // Si solo guardaramos sedeId perderiamos esa distincion y mezclariamos
+  // los estados S.inventario entre sedes que comparten numero.
+  const authorized = new Map<string, { empresa: string; sedeId: string }>();
   for (const scope of parsed) {
-    if (visibleKeys.has(scopeKey(scope))) {
-      authorizedSedeIds.add(scope.sedeId);
+    const key = scopeKey(scope);
+    if (visibleKeys.has(key)) {
+      authorized.set(key, scope);
     }
   }
 
-  if (authorizedSedeIds.size === 0) {
+  if (authorized.size === 0) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -231,7 +239,7 @@ const resolveAuthorizedScopesForRequest = async (
     };
   }
 
-  return { ok: true, sedeIds: Array.from(authorizedSedeIds) };
+  return { ok: true, scopes: Array.from(authorized.values()) };
 };
 
 export async function GET(request: Request) {
@@ -282,9 +290,16 @@ export async function GET(request: Request) {
   );
   if (!resolved.ok) return withSession(session, resolved.response);
 
+  // Pasamos arrays paralelos (empresa[], sede_id[]) al SQL y matcheamos por
+  // tupla con `unnest(...) AS t(empresa, sede_id)` para no mezclar empresas
+  // que comparten sede_id (ej. Mercatodo 001 con Mercamio 001).
+  const empresasArr = resolved.scopes.map((s) => s.empresa);
+  const sedeIdsArr = resolved.scopes.map((s) => s.sedeId);
+
   const pool = await getDbPool();
   let result: {
     rows: Array<{
+      empresa: string;
       sede_id: string;
       item: string;
       estado: string;
@@ -293,17 +308,19 @@ export async function GET(request: Request) {
   };
   try {
     result = await pool.query<{
+      empresa: string;
       sede_id: string;
       item: string;
       estado: string;
       context: RotacionSurtidoEstadoContext;
     }>(
       `
-      SELECT sede_id, item, estado, context
-      FROM rotacion_cero_item_estado
-      WHERE sede_id = ANY($1::text[])
+      SELECT e.empresa, e.sede_id, e.item, e.estado, e.context
+      FROM rotacion_cero_item_estado e
+      JOIN unnest($1::text[], $2::text[]) AS t(empresa, sede_id)
+        ON e.empresa = t.empresa AND e.sede_id = t.sede_id
       `,
-      [resolved.sedeIds],
+      [empresasArr, sedeIdsArr],
     );
   } catch (error) {
     if (isMissingCeroEstadoTableError(error)) {
@@ -321,17 +338,19 @@ export async function GET(request: Request) {
     if (isMissingContextColumnError(error)) {
       try {
         result = await pool.query<{
+          empresa: string;
           sede_id: string;
           item: string;
           estado: string;
           context: RotacionSurtidoEstadoContext;
         }>(
           `
-          SELECT sede_id, item, estado, 'cero'::text AS context
-          FROM rotacion_cero_item_estado
-          WHERE sede_id = ANY($1::text[])
+          SELECT e.empresa, e.sede_id, e.item, e.estado, 'cero'::text AS context
+          FROM rotacion_cero_item_estado e
+          JOIN unnest($1::text[], $2::text[]) AS t(empresa, sede_id)
+            ON e.empresa = t.empresa AND e.sede_id = t.sede_id
           `,
-          [resolved.sedeIds],
+          [empresasArr, sedeIdsArr],
         );
       } catch (fallbackErr) {
         if (isMissingCeroEstadoTableError(fallbackErr)) {
@@ -358,7 +377,7 @@ export async function GET(request: Request) {
   for (const row of result.rows) {
     const parsed = parseCeroRotacionEstado(row.estado);
     if (!parsed) continue;
-    const key = makeCeroRotacionEstadoKey(row.sede_id, row.item);
+    const key = makeCeroRotacionEstadoKey(row.empresa, row.sede_id, row.item);
     const ctx =
       parseRotacionSurtidoEstadoContext(
         typeof row.context === "string" ? row.context : undefined,
@@ -481,7 +500,13 @@ export async function PATCH(request: Request) {
     scopeKey({ empresa, sedeId }),
   ]);
   if (!resolved.ok) return withSession(session, resolved.response);
-  if (!resolved.sedeIds.includes(sedeId)) {
+  // Verificamos la tupla completa (empresa, sedeId): no basta con que el sedeId
+  // este en la lista, porque sedeIds chocan entre empresas (Mercamio 001
+  // y Mercatodo 001 son sedes distintas que comparten numero).
+  const isAuthorized = resolved.scopes.some(
+    (scope) => scope.empresa === empresa && scope.sedeId === sedeId,
+  );
+  if (!isAuthorized) {
     return withSession(
       session,
       NextResponse.json(
@@ -494,7 +519,7 @@ export async function PATCH(request: Request) {
   const pool = await getDbPool();
   let estadoAnterior: string | null = null;
   try {
-    estadoAnterior = await readEstadoAnterior(pool, sedeId, item, context);
+    estadoAnterior = await readEstadoAnterior(pool, empresa, sedeId, item, context);
   } catch {
     estadoAnterior = null;
   }
@@ -502,14 +527,14 @@ export async function PATCH(request: Request) {
   try {
     await pool.query(
       `
-      INSERT INTO rotacion_cero_item_estado (sede_id, item, context, estado, updated_at, updated_by)
-      VALUES ($1, $2, $3, $4, now(), $5::uuid)
-      ON CONFLICT (sede_id, item, context) DO UPDATE SET
+      INSERT INTO rotacion_cero_item_estado (empresa, sede_id, item, context, estado, updated_at, updated_by)
+      VALUES ($1, $2, $3, $4, $5, now(), $6::uuid)
+      ON CONFLICT (empresa, sede_id, item, context) DO UPDATE SET
         estado = EXCLUDED.estado,
         updated_at = now(),
         updated_by = EXCLUDED.updated_by
       `,
-      [sedeId, item, context, estado, session.user.id],
+      [empresa, sedeId, item, context, estado, session.user.id],
     );
   } catch (error) {
     if (isMissingCeroEstadoTableError(error)) {
@@ -539,14 +564,14 @@ export async function PATCH(request: Request) {
       try {
         await pool.query(
           `
-          INSERT INTO rotacion_cero_item_estado (sede_id, item, estado, updated_at, updated_by)
-          VALUES ($1, $2, $3, now(), $4::uuid)
-          ON CONFLICT (sede_id, item) DO UPDATE SET
+          INSERT INTO rotacion_cero_item_estado (empresa, sede_id, item, estado, updated_at, updated_by)
+          VALUES ($1, $2, $3, $4, now(), $5::uuid)
+          ON CONFLICT (empresa, sede_id, item) DO UPDATE SET
             estado = EXCLUDED.estado,
             updated_at = now(),
             updated_by = EXCLUDED.updated_by
           `,
-          [sedeId, item, estado, session.user.id],
+          [empresa, sedeId, item, estado, session.user.id],
         );
       } catch (legacyErr) {
         if (isMissingCeroEstadoTableError(legacyErr)) {
@@ -570,6 +595,7 @@ export async function PATCH(request: Request) {
 
   if (estadoAnterior !== estado) {
     await tryInsertSurtidoAudit(pool, {
+      empresa,
       sedeId,
       item,
       context,
@@ -584,7 +610,7 @@ export async function PATCH(request: Request) {
     NextResponse.json(
       {
         ok: true,
-        key: makeCeroRotacionEstadoKey(sedeId, item),
+        key: makeCeroRotacionEstadoKey(empresa, sedeId, item),
         estado,
         context,
       },

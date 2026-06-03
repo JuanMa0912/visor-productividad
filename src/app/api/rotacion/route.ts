@@ -158,6 +158,17 @@ const HIDDEN_SEDE_KEYS = new Set([
   "cedicavasa",
   "centrodistribucioncavasa",
   "importados",
+  // Sedes operativas de Mercamio que NO deben aparecer en el filtro de
+  // rotacion (CEI, IMP, PPT). Se incluyen tanto la forma corta como la
+  // que trae el prefijo "Mercamio " porque en algunos feeds la BD guarda
+  // el nombre completo (ej. "Mercamio CEI") y en otros la version
+  // canonica corta. Ambas se normalizan a la misma clave alfanumerica.
+  "cei",
+  "imp",
+  "ppt",
+  "mercamiocei",
+  "mercamioimp",
+  "mercamioppt",
 ]);
 
 /**
@@ -179,7 +190,18 @@ const buildHiddenSedeWhereClause = (sedeNameExpr: string) =>
     '[^a-zA-Z0-9]+',
     '',
     'g'
-  )) NOT IN ('adm', 'cedicavasa', 'centrodistribucioncavasa', 'importados')`;
+  )) NOT IN (
+    'adm',
+    'cedicavasa',
+    'centrodistribucioncavasa',
+    'importados',
+    'cei',
+    'imp',
+    'ppt',
+    'mercamiocei',
+    'mercamioimp',
+    'mercamioppt'
+  )`;
 const DEFAULT_ABCD_CONFIG: AbcdConfig = {
   aUntilPercent: 70,
   bUntilPercent: 85,

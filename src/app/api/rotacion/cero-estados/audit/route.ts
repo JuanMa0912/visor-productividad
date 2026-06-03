@@ -118,7 +118,7 @@ const resolveAuthorizedScopesForRequest = async (
   end: string,
   sedeScopeRaw: string[],
 ): Promise<
-  | { ok: true; sedeIds: string[] }
+  | { ok: true; scopes: Array<{ empresa: string; sedeId: string }> }
   | { ok: false; response: NextResponse }
 > => {
   const catalog = await getRotationFilterCatalog(start, end);
@@ -131,14 +131,17 @@ const resolveAuthorizedScopesForRequest = async (
     .map(parseSedeScope)
     .filter((v): v is { empresa: string; sedeId: string } => v !== null);
 
-  const authorizedSedeIds = new Set<string>();
+  // Mantenemos la tupla (empresa, sedeId) porque sedeId no es unico entre
+  // empresas: Mercamio 001 != Mercatodo 001 != Merkmios 001.
+  const authorized = new Map<string, { empresa: string; sedeId: string }>();
   for (const scope of parsed) {
-    if (visibleKeys.has(scopeKey(scope))) {
-      authorizedSedeIds.add(scope.sedeId);
+    const key = scopeKey(scope);
+    if (visibleKeys.has(key)) {
+      authorized.set(key, scope);
     }
   }
 
-  if (authorizedSedeIds.size === 0) {
+  if (authorized.size === 0) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -148,11 +151,12 @@ const resolveAuthorizedScopesForRequest = async (
     };
   }
 
-  return { ok: true, sedeIds: Array.from(authorizedSedeIds) };
+  return { ok: true, scopes: Array.from(authorized.values()) };
 };
 
 export type RotacionSurtidoAuditRow = {
   id: string;
+  empresa: string;
   sede_id: string;
   item: string;
   context: string;
@@ -208,12 +212,19 @@ export async function GET(request: Request) {
   );
   if (!resolved.ok) return withSession(session, resolved.response);
 
+  // Pasamos arrays paralelos (empresa[], sede_id[]) y filtramos por tupla
+  // para no traer cambios de otras empresas que comparten sede_id (ej.
+  // Mercatodo 001 vs Mercamio 001).
+  const empresasArr = resolved.scopes.map((s) => s.empresa);
+  const sedeIdsArr = resolved.scopes.map((s) => s.sedeId);
+
   const pool = await getDbPool();
   try {
     const result = await pool.query<RotacionSurtidoAuditRow>(
       `
       SELECT
         a.id::text AS id,
+        a.empresa,
         a.sede_id,
         a.item,
         a.context,
@@ -223,18 +234,19 @@ export async function GET(request: Request) {
         a.changed_by::text AS changed_by,
         u.username
       FROM rotacion_cero_item_estado_audit a
+      JOIN unnest($1::text[], $2::text[]) AS t(empresa, sede_id)
+        ON a.empresa = t.empresa AND a.sede_id = t.sede_id
       LEFT JOIN app_users u ON u.id = a.changed_by
-      WHERE a.sede_id = ANY($1::text[])
-        AND (a.changed_at AT TIME ZONE 'America/Bogota')::date >= to_date($2::text, 'YYYYMMDD')
+      WHERE (a.changed_at AT TIME ZONE 'America/Bogota')::date >= to_date($3::text, 'YYYYMMDD')
         /* El periodo del tablero suele terminar antes que "hoy"; los cambios usan changed_at real. */
         AND (a.changed_at AT TIME ZONE 'America/Bogota')::date <= GREATEST(
-          to_date($3::text, 'YYYYMMDD'),
+          to_date($4::text, 'YYYYMMDD'),
           (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::date
         )
       ORDER BY a.changed_at DESC
       LIMIT 2000
       `,
-      [resolved.sedeIds, start, end],
+      [empresasArr, sedeIdsArr, start, end],
     );
 
     return withSession(

@@ -977,7 +977,7 @@ export function RotacionPageInner() {
 
   const getSurtidoEstadoSortRank = useCallback(
     (row: RotationRow) => {
-      const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+      const key = makeCeroRotacionEstadoKey(row.empresa, row.sedeId, row.item);
       const map = isNuevoItemInSelectedRange(row)
         ? restockEstadoByKey
         : ceroEstadoByKey;
@@ -1033,7 +1033,7 @@ export function RotacionPageInner() {
       estado: CeroRotacionEstado,
       context: RotacionSurtidoEstadoContext,
     ) => {
-      const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+      const key = makeCeroRotacionEstadoKey(row.empresa, row.sedeId, row.item);
       const setMap =
         context === "restock" ? setRestockEstadoByKey : setCeroEstadoByKey;
       const currentMap = context === "restock" ? restockEstadoByKey : ceroEstadoByKey;
@@ -1745,7 +1745,11 @@ export function RotacionPageInner() {
           zeroEstadoSet.length < CERO_ROTACION_ESTADO_VALUES.length;
         const filteredRows = filterSurtidoByEstadoMulti
           ? quickFilteredRows.filter((row) => {
-              const key = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+              const key = makeCeroRotacionEstadoKey(
+                row.empresa,
+                row.sedeId,
+                row.item,
+              );
               const estado =
                 estadoMapForFilter[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
               return zeroEstadoSet.includes(estado);
@@ -1785,7 +1789,11 @@ export function RotacionPageInner() {
             : isCeroRotacionExcludingNuevo(row, dateRange)
               ? "0"
               : (categoryByItem.get(row.item) ?? "D");
-          const estadoKey = makeCeroRotacionEstadoKey(row.sedeId, row.item);
+          const estadoKey = makeCeroRotacionEstadoKey(
+            row.empresa,
+            row.sedeId,
+            row.item,
+          );
           const estadoMapForRow = isNuevoItemInSelectedRange(row)
             ? restockEstadoByKey
             : ceroEstadoByKey;
@@ -2872,6 +2880,7 @@ export function RotacionPageInner() {
                     const filteredRows = filterSurtidoByEstadoMulti
                       ? quickFilteredRows.filter((row) => {
                           const key = makeCeroRotacionEstadoKey(
+                            row.empresa,
                             row.sedeId,
                             row.item,
                           );
@@ -4361,6 +4370,7 @@ export function RotacionPageInner() {
                                                   ? ceroEstadoByKey
                                                   : restockEstadoByKey)[
                                                   makeCeroRotacionEstadoKey(
+                                                    row.empresa,
                                                     row.sedeId,
                                                     row.item,
                                                   )
