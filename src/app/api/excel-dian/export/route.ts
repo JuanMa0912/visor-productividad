@@ -20,33 +20,26 @@ export const dynamic = "force-dynamic";
 const MIN_YEAR = 2000;
 const MAX_YEAR = 2100;
 const NUMERIC_VALUE_KEYS = new Set([
-  "valor_bruto",
-  "suma_descuentos",
-  "suma_impo1",
-  "suma_impo2",
-  "imp_bolsa",
-  "ingresos_brutos_propios",
-  "devoluciones_notas",
-  "total_ingreso",
+  "Ingresos Brutos Recibidos",
+  "Devoluciones Rebajas Descuentos",
 ]);
 
 const COLUMN_WIDTH_BY_KEY: Partial<Record<string, number>> = {
-  tercerotd: 11,
-  terceronit: 14,
-  tercero_apellido1: 16,
-  tercero_apellido2: 16,
-  tercero_nombre1: 16,
-  tercero_nombre2: 16,
-  tercero_razon_social: 36,
-  pais: 10,
-  valor_bruto: 17,
-  suma_descuentos: 17,
-  suma_impo1: 15,
-  suma_impo2: 15,
-  imp_bolsa: 14,
-  ingresos_brutos_propios: 20,
-  devoluciones_notas: 19,
-  total_ingreso: 18,
+  Concepto: 10,
+  "Tipo Documento": 13,
+  "Numero Identificacion": 18,
+  DV: 6,
+  "Primer Apellido": 16,
+  "Segundo Apellido": 16,
+  "Primer Nombre": 16,
+  "Otros Nombres": 16,
+  "Razon Social": 36,
+  Direccion: 30,
+  "Codigo Pais": 11,
+  "Codigo Departamento": 14,
+  "Codigo Municipio": 14,
+  "Ingresos Brutos Recibidos": 22,
+  "Devoluciones Rebajas Descuentos": 26,
 };
 
 /** Bordes finos tipo plantilla Office (similar a F1007 contabilidad). */
