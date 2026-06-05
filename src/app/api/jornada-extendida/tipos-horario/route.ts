@@ -6,6 +6,10 @@ import {
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
 import {
+  canonicalizeSedeKey,
+  resolveAllowedSedeKeys,
+} from "@/lib/horarios/visible-sedes";
+import {
   TIPOS_HORARIO_BUCKETS,
   TIPOS_HORARIO_DEFAULT_BUCKET,
   TIPOS_HORARIO_DEFAULT_TOP_N,
@@ -255,6 +259,18 @@ export async function GET(request: Request) {
     );
   }
 
+  // Autorizacion fina por sede: un usuario amarrado solo puede ver sus sedes.
+  // null = sin restriccion (admin / "Todas"); Set vacio = sin sedes asignadas.
+  const allowedSedeKeys = resolveAllowedSedeKeys(session.user);
+  if (allowedSedeKeys !== null && allowedSedeKeys.size === 0) {
+    return withSession(
+      NextResponse.json(
+        { error: "No tienes sedes asignadas para consultar." },
+        { status: 403 },
+      ),
+    );
+  }
+
   const url = new URL(request.url);
   const startParam = url.searchParams.get("start")?.trim() ?? "";
   const endParam = url.searchParams.get("end")?.trim() ?? "";
@@ -420,6 +436,13 @@ export async function GET(request: Request) {
       };
       const sedeNorm = (typed.sede_norm ?? "").trim();
       if (!sedeNorm) continue;
+      // Enforcing por sede: descarta filas fuera de las sedes del usuario.
+      if (
+        allowedSedeKeys &&
+        !allowedSedeKeys.has(canonicalizeSedeKey(sedeNorm))
+      ) {
+        continue;
+      }
       const sede = mapSedeToCanonical(sedeNorm) ?? titleCaseSede(sedeNorm);
       if (selectedSede && sede !== selectedSede) continue;
       const departamento = (typed.departamento ?? "").trim();

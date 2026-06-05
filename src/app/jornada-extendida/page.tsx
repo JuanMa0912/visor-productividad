@@ -189,6 +189,7 @@ export default function JornadaExtendidaPage() {
   const [availableSedes, setAvailableSedes] = useState<Sede[]>([]);
   const [defaultSede, setDefaultSede] = useState<string | undefined>(undefined);
   const [canSeeAlexReport, setCanSeeAlexReport] = useState(false);
+  const [tiposHorarioOpen, setTiposHorarioOpen] = useState(false);
   const [alexStartDate, setAlexStartDate] = useState("");
   const [alexEndDate, setAlexEndDate] = useState("");
   const [alexRows, setAlexRows] = useState<AlexReportRow[]>([]);
@@ -1942,9 +1943,23 @@ export default function JornadaExtendidaPage() {
               alexConsistencyMode={canSeeAlexReport}
               alexTotalsOverride={canSeeAlexReport ? alexTotals : undefined}
               dashboardContext="jornada-extendida"
+              headerActions={
+                <button
+                  type="button"
+                  onClick={() => setTiposHorarioOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3.5 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100"
+                >
+                  <Clock className="h-4 w-4" />
+                  Tipos de horario por sede y area
+                </button>
+              }
             />
 
-            <TiposHorarioPanel availableSedes={availableSedes} />
+            <TiposHorarioPanel
+              open={tiposHorarioOpen}
+              onClose={() => setTiposHorarioOpen(false)}
+              availableSedes={availableSedes}
+            />
           </>
         )}
       </div>

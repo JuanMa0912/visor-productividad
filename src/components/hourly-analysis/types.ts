@@ -1,4 +1,4 @@
-import type { MutableRefObject } from "react";
+import type { MutableRefObject, ReactNode } from "react";
 import type { Sede } from "@/lib/shared/constants";
 import type { HourlyAnalysisData } from "@/types";
 
@@ -50,6 +50,8 @@ export interface HourlyAnalysisProps {
   badgeLabel?: string;
   panelTitle?: string;
   panelDescription?: string;
+  /** Contenido opcional alineado a la derecha del encabezado del panel (p. ej. un boton de accion). */
+  headerActions?: ReactNode;
   showPersonBreakdown?: boolean;
   defaultPersonBreakdownView?: PersonBreakdownView;
   hidePersonBreakdownTabs?: boolean;

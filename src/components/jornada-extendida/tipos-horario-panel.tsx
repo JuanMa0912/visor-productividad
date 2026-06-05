@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Download, RefreshCw } from "lucide-react";
+import { Download, RefreshCw, X } from "lucide-react";
 import type { Sede } from "@/lib/shared/constants";
 import { loadExcelJs } from "@/components/hourly-analysis/hourly-formatters";
 import {
@@ -12,6 +12,8 @@ import {
 } from "@/lib/horarios/tipos-horario";
 
 type TiposHorarioPanelProps = {
+  open: boolean;
+  onClose: () => void;
   availableSedes: Sede[];
 };
 
@@ -31,17 +33,34 @@ const formatHoras = (value: number) =>
 const formatPct = (value: number) =>
   `${value.toLocaleString("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`;
 
-export function TiposHorarioPanel({ availableSedes }: TiposHorarioPanelProps) {
+export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorarioPanelProps) {
+  const [activated, setActivated] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [sede, setSede] = useState("all");
   const [bucket, setBucket] = useState<number>(TIPOS_HORARIO_DEFAULT_BUCKET);
   const [departamentoFilter, setDepartamentoFilter] = useState("all");
+  const [minDias, setMinDias] = useState(1);
   const [data, setData] = useState<TiposHorarioResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const rangeInitializedRef = useRef(false);
+
+  // Primera apertura -> activa la carga; luego se mantiene montado y conserva datos.
+  useEffect(() => {
+    if (open) setActivated(true);
+  }, [open]);
+
+  // Cierre con tecla Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   const fetchData = useCallback(
     async (
@@ -69,13 +88,13 @@ export function TiposHorarioPanel({ availableSedes }: TiposHorarioPanelProps) {
   );
 
   useEffect(() => {
+    if (!activated) return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     fetchData({ start: startDate, end: endDate, sede, bucket }, controller.signal)
       .then((json) => {
         setData(json);
-        // En la primera carga, sincroniza los inputs de fecha con el rango usado.
         if (!rangeInitializedRef.current && json.usedRange) {
           setStartDate(json.usedRange.start);
           setEndDate(json.usedRange.end);
@@ -89,9 +108,9 @@ export function TiposHorarioPanel({ availableSedes }: TiposHorarioPanelProps) {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-    // sede y bucket recargan en el acto; fechas via boton (reloadTick).
+    // sede/bucket recargan en el acto; fechas via boton (reloadTick).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sede, bucket, reloadTick]);
+  }, [activated, sede, bucket, reloadTick]);
 
   const groups = useMemo<SedeGroup[]>(() => {
     if (!data) return [];
@@ -99,7 +118,9 @@ export function TiposHorarioPanel({ availableSedes }: TiposHorarioPanelProps) {
       data.grupos.map((g) => [`${g.sede}||${g.departamento}`, g]),
     );
     const visibleRows = data.rows.filter(
-      (row) => departamentoFilter === "all" || row.departamento === departamentoFilter,
+      (row) =>
+        (departamentoFilter === "all" || row.departamento === departamentoFilter) &&
+        row.diasEmpleado >= minDias,
     );
     const sedeMap = new Map<string, SedeGroup>();
     for (const row of visibleRows) {
@@ -122,10 +143,14 @@ export function TiposHorarioPanel({ availableSedes }: TiposHorarioPanelProps) {
       dep.rows.push(row);
     }
     return Array.from(sedeMap.values());
-  }, [data, departamentoFilter]);
+  }, [data, departamentoFilter, minDias]);
 
   const totalRows = useMemo(
-    () => groups.reduce((sum, g) => sum + g.departamentos.reduce((s, d) => s + d.rows.length, 0), 0),
+    () =>
+      groups.reduce(
+        (sum, g) => sum + g.departamentos.reduce((s, d) => s + d.rows.length, 0),
+        0,
+      ),
     [groups],
   );
 
@@ -146,7 +171,9 @@ export function TiposHorarioPanel({ availableSedes }: TiposHorarioPanelProps) {
       { header: "Horas prom.", key: "horas", width: 12 },
     ];
     const filtered = data.rows.filter(
-      (row) => departamentoFilter === "all" || row.departamento === departamentoFilter,
+      (row) =>
+        (departamentoFilter === "all" || row.departamento === departamentoFilter) &&
+        row.diasEmpleado >= minDias,
     );
     for (const row of filtered) {
       sheet.addRow({
@@ -174,192 +201,227 @@ export function TiposHorarioPanel({ availableSedes }: TiposHorarioPanelProps) {
     link.download = `tipos-horario-${rango}.xlsx`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [data, departamentoFilter]);
+  }, [data, departamentoFilter, minDias]);
+
+  if (!open) return null;
 
   const inputClass =
     "rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-slate-400 focus:outline-none";
 
   return (
-    <section className="mt-5 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="rounded-2xl bg-slate-900/90 p-2.5 text-white">
-          <Clock className="h-5 w-5" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">
-            Tipos de horario por sede y area
-          </h2>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Turnos reales segun marcaciones (entrada–salida redondeadas a {bucket} min). Es
-            el horario de facto del rango, no el programado en planillas.
-          </p>
-        </div>
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-          Desde
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className={inputClass}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-          Hasta
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className={inputClass}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-          Sede
-          <select value={sede} onChange={(e) => setSede(e.target.value)} className={inputClass}>
-            <option value="all">Todas</option>
-            {availableSedes.map((s) => (
-              <option key={s.id} value={s.name}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-          Granularidad
-          <select
-            value={bucket}
-            onChange={(e) => setBucket(Number(e.target.value))}
-            className={inputClass}
-          >
-            {TIPOS_HORARIO_BUCKETS.map((b) => (
-              <option key={b} value={b}>
-                {b} min
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-          Area
-          <select
-            value={departamentoFilter}
-            onChange={(e) => setDepartamentoFilter(e.target.value)}
-            className={inputClass}
-          >
-            <option value="all">Todas</option>
-            {(data?.departamentos ?? []).map((dep) => (
-              <option key={dep} value={dep}>
-                {dep}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={() => setReloadTick((t) => t + 1)}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          {loading ? "Cargando..." : "Aplicar rango"}
-        </button>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={loading || !data || data.rows.length === 0}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-        >
-          <Download className="h-4 w-4" />
-          Excel
-        </button>
-      </div>
-
-      {data?.usedRange && (
-        <p className="mb-3 text-xs text-slate-400">
-          Rango analizado: {data.usedRange.start} a {data.usedRange.end}
-          {totalRows > 0 ? ` · ${totalRows} turnos mostrados` : ""}
-        </p>
-      )}
-
-      {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
-      )}
-
-      {!error && !loading && groups.length === 0 && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-          No hay marcaciones con entrada y salida en el rango seleccionado.
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {groups.map((group) => (
-          <div key={group.sede}>
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
-              {group.sede}
-            </h3>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {group.departamentos.map((dep) => (
-                <div
-                  key={dep.departamento}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
-                >
-                  <div className="flex items-baseline justify-between border-b border-slate-100 bg-slate-50/60 px-3 py-2">
-                    <span className="text-sm font-medium text-slate-800">
-                      {dep.departamento}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      top {dep.rows.length} de {dep.totalTurnos} · {dep.totalDias} dias
-                    </span>
-                  </div>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
-                        <th className="px-3 py-1.5 font-medium">Turno</th>
-                        <th className="px-2 py-1.5 font-medium">Jornada</th>
-                        <th className="px-2 py-1.5 text-right font-medium">Dias</th>
-                        <th className="px-2 py-1.5 text-right font-medium">Pers.</th>
-                        <th className="px-2 py-1.5 text-right font-medium">% dias</th>
-                        <th className="px-3 py-1.5 text-right font-medium">Horas</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dep.rows.map((row, idx) => (
-                        <tr
-                          key={`${row.turno}-${idx}`}
-                          className={`border-t border-slate-100 ${idx === 0 ? "bg-amber-50/50" : ""}`}
-                        >
-                          <td className="px-3 py-1.5 font-medium text-slate-800">
-                            {row.turno}
-                            {row.cruzaMedianoche && (
-                              <span className="ml-1 text-[10px] text-indigo-500">nocturno</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5 text-slate-500">{row.jornada}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
-                            {row.diasEmpleado}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
-                            {row.empleadosDistintos}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
-                            {formatPct(row.pctDias)}
-                          </td>
-                          <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
-                            {formatHoras(row.horasPromedio)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="relative my-8 w-full max-w-5xl rounded-3xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Tipos de horario por sede y area
+            </h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Turnos reales segun marcaciones (entrada–salida redondeadas a {bucket} min). Es
+              el horario de facto del rango, no el programado en planillas.
+            </p>
           </div>
-        ))}
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Cerrar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-5 pb-5 pt-4">
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+              Desde
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+              Hasta
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+              Sede
+              <select value={sede} onChange={(e) => setSede(e.target.value)} className={inputClass}>
+                <option value="all">Todas</option>
+                {availableSedes.map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+              Granularidad
+              <select
+                value={bucket}
+                onChange={(e) => setBucket(Number(e.target.value))}
+                className={inputClass}
+              >
+                {TIPOS_HORARIO_BUCKETS.map((b) => (
+                  <option key={b} value={b}>
+                    {b} min
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+              Area
+              <select
+                value={departamentoFilter}
+                onChange={(e) => setDepartamentoFilter(e.target.value)}
+                className={inputClass}
+              >
+                <option value="all">Todas</option>
+                {(data?.departamentos ?? []).map((dep) => (
+                  <option key={dep} value={dep}>
+                    {dep}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+              Min. dias
+              <input
+                type="number"
+                min={1}
+                value={minDias}
+                onChange={(e) => setMinDias(Math.max(1, Number(e.target.value) || 1))}
+                className={`${inputClass} w-20`}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setReloadTick((t) => t + 1)}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              {loading ? "Cargando..." : "Aplicar rango"}
+            </button>
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={loading || !data || data.rows.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              Excel
+            </button>
+          </div>
+
+          {data?.usedRange && (
+            <p className="mb-3 text-xs text-slate-400">
+              Rango analizado: {data.usedRange.start} a {data.usedRange.end}
+              {totalRows > 0 ? ` · ${totalRows} turnos mostrados` : ""}
+            </p>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+
+          {loading && !data && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+              Calculando turnos del rango...
+            </div>
+          )}
+
+          {!error && !loading && groups.length === 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+              No hay marcaciones con entrada y salida en el rango seleccionado.
+            </div>
+          )}
+
+          <div className="max-h-[60vh] space-y-6 overflow-y-auto">
+            {groups.map((group) => (
+              <div key={group.sede}>
+                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
+                  {group.sede}
+                </h3>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {group.departamentos.map((dep) => (
+                    <div
+                      key={dep.departamento}
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                    >
+                      <div className="flex items-baseline justify-between border-b border-slate-100 bg-slate-50/60 px-3 py-2">
+                        <span className="text-sm font-medium text-slate-800">
+                          {dep.departamento}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {dep.rows.length} de {dep.totalTurnos} turnos · {dep.totalDias} dias
+                        </span>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
+                            <th className="px-3 py-1.5 font-medium">Turno</th>
+                            <th className="px-2 py-1.5 font-medium">Jornada</th>
+                            <th className="px-2 py-1.5 text-right font-medium">Dias</th>
+                            <th className="px-2 py-1.5 text-right font-medium">Pers.</th>
+                            <th className="px-2 py-1.5 text-right font-medium">% dias</th>
+                            <th className="px-3 py-1.5 text-right font-medium">Horas</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dep.rows.map((row, idx) => (
+                            <tr
+                              key={`${row.turno}-${idx}`}
+                              className={`border-t border-slate-100 ${idx === 0 ? "bg-amber-50/50" : ""}`}
+                            >
+                              <td className="px-3 py-1.5 font-medium text-slate-800">
+                                {row.turno}
+                                {row.cruzaMedianoche && (
+                                  <span className="ml-1 text-[10px] text-indigo-500">nocturno</span>
+                                )}
+                              </td>
+                              <td className="px-2 py-1.5 text-slate-500">{row.jornada}</td>
+                              <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
+                                {row.diasEmpleado}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
+                                {row.empleadosDistintos}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                                {formatPct(row.pctDias)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
+                                {formatHoras(row.horasPromedio)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }

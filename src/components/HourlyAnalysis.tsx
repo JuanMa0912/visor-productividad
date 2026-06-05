@@ -124,6 +124,7 @@ export const HourlyAnalysis = ({
   badgeLabel = "Analisis por hora",
   panelTitle = "Desglose horario",
   panelDescription = "Filtra por linea para enfocar el comportamiento horario en todas las sedes.",
+  headerActions,
   showPersonBreakdown = false,
   defaultPersonBreakdownView = "individual",
   hidePersonBreakdownTabs = false,
@@ -2543,14 +2544,17 @@ export const HourlyAnalysis = ({
       data-animate="hourly-card"
       className="relative rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.2)]"
     >
-      <div className="mb-6">
-        <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-rose-600">
-          {badgeLabel}
-        </p>
-        <h3 className="mt-1 text-2xl font-bold text-slate-900">
-          {panelTitle}
-        </h3>
-        <p className="mt-1 text-sm text-slate-600">{panelDescription}</p>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-rose-600">
+            {badgeLabel}
+          </p>
+          <h3 className="mt-1 text-2xl font-bold text-slate-900">
+            {panelTitle}
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">{panelDescription}</p>
+        </div>
+        {headerActions && <div className="shrink-0">{headerActions}</div>}
       </div>
 
       {(showTopDateFilter || showTopLineFilter || showTimeFilters) && (
