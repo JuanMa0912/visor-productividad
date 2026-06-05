@@ -13,6 +13,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ArrowUp, Clock, MapPin } from "lucide-react";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
+import { TiposHorarioPanel } from "@/components/jornada-extendida/tipos-horario-panel";
 import { DEFAULT_SEDES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
@@ -1942,6 +1943,8 @@ export default function JornadaExtendidaPage() {
               alexTotalsOverride={canSeeAlexReport ? alexTotals : undefined}
               dashboardContext="jornada-extendida"
             />
+
+            <TiposHorarioPanel availableSedes={availableSedes} />
           </>
         )}
       </div>

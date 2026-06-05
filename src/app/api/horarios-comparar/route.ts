@@ -587,6 +587,9 @@ export async function GET(request: Request) {
           horaIntermedia1: typed.hora_intermedia1,
           horaIntermedia2: typed.hora_intermedia2,
           horaSalida: typed.hora_salida,
+          // Esta ruta no consulta estado_asistencia; se deja null para satisfacer
+          // AttendanceCompareInput sin alterar el comportamiento existente.
+          estadoAsistencia: null,
         });
       }
     }
