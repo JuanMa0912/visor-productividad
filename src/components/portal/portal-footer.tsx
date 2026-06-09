@@ -1,5 +1,14 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { PORTAL_APP_VERSION } from "./portal-branding-header";
+
+/**
+ * Rutas en las que el footer global NO debe renderizarse porque la pagina
+ * ya provee su propio footer/branding autocontenido (split-panel, hero, etc).
+ */
+const ROUTES_WITHOUT_FOOTER: readonly string[] = ["/login"];
 
 /**
  * Pie de pagina global del Portal UAID.
@@ -16,7 +25,12 @@ import { PORTAL_APP_VERSION } from "./portal-branding-header";
  * agregar aqui un `<a href="mailto:...">` para que aparezca en todo el portal.
  */
 export function PortalFooter() {
+  const pathname = usePathname();
   const year = new Date().getFullYear();
+
+  if (ROUTES_WITHOUT_FOOTER.includes(pathname ?? "")) {
+    return null;
+  }
 
   return (
     <footer className="mt-auto border-t border-slate-200/70 bg-white/70 backdrop-blur-sm">
