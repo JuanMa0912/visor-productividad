@@ -1490,7 +1490,30 @@ export default function HorariosGuardadosPage() {
              vertical a la tabla y evitar que la ultima fila quede cortada. */
           @page {
             size: A4 landscape;
-            margin: 0 0 4mm 0;
+            /* Top margin reservado para el encabezado "Portal UAID" que va
+               dentro de @top-center; asi se repite automaticamente en cada
+               hoja sin pisar contenido (como pasaba con position: fixed). */
+            margin: 9mm 0 4mm 0;
+            /* Anulamos explicitamente los encabezados por defecto del
+               navegador (fecha/hora a la izquierda, titulo arriba, URL a
+               la derecha). Sin estas reglas algunos navegadores los pintan
+               aunque el margen sea pequeño. */
+            @top-left {
+              content: "";
+            }
+            @top-center {
+              content: "✨ Portal UAID";
+              font-family: "Helvetica Neue", Arial, sans-serif;
+              font-size: 12pt;
+              font-weight: 800;
+              letter-spacing: 0.5px;
+              color: #0f172a;
+              vertical-align: bottom;
+              padding-bottom: 1.5mm;
+            }
+            @top-right {
+              content: "";
+            }
             @bottom-left {
               content: "";
             }
@@ -1527,53 +1550,22 @@ export default function HorariosGuardadosPage() {
             max-width: 100% !important;
             height: auto !important;
             overflow: visible !important;
-            /* padding-top reservado para el encabezado "Portal UAID" fijo.
-               Compensamos parte de este espacio reduciendo el margen
-               inferior del @page, asi la tabla pierde solo ~1mm respecto
-               a su altura original sin header. */
-            padding: 8mm 5mm 0 5mm !important;
+            /* El espacio para el encabezado "Portal UAID" ahora lo aporta
+               el margin-top del @page (9mm), asi se repite limpio en cada
+               hoja y no pisa filas en las paginas 2 y siguientes. */
+            padding: 0 5mm 0 5mm !important;
             margin: 0 !important;
             background: white !important;
             box-shadow: none !important;
             border: 0 !important;
             box-sizing: border-box !important;
           }
-          /* Encabezado de impresion: posicion fija sobre la hoja. Como esta
-             dentro de #horarios-guardados-print pasa el filtro de
-             visibility y se repite automaticamente en cada pagina impresa
-             (comportamiento estandar de position: fixed en print).
-             top: 1.5mm separa el logo del borde fisico del papel para que
-             las impresoras que recortan ~2-3mm por seguridad no lo corten.
-             top + height = 8mm coincide con el padding-top del contenedor,
-             asi el logo termina justo donde inicia la tabla. */
+          /* El header en pantalla se manten\u00eda con position:fixed para repetirse
+             en cada hoja, pero generaba overlap en las paginas siguientes a la
+             primera. Ahora el encabezado vive en @page @top-center (margin box)
+             y este div solo existe como fallback visual; lo ocultamos en print. */
           .planilla-print-portal-header {
-            display: flex !important;
-            position: fixed !important;
-            top: 1.5mm !important;
-            left: 0 !important;
-            right: 0 !important;
-            align-items: center !important;
-            justify-content: center !important;
-            gap: 2mm !important;
-            height: 6.5mm !important;
-            color: #0f172a !important;
-            background: white !important;
-            z-index: 9999 !important;
-          }
-          .planilla-print-portal-icon {
-            width: 5mm !important;
-            height: 5mm !important;
-            color: #6d28d9 !important;
-            stroke-width: 2.25 !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          .planilla-print-portal-name {
-            font-family: "Helvetica Neue", Arial, sans-serif !important;
-            font-size: 13pt !important;
-            font-weight: 800 !important;
-            letter-spacing: 0.5px !important;
-            color: #0f172a !important;
+            display: none !important;
           }
           #horarios-guardados-print .overflow-x-auto {
             overflow: visible !important;
