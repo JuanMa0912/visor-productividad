@@ -363,17 +363,11 @@ export function RotacionPageInner() {
       const allSedeOptionsForQuery = mapRotationSedeOptions(
         filterCatalog.sedes,
       );
-      const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter(
+      // Solo sedes explicitamente seleccionadas; sin fallback a "todas las
+      // sedes de la empresa". Ver comentario en `targetSedeSelections`.
+      const targetSedeSelectionsForQuery = allSedeOptionsForQuery.filter(
         (option) => selectedSedeSet.has(option.value),
       );
-      const targetSedeSelectionsForQuery =
-        selectedSedeMetasForQuery.length > 0
-          ? selectedSedeMetasForQuery
-          : selectedCompanySet.size > 0
-            ? allSedeOptionsForQuery.filter((option) =>
-                selectedCompanySet.has(option.empresa),
-              )
-            : [];
       if (targetSedeSelectionsForQuery.length === 0) return false;
 
       const lineas = overrides?.lineasN1 ?? selectedLineaN1Values;
@@ -487,7 +481,6 @@ export function RotacionPageInner() {
     [
       router,
       filterCatalog.sedes,
-      selectedCompanySet,
       selectedSedeSet,
       dateRange.start,
       dateRange.end,
@@ -506,17 +499,10 @@ export function RotacionPageInner() {
     /** No exigir ref previo: si el primer fetch se aborta o falla, el ref queda null y antes el efecto
      *  nunca volvia a disparar la recarga (tabla vacia hasta recargar la pagina). */
     const allSedeOptionsForQuery = mapRotationSedeOptions(filterCatalog.sedes);
-    const selectedSedeMetasForQuery = allSedeOptionsForQuery.filter((option) =>
-      selectedSedeSet.has(option.value),
+    // Solo sedes explicitamente seleccionadas (sin fallback a empresa).
+    const targetSedeSelectionsForQuery = allSedeOptionsForQuery.filter(
+      (option) => selectedSedeSet.has(option.value),
     );
-    const targetSedeSelectionsForQuery =
-      selectedSedeMetasForQuery.length > 0
-        ? selectedSedeMetasForQuery
-        : selectedCompanySet.size > 0
-          ? allSedeOptionsForQuery.filter((option) =>
-              selectedCompanySet.has(option.empresa),
-            )
-          : [];
 
     if (
       targetSedeSelectionsForQuery.length === 0 ||
@@ -549,7 +535,6 @@ export function RotacionPageInner() {
     isLoadingLineCatalog,
     filterCatalog.sedes,
     filterCatalog.lineasN1,
-    selectedCompanySet,
     selectedSedeSet,
     dateRange.start,
     dateRange.end,
@@ -940,13 +925,18 @@ export function RotacionPageInner() {
     () => allSedeOptions.filter((option) => selectedSedeSet.has(option.value)),
     [allSedeOptions, selectedSedeSet],
   );
-  const targetSedeSelections = useMemo(() => {
-    if (selectedSedeMetas.length > 0) return selectedSedeMetas;
-    if (selectedCompanySet.size === 0) return [];
-    return allSedeOptions.filter((option) =>
-      selectedCompanySet.has(option.empresa),
-    );
-  }, [allSedeOptions, selectedCompanySet, selectedSedeMetas]);
+  // Solo consideramos sedes EXPLICITAMENTE seleccionadas. Antes habia un
+  // fallback a "todas las sedes de la empresa seleccionada", pero eso
+  // disparaba la query mas pesada posible cuando el usuario hacia clic en
+  // 'Limpiar' en sedes y dejaba la empresa tildada: el sistema entendia
+  // "todas las sedes de esa empresa". En local apenas se notaba; en GCP con
+  // empresas grandes la consulta se quedaba colgada minutos. Ahora la falta
+  // de sede explicita muestra el placeholder "Selecciona empresa o sede" y
+  // ninguna query se dispara hasta que el usuario marque al menos 1 sede.
+  const targetSedeSelections = useMemo(
+    () => selectedSedeMetas,
+    [selectedSedeMetas],
+  );
   const singleSelectedSedeTarget = useMemo(
     () => (targetSedeSelections.length === 1 ? targetSedeSelections[0] : null),
     [targetSedeSelections],
