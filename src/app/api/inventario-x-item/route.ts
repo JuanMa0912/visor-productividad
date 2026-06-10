@@ -145,6 +145,11 @@ const buildHiddenSedeWhereClause = (sedeNameExpr: string) =>
 let dateRangeCache:
   | { value: { min: string | null; max: string | null }; expiresAt: number }
   | null = null;
+// Cache del catalogo de filtros. La clave es UNICAMENTE el `dateEnd` porque
+// el catalogo se calcula sobre la ultima fecha del rango (las empresas/sedes
+// son estables dia a dia). Asi cualquier rango que termine en la misma fecha
+// reutiliza el mismo cache (antes la clave era `start-end` y cada cambio de
+// rango invalidaba todo).
 let filterCatalogCache:
   | { dateKey: string; value: InventoryFilterCatalog; expiresAt: number }
   | null = null;
@@ -239,7 +244,9 @@ const getInventoryFilterCatalog = async (
   precomputedFields?: RotacionBaseSqlFields,
 ): Promise<InventoryFilterCatalog> => {
   const now = Date.now();
-  const dateKey = `${dateRangeCompact.start}-${dateRangeCompact.end}`;
+  // Solo dependemos de `dateEnd`: el catalogo se calcula sobre la ultima
+  // fecha del rango. Cualquier rango con el mismo `end` reusa el cache.
+  const dateKey = dateRangeCompact.end;
   if (
     filterCatalogCache &&
     filterCatalogCache.dateKey === dateKey &&
@@ -252,6 +259,11 @@ const getInventoryFilterCatalog = async (
   try {
     const fields = precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
     const dateColumn = fields.dateColumn;
+    // El catalogo solo escanea la ULTIMA fecha del rango ($1). Las empresas
+    // y sedes son estables dia a dia, asi que no tiene sentido escanear
+    // semanas/meses solo para sacar combinaciones unicas. En la prod real
+    // esto baja el costo de ~16s (escan de mes) a sub-segundo (1 dia con
+    // indice `rotacion_base_new_idx_fecha_dia`).
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -259,12 +271,12 @@ const getInventoryFilterCatalog = async (
         ${fields.sedeIdExpr} AS sede_id,
         ${fields.sedeNameExpr} AS sede_name
       FROM rotacion_base_item_dia_sede
-      WHERE ${buildCompactDateRangeSql(dateColumn)}
+      WHERE ${buildEndDateEqualsSql(dateColumn)}
         AND ${fields.itemPresentCondition}
         AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
       `,
-      [dateRangeCompact.start, dateRangeCompact.end],
+      [dateRangeCompact.end],
     );
 
     // 1. Red de seguridad: el WHERE SQL ya filtra las sedes ocultas, pero
