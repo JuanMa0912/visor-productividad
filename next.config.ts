@@ -18,11 +18,34 @@ const allowedDevOrigins = (
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-// La `Content-Security-Policy` se maneja en `src/middleware.ts` porque
-// necesita generar un nonce unico por request. Aqui solo dejamos los
-// headers que SI son estaticos y se pueden inyectar a nivel de
-// next.config.
+// Construye el CSP estatico. Mantenemos `'unsafe-inline'` en `script-src`
+// porque Next.js 16 (App Router) emite scripts inline de hidratacion/RSC
+// que no podemos firmar con un hash estable. Se intento migrar a nonce
+// dinamico via `src/proxy.ts`, pero el framework no auto-inyecto el nonce
+// en sus propios scripts y se rompio la hidratacion en produccion.
+// `connect-src` permite `https:` y `wss:` para `data:` / heartbeats y
+// para el HMR de turbopack en dev (en prod basta con `self`).
+const upgradeInsecure =
+  process.env.UPGRADE_INSECURE_REQUESTS === "true" ? "; upgrade-insecure-requests" : "";
+
+const cspValue = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  isDev ? "connect-src 'self' ws: wss: http: https:" : "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+].join("; ") + upgradeInsecure;
+
 const securityHeaders = [
+  {
+    key: "Content-Security-Policy",
+    value: cspValue,
+  },
   {
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains; preload",
