@@ -875,16 +875,11 @@ export const getRotationFilterCatalog = async (
   try {
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
-    const rangeSql = `
-      SELECT DISTINCT
-        ${fields.empresaExpr} AS empresa,
-        ${fields.sedeIdExpr} AS sede_id,
-        ${fields.sedeNameExpr} AS sede_name
-      FROM ${getRotacionSourceTable()}
-      WHERE ${buildCompactDateRangeSql(dateColumn)}
-        AND ${fields.itemPresentCondition}
-      ORDER BY empresa ASC, sede_name ASC, sede_id ASC
-    `;
+    // Catalogo de filtros: solo escaneamos la ULTIMA fecha del rango. Las
+    // empresas/sedes son estables dia a dia, asi que escanear semanas/meses
+    // solo para sacar combinaciones unicas no aporta nada y costaba ~13s.
+    // (Antes habia un fallback try/catch que primero intentaba el rango y
+    // solo si timeoutaba caia al snap; ahora vamos directo al snap.)
     const snapSql = `
       SELECT DISTINCT
         ${fields.empresaExpr} AS empresa,
@@ -896,19 +891,8 @@ export const getRotationFilterCatalog = async (
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
     `;
 
-    let result: { rows?: RotationFilterDbRow[] };
-    let cacheKey = rangeKey;
-
-    try {
-      result = await client.query(rangeSql, [startDateCompact, endDateCompact]);
-    } catch (rangeErr) {
-      console.warn(
-        "[rotacion] catalogo por rango fallo (timeout o carga); usando solo ultimo dia:",
-        rangeErr instanceof Error ? rangeErr.message : rangeErr,
-      );
-      result = await client.query(snapSql, [endDateCompact]);
-      cacheKey = snapKey;
-    }
+    const result = await client.query(snapSql, [endDateCompact]);
+    const cacheKey = snapKey;
 
     const value = mapRotationCatalogRows(
       (result.rows ?? []) as RotationFilterDbRow[],
