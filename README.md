@@ -1,390 +1,304 @@
 # Visor de Productividad
 
-Documento tecnico compacto del repositorio, pensado para lectura directa o exportacion a PDF. La aplicacion es una web interna en Next.js para el Portal UAID de Mercamio, Mercatodo y Merkmios, usando PostgreSQL como fuente principal de datos para productividad, margenes, operacion y ventas por item.
+Documento tecnico principal del repositorio. La aplicacion es un portal interno
+Next.js para la UAID de Mercamio, Mercatodo y Merkmios, con PostgreSQL como
+fuente principal de datos operativos, comerciales y administrativos.
 
-## 1. Resumen del sistema
+Estado de referencia: codigo versionado revisado el **2026-06-10**.
+
+## 1. Mapa rapido
+
+| Documento | Uso |
+| --- | --- |
+| `README.md` | Vision general, modulos, permisos, entorno y operacion local |
+| `docs/STRUCTURE.md` | Donde vive cada pieza de codigo, rutas UI/API, tests y convenciones |
+| `docs/DATABASE.md` | Tablas, migraciones, indices y operacion PostgreSQL |
+| `docs/DEPLOYMENT.md` | Runbook de despliegue Linux, HTTPS/HTTP, build y limpieza de logs |
+| `deploy/README.md` | Instalacion y operacion del timer `cleanup-logs` |
+| `AGENTS.md` | Instrucciones canonicas para agentes de codigo |
+| `CONTRIBUTING.md` | Flujo de setup, validacion y PR |
+
+## 2. Resumen del sistema
 
 ### Objetivo
 
-Centralizar la experiencia del Portal UAID con acceso por secciones, filtros por permisos, consultas SQL directas y exportaciones a formatos de oficina.
+Centralizar el Portal UAID con acceso por secciones, permisos por usuario,
+consultas SQL directas, exportaciones de oficina y herramientas internas de
+seguimiento operativo.
 
 ### Modulos activos
 
 | Modulo | Rutas UI | APIs clave | Salidas principales |
 | --- | --- | --- | --- |
-| Portal UAID | `/secciones` (`/tableros` redirige a `/secciones`) | `/api/auth/me` | entrada central por secciones; cuenta y sesion en la parte superior |
-| Hub Venta UAID | `/venta` | — | acceso agrupado a ventas por item e inventario |
-| Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos; grafico multi-serie (filtros y top series); CSV, XLSX, PDF |
+| Portal UAID | `/secciones`, `/tableros` (redirect), `/login`, `/cuenta/contrasena` | `/api/auth/*` | entrada central, sesion, cuenta y permisos |
+| Hub Venta UAID | `/venta` | - | acceso agrupado a ventas e inventario |
+| Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV/XLSX/PDF/PNG |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
-| Rotacion | `/rotacion` | `/api/rotacion` | inventario, rotacion y margen estimado por item/sede |
-| Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario de margen y resúmenes agregados con formula SUM/SUM |
-| Inventario x item | `/inventario-x-item` | `/api/inventario-x-item` | vistas y pivotes de inventario desde la base comun de rotacion |
-| Analisis de inventario | `/analisis-de-inventario` | — | exploracion complementaria inventario vs venta |
-| Prediccion pedidos | `/prediccion-pedidos` | — | modulo UI orientado a demanda (sin API REST de negocio dedicada listada aqui) |
-| Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, modo `meta`/`summary`/paginacion y XLSX |
-| Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` | `/api/jornada-extendida/meta`, `/api/jornada-extendida/alex-report`, `/api/hourly-analysis`, `/api/ingresar-horarios/options`, `/api/ingresar-horarios/forms`, `/api/horarios-comparar` | consultas operativas, reporte Alex y formularios de horarios |
-| Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/cuenta/contrasena`, `/login` | `/api/auth/*`, `/api/admin/*` | login, sesiones, usuarios y permisos |
+| Rotacion | `/rotacion`, `/rotacion-dos` | `/api/rotacion`, `/api/rotacion-dos`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, estados de S.inventario y auditoria |
+| Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario y resumenes con margen `SUM/SUM` |
+| Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | matrices, pivotes y presets por usuario |
+| Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, meta/summary/options y XLSX |
+| Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` | consultas operativas, reporte Alex, planillas y comparativos |
+| Cronograma | `/cronograma` | `/api/cronograma` | lectura de bases de datos embebidas en una pagina de Notion |
+| Excel DIAN | `/ExcelDian` | `/api/excel-dian/export` | exportes DIAN por empresa desde bases PostgreSQL separadas |
+| Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/[id]/metricas` | `/api/admin/*`, `/api/auth/heartbeat` | usuarios, permisos, presencia, login logs y metricas de actividad |
 
-### Experiencia UAID actual
+### Secciones UAID
 
-#### Login y entrada al portal
+La definicion canonica esta en `src/lib/shared/portal-sections.ts`.
 
-- `/login` usa la identidad `UAID` como marca principal.
-- `Portal de Inteligencia de Datos` y `Unidad de Analitica e Inteligencia de Datos` funcionan como subtitulos institucionales.
-- Al autenticarse correctamente, el usuario entra a `/secciones`.
-- La ruta legacy `/tableros` se mantiene solo como redireccion a `/secciones`.
+| Seccion | Ruta hub | Subtableros principales |
+| --- | --- | --- |
+| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario` |
+| `producto` | `/productividad` | `mix-y-linea`, `margenes`, `rotacion` |
+| `operacion` | `/horario` | `consulta-operativa`, `planilla-vs-asistencia`, `registro-de-horarios` |
 
-#### Secciones iniciales del portal
+`/tableros` existe solo como ruta legacy hacia `/secciones`. El termino
+"tablero" se mantiene por compatibilidad de base de datos y lenguaje historico.
 
-La definicion canónica de textos y modulos por seccion vive en `src/lib/portal-sections.ts`. Resumen:
+## 3. Stack y arquitectura
 
-| Seccion | Descripcion funcional | Modulos visibles en tarjetas | Ruta de entrada del hub |
-| --- | --- | --- | --- |
-| `Venta` | Lectura del resultado comercial e inventario asociado. | `Ventas por item`, `Inventario x item`, `Analisis de inventario` | `/venta` |
-| `Producto` | Productividad, rentabilidad, rotacion y lecturas analiticas. | `Productividad`, `Margenes`, `Rotacion`, `Prediccion pedidos` | `/productividad` |
-| `Operacion` | Horas, personal y registro de horarios. | `Horarios`, `Registro de horarios` | `/horario` |
-
-#### Jerarquia visual documentada
-
-- En el login, `UAID` debe tener mas peso visual que `Portal de Inteligencia de Datos`.
-- En `/secciones`, el bloque **Cuenta** (cambio de usuario, contrasena, metadatos de sesion y ciclo) va **arriba** del texto introductorio y de las tarjetas de seccion; el **pie de pagina** es minimalista (version del portal y linea corta institucional).
-- El tono general buscado es institucional, claro y amigable, sin romper la estructura actual de la app.
-
-### Stack actual
-
-- Framework: Next.js `16.2.x` con App Router.
-- UI: React `19.2.3` + Tailwind CSS `4`.
-- Componentes: Radix UI, componentes locales y MUI X Charts.
-- Lenguaje: TypeScript.
-- Persistencia: PostgreSQL via `pg`.
-- Auth: sesiones propias en base de datos + cookie `vp_session`.
-- Exportacion: ExcelJS, jsPDF, jsPDF AutoTable y canvas.
-- Animacion: Anime.js.
-
-### Estructura principal del repositorio
-
-| Ruta | Contenido |
+| Capa | Tecnologia |
 | --- | --- |
-| `.github/` | workflow de CI y plantilla de Pull Request |
-| `.agents/skills/` | skills de agentes usadas por el proyecto |
-| `db/` | esquema, migraciones y scripts SQL operativos |
-| `docs/STRUCTURE.md` | mapa del codigo (`src/`, rutas, componentes) |
-| `docs/DATABASE.md` | tablas PostgreSQL, indices, migraciones y operacion BD |
-| `docs/reference/` | material de referencia que no se ejecuta en la app |
-| `public/` | imagenes y assets estaticos |
-| `scripts/` | utilidades de desarrollo, build, admin, debug y pruebas DB |
-| `src/app/` | rutas UI y API handlers de Next.js |
-| `src/components/` | componentes reutilizables |
-| `src/lib/` | utilidades compartidas, auth, DB, calculos y tests unitarios |
+| Framework | Next.js `16.2.x` con App Router |
+| UI | React `19.2.3`, Tailwind CSS `4`, Radix UI, componentes locales y MUI X Charts |
+| Lenguaje | TypeScript |
+| Persistencia | PostgreSQL via `pg`, sin ORM |
+| Auth | Sesiones propias en BD + cookie `vp_session` + cookie CSRF `vp_csrf` |
+| Validacion | Zod en endpoints que lo requieren |
+| Exportacion | ExcelJS, jsPDF, jsPDF AutoTable, `html-to-image` |
+| Integraciones externas | Notion SDK para `/cronograma`; PostgreSQL por empresa para Excel DIAN |
 
-## 2. Arquitectura
-
-La aplicacion usa una arquitectura directa: las paginas cliente en `src/app` consumen endpoints internos en `src/app/api`, y cada `route.ts` consulta PostgreSQL sin ORM ni una capa intermedia de servicios o repositorios.
+Flujo general:
 
 ```text
 Usuario
-  -> paginas cliente en src/app
+  -> paginas en src/app
     -> fetch a /api/*
       -> route handlers Next.js
-        -> src/lib/auth.ts
-        -> src/lib/db.ts
-        -> PostgreSQL
-
-Exportaciones
-  -> generadas en cliente
-    -> XLSX / CSV / PDF / PNG
+        -> src/lib/auth, src/lib/db, src/lib/shared/*
+        -> PostgreSQL / Notion segun dominio
 ```
 
-### Piezas compartidas
+Piezas compartidas principales:
 
-- `src/lib/auth.ts`: sesiones, cookies, hashing, permisos y auditoria de IP.
-- `src/lib/db.ts`: inicializacion del pool de PostgreSQL.
-- `src/lib/constants.ts`: sedes, lineas y agrupaciones visibles.
-- `src/lib/calc.ts`: calculos de productividad y margen.
-- `src/lib/portal-sections.ts`: secciones UAID, alias de rutas legacy y comprobacion de acceso por seccion.
-- `src/lib/ventas-x-item.ts`: normalizacion y pivoteo para ventas x item.
-- `src/lib/inventario-x-item.ts`: etiquetas y pivotes para inventario x item.
-- `src/app/api/hourly-analysis/route.ts`: modulo mas cargado en transformacion, permisos y cache en memoria.
+- `src/lib/auth/index.ts`: sesiones, cookies, CSRF, permisos de rol, auditoria de IP, heartbeat y actividad.
+- `src/lib/db/index.ts`: pool PostgreSQL y carga de `.env.local` cuando aplica.
+- `src/lib/shared/portal-sections.ts`: secciones, subtableros, alias legacy y normalizacion de permisos.
+- `src/lib/shared/special-role-features.ts`: capacidades por `special_roles`.
+- `src/lib/shared/rate-limit.ts`: rate limits en memoria por IP.
+- `src/features/productividad/*`: hooks, tipos, formatters y visualizaciones del modulo de productividad.
+- `src/features/kardex/*`: repo/schema/types/tests para Kardex.
 
-### Rasgos de implementacion
+## 4. Seguridad, sesiones y permisos
 
-- Las vistas principales usan `"use client"`.
-- `src/proxy.ts` (convencion Next.js 16, antes `middleware`) redirige a `/login` sin cookie `vp_session`, salvo `/login`; las APIs siguen validando sesion en cada `route.ts`.
-- SQL, normalizaciones y shape de respuesta viven en los handlers.
-- Hay mapeos manuales para sedes, empresas, centros de operacion y departamentos.
-- Los caches actuales no son distribuidos:
-  - `/api/productivity` usa archivo local JSON.
-  - `/api/hourly-analysis` usa memoria del proceso.
+### Autenticacion
 
-## 3. Seguridad, sesiones y permisos
-
-### Flujo de autenticacion
-
-1. El usuario entra por `/login` y llama `POST /api/auth/login`.
-2. El backend valida `app_users`, el `password_hash`, el estado del usuario y crea una sesion en `app_user_sessions`.
-3. El login registra trazabilidad en `app_user_login_logs` y actualiza `last_login_at` y `last_login_ip`.
+1. `POST /api/auth/login` valida `app_users`, `password_hash`, estado activo y credenciales.
+2. Se revocan sesiones previas del usuario y se crea una nueva fila en `app_user_sessions`.
+3. Se registra login en `app_user_login_logs` con IP auditada y User-Agent.
 4. La UI consulta `GET /api/auth/me`; los endpoints protegidos usan `requireAuthSession` o `requireAdminSession`.
+5. `POST /api/auth/heartbeat` refresca sesion, actualiza `last_activity_at`, guarda `last_path` e inserta actividad en `app_user_activity_log`.
 
-### Cookie de sesion
+### Cookies
 
-| Propiedad | Valor |
-| --- | --- |
-| Nombre | `vp_session` |
-| Tipo | `httpOnly` |
-| `sameSite` | `lax` |
-| `secure` | depende de `SESSION_COOKIE_SECURE` o `NODE_ENV=production` |
-| Expiracion | sesion deslizante, 60 minutos de inactividad |
-| Revocacion | `logout` marca la sesion como revocada y expira la cookie |
+| Cookie | Uso | Propiedades |
+| --- | --- | --- |
+| `vp_session` | token de sesion | `httpOnly`, `sameSite=lax`, `secure` segun `SESSION_COOKIE_SECURE` o `NODE_ENV=production`, expiracion deslizante de 60 minutos |
+| `vp_csrf` | token CSRF para mutaciones protegidas | legible por cliente, `sameSite=lax`, `secure` igual que la sesion |
+
+En despliegues HTTP planos se debe usar `SESSION_COOKIE_SECURE=false`; al pasar a
+HTTPS se debe remover esa excepcion o establecer `true`. Ver
+`docs/DEPLOYMENT.md`.
 
 ### Modelo de permisos
 
-- `role`: `admin` o `user`.
-- `allowed_sedes`: controla sedes visibles; `NULL` o `Todas` equivale a acceso amplio.
-- `allowed_lines`: restringe lineas; `NULL` equivale a todas.
-- `allowed_dashboards`: columna legacy que ahora guarda secciones UAID (`venta`, `producto`, `operacion`); `NULL` equivale a todas.
-- `special_roles`: uso principal `alex` (reporte Alex en jornada extendida); tambien `cronograma` para acceso al enlace de cronograma en cabeceras del portal cuando corresponda.
-- `sede`: campo legacy usado como fallback cuando no hay `allowed_sedes`.
-- `is_active`: habilita o bloquea el acceso.
-
-Los valores legacy de `allowed_dashboards` siguen siendo compatibles. El mapeo de rutas y alias hacia `venta` / `producto` / `operacion` esta centralizado en `PORTAL_SECTION_ALIAS_MAP` dentro de `src/lib/portal-sections.ts` (algunas pantallas adicionalmente comprueban la seccion en codigo).
-
-### Secciones y acceso
-
-| Permiso | Rutas / APIs asociadas |
+| Campo | Significado |
 | --- | --- |
-| `venta` | `/secciones`, `/venta`, `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/api/ventas-x-item`, `/api/ventas-x-item/v2`, `/api/inventario-x-item` |
-| `producto` | `/secciones`, `/`, `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/prediccion-pedidos`, `/api/productivity`, `/api/margenes`, `/api/hourly-analysis`, `/api/rotacion` |
-| `operacion` | `/secciones`, `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` |
-| `alex` | `special_roles` requerido para `/api/jornada-extendida/alex-report`, salvo admin |
+| `role` | `admin` o `user`; admin omite restricciones funcionales |
+| `allowed_sedes` | sedes visibles; `NULL` o lista vacia normalizada equivale a todas |
+| `allowed_lines` | lineas visibles; `NULL` equivale a todas |
+| `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` equivale a todas |
+| `allowed_subdashboards` | permisos granulares por subtablero; `NULL` equivale a todos |
+| `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `rotacion` legacy, `comparar_horarios`, `abcd`, `historial_sinventario`, `crear_horario_predeterminado` |
+| `sede` | campo legacy usado como fallback |
+| `is_active` | bloqueo o habilitacion de acceso |
 
-Nota operativa: la home funcional ya no se organiza por "tableros" sino por secciones UAID. El termino "tablero" queda solo como compatibilidad de ruta o de almacenamiento legacy.
+Reglas notables:
 
-### Endpoints de soporte
-
-| Endpoint | Metodo | Acceso | Uso |
-| --- | --- | --- | --- |
-| `/api/auth/login` | `POST` | publico | inicio de sesion |
-| `/api/auth/me` | `GET` | sesion valida | usuario actual |
-| `/api/auth/logout` | `POST` | sesion opcional | cierre de sesion |
-| `/api/auth/change-password` | `POST` | sesion valida | cambio de contrasena |
-| `/api/admin/users` | `GET`, `POST` | admin | listar y crear usuarios |
-| `/api/admin/users/[id]` | `PATCH`, `DELETE` | admin | editar o eliminar usuarios |
-| `/api/admin/login-logs` | `GET`, `DELETE` | admin | consultar o limpiar bitacora |
+- `src/proxy.ts` solo redirige paginas sin cookie hacia `/login`; no reemplaza la autorizacion por endpoint.
+- `/cronograma` se muestra en UI a usuarios con `special_roles` que incluya `cronograma`.
+- `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
+- `/rotacion-dos` es una vista tecnica/admin sobre `rotacion_v4`.
+- Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
 
 ### Headers y rate limiting
 
-`next.config.ts` aplica a todas las rutas: `Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, `Referrer-Policy` y `Permissions-Policy`.
+`next.config.ts` aplica CSP, HSTS, `X-Content-Type-Options`, `X-Frame-Options`,
+COOP/CORP, `Referrer-Policy` y `Permissions-Policy`.
 
-| Endpoint | Limite observado |
+Los rate limits estan en memoria del proceso. No son compartidos entre replicas.
+Algunos limites explicitos:
+
+| Endpoint | Limite |
 | --- | --- |
-| `/api/productivity` | 120 req/min/IP |
-| `/api/hourly-analysis` | 120 req/min/IP |
-| `/api/margenes` | 120 req/min/IP |
+| APIs con default `checkRateLimit` | 120 req/min/IP |
 | `/api/ventas-x-item` | 90 req/min/IP |
-| `/api/ventas-x-item/v2` | 120 req/min/IP |
-| `/api/jornada-extendida/alex-report` | 60 req/min/IP |
-| `/api/auth/login` | 10 intentos/15 min por IP auditada y 5 intentos/15 min por usuario |
+| `/api/excel-dian/export` | 12 req/5 min/IP |
+| `/api/admin/users` GET/POST | 60 req/min/IP / 20 req/min/IP |
+| `/api/admin/users/[id]` PATCH/DELETE | 20 req/min/IP / 15 req/min/IP |
+| `/api/admin/user-presence` | 240 req/min/IP |
+| `/api/admin/users/[id]/metrics` | 60 req/min/IP |
+| `/api/admin/login-logs` GET/DELETE | 60 req/min/IP / 10 req/min/IP |
+| `/api/auth/login` | limites propios por IP auditada y usuario |
 
-### Limitaciones de seguridad actuales
+## 5. Datos, dominios e integraciones
 
-- La capa de borde (`src/proxy.ts`) no sustituye la validacion en APIs: cada endpoint sigue usando `requireAuthSession` / `requireAdminSession` donde corresponda.
-- Los rate limits viven en memoria del proceso y no se comparten entre replicas.
-- No hay proceso documentado de limpieza de sesiones expiradas.
+### PostgreSQL principal
 
-## 4. Datos, endpoints e integraciones
+Dominios principales:
 
-### Integraciones reales
-
-La unica integracion de negocio observada en el codigo es PostgreSQL. No se encontraron APIs HTTP externas, colas, object storage ni proveedores externos de autenticacion.
-
-### Tablas principales
-
-| Dominio | Tablas |
+| Dominio | Tablas principales |
 | --- | --- |
-| Auth y administracion | `app_users`, `app_user_sessions`, `app_user_login_logs` |
-| Productividad y analisis horario | `ventas_cajas`, `ventas_fruver`, `ventas_industria`, `ventas_carnes`, `ventas_pollo_pesc`, `ventas_asadero`, `asistencia_horas` |
+| Auth/admin | `app_users`, `app_user_sessions`, `app_user_login_logs`, `app_user_activity_log` |
+| Productividad | `ventas_cajas`, `ventas_fruver`, `ventas_industria`, `ventas_carnes`, `ventas_pollo_pesc`, `ventas_asadero`, `asistencia_horas` |
 | Margenes | `margenes_linea_co_dia` |
 | Ventas x item | `ventas_item_diario`, `ventas_item_cargas`, `ventas_item_sede_map` |
-| Rotacion e inventario x item | `rotacion_base_item_dia_sede`, `rotacion_abcd_config` |
+| Rotacion/inventario/kardex | `rotacion_base_item_dia_sede`, `rotacion_v4`, `rotacion_abcd_config*`, `rotacion_cero_item_estado*` |
+| Horarios | `horario_planillas`, `horario_planilla_detalles` |
+| Inventario presets | `inventario_x_item_user_presets` |
 
-### Comportamiento por dominio
+El repo no contiene todo el DDL de tablas ETL como `ventas_*`,
+`asistencia_horas`, `rotacion_base_item_dia_sede` o `margenes_linea_co_dia`.
+Esas tablas suelen existir en el servidor y la app las lee.
 
-- `GET /api/productivity`
-  - Consulta `ventas_*` y `asistencia_horas`.
-  - Usa cache de archivo en `PRODUCTIVITY_CACHE_PATH`.
-  - Si no hay cache y la DB falla, responde fallback vacio.
-- `GET /api/hourly-analysis`
-  - Consulta `ventas_*` y `asistencia_horas`.
-  - Soporta `date`, `sede`, `line`, `bucketMinutes`, `includePeople`, `overtimeDateStart`, `overtimeDateEnd` y `dashboardContext`.
-  - `bucketMinutes` acepta `60`, `30`, `20`, `15` y `10`.
-  - Cachea respuesta 30 segundos y columnas de `asistencia_horas` 5 minutos en memoria.
-  - Reutiliza logica entre productividad y jornada extendida.
-- `GET /api/kardex/*`
-  - Endpoints: `detalle`, `resumen-item`, `resumen-categoria`, `totales` y `lookups`.
-  - Filtros por query params (`empresa`, `sede`, `bodegaLocal`, `idItem`, `idCategoria`, `idLineaNivel1`, `fechaDesde`, `fechaHasta`).
-  - Regla de margen agregado: `SUM(margen)/SUM(ventas)*100` (nunca promedio de porcentajes).
-- Vista `/` modo **Grafico** (productividad)
-  - Comparativos multi-serie de `Vta/Hr`: por defecto el grafico puede limitar las lineas dibujadas a las series con mayor promedio en el rango seleccionado; la UI ofrece **Ver todas** para mostrar todas las combinaciones sede/linea seleccionadas.
-  - Filtros de lineas y sedes del grafico incluyen busqueda textual; las exportaciones CSV/XLSX del grafico incluyen **todas** las series seleccionadas, no solo las visibles en pantalla.
-- `GET /api/margenes`
-  - Agrega directamente `margenes_linea_co_dia`.
-  - Aplica filtro por lineas permitidas.
-- `GET /api/jornada-extendida/meta`
-  - Resuelve fechas disponibles y sedes visibles desde `asistencia_horas`.
-- `GET /api/jornada-extendida/alex-report`
-  - Usa `asistencia_horas`, requiere seccion `operacion` y rol `alex` o `admin`.
-  - Limita el rango a 31 dias.
-  - La metrica etiquetada en UI como **mas de ~7h20 con 2 marcaciones** solo cuenta filas donde exista al menos una marcacion del dia con estado **SI NOMINA** (columna `nomina` detectada dinamicamente); sin ese criterio no incrementa el contador aunque coincidan horas y numero de marcas.
-  - En `/jornada-extendida`, la tabla visible se exporta a Excel en cliente con el rango seleccionado, columna `Sede` fija, fila total y solo las metricas marcadas en el selector.
-  - La exportacion sanea texto antes de escribir celdas para evitar formulas inesperadas en Excel.
-- `GET /api/rotacion`
-  - Agrega inventario, ventas y rotacion por item/sede desde `rotacion_base_item_dia_sede` y reglas de clasificacion; el **margen monetario** usa `venta_sin_impuesto - total_costo` cuando la tabla expone el esquema actual.
-  - Permisos de acceso y edicion de configuracion ABCD pueden depender de `special_roles` ademas de la seccion `producto` (ver `src/lib/special-role-features.ts`).
-- `GET /api/inventario-x-item`
-  - Consulta principalmente `rotacion_base_item_dia_sede` para matrices y resumenes de inventario por empresa/sede/item.
-- `GET /api/ventas-x-item`
-  - Lee `ventas_item_diario`.
-  - Maneja `meta`, `summary`, rango por fechas, empresa, item y paginacion.
-  - Si no se envia rango, usa la ultima semana disponible en la tabla.
-- `GET /api/ventas-x-item/v2`
-  - Mantiene `meta` y `summary`.
-  - Agrega `options`, `itemQuery`, `idCo` y `optionLimit`.
-  - Si no se envia rango, usa la ultima semana disponible en la tabla.
-  - La UI cambia entre v1 y v2 con `NEXT_PUBLIC_VENTAS_X_ITEM_USE_V2`.
+### Notion
 
-### Parametros relevantes en ventas x item
+`/cronograma` usa `@notionhq/client` y lee bases de datos embebidas en una pagina
+de Notion. Requiere:
 
-| Parametro | v1 | v2 | Uso |
-| --- | --- | --- | --- |
-| `start`, `end` | si | si | rango de fechas |
-| `mode` | si | si | `meta`, `summary`; v2 agrega `options` |
-| `empresa` | si | si | filtro por empresa |
-| `itemIds` | si | si | filtro por item |
-| `itemQuery` | no | si | busqueda libre |
-| `idCo` | no | si | filtro por centro de operacion |
-| `maxRows`, `offset` | si | si | paginacion y limite |
-| `optionLimit` | no | si | limite de opciones en modo `options` |
+- `NOTION_TOKEN`
+- `NOTION_CRONOGRAMA_PAGE_ID`
 
-### Riesgos de integracion
+La ruta requiere sesion valida; la visibilidad del enlace en el portal depende
+de `special_roles` con `cronograma`.
 
-- La app depende de mapeos manuales de sedes, empresas y departamentos.
-- Cambios en columnas de `asistencia_horas` pueden romper deteccion dinamica.
-- No hay documentacion del proceso de carga de `ventas_item_diario`.
-- El ciclo de vida del cache `PRODUCTIVITY_CACHE_PATH` solo esta descrito en codigo.
+### Excel DIAN
 
-## 5. Operacion local
+`/ExcelDian` y `/api/excel-dian/export` consultan bases PostgreSQL separadas por
+empresa:
+
+- `EXCEL_DIAN_MTDO_DB_*`
+- `EXCEL_DIAN_MIO_DB_*`
+- `EXCEL_DIAN_BGT_DB_*`
+
+Por defecto requiere sesion. `EXCEL_DIAN_EXPORT_PUBLIC` o
+`NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC` permiten exponerlo sin sesion en redes
+confiables; tratarlo como excepcion operativa, no como default.
+
+## 6. Operacion local
 
 ### Requisitos
 
-- Node.js compatible con Next.js 16.
-- Dependencias instaladas con `npm install`.
-- Acceso a PostgreSQL con tablas y migraciones aplicadas.
+- Node.js 22 recomendado (CI usa `actions/setup-node@v4` con Node 22).
+- PostgreSQL accesible con tablas y migraciones aplicadas.
+- Dependencias instaladas con `npm install` o `npm ci`.
 
-### Comandos
+### Setup rapido
 
 ```bash
 npm install
+cp .env.example .env.local
+npm run db:test
+node scripts/create-admin.js
 npm run dev
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm run build:server
-npm run ci
-npm run start
-npm run start:server
 ```
 
-### Flujo recomendado
+En Windows, `npm run dev` usa `scripts/dev.mjs`: limpia procesos Next dev
+anteriores del mismo proyecto, borra el lock local y levanta Next en un puerto
+disponible (`--port 0`).
 
-1. Configurar variables de entorno de base de datos y seguridad.
-2. Aplicar `db/schema-auth.sql` y luego las migraciones.
-3. Verificar conectividad con `npm run db:test` o `npm run db:test:postgres`.
-4. Crear o actualizar un admin con `node scripts/create-admin.js` si hace falta.
-5. Ejecutar `npm run dev`.
+### Comandos
 
-## 6. Entorno, base de datos y scripts
+| Comando | Uso |
+| --- | --- |
+| `npm run dev` | servidor local Next |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript sin emitir archivos |
+| `npm test` / `npm run test:unit` | tests `tsx --test "src/**/*.test.ts"` |
+| `npm run test:e2e-smoke` | smoke Playwright/Python con dev server activo |
+| `npm run build` | build rapido con wrapper de memoria |
+| `npm run build:strict` | build con typecheck dentro de Next |
+| `npm run build:server` | build standalone |
+| `npm run build:release` | standalone + strict |
+| `npm run start` | `next start` |
+| `npm run start:server` | `.next/standalone/server.js` |
+| `npm run ci` | lint + typecheck + test unitario + build |
+| `npm run db:test` | prueba conexion y tablas desde `.env.local` |
+| `npm run db:test:postgres` | valida conexion con usuario PostgreSQL |
 
-### Variables de entorno detectadas
-
-El repo ya incluye `.env.example` con placeholders seguros. Las variables observadas en el codigo son:
+### Variables de entorno principales
 
 | Grupo | Variables |
 | --- | --- |
-| DB | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SCHEMA` |
-| Seguridad | `SESSION_COOKIE_SECURE`, `AUDIT_IP_HMAC_SECRET` |
-| Runtime y cache | `PRODUCTIVITY_CACHE_PATH`, `NEXT_ENABLE_REACT_COMPILER`, `UPGRADE_INSECURE_REQUESTS`, `CSP_UNSAFE_EVAL`, `NEXT_PUBLIC_VENTAS_X_ITEM_USE_V2` |
+| DB principal | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SCHEMA`, `DB_SSL` (scripts de limpieza) |
+| Seguridad/sesion | `SESSION_COOKIE_SECURE`, `AUDIT_IP_HMAC_SECRET`, `TRUST_PROXY` |
+| Runtime/build | `PRODUCTIVITY_CACHE_PATH`, `PRODUCTIVITY_SERVE_FILE_CACHE`, `NEXT_ENABLE_REACT_COMPILER`, `NEXT_BUILD_STANDALONE`, `NEXT_BUILD_STRICT`, `NEXT_BUILD_MEMORY_MB`, `NEXT_BUILD_LOG_LIMITS`, `NEXT_BUILD_SKIP_TYPECHECK`, `ALLOWED_DEV_ORIGINS`, `UPGRADE_INSECURE_REQUESTS`, `COOP_DISABLED`, `NEXT_PUBLIC_VENTAS_X_ITEM_USE_V2` |
+| Excel DIAN | `EXCEL_DIAN_MTDO_DB_*`, `EXCEL_DIAN_MIO_DB_*`, `EXCEL_DIAN_BGT_DB_*`, `EXCEL_DIAN_EXPORT_PUBLIC`, `NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC` |
+| Notion | `NOTION_TOKEN`, `NOTION_CRONOGRAMA_PAGE_ID` |
 | Bootstrap admin | `ADMIN_USERNAME`, `ADMIN_PASSWORD` |
 
-### Defaults y advertencias
+Nota: `CSP_UNSAFE_EVAL` aparece en entornos historicos, pero el CSP actual de
+`next.config.ts` ya incluye `'unsafe-eval'` de forma fija para compatibilidad
+con librerias de exportacion y UI. No depender de esa variable para cambiar CSP.
 
-- `src/lib/db.ts` usa defaults de conexion: host `192.168.35.232`, puerto `5432`, base `produXdia`, usuario `postgres`, schema `public`.
-- `src/lib/db.ts` ya no incluye password hardcodeado: requiere `DB_PASSWORD` en el entorno y falla temprano si no existe.
-- `src/lib/db.ts` valida `DB_PORT` y `DB_SCHEMA` antes de abrir el pool.
-- `scripts/create-admin.js` lee `.env.local` si existe y exige `DB_PASSWORD` antes de conectarse.
-- `scripts/test-db.js` y `scripts/test-db-postgres.js` leen `.env.local` si existe y exigen `DB_PASSWORD`; ya no incluyen passwords embebidos.
-- `.env.example` se puede usar como base para nuevos ambientes sin exponer secretos reales.
+## 7. Migraciones
 
-### Esquema y migraciones
+Orden recomendado despues de `db/schema-auth.sql`:
 
-Orden recomendado para reflejar el estado actual del codigo:
+1. `db/migrations/20260203_auth_username.sql`
+2. `db/migrations/20260220_user_sede.sql`
+3. `db/migrations/20260224_user_allowed_lines.sql`
+4. `db/migrations/20260227_user_allowed_dashboards.sql`
+5. `db/migrations/20260302_user_allowed_sedes.sql`
+6. `db/migrations/20260303_ventas_x_item.sql`
+7. `db/migrations/20260305_user_special_roles.sql`
+8. `db/migrations/20260409_ingresar_horarios.sql`
+9. `db/migrations/20260423_rotacion_perf_indexes.sql`
+10. `db/migrations/20260424_user_allowed_subdashboards.sql`
+11. `db/migrations/20260427_rotacion_new_fields_indexes.sql`
+12. `db/migrations/20260429_rotacion_cero_item_estado.sql`
+13. `db/migrations/20260429_rotacion_cero_item_estado_values.sql`
+14. `db/migrations/20260504_inventario_x_item_user_presets.sql`
+15. `db/migrations/20260514_rotacion_cero_item_estado_restock_context.sql`
+16. `db/migrations/20260515_rotacion_cero_item_estado_audit.sql`
+17. `db/migrations/20260516_productividad_x_linea_indexes.sql`
+18. `db/migrations/20260520_rotacion_v4_perf_indexes.sql`
+19. `db/migrations/20260520_session_last_activity.sql`
+20. `db/migrations/20260520_session_last_path.sql`
+21. `db/migrations/20260526_user_activity_log.sql`
+22. `db/migrations/20260529_ventas_x_item_perf_indexes.sql`
+23. `db/migrations/20260603_rotacion_cero_item_estado_empresa.sql`
 
-1. `db/schema-auth.sql`
-2. `db/migrations/20260203_auth_username.sql`
-3. `db/migrations/20260220_user_sede.sql`
-4. `db/migrations/20260224_user_allowed_lines.sql`
-5. `db/migrations/20260227_user_allowed_dashboards.sql`
-6. `db/migrations/20260302_user_allowed_sedes.sql`
-7. `db/migrations/20260303_ventas_x_item.sql`
-8. `db/migrations/20260305_user_special_roles.sql`
-9. `db/migrations/20260424_user_allowed_subdashboards.sql`
-10. `db/migrations/20260520_rotacion_v4_perf_indexes.sql` (indices funcionales para `rotacion_v4`; requeridos por `/rotacion-dos` para que las consultas no caigan en seq scan).
-11. `db/migrations/20260520_session_last_activity.sql` (columna `last_activity_at` en `app_user_sessions` para el panel de presencia en `/admin/usuarios`).
-12. `db/migrations/20260520_session_last_path.sql` (columna `last_path` en `app_user_sessions` para mostrar el tablero actual del usuario en `/admin/usuarios/accesos`).
+`scripts/apply-migration-file.mjs` aplica un SQL individual desde
+`db/migrations/` usando `.env.local`.
 
-Nota: `db/schema-auth.sql` no describe por si solo todas las columnas usadas hoy por la aplicacion.
+## 8. CI y mantenimiento
 
-### Scripts auxiliares
+`.github/workflows/ci.yml` corre en Pull Requests contra `main` y manualmente
+por `workflow_dispatch`. No corre en cada push directo a `main`.
 
-| Archivo | Uso |
-| --- | --- |
-| `scripts/create-admin.js` | crea o actualiza un admin usando `ADMIN_USERNAME`, `ADMIN_PASSWORD` y `DB_PASSWORD` del entorno o `.env.local` |
-| `scripts/test-db.js` | prueba conexion, lista tablas y consulta `ventas_cajas` usando `DB_PASSWORD` del entorno o `.env.local` |
-| `scripts/test-db-postgres.js` | valida conexion con PostgreSQL y verifica el usuario `produ` usando `DB_PASSWORD` del entorno o `.env.local` |
-| `scripts/apply-migration-file.mjs` | aplica un archivo SQL de `db/migrations/` usando credenciales de `.env.local` |
-| `db/crear-usuario.sql` | crea el usuario PostgreSQL `produ` |
-| `db/permisos-usuario.sql` | otorga permisos sobre `public` |
-| `db/seed_sede_users.sql` | inserta usuarios base por sede |
-| `db/establecer-password.sql` | apoyo operativo para gestion de password |
-
-### Validacion en GitHub
-
-El repositorio incluye `.github/workflows/ci.yml`. En cada push o Pull Request contra `main` ejecuta:
+Pipeline:
 
 1. `npm ci`
-2. `npm run lint`
-3. `npm run typecheck`
-4. `npm test`
-5. `npm run build`
+2. `npm run ci`
 
-## 7. Riesgos abiertos y mantenimiento
+`npm run ci` expande a lint, typecheck, tests unitarios y build.
 
-### Vacios actuales
+Actualizar esta documentacion cuando:
 
-- No se encontro documentacion de despliegue.
-- No se encontro documentacion de backup, restore ni observabilidad.
-- El CI versionado cubre lint, typecheck, test unitario y build; aun no existe checklist formal de release.
-- Aun con `src/proxy.ts` en el borde, la autorizacion fina (permisos, sedes, rate limits) sigue en cada API y en el cliente donde aplique.
-- Parte importante de la logica de negocio sigue concentrada en handlers grandes, especialmente `src/app/api/hourly-analysis/route.ts` y `src/app/api/productivity/route.ts`.
-
-### Cuando actualizar este documento
-
-Actualizar `README.md` si cambia cualquiera de estos puntos:
-
-- se agrega o elimina una seccion o modulo (incluido `src/lib/portal-sections.ts` y hubs como `/venta`)
-- cambia el modelo de permisos, sesiones o headers de seguridad
-- cambian tablas, migraciones o variables de entorno
-- se introduce una integracion externa
-- cambia la estrategia de cache, exportacion o despliegue
-
-Estado de referencia: documentacion consolidada contra el codigo versionado el **2026-04-30**.
+- se agregue o elimine una ruta UI/API;
+- cambien permisos, sesiones, headers o cookies;
+- cambien tablas, migraciones o variables de entorno;
+- cambien despliegue, cache, exportaciones o integraciones externas;
+- se agreguen scripts de desarrollo, build, DB o limpieza.

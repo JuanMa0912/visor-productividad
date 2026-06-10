@@ -1,251 +1,266 @@
-# Base de datos — Visor de Productividad
+# Base de datos - Visor de Productividad
 
-Referencia de tablas, índices y operación PostgreSQL usados por la aplicación. Para el orden de migraciones y scripts SQL, ver también [`STRUCTURE.md`](STRUCTURE.md). Para módulos y APIs, [`README.md`](../README.md).
+Referencia de tablas, migraciones e indices usados por la aplicacion. Para
+arquitectura general ver [`../README.md`](../README.md). Para estructura de
+codigo ver [`STRUCTURE.md`](STRUCTURE.md).
 
----
+Estado de referencia: codigo versionado revisado el **2026-06-10**.
 
-## 1. Conexión y entorno
+## 1. Conexion y entorno
 
 | Variable | Uso |
 | --- | --- |
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Pool principal (`src/lib/db/index.ts`) |
-| `DB_SCHEMA` | Schema por defecto (`public`) |
-| `AUDIT_IP_HMAC_SECRET` | Si está definido, login guarda IP como `hmac:…` en lugar de IP literal |
-| `TRUST_PROXY=true` | Lee `x-forwarded-for` para IP de cliente (detrás de nginx/Cloudflare) |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | pool principal en `src/lib/db/index.ts` |
+| `DB_SCHEMA` | `search_path`/schema por defecto; default `public` |
+| `DB_SSL` | usado por `scripts/cleanup-logs.sh`; si es `true`, exporta `PGSSLMODE=require` |
+| `AUDIT_IP_HMAC_SECRET` | si existe, guarda IP auditada como HMAC truncado |
+| `TRUST_PROXY=true` | permite leer `x-forwarded-for` en endpoints que usan `getClientIp` |
 
-**Usuario PostgreSQL operativo habitual:** `produ` (scripts en `db/crear-usuario.sql`, `db/permisos-usuario.sql`).
+Usuario PostgreSQL operativo habitual: `produ` (ver `db/crear-usuario.sql` y
+`db/permisos-usuario.sql`).
 
-**Excel DIAN** usa bases **separadas** por empresa (`EXCEL_DIAN_MTDO_*`, `EXCEL_DIAN_MIO_*`, `EXCEL_DIAN_BGT_*`) — no comparten el mismo `DB_NAME` que el visor salvo que se configure igual a propósito.
+## 2. Que esta en Git vs que asume el servidor
 
----
+En el repo:
 
-## 2. Qué está en Git vs qué asume el servidor
+- auth y administracion (`app_users`, sesiones, login logs);
+- permisos por sede/linea/seccion/subtablero;
+- ventas x item;
+- horarios guardados;
+- presets de inventario;
+- estados/auditoria de cero rotacion/restock;
+- indices de rendimiento parciales.
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  En el repositorio (db/schema-auth.sql + db/migrations/)      │
-│  Auth, horarios guardados, ventas x ítem, presets inventario, │
-│  estados cero rotación, índices de rendimiento (parcial)      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Suele existir solo en el servidor (ETL / procesos externos) │
-│  ventas_*, asistencia_horas, rotacion_base_item_dia_sede,     │
-│  margenes_linea_co_dia, tablas DIAN (cmmovimiento_pdv, …)     │
-└─────────────────────────────────────────────────────────────┘
-```
+Suele existir solo en el servidor o en procesos ETL externos:
 
-La app **lee** las tablas de negocio; no incluye el DDL completo de `ventas_cajas` ni de `asistencia_horas` en migraciones. Si faltan columnas esperadas, los endpoints fallan o degradan (detección dinámica en rotación y asistencia).
+- `ventas_*`;
+- `asistencia_horas`;
+- `margenes_linea_co_dia`;
+- `rotacion_base_item_dia_sede`;
+- `rotacion_v4`;
+- tablas DIAN como `cmmovimiento_pdv`, `cgmovimiento_contable`, `items`,
+  `terceros`, `tipos_documentos`.
 
----
+La app lee esas tablas. Si faltan columnas esperadas, algunos endpoints fallan
+o degradan; rotacion y asistencia tienen deteccion dinamica parcial.
 
-## 3. Aplicar esquema (orden)
+## 3. Aplicar esquema
 
-1. `db/schema-auth.sql`
-2. Migraciones en `db/migrations/` por fecha (lista completa en [`STRUCTURE.md`](STRUCTURE.md#orden-de-migraciones-después-de-schema-autsql))
+1. Aplicar `db/schema-auth.sql`.
+2. Aplicar migraciones de `db/migrations/` en orden por fecha.
+3. Verificar con `npm run db:test` o `npm run db:test:postgres`.
 
-Verificar conectividad: `npm run db:test` o `npm run db:test:postgres`.
+Orden completo despues de `schema-auth.sql`:
 
----
+1. `20260203_auth_username.sql`
+2. `20260220_user_sede.sql`
+3. `20260224_user_allowed_lines.sql`
+4. `20260227_user_allowed_dashboards.sql`
+5. `20260302_user_allowed_sedes.sql`
+6. `20260303_ventas_x_item.sql`
+7. `20260305_user_special_roles.sql`
+8. `20260409_ingresar_horarios.sql`
+9. `20260423_rotacion_perf_indexes.sql`
+10. `20260424_user_allowed_subdashboards.sql`
+11. `20260427_rotacion_new_fields_indexes.sql`
+12. `20260429_rotacion_cero_item_estado.sql`
+13. `20260429_rotacion_cero_item_estado_values.sql`
+14. `20260504_inventario_x_item_user_presets.sql`
+15. `20260514_rotacion_cero_item_estado_restock_context.sql`
+16. `20260515_rotacion_cero_item_estado_audit.sql`
+17. `20260516_productividad_x_linea_indexes.sql`
+18. `20260520_rotacion_v4_perf_indexes.sql`
+19. `20260520_session_last_activity.sql`
+20. `20260520_session_last_path.sql`
+21. `20260526_user_activity_log.sql`
+22. `20260529_ventas_x_item_perf_indexes.sql`
+23. `20260603_rotacion_cero_item_estado_empresa.sql`
 
 ## 4. Dominios y tablas
 
-### 4.1 Autenticación y administración
+### 4.1 Auth, sesiones y administracion
 
-**Origen:** `db/schema-auth.sql` + migraciones `202602*` – `20260424`.
-
-| Tabla | Descripción | Índices relevantes |
+| Tabla | Descripcion | Notas |
 | --- | --- | --- |
-| `app_users` | Usuarios del portal (`admin` / `user`), permisos por sede/línea/sección | PK `id`; **UNIQUE** `username` |
-| `app_user_sessions` | Sesiones activas (`token_hash`, expiración) | `(user_id)`, `(expires_at)` |
-| `app_user_login_logs` | Bitácora de login (`/admin/usuarios/accesos`) | `(user_id, logged_at DESC)` |
+| `app_users` | usuarios, roles y permisos | `username` unico, `role` `admin`/`user` |
+| `app_user_sessions` | sesiones activas/revocadas | `token_hash`, `expires_at`, `last_activity_at`, `last_path` |
+| `app_user_login_logs` | bitacora de login | IP auditada, User-Agent, fecha |
+| `app_user_activity_log` | actividad por heartbeat | una observacion por usuario/sesion/ruta, deduplicada por ventana corta |
 
-**Columnas habituales en `app_users`** (algunas vía migraciones):
+Columnas relevantes de `app_users`:
 
-| Columna | Tipo | Notas |
-| --- | --- | --- |
-| `username` | text | Login |
-| `password_hash` | text | bcrypt |
-| `role` | text | `admin` \| `user` |
-| `sede` | text | Obligatoria si `role = user` |
-| `allowed_sedes` | jsonb | `NULL` = todas |
-| `allowed_lines` | text[] | Líneas de productividad |
-| `allowed_dashboards` | text[] | Secciones UAID legacy (`venta`, `producto`, `operacion`) |
-| `allowed_subdashboards` | text[] | Sub-secciones opcionales |
-| `special_roles` | text[] | p. ej. `alex`, `cronograma` |
-| `is_active` | boolean | |
-| `last_login_at`, `last_login_ip` | timestamptz / inet | Actualizados en login |
-
-**APIs:** `/api/auth/*`, `/api/admin/users`, `/api/admin/login-logs`.
-
----
-
-### 4.2 Productividad y análisis por hora
-
-**Origen:** tablas de negocio en servidor; índices en `20260516_productividad_x_linea_indexes.sql`.
-
-| Tabla | Uso en la app |
+| Columna | Uso |
 | --- | --- |
-| `ventas_cajas` | Línea Cajas |
-| `ventas_fruver` | Fruver |
-| `ventas_industria` | Industria |
-| `ventas_carnes` | Carnes |
-| `ventas_pollo_pesc` | Pollo / pescado |
-| `ventas_asadero` | Asadero |
-| `asistencia_horas` | Horas laboradas, marcaciones, análisis por hora, jornada extendida |
+| `username`, `password_hash` | login con bcrypt |
+| `role` | `admin` o `user` |
+| `sede` | fallback legacy |
+| `allowed_sedes` | JSONB de sedes visibles |
+| `allowed_lines` | lineas visibles |
+| `allowed_dashboards` | secciones UAID |
+| `allowed_subdashboards` | permisos granulares |
+| `special_roles` | capacidades especiales |
+| `is_active` | bloqueo de acceso |
+| `last_login_at`, `last_login_ip` | trazabilidad |
 
-**Columnas usadas con frecuencia (ventas):** `fecha_dcto`, `centro_operacion`, `empresa_bd`, importes de venta (según línea).
+APIs relacionadas: `/api/auth/*`, `/api/admin/users*`,
+`/api/admin/login-logs`, `/api/admin/user-presence`,
+`/api/admin/users/[id]/metrics`.
 
-**Columnas usadas con frecuencia (asistencia):** `fecha`, `sede`, `departamento`, `total_laborado_horas`, `hora_entrada`, `hora_intermedia1`, `hora_intermedia2`, `hora_salida`, `cargo`, `incidencia`, `nomina`; identificación de empleado vía columnas detectadas (`numero`, `cedula`, `documento`, … — ver `EMPLOYEE_ID_COLUMN_CANDIDATES` en `hourly-analysis/route.ts`).
-
-**Índices (migración 20260516):**
-
-| Índice | Tabla | Columnas |
-| --- | --- | --- |
-| `idx_ventas_*_prod_fecha_co_empresa` | Cada `ventas_*` | `(fecha_dcto, centro_operacion, empresa_bd)` |
-| `idx_asistencia_horas_prod_fecha_sede_depto` | `asistencia_horas` | `(fecha, sede, departamento)` |
-
-**APIs:** `/api/productivity`, `/api/hourly-analysis`, `/api/jornada-extendida/*`.
-
-**Notas:**
-
-- `GET /api/productivity` puede usar cache en archivo (`PRODUCTIVITY_CACHE_PATH`).
-- Cédulas en lista de `src/lib/horarios/ocultar-cedulas.ts` no se muestran ni cuentan en análisis por hora para usuarios no admin (sí para admin).
-- `asistencia_horas` no tiene DDL en el repo; en producción puede existir `ux_asistencia_numero_fecha` u otros índices locales no versionados aquí.
-
----
-
-### 4.3 Márgenes
+### 4.2 Productividad y analisis horario
 
 | Tabla | Uso |
 | --- | --- |
-| `margenes_linea_co_dia` | Agregados por línea, sede y día |
+| `ventas_cajas` | linea cajas |
+| `ventas_fruver` | fruver |
+| `ventas_industria` | industria |
+| `ventas_carnes` | carnes |
+| `ventas_pollo_pesc` | pollo/pescado |
+| `ventas_asadero` | asadero |
+| `asistencia_horas` | horas laboradas, marcaciones, presencia y jornada extendida |
 
-**API:** `/api/margenes`.  
-**Regla de margen % agregado:** `SUM(margen) / SUM(ventas) * 100` (nunca promedio de porcentajes).
+Indices versionados:
 
-**Índices:** no hay migración en el repo; conviene alinear con filtros `(fecha, sede, linea)` si el volumen crece.
+- `20260516_productividad_x_linea_indexes.sql` crea indices por
+  `(fecha_dcto, centro_operacion, empresa_bd)` en ventas y
+  `(fecha, sede, departamento)` en `asistencia_horas`.
 
----
+APIs relacionadas: `/api/productivity`, `/api/hourly-analysis`,
+`/api/jornada-extendida/*`.
 
-### 4.4 Rotación, inventario x ítem y kardex
+Notas:
+
+- `/api/productivity` usa `PRODUCTIVITY_CACHE_PATH` y opcionalmente
+  `PRODUCTIVITY_SERVE_FILE_CACHE`.
+- `src/lib/horarios/ocultar-cedulas.ts` excluye cedulas del analisis para no
+  admins.
+- `asistencia_horas` no tiene DDL completo en el repo.
+
+### 4.3 Margenes
+
+| Tabla | Uso |
+| --- | --- |
+| `margenes_linea_co_dia` | agregados por linea/sede/dia |
+
+API: `/api/margenes`.
+
+Regla de margen agregado: `SUM(margen) / SUM(ventas) * 100`; no promediar
+porcentajes.
+
+No hay migracion versionada de indices para esta tabla; revisar `EXPLAIN
+ANALYZE` si crece el volumen.
+
+### 4.4 Rotacion, inventario y kardex
 
 | Tabla | Origen | Uso |
 | --- | --- | --- |
-| `rotacion_base_item_dia_sede` | Servidor (ETL) | Rotación (`/rotacion`), inventario x ítem, kardex |
-| `rotacion_v4` | Servidor (ETL) | Rotación de prueba (`/rotacion-dos`); mismos datos diarios, esquema alineado con la tabla legacy |
-| `rotacion_abcd_config` | Creada en runtime por `/api/rotacion` | Umbrales ABCD globales |
-| `rotacion_abcd_config_sede` | Idem | Umbrales ABCD por empresa/sede |
-| `rotacion_cero_item_estado` | `schema-auth` / migraciones | Estado operativo ítem (cero / restock) |
-| `rotacion_cero_item_estado_audit` | `20260515_*` | Historial de cambios de estado |
+| `rotacion_base_item_dia_sede` | ETL/servidor | rotacion, inventario x item, kardex |
+| `rotacion_v4` | ETL/servidor | vista tecnica `/rotacion-dos` |
+| `rotacion_abcd_config` | runtime/API | umbrales ABCD globales |
+| `rotacion_abcd_config_sede` | runtime/API | umbrales ABCD por empresa/sede |
+| `rotacion_cero_item_estado` | migraciones | estado operativo cero/restock |
+| `rotacion_cero_item_estado_audit` | migraciones | historial de cambios |
 
-**Esquema actual de rotación (referencia):** la app detecta columnas vía `information_schema` (`src/lib/rotacion/base-fields.ts`). Forma habitual: `fecha_dia`, `empresa`, `sede`, `id_item`, `id_linea_nivel_1`, `id_categoria`, ventas, costos, inventario, fechas última venta/ingreso, etc. Esquema legacy con `fecha_consulta` / `item` aún soportado con índices condicionales en `20260423_rotacion_perf_indexes.sql`.
+`rotacion_cero_item_estado` usa PK actual
+`(empresa, sede_id, item, context)`. La migracion
+`20260603_rotacion_cero_item_estado_empresa.sql` agrego `empresa` porque
+`sede_id` no es unico entre empresas.
 
-**Índices rotación (migraciones):**
+Indices versionados:
 
-| Migración | Índices |
-| --- | --- |
-| `20260423_*` | Legacy (`fecha_consulta`, …) solo si existen esas columnas |
-| `20260427_*` | `rotacion_base_new_idx_*` sobre `fecha_dia`, empresa, sede, item, línea N1, categoría |
+- `20260423_rotacion_perf_indexes.sql`: indices condicionales para esquema legacy.
+- `20260427_rotacion_new_fields_indexes.sql`: indices para esquema con
+  `fecha_dia`, empresa, sede, item, linea N1 y categoria.
+- `20260520_rotacion_v4_perf_indexes.sql`: indices para `rotacion_v4`.
 
-**`rotacion_cero_item_estado`:**
+APIs relacionadas: `/api/rotacion`, `/api/rotacion-dos`,
+`/api/rotacion/cero-estados`, `/api/rotacion/cero-estados/audit`,
+`/api/inventario-x-item`, `/api/kardex/*`.
 
-| Columna | Notas |
-| --- | --- |
-| PK | `(sede_id, item, context)` — `context` ∈ `cero` \| `restock` (`20260514_*`) |
-| `estado` | `sin_verificar`, `seguimiento`, `surtido` |
-| `updated_by` | FK opcional a `app_users` |
-
-**APIs:** `/api/rotacion`, `/api/rotacion-dos` (lee `rotacion_v4`), `/api/rotacion/cero-estados/*`, `/api/inventario-x-item`, `/api/kardex/*`.
-
-**Carga de datos:** `rotacion_base_item_dia_sede` se actualiza por proceso **externo** a esta app; no hay job documentado en el repo.
-
----
-
-### 4.5 Ventas por ítem
-
-**Origen:** `db/migrations/20260303_ventas_x_item.sql`.
+### 4.5 Ventas por item
 
 | Tabla | Rol |
 | --- | --- |
-| `ventas_item_cargas` | Metadatos de cada carga ETL |
-| `ventas_item_diario` | Hechos diarios por empresa, CO, ítem, línea |
-| `ventas_item_sede_map` | Mapeo `empresa_norm` + `id_co_norm` → nombre sede |
+| `ventas_item_cargas` | metadata de cargas |
+| `ventas_item_diario` | hechos diarios por empresa/CO/item/linea |
+| `ventas_item_sede_map` | mapeo empresa+CO hacia sede |
 
-**Índices:**
+Migraciones:
 
-- UNIQUE natural: `(fecha_dcto, empresa_norm/id_co_norm, id_item, linea)`
-- `ventas_item_diario_idx_fecha`, `_empresa`, `_item`, `_sede`
+- `20260303_ventas_x_item.sql`: tablas base.
+- `20260529_ventas_x_item_perf_indexes.sql`: indices de rendimiento.
 
-**APIs:** `/api/ventas-x-item`, `/api/ventas-x-item/v2`.
+APIs: `/api/ventas-x-item`, `/api/ventas-x-item/v2`.
 
----
-
-### 4.6 Horarios (planillas guardadas)
-
-**Origen:** `db/migrations/20260409_ingresar_horarios.sql`.
+### 4.6 Horarios y planillas
 
 | Tabla | Rol |
 | --- | --- |
-| `horario_planillas` | Cabecera (sede, sección, rango fechas, autor) |
-| `horario_planilla_detalles` | Filas por empleado y día (`day_key`, marcaciones HE/HS) |
+| `horario_planillas` | cabecera por sede/seccion/rango/autor |
+| `horario_planilla_detalles` | filas por empleado y dia |
 
-**Índices:** sede+fechas, `created_at`, `planilla_id`, empleado+fecha, `worked_date`.
+Origen: `20260409_ingresar_horarios.sql`.
 
-**APIs:** `/api/ingresar-horarios/*`, `/api/horarios-comparar` (también lee `asistencia_horas`).
+APIs: `/api/ingresar-horarios/*`, `/api/horarios-comparar`.
 
----
-
-### 4.7 Inventario x ítem — presets de usuario
-
-**Origen:** `db/migrations/20260504_inventario_x_item_user_presets.sql`.
+### 4.7 Inventario presets
 
 | Tabla | Rol |
 | --- | --- |
-| `inventario_x_item_user_presets` | JSON de presets por `user_id` (PK) |
+| `inventario_x_item_user_presets` | JSON de presets por `user_id` |
 
-**Índice:** `(updated_at DESC)`.
+Origen: `20260504_inventario_x_item_user_presets.sql`.
 
-**API:** `/api/inventario-x-item/presets`.
+API: `/api/inventario-x-item/presets`.
 
----
+### 4.8 Excel DIAN
 
-### 4.8 Excel DIAN (bases opcionales)
+No forma parte del schema principal del visor. Usa conexiones PostgreSQL por
+empresa (`EXCEL_DIAN_MTDO_DB_*`, `EXCEL_DIAN_MIO_DB_*`,
+`EXCEL_DIAN_BGT_DB_*`) y consultas en `src/lib/excel-dian/`.
 
-No forman parte del schema principal del visor. Consultas en `src/lib/excel-dian/` sobre tablas típicas:
+API: `/api/excel-dian/export`.
 
-- `public.cmmovimiento_pdv`
-- `public.cgmovimiento_contable`
-- `public.items`, `public.terceros`, `public.tipos_documentos`
+### 4.9 Cronograma Notion
 
-**API:** `/api/excel-dian/export`. Variables `EXCEL_DIAN_*_DB_*` por empresa.
+No usa tablas locales. `/api/cronograma` consulta Notion con `NOTION_TOKEN` y
+`NOTION_CRONOGRAMA_PAGE_ID`, normaliza bases de datos embebidas y responde al
+cliente autenticado.
 
----
-
-## 5. Diagrama de dependencias (auth y app)
+## 5. Relaciones principales
 
 ```text
 app_users
-  ├── app_user_sessions (user_id)
-  ├── app_user_login_logs (user_id)
-  ├── horario_planillas (created_by_user_id)
-  ├── inventario_x_item_user_presets (user_id)
-  ├── rotacion_cero_item_estado (updated_by)
-  └── rotacion_cero_item_estado_audit (changed_by)
+  -> app_user_sessions
+  -> app_user_login_logs
+  -> app_user_activity_log
+  -> horario_planillas
+  -> inventario_x_item_user_presets
+  -> rotacion_cero_item_estado.updated_by
+  -> rotacion_cero_item_estado_audit.changed_by
 
 horario_planillas
-  └── horario_planilla_detalles (planilla_id)
+  -> horario_planilla_detalles
 
 ventas_item_cargas
-  └── ventas_item_diario (source_load_id, opcional)
+  -> ventas_item_diario
 ```
 
----
+## 6. Limpieza y retencion
 
-## 6. Consultas útiles en pgAdmin
+`scripts/cleanup-logs.sh` borra registros antiguos de:
 
-**Índices de una tabla:**
+- `app_user_activity_log` por `observed_at`;
+- `app_user_login_logs` por `logged_at`;
+- `app_user_sessions` expiradas o con `created_at` anterior a la retencion.
+
+El timer systemd esta en `deploy/systemd/`. Ver [`../deploy/README.md`](../deploy/README.md)
+y [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+Default operativo: `RETENTION_DAYS=7`.
+
+## 7. Consultas utiles
+
+Indices de una tabla:
 
 ```sql
 SELECT indexname, indexdef
@@ -254,30 +269,33 @@ WHERE schemaname = 'public' AND tablename = 'app_users'
 ORDER BY indexname;
 ```
 
-**Columnas de `asistencia_horas` (servidor):**
+Columnas de una tabla ETL:
 
 ```sql
 SELECT column_name, data_type
 FROM information_schema.columns
-WHERE table_schema = 'public' AND table_name = 'asistencia_horas'
+WHERE table_schema = 'public'
+  AND table_name = 'asistencia_horas'
 ORDER BY ordinal_position;
 ```
 
-**Tamaño y último vacuum:**
+Tamanos y vacuum:
 
 ```sql
 SELECT relname, n_live_tup, last_vacuum, last_autovacuum
 FROM pg_stat_user_tables
 WHERE relname IN (
+  'app_user_activity_log',
+  'app_user_login_logs',
+  'app_user_sessions',
   'asistencia_horas',
   'rotacion_base_item_dia_sede',
-  'ventas_item_diario',
-  'app_user_login_logs'
+  'ventas_item_diario'
 )
 ORDER BY relname;
 ```
 
-**Mantenimiento manual (tablas grandes, tras cargas masivas):**
+Mantenimiento manual tras cargas grandes:
 
 ```sql
 VACUUM (ANALYZE) rotacion_base_item_dia_sede;
@@ -285,31 +303,15 @@ VACUUM (ANALYZE) asistencia_horas;
 VACUUM (ANALYZE) ventas_item_diario;
 ```
 
-Ejecutar en ventana de baja carga; no está automatizado desde la app.
+## 8. Vacios conocidos
 
----
-
-## 7. Vacíos conocidos (completar en servidor)
-
-Marca en tu entorno lo que ya exista; el repo no lo garantiza:
-
-| Tema | Acción sugerida |
+| Tema | Accion sugerida |
 | --- | --- |
-| DDL de `ventas_*` y `asistencia_horas` | Exportar `\d+ tabla` desde producción y archivar en `docs/` o migración de referencia |
-| Índices en `margenes_linea_co_dia` | Revisar `EXPLAIN ANALYZE` de `/api/margenes` |
-| Índice único asistencia | Documentar si existe `ux_asistencia_numero_fecha` |
-| Frecuencia ETL rotación / ventas | Anotar horario y responsable del proceso |
-| Limpieza de sesiones | No hay job; sesiones expiradas pueden acumularse en `app_user_sessions` |
-| IP en login logs | Requiere proxy + `TRUST_PROXY=true` o IP directa al Node |
+| DDL completo de tablas ETL | exportar desde produccion y archivar como referencia |
+| Indices de `margenes_linea_co_dia` | revisar planes reales y versionar indices si aplica |
+| Jobs ETL de ventas/rotacion/asistencia | documentar frecuencia, responsable y validaciones |
+| Store distribuido para rate limit/cache | requerido si se escala a multiples replicas |
+| Retencion historica | confirmar si 7 dias de actividad/login es suficiente para auditoria |
 
----
-
-## 8. Cuándo actualizar este documento
-
-- Nueva migración en `db/migrations/`.
-- Nueva tabla consultada desde `src/app/api/`.
-- Cambio de columnas detectadas dinámicamente (asistencia / rotación).
-- Nuevos índices de rendimiento acordados en producción.
-- Nueva base Excel DIAN o cambio de tablas DIAN.
-
-*Referencia de código: mayo 2026.*
+Actualizar este documento cuando cambien migraciones, tablas leidas, columnas
+dinamicas, indices acordados en produccion o bases externas.

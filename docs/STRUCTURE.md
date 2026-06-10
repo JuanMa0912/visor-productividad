@@ -1,243 +1,174 @@
 # Estructura del repositorio
 
-Guía de **dónde va cada cosa** en el código. Para visión de producto, APIs, permisos y despliegue, ver [`README.md`](../README.md) en la raíz. Para tablas PostgreSQL, índices y operación de BD, ver [`DATABASE.md`](DATABASE.md).
+Guia de ubicacion para codigo, rutas, scripts y pruebas. Para vision general,
+permisos y entorno ver [`README.md`](../README.md). Para base de datos ver
+[`DATABASE.md`](DATABASE.md). Para despliegue Linux ver
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+Estado de referencia: codigo versionado revisado el **2026-06-10**.
 
 ## Convenciones
 
 | Tema | Regla |
 | --- | --- |
-| Imports | Alias `@/` → `src/` (`tsconfig.json`) |
-| APIs | Un handler por carpeta: `src/app/api/<modulo>/route.ts` |
-| Páginas | `src/app/<ruta>/page.tsx` (App Router de Next.js) |
-| Lógica reutilizable | `src/lib/<dominio>/` o `src/features/<modulo>/` |
+| Imports | Alias `@/` hacia `src/` (`tsconfig.json`) |
+| Paginas | `src/app/<ruta>/page.tsx` (App Router) |
+| APIs | `src/app/api/<modulo>/route.ts` |
+| Logica reutilizable | `src/lib/<dominio>/` o `src/features/<modulo>/` |
 | UI compartida | `src/components/` |
-| Cliente vs servidor | La mayoría de pantallas usan `"use client"`; la auth fina vive en cada API |
-| Borde HTTP | `src/proxy.ts` redirige a `/login` sin cookie `vp_session` (no sustituye validación en APIs) |
+| Auth cliente | `src/lib/auth/auth-context.tsx` |
+| Borde HTTP | `src/proxy.ts` redirige paginas sin `vp_session`; las APIs validan por endpoint |
 
 ```text
-src/app/<ruta>/page.tsx     →  fetch("/api/...")
-src/app/api/<modulo>/route.ts  →  @/lib/auth, @/lib/db, @/lib/...
+src/app/<ruta>/page.tsx
+  -> fetch("/api/...")
+    -> src/app/api/<modulo>/route.ts
+      -> src/lib/auth, src/lib/db, src/lib/shared/*
 ```
 
----
+## Directorios raiz
 
-## `src/lib/` — dominio y utilidades
+| Ruta | Uso |
+| --- | --- |
+| `.github/` | workflow CI y plantilla de PR |
+| `.agents/skills/` | skills locales para agentes; no son reglas Cursor |
+| `db/` | esquema auth, migraciones y SQL operativo |
+| `deploy/` | unidades systemd y runbooks de operacion |
+| `docs/` | documentacion tecnica |
+| `public/` | assets estaticos |
+| `scripts/` | utilidades de dev, build, DB, admin, debug y limpieza |
+| `src/app/` | rutas UI y route handlers |
+| `src/components/` | componentes React reutilizables |
+| `src/features/` | modulos con capa propia de repo/schema/hooks/tests |
+| `src/lib/` | librerias compartidas de dominio, auth, DB e integraciones |
 
-Código compartido sin UI. Punto de entrada habitual: `index.ts` en `auth/` y `db/`.
+## `src/lib/`
+
+Codigo compartido sin UI de pagina.
 
 ### `auth/`
 
 | Archivo | Rol |
 | --- | --- |
-| `index.ts` | Sesiones (`app_user_sessions`), cookie `vp_session`, hash de contraseña, `getClientIp`, `getAuditNetworkId`, `requireAuthSession`, `requireAdminSession` |
-| `types.ts` | Tipos puros (`AuthUser`, `AuthRole`, `AuthUserPublic`). Importable desde código cliente sin arrastrar dependencias de Node (`crypto`, `pg`). |
-| `auth-context.tsx` | `AuthProvider`, `useAuth()`, `useRequireAuth()`, `usePermissions()`. Centraliza la sesión del cliente: una sola llamada a `/api/auth/me` al montar el RootLayout, todo el resto del portal lee de aquí. |
+| `index.ts` | sesiones, cookies `vp_session`/`vp_csrf`, bcrypt, CSRF, IP auditada, permisos admin, heartbeat, `last_path` y `app_user_activity_log` |
+| `types.ts` | tipos puros `AuthUser`, `AuthRole`, `AuthUserPublic` |
+| `auth-context.tsx` | `AuthProvider`, `useAuth`, `useRequireAuth`, `usePermissions` |
 
 ### `db/`
 
 | Archivo | Rol |
 | --- | --- |
-| `index.ts` | Pool PostgreSQL (`pg`); exige `DB_PASSWORD` en entorno |
+| `index.ts` | pool PostgreSQL via `pg`, lectura de `.env.local` y validacion temprana de `DB_PASSWORD`, `DB_PORT`, `DB_SCHEMA` |
 
 ### `shared/`
 
 | Archivo | Rol |
 | --- | --- |
-| `constants.ts` | Sedes, líneas de negocio, agrupaciones visibles |
-| `calc.ts` | Productividad (Vta/Hr) y margen |
-| `normalize.ts` | Normalización de textos, sedes, IDs |
-| `utils.ts` | Helpers genéricos (`cn`, formatos) |
-| `portal-sections.ts` | Secciones UAID (`venta`, `producto`, `operacion`), alias legacy, `canAccessSection` |
-| `special-role-features.ts` | Capacidades por `special_roles` (`alex`, `cronograma`, ABCD, etc.) |
-| `rate-limit.ts` | Límites por IP en memoria del proceso |
-| `export-utils.ts` | Utilidades para exportar tablas/gráficos |
-| `agent-debug-log.ts` | Logging opcional de depuración para agentes |
-| `messages.ts` | Catálogo de mensajes estandarizados (`AUTH_MESSAGES`, `DATA_MESSAGES`, `ACTION_MESSAGES`, `VALIDATION_MESSAGES`) + helpers (`extractErrorMessage`, `couldNotLoad`, etc.). Incluye guía de estilo (tuteo, tildes, sin exclamaciones). |
-| `path-labels.ts` | Mapa `pathname → label legible` para mostrar en panel de presencia y bitácora de accesos (`/ventas-x-item` → "Ventas por ítem", etc.). |
-| `item-drilldown-links.ts` | Construcción de URLs para navegar entre módulos manteniendo filtros (drilldown desde rotación a ventas-x-item, etc.). |
+| `constants.ts` | sedes, lineas y agrupaciones visibles |
+| `calc.ts` | productividad, margen y calculos compartidos |
+| `normalize.ts` | normalizacion de textos, sedes e IDs |
+| `utils.ts` | helpers genericos como `cn` |
+| `portal-sections.ts` | secciones UAID, subtableros, alias legacy y validacion de acceso |
+| `special-role-features.ts` | capacidades por `special_roles` |
+| `rate-limit.ts` | rate limit en memoria por IP |
+| `export-utils.ts` | utilidades para exportar tablas/graficos |
+| `agent-debug-log.ts` | logging opcional de depuracion en desarrollo |
+| `messages.ts` | catalogo de mensajes UI |
+| `path-labels.ts` | etiquetas legibles para rutas en presencia/accesos |
+| `item-drilldown-links.ts` | links entre modulos manteniendo filtros |
+| `portal-permissions.test.ts` | tests de permisos seccion/subtablero/rotacion |
 
-### `horarios/`
+### Dominios
 
-| Archivo | Rol |
+| Ruta | Rol |
 | --- | --- |
-| `ocultar-cedulas.ts` | Lista de cédulas ocultas en análisis por hora; admins las ven, el resto no (listas y conteo de presencia) |
-| `schedule-time.ts` | Parseo y franjas horarias de marcaciones |
-| `planilla-sede.ts` | Resolución sede ↔ asistencia |
-| `planilla-persist.ts` | Persistencia de planillas guardadas |
-| `comparar-utils.ts` | Lógica compartida de `/horarios-comparar` |
-| `lunes-schedule-presets.ts` | Presets de horario los lunes |
+| `horarios/` | planillas, franjas, presets de lunes, ocultamiento de cedulas y comparacion |
+| `rotacion/` | campos base, dimensiones, fuentes y estados de cero rotacion/restock |
+| `ventas/` | ventas por item y rangos de fechas |
+| `inventario/` | inventario por item y presets |
+| `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
+| `notion/` | cliente Notion y normalizacion del cronograma |
+| `parse-user-agent.ts` | parser simple de User-Agent usado en accesos admin |
+| `status.ts` | helpers de estado |
 
-**Consumidor principal de `ocultar-cedulas`:** `src/app/api/hourly-analysis/route.ts`.
+## `src/app/`
 
-### `rotacion/`
+### Rutas UI
 
-| Archivo | Rol |
+| Grupo | Rutas |
 | --- | --- |
-| `base-fields.ts` | Campos SQL base de `rotacion_base_item_dia_sede` |
-| `dimensions.ts` | Dimensiones de categoría / ABCD |
-| `cero-estado.ts` | Estados de ítems con cero rotación (API y persistencia) |
-
-**Lógica de clasificación UI (nuevo / restock / etc.):** `src/app/rotacion/rotacion-preamble.ts` (no está en `lib/rotacion` porque acoplada a la vista).
-
-### `ventas/`
-
-| Archivo | Rol |
-| --- | --- |
-| `x-item.ts` | Normalización y pivoteo ventas por ítem |
-| `x-item-date-range.ts` | Validación de rangos de fechas (+ test) |
-
-### `inventario/`
-
-| Archivo | Rol |
-| --- | --- |
-| `x-item.ts` | Etiquetas y pivotes inventario por ítem |
-| `x-item-presets.ts` | Presets de usuario (`inventario_x_item_user_presets`) |
-
-### `excel-dian/`
-
-| Archivo | Rol |
-| --- | --- |
-| `excel-dian-db.ts` | Conexiones PostgreSQL por empresa (MTDO / MIO / BGT) |
-| `mtodo-medios-magneticos.ts` | Consultas y formato export DIAN |
-| `public-export-env.ts` | Flag `EXCEL_DIAN_EXPORT_PUBLIC` / acceso sin sesión |
-
-**UI:** `src/app/ExcelDian/`. **API:** `src/app/api/excel-dian/export/route.ts`.
-
-### Raíz de `lib/`
-
-| Archivo | Rol |
-| --- | --- |
-| `parse-user-agent.ts` | Etiqueta legible de User-Agent (navegador, versión, SO) |
-| `parse-user-agent.test.ts` | Tests del parser |
-
-**Consumidor:** `src/app/admin/usuarios/accesos/page.tsx`.
-
----
-
-## `src/app/` — rutas y APIs
-
-### Páginas por sección UAID
-
-| Sección | Rutas UI notables |
-| --- | --- |
-| Portal | `/login`, `/secciones`, `/tableros` (redirect), `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
+| Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
 | Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario` |
-| Producto | `/`, `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/rotacion-dos` (variante V4), `/kardex`, `/prediccion-pedidos` |
-| Operación | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
+| Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/rotacion-dos`, `/kardex`, `/prediccion-pedidos` |
+| Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/[id]/metricas` |
-| Otros | `/ExcelDian` (nota: PascalCase histórico; URL queda `/ExcelDian`) |
+| Otros | `/ExcelDian` (PascalCase historico de URL) |
 
-### APIs (`src/app/api/`)
+### APIs
 
 | Carpeta | Uso |
 | --- | --- |
-| `auth/*` | Login, logout, me, cambio de contraseña |
-| `admin/users`, `admin/login-logs` | CRUD usuarios y bitácora de accesos |
-| `productivity` | Productividad por línea (cache en archivo) |
-| `hourly-analysis` | Análisis por hora, cajeros, horas extra, presencia por franja |
-| `margenes` | Márgenes por línea/sede |
-| `rotacion`, `rotacion/cero-estados/*` | Rotación e ítems cero |
-| `ventas-x-item`, `ventas-x-item/v2` | Ventas por ítem |
-| `inventario-x-item`, `.../presets` | Inventario por ítem y presets |
-| `kardex/*` | Detalle, resúmenes, totales, lookups |
-| `jornada-extendida/meta`, `.../alex-report` | Metadatos y reporte Alex |
-| `ingresar-horarios/*` | Formularios y opciones de horarios |
-| `horarios-comparar` | Comparación de planillas |
-| `excel-dian/export` | Export Excel DIAN |
-| `debug-agent-log` | Depuración (restringir en producción) |
+| `auth/*` | login, logout, me, cambio de password y heartbeat |
+| `admin/users`, `admin/users/[id]`, `admin/users/[id]/metrics` | usuarios y metricas por usuario |
+| `admin/login-logs`, `admin/user-presence` | accesos y presencia |
+| `productivity` | productividad por linea con cache de archivo opcional |
+| `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
+| `margenes` | margen por linea/sede |
+| `rotacion`, `rotacion-dos` | rotacion legacy y vista V4 |
+| `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
+| `ventas-x-item`, `ventas-x-item/v2` | ventas por item |
+| `inventario-x-item`, `inventario-x-item/presets` | inventario y presets |
+| `kardex/*` | detalle, lookups, resumenes y totales |
+| `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
+| `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |
+| `horarios-comparar` | comparacion planilla vs asistencia |
+| `cronograma` | Notion cronograma |
+| `excel-dian/export` | export DIAN |
+| `debug-agent-log` | depuracion solo fuera de produccion |
 
-Handlers grandes (mantener cambios acotados al dominio):
-
-- `api/hourly-analysis/route.ts`
-- `api/productivity/route.ts`
-- `api/rotacion/route.ts`
-
-### `src/app/rotacion/` (módulo pesado en UI)
-
-| Archivo | Rol |
-| --- | --- |
-| `page.tsx` | Vista principal (cliente), tablas, filtros, exportaciones |
-| `rotacion-preamble.ts` | Tipos, constantes, reglas puras (nuevo, restock por ingreso en período, ABCD, etc.) |
-| `rotation-filter-widgets.tsx` | Widgets de filtro reutilizables |
-
-### `src/app/ingresar-horarios/`
-
-| Archivo | Rol |
-| --- | --- |
-| `page.tsx` | Shell de la ruta |
-| `ingresar-horarios-inner.tsx` | Formulario y estado principal (archivo grande) |
-
-### `src/app/admin/usuarios/`
-
-| Archivo | Rol |
-| --- | --- |
-| `page.tsx` | Listado y edición de usuarios |
-| `accesos/page.tsx` | Bitácora de login (IP, navegador parseado) |
-| `accesos/pormes/page.tsx` | Resumen de accesos por mes |
-| `layout.tsx` | Layout protegido admin |
-
----
+Handlers especialmente grandes: `api/hourly-analysis/route.ts`,
+`api/productivity/route.ts` y `api/rotacion/route.ts`. Mantener cambios
+acotados al dominio cuando se toquen.
 
 ## `src/components/`
 
-Componentes React reutilizables entre páginas.
-
 | Ruta | Rol |
 | --- | --- |
-| `HourlyAnalysis.tsx` | Análisis por hora embebido en productividad/jornada (filtros, mapa, cajeros paginados, horas extra) |
-| `LineCard.tsx`, `LineComparisonTable.tsx`, `SelectionSummary.tsx` | Productividad / comparativos |
-| `TopBar.tsx` | Barra superior usada dentro de la home `/` junto al `AppTopBar` global (no confundir: `TopBar` ≠ `AppTopBar`) |
-| `PresenceHeartbeat.tsx` | Ping a `/api/auth/heartbeat` para alimentar el panel de presencia. Solo dispara cuando `useAuth().status === "authenticated"`. |
-| `portal/app-top-bar.tsx` | Header global del portal. Consume `useAuth()`; aparece en todas las páginas con sesión. |
-| `portal/portal-branding-header.tsx` | Cabecera UAID, cuenta, navegación (usado internamente por `app-top-bar.tsx`) |
-| `portal/portal-footer.tsx` | Pie de página global (versión + copyright). Montado una vez en `RootLayout`. |
-| `portal/portal-toaster.tsx` | Toaster global (sonner). Cualquier componente puede llamar `toast.success/error/info/warning` o `toast.promise(...)`. Reemplaza `alert()` y `<div>` rojos inline para notificar resultados de acciones. |
-| `portal/hub-section-cards.tsx` | Tarjetas de hubs (`/venta`, etc.) |
-| `portal/user-menu.tsx` | Menú de usuario (cambiar contraseña, logout) |
-| `productividad/*` | Componentes UI específicos: skeleton, búsqueda, toggle de vista, empty state |
-| `hourly-analysis/*` | Componentes y utilidades del análisis horario embebido |
-| `cashier/EditorialTop5.tsx` | Top 5 de cajeros (usado por `HourlyAnalysis`) |
-| `ui/*` | Primitivos shadcn/ui (button, card, table, select, badge, stepper, scroll-to-top-button) |
+| `HourlyAnalysis.tsx` | analisis por hora embebido en productividad/jornada |
+| `LineCard.tsx`, `LineComparisonTable.tsx`, `SelectionSummary.tsx` | productividad y comparativos |
+| `PresenceHeartbeat.tsx` | ping de actividad a `/api/auth/heartbeat` cuando el usuario esta autenticado |
+| `TopBar.tsx` | barra usada por la home de productividad |
+| `portal/*` | top bar global, branding, footer, menu de usuario, toaster y tarjetas hub |
+| `productividad/*` | controles/skeleton/empty states de productividad |
+| `hourly-analysis/*` | piezas del analisis horario |
+| `cashier/EditorialTop5.tsx` | top de cajeros |
+| `ui/*` | primitivos UI locales |
+| `jornada-extendida/*` | paneles de tipos de horario |
 
-**Regla:** lógica de negocio que no sea puramente visual → mover a `src/lib/` o al `route.ts` de la API.
-
-**Nota sobre dualidad `components/` vs `features/`:** algunos dominios (como `productividad`) aparecen en ambos lugares de forma intencional:
-- `components/productividad/*` → UI presentacional reutilizable (skeleton, controles).
-- `features/productividad/*` → lógica del módulo (hooks, formatters, vista pesada `line-trends`).
-
-Esta separación se mantiene **solo cuando el módulo crece**. Módulos pequeños viven solo en `components/` o solo en `app/<ruta>/`.
-
----
+Regla: si la logica no es visual, moverla a `src/lib/`, `src/features/` o al
+handler correspondiente.
 
 ## `src/features/`
 
-Módulos con capa explícita (hoy solo kardex):
+| Ruta | Rol |
+| --- | --- |
+| `productividad/` | hook de datos, tipos, formateadores, utilidades de fecha/sede y visualizaciones |
+| `kardex/` | `repo`, `schema`, `types`, `hooks` y tests de rutas/repositorio |
+
+Patron preferido para modulos que crecen: `features/<modulo>/{repo,schema,types}`
+y APIs mas delgadas en `src/app/api/`.
+
+## `db/`
 
 | Ruta | Rol |
 | --- | --- |
-| `kardex/repo.ts` | Consultas SQL / agregaciones |
-| `kardex/schema.ts` | Validación Zod de query params |
-| `kardex/types.ts` | Tipos de respuesta |
-| `kardex/hooks.ts` | Hooks cliente (si aplica) |
-| `kardex/__tests__/*` | Tests de repo y rutas |
+| `schema-auth.sql` | tablas base de auth/admin |
+| `migrations/*.sql` | cambios incrementales en orden por fecha |
+| `crear-usuario.sql`, `permisos-usuario.sql` | usuario PostgreSQL `produ` |
+| `seed_sede_users.sql` | usuarios base por sede |
+| `establecer-password.sql` | apoyo operativo de password |
 
-Patrón a replicar si un módulo crece mucho: `features/<modulo>/{repo,schema,types}` + APIs delgadas en `app/api/`.
-
----
-
-## `db/` — esquema y migraciones
-
-Detalle de tablas, índices, dominios y consultas operativas: **[`DATABASE.md`](DATABASE.md)**.
-
-| Ruta | Rol |
-| --- | --- |
-| `schema-auth.sql` | Tablas `app_users`, sesiones, login logs (base) |
-| `migrations/*.sql` | Cambios incrementales (aplicar en orden por fecha en el nombre) |
-| `crear-usuario.sql`, `permisos-usuario.sql` | Usuario PostgreSQL `produ` |
-| `seed_sede_users.sql` | Usuarios de ejemplo por sede |
-| `establecer-password.sql` | Soporte operativo de passwords |
-
-### Orden de migraciones (después de `schema-auth.sql`)
+Orden completo despues de `schema-auth.sql`:
 
 1. `20260203_auth_username.sql`
 2. `20260220_user_sede.sql`
@@ -256,116 +187,63 @@ Detalle de tablas, índices, dominios y consultas operativas: **[`DATABASE.md`](
 15. `20260514_rotacion_cero_item_estado_restock_context.sql`
 16. `20260515_rotacion_cero_item_estado_audit.sql`
 17. `20260516_productividad_x_linea_indexes.sql`
-
-Tablas de negocio (`ventas_*`, `asistencia_horas`, `rotacion_base_item_dia_sede`, etc.) suelen existir **antes** en el servidor; las migraciones del repo cubren auth, índices y extensiones de la app.
-
----
+18. `20260520_rotacion_v4_perf_indexes.sql`
+19. `20260520_session_last_activity.sql`
+20. `20260520_session_last_path.sql`
+21. `20260526_user_activity_log.sql`
+22. `20260529_ventas_x_item_perf_indexes.sql`
+23. `20260603_rotacion_cero_item_estado_empresa.sql`
 
 ## `scripts/`
 
 | Script | Uso |
 | --- | --- |
-| `dev.mjs` | `npm run dev` |
-| `build.mjs` | `npm run build` / `build:server` |
-| `create-admin.js` | Crear o actualizar admin (`ADMIN_*`, `DB_PASSWORD`) |
-| `test-db.js`, `test-db-postgres.js` | Probar conexión y tablas |
-| `playwright_smoke.py` | Smoke E2E (`npm run test:e2e-smoke`) |
-| `benchmark-rotacion.mjs`, `debug-rotacion-items.mjs` | Diagnóstico rotación |
-
----
+| `dev.mjs` | wrapper de `npm run dev`; en Windows mata Next dev previos del mismo repo |
+| `build.mjs` | wrapper de build con heap heuristico, modo strict y standalone |
+| `create-admin.js` | crear/actualizar admin desde `ADMIN_*` |
+| `test-db.js`, `test-db-postgres.js` | pruebas de conexion |
+| `apply-migration-file.mjs` | aplicar un SQL de `db/migrations/` |
+| `apply-activity-log-migration.mjs` | apoyo historico para migracion de actividad |
+| `playwright_smoke.py` | smoke E2E con dev server activo |
+| `cleanup-logs.sh` | limpieza de logs/sesiones para systemd |
+| `benchmark-rotacion.mjs`, `debug-rotacion-items.mjs`, `inspect-rotacion-v4.mjs` | diagnostico rotacion |
 
 ## Tests
 
-| Tipo | Ubicación | Comando |
+| Tipo | Ubicacion | Comando |
 | --- | --- | --- |
-| Unitarios | `src/**/*.test.ts` | `npm test` / `npm run test:unit` |
-| Features | `src/features/**/__tests__/*` | Incluidos en `test:unit` |
-| Smoke E2E | `scripts/playwright_smoke.py` | `npm run test:e2e-smoke` (dev server en marcha) |
+| Unitarios | `src/**/*.test.ts` | `npm test` |
+| Feature tests | `src/features/**/__tests__/*` | incluidos en `npm test` |
+| Smoke E2E | `scripts/playwright_smoke.py` | `npm run test:e2e-smoke` |
 
-Añadir un `*.test.ts` junto al módulo cuando la regla sea fácil de romper (fechas, parsers, agregados SUM/SUM).
+Agregar tests co-localizados (`*.test.ts`) cuando se toque una regla facil de
+romper: fechas, permisos, parsers, filtros, agregados `SUM/SUM` o normalizadores.
 
----
+## Naming
 
-## Otros directorios
-
-| Ruta | Rol |
+| Tipo | Convencion preferida |
 | --- | --- |
-| `public/` | Assets estáticos |
-| `docs/reference/` | PDF y material de referencia (no runtime) |
-| `.agents/skills/` | Guías para agentes de desarrollo |
-| `.github/workflows/ci.yml` | lint → typecheck → test → build |
+| Utilidades/config | `kebab-case.ts` |
+| Hooks | `use-*.ts` o `use-*.tsx` |
+| Tests | co-localizados con sufijo `.test.ts` |
+| Rutas | `kebab-case` |
+| Tipos de modulo | `types.ts` dentro del modulo |
+| Constantes exportadas | `UPPER_SNAKE_CASE` |
 
----
+Excepciones historicas conscientes:
 
-## Convenciones de naming
+- `src/app/ExcelDian/` conserva PascalCase porque cambiarlo rompe URLs guardadas.
+- `src/components/` mezcla PascalCase y kebab-case; mantener consistencia dentro
+  de cada subcarpeta nueva.
+- `src/types.ts` contiene tipos de dominio importados como `@/types`; `src/types/*.d.ts`
+  contiene declaraciones ambient.
 
-El repo creció con dos estilos mezclados. Esta es la **convención preferida hacia adelante** (aplicar a archivos nuevos; no migrar masivamente los existentes):
+## Mantenimiento
 
-| Tipo de archivo | Convención | Ejemplo |
-| --- | --- | --- |
-| Componente React (`.tsx`) | **PascalCase** O **kebab-case** consistente dentro del subdirectorio | `LineCard.tsx` o `app-top-bar.tsx` |
-| Utilidad / helper / config (`.ts`) | **kebab-case** | `portal-sections.ts`, `messages.ts` |
-| Hook (`.ts` o `.tsx`) | **kebab-case** con prefijo `use-` | `use-productivity-data.ts` |
-| Test | **co-located** junto al archivo probado, sufijo `.test.ts` | `x-item-date-range.test.ts` |
-| Tipos de un módulo | `types.ts` adentro del módulo | `features/kardex/types.ts` |
-| Carpeta de páginas / rutas | **kebab-case** | `/inventario-x-item`, `/horarios-comparar` |
-| Carpeta de componentes / lib | **kebab-case** | `components/portal/`, `lib/excel-dian/` |
-| Constantes exportadas | **UPPER_SNAKE_CASE** | `AUTH_MESSAGES`, `PORTAL_APP_VERSION` |
+Actualizar este archivo cuando:
 
-**Excepciones históricas conscientes:**
-- `app/ExcelDian/` → PascalCase. Cambiar rompería URLs guardadas. Mantener hasta que haya una buena razón para migrar (con redirect 301).
-- `components/` mezcla PascalCase (`HourlyAnalysis.tsx`, `TopBar.tsx`) y kebab-case (`portal/app-top-bar.tsx`). Aceptable mientras cada subcarpeta sea internamente consistente.
-
----
-
-## Dualidad `src/types.ts` vs `src/types/`
-
-A primera vista parece accidental, pero son cosas diferentes:
-
-| Ubicación | Propósito | Cómo se usa |
-| --- | --- | --- |
-| `src/types.ts` (archivo) | Tipos de **dominio** del negocio (`Linekey`, `HourlyAnalysisData`, `OvertimeEmployee`, etc.). | `import type { ... } from "@/types"` |
-| `src/types/*.d.ts` (carpeta) | **Ambient declarations** para librerías externas sin tipos propios (ej. `animejs.d.ts`). | Las recoge TypeScript automáticamente; no se importan. |
-
-Si `types.ts` crece demasiado, partirlo en archivos por dominio dentro de `src/types/domain/` o moverlo a `src/lib/<dominio>/types.ts`. Mientras tanto, **dejar como está** evita romper 15+ imports.
-
----
-
-## Mantenimiento del repo
-
-### Archivos a revisar periódicamente para detectar huérfanos
-
-Después de refactors grandes (como el de Auth Context de jun/2026) algunos archivos pueden quedar sin uso. Verificar con grep si están sin importar antes de borrar:
-
-- Componentes en `src/components/` raíz (los más propensos a quedar abandonados al moverse lógica a `features/`).
-- Helpers en `src/lib/shared/` (mismo riesgo).
-- Páginas en `src/app/` con nombres similares a otras (ej. `rotacion` vs `rotacion-dos`).
-
-**Cómo verificar:**
-
-```bash
-# ¿Algún archivo importa este símbolo o este path?
-rg "from ['\"]@/components/NombreDelArchivo['\"]"
-```
-
-Si no aparece nada, es candidato a borrado (revisar dos veces: puede usarse vía `dynamic import` o `React.lazy`).
-
-### Archivos generados por agentes IA
-
-Cuando un agente IA propone un componente que después se descarta (como pasó con `portal-breadcrumbs.tsx` en jun/2026), borrarlo en la misma conversación. Si quedó por error, aparecerá como huérfano en la revisión periódica.
-
----
-
-## Cuándo actualizar este archivo
-
-Actualizar `docs/STRUCTURE.md` cuando:
-
-- se cree una carpeta nueva en `src/lib/`, `src/features/` o un módulo API relevante;
-- se mueva lógica entre `page.tsx`, `lib/` y `api/`;
-- se añada una migración en `db/migrations/`;
-- un handler pase a ser “punto central” de un dominio (mencionarlo en la tabla de APIs);
-- se introduzca un patrón nuevo (como `AuthProvider` global) que cambia la forma de hacer algo en el portal.
-
-No duplicar aquí tablas de permisos ni variables de entorno: enlazar al [`README.md`](../README.md).
-
-*Referencia de código: junio 2026.*
+- se cree una carpeta relevante en `src/lib/`, `src/features/` o `src/app/api/`;
+- se agregue o quite una ruta UI/API;
+- se agregue una migracion;
+- cambie un patron de auth, permisos, presencia, exportacion o build;
+- un handler pase a ser punto central de un dominio.

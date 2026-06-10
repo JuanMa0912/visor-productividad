@@ -1,92 +1,124 @@
-# Limpieza semanal de logs (cleanup-logs)
+# Timer cleanup-logs
 
-Borra automaticamente los registros antiguos de las tablas de auditoria/sesion
-para que no crezcan sin limite.
+Instala y opera la limpieza semanal de logs y sesiones del visor.
 
-## Que borra
+El runbook general de despliegue Linux esta en
+[`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
-Cada ejecucion borra de la base de datos `produxdia` (Cloud SQL):
+## Que limpia
 
-| Tabla                     | Condicion                                           |
-| ------------------------- | --------------------------------------------------- |
-| `app_user_activity_log`   | `observed_at < NOW() - INTERVAL '7 days'`           |
-| `app_user_login_logs`     | `logged_at  < NOW() - INTERVAL '7 days'`            |
-| `app_user_sessions`       | `expires_at < NOW() OR created_at < 7 dias atras`   |
+`scripts/cleanup-logs.sh` borra registros antiguos de:
 
-Luego ejecuta `VACUUM (ANALYZE)` en las tres tablas para liberar espacio.
+| Tabla | Condicion |
+| --- | --- |
+| `app_user_activity_log` | `observed_at < NOW() - INTERVAL '<RETENTION_DAYS> days'` |
+| `app_user_login_logs` | `logged_at < NOW() - INTERVAL '<RETENTION_DAYS> days'` |
+| `app_user_sessions` | `expires_at < NOW()` o `created_at` anterior a la retencion |
 
-La ventana de retencion (`RETENTION_DAYS`) es configurable por variable de
-entorno; por defecto 7 dias.
+Despues ejecuta `VACUUM (ANALYZE)` sobre esas tablas, excepto en `--dry-run`.
 
-## Cuando corre
+## Variables
 
-Un systemd timer dispara la tarea **todos los domingos a las 03:00** hora del
-sistema. Si la VM estaba apagada en ese momento, `Persistent=true` hace que
-se ejecute al siguiente arranque.
+| Variable | Default | Uso |
+| --- | --- | --- |
+| `RETENTION_DAYS` | `7` | ventana de retencion |
+| `ENV_FILE` | `/opt/visor-productividad/.env.local` | archivo con credenciales DB |
+| `LOG_FILE` | `/var/log/visor-cleanup.log` | log persistente adicional al journal |
+| `DB_SSL` | `false` | si es `true`, usa `PGSSLMODE=require` |
+
+El script requiere `DB_HOST`, `DB_NAME`, `DB_USER` y `DB_PASSWORD` en
+`ENV_FILE`. Usa `DB_PORT` si existe, si no `5432`.
 
 ## Archivos
 
-- `scripts/cleanup-logs.sh` - el script bash que ejecuta los DELETEs.
-- `deploy/systemd/visor-cleanup-logs.service` - unidad oneshot que lanza el script.
-- `deploy/systemd/visor-cleanup-logs.timer` - schedule semanal.
+| Archivo | Uso |
+| --- | --- |
+| `scripts/cleanup-logs.sh` | script ejecutable |
+| `deploy/systemd/visor-cleanup-logs.service` | unidad oneshot |
+| `deploy/systemd/visor-cleanup-logs.timer` | schedule semanal, domingos 03:00 |
 
-## Despliegue en la VM (una sola vez)
+## Instalacion
 
-> Ejecutar como un usuario con `sudo` en `app-server` (Debian 12).
+Ejecutar en la VM como un usuario con `sudo`.
 
 ```bash
-# 1) Traer los archivos del repo
 cd /opt/visor-productividad
 sudo -u visor git pull
 
-# 2) Permisos al script
 sudo chmod +x /opt/visor-productividad/scripts/cleanup-logs.sh
 
-# 3) Archivo de log persistente
 sudo touch /var/log/visor-cleanup.log
 sudo chown visor:visor /var/log/visor-cleanup.log
 
-# 4) Instalar las unidades de systemd
 sudo cp /opt/visor-productividad/deploy/systemd/visor-cleanup-logs.service /etc/systemd/system/
-sudo cp /opt/visor-productividad/deploy/systemd/visor-cleanup-logs.timer   /etc/systemd/system/
+sudo cp /opt/visor-productividad/deploy/systemd/visor-cleanup-logs.timer /etc/systemd/system/
 sudo systemctl daemon-reload
+```
 
-# 5) Probar en seco (no borra nada)
+## Probar antes de activar
+
+```bash
 sudo -u visor /opt/visor-productividad/scripts/cleanup-logs.sh --dry-run
+```
 
-# 6) Si el dry-run se ve bien, activar el timer
+Con otro archivo `.env`:
+
+```bash
+sudo -u visor ENV_FILE=/opt/visor-productividad/.env.production \
+  /opt/visor-productividad/scripts/cleanup-logs.sh --dry-run
+```
+
+Con retencion distinta:
+
+```bash
+sudo -u visor RETENTION_DAYS=14 \
+  /opt/visor-productividad/scripts/cleanup-logs.sh --dry-run
+```
+
+## Activar
+
+```bash
 sudo systemctl enable --now visor-cleanup-logs.timer
-
-# 7) Verificar que esta agendado
 systemctl list-timers visor-cleanup-logs.timer
 ```
 
 ## Operacion
 
 ```bash
-# Ver cuando corrio por ultima vez y cuando corre la proxima
+# Proxima y ultima ejecucion
 systemctl list-timers visor-cleanup-logs.timer
 
-# Ver el log historico
+# Log persistente
 sudo tail -n 50 /var/log/visor-cleanup.log
 
-# Ver el journal de la ultima ejecucion
+# Journal de la unidad
 journalctl -u visor-cleanup-logs.service -n 100 --no-pager
 
-# Ejecutar manualmente ahora (sin esperar al domingo)
+# Ejecutar ahora
 sudo systemctl start visor-cleanup-logs.service
 
-# Pausar temporalmente la limpieza
+# Pausar
 sudo systemctl disable --now visor-cleanup-logs.timer
 ```
 
-## Cambiar la retencion
+## Cambiar retencion permanente
 
-Editar la unidad service para pasar la variable:
+Editar la unidad o crear override:
+
+```bash
+sudo systemctl edit visor-cleanup-logs.service
+```
+
+Contenido:
 
 ```ini
 [Service]
 Environment=RETENTION_DAYS=14
 ```
 
-Y luego `sudo systemctl daemon-reload`.
+Aplicar:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart visor-cleanup-logs.timer
+```
