@@ -1141,12 +1141,12 @@ const queryRotationRows = async ({
       const sqlStartTs = performance.now();
       const result = await client.query(
       `
-      -- MATERIALIZED es CRITICO aqui: 'scoped' se referencia 3 veces
-      -- (ranked, item_day_margin, item_day_inventory). PostgreSQL 12+ inlinea
-      -- por defecto, lo que provoca 3 escaneos completos de rotacion_base
-      -- sobre el rango de fechas. Con MATERIALIZED se calcula una sola vez y
-      -- se reusa, evitando 2 escaneos redundantes (potencial ~30s -> ~10s).
-      WITH scoped AS MATERIALIZED (
+      -- IMPORTANTE: NO usar 'WITH scoped AS MATERIALIZED'. Se intento para
+      -- evitar los 3 escaneos de rotacion_base (scoped es referenciada por
+      -- ranked, item_day_margin, item_day_inventory), pero el resultado de
+      -- scoped es demasiado grande y termina spilleando a disco; en prod
+      -- empeoro de ~30s a ~150s. Dejamos que PostgreSQL inlinee la CTE.
+      WITH scoped AS (
         SELECT
           ${fields.empresaExpr} AS empresa,
           ${fields.sedeIdExpr} AS sede_id,
