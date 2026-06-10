@@ -83,6 +83,53 @@ import {
 import { SelectField, MultiSelectField } from "./select-fields";
 
 /**
+ * Lee la respuesta de un endpoint y la devuelve tipada.
+ *
+ * Maneja de forma elegante el caso en que el endpoint NO devuelve JSON valido
+ * (ej: cuando el GCP Load Balancer mata la request con un texto plano
+ * "stream timeout" porque la query duro mas de 30s, o cuando nginx devuelve
+ * una pagina HTML de error 502/504). En esos casos lanzamos un Error con
+ * mensaje accionable en lugar del crash de `SyntaxError: Unexpected token ...`.
+ */
+async function readApiPayload<T>(
+  response: Response,
+  fallbackMessage: string,
+): Promise<T> {
+  const rawText = await response.text();
+  const contentType = response.headers.get("content-type") ?? "";
+
+  let parsed: T | null = null;
+  if (contentType.includes("application/json") && rawText.length > 0) {
+    try {
+      parsed = JSON.parse(rawText) as T;
+    } catch {
+      // Si dice ser JSON pero esta corrupto, lo tratamos como error de red.
+    }
+  }
+
+  if (response.ok && parsed) {
+    return parsed;
+  }
+
+  const apiError = (parsed as { error?: string } | null)?.error;
+  const lowerText = rawText.toLowerCase();
+  const isTimeout =
+    /timeout|timed out|gateway/.test(lowerText) ||
+    response.status === 504 ||
+    response.status === 408;
+  const isUnavailable = response.status === 502 || response.status === 503;
+
+  throw new Error(
+    apiError ??
+      (isTimeout
+        ? "La consulta se demoro demasiado. Acota los filtros (menos sedes, items o un rango de fechas mas corto) y vuelve a intentar."
+        : isUnavailable
+          ? "El servidor no esta disponible en este momento. Intenta de nuevo en unos segundos."
+          : `${fallbackMessage} (codigo ${response.status}).`),
+  );
+}
+
+/**
  * Formatea milisegundos a un string corto y legible para el log de consola del
  * cronometro de carga de la matriz. No se muestra en la UI.
  */
@@ -391,12 +438,10 @@ export default function InventarioXItemPage() {
           return;
         }
 
-        const payload = (await response.json()) as InventarioApiResponse;
-        if (!response.ok) {
-          throw new Error(
-            payload.error ?? "No fue posible consultar los filtros de inventario.",
-          );
-        }
+        const payload = await readApiPayload<InventarioApiResponse>(
+          response,
+          "No fue posible consultar los filtros de inventario.",
+        );
 
         setFilters(
           payload.filters ?? {
@@ -488,12 +533,10 @@ export default function InventarioXItemPage() {
           return;
         }
 
-        const payload = (await response.json()) as InventarioApiResponse;
-        if (!response.ok) {
-          throw new Error(
-            payload.error ?? "No fue posible consultar el inventario por item.",
-          );
-        }
+        const payload = await readApiPayload<InventarioApiResponse>(
+          response,
+          "No fue posible consultar el inventario por item.",
+        );
 
         setRows(payload.rows ?? []);
         setAvailableDate(payload.meta?.availableDate ?? "");
@@ -1061,12 +1104,10 @@ export default function InventarioXItemPage() {
           return;
         }
 
-        const payload = (await response.json()) as InventarioApiResponse;
-        if (!response.ok) {
-          throw new Error(
-            payload.error ?? "No fue posible construir la matriz de existencias.",
-          );
-        }
+        const payload = await readApiPayload<InventarioApiResponse>(
+          response,
+          "No fue posible construir la matriz de existencias.",
+        );
 
         setMatrixRows(payload.matrixRows ?? []);
         setAvailableDate(payload.meta?.availableDate ?? "");

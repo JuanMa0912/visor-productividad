@@ -94,7 +94,9 @@ export default function SeccionesPage() {
   const visibleSections =
     isAdmin || allowedDashboards === null
       ? PORTAL_SECTIONS
-      : PORTAL_SECTIONS.filter((section) => allowedDashboards.includes(section.id));
+      : PORTAL_SECTIONS.filter((section) =>
+          allowedDashboards.includes(section.id),
+        );
   const canAccessCronograma = hasSpecialRole("cronograma");
   const sectionCount = visibleSections.length;
 
@@ -122,7 +124,10 @@ export default function SeccionesPage() {
             const styles = SECTION_STYLES[section.id];
             const Icon = SECTION_ICONS[section.id];
             const sectionNumber = String(index + 1).padStart(2, "0");
-            const modulesCount = String(section.modules.length).padStart(2, "0");
+            const modulesCount = String(section.modules.length).padStart(
+              2,
+              "0",
+            );
             return (
               <button
                 key={section.id}
@@ -158,7 +163,9 @@ export default function SeccionesPage() {
                 <p
                   className={`relative z-1 mt-3 inline-flex w-fit max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-[0.06em] ${styles.badgeClasses}`}
                 >
-                  <span className="text-[0.65rem] leading-none opacity-90">•</span>
+                  <span className="text-[0.65rem] leading-none opacity-90">
+                    •
+                  </span>
                   {SECTION_BADGE_TAG[section.id]}
                 </p>
                 <span className="relative z-1 mt-3 block text-xl font-black leading-snug tracking-tight text-slate-900 sm:text-2xl">

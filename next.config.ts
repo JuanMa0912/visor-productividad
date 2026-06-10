@@ -5,9 +5,6 @@ const enableReactCompiler = process.env.NEXT_ENABLE_REACT_COMPILER === "true";
 const standaloneBuild = process.env.NEXT_BUILD_STANDALONE === "1";
 const skipTypecheckInBuild = process.env.NEXT_BUILD_SKIP_TYPECHECK === "1";
 
-const enableUpgradeInsecure =
-  process.env.UPGRADE_INSECURE_REQUESTS === "true";
-const allowUnsafeEval = process.env.CSP_UNSAFE_EVAL === "true";
 // Cross-Origin-Opener-Policy requiere HTTPS (o localhost). Si el despliegue
 // corre por HTTP plano, `same-origin` se ignora con un warning en consola.
 // Set `COOP_DISABLED=true` para servir el valor permisivo (`unsafe-none`) y
@@ -21,26 +18,11 @@ const allowedDevOrigins = (
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev || allowUnsafeEval ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self'",
-  isDev ? "connect-src 'self' ws: wss: http: https:" : "connect-src 'self'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "object-src 'none'",
-  // Solo aplicar upgrade-insecure-requests cuando hay HTTPS real
-  ...(enableUpgradeInsecure ? ["upgrade-insecure-requests"] : []),
-].join("; ");
-
+// La `Content-Security-Policy` se maneja en `src/middleware.ts` porque
+// necesita generar un nonce unico por request. Aqui solo dejamos los
+// headers que SI son estaticos y se pueden inyectar a nivel de
+// next.config.
 const securityHeaders = [
-  {
-    key: "Content-Security-Policy",
-    value: contentSecurityPolicy,
-  },
   {
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains; preload",
