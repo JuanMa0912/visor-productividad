@@ -4,6 +4,7 @@ import {
   createSessionReplacingOthers,
   getAuditNetworkId,
   getClientIp,
+  getDummyPasswordHash,
   verifyPassword,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
@@ -15,6 +16,11 @@ import {
 const FAILED_LOGIN_WINDOW_MS = 15 * 60_000;
 const FAILED_LOGIN_MAX_PER_IP = 10;
 const FAILED_LOGIN_MAX_PER_USER = 5;
+// Delay artificial en respuestas de login fallido. Imperceptible para humanos
+// (<300ms), pero limita el ritmo maximo de un bot a ~3-4 intentos/seg/IP antes
+// de toparse con el rate limit duro de FAILED_LOGIN_MAX_PER_IP.
+const FAILED_LOGIN_DELAY_MS = 250;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type FailedLoginEntry = {
   count: number;
@@ -132,7 +138,13 @@ export async function POST(req: Request) {
       );
 
       if (!result.rows || result.rows.length === 0) {
+        // Anti-enumeration: hacemos `bcrypt.compare` contra un hash dummy para
+        // que el tiempo total de respuesta sea equivalente al de "password
+        // incorrecta" y un atacante no pueda enumerar usernames midiendo
+        // latencias.
+        await verifyPassword(password, await getDummyPasswordHash());
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
+        await sleep(FAILED_LOGIN_DELAY_MS);
         return NextResponse.json(
           { error: "Credenciales inválidas." },
           { status: 401 },
@@ -159,6 +171,7 @@ export async function POST(req: Request) {
 
       if (!user.is_active) {
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
+        await sleep(FAILED_LOGIN_DELAY_MS);
         return NextResponse.json(
           { error: "Cuenta desactivada." },
           { status: 403 },
@@ -168,6 +181,7 @@ export async function POST(req: Request) {
       const ok = await verifyPassword(password, user.password_hash);
       if (!ok) {
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
+        await sleep(FAILED_LOGIN_DELAY_MS);
         return NextResponse.json(
           { error: "Credenciales inválidas." },
           { status: 401 },

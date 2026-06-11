@@ -4,6 +4,7 @@ import {
   applySessionCookies,
   hashPassword,
   requireAdminSession,
+  validatePasswordLength,
   verifyCsrf,
 } from "@/lib/auth";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
@@ -588,9 +589,10 @@ export async function PATCH(req: Request, { params }: Params) {
       addUpdate("is_active", body.is_active);
     }
     if (typeof body.password === "string" && body.password.length > 0) {
-      if (body.password.length < 8) {
+      const passwordLengthError = validatePasswordLength(body.password);
+      if (passwordLengthError) {
         return NextResponse.json(
-          { error: "La contrasena debe tener minimo 8 caracteres." },
+          { error: passwordLengthError },
           { status: 400 },
         );
       }

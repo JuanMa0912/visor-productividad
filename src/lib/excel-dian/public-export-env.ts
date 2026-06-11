@@ -13,3 +13,18 @@ export const isExcelDianExportPublic = (): boolean => {
   const v = raw?.toLowerCase() ?? "";
   return v === "true" || v === "1" || v === "yes";
 };
+
+// Si el flag esta encendido en produccion, gritamos en logs al startup. El
+// endpoint /api/excel-dian/export expone consultas a 3 bases externas (DIAN
+// mtodo/mio/bgt) sin auth: el escenario casi siempre es un mistake de config.
+// Se ejecuta una sola vez por proceso porque el modulo se carga al levantar
+// el servidor (lo importan el proxy y el route handler).
+if (
+  typeof process !== "undefined" &&
+  process.env.NODE_ENV === "production" &&
+  isExcelDianExportPublic()
+) {
+  console.warn(
+    "[SECURITY] EXCEL_DIAN_EXPORT_PUBLIC=true en produccion. /api/excel-dian/export y /ExcelDian quedan PUBLICOS (sin autenticacion) y exponen las bases DIAN configuradas (mtodo/mio/bgt). Cambia a false si no es intencional.",
+  );
+}

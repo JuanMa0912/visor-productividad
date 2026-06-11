@@ -37,11 +37,56 @@ const shouldUseSecureCookies = () => {
   return process.env.NODE_ENV === "production";
 };
 
-export const hashPassword = async (password: string) =>
-  bcrypt.hash(password, 12);
+// bcrypt trunca silenciosamente todo lo que excede 72 bytes UTF-8: dos passwords
+// distintas con los mismos primeros 72 bytes producirian el mismo hash. Validamos
+// upfront para evitar esa colision invisible.
+export const PASSWORD_MIN_CHARS = 8;
+export const PASSWORD_MAX_BYTES = 72;
+
+/**
+ * Devuelve `null` si la password cumple los limites; en caso contrario, un
+ * mensaje listo para responder al cliente. Centraliza la regla para login,
+ * cambio de password y creacion/edicion de usuarios desde admin.
+ */
+export const validatePasswordLength = (password: string): string | null => {
+  if (password.length < PASSWORD_MIN_CHARS) {
+    return `La contrasena debe tener minimo ${PASSWORD_MIN_CHARS} caracteres.`;
+  }
+  if (Buffer.byteLength(password, "utf8") > PASSWORD_MAX_BYTES) {
+    return `La contrasena no puede exceder ${PASSWORD_MAX_BYTES} bytes (acentos y emojis cuentan como 2-4).`;
+  }
+  return null;
+};
+
+export const hashPassword = async (password: string) => {
+  const validationError = validatePasswordLength(password);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+  return bcrypt.hash(password, 12);
+};
 
 export const verifyPassword = async (password: string, hash: string) =>
   bcrypt.compare(password, hash);
+
+// Hash precalculado (lazy + memoizado) que usamos como fallback para hacer
+// `bcrypt.compare` cuando el usuario no existe, asi la latencia de respuesta
+// es la misma para "usuario inexistente" que para "password incorrecta" y un
+// atacante no puede inferir que usernames son validos midiendo timing.
+let dummyPasswordHashCache: Promise<string> | null = null;
+export const getDummyPasswordHash = () => {
+  if (!dummyPasswordHashCache) {
+    dummyPasswordHashCache = bcrypt.hash(
+      "anti-timing-attack-placeholder-not-a-real-password",
+      12,
+    );
+  }
+  return dummyPasswordHashCache;
+};
+
+// Prime al cargar el modulo: arranca el hash en background para que el primer
+// login fallido no espere los ~250ms iniciales.
+void getDummyPasswordHash();
 
 export const getClientIp = (req: Request) => {
   const trustProxy = process.env.TRUST_PROXY === "true";

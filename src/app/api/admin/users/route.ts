@@ -4,6 +4,7 @@ import {
   applySessionCookies,
   hashPassword,
   requireAdminSession,
+  validatePasswordLength,
   verifyCsrf,
 } from "@/lib/auth";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
@@ -416,9 +417,16 @@ export async function POST(req: Request) {
   );
   const specialRolesResult = resolveValidSpecialRoles(body.specialRoles);
 
-  if (!username || password.length < 8) {
+  if (!username) {
     return NextResponse.json(
-      { error: "Usuario y contraseña (mín 8) son obligatorios." },
+      { error: "El usuario es obligatorio." },
+      { status: 400 },
+    );
+  }
+  const passwordLengthError = validatePasswordLength(password);
+  if (passwordLengthError) {
+    return NextResponse.json(
+      { error: passwordLengthError },
       { status: 400 },
     );
   }

@@ -8,6 +8,7 @@ import {
   hashPassword,
   requireAuthSession,
   revokeAllSessionsForUser,
+  validatePasswordLength,
   verifyPassword,
   verifyCsrf,
 } from "@/lib/auth";
@@ -43,12 +44,10 @@ export async function POST(req: Request) {
     );
   }
 
-  if (newPassword.length < 8) {
+  const passwordLengthError = validatePasswordLength(newPassword);
+  if (passwordLengthError) {
     return withSession(
-      NextResponse.json(
-        { error: "La nueva contraseña debe tener mínimo 8 caracteres." },
-        { status: 400 },
-      ),
+      NextResponse.json({ error: passwordLengthError }, { status: 400 }),
     );
   }
 
