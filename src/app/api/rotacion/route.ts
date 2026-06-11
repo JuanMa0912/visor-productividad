@@ -1109,7 +1109,37 @@ const mapWithConcurrency = async <T, R>(
   return results;
 };
 
-const queryRotationRows = async ({
+type ExplainPlanResult = {
+  empresa: string | null;
+  sedeId: string | null;
+  rows: number;
+  durationMs: number;
+  plan: string;
+};
+
+async function queryRotationRows(args: {
+  startDate: string;
+  endDate: string;
+  maxSalesValue: number | null;
+  empresa: string | null;
+  sedeId: string | null;
+  lineasN1: string[] | null;
+  categoriaKeys: string[] | null;
+  precomputedFields?: RotacionBaseSqlFields;
+  explain: true;
+}): Promise<ExplainPlanResult>;
+async function queryRotationRows(args: {
+  startDate: string;
+  endDate: string;
+  maxSalesValue: number | null;
+  empresa: string | null;
+  sedeId: string | null;
+  lineasN1: string[] | null;
+  categoriaKeys: string[] | null;
+  precomputedFields?: RotacionBaseSqlFields;
+  explain?: false;
+}): Promise<RotationRow[]>;
+async function queryRotationRows({
   startDate,
   endDate,
   maxSalesValue,
@@ -1118,6 +1148,7 @@ const queryRotationRows = async ({
   lineasN1,
   categoriaKeys,
   precomputedFields,
+  explain = false,
 }: {
   startDate: string;
   endDate: string;
@@ -1132,15 +1163,21 @@ const queryRotationRows = async ({
    * sede (cuando hay N sedes, esto ahorra N - 1 round-trips).
    */
   precomputedFields?: RotacionBaseSqlFields;
-}): Promise<RotationRow[]> => {
-  const fetchRows = async (): Promise<RotationRow[]> =>
+  /**
+   * Si es `true`, envuelve el query en `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)`
+   * y devuelve el plan como string en vez de las filas. Util para diagnostico
+   * desde `?explain=1` (admin only). NO modifica el query original ni lo afecta
+   * de ninguna forma cuando `explain=false`.
+   */
+  explain?: boolean;
+}): Promise<RotationRow[] | ExplainPlanResult> {
+  const fetchRows = async (): Promise<RotationRow[] | ExplainPlanResult> =>
     withPoolClient(async (client) => {
       const fields =
         precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
       const dateColumn = fields.dateColumn;
       const sqlStartTs = performance.now();
-      const result = await client.query(
-      `
+      const baseSql = `
       -- IMPORTANTE: NO usar 'WITH scoped AS MATERIALIZED'. Se intento para
       -- evitar los 3 escaneos de rotacion_base (scoped es referenciada por
       -- ranked, item_day_margin, item_day_inventory), pero el resultado de
@@ -1502,8 +1539,8 @@ const queryRotationRows = async ({
         total_sales DESC,
         inventory_value DESC,
         item ASC
-      `,
-      [
+      `;
+      const params = [
         isoToCompactDate(startDate),
         isoToCompactDate(endDate),
         endDate,
@@ -1514,19 +1551,41 @@ const queryRotationRows = async ({
         FUTURE_STOCKOUT_DAYS,
         LOW_ROTATION_DAYS_THRESHOLD,
         categoriaKeys,
-      ],
-    );
+      ];
 
-    // Log de timing por sede para diagnostico. Permite ver en `npm run dev` si
-    // la lentitud esta concentrada en una sede grande o repartida.
-    const sqlElapsedMs = performance.now() - sqlStartTs;
-    console.info(
-      `[rotacion API] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
-        result.rows?.length ?? 0
-      } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
-    );
+      if (explain) {
+        const explainResult = await client.query(
+          `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${baseSql}`,
+          params,
+        );
+        const planLines = (explainResult.rows ?? [])
+          .map((row) => (row as { "QUERY PLAN": string })["QUERY PLAN"])
+          .filter((line): line is string => typeof line === "string");
+        const sqlElapsedMs = performance.now() - sqlStartTs;
+        console.info(
+          `[rotacion API] EXPLAIN empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+        );
+        return {
+          empresa,
+          sedeId,
+          rows: 0,
+          durationMs: sqlElapsedMs,
+          plan: planLines.join("\n"),
+        } satisfies ExplainPlanResult;
+      }
 
-    return ((result.rows ?? []) as RotationDbRow[])
+      const result = await client.query(baseSql, params);
+
+      // Log de timing por sede para diagnostico. Permite ver en `npm run dev` si
+      // la lentitud esta concentrada en una sede grande o repartida.
+      const sqlElapsedMs = performance.now() - sqlStartTs;
+      console.info(
+        `[rotacion API] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
+          result.rows?.length ?? 0
+        } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+      );
+
+      return ((result.rows ?? []) as RotationDbRow[])
       .map((row) => ({
         empresa: row.empresa,
         sedeId: row.sede_id,
@@ -1571,7 +1630,7 @@ const queryRotationRows = async ({
     if (!isPgConnectionFailure(first)) throw first;
     return await fetchRows();
   }
-};
+}
 
 export async function GET(request: Request) {
   const session = await requireAuthSession();
@@ -1688,6 +1747,22 @@ export async function GET(request: Request) {
       .map((value) => value.trim())
       .filter(Boolean);
     const isCatalogOnly = url.searchParams.get("catalogOnly") === "1";
+    /**
+     * Modo diagnostico: cuando un admin pasa `?explain=1`, en vez de devolver
+     * filas se devuelve el plan de ejecucion (EXPLAIN ANALYZE) del query
+     * principal de rotacion para la PRIMERA sede seleccionada. NO modifica el
+     * query original ni afecta a otros usuarios; solo es accesible para admins
+     * y se ejecuta una sola vez por request.
+     */
+    const isExplain = url.searchParams.get("explain") === "1";
+    if (isExplain && session.user.role !== "admin") {
+      return withSession(
+        NextResponse.json(
+          { error: "El modo explain solo esta disponible para admins." },
+          { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
     const maxSalesValue = clampSalesThreshold(
       parsePositiveNumber(url.searchParams.get("maxSalesValue")),
     );
@@ -1942,6 +2017,50 @@ export async function GET(request: Request) {
     const precomputedFields = await withPoolClient((client) =>
       resolveRotacionBaseSqlFields(client),
     );
+
+    if (isExplain) {
+      // Solo corremos EXPLAIN para la PRIMERA sede para no recargar la BD.
+      // Esto es suficiente para diagnosticar el plan: las sedes adicionales
+      // ejecutan el mismo query con distintos parametros.
+      const targetSede = selectedVisibleSedes[0];
+      const explainStartTs = performance.now();
+      const explainResult = await queryRotationRows({
+        startDate: boundedRange.start,
+        endDate: boundedRange.end,
+        maxSalesValue,
+        empresa: targetSede.empresa,
+        sedeId: targetSede.sedeId,
+        lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
+        categoriaKeys: categoriaKeysForQuery,
+        precomputedFields,
+        explain: true,
+      });
+      const totalExplainMs = performance.now() - explainStartTs;
+      return withSession(
+        NextResponse.json(
+          {
+            explain: true,
+            sede: {
+              empresa: explainResult.empresa,
+              sedeId: explainResult.sedeId,
+              sedeName: targetSede.sedeName,
+            },
+            range: boundedRange,
+            durationMs: Math.round(explainResult.durationMs),
+            totalDurationMs: Math.round(totalExplainMs),
+            plan: explainResult.plan,
+            note: "Plan generado con EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT). Solo primera sede seleccionada.",
+          },
+          {
+            headers: {
+              "Cache-Control": CACHE_CONTROL,
+              "Content-Type": "application/json; charset=utf-8",
+              "X-Data-Source": "explain",
+            },
+          },
+        ),
+      );
+    }
 
     const totalStartTs = performance.now();
     console.info(
