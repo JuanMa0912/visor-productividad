@@ -1553,75 +1553,110 @@ async function queryRotationRows({
         categoriaKeys,
       ];
 
-      if (explain) {
-        const explainResult = await client.query(
-          `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${baseSql}`,
-          params,
+      // El query principal de rotacion tiene 9 CTEs encadenadas, varios
+      // window functions y 3 escaneos del CTE `scoped` (~365k filas para una
+      // sede grande). Con el default de `work_mem=64MB` por rol, el plan
+      // observado spillea ~210 MB a disco temporal (WindowAgg sort 80MB,
+      // GroupAggregate 88MB, HashAggregate dma 28MB, HashAggregate iir 16MB)
+      // y pierde ~10s solo en I/O temporal. Subir `work_mem` a 256MB SOLO
+      // para esta transaccion (SET LOCAL) elimina los spills. Como es LOCAL,
+      // al hacer COMMIT/ROLLBACK la sesion vuelve a 64MB y no afecta otras
+      // queries. Necesitamos transaccion explicita porque sin BEGIN el
+      // `SET LOCAL` seria un no-op (cada client.query es su propia transaccion
+      // implicita). Si BEGIN falla seguimos con el default sin romper.
+      let txnStarted = false;
+      try {
+        await client.query("BEGIN");
+        txnStarted = true;
+        await client.query("SET LOCAL work_mem = '256MB'");
+      } catch (err) {
+        console.warn(
+          `[rotacion API] no se pudo elevar work_mem (sigue con default): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
         );
-        const planLines = (explainResult.rows ?? [])
-          .map((row) => (row as { "QUERY PLAN": string })["QUERY PLAN"])
-          .filter((line): line is string => typeof line === "string");
-        const sqlElapsedMs = performance.now() - sqlStartTs;
-        console.info(
-          `[rotacion API] EXPLAIN empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
-        );
-        return {
-          empresa,
-          sedeId,
-          rows: 0,
-          durationMs: sqlElapsedMs,
-          plan: planLines.join("\n"),
-        } satisfies ExplainPlanResult;
       }
 
-      const result = await client.query(baseSql, params);
+      try {
+        if (explain) {
+          const explainResult = await client.query(
+            `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${baseSql}`,
+            params,
+          );
+          const planLines = (explainResult.rows ?? [])
+            .map((row) => (row as { "QUERY PLAN": string })["QUERY PLAN"])
+            .filter((line): line is string => typeof line === "string");
+          if (txnStarted) await client.query("COMMIT");
+          const sqlElapsedMs = performance.now() - sqlStartTs;
+          console.info(
+            `[rotacion API] EXPLAIN empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+          );
+          return {
+            empresa,
+            sedeId,
+            rows: 0,
+            durationMs: sqlElapsedMs,
+            plan: planLines.join("\n"),
+          } satisfies ExplainPlanResult;
+        }
 
-      // Log de timing por sede para diagnostico. Permite ver en `npm run dev` si
-      // la lentitud esta concentrada en una sede grande o repartida.
-      const sqlElapsedMs = performance.now() - sqlStartTs;
-      console.info(
-        `[rotacion API] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
-          result.rows?.length ?? 0
-        } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
-      );
+        const result = await client.query(baseSql, params);
+        if (txnStarted) await client.query("COMMIT");
 
-      return ((result.rows ?? []) as RotationDbRow[])
-      .map((row) => ({
-        empresa: row.empresa,
-        sedeId: row.sede_id,
-        sedeName: row.sede_name,
-        linea: row.linea,
-        lineaN1Codigo: row.linea_n1_codigo,
-        item: row.item,
-        descripcion: row.descripcion,
-        unidad: row.unidad,
-        bodega: toOptionalTrimmedString(row.bodega),
-        nombreBodega: toOptionalTrimmedString(row.nombre_bodega),
-        categoria: toOptionalTrimmedString(row.categoria),
-        nombreCategoria: toOptionalTrimmedString(row.nombre_categoria),
-        linea01: toOptionalTrimmedString(row.linea01),
-        nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
-        totalSales: toNumber(row.total_sales),
-        totalCost: toNumber(row.total_cost),
-        totalMargin: toNumber(row.total_margin),
-        marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
-        totalUnits: toNumber(row.total_units),
-        openingInventoryUnits: toNumber(row.opening_inventory_units),
-        minInventoryUnits: toNumber(row.min_inventory_units),
-        inventoryUnits: toNumber(row.inventory_units),
-        inventoryValue: toNumber(row.inventory_value),
-        rotation: toNumber(row.rotation),
-        trackedDays: toNumber(row.tracked_days),
-        salesEffectiveDays: toNumber(row.sales_effective_days),
-        lastMovementDate: row.last_movement_date,
-        lastPurchaseDate: row.last_purchase_date,
-        effectiveDays:
-          row.effective_days === null || row.effective_days === undefined
-            ? null
-            : toNumber(row.effective_days),
-        status: row.status,
-      }))
-      .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+        const sqlElapsedMs = performance.now() - sqlStartTs;
+        console.info(
+          `[rotacion API] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
+            result.rows?.length ?? 0
+          } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+        );
+
+        return ((result.rows ?? []) as RotationDbRow[])
+          .map((row) => ({
+            empresa: row.empresa,
+            sedeId: row.sede_id,
+            sedeName: row.sede_name,
+            linea: row.linea,
+            lineaN1Codigo: row.linea_n1_codigo,
+            item: row.item,
+            descripcion: row.descripcion,
+            unidad: row.unidad,
+            bodega: toOptionalTrimmedString(row.bodega),
+            nombreBodega: toOptionalTrimmedString(row.nombre_bodega),
+            categoria: toOptionalTrimmedString(row.categoria),
+            nombreCategoria: toOptionalTrimmedString(row.nombre_categoria),
+            linea01: toOptionalTrimmedString(row.linea01),
+            nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
+            totalSales: toNumber(row.total_sales),
+            totalCost: toNumber(row.total_cost),
+            totalMargin: toNumber(row.total_margin),
+            marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
+            totalUnits: toNumber(row.total_units),
+            openingInventoryUnits: toNumber(row.opening_inventory_units),
+            minInventoryUnits: toNumber(row.min_inventory_units),
+            inventoryUnits: toNumber(row.inventory_units),
+            inventoryValue: toNumber(row.inventory_value),
+            rotation: toNumber(row.rotation),
+            trackedDays: toNumber(row.tracked_days),
+            salesEffectiveDays: toNumber(row.sales_effective_days),
+            lastMovementDate: row.last_movement_date,
+            lastPurchaseDate: row.last_purchase_date,
+            effectiveDays:
+              row.effective_days === null || row.effective_days === undefined
+                ? null
+                : toNumber(row.effective_days),
+            status: row.status,
+          }))
+          .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+      } catch (queryErr) {
+        if (txnStarted) {
+          try {
+            await client.query("ROLLBACK");
+          } catch {
+            /* ignore */
+          }
+        }
+        throw queryErr;
+      }
     });
 
   try {
