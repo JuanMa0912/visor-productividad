@@ -23,6 +23,11 @@ BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM pg_matviews WHERE matviewname = 'margenes_linea_co_dia_clean'
     ) THEN
+      -- nombre_linea1 se trata como agregado (MAX) en vez de ser parte del
+      -- GROUP BY: en la tabla cruda el mismo id_linea1 a veces tiene varias
+      -- variantes de label (case mixto, acentos, espacios), y queremos UNA
+      -- sola fila por (fecha, empresa, centro, linea) para poder armar el
+      -- indice UNIQUE que REFRESH CONCURRENTLY requiere.
       EXECUTE $sql$
         CREATE MATERIALIZED VIEW margenes_linea_co_dia_clean AS
         SELECT
@@ -34,7 +39,7 @@ BEGIN
           COALESCE(TRIM(empresa), '') AS empresa,
           LPAD(TRIM(COALESCE(centro_operacion::text, '')), 3, '0') AS centro_operacion,
           COALESCE(TRIM(id_linea1::text), '') AS id_linea1,
-          NULLIF(TRIM(COALESCE(nombre_linea1, '')), '') AS nombre_linea1,
+          MAX(NULLIF(TRIM(COALESCE(nombre_linea1, '')), '')) AS nombre_linea1,
           COALESCE(SUM(venta_sin_iva), 0)::numeric AS venta_sin_iva,
           COALESCE(SUM(iva), 0)::numeric AS iva,
           COALESCE(SUM(venta_con_iva), 0)::numeric AS venta_con_iva,
@@ -43,7 +48,7 @@ BEGIN
         FROM margenes_linea_co_dia
         WHERE fecha_dcto IS NOT NULL
           AND centro_operacion IS NOT NULL
-        GROUP BY 1, 2, 3, 4, 5
+        GROUP BY 1, 2, 3, 4
         WITH DATA
       $sql$;
     END IF;
