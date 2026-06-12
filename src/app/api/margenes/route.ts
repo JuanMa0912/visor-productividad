@@ -138,41 +138,160 @@ const resolveSedeName = (centroOperacion: string, empresa: string) => {
   return `${empresaLabel} ${cleanCenter}`;
 };
 
-const queryMargins = async (allowedLineIds: string[] = []): Promise<MarginRow[]> => {
+// Limite duro de rango para evitar full table scans accidentales. Si alguien
+// pide un rango mas amplio que esto, se acota. La UI por default ya pide los
+// ultimos 90 dias.
+const MAX_DATE_RANGE_DAYS = 730; // ~2 anios
+const DEFAULT_DATE_RANGE_DAYS = 90;
+
+type DateRangeFilter = { from: string; to: string };
+
+/**
+ * Resuelve el rango de fechas a aplicar en la query. Si llega `from`/`to`
+ * validos los usa; si no, calcula los ultimos `DEFAULT_DATE_RANGE_DAYS` dias.
+ * Acepta solo formato `YYYY-MM-DD`. Cualquier otro string se ignora.
+ */
+const resolveDateRange = (
+  fromParam: string | null,
+  toParam: string | null,
+): DateRangeFilter => {
+  const isValid = (value: string | null): value is string =>
+    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  const today = new Date();
+  const todayKey = today.toISOString().slice(0, 10);
+
+  const explicitFrom = isValid(fromParam) ? fromParam : null;
+  const explicitTo = isValid(toParam) ? toParam : null;
+
+  if (explicitFrom && explicitTo) {
+    // Ordena de menor a mayor por si vienen invertidos.
+    const [from, to] = explicitFrom <= explicitTo
+      ? [explicitFrom, explicitTo]
+      : [explicitTo, explicitFrom];
+    // Trunca rangos demasiado amplios.
+    const fromDate = new Date(`${from}T00:00:00Z`);
+    const toDate = new Date(`${to}T00:00:00Z`);
+    const spanDays = Math.round(
+      (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (spanDays > MAX_DATE_RANGE_DAYS) {
+      const cappedFromDate = new Date(toDate);
+      cappedFromDate.setUTCDate(cappedFromDate.getUTCDate() - MAX_DATE_RANGE_DAYS);
+      return { from: cappedFromDate.toISOString().slice(0, 10), to };
+    }
+    return { from, to };
+  }
+
+  const defaultFromDate = new Date(today);
+  defaultFromDate.setUTCDate(defaultFromDate.getUTCDate() - DEFAULT_DATE_RANGE_DAYS);
+  return { from: defaultFromDate.toISOString().slice(0, 10), to: todayKey };
+};
+
+// Cache de si la vista materializada existe (la primera llamada hace una
+// consulta a pg_matviews; las siguientes evitan el round-trip). Se invalida
+// 5 min para que detecte si la migracion se aplico despues del primer arranque.
+type MatViewProbe = { exists: boolean; checkedAt: number };
+let matViewCache: MatViewProbe | null = null;
+const MATVIEW_CACHE_TTL_MS = 5 * 60_000;
+
+const ensureCleanMatViewProbe = async (
+  client: import("pg").PoolClient,
+): Promise<boolean> => {
+  const now = Date.now();
+  if (matViewCache && now - matViewCache.checkedAt < MATVIEW_CACHE_TTL_MS) {
+    return matViewCache.exists;
+  }
+  const result = await client.query(
+    `SELECT 1 FROM pg_matviews WHERE matviewname = 'margenes_linea_co_dia_clean' LIMIT 1`,
+  );
+  const exists = (result.rowCount ?? 0) > 0;
+  matViewCache = { exists, checkedAt: now };
+  return exists;
+};
+
+type QueryMarginsResult = {
+  rows: MarginRow[];
+  source: "matview" | "raw";
+};
+
+const queryMargins = async (
+  range: DateRangeFilter,
+  allowedLineIds: string[] = [],
+): Promise<QueryMarginsResult> => {
   const pool = await getDbPool();
   const client = await pool.connect();
   const allowedSet = new Set(allowedLineIds.map(normalizeLineId));
 
   try {
-    const result = await client.query(
-      `
-      SELECT
-        TO_CHAR(
-          CASE
-            WHEN fecha_dcto::text ~ '^[0-9]{8}$' THEN TO_DATE(fecha_dcto::text, 'YYYYMMDD')
-            ELSE fecha_dcto::date
-          END,
-          'YYYY-MM-DD'
-        ) AS fecha,
-        COALESCE(TRIM(empresa), '') AS empresa,
-        LPAD(TRIM(COALESCE(centro_operacion::text, '')), 3, '0') AS centro_operacion,
-        COALESCE(TRIM(id_linea1::text), '') AS id_linea1,
-        NULLIF(TRIM(COALESCE(nombre_linea1, '')), '') AS nombre_linea1,
-        COALESCE(SUM(venta_sin_iva), 0) AS venta_sin_iva,
-        COALESCE(SUM(iva), 0) AS iva,
-        COALESCE(SUM(venta_con_iva), 0) AS venta_con_iva,
-        COALESCE(SUM(costo_total), 0) AS costo_total,
-        COALESCE(SUM(utilidad_bruta), 0) AS utilidad_bruta
-      FROM margenes_linea_co_dia
-      WHERE fecha_dcto IS NOT NULL
-        AND centro_operacion IS NOT NULL
-      GROUP BY 1, 2, 3, 4, 5
-      ORDER BY 1, 2, 3, 4
-      `,
-    );
+    const useMatView = await ensureCleanMatViewProbe(client);
 
-    const rows = (result.rows ?? []) as MarginDbRow[];
-    return rows
+    // Path rapido: la vista materializada margenes_linea_co_dia_clean ya
+    // tiene la data limpia + indexada por fecha. Query sub-segundo.
+    // Fallback: query original sobre la tabla cruda con CTE para acotar antes
+    // del GROUP BY. Mas lento pero correcto si la vista no existe todavia.
+    const result = useMatView
+      ? await client.query(
+          `
+          SELECT
+            TO_CHAR(fecha, 'YYYY-MM-DD') AS fecha,
+            empresa,
+            centro_operacion,
+            id_linea1,
+            nombre_linea1,
+            venta_sin_iva,
+            iva,
+            venta_con_iva,
+            costo_total,
+            utilidad_bruta
+          FROM margenes_linea_co_dia_clean
+          WHERE fecha BETWEEN $1::date AND $2::date
+          ORDER BY fecha, empresa, centro_operacion, id_linea1
+          `,
+          [range.from, range.to],
+        )
+      : await client.query(
+          `
+          WITH normalized AS (
+            SELECT
+              CASE
+                WHEN fecha_dcto::text ~ '^[0-9]{8}$' THEN TO_DATE(fecha_dcto::text, 'YYYYMMDD')
+                ELSE fecha_dcto::date
+              END AS fecha_real,
+              empresa,
+              centro_operacion,
+              id_linea1,
+              nombre_linea1,
+              venta_sin_iva,
+              iva,
+              venta_con_iva,
+              costo_total,
+              utilidad_bruta
+            FROM margenes_linea_co_dia
+            WHERE fecha_dcto IS NOT NULL
+              AND centro_operacion IS NOT NULL
+          )
+          SELECT
+            TO_CHAR(fecha_real, 'YYYY-MM-DD') AS fecha,
+            COALESCE(TRIM(empresa), '') AS empresa,
+            LPAD(TRIM(COALESCE(centro_operacion::text, '')), 3, '0') AS centro_operacion,
+            COALESCE(TRIM(id_linea1::text), '') AS id_linea1,
+            NULLIF(TRIM(COALESCE(nombre_linea1, '')), '') AS nombre_linea1,
+            COALESCE(SUM(venta_sin_iva), 0) AS venta_sin_iva,
+            COALESCE(SUM(iva), 0) AS iva,
+            COALESCE(SUM(venta_con_iva), 0) AS venta_con_iva,
+            COALESCE(SUM(costo_total), 0) AS costo_total,
+            COALESCE(SUM(utilidad_bruta), 0) AS utilidad_bruta
+          FROM normalized
+          WHERE fecha_real BETWEEN $1::date AND $2::date
+          GROUP BY 1, 2, 3, 4, 5
+          ORDER BY 1, 2, 3, 4
+          `,
+          [range.from, range.to],
+        );
+
+    const dbRows = (result.rows ?? []) as MarginDbRow[];
+    const rows = dbRows
       .map((row) => {
         const sede = resolveSedeName(row.centro_operacion, row.empresa);
         const normalizedLineId = normalizeLineId(row.id_linea1 || "sin_linea");
@@ -193,6 +312,7 @@ const queryMargins = async (allowedLineIds: string[] = []): Promise<MarginRow[]>
         allowedSet.size === 0 ? true : allowedSet.has(normalizeLineId(row.lineaId)),
       )
       .filter((row) => !HIDDEN_SEDES.has(normalizeKey(row.sede)));
+    return { rows, source: useMatView ? "matview" : "raw" };
   } finally {
     client.release();
   }
@@ -251,7 +371,12 @@ export async function GET(request: Request) {
       ),
     );
   }
-    const rows = await queryMargins(allowedLineIds);
+    const url = new URL(request.url);
+    const range = resolveDateRange(
+      url.searchParams.get("from"),
+      url.searchParams.get("to"),
+    );
+    const { rows, source } = await queryMargins(range, allowedLineIds);
     const sedes = Array.from(new Set(rows.map((row) => row.sede))).map(
       (name) => ({
         id: name,
@@ -269,11 +394,14 @@ export async function GET(request: Request) {
 
     return withSession(
       NextResponse.json(
-        { rows, sedes, lineas },
+        { rows, sedes, lineas, range },
         {
           headers: {
-            "Cache-Control": "no-store",
-            "X-Data-Source": "database",
+            // Cacheable por el browser/CDN solo para el usuario actual. 5 min
+            // de fresh + 15 min stale-while-revalidate cubren el caso comun
+            // (la data viene de la ETL nocturna, no cambia minuto a minuto).
+            "Cache-Control": "private, max-age=300, stale-while-revalidate=900",
+            "X-Data-Source": source,
           },
         },
       ),

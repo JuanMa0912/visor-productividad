@@ -52,6 +52,8 @@ type ApiResponse = {
   rows: MarginRow[];
   sedes: Array<{ id: string; name: string }>;
   lineas: LineOption[];
+  /** Rango efectivamente aplicado por el backend (puede diferir del solicitado si excedia el limite duro). */
+  range?: { from: string; to: string };
   error?: string;
 };
 
@@ -248,11 +250,27 @@ export default function MargenesPage() {
     let isMounted = true;
     const controller = new AbortController();
 
+    // El backend acepta ?from=&to= y por default sirve los ultimos 90 dias.
+    // Si el usuario tiene un rango seleccionado completo, lo pasamos al server
+    // para reducir el volumen de filas escaneadas; si no, dejamos que el
+    // server use el default. El filtrado fino sigue ocurriendo en JS porque
+    // el usuario puede mover el rango sin re-pedir al backend (siempre que
+    // este dentro del rango actual).
+    const hasExplicitRange = Boolean(dateRange.start && dateRange.end);
+    const params = new URLSearchParams();
+    if (hasExplicitRange) {
+      params.set("from", dateRange.start);
+      params.set("to", dateRange.end);
+    }
+    const url = params.toString()
+      ? `/api/margenes?${params.toString()}`
+      : "/api/margenes";
+
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch("/api/margenes", {
+        const response = await fetch(url, {
           signal: controller.signal,
         });
         const payload = (await response.json()) as ApiResponse;
@@ -296,7 +314,7 @@ export default function MargenesPage() {
       isMounted = false;
       controller.abort();
     };
-  }, [ready, router]);
+  }, [ready, router, dateRange.start, dateRange.end]);
 
   const orderedSedes = useMemo(() => {
     const hidden = new Set(
