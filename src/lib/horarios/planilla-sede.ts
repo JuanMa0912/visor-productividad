@@ -45,8 +45,37 @@ const SEDE_ALIAS_CONFIGS = [
   { name: "Floresta", aliases: ["floresta"] },
   { name: "Floralia", aliases: ["floralia", "floralia mercatodo", "mercatodo floralia"] },
   { name: "Guaduales", aliases: ["guaduales"] },
-  { name: "Bogota", aliases: ["bogota", "bogot", "merkmios bogota", "merkmios bogot"] },
-  { name: "Chia", aliases: ["chia", "chi", "ch a", "merkmios chia"] },
+  {
+    name: "Bogota",
+    /**
+     * En la base de productividad/rotacion la sede de Bogota viene
+     * etiquetada como "Merkmios La 80" (la planta esta sobre la calle 80),
+     * sin la palabra "Bogota". Sin estos aliases el matcher no la asociaba
+     * con `allowedSedes: ["Bogota"]` y los usuarios scopeados a Bogota
+     * obtenian un catalogo vacio (la sede no se autoseleccionaba en
+     * rotacion).
+     */
+    aliases: [
+      "bogota",
+      "bogot",
+      "merkmios bogota",
+      "merkmios bogot",
+      "merkmios la 80",
+      "mercamios la 80",
+      "la 80",
+    ],
+  },
+  {
+    name: "Chia",
+    aliases: [
+      "chia",
+      "chi",
+      "ch a",
+      "merkmios chia",
+      "plaza mayor chia",
+      "plaza mayor de chia",
+    ],
+  },
   { name: "ADM", aliases: ["adm"] },
   { name: "CEDI-CAVASA", aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
   { name: "Panificadora", aliases: ["panificadora"] },

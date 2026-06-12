@@ -369,10 +369,23 @@ const canonicalSedeKey = (value: string): string => {
     return normalizeKey(mapped);
   }
 
-  /** 2) Probar el indice global por alias cortos / prefijos. */
+  /** 2a) Probar el indice global por la clave COMPACTA original, antes de
+   *  strippear prefijos. SEDE_ORDER_INDEX_MAP registra aliases CON prefijos
+   *  ("Merkmios La 80" -> Bogota, "Mercatodo Floralia" -> Floralia) que
+   *  desaparecerian si los strippearamos primero. Sin esta busqueda,
+   *  textos como "Merkmios La 80" caian al paso 3 y nunca se asociaban con
+   *  "Bogota" (rompiendo la autoseleccion de sede en rotacion para
+   *  usuarios cuyo allowedSedes era ["Bogota"]). */
+  const compactWithPrefix = normalizeKeyCompact(trimmed);
+  let orderIndex = SEDE_ORDER_INDEX_MAP.get(compactWithPrefix);
+  if (orderIndex !== undefined && SEDE_ORDER[orderIndex]) {
+    return normalizeKey(SEDE_ORDER[orderIndex]);
+  }
+
+  /** 2b) Probar el indice global por alias corto (ya sin prefijos). */
   const stripped = stripSedeLabelPrefixes(trimmed);
   const compactKey = normalizeKeyCompact(stripped);
-  const orderIndex = SEDE_ORDER_INDEX_MAP.get(compactKey);
+  orderIndex = SEDE_ORDER_INDEX_MAP.get(compactKey);
   if (orderIndex !== undefined && SEDE_ORDER[orderIndex]) {
     return normalizeKey(SEDE_ORDER[orderIndex]);
   }
