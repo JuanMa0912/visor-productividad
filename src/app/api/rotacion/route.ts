@@ -144,6 +144,15 @@ type AbcdConfig = {
 };
 
 const CACHE_CONTROL = "no-store";
+/**
+ * Cache HTTP para la respuesta exitosa del GET (no aplica a errores,
+ * `catalogOnly`, ni respuestas vacias). 5 min fresco + 15 min stale-while-
+ * revalidate. `private` para que solo el browser del usuario cachee (la
+ * respuesta depende de sesion y permisos). La rotacion se refresca cada
+ * noche via systemd timer, asi que 5 min stale no perjudica.
+ */
+const ROTATION_SUCCESS_CACHE_CONTROL =
+  "private, max-age=300, stale-while-revalidate=900";
 const LOW_ROTATION_DAYS_THRESHOLD = 45;
 const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -1428,15 +1437,17 @@ async function queryRotationRowsViaMatview({
     categoriaKeys, // $10
   ];
 
-  // Misma estrategia que el query original: subir work_mem y forzar paralelismo
-  // dentro de una transaccion local. La matview no necesita tanto como la
-  // tabla raw (~478k filas vs 22k de items finales), pero no esta de mas.
+  // Subimos work_mem a 256MB y forzamos paralelismo. Con 128MB el planner
+  // elegia GroupAggregate (requiere Sort de 478k filas que tarda ~10s) en
+  // lugar de HashAggregate. Con 256MB tiene espacio para meter las hash
+  // buckets en memoria y se saltea el sort masivo. SET LOCAL solo afecta
+  // esta transaccion.
   let txnStarted = false;
   try {
     await client.query("BEGIN");
     txnStarted = true;
-    await client.query("SET LOCAL work_mem = '128MB'");
-    await client.query("SET LOCAL max_parallel_workers_per_gather = 2");
+    await client.query("SET LOCAL work_mem = '256MB'");
+    await client.query("SET LOCAL max_parallel_workers_per_gather = 4");
   } catch (err) {
     console.warn(
       `[rotacion API matview] no se pudo elevar work_mem/parallelism: ${
@@ -2589,7 +2600,7 @@ export async function GET(request: Request) {
         },
         {
           headers: {
-            "Cache-Control": CACHE_CONTROL,
+            "Cache-Control": ROTATION_SUCCESS_CACHE_CONTROL,
             "X-Data-Source": dataSource,
           },
         },
