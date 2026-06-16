@@ -1577,14 +1577,21 @@ async function queryRotationRows({
       // queries. Necesitamos transaccion explicita porque sin BEGIN el
       // `SET LOCAL` seria un no-op (cada client.query es su propia transaccion
       // implicita). Si BEGIN falla seguimos con el default sin romper.
+      //
+      // Ademas forzamos `max_parallel_workers_per_gather = 4` para recuperar
+      // el paralelismo que el planner pierde despues de un ANALYZE: con stats
+      // mas precisas, decide que el Parallel Index Scan no vale la pena, pero
+      // en la realidad SI vale (medimos 22s con 2 workers vs 35s sin workers).
+      // Lo seteamos a 4 para que use 2-4 segun disponibilidad del cluster.
       let txnStarted = false;
       try {
         await client.query("BEGIN");
         txnStarted = true;
         await client.query("SET LOCAL work_mem = '256MB'");
+        await client.query("SET LOCAL max_parallel_workers_per_gather = 4");
       } catch (err) {
         console.warn(
-          `[rotacion API] no se pudo elevar work_mem (sigue con default): ${
+          `[rotacion API] no se pudo elevar work_mem/parallelism (sigue con default): ${
             err instanceof Error ? err.message : String(err)
           }`,
         );
