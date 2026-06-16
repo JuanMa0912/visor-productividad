@@ -143,6 +143,11 @@ import { AppTopBar } from "@/components/portal/app-top-bar";
 import { AbcdConfigModal } from "./abcd-config-modal";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
+import {
+  buildRotacionRowsCacheKey,
+  readRotacionRowsIdbCache,
+  writeRotacionRowsIdbCache,
+} from "./rotacion-rows-idb-cache";
 
 /**
  * Formatea milisegundos a un string legible para el log de consola del
@@ -380,6 +385,16 @@ export function RotacionPageInner() {
       );
       const lineasKeyValues = lineasForParams ?? [];
 
+      const rowsFilterKey = buildRotacionRowsKey({
+        start: dateRange.start ?? "",
+        end: dateRange.end ?? "",
+        empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
+        sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
+        lineasN1: lineasKeyValues,
+        categoriaKeys: cats,
+      });
+      const rowsCacheKey = buildRotacionRowsCacheKey(apiBasePath, rowsFilterKey);
+
       setIsLoadingData(true);
       setError(null);
 
@@ -404,6 +419,31 @@ export function RotacionPageInner() {
           setError(ROTACION_MAX_RANGE_ERROR);
           return false;
         }
+
+        if (!options?.signal?.aborted) {
+          const cached = await readRotacionRowsIdbCache(rowsCacheKey);
+          if (options?.signal?.aborted) {
+            setHasLoadedItems(false);
+            return false;
+          }
+          if (cached) {
+            setRows(normalizeRotationRows(cached.rows));
+            setHasLoadedItems(true);
+            if (
+              targetSedeSelectionsForQuery.length === 1 &&
+              cached.abcdConfig
+            ) {
+              setAbcdConfig(normalizeAbcdConfig(cached.abcdConfig));
+            }
+            rotacionRowsFetchKeyRef.current = rowsFilterKey;
+            const elapsedMs = performance.now() - reloadStartTs;
+            console.log(
+              `[rotacion] Cache IDB hit en ${formatLoadDuration(elapsedMs)} (${elapsedMs.toFixed(0)} ms).`,
+            );
+            return true;
+          }
+        }
+
         const params = new URLSearchParams();
         if (dateRange.start && dateRange.end) {
           params.set("start", dateRange.start);
@@ -445,13 +485,13 @@ export function RotacionPageInner() {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
         }
-        rotacionRowsFetchKeyRef.current = buildRotacionRowsKey({
-          start: dateRange.start ?? "",
-          end: dateRange.end ?? "",
-          empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
-          sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
-          lineasN1: lineasKeyValues,
-          categoriaKeys: cats,
+        rotacionRowsFetchKeyRef.current = rowsFilterKey;
+        void writeRotacionRowsIdbCache(rowsCacheKey, {
+          rows: payload.rows ?? [],
+          abcdConfig:
+            targetSedeSelectionsForQuery.length === 1
+              ? payload.meta?.abcdConfig
+              : undefined,
         });
         return true;
       } catch (err) {
