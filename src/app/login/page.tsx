@@ -2,8 +2,8 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import { Lock, User } from "lucide-react";
+import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { AuthUser } from "@/lib/auth/types";
 
@@ -98,22 +98,8 @@ function LoginPageInner() {
         <div className="w-full max-w-sm">
           {/* Logos arriba del form */}
           <div className="mb-8 flex items-center justify-center gap-5 border-b border-slate-200 pb-6">
-            <Image
-              src="/logos/mercamio.jpeg"
-              alt="MercaMio"
-              width={240}
-              height={72}
-              className="h-16 w-auto"
-              priority
-            />
-            <Image
-              src="/logos/mercatodo.jpeg"
-              alt="MercaTodo"
-              width={240}
-              height={72}
-              className="h-16 w-auto"
-              priority
-            />
+            <MercamioLogo className="h-16 w-auto" />
+            <MercatodoLogo className="h-16 w-auto" />
           </div>
 
           <h2 className="text-3xl font-bold text-slate-900">Bienvenido</h2>

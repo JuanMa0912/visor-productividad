@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import {
   ArrowLeft,
   CalendarDays,
@@ -660,24 +660,10 @@ export default function MargenesPage() {
               </div>
               <div className="inline-flex items-center gap-2 rounded-2xl border border-border/70 bg-muted/20 p-2">
                 <div className="rounded-xl border border-border/70 bg-card px-4 py-2 shadow-soft">
-                  <Image
-                    src="/logos/mercatodo.jpeg"
-                    alt="Logo MercaTodo"
-                    width={130}
-                    height={40}
-                    className="h-8 w-auto"
-                    priority
-                  />
+                  <MercatodoLogo className="h-8 w-auto" />
                 </div>
                 <div className="rounded-xl border border-border/70 bg-card px-4 py-2 shadow-soft">
-                  <Image
-                    src="/logos/mercamio.jpeg"
-                    alt="Logo MercaMio"
-                    width={130}
-                    height={40}
-                    className="h-8 w-auto"
-                    priority
-                  />
+                  <MercamioLogo className="h-8 w-auto" />
                 </div>
               </div>
             </div>

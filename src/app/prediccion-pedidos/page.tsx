@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -49,20 +49,8 @@ export default function PrediccionPedidosPage() {
             </div>
             <div className="max-w-full rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2">
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Image
-                  src="/logos/mercamio.jpeg"
-                  alt="Logo Mercamio"
-                  width={150}
-                  height={48}
-                  className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm"
-                />
-                <Image
-                  src="/logos/mercatodo.jpeg"
-                  alt="Logo Mercatodo"
-                  width={150}
-                  height={48}
-                  className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm"
-                />
+                <MercamioLogo className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm" />
+                <MercatodoLogo className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm" />
               </div>
             </div>
           </div>

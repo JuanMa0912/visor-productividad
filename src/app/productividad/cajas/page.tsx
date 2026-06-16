@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
+import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -233,20 +233,8 @@ export default function ProductividadCajasPage() {
           <div className="flex flex-col gap-3 md:items-end">
             <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2">
               <div className="flex items-center gap-3">
-                <Image
-                  src="/logos/mercamio.jpeg"
-                  alt="Logo Mercamio"
-                  width={164}
-                  height={52}
-                  className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
-                />
-                <Image
-                  src="/logos/mercatodo.jpeg"
-                  alt="Logo Mercatodo"
-                  width={164}
-                  height={52}
-                  className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm"
-                />
+                <MercamioLogo className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm" />
+                <MercatodoLogo className="h-12 w-auto rounded-lg bg-white object-cover shadow-sm" />
               </div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
+import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import {
   Building2,
   CalendarDays,
@@ -264,24 +264,10 @@ const BrandHeader = ({ title }: { title: ReactNode }) => (
     </div>
     <div className="flex flex-wrap items-center gap-2">
       <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-1 shadow-sm">
-        <Image
-          src="/logos/mercamio.jpeg"
-          alt="Logo MercaMio"
-          width={210}
-          height={68}
-          className="h-12 w-auto sm:h-14"
-          priority
-        />
+        <MercamioLogo className="h-12 w-auto sm:h-14" />
       </div>
       <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-1 shadow-sm">
-        <Image
-          src="/logos/mercatodo.jpeg"
-          alt="Logo MercaTodo"
-          width={210}
-          height={68}
-          className="h-12 w-auto sm:h-14"
-          priority
-        />
+        <MercatodoLogo className="h-12 w-auto sm:h-14" />
       </div>
     </div>
   </div>

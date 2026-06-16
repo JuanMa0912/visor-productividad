@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import Image from "next/image";
+import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import { useRouter } from "next/navigation";
 import { ArrowUp, Clock, MapPin } from "lucide-react";
 import { HourlyAnalysis } from "@/components/HourlyAnalysis";
@@ -1345,20 +1345,8 @@ export default function JornadaExtendidaPage() {
             <div className="ml-auto flex shrink-0 flex-col items-end gap-3">
               <div className="rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
                 <div className="flex items-center gap-3">
-                  <Image
-                    src="/logos/mercamio.jpeg"
-                    alt="Logo Mercamio"
-                    width={160}
-                    height={48}
-                    className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm"
-                  />
-                  <Image
-                    src="/logos/mercatodo.jpeg"
-                    alt="Logo Mercatodo"
-                    width={160}
-                    height={48}
-                    className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm"
-                  />
+                  <MercamioLogo className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm" />
+                  <MercatodoLogo className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm" />
                 </div>
               </div>
             </div>
