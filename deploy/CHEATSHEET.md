@@ -58,6 +58,14 @@ sudo systemctl status visor --no-pager
 > `npm run build:server` completo o se reinicio el servicio antes de que
 > terminara el build. No uses Ctrl+Z durante el build.
 
+**Logos rotos en login (`mercamio.jpeg` / `mercatodo.jpeg`):**
+- Archivos en `public/logos/` (versionados en git).
+- Deben copiarse a `.next/standalone/public/logos/` (lo hace `build:server`).
+- Tras rebuild: `sudo systemctl restart visor`.
+- Verificar: `curl -sI http://127.0.0.1:3000/logos/mercamio.jpeg` → `200`.
+- El build standalone usa `images.unoptimized` (sin `/_next/image`) para evitar
+  errores de sharp con archivos en `public/`.
+
 ---
 
 ## 4. Rollback (revertir deploy malo)

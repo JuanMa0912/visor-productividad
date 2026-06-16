@@ -79,6 +79,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   ...(standaloneBuild ? { output: "standalone" } : {}),
+  // En standalone, sharp a menudo no resuelve bien public/ → next/image devuelve
+  // 400 "received null" aunque /logos/*.jpeg existan. Servimos estáticos directo.
+  ...(standaloneBuild ? { images: { unoptimized: true } } : {}),
   typescript: {
     ignoreBuildErrors: skipTypecheckInBuild,
   },
