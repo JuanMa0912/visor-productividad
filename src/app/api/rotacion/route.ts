@@ -4,6 +4,7 @@ import { getDbPool, withPoolClient } from "@/lib/db";
 import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
+  type RotacionBaseQueryClient,
   type RotacionBaseSqlFields,
 } from "@/lib/rotacion/base-fields";
 import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
@@ -145,6 +146,21 @@ type AbcdConfig = {
 const CACHE_CONTROL = "no-store";
 const LOW_ROTATION_DAYS_THRESHOLD = 45;
 const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Vista materializada pre-procesada de `rotacion_base_item_dia_sede`. Vive en
+ * la BD (creada por `db/migrations/20260616_rotacion_clean_matview.sql`) y se
+ * refresca diariamente via `visor-refresh-rotacion.timer`. Si la matview
+ * existe, `queryRotationRows` usa el camino simplificado contra ella; si no,
+ * cae al query original sobre la tabla cruda. Detectarla cada vez seria caro:
+ * cacheamos el probe por 5 min.
+ */
+const ROTACION_CLEAN_MATVIEW_NAME = "rotacion_item_dia_clean";
+const ROTACION_CLEAN_MATVIEW_PROBE_CACHE_TTL_MS = 5 * 60 * 1000;
+let rotacionCleanMatViewProbeCache:
+  | { exists: boolean; expiresAt: number }
+  | null = null;
+
 /** Ventana hacia atras para el DISTINCT de sedes (catalogo). Corta para no escanear meses de datos ni disparar timeouts en el servidor. */
 const ROTATION_CATALOG_LOOKBACK_DAYS = 45;
 const ROTATION_ABCD_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1130,6 +1146,387 @@ type ExplainPlanResult = {
   plan: string;
 };
 
+/**
+ * Detecta si la matview `rotacion_item_dia_clean` existe en la BD.
+ * Cache 5 min para no pagar el SELECT contra pg_matviews en cada request.
+ * Si la matview no existe (porque aun no se aplico la migracion), devolvemos
+ * `false` y el caller hace fallback al query original.
+ */
+async function ensureRotacionCleanMatViewProbe(
+  client: RotacionBaseQueryClient,
+): Promise<boolean> {
+  const now = Date.now();
+  if (
+    rotacionCleanMatViewProbeCache &&
+    rotacionCleanMatViewProbeCache.expiresAt > now
+  ) {
+    return rotacionCleanMatViewProbeCache.exists;
+  }
+  try {
+    const result = await client.query(
+      "SELECT 1 FROM pg_matviews WHERE matviewname = $1 LIMIT 1",
+      [ROTACION_CLEAN_MATVIEW_NAME],
+    );
+    const exists = (result.rows?.length ?? 0) > 0;
+    rotacionCleanMatViewProbeCache = {
+      exists,
+      expiresAt: now + ROTACION_CLEAN_MATVIEW_PROBE_CACHE_TTL_MS,
+    };
+    return exists;
+  } catch (err) {
+    console.warn(
+      `[rotacion API] probe matview fallo (asumiendo no existe): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return false;
+  }
+}
+
+/**
+ * Variante de `queryRotationRows` que lee de la vista materializada
+ * `rotacion_item_dia_clean`. Esta vista ya tiene:
+ *   - Strings limpios (TRIM/COALESCE/LPAD/normalizacion)
+ *   - Categorias y sedes excluidas filtradas (`PRODUCTO TERMINADO`, hidden sedes)
+ *   - Metricas diarias pre-sumadas (venta_sin_impuesto_dia, cost_value_dia,
+ *     margin_value_dia, unidades_vendidas_dia, inventory_units_dia,
+ *     inventory_value_dia)
+ *   - Agregado por (fecha, empresa, sede_id, item) ignorando bodega_local
+ *
+ * El query es significativamente mas simple que el original porque elimina:
+ *   - El CTE `scoped` con todas las transformaciones de columnas
+ *   - Los CTEs `item_day_margin` e `item_day_inventory` (las daily sums ya
+ *     vienen pre-calculadas)
+ *   - El filtro `buildHiddenSedeWhereClause` (ya pre-filtrado)
+ *
+ * Mantiene comportamiento equivalente: window functions sobre (empresa, sede,
+ * item) para opening/latest inventory, AVG del margin %, MIN del inventory en
+ * el rango, classification por status, etc.
+ */
+async function queryRotationRowsViaMatview({
+  client,
+  startDate,
+  endDate,
+  maxSalesValue,
+  empresa,
+  sedeId,
+  lineasN1,
+  categoriaKeys,
+  explain,
+}: {
+  client: RotacionBaseQueryClient;
+  startDate: string;
+  endDate: string;
+  maxSalesValue: number | null;
+  empresa: string | null;
+  sedeId: string | null;
+  lineasN1: string[] | null;
+  categoriaKeys: string[] | null;
+  explain: boolean;
+}): Promise<RotationRow[] | ExplainPlanResult> {
+  const sqlStartTs = performance.now();
+  const baseSql = `
+    WITH base AS (
+      SELECT
+        fecha,
+        empresa,
+        sede_id,
+        sede_name,
+        item,
+        descripcion,
+        unidad,
+        linea,
+        linea_n1_codigo,
+        bodega,
+        categoria,
+        nombre_categoria,
+        categoria_key,
+        venta_sin_impuesto_dia,
+        cost_value_dia,
+        margin_value_dia,
+        unidades_vendidas_dia,
+        inventory_units_dia,
+        inventory_value_dia,
+        ultima_venta_pdv,
+        ultima_venta_inventario,
+        fecha_ultima_compra,
+        fecha_ultima_entrada,
+        carga_ts
+      FROM rotacion_item_dia_clean
+      WHERE fecha BETWEEN $1::date AND $2::date
+        AND ($5::text IS NULL OR empresa = $5)
+        AND ($6::text IS NULL OR sede_id = $6)
+        AND (
+          $7::text[] IS NULL
+          OR COALESCE(linea_n1_codigo, '__sin_n1__') = ANY($7::text[])
+        )
+        AND ($10::text[] IS NULL OR categoria_key = ANY($10::text[]))
+    ),
+    ranked AS (
+      SELECT
+        base.*,
+        MIN(fecha) OVER (PARTITION BY empresa, sede_id, item) AS first_fecha,
+        MAX(fecha) OVER (PARTITION BY empresa, sede_id, item) AS latest_fecha,
+        ROW_NUMBER() OVER (
+          PARTITION BY empresa, sede_id, item
+          ORDER BY fecha DESC, carga_ts DESC NULLS LAST
+        ) AS latest_rank
+      FROM base
+    ),
+    aggregated AS (
+      SELECT
+        empresa,
+        sede_id,
+        sede_name,
+        linea,
+        linea_n1_codigo,
+        item,
+        descripcion,
+        unidad,
+        SUM(venta_sin_impuesto_dia)::numeric AS total_sales,
+        SUM(cost_value_dia)::numeric AS total_cost,
+        SUM(margin_value_dia)::numeric AS total_margin,
+        COALESCE(
+          AVG(
+            CASE
+              WHEN venta_sin_impuesto_dia > 0
+              THEN (margin_value_dia / venta_sin_impuesto_dia) * 100
+              ELSE NULL
+            END
+          ),
+          0
+        )::numeric AS margin_daily_avg_pct,
+        SUM(unidades_vendidas_dia)::numeric AS total_units,
+        MAX(
+          CASE
+            WHEN COALESCE(fecha_ultima_compra, fecha_ultima_entrada)
+                 BETWEEN $1::date AND $2::date
+            THEN COALESCE(fecha_ultima_compra, fecha_ultima_entrada)
+            WHEN COALESCE(ultima_venta_pdv, ultima_venta_inventario)
+                 BETWEEN $1::date AND $2::date
+            THEN COALESCE(ultima_venta_pdv, ultima_venta_inventario)
+            ELSE NULL
+          END
+        ) AS last_movement_date,
+        MAX(COALESCE(ultima_venta_pdv, ultima_venta_inventario)) AS last_purchase_date,
+        SUM(
+          CASE WHEN fecha = first_fecha THEN inventory_units_dia ELSE 0 END
+        )::numeric AS opening_inventory_units,
+        MIN(inventory_units_dia)::numeric AS min_inventory_units,
+        SUM(
+          CASE WHEN fecha = latest_fecha THEN inventory_units_dia ELSE 0 END
+        )::numeric AS inventory_units,
+        SUM(
+          CASE WHEN fecha = latest_fecha THEN inventory_value_dia ELSE 0 END
+        )::numeric AS inventory_value,
+        MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
+        MAX(CASE WHEN latest_rank = 1 THEN categoria END) AS categoria,
+        MAX(CASE WHEN latest_rank = 1 THEN nombre_categoria END) AS nombre_categoria,
+        MAX(CASE WHEN latest_rank = 1 THEN linea_n1_codigo END) AS linea01,
+        MAX(CASE WHEN latest_rank = 1 THEN linea END) AS nombre_linea01,
+        COUNT(DISTINCT fecha)::int AS tracked_days,
+        COUNT(
+          DISTINCT CASE
+            WHEN unidades_vendidas_dia > 0 THEN fecha
+            ELSE NULL
+          END
+        )::int AS sales_effective_days
+      FROM ranked
+      GROUP BY
+        empresa,
+        sede_id,
+        sede_name,
+        linea,
+        linea_n1_codigo,
+        item,
+        descripcion,
+        unidad
+    ),
+    enriched AS (
+      SELECT
+        *,
+        NULL::text AS nombre_bodega,
+        CASE
+          WHEN COALESCE(inventory_units, 0) <= 0
+            OR COALESCE(inventory_value, 0) <= 0 THEN 0::numeric
+          WHEN COALESCE(total_units, 0) <= 0
+            OR COALESCE(tracked_days, 0) <= 0 THEN 999999::numeric
+          ELSE (COALESCE(inventory_units, 0) * tracked_days::numeric)
+               / NULLIF(total_units, 0)
+        END AS rotation,
+        CASE
+          WHEN last_movement_date IS NULL THEN NULL
+          ELSE ($3::date - last_movement_date)
+        END::int AS effective_days
+      FROM aggregated
+      WHERE $4::numeric IS NULL OR total_sales <= $4::numeric
+    ),
+    classified AS (
+      SELECT
+        *,
+        CASE
+          WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 'Agotado'
+          WHEN total_units > 0
+            AND tracked_days > 0
+            AND inventory_units > 0
+            AND inventory_units <= ((total_units / tracked_days) * $8::numeric)
+            THEN 'Futuro agotado'
+          WHEN COALESCE(rotation, 0) > $9 THEN 'Baja rotacion'
+          ELSE 'En seguimiento'
+        END AS status
+      FROM enriched
+    )
+    SELECT
+      empresa,
+      sede_id,
+      sede_name,
+      linea,
+      linea_n1_codigo,
+      item,
+      descripcion,
+      unidad,
+      bodega,
+      nombre_bodega,
+      categoria,
+      nombre_categoria,
+      linea01,
+      nombre_linea01,
+      total_sales,
+      total_cost,
+      total_margin,
+      margin_daily_avg_pct,
+      total_units,
+      opening_inventory_units,
+      min_inventory_units,
+      inventory_units,
+      inventory_value,
+      rotation,
+      tracked_days,
+      sales_effective_days,
+      TO_CHAR(last_movement_date, 'YYYY-MM-DD') AS last_movement_date,
+      TO_CHAR(last_purchase_date, 'YYYY-MM-DD') AS last_purchase_date,
+      effective_days,
+      status
+    FROM classified
+    ORDER BY
+      empresa ASC,
+      sede_name ASC,
+      total_sales DESC,
+      inventory_value DESC,
+      item ASC
+  `;
+  const params = [
+    startDate, // $1: fecha desde (ISO)
+    endDate, // $2: fecha hasta (ISO)
+    endDate, // $3: fecha hasta para effective_days
+    maxSalesValue, // $4
+    empresa, // $5
+    sedeId, // $6
+    lineasN1, // $7
+    FUTURE_STOCKOUT_DAYS, // $8
+    LOW_ROTATION_DAYS_THRESHOLD, // $9
+    categoriaKeys, // $10
+  ];
+
+  // Misma estrategia que el query original: subir work_mem y forzar paralelismo
+  // dentro de una transaccion local. La matview no necesita tanto como la
+  // tabla raw (~478k filas vs 22k de items finales), pero no esta de mas.
+  let txnStarted = false;
+  try {
+    await client.query("BEGIN");
+    txnStarted = true;
+    await client.query("SET LOCAL work_mem = '128MB'");
+    await client.query("SET LOCAL max_parallel_workers_per_gather = 2");
+  } catch (err) {
+    console.warn(
+      `[rotacion API matview] no se pudo elevar work_mem/parallelism: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+
+  try {
+    if (explain) {
+      const explainResult = await client.query(
+        `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${baseSql}`,
+        params,
+      );
+      const planLines = (explainResult.rows ?? [])
+        .map((row) => (row as { "QUERY PLAN": string })["QUERY PLAN"])
+        .filter((line): line is string => typeof line === "string");
+      if (txnStarted) await client.query("COMMIT");
+      const sqlElapsedMs = performance.now() - sqlStartTs;
+      console.info(
+        `[rotacion API matview] EXPLAIN empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+      );
+      return {
+        empresa,
+        sedeId,
+        rows: 0,
+        durationMs: sqlElapsedMs,
+        plan: planLines.join("\n"),
+      } satisfies ExplainPlanResult;
+    }
+
+    const result = await client.query(baseSql, params);
+    if (txnStarted) await client.query("COMMIT");
+
+    const sqlElapsedMs = performance.now() - sqlStartTs;
+    console.info(
+      `[rotacion API matview] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
+        result.rows?.length ?? 0
+      } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+    );
+
+    return ((result.rows ?? []) as RotationDbRow[])
+      .map((row) => ({
+        empresa: row.empresa,
+        sedeId: row.sede_id,
+        sedeName: row.sede_name,
+        linea: row.linea,
+        lineaN1Codigo: row.linea_n1_codigo,
+        item: row.item,
+        descripcion: row.descripcion,
+        unidad: row.unidad,
+        bodega: toOptionalTrimmedString(row.bodega),
+        nombreBodega: toOptionalTrimmedString(row.nombre_bodega),
+        categoria: toOptionalTrimmedString(row.categoria),
+        nombreCategoria: toOptionalTrimmedString(row.nombre_categoria),
+        linea01: toOptionalTrimmedString(row.linea01),
+        nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
+        totalSales: toNumber(row.total_sales),
+        totalCost: toNumber(row.total_cost),
+        totalMargin: toNumber(row.total_margin),
+        marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
+        totalUnits: toNumber(row.total_units),
+        openingInventoryUnits: toNumber(row.opening_inventory_units),
+        minInventoryUnits: toNumber(row.min_inventory_units),
+        inventoryUnits: toNumber(row.inventory_units),
+        inventoryValue: toNumber(row.inventory_value),
+        rotation: toNumber(row.rotation),
+        trackedDays: toNumber(row.tracked_days),
+        salesEffectiveDays: toNumber(row.sales_effective_days),
+        lastMovementDate: row.last_movement_date,
+        lastPurchaseDate: row.last_purchase_date,
+        effectiveDays:
+          row.effective_days === null || row.effective_days === undefined
+            ? null
+            : toNumber(row.effective_days),
+        status: row.status,
+      }))
+      .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+  } catch (queryErr) {
+    if (txnStarted) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        /* ignore */
+      }
+    }
+    throw queryErr;
+  }
+}
+
 async function queryRotationRows(args: {
   startDate: string;
   endDate: string;
@@ -1186,6 +1583,26 @@ async function queryRotationRows({
 }): Promise<RotationRow[] | ExplainPlanResult> {
   const fetchRows = async (): Promise<RotationRow[] | ExplainPlanResult> =>
     withPoolClient(async (client) => {
+      // Si la vista materializada rotacion_item_dia_clean existe, usamos el
+      // camino simplificado que evita CTEs intermedias y aprovecha que las
+      // metricas diarias ya estan pre-sumadas y los strings limpios. Si no
+      // existe (porque la migracion aun no se aplico), fallback al query
+      // original sobre la tabla cruda.
+      const matViewExists = await ensureRotacionCleanMatViewProbe(client);
+      if (matViewExists) {
+        return queryRotationRowsViaMatview({
+          client,
+          startDate,
+          endDate,
+          maxSalesValue,
+          empresa,
+          sedeId,
+          lineasN1,
+          categoriaKeys,
+          explain,
+        });
+      }
+
       const fields =
         precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
       const dateColumn = fields.dateColumn;
@@ -2121,6 +2538,11 @@ export async function GET(request: Request) {
     console.info(
       `[rotacion API] iniciando fetch de filas para ${selectedVisibleSedes.length} sede(s)`,
     );
+    // Pre-probe para reportar en el header si esta usando matview o raw.
+    // El probe esta cacheado 5 min, asi que no pagamos un round-trip por sede.
+    const dataSource = await withPoolClient(async (client) =>
+      (await ensureRotacionCleanMatViewProbe(client)) ? "matview" : "raw",
+    );
     const rowsBySede = await mapWithConcurrency(
       selectedVisibleSedes,
       3,
@@ -2139,7 +2561,7 @@ export async function GET(request: Request) {
     const rows = rowsBySede.flat();
     const totalElapsedMs = performance.now() - totalStartTs;
     console.info(
-      `[rotacion API] fetch completo en ${(totalElapsedMs / 1000).toFixed(2)}s (${rows.length} filas totales)`,
+      `[rotacion API] fetch completo en ${(totalElapsedMs / 1000).toFixed(2)}s (${rows.length} filas totales, source=${dataSource})`,
     );
 
     const stats = {
@@ -2168,7 +2590,7 @@ export async function GET(request: Request) {
         {
           headers: {
             "Cache-Control": CACHE_CONTROL,
-            "X-Data-Source": "database",
+            "X-Data-Source": dataSource,
           },
         },
       ),
