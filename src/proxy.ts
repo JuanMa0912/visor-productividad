@@ -34,6 +34,8 @@ export function proxy(request: NextRequest) {
   // Pase libre para rutas internas de Next, APIs y assets.
   if (pathname.startsWith("/_next")) return NextResponse.next();
   if (pathname.startsWith("/api/")) return NextResponse.next();
+  // public/logos/ (login y cabeceras); sin esto el proxy redirige a /login sin sesion.
+  if (pathname.startsWith("/logos/")) return NextResponse.next();
 
   // Pagina publica: dejamos pasar sin chequeo de cookie.
   if (isPublicPagePath(pathname)) return NextResponse.next();
@@ -51,6 +53,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|_next/webpack-hmr|_next/data).*)",
+    "/((?!_next/static|_next/image|_next/webpack-hmr|_next/data|logos/).*)",
   ],
 };
