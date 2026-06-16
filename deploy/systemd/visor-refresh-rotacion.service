@@ -1,0 +1,19 @@
+[Unit]
+Description=Visor - refresh diario de la vista materializada de rotacion
+Documentation=file:///opt/visor-productividad/scripts/refresh-rotacion-matview.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=visor
+Group=visor
+WorkingDirectory=/opt/visor-productividad
+ExecStart=/opt/visor-productividad/scripts/refresh-rotacion-matview.sh
+StandardOutput=journal
+StandardError=journal
+# Endurecimientos basicos
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true

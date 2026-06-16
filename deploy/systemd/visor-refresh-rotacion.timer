@@ -1,0 +1,17 @@
+[Unit]
+Description=Visor - timer diario de refresh de la vista materializada de rotacion
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Todos los dias a las 06:15 hora del sistema. 15 min despues del refresh de
+# margenes para no apilar carga sobre la BD al mismo tiempo. Asume que la ETL
+# nocturna termino antes; ajustar si la ETL corre mas tarde.
+OnCalendar=*-*-* 06:15:00
+# Si la VM estaba apagada en ese momento, ejecutar al arrancar
+Persistent=true
+# Dispersa la ejecucion para evitar picos
+RandomizedDelaySec=300
+Unit=visor-refresh-rotacion.service
+
+[Install]
+WantedBy=timers.target
