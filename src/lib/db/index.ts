@@ -49,13 +49,28 @@ const resolveDbConfig = () => {
     throw new Error("DB_SCHEMA contiene un identificador invalido.");
   }
 
+  const host = process.env.DB_HOST ?? "192.168.35.232";
+
+  const sslEnv = (process.env.DB_SSL ?? "").trim().toLowerCase();
+  let ssl: false | { rejectUnauthorized: boolean };
+  if (sslEnv === "true" || sslEnv === "1" || sslEnv === "require") {
+    ssl = { rejectUnauthorized: false };
+  } else if (sslEnv === "false" || sslEnv === "0" || sslEnv === "disable") {
+    ssl = false;
+  } else {
+    // Default seguro: SSL ON salvo loopback (Cloud SQL siempre exige SSL).
+    const isLoopback = ["localhost", "127.0.0.1", "::1"].includes(host);
+    ssl = isLoopback ? false : { rejectUnauthorized: false };
+  }
+
   return {
-    host: process.env.DB_HOST ?? "192.168.35.232",
+    host,
     port,
     database: process.env.DB_NAME ?? "produXdia",
     user: process.env.DB_USER ?? "postgres",
     password,
     schema,
+    ssl,
   };
 };
 
@@ -74,6 +89,7 @@ export const getDbPool = async (): Promise<import("pg").Pool> => {
         password: dbConfig.password,
         options: `-c search_path=${dbConfig.schema}`,
         keepAlive: true,
+        ssl: dbConfig.ssl,
       });
       next.on("error", (err: Error) => {
         console.error("[db] PostgreSQL pool client error:", err.message);
