@@ -486,7 +486,7 @@ export function RotacionPageInner() {
           setAbcdConfig(normalizedConfig);
         }
         rotacionRowsFetchKeyRef.current = rowsFilterKey;
-        void writeRotacionRowsIdbCache(rowsCacheKey, {
+        await writeRotacionRowsIdbCache(rowsCacheKey, {
           rows: payload.rows ?? [],
           abcdConfig:
             targetSedeSelectionsForQuery.length === 1

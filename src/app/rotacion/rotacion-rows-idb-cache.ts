@@ -167,8 +167,8 @@ export const readRotacionRowsIdbCache = async (
 export const writeRotacionRowsIdbCache = async (
   key: string,
   value: RotacionRowsIdbCacheValue,
-): Promise<void> => {
-  if (!isIndexedDbAvailable()) return;
+): Promise<boolean> => {
+  if (!isIndexedDbAvailable()) return false;
 
   const record: RotacionRowsIdbRecord = {
     key,
@@ -186,6 +186,10 @@ export const writeRotacionRowsIdbCache = async (
 
   try {
     await persist();
+    console.info(
+      `[rotacion] Cache IDB guardado (${value.rows.length} filas, TTL 5 min).`,
+    );
+    return true;
   } catch (err) {
     const isQuota =
       err instanceof DOMException &&
@@ -195,7 +199,7 @@ export const writeRotacionRowsIdbCache = async (
         "[rotacion] Cache IDB escritura fallida:",
         err instanceof Error ? err.message : String(err),
       );
-      return;
+      return false;
     }
 
     try {
@@ -205,11 +209,16 @@ export const writeRotacionRowsIdbCache = async (
         await deleteRecord(sorted[0].key);
       }
       await persist();
+      console.info(
+        `[rotacion] Cache IDB guardado tras eviccion (${value.rows.length} filas).`,
+      );
+      return true;
     } catch (retryErr) {
       console.warn(
         "[rotacion] Cache IDB escritura fallida tras eviccion:",
         retryErr instanceof Error ? retryErr.message : String(retryErr),
       );
+      return false;
     }
   }
 };
