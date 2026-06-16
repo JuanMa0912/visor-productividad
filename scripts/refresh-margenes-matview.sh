@@ -52,7 +52,15 @@ set +a
 : "${DB_PASSWORD:?DB_PASSWORD no esta definido en $ENV_FILE}"
 
 export PGPASSWORD="${DB_PASSWORD}"
-if [[ "${DB_SSL:-false}" == "true" ]]; then
+# Alineado con src/lib/db/index.ts: SSL ON salvo loopback o DB_SSL=false explícito.
+db_ssl="$(echo "${DB_SSL:-}" | tr '[:upper:]' '[:lower:]')"
+if [[ "$db_ssl" == "true" || "$db_ssl" == "1" || "$db_ssl" == "require" ]]; then
+  export PGSSLMODE=require
+elif [[ "$db_ssl" == "false" || "$db_ssl" == "0" || "$db_ssl" == "disable" ]]; then
+  export PGSSLMODE=disable
+elif [[ "${DB_HOST:-localhost}" == "localhost" || "${DB_HOST}" == "127.0.0.1" || "${DB_HOST}" == "::1" ]]; then
+  export PGSSLMODE=disable
+else
   export PGSSLMODE=require
 fi
 
