@@ -17,14 +17,17 @@ type TiposHorarioPanelProps = {
   availableSedes: Sede[];
 };
 
+type DepGroup = {
+  departamento: string;
+  tipoContrato: string;
+  rows: TipoHorarioRow[];
+  totalTurnos: number;
+  totalDias: number;
+};
+
 type SedeGroup = {
   sede: string;
-  departamentos: Array<{
-    departamento: string;
-    rows: TipoHorarioRow[];
-    totalTurnos: number;
-    totalDias: number;
-  }>;
+  departamentos: DepGroup[];
 };
 
 const formatHoras = (value: number) =>
@@ -40,6 +43,7 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
   const [sede, setSede] = useState("all");
   const [bucket, setBucket] = useState<number>(TIPOS_HORARIO_DEFAULT_BUCKET);
   const [departamentoFilter, setDepartamentoFilter] = useState("all");
+  const [contratoFilter, setContratoFilter] = useState("all");
   const [minDias, setMinDias] = useState(1);
   const [data, setData] = useState<TiposHorarioResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -115,11 +119,15 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
   const groups = useMemo<SedeGroup[]>(() => {
     if (!data) return [];
     const metaByKey = new Map(
-      data.grupos.map((g) => [`${g.sede}||${g.departamento}`, g]),
+      data.grupos.map((g) => [
+        `${g.sede}||${g.departamento}||${g.tipoContrato}`,
+        g,
+      ]),
     );
     const visibleRows = data.rows.filter(
       (row) =>
         (departamentoFilter === "all" || row.departamento === departamentoFilter) &&
+        (contratoFilter === "all" || row.tipoContrato === contratoFilter) &&
         row.diasEmpleado >= minDias,
     );
     const sedeMap = new Map<string, SedeGroup>();
@@ -129,11 +137,18 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
         group = { sede: row.sede, departamentos: [] };
         sedeMap.set(row.sede, group);
       }
-      let dep = group.departamentos.find((d) => d.departamento === row.departamento);
+      let dep = group.departamentos.find(
+        (d) =>
+          d.departamento === row.departamento &&
+          d.tipoContrato === row.tipoContrato,
+      );
       if (!dep) {
-        const meta = metaByKey.get(`${row.sede}||${row.departamento}`);
+        const meta = metaByKey.get(
+          `${row.sede}||${row.departamento}||${row.tipoContrato}`,
+        );
         dep = {
           departamento: row.departamento,
+          tipoContrato: row.tipoContrato,
           rows: [],
           totalTurnos: meta?.totalTurnos ?? 0,
           totalDias: meta?.totalDias ?? 0,
@@ -143,7 +158,7 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
       dep.rows.push(row);
     }
     return Array.from(sedeMap.values());
-  }, [data, departamentoFilter, minDias]);
+  }, [data, departamentoFilter, contratoFilter, minDias]);
 
   const totalRows = useMemo(
     () =>
@@ -162,6 +177,7 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
     sheet.columns = [
       { header: "Sede", key: "sede", width: 18 },
       { header: "Area (departamento)", key: "departamento", width: 26 },
+      { header: "Contrato", key: "contrato", width: 16 },
       { header: "Turno", key: "turno", width: 16 },
       { header: "Nocturno", key: "nocturno", width: 10 },
       { header: "Jornada", key: "jornada", width: 10 },
@@ -173,12 +189,14 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
     const filtered = data.rows.filter(
       (row) =>
         (departamentoFilter === "all" || row.departamento === departamentoFilter) &&
+        (contratoFilter === "all" || row.tipoContrato === contratoFilter) &&
         row.diasEmpleado >= minDias,
     );
     for (const row of filtered) {
       sheet.addRow({
         sede: row.sede,
         departamento: row.departamento,
+        contrato: row.tipoContrato,
         turno: row.turno,
         nocturno: row.cruzaMedianoche ? "Si" : "",
         jornada: row.jornada,
@@ -201,7 +219,7 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
     link.download = `tipos-horario-${rango}.xlsx`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [data, departamentoFilter, minDias]);
+  }, [data, departamentoFilter, contratoFilter, minDias]);
 
   if (!open) return null;
 
@@ -300,6 +318,21 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
               </select>
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+              Contrato
+              <select
+                value={contratoFilter}
+                onChange={(e) => setContratoFilter(e.target.value)}
+                className={inputClass}
+              >
+                <option value="all">Todos</option>
+                {(data?.contratos ?? []).map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
               Min. dias
               <input
                 type="number"
@@ -363,14 +396,17 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
                 <div className="grid gap-4 lg:grid-cols-2">
                   {group.departamentos.map((dep) => (
                     <div
-                      key={dep.departamento}
+                      key={`${dep.departamento}||${dep.tipoContrato}`}
                       className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
                     >
-                      <div className="flex items-baseline justify-between border-b border-slate-100 bg-slate-50/60 px-3 py-2">
-                        <span className="text-sm font-medium text-slate-800">
+                      <div className="flex items-baseline justify-between gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-2">
+                        <span className="flex items-baseline gap-2 text-sm font-medium text-slate-800">
                           {dep.departamento}
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                            {dep.tipoContrato}
+                          </span>
                         </span>
-                        <span className="text-[11px] text-slate-400">
+                        <span className="shrink-0 text-[11px] text-slate-400">
                           {dep.rows.length} de {dep.totalTurnos} turnos · {dep.totalDias} dias
                         </span>
                       </div>

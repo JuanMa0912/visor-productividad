@@ -10,11 +10,13 @@ import {
   resolveAllowedSedeKeys,
 } from "@/lib/horarios/visible-sedes";
 import {
+  TIPO_CONTRATO_ORDER,
   TIPOS_HORARIO_BUCKETS,
   TIPOS_HORARIO_DEFAULT_BUCKET,
   TIPOS_HORARIO_DEFAULT_TOP_N,
   TIPOS_HORARIO_MAX_RANGE_DAYS,
   TIPOS_HORARIO_MAX_TOP_N,
+  classifyContrato,
   formatTurno,
   jornadaBand,
   type TipoHorarioBucket,
@@ -320,6 +322,7 @@ export async function GET(request: Request) {
             rows: [],
             grupos: [],
             departamentos: [],
+            contratos: [],
           }),
         );
       }
@@ -372,6 +375,14 @@ export async function GET(request: Request) {
     const employeeNameExpr = employeeNameColumn
       ? `NULLIF(TRIM(CAST(${quoteIdentifier(employeeNameColumn)} AS text)), '')`
       : "NULL::text";
+    // El tipo de contrato (36 horas, medio tiempo) vive en `cargo`. Si la tabla
+    // no tiene la columna, todo cae en "Tiempo completo" y el panel no separa.
+    const hasCargoColumn = attendanceColumns.some(
+      (col) => normalizeColumnName(col) === "cargo",
+    );
+    const cargoExpr = hasCargoColumn
+      ? "NULLIF(TRIM(CAST(cargo AS text)), '')"
+      : "NULL::text";
 
     // Agregacion del rango completo en SQL: nunca se traen filas crudas.
     const result = await client.query(
@@ -380,6 +391,7 @@ export async function GET(request: Request) {
         SELECT
           ${buildNormalizeSedeSql("sede")} AS sede_norm,
           NULLIF(TRIM(CAST(departamento AS text)), '') AS departamento,
+          ${cargoExpr} AS cargo,
           COALESCE(
             ${employeeIdExpr},
             ${employeeNameExpr},
@@ -404,6 +416,7 @@ export async function GET(request: Request) {
       SELECT
         sede_norm,
         departamento,
+        cargo,
         ent_min,
         sal_min,
         COUNT(*)::int AS dias_empleado,
@@ -411,7 +424,7 @@ export async function GET(request: Request) {
         AVG(total_hours)::float8 AS horas_promedio
       FROM raw
       WHERE departamento IS NOT NULL AND sede_norm <> ''
-      GROUP BY sede_norm, departamento, ent_min, sal_min
+      GROUP BY sede_norm, departamento, cargo, ent_min, sal_min
       `,
       [startDate, endDate, bucket],
     );
@@ -420,7 +433,12 @@ export async function GET(request: Request) {
     // escritura de sede que mapean al mismo nombre canonico.
     const grupos = new Map<
       string,
-      { sede: string; departamento: string; turnos: Map<string, TurnoAcc> }
+      {
+        sede: string;
+        departamento: string;
+        tipoContrato: string;
+        turnos: Map<string, TurnoAcc>;
+      }
     >();
     const departamentos = new Set<string>();
 
@@ -428,6 +446,7 @@ export async function GET(request: Request) {
       const typed = row as {
         sede_norm: string | null;
         departamento: string | null;
+        cargo: string | null;
         ent_min: number | null;
         sal_min: number | null;
         dias_empleado: number | null;
@@ -448,6 +467,7 @@ export async function GET(request: Request) {
       const departamento = (typed.departamento ?? "").trim();
       if (!departamento) continue;
       departamentos.add(departamento);
+      const tipoContrato = classifyContrato(typed.cargo, departamento);
 
       const entradaMin = Number(typed.ent_min ?? 0);
       const salidaMin = Number(typed.sal_min ?? 0);
@@ -456,10 +476,10 @@ export async function GET(request: Request) {
       const horasProm = Number(typed.horas_promedio ?? 0);
       if (dias <= 0) continue;
 
-      const groupKey = `${sede}||${departamento}`;
+      const groupKey = `${sede}||${departamento}||${tipoContrato}`;
       let grupo = grupos.get(groupKey);
       if (!grupo) {
-        grupo = { sede, departamento, turnos: new Map() };
+        grupo = { sede, departamento, tipoContrato, turnos: new Map() };
         grupos.set(groupKey, grupo);
       }
       const turnoKey = `${entradaMin}|${salidaMin}`;
@@ -493,6 +513,7 @@ export async function GET(request: Request) {
       gruposMeta.push({
         sede: grupo.sede,
         departamento: grupo.departamento,
+        tipoContrato: grupo.tipoContrato,
         totalTurnos: turnos.length,
         turnosMostrados: visibles.length,
         totalDias,
@@ -503,6 +524,7 @@ export async function GET(request: Request) {
         rows.push({
           sede: grupo.sede,
           departamento: grupo.departamento,
+          tipoContrato: grupo.tipoContrato,
           turno: formatTurno(t.entradaMin, t.salidaMin),
           entradaMin: t.entradaMin,
           salidaMin: t.salidaMin,
@@ -516,16 +538,33 @@ export async function GET(request: Request) {
       }
     }
 
+    // Orden de presentacion de contratos: 36 horas, Medio tiempo, Tiempo completo,
+    // y cualquier otro al final por orden alfabetico.
+    const contratoRank = (value: string) => {
+      const idx = (TIPO_CONTRATO_ORDER as readonly string[]).indexOf(value);
+      return idx === -1 ? TIPO_CONTRATO_ORDER.length : idx;
+    };
+
     rows.sort(
       (a, b) =>
         a.sede.localeCompare(b.sede, "es", { sensitivity: "base" }) ||
         a.departamento.localeCompare(b.departamento, "es", { sensitivity: "base" }) ||
+        contratoRank(a.tipoContrato) - contratoRank(b.tipoContrato) ||
         b.diasEmpleado - a.diasEmpleado,
     );
     gruposMeta.sort(
       (a, b) =>
         a.sede.localeCompare(b.sede, "es", { sensitivity: "base" }) ||
-        a.departamento.localeCompare(b.departamento, "es", { sensitivity: "base" }),
+        a.departamento.localeCompare(b.departamento, "es", { sensitivity: "base" }) ||
+        contratoRank(a.tipoContrato) - contratoRank(b.tipoContrato),
+    );
+
+    const contratos = Array.from(
+      new Set(gruposMeta.map((g) => g.tipoContrato)),
+    ).sort(
+      (a, b) =>
+        contratoRank(a) - contratoRank(b) ||
+        a.localeCompare(b, "es", { sensitivity: "base" }),
     );
 
     return withSession(
@@ -538,6 +577,7 @@ export async function GET(request: Request) {
         departamentos: Array.from(departamentos).sort((a, b) =>
           a.localeCompare(b, "es", { sensitivity: "base" }),
         ),
+        contratos,
       }),
     );
   } catch (error) {

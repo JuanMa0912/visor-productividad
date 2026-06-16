@@ -16,6 +16,8 @@ export const TIPOS_HORARIO_MAX_TOP_N = 50;
 export type TipoHorarioRow = {
   sede: string;
   departamento: string;
+  /** Tipo de contrato inferido de `cargo`: "36 horas" | "Medio tiempo" | "Tiempo completo". */
+  tipoContrato: string;
   /** Etiqueta del turno, p. ej. "06:00–14:00". */
   turno: string;
   entradaMin: number;
@@ -34,6 +36,7 @@ export type TipoHorarioRow = {
 export type TipoHorarioGrupoMeta = {
   sede: string;
   departamento: string;
+  tipoContrato: string;
   /** Total de turnos distintos detectados en la sede+area (antes de recortar a topN). */
   totalTurnos: number;
   /** Turnos efectivamente devueltos (<= totalTurnos). */
@@ -49,6 +52,8 @@ export type TiposHorarioResponse = {
   rows: TipoHorarioRow[];
   grupos: TipoHorarioGrupoMeta[];
   departamentos: string[];
+  /** Tipos de contrato presentes en el rango, para el filtro del panel. */
+  contratos: string[];
   error?: string;
 };
 
@@ -75,4 +80,46 @@ export const jornadaBand = (hours: number): string => {
   if (hours <= 8) return "6–8h";
   if (hours <= 9) return "8–9h";
   return ">9h";
+};
+
+// ---------------------------------------------------------------------------
+// Tipo de contrato. El contrato (36 horas, medio tiempo, tiempo completo) vive
+// en el texto de `cargo`, no en la marcacion, por eso se infiere del texto.
+// ---------------------------------------------------------------------------
+
+export const TIPO_CONTRATO_36H = "36 horas";
+export const TIPO_CONTRATO_MEDIO = "Medio tiempo";
+export const TIPO_CONTRATO_COMPLETO = "Tiempo completo";
+
+/** Orden de presentacion preferido de los tipos de contrato. */
+export const TIPO_CONTRATO_ORDER = [
+  TIPO_CONTRATO_36H,
+  TIPO_CONTRATO_MEDIO,
+  TIPO_CONTRATO_COMPLETO,
+] as const;
+
+/**
+ * Clasifica el tipo de contrato a partir del texto de `cargo`, usando
+ * `departamento` como apoyo. Misma heuristica que el reporte de horas extra
+ * (hourly-analysis) para mantener coherencia entre modulos.
+ */
+export const classifyContrato = (
+  cargo: string | null | undefined,
+  departamento: string | null | undefined,
+): string => {
+  const source = `${cargo ?? ""} ${departamento ?? ""}`.trim();
+  const key = source
+    ? source
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+    : "";
+  const compact = key.replace(/\s+/g, "");
+  if ((key.includes("36") && key.includes("hora")) || compact.includes("36h")) {
+    return TIPO_CONTRATO_36H;
+  }
+  if (key.includes("medio")) return TIPO_CONTRATO_MEDIO;
+  return TIPO_CONTRATO_COMPLETO;
 };
