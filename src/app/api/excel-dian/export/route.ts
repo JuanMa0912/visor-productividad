@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { applySessionCookies, requireAuthSession } from "@/lib/auth";
 import {
+  EXCEL_DIAN_ID_EMP,
   getExcelDianPool,
   type ExcelDianDbEmpresa,
 } from "@/lib/excel-dian/excel-dian-db";
@@ -526,7 +527,12 @@ export async function GET(request: Request) {
     const client = await pool.connect();
     try {
       const { rows, startLapso: sl, endLapso: el } =
-        await queryMtodoMediosMagneticos(client, startLapso, endLapso);
+        await queryMtodoMediosMagneticos(
+          client,
+          startLapso,
+          endLapso,
+          EXCEL_DIAN_ID_EMP[empresa],
+        );
       const workbook = await buildWorkbook(rows, sl, el, {
         label: excelDianEmpresaLabel(empresa),
         dbCode: empresa,

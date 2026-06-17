@@ -34,8 +34,9 @@ export const buildYearLapsoRange = (year: number) => ({
 });
 
 // Medios magneticos F1007 para Comercializadora (mtodo) y Mercamio (mio).
-// Misma estructura de ERP en ambas bases (id_emp='01'); se corre contra la BD de
-// cada empresa. Periodo parametrizado por lapso YYYYMM: $1 = inicio, $2 = fin.
+// Misma estructura de ERP; se corre contra la BD de cada empresa. El id_emp NO es
+// igual en todas (mtodo='01', mio='02'), por eso va parametrizado.
+// Params: $1 = lapso inicio (YYYYMM), $2 = lapso fin, $3 = id_emp.
 // Merkmios (bgt) aun no tiene consulta estandar (se bloquea en el selector y la API).
 // El alias de la columna de ingreso es "Ingresos Brutos Recibidos" para calzar con
 // las keys que usa el armado del Excel (anchos, formato numerico, etc.).
@@ -63,7 +64,7 @@ mayor_agrupado AS (
         SUM(CASE WHEN cc.tipo='D' THEN c.valor_deb - c.valor_cre ELSE 0 END) AS devolucion
     FROM public.cgmovimiento_contable c
     INNER JOIN cuentas_concepto cc ON TRIM(c.id_cuenta) = cc.cuenta
-    WHERE c.id_emp = '01'
+    WHERE c.id_emp = $3
       AND c.lapso_doc BETWEEN $1 AND $2
     GROUP BY TRIM(c.terc), cc.concepto
 )
@@ -119,10 +120,11 @@ export const queryMtodoMediosMagneticos = async (
   client: PoolClient,
   startLapso: string,
   endLapso: string,
+  idEmp: string,
 ) => {
   const result = await client.query<MtodoMediosMagneticosRow>(
     MTODO_MEDIOS_MAGNETICOS_QUERY,
-    [startLapso, endLapso],
+    [startLapso, endLapso, idEmp],
   );
   return {
     rows: result.rows,
