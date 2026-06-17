@@ -290,21 +290,34 @@ Archivos provistos (no activos hasta configurarlos):
 | `deploy/ecosystem.config.js` | config PM2 (1 proceso, `max_memory_restart`) |
 | `deploy/healthcheck.sh` | sonda `/api/health` y reinicia tras N fallos |
 
-Activar:
+Entorno real de producción: usuario `prodapp`, repo en `/home/prodapp/visor-productividad`,
+proceso PM2 `visor-productividad` corriendo `npm start -- -p 5600` (next start en el
+**puerto 5600**), modo fork.
+
+Probar el endpoint (no requiere activar nada más; ya viene en el build):
 
 ```bash
-# 1) Arrancar bajo el ecosystem (ajusta cwd/script dentro del archivo)
-pm2 start /opt/visor-productividad/deploy/ecosystem.config.js
-pm2 save
-
-# 2) Probar el endpoint
-curl -fsS http://127.0.0.1:3000/api/health
-
-# 3) Instalar el watchdog en cron del usuario que corre PM2 (cada minuto)
-chmod +x /opt/visor-productividad/deploy/healthcheck.sh
-crontab -e
-# * * * * * /opt/visor-productividad/deploy/healthcheck.sh >> /var/log/vp-healthcheck.log 2>&1
+curl -fsS http://127.0.0.1:5600/api/health
+# -> 200 {"ok":true,...,"pool":{...}}
 ```
 
-Nota: el runbook de la seccion 5 usa **systemd**; si operas con **PM2**, usa esta
-seccion en su lugar (no mezcles ambos supervisores sobre el mismo proceso).
+Instalar el watchdog (auto-recuperación del "pegado"), en el cron de `prodapp`:
+
+```bash
+chmod +x /home/prodapp/visor-productividad/deploy/healthcheck.sh
+crontab -e
+# * * * * * /home/prodapp/visor-productividad/deploy/healthcheck.sh >> /home/prodapp/vp-healthcheck.log 2>&1
+```
+
+Opcional — adoptar `ecosystem.config.js` (solo agrega `max_memory_restart`). Como el
+proceso ya corre sin ecosystem, primero hay que borrarlo para no duplicarlo:
+
+```bash
+pm2 delete visor-productividad
+pm2 start /home/prodapp/visor-productividad/deploy/ecosystem.config.js
+pm2 save
+```
+
+Nota: el runbook de la sección 5 usa rutas `/opt/...` y **systemd** como ejemplo
+genérico; la operación real de este server es **PM2** en `/home/prodapp`. Si operas
+con PM2, usá esta sección (no mezcles ambos supervisores sobre el mismo proceso).
