@@ -12,7 +12,10 @@ import {
 } from "@/lib/excel-dian/mtodo-medios-magneticos";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 import { isExcelDianExportPublic } from "@/lib/excel-dian/public-export-env";
-import { EXCEL_DIAN_EMPRESA_OPTIONS } from "@/app/ExcelDian/excel-dian-empresa";
+import {
+  EXCEL_DIAN_EMPRESA_OPTIONS,
+  isExcelDianEmpresaEnabled,
+} from "@/app/ExcelDian/excel-dian-empresa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -406,6 +409,21 @@ export async function GET(request: Request) {
             "Indica empresa=mtodo, mio o bgt (Comercializadora, Mercamio o Merkmios).",
         },
         { status: 400, headers: { "Cache-Control": "no-store" } },
+      ),
+    );
+  }
+
+  // Merkmios (bgt) aun no tiene consulta estandar; no corremos la query de
+  // mtodo/mio contra su base. El selector ya lo deshabilita, pero la API tambien
+  // valida (puede llamarse directo, incluso con export publico).
+  if (!isExcelDianEmpresaEnabled(empresa)) {
+    return finalizeResponse(
+      NextResponse.json(
+        {
+          error:
+            "La exportacion para Merkmios (Bogota) esta en construccion: aun no hay consulta estandar.",
+        },
+        { status: 422, headers: { "Cache-Control": "no-store" } },
       ),
     );
   }
