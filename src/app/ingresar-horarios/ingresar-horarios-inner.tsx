@@ -20,6 +20,7 @@ import {
   FolderOpen,
   ImageIcon,
   Pencil,
+  RefreshCw,
   Save,
   Users,
 } from "lucide-react";
@@ -119,6 +120,7 @@ export function IngresarHorariosInner() {
   const [employeeDuplicateError, setEmployeeDuplicateError] = useState<
     { rowIndex: number; message: string } | null
   >(null);
+  const [refreshingEmployees, setRefreshingEmployees] = useState(false);
   const [rows, setRows] = useState<RowSchedule[]>(
     Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow()),
   );
@@ -763,8 +765,24 @@ export function IngresarHorariosInner() {
     [],
   );
 
+  const fetchEmployeeOptions = useCallback(async () => {
+    const optionsResponse = await fetch("/api/ingresar-horarios/options", {
+      cache: "no-store",
+    });
+    if (!optionsResponse.ok) {
+      const optionsPayload =
+        (await optionsResponse.json()) as HorariosOptionsResponse;
+      throw new Error(
+        optionsPayload.error ?? "No se pudieron actualizar los empleados.",
+      );
+    }
+    const optionsPayload =
+      (await optionsResponse.json()) as HorariosOptionsResponse;
+    return optionsPayload.employees ?? [];
+  }, []);
+
   const handleSedeChange = useCallback(
-    (newSede: string) => {
+    async (newSede: string) => {
       if (newSede === sede) return;
       const hasTableContent = rows.some(rowScheduleHasContent);
       if (
@@ -777,10 +795,75 @@ export function IngresarHorariosInner() {
         return;
       }
       setSede(newSede);
-      applySedeEmployeeRows(newSede, employeeOptions);
+      try {
+        const employees = await fetchEmployeeOptions();
+        setEmployeeOptions(employees);
+        applySedeEmployeeRows(newSede, employees);
+      } catch {
+        applySedeEmployeeRows(newSede, employeeOptions);
+      }
     },
-    [applySedeEmployeeRows, employeeOptions, rows, sede],
+    [applySedeEmployeeRows, employeeOptions, fetchEmployeeOptions, rows, sede],
   );
+
+  useEffect(() => {
+    if (!ready) return;
+    const refreshEmployees = () => {
+      void fetchEmployeeOptions()
+        .then((employees) => {
+          setEmployeeOptions(employees);
+        })
+        .catch(() => {
+          /* conservar lista previa si falla el refresco */
+        });
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshEmployees();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [fetchEmployeeOptions, ready]);
+
+  const handleRefreshEmployees = useCallback(async () => {
+    if (!sede || refreshingEmployees) return;
+    const hasTableContent = rows.some(rowScheduleHasContent);
+    if (
+      hasTableContent &&
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Actualizar la lista reemplazara los empleados y horarios de la tabla por los activos en asistencia. ¿Continuar?",
+      )
+    ) {
+      return;
+    }
+    setRefreshingEmployees(true);
+    try {
+      const employees = await fetchEmployeeOptions();
+      setEmployeeOptions(employees);
+      applySedeEmployeeRows(sede, employees);
+      setDraftMessage(
+        "Lista de empleados actualizada (ultimo mes de asistencia).",
+      );
+    } catch (err) {
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo actualizar la lista de empleados.",
+      );
+    } finally {
+      setRefreshingEmployees(false);
+    }
+  }, [
+    applySedeEmployeeRows,
+    fetchEmployeeOptions,
+    refreshingEmployees,
+    rows,
+    sede,
+  ]);
 
   const employeeNamesPerRow = useMemo(
     () =>
@@ -1793,7 +1876,19 @@ export function IngresarHorariosInner() {
             </datalist>
           ))}
         </div>
-        <div className="mt-2 flex items-center justify-center gap-2 print:hidden">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 print:hidden">
+          <button
+            type="button"
+            onClick={() => void handleRefreshEmployees()}
+            disabled={!sede || refreshingEmployees}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Traer empleados activos segun asistencia reciente"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${refreshingEmployees ? "animate-spin" : ""}`}
+            />
+            Actualizar empleados
+          </button>
           <button
             type="button"
             onClick={handleRemoveLastRow}
@@ -1835,9 +1930,10 @@ export function IngresarHorariosInner() {
             descanso (DESC) para ese empleado.
           </p>
           <p>
-            Al elegir la sede se cargan automaticamente todos los empleados de
-            esa sede en la tabla. Puedes ajustar nombres o agregar filas con el
-            boton + si hace falta.
+            La lista sale de asistencia del ultimo mes: ingresos nuevos
+            aparecen al actualizar; quien renuncio deja de salir. Al elegir la
+            sede se cargan automaticamente todos los empleados activos en la
+            tabla.
           </p>
           <p>
             Cada empleado solo puede aparecer en una fila: al elegirlo en la

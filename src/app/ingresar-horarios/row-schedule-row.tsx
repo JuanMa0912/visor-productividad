@@ -134,9 +134,11 @@ export const RowScheduleRow = memo(
                 onClearLunesPresetChoice(rowIndex);
                 return;
               }
-              if (v === "1" || v === "2" || v === "3") {
-                onApplyLunesPreset(rowIndex, v);
-              }
+              // Aplica cualquier preset (originales 1/2/3 y los creados con
+              // llave c-<timestamp>-<rand>); antes solo se aceptaban "1"|"2"|"3"
+              // y los horarios personalizados quedaban en la lista sin llenar
+              // las celdas del dia.
+              onApplyLunesPreset(rowIndex, v);
             }}
             className="w-full max-w-none min-w-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-1 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
             aria-label={`Aplicar horario predeterminado en fila ${rowIndex + 1}`}

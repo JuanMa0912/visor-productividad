@@ -12,6 +12,14 @@ import {
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
+/**
+ * Solo se listan empleados con marcacion reciente en asistencia_horas. Antes
+ * se usaba SELECT DISTINCT sobre todo el historial: quedaban renuncias y no
+ * entraban ingresos hasta que el usuario recargara la pagina (y aun asi
+ * seguian apareciendo ex empleados).
+ */
+const EMPLOYEE_LOOKBACK_DAYS = 30;
+
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
 const RATE_LIMIT_MAX_ENTRIES = 10_000;
@@ -121,8 +129,8 @@ const SEDE_CONFIGS = [
   { name: "Floresta", attendanceNames: ["floresta"], aliases: ["floresta"] },
   { name: "Floralia", attendanceNames: ["floralia", "floralia mercatodo", "mercatodo floralia"], aliases: ["floralia", "mercatodo floralia"] },
   { name: "Guaduales", attendanceNames: ["guaduales"], aliases: ["guaduales"] },
-  { name: "Bogota", attendanceNames: ["bogota", "merkmios bogota"], aliases: ["bogota", "bogot", "merkmios bogota", "merkmios bogot"] },
-  { name: "Chia", attendanceNames: ["chia", "merkmios chia"], aliases: ["chia", "chi", "ch a", "merkmios chia"] },
+  { name: "Bogota", attendanceNames: ["bogota", "merkmios bogota", "merkmios la 80", "mercamios la 80", "la 80"], aliases: ["bogota", "bogot", "merkmios bogota", "merkmios bogot", "merkmios la 80", "mercamios la 80", "la 80"] },
+  { name: "Chia", attendanceNames: ["chia", "merkmios chia", "plaza mayor chia", "plaza mayor de chia"], aliases: ["chia", "chi", "ch a", "merkmios chia", "plaza mayor chia", "plaza mayor de chia"] },
   { name: "ADM", attendanceNames: ["adm"], aliases: ["adm"] },
   { name: "CEDI-CAVASA", attendanceNames: ["cedi cavasa", "cedi-cavasa", "cedicavasa"], aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
   { name: "Panificadora", attendanceNames: ["panificadora"], aliases: ["panificadora"] },
@@ -328,7 +336,23 @@ export async function GET(request: Request) {
           )), '')`
         : "NULL::text";
 
+    const dateColumn = ["fecha", "fecha_dia", "fecha_asistencia", "worked_date"]
+      .map((candidate) => normalizedToOriginal.get(candidate))
+      .find(Boolean);
+
+    const departmentFilterSql = `(
+          ${buildNormalizeSql("COALESCE(departamento, '')")} LIKE '%caja%'
+          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'supervision y cajas'
+          OR ${buildNormalizeSql("COALESCE(cargo, '')")} LIKE '%caj%'
+          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'planta de produccion'
+          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'servicios generales'
+          OR ${buildNormalizeSql("COALESCE(sede, '')")} LIKE '%panificadora%'
+          OR ${buildNormalizeSql("COALESCE(sede, '')")} LIKE '%planta desposte%'
+          OR ${buildNormalizeSql("COALESCE(sede, '')")} LIKE '%planta desprese%'
+        )`;
+
     const params: unknown[] = [];
+    let paramIndex = 1;
     let sedeFilterSql = "";
     if (visibleSedes.length > 0 && visibleSedes.length < BASE_SEDES.length) {
       const allowedSedeNames = visibleSedes.flatMap((visibleSede) => {
@@ -340,27 +364,44 @@ export async function GET(request: Request) {
           : [normalizeSedeKey(visibleSede.name)];
       });
       params.push(allowedSedeNames);
-      sedeFilterSql = `AND ${buildNormalizeSql("sede")} = ANY($1::text[])`;
+      sedeFilterSql = `AND ${buildNormalizeSql("sede")} = ANY($${paramIndex}::text[])`;
+      paramIndex += 1;
     }
 
-    const employeesQuery = `
+    let recentAttendanceSql = "";
+    if (dateColumn) {
+      params.push(EMPLOYEE_LOOKBACK_DAYS);
+      recentAttendanceSql = `AND ${quoteIdentifier(dateColumn)}::date >= (CURRENT_DATE - $${paramIndex}::int)`;
+      paramIndex += 1;
+    }
+
+    const employeesQuery = dateColumn
+      ? `
+      SELECT employee_name, raw_sede
+      FROM (
+        SELECT
+          ${nameExpr} AS employee_name,
+          NULLIF(TRIM(CAST(sede AS text)), '') AS raw_sede,
+          ROW_NUMBER() OVER (
+            PARTITION BY ${nameExpr}
+            ORDER BY ${quoteIdentifier(dateColumn)}::date DESC NULLS LAST
+          ) AS rn
+        FROM asistencia_horas
+        WHERE ${departmentFilterSql}
+          AND ${nameExpr} IS NOT NULL
+          ${recentAttendanceSql}
+          ${sedeFilterSql}
+      ) ranked
+      WHERE rn = 1
+      ORDER BY employee_name ASC
+    `
+      : `
       SELECT DISTINCT
         ${nameExpr} AS employee_name,
         NULLIF(TRIM(CAST(sede AS text)), '') AS raw_sede
       FROM asistencia_horas
-      WHERE (
-          ${buildNormalizeSql("COALESCE(departamento, '')")} LIKE '%caja%'
-          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'supervision y cajas'
-          OR ${buildNormalizeSql("COALESCE(cargo, '')")} LIKE '%caj%'
-          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'planta de produccion'
-          OR ${buildNormalizeSql("COALESCE(departamento, '')")} = 'servicios generales'
-          OR ${buildNormalizeSql("COALESCE(sede, '')")} LIKE '%panificadora%'
-          OR ${buildNormalizeSql("COALESCE(sede, '')")} LIKE '%planta desposte%'
-          OR ${buildNormalizeSql("COALESCE(sede, '')")} LIKE '%planta desprese%'
-        )
-        AND (
-          ${nameExpr} IS NOT NULL
-        )
+      WHERE ${departmentFilterSql}
+        AND ${nameExpr} IS NOT NULL
         ${sedeFilterSql}
       ORDER BY employee_name ASC
     `;
