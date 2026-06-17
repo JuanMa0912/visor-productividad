@@ -38,6 +38,7 @@ Variables por capacidad:
 
 | Capacidad | Variables |
 | --- | --- |
+| Pool PostgreSQL | `DB_POOL_MAX`, `DB_POOL_CONN_TIMEOUT_MS`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_MAX_LIFETIME_SEC`, `DB_STATEMENT_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` (todas opcionales; ver seccion 11) |
 | Productividad cache | `PRODUCTIVITY_CACHE_PATH`, `PRODUCTIVITY_SERVE_FILE_CACHE` |
 | Build | `NEXT_BUILD_MEMORY_MB`, `NEXT_BUILD_LOG_LIMITS`, `NEXT_BUILD_STRICT` |
 | HTTPS/headers | `UPGRADE_INSECURE_REQUESTS`, `COOP_DISABLED`, `ALLOWED_DEV_ORIGINS` |
@@ -237,3 +238,73 @@ La limpieza borra registros antiguos de `app_user_activity_log`,
 | IPs aparecen como proxy | falta `TRUST_PROXY=true` o headers nginx | configurar proxy y env |
 | Presencia/admin sin datos | faltan migraciones `last_activity`, `last_path` o `user_activity_log` | aplicar migraciones de mayo 2026 |
 | `/cronograma` falla | faltan `NOTION_*` o permisos de integracion | revisar token, page id y conexiones en Notion |
+| Servidor "pegado", solo revive con `pm2 restart` | pool PostgreSQL agotado sin timeouts (una query trabada retiene conexiones y `pool.connect()` esperaba para siempre) | mitigado por defecto desde Fase 1+2 (timeouts del pool); para auto-recuperacion activar el watchdog de la seccion 11 |
+
+## 11. Resiliencia del pool PostgreSQL y auto-recuperacion
+
+### 11.1 Timeouts del pool (Fase 1+2, ya activos)
+
+El pool principal (`src/lib/db/index.ts`) ahora separa dos cosas distintas:
+
+- **Adquirir conexion** (sacar un client del pool): acotado para fallar rapido en
+  vez de colgarse para siempre cuando el pool se agota. Esta era la causa raiz del
+  "pegado". No afecta la duracion de las queries.
+- **Duracion de query**: techo alto (`statement_timeout` 800s) que solo aborta
+  queries trabadas indefinidamente (conexiones zombi). Las queries pesadas reales
+  (rotacion, exports) terminan muy por debajo y no se ven afectadas.
+
+Todo es configurable por env con defaults seguros (no requieren accion):
+
+| Variable | Default | Efecto |
+| --- | --- | --- |
+| `DB_POOL_MAX` | `15` | tamano del pool; revisar contra `max_connections` de la DB |
+| `DB_POOL_CONN_TIMEOUT_MS` | `10000` | espera maxima para obtener un client (antes: infinita) |
+| `DB_POOL_IDLE_TIMEOUT_MS` | `30000` | cierre de conexiones ociosas |
+| `DB_POOL_MAX_LIFETIME_SEC` | `1800` | reciclaje de conexiones (mata zombis de Cloud SQL/NAT) |
+| `DB_STATEMENT_TIMEOUT_MS` | `800000` | techo por query (800s); `0` desactiva |
+| `DB_IDLE_TX_TIMEOUT_MS` | `60000` | corta transacciones OCIOSas; no toca queries en curso |
+
+Para tightening fino de endpoints livianos existe `withPoolClient(fn, { statementTimeoutMs })`,
+que aplica un timeout corto solo a ese client y lo restablece al techo global al
+terminar. Las rutas pesadas no lo usan.
+
+Stopgap inmediato del lado de la DB (sin redeploy), si hiciera falta:
+
+```sql
+ALTER ROLE <DB_USER> SET statement_timeout = '800s';
+ALTER ROLE <DB_USER> SET idle_in_transaction_session_timeout = '60s';
+-- aplica a conexiones nuevas; reiniciar la app para tomarlo
+```
+
+### 11.2 Auto-recuperacion con PM2 + watchdog (Fase 3, lista para configurar)
+
+PM2 reinicia el proceso si **crashea** o supera memoria, pero NO detecta
+"pegado-pero-vivo". El endpoint `GET /api/health` (publico, hace `SELECT 1` y
+expone contadores del pool) permite a un watchdog externo detectarlo y reiniciar.
+
+Archivos provistos (no activos hasta configurarlos):
+
+| Archivo | Uso |
+| --- | --- |
+| `src/app/api/health/route.ts` | health endpoint (`200` ok / `503` DB caida) |
+| `deploy/ecosystem.config.js` | config PM2 (1 proceso, `max_memory_restart`) |
+| `deploy/healthcheck.sh` | sonda `/api/health` y reinicia tras N fallos |
+
+Activar:
+
+```bash
+# 1) Arrancar bajo el ecosystem (ajusta cwd/script dentro del archivo)
+pm2 start /opt/visor-productividad/deploy/ecosystem.config.js
+pm2 save
+
+# 2) Probar el endpoint
+curl -fsS http://127.0.0.1:3000/api/health
+
+# 3) Instalar el watchdog en cron del usuario que corre PM2 (cada minuto)
+chmod +x /opt/visor-productividad/deploy/healthcheck.sh
+crontab -e
+# * * * * * /opt/visor-productividad/deploy/healthcheck.sh >> /var/log/vp-healthcheck.log 2>&1
+```
+
+Nota: el runbook de la seccion 5 usa **systemd**; si operas con **PM2**, usa esta
+seccion en su lugar (no mezcles ambos supervisores sobre el mismo proceso).
