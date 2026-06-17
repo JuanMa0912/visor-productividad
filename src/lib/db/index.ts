@@ -29,6 +29,14 @@ const loadLocalEnv = () => {
   });
 };
 
+/** Lee un entero no-negativo de env con fallback; ignora valores invalidos. */
+const intEnv = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+};
+
 const resolveDbConfig = () => {
   loadLocalEnv();
 
@@ -81,15 +89,45 @@ export const getDbPool = async (): Promise<import("pg").Pool> => {
     const dbConfig = resolveDbConfig();
     try {
       const { Pool } = await import("pg");
+
+      // Endurecimiento del pool. Idea clave: separar "adquirir conexion" (acotable
+      // sin riesgo, no es la query) de "duracion de query" (techo generoso para no
+      // matar las pesadas como rotacion). Todo configurable por env con defaults
+      // seguros. Sin esto, connectionTimeoutMillis=0 hace que pool.connect() espere
+      // para siempre cuando el pool se agota => servidor "pegado" hasta pm2 restart.
+      const statementTimeoutMs = intEnv("DB_STATEMENT_TIMEOUT_MS", 800_000);
+      const idleTxTimeoutMs = intEnv("DB_IDLE_TX_TIMEOUT_MS", 60_000);
+      const optionParts = [`-c search_path=${dbConfig.schema}`];
+      // Techo alto (800s): solo aborta queries trabadas "para siempre" (conexion
+      // zombi); rotacion/exports reales terminan muy por debajo. 0 = desactivado.
+      if (statementTimeoutMs > 0) {
+        optionParts.push(`-c statement_timeout=${statementTimeoutMs}`);
+      }
+      // Solo dispara en transacciones OCIOSas; no toca una query en ejecucion.
+      if (idleTxTimeoutMs > 0) {
+        optionParts.push(
+          `-c idle_in_transaction_session_timeout=${idleTxTimeoutMs}`,
+        );
+      }
+
       const next = new Pool({
         host: dbConfig.host,
         port: dbConfig.port,
         database: dbConfig.database,
         user: dbConfig.user,
         password: dbConfig.password,
-        options: `-c search_path=${dbConfig.schema}`,
+        options: optionParts.join(" "),
+        application_name: "visor-productividad",
         keepAlive: true,
         ssl: dbConfig.ssl,
+        // Adquirir un client: falla rapido en vez de colgar para siempre cuando
+        // el pool se agota (causa raiz del "pegado"). NO afecta la duracion de queries.
+        max: intEnv("DB_POOL_MAX", 15),
+        connectionTimeoutMillis: intEnv("DB_POOL_CONN_TIMEOUT_MS", 10_000),
+        idleTimeoutMillis: intEnv("DB_POOL_IDLE_TIMEOUT_MS", 30_000),
+        // Recicla conexiones zombi (Cloud SQL/NAT cierran sockets ociosos). La
+        // eviccion ocurre al liberar/estar idle, nunca a mitad de una query.
+        maxLifetimeSeconds: intEnv("DB_POOL_MAX_LIFETIME_SEC", 1_800),
       });
       next.on("error", (err: Error) => {
         console.error("[db] PostgreSQL pool client error:", err.message);
@@ -107,20 +145,54 @@ export const getDbPool = async (): Promise<import("pg").Pool> => {
   return pool;
 };
 
-/** Ejecuta fn con un cliente del pool y libera correctamente; si falla, descarta el cliente (no reutiliza conexion rota). */
+/**
+ * Ejecuta fn con un cliente del pool y libera correctamente; si falla, descarta el
+ * cliente (no reutiliza conexion rota).
+ *
+ * `statementTimeoutMs` (Fase 2, opcional y ADITIVO): aplica un statement_timeout mas
+ * corto SOLO a este client mientras esta fuera del pool, y lo restablece al techo
+ * global con RESET al terminar. Pensado para endpoints LIVIANOS (auth, heartbeat,
+ * presencia, listados admin). Las rutas pesadas (rotacion, margenes, exports) no lo
+ * usan y conservan el techo generoso del pool.
+ */
 export const withPoolClient = async <T>(
   fn: (client: import("pg").PoolClient) => Promise<T>,
+  opts?: { statementTimeoutMs?: number },
 ): Promise<T> => {
   const poolInstance = await getDbPool();
   const client = await poolInstance.connect();
+  const overrideMs = opts?.statementTimeoutMs;
+  const applyOverride = typeof overrideMs === "number" && overrideMs >= 0;
   try {
+    if (applyOverride) {
+      await client.query(`SET statement_timeout = ${Math.floor(overrideMs)}`);
+    }
     const result = await fn(client);
+    // RESET restaura el statement_timeout configurado en la conexion (el techo
+    // global), evitando que el override se filtre al siguiente uso del client.
+    if (applyOverride) {
+      await client.query("RESET statement_timeout");
+    }
     client.release();
     return result;
   } catch (err) {
     client.release(err instanceof Error ? err : new Error(String(err)));
     throw err;
   }
+};
+
+/** Estadisticas del pool para health checks/observabilidad. */
+export const getPoolStats = async (): Promise<{
+  total: number;
+  idle: number;
+  waiting: number;
+}> => {
+  const poolInstance = await getDbPool();
+  return {
+    total: poolInstance.totalCount,
+    idle: poolInstance.idleCount,
+    waiting: poolInstance.waitingCount,
+  };
 };
 
 export const testDbConnection = async () => {
