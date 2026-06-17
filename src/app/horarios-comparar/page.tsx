@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Download,
@@ -15,7 +13,6 @@ import {
   FileText,
   RefreshCw,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
 import { AppTopBar } from "@/components/portal/app-top-bar";

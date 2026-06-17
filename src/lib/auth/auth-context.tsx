@@ -81,6 +81,36 @@ const readCookie = (name: string): string | null => {
   return match ? decodeURIComponent(match[1]) : null;
 };
 
+/** Lee /api/auth/me sin tocar React state (seguro para llamar desde effects). */
+type SessionLoadResult =
+  | { kind: "authenticated"; user: AuthUser }
+  | { kind: "unauthenticated" }
+  | { kind: "error"; message: string };
+
+async function loadSessionFromApi(
+  signal: AbortSignal,
+): Promise<SessionLoadResult> {
+  const response = await fetch("/api/auth/me", {
+    signal,
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (response.status === 401) {
+    return { kind: "unauthenticated" };
+  }
+  if (!response.ok) {
+    return {
+      kind: "error",
+      message: `No fue posible consultar la sesion (HTTP ${response.status}).`,
+    };
+  }
+  const payload = (await response.json()) as { user?: AuthUser | null };
+  if (payload?.user) {
+    return { kind: "authenticated", user: payload.user };
+  }
+  return { kind: "unauthenticated" };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -88,54 +118,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  const applySessionResult = useCallback((result: SessionLoadResult) => {
+    switch (result.kind) {
+      case "authenticated":
+        setUser(result.user);
+        setStatus("authenticated");
+        setError(null);
+        break;
+      case "unauthenticated":
+        setUser(null);
+        setStatus("unauthenticated");
+        setError(null);
+        break;
+      case "error":
+        setUser(null);
+        setStatus("error");
+        setError(result.message);
+        break;
+    }
+  }, []);
+
   const fetchSession = useCallback(async () => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const response = await fetch("/api/auth/me", {
-        signal: controller.signal,
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (response.status === 401) {
-        setUser(null);
-        setStatus("unauthenticated");
-        setError(null);
-        return;
-      }
-      if (!response.ok) {
-        setUser(null);
-        setStatus("error");
-        setError(`No fue posible consultar la sesion (HTTP ${response.status}).`);
-        return;
-      }
-      const payload = (await response.json()) as { user?: AuthUser | null };
-      if (payload?.user) {
-        setUser(payload.user);
-        setStatus("authenticated");
-        setError(null);
-      } else {
-        setUser(null);
-        setStatus("unauthenticated");
-        setError(null);
+      const result = await loadSessionFromApi(controller.signal);
+      if (!controller.signal.aborted) {
+        applySessionResult(result);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      setUser(null);
-      setStatus("error");
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Error desconocido al consultar la sesion.",
-      );
+      if (!controller.signal.aborted) {
+        applySessionResult({
+          kind: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Error desconocido al consultar la sesion.",
+        });
+      }
     }
-  }, []);
+  }, [applySessionResult]);
 
   useEffect(() => {
-    void fetchSession();
-    return () => abortRef.current?.abort();
-  }, [fetchSession]);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    void loadSessionFromApi(controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          applySessionResult(result);
+        }
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (!controller.signal.aborted) {
+          applySessionResult({
+            kind: "error",
+            message:
+              err instanceof Error
+                ? err.message
+                : "Error desconocido al consultar la sesion.",
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [applySessionResult]);
 
   const signIn = useCallback<AuthContextValue["signIn"]>((nextUser) => {
     // `flushSync` obliga a React a procesar el cambio de estado AHORA, no en

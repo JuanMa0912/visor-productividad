@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
 import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/portal/app-top-bar";

@@ -50,7 +50,6 @@ import type {
   DayKey,
   DaySchedule,
   RowSchedule,
-  ScheduleDraft,
 } from "./types";
 import {
   DAY_ORDER,

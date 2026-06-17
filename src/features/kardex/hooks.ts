@@ -31,17 +31,20 @@ const useKardexQuery = <T,>(
   filters: KardexFilters,
   initial: T,
 ): QueryState<T> => {
-  const [data, setData] = useState<T>(initial);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<{
+    key: string;
+    data: T;
+    error: string | null;
+  }>({ key: "", data: initial, error: null });
 
   const query = useMemo(() => buildQueryString(filters), [filters]);
   const key = `${endpoint}?${query}`;
+  const loading = snapshot.key !== key;
+  const data = snapshot.data;
+  const error = snapshot.key === key ? snapshot.error : null;
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
 
     void fetch(key, { signal: controller.signal, cache: "no-store" })
       .then(async (res) => {
@@ -54,18 +57,24 @@ const useKardexQuery = <T,>(
         return (await res.json()) as T;
       })
       .then((payload) => {
-        setData(payload);
+        if (!controller.signal.aborted) {
+          setSnapshot({ key, data: payload, error: null });
+        }
       })
       .catch((err: unknown) => {
         if ((err as { name?: string }).name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Error consultando kardex.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setSnapshot((prev) => ({
+            key,
+            data: prev.key === key ? prev.data : initial,
+            error:
+              err instanceof Error ? err.message : "Error consultando kardex.",
+          }));
+        }
       });
 
     return () => controller.abort();
-  }, [key]);
+  }, [initial, key]);
 
   return { data, loading, error };
 };

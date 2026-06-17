@@ -2,16 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import {
-  ArrowLeft,
   CalendarDays,
   ChevronDown,
   Download,
   RefreshCw,
   Search,
-  Sparkles,
 } from "lucide-react";
 import {
   DEFAULT_SEDES,

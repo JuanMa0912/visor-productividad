@@ -62,9 +62,9 @@ sudo systemctl status visor --no-pager
 - Archivos en `public/logos/` (versionados en git).
 - Deben copiarse a `.next/standalone/public/logos/` (lo hace `build:server`).
 - Tras rebuild: `sudo systemctl restart visor`.
-- Verificar: `curl -sI http://127.0.0.1:3000/logos/mercamio.jpeg` → `200`.
-- El build standalone usa `images.unoptimized` (sin `/_next/image`) para evitar
-  errores de sharp con archivos en `public/`.
+- Verificar: `curl -sI http://127.0.0.1:3000/logos/mercamio.jpeg` → `200` (no `302` a `/login`).
+- El proxy (`src/proxy.ts`) debe dejar pasar `/logos/` sin cookie de sesión.
+- El build standalone usa `<img>` directo y `images.unoptimized` (sin `/_next/image`).
 
 ---
 

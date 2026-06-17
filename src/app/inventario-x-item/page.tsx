@@ -778,8 +778,12 @@ export default function InventarioXItemPage() {
     });
 
     return Array.from(itemMap.values()).map(
-      ({ diWeightedNum: _n, diWeightedDen: _d, anyNoSalesDi: _a, ...rest }) =>
-        rest,
+      ({
+        diWeightedNum: _diWeightedNum,
+        diWeightedDen: _diWeightedDen,
+        anyNoSalesDi: _anyNoSalesDi,
+        ...rest
+      }) => rest,
     );
   }, [filteredRows]);
 

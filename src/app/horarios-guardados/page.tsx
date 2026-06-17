@@ -209,8 +209,13 @@ export default function HorariosGuardadosPage() {
   const [filterSede, setFilterSede] = useState("");
 
   const selectedForm = selectedFormId !== null ? formDetailsById[selectedFormId] ?? null : null;
-  const selectedEmployeeRecords =
-    selectedEmployeeName !== null ? employeeRecordsByName[selectedEmployeeName] ?? [] : [];
+  const selectedEmployeeRecords = useMemo(
+    () =>
+      selectedEmployeeName !== null
+        ? employeeRecordsByName[selectedEmployeeName] ?? []
+        : [],
+    [employeeRecordsByName, selectedEmployeeName],
+  );
 
   const loadForms = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch("/api/ingresar-horarios/forms", {
