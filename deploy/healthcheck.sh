@@ -6,19 +6,19 @@
 # (pool agotado / event loop bloqueado) no crashea, asi que PM2 no lo reinicia.
 # Este script sondea /api/health y reinicia la app tras N fallos seguidos.
 #
-# Instalar (cron del usuario que corre PM2, p. ej. `visor`), cada minuto:
-#   chmod +x /opt/visor-productividad/deploy/healthcheck.sh
+# Instalar (cron del usuario prodapp, que corre PM2), cada minuto:
+#   chmod +x /home/prodapp/visor-productividad/deploy/healthcheck.sh
 #   crontab -e
-#   * * * * * /opt/visor-productividad/deploy/healthcheck.sh >> /var/log/vp-healthcheck.log 2>&1
+#   * * * * * /home/prodapp/visor-productividad/deploy/healthcheck.sh >> /home/prodapp/vp-healthcheck.log 2>&1
 #
 # Variables (opcionales):
-#   VP_HEALTH_URL        URL del endpoint (default http://127.0.0.1:3000/api/health)
+#   VP_HEALTH_URL        URL del endpoint (default http://127.0.0.1:5600/api/health)
 #   VP_PM2_APP           nombre PM2 a reiniciar (default visor-productividad)
 #   VP_HEALTH_MAX_FAILS  fallos seguidos antes de reiniciar (default 3)
 #   VP_HEALTH_STATE      archivo de estado (default /tmp/vp-health-fails)
 set -euo pipefail
 
-URL="${VP_HEALTH_URL:-http://127.0.0.1:3000/api/health}"
+URL="${VP_HEALTH_URL:-http://127.0.0.1:5600/api/health}"
 APP_NAME="${VP_PM2_APP:-visor-productividad}"
 MAX_FAILS="${VP_HEALTH_MAX_FAILS:-3}"
 STATE_FILE="${VP_HEALTH_STATE:-/tmp/vp-health-fails}"

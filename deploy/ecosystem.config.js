@@ -1,24 +1,25 @@
 // PM2 ecosystem para Visor de Productividad.
-// LISTO PARA CONFIGURAR — no esta activo hasta que lo arranques con:
-//   pm2 start deploy/ecosystem.config.js
-//   pm2 save
+// Calzado al entorno real: usuario prodapp, repo en /home/prodapp/visor-productividad,
+// arranque `npm start -- -p 5600` (next start en puerto 5600), modo fork.
 //
 // Por que importa: PM2 reinicia el proceso si CRASHEA o supera memoria, pero NO
-// detecta "pegado-pero-vivo" (event loop u ozio del pool). Para eso esta el
-// watchdog externo deploy/healthcheck.sh. Este ecosystem cubre el reinicio por
-// crash/memoria; el watchdog cubre el "pegado".
+// detecta "pegado-pero-vivo" (event loop u ocio del pool). Para eso esta el
+// watchdog externo deploy/healthcheck.sh. Este ecosystem agrega max_memory_restart
+// (reinicio por fuga de memoria) al proceso que hoy ya corre sin ecosystem.
 //
-// Ajusta `cwd`, `script`/`args` y `max_memory_restart` a tu host real.
+// OPCIONAL: tu PM2 ya funciona sin este archivo. Solo aporta max_memory_restart.
+// Si lo querés adoptar, primero borra el proceso actual para no duplicarlo:
+//   pm2 delete visor-productividad
+//   pm2 start /home/prodapp/visor-productividad/deploy/ecosystem.config.js
+//   pm2 save
 module.exports = {
   apps: [
     {
       name: "visor-productividad",
-      // Opcion A (build normal): npm run start  ->  next start
       script: "npm",
-      args: "run start",
-      // Opcion B (build standalone, recomendado en prod): comenta lo de arriba y usa:
-      //   script: ".next/standalone/server.js",
-      cwd: "/opt/visor-productividad",
+      // npm start -> next start; "-- -p 5600" fija el puerto (igual que hoy).
+      args: "start -- -p 5600",
+      cwd: "/home/prodapp/visor-productividad",
       instances: 1,
       // IMPORTANTE: un solo proceso. El rate-limit y varias caches viven EN MEMORIA
       // del proceso (no son multi-replica); cluster duplicaria caches y romperia los
@@ -31,7 +32,8 @@ module.exports = {
       max_memory_restart: "1G",
       env: {
         NODE_ENV: "production",
-        // PORT: "3000",
+        // El puerto se fija via args (-p 5600). Las credenciales DB se leen de
+        // .env.local en el cwd (no hace falta declararlas aqui).
         // --- Tunables del pool PostgreSQL (Fase 1+2). Defaults seguros ya estan en
         // codigo; descomenta solo si necesitas ajustar para tu DB ---
         // DB_POOL_MAX: "15",                 // revisar contra max_connections de la DB
