@@ -1,6 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { isSamePlanillaSede } from "@/lib/horarios/planilla-sede";
 import { normalizeScheduleTime } from "@/lib/horarios/schedule-time";
+import { normalizePersonNameKey } from "@/lib/shared/normalize";
 import type { DayKey, DaySchedule, RowSchedule } from "./types";
 
 export const DAY_ORDER: DayKey[] = [
@@ -135,6 +136,55 @@ export const matchesSede = (
 ) => {
   if (!selectedSede.trim()) return false;
   return isSamePlanillaSede(employeeSede ?? "", selectedSede);
+};
+
+/** Nombres unicos de empleados asociados a la sede seleccionada (orden alfabético). */
+export const listEmployeeNamesForSede = (
+  employees: Array<{ name: string; sede?: string }>,
+  selectedSede: string,
+): string[] => {
+  if (!selectedSede.trim()) return [];
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const employee of employees) {
+    if (!matchesSede(employee.sede, selectedSede)) continue;
+    const name = employee.name.trim();
+    if (!name) continue;
+    const key = normalizePersonNameKey(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  return names.sort((a, b) => a.localeCompare(b, "es"));
+};
+
+/** Indica si la fila ya tiene nombre, firma u horarios capturados. */
+export const rowScheduleHasContent = (row: RowSchedule): boolean => {
+  if (row.nombre.trim() || row.firma.trim()) return true;
+  return DAY_ORDER.some((day) => {
+    const slot = row.days[day];
+    return (
+      slot.conDescanso ||
+      Boolean(slot.he1.trim()) ||
+      Boolean(slot.hs1.trim()) ||
+      Boolean(slot.he2.trim()) ||
+      Boolean(slot.hs2.trim())
+    );
+  });
+};
+
+/**
+ * Crea una fila por empleado de la sede. Si no hay empleados, conserva las
+ * filas vacias iniciales para captura manual.
+ */
+export const buildRowsFromEmployeeNames = (names: string[]): RowSchedule[] => {
+  if (names.length === 0) {
+    return Array.from({ length: INITIAL_ROW_COUNT }, () => createEmptyRow());
+  }
+  return names.map((name) => ({
+    ...createEmptyRow(),
+    nombre: name,
+  }));
 };
 
 /**

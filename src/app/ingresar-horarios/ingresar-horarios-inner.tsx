@@ -69,7 +69,9 @@ import {
   parseLunesIndependence,
   serializeLunesIndependence,
   normalizeText,
-  matchesSede,
+  listEmployeeNamesForSede,
+  buildRowsFromEmployeeNames,
+  rowScheduleHasContent,
 } from "./schedule-utils";
 import {
   getCookieValue,
@@ -376,10 +378,20 @@ export function IngresarHorariosInner() {
           );
           setLunesIndVersion((n) => n + 1);
         } else if (!skipDraftForPlanilla) {
-          if (optionsPayload.defaultSede) {
-            setSede(optionsPayload.defaultSede);
-          } else if (nextSedes.length > 0) {
-            setSede(nextSedes[0].name);
+          const defaultSede =
+            optionsPayload.defaultSede?.trim() ||
+            nextSedes[0]?.name?.trim() ||
+            "";
+          if (defaultSede) {
+            setSede(defaultSede);
+            setRows(
+              buildRowsFromEmployeeNames(
+                listEmployeeNamesForSede(
+                  optionsPayload.employees ?? [],
+                  defaultSede,
+                ),
+              ),
+            );
           }
         }
         setDraftHydrated(true);
@@ -732,16 +744,42 @@ export function IngresarHorariosInner() {
   );
 
   const filteredEmployeeNames = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          employeeOptions
-            .filter((employee) => matchesSede(employee.sede, sede))
-            .map((employee) => employee.name)
-            .filter(Boolean),
-        ),
-      ).sort((a, b) => a.localeCompare(b, "es")),
+    () => listEmployeeNamesForSede(employeeOptions, sede),
     [employeeOptions, sede],
+  );
+
+  const applySedeEmployeeRows = useCallback(
+    (selectedSede: string, employees: Array<{ name: string; sede?: string }>) => {
+      setRows(
+        buildRowsFromEmployeeNames(
+          listEmployeeNamesForSede(employees, selectedSede),
+        ),
+      );
+      setLunesPresetChoiceByRow({});
+      lunesIndependenceRef.current.clear();
+      setLunesIndVersion((n) => n + 1);
+      setEmployeeDuplicateError(null);
+    },
+    [],
+  );
+
+  const handleSedeChange = useCallback(
+    (newSede: string) => {
+      if (newSede === sede) return;
+      const hasTableContent = rows.some(rowScheduleHasContent);
+      if (
+        hasTableContent &&
+        typeof window !== "undefined" &&
+        !window.confirm(
+          "Al cambiar de sede se reemplazaran los empleados y horarios de la tabla por los de la nueva sede. ¿Continuar?",
+        )
+      ) {
+        return;
+      }
+      setSede(newSede);
+      applySedeEmployeeRows(newSede, employeeOptions);
+    },
+    [applySedeEmployeeRows, employeeOptions, rows, sede],
   );
 
   const employeeNamesPerRow = useMemo(
@@ -1266,7 +1304,7 @@ export function IngresarHorariosInner() {
                 <select
                   id="ih-sede"
                   value={sede}
-                  onChange={(e) => setSede(e.target.value)}
+                  onChange={(e) => handleSedeChange(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
                 >
                   {sedesOptions.map((option) => (
@@ -1795,6 +1833,11 @@ export function IngresarHorariosInner() {
           <p>
             Marca el check junto al primer HE para dejar el dia completo en
             descanso (DESC) para ese empleado.
+          </p>
+          <p>
+            Al elegir la sede se cargan automaticamente todos los empleados de
+            esa sede en la tabla. Puedes ajustar nombres o agregar filas con el
+            boton + si hace falta.
           </p>
           <p>
             Cada empleado solo puede aparecer en una fila: al elegirlo en la
