@@ -111,8 +111,7 @@ import {
   calculateDuvDays,
   calculateDiSinceLastIngresoDays,
   normalizeRotationRows,
-  appendCategoriaParams,
-  buildLineasN1QueryValues,
+  filterRotationRowsByLineaAndCategoria,
   readCatalogCache,
   writeCatalogCache,
   buildDefaultCategoriaKeys,
@@ -358,7 +357,7 @@ export function RotacionPageInner() {
 
   const reloadRotacionRows = useCallback(
     async (
-      overrides?: {
+      _overrides?: {
         lineasN1?: string[];
         categoriaKeys?: string[];
         categoriasCatalog?: RotationCategoriaFilterOption[];
@@ -375,25 +374,23 @@ export function RotacionPageInner() {
       );
       if (targetSedeSelectionsForQuery.length === 0) return false;
 
-      const lineas = overrides?.lineasN1 ?? selectedLineaN1Values;
-      const cats = overrides?.categoriaKeys ?? selectedCategoriaKeys;
-      const categoriasForParams =
-        overrides?.categoriasCatalog ?? filterCatalog.categorias ?? [];
-      const lineasForParams = buildLineasN1QueryValues(
-        filterCatalog.lineasN1 ?? [],
-        lineas,
-      );
-      const lineasKeyValues = lineasForParams ?? [];
-
-      const rowsFilterKey = buildRotacionRowsKey({
+      // Una sola carga por sede+rango; linea N1 y categoria se filtran en cliente.
+      const rowsScopeKey = buildRotacionRowsKey({
         start: dateRange.start ?? "",
         end: dateRange.end ?? "",
         empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
         sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
-        lineasN1: lineasKeyValues,
-        categoriaKeys: cats,
+        lineasN1: [],
+        categoriaKeys: [],
       });
-      const rowsCacheKey = buildRotacionRowsCacheKey(apiBasePath, rowsFilterKey);
+      const rowsCacheKey = buildRotacionRowsCacheKey(apiBasePath, rowsScopeKey);
+
+      const scopeChanged =
+        rotacionRowsFetchKeyRef.current !== null &&
+        rotacionRowsFetchKeyRef.current !== rowsScopeKey;
+      if (scopeChanged) {
+        setHasLoadedItems(false);
+      }
 
       setIsLoadingData(true);
       setError(null);
@@ -435,7 +432,7 @@ export function RotacionPageInner() {
             ) {
               setAbcdConfig(normalizeAbcdConfig(cached.abcdConfig));
             }
-            rotacionRowsFetchKeyRef.current = rowsFilterKey;
+            rotacionRowsFetchKeyRef.current = rowsScopeKey;
             const elapsedMs = performance.now() - reloadStartTs;
             console.log(
               `[rotacion] Cache IDB hit en ${formatLoadDuration(elapsedMs)} (${elapsedMs.toFixed(0)} ms).`,
@@ -452,10 +449,6 @@ export function RotacionPageInner() {
         targetSedeSelectionsForQuery.forEach((sedeMeta) => {
           params.append("sedeScope", `${sedeMeta.empresa}::${sedeMeta.sedeId}`);
         });
-        lineasKeyValues.forEach((linea) => {
-          params.append("lineasN1", linea);
-        });
-        appendCategoriaParams(params, categoriasForParams, cats);
         const response = await fetch(
           `${apiBasePath}${params.size > 0 ? `?${params.toString()}` : ""}`,
           { cache: "no-store", signal: options?.signal },
@@ -493,7 +486,7 @@ export function RotacionPageInner() {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
         }
-        rotacionRowsFetchKeyRef.current = rowsFilterKey;
+        rotacionRowsFetchKeyRef.current = rowsScopeKey;
 
         const uiReadyMs = performance.now() - reloadStartTs;
         console.log(
@@ -531,10 +524,6 @@ export function RotacionPageInner() {
       selectedSedeSet,
       dateRange.start,
       dateRange.end,
-      selectedLineaN1Values,
-      selectedCategoriaKeys,
-      filterCatalog.lineasN1,
-      filterCatalog.categorias,
       apiBasePath,
     ],
   );
@@ -558,20 +547,16 @@ export function RotacionPageInner() {
     )
       return;
 
-    const key = buildRotacionRowsKey({
+    const scopeKey = buildRotacionRowsKey({
       start: dateRange.start,
       end: dateRange.end,
       empresas: targetSedeSelectionsForQuery.map((s) => s.empresa),
       sedeIds: targetSedeSelectionsForQuery.map((s) => s.sedeId),
-      lineasN1:
-        buildLineasN1QueryValues(
-          filterCatalog.lineasN1 ?? [],
-          selectedLineaN1Values,
-        ) ?? [],
-      categoriaKeys: selectedCategoriaKeys,
+      lineasN1: [],
+      categoriaKeys: [],
     });
 
-    if (key === rotacionRowsFetchKeyRef.current) return;
+    if (scopeKey === rotacionRowsFetchKeyRef.current) return;
 
     const timer = window.setTimeout(() => {
       void reloadRotacionRows();
@@ -581,12 +566,9 @@ export function RotacionPageInner() {
     ready,
     isLoadingLineCatalog,
     filterCatalog.sedes,
-    filterCatalog.lineasN1,
     selectedSedeSet,
     dateRange.start,
     dateRange.end,
-    selectedLineaN1Values,
-    selectedCategoriaKeys,
     reloadRotacionRows,
   ]);
 
@@ -1364,17 +1346,35 @@ export function RotacionPageInner() {
     lastSedeStorageKey,
   ]);
 
+  const catalogFilteredRows = useMemo(
+    () =>
+      filterRotationRowsByLineaAndCategoria(
+        rows,
+        filterCatalog.lineasN1 ?? [],
+        selectedLineaN1Values,
+        filterCatalog.categorias ?? [],
+        selectedCategoriaKeys,
+      ),
+    [
+      rows,
+      filterCatalog.lineasN1,
+      filterCatalog.categorias,
+      selectedLineaN1Values,
+      selectedCategoriaKeys,
+    ],
+  );
+
   const sortedRows = useMemo(
     () =>
       sortRotationRows(
-        rows,
+        catalogFilteredRows,
         tableSortField,
         tableSortDirection,
         tableSortField === "ceroRotacionEstado"
           ? getSurtidoEstadoSortRank
           : undefined,
       ),
-    [rows, tableSortDirection, tableSortField, getSurtidoEstadoSortRank],
+    [catalogFilteredRows, tableSortDirection, tableSortField, getSurtidoEstadoSortRank],
   );
   const rowsAfterProductFilter = useMemo(
     () =>
@@ -2753,7 +2753,7 @@ export function RotacionPageInner() {
               </p>
             </CardContent>
           </Card>
-        ) : isLoadingData ? (
+        ) : isLoadingData && !hasLoadedItems ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
               <div
