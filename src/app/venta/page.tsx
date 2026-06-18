@@ -99,20 +99,20 @@ export default function VentaHubPage() {
         showSeccionesShortcut
       />
       <PortalHubShell>
-      <PortalHubHeroCard
-        theme="venta"
-        icon={BarChart3}
-        eyebrow="Venta • Enfoque • Resultado"
-        title="Resultado comercial del negocio"
-        description="Usa esta seccion para leer el desempeno comercial, seguir tendencias por sede e ingresar a los modulos que explican la venta por item."
-        moduleCount={visibleModules.length}
-      />
-      <PortalHubModuleGrid
-        theme="venta"
-        items={visibleModules}
-        onNavigate={(href) => router.push(href)}
-        columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
-      />
+        <PortalHubHeroCard
+          theme="venta"
+          icon={BarChart3}
+          eyebrow="Venta • Enfoque • Resultado"
+          title="Resultado comercial del negocio"
+          description="Usa esta seccion para leer el desempeno comercial, seguir tendencias por sede e ingresar a los modulos que explican la venta por item."
+          moduleCount={visibleModules.length}
+        />
+        <PortalHubModuleGrid
+          theme="venta"
+          items={visibleModules}
+          onNavigate={(href) => router.push(href)}
+          columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        />
       </PortalHubShell>
     </div>
   );

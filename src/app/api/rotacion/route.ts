@@ -175,6 +175,75 @@ const ROTATION_CATALOG_LOOKBACK_DAYS = 45;
 const ROTATION_ABCD_CACHE_TTL_MS = 5 * 60 * 1000;
 const ROTATION_LINEAS_N1_CACHE_TTL_MS = 3 * 60 * 1000;
 const ROTACION_CATEGORIA_LINEA_CACHE_TTL_MS = 3 * 60 * 1000;
+/** Alineado con ROTATION_SUCCESS_CACHE_CONTROL e IndexedDB cliente (5 min). */
+const ROTATION_ROWS_SLICE_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Cada entrada puede pesar ~2–15 MB; cap bajo para no saturar RAM del VM. */
+const ROTATION_ROWS_SLICE_CACHE_MAX = 20;
+
+type RotationRowsSliceCacheEntry = {
+  rows: RotationRow[];
+  expiresAt: number;
+};
+
+const rotationRowsSliceCache = new Map<string, RotationRowsSliceCacheEntry>();
+
+const buildRotationRowsSliceCacheKey = (input: {
+  dataSource: "matview" | "raw";
+  startDate: string;
+  endDate: string;
+  empresa: string;
+  sedeId: string;
+  lineasN1: string[] | null;
+  categoriaKeys: string[] | null;
+  maxSalesValue: number | null;
+}) => {
+  const lineas = [...(input.lineasN1 ?? [])].sort((a, b) =>
+    a.localeCompare(b, "es"),
+  );
+  const cats = [...(input.categoriaKeys ?? [])].sort((a, b) =>
+    a.localeCompare(b, "es"),
+  );
+  const maxSales =
+    input.maxSalesValue === null ? "" : String(input.maxSalesValue);
+  return [
+    input.dataSource,
+    input.startDate,
+    input.endDate,
+    input.empresa,
+    input.sedeId,
+    lineas.join(","),
+    cats.join(","),
+    maxSales,
+  ].join("|");
+};
+
+const getRotationRowsSliceFromCache = (key: string): RotationRow[] | null => {
+  const entry = rotationRowsSliceCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    rotationRowsSliceCache.delete(key);
+    return null;
+  }
+  return entry.rows;
+};
+
+const setRotationRowsSliceCache = (key: string, rows: RotationRow[]) => {
+  const now = Date.now();
+  for (const [cacheKey, entry] of rotationRowsSliceCache) {
+    if (entry.expiresAt <= now) {
+      rotationRowsSliceCache.delete(cacheKey);
+    }
+  }
+  while (rotationRowsSliceCache.size >= ROTATION_ROWS_SLICE_CACHE_MAX) {
+    const oldestKey = rotationRowsSliceCache.keys().next().value;
+    if (!oldestKey) break;
+    rotationRowsSliceCache.delete(oldestKey);
+  }
+  rotationRowsSliceCache.set(key, {
+    rows,
+    expiresAt: now + ROTATION_ROWS_SLICE_CACHE_TTL_MS,
+  });
+};
 
 const MAX_ROTATION_RANGE_DAYS = 93;
 const FUTURE_STOCKOUT_DAYS = 7;
@@ -2554,25 +2623,53 @@ export async function GET(request: Request) {
     const dataSource = await withPoolClient(async (client) =>
       (await ensureRotacionCleanMatViewProbe(client)) ? "matview" : "raw",
     );
+    const lineasN1ForQuery =
+      requestedLineasN1.length > 0 ? requestedLineasN1 : null;
+    let rowCacheHits = 0;
     const rowsBySede = await mapWithConcurrency(
       selectedVisibleSedes,
       3,
-      (sede) =>
-        queryRotationRows({
+      async (sede) => {
+        const sliceCacheKey = buildRotationRowsSliceCacheKey({
+          dataSource,
+          startDate: boundedRange.start,
+          endDate: boundedRange.end,
+          empresa: sede.empresa,
+          sedeId: sede.sedeId,
+          lineasN1: lineasN1ForQuery,
+          categoriaKeys: categoriaKeysForQuery,
+          maxSalesValue,
+        });
+        const cachedRows = getRotationRowsSliceFromCache(sliceCacheKey);
+        if (cachedRows) {
+          rowCacheHits += 1;
+          console.info(
+            `[rotacion API] cache hit sede=${sede.empresa}/${sede.sedeId} rows=${cachedRows.length}`,
+          );
+          return cachedRows;
+        }
+        const fetchedRows = await queryRotationRows({
           startDate: boundedRange.start,
           endDate: boundedRange.end,
           maxSalesValue,
           empresa: sede.empresa,
           sedeId: sede.sedeId,
-          lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
+          lineasN1: lineasN1ForQuery,
           categoriaKeys: categoriaKeysForQuery,
           precomputedFields,
-        }),
+        });
+        setRotationRowsSliceCache(sliceCacheKey, fetchedRows);
+        return fetchedRows;
+      },
     );
     const rows = rowsBySede.flat();
     const totalElapsedMs = performance.now() - totalStartTs;
+    const rowCacheSummary =
+      selectedVisibleSedes.length > 0
+        ? `${rowCacheHits}/${selectedVisibleSedes.length} hit`
+        : "0/0 hit";
     console.info(
-      `[rotacion API] fetch completo en ${(totalElapsedMs / 1000).toFixed(2)}s (${rows.length} filas totales, source=${dataSource})`,
+      `[rotacion API] fetch completo en ${(totalElapsedMs / 1000).toFixed(2)}s (${rows.length} filas totales, source=${dataSource}, rowCache=${rowCacheSummary})`,
     );
 
     const stats = {
@@ -2602,6 +2699,7 @@ export async function GET(request: Request) {
           headers: {
             "Cache-Control": ROTATION_SUCCESS_CACHE_CONTROL,
             "X-Data-Source": dataSource,
+            "X-Row-Cache": rowCacheSummary,
           },
         },
       ),
