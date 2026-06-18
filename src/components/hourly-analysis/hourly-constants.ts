@@ -50,15 +50,14 @@ export const CASHIER_PAGE_TAB_WINDOW = 8;
 
 // Umbrales para los botones "Ver personas >X:YYh".
 // Se usa `>` (estricto), asi que las constantes apuntan al ultimo minuto
-// excluido. La etiqueta del boton se mantiene en X:20 por convencion del
-// negocio, pero el filtro arranca un minuto despues del numero redondo (X:30)
-// para no contar a quienes terminan exactamente en X:30h (jornada esperada
-// + tiempo de gracia clavado al minuto 30).
-// >9:19 -> arranca en 9:20 (umbral inclusivo: cuenta desde 9:20h en adelante).
-export const ALERT_THRESHOLD_MINUTES = 9 * 60 + 19;
+// excluido.
+// >9:20 -> arranca en 9:21: NO se cuentan las jornadas de exactamente 9:20,
+// solo desde 9:21h en adelante.
+export const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
 export const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 30; // >7:30 -> arranca en 7:31
 // Limite superior del rango ">7:20H con 2 marcaciones" (inclusivo). Se queda
-// en 9:19 para no solaparse con el boton ">9:20H" (que ahora arranca en 9:20).
+// en 9:19 (sin cambios): una jornada de exactamente 9:20 no entra aqui ni en
+// ">9:20H", queda fuera de ambos buckets a proposito.
 export const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = 9 * 60 + 19;
 
 export const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";

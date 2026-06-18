@@ -2485,8 +2485,12 @@ export const HourlyAnalysis = ({
     exportEmployees.forEach((employee) => {
       const rawId = employee.employeeId?.toString().trim() ?? "";
       const numericId = /^\d+$/.test(rawId) ? Number(rawId) : rawId;
+      // Construimos el valor para Excel desde minutos enteros redondeados (la
+      // misma logica que la pantalla y los umbrales). Asi `[h]:mm` muestra
+      // exactamente lo mismo que el desglose (p. ej. 9:20, no 9:19): evitamos
+      // que Excel descarte los segundos sobrantes del decimal crudo.
       const workedHoursValue = Number.isFinite(employee.workedHours)
-        ? Math.max(0, employee.workedHours) / 24
+        ? decimalHoursToMinutes(Math.max(0, employee.workedHours)) / (24 * 60)
         : null;
       sheet.addRow({
         employeeId: numericId,

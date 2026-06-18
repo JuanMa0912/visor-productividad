@@ -165,10 +165,15 @@ const isAbsenceIncident = (value: string | null | undefined) =>
 
 // Se conserva la etiqueta visible 7:20h, pero el filtro interno usa 7:29h.
 const HOURS_7_20 = 7 + 29 / 60;
-// Umbral interno para "+9:20h": 9 + 19.5/60. Con `>` arranca exactamente en 9:20,
-// tolerando representaciones decimales (9.33, 9.333, 9.3333...) que vienen de
-// la BD; y con `<=` en el rango anterior se evita el solape en el caso 9:20.
-const HOURS_9_20 = 9 + 19.5 / 60;
+// Tope superior (inclusivo) del rango "7:20h con 2 marcaciones": 9:19:30.
+// Se mantiene en 9:19.5 (sin cambios) para no alterar ese bucket.
+const HOURS_720_UPPER = 9 + 19.5 / 60;
+// Umbral de "9:20h": ahora arranca en 9:21 (corte interno 9:20:30) para NO
+// contar jornadas de exactamente 9:20. Con `>` y el medio minuto se incluyen
+// las representaciones decimales de 9:21 (9.35) y se excluyen las de 9:20
+// (9.33, 9.333, 9.3333...). Resultado: una jornada de exactamente 9:20 no cae
+// en ningun bucket (ni en "7:20 con 2 marcaciones" ni en "9:20h").
+const HOURS_9_20 = 9 + 20.5 / 60;
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
@@ -487,7 +492,7 @@ export async function GET(request: Request) {
 
       if (
         totalHours > HOURS_7_20 &&
-        totalHours <= HOURS_9_20 &&
+        totalHours <= HOURS_720_UPPER &&
         marksCount === 2 &&
         hasSiNomina
       ) {
