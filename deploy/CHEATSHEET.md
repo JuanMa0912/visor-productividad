@@ -349,6 +349,25 @@ sudo journalctl -u visor --since "1 hour ago" --no-pager \
 https://uaid.mercamio.com.co/api/rotacion?explain=1&start=YYYY-MM-DD&end=YYYY-MM-DD&empresa=...&sede=...
 ```
 
+**Variante SQL matview (default `ranked`, alternativa `hashagg`):**
+
+| Mecanismo | Uso |
+|-----------|-----|
+| Default código | `ranked` (window functions, ~10–11 s) |
+| Env en VM | `ROTACION_MATVIEW_SQL=hashagg` en unit systemd de `visor` |
+| Admin A/B | `?matviewSql=hashagg` o `?matviewSql=ranked` con `explain=1` |
+| Header respuesta | `X-Matview-Sql: ranked` o `hashagg` |
+
+Rollback rápido a la variante experimental sin redeploy de git:
+
+```bash
+# En /etc/systemd/system/visor.service.d/override.conf o Environment=
+ROTACION_MATVIEW_SQL=hashagg
+sudo systemctl daemon-reload && sudo systemctl restart visor
+```
+
+Quitar la variable (o `=ranked`) vuelve al default del código.
+
 ### Troubleshooting rotación
 
 | Síntoma | Causa probable | Fix |

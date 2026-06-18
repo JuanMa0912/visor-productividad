@@ -170,6 +170,29 @@ let rotacionCleanMatViewProbeCache:
   | { exists: boolean; expiresAt: number }
   | null = null;
 
+/** Variante SQL sobre `rotacion_item_dia_clean`. Default `ranked` (window functions). */
+export type RotacionMatviewSqlStrategy = "ranked" | "hashagg";
+const ROTACION_MATVIEW_SQL_DEFAULT: RotacionMatviewSqlStrategy = "ranked";
+
+/**
+ * Resuelve que query usar contra la matview:
+ * - Default: `ranked` (comportamiento previo ~10–11 s en prod).
+ * - Alternativa: `hashagg` (item_bounds + DISTINCT ON; midió ~16 s, se conserva).
+ * - Env global: `ROTACION_MATVIEW_SQL=hashagg|ranked` (rollback sin cambiar codigo).
+ * - Query admin: `?matviewSql=hashagg|ranked` (comparar planes).
+ */
+export const resolveRotacionMatviewSqlStrategy = (
+  queryParam: string | null | undefined,
+): RotacionMatviewSqlStrategy => {
+  const fromParam = queryParam?.trim().toLowerCase();
+  const fromEnv = process.env.ROTACION_MATVIEW_SQL?.trim().toLowerCase();
+  const raw = fromParam || fromEnv || ROTACION_MATVIEW_SQL_DEFAULT;
+  if (raw === "hashagg" || raw === "bounds" || raw === "item_bounds") {
+    return "hashagg";
+  }
+  return "ranked";
+};
+
 /** Ventana hacia atras para el DISTINCT de sedes (catalogo). Corta para no escanear meses de datos ni disparar timeouts en el servidor. */
 const ROTATION_CATALOG_LOOKBACK_DAYS = 45;
 const ROTATION_ABCD_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -189,6 +212,7 @@ const rotationRowsSliceCache = new Map<string, RotationRowsSliceCacheEntry>();
 
 const buildRotationRowsSliceCacheKey = (input: {
   dataSource: "matview" | "raw";
+  matviewSql: RotacionMatviewSqlStrategy | null;
   startDate: string;
   endDate: string;
   empresa: string;
@@ -205,8 +229,11 @@ const buildRotationRowsSliceCacheKey = (input: {
   );
   const maxSales =
     input.maxSalesValue === null ? "" : String(input.maxSalesValue);
+  const matviewSql =
+    input.dataSource === "matview" ? (input.matviewSql ?? "ranked") : "";
   return [
     input.dataSource,
+    matviewSql,
     input.startDate,
     input.endDate,
     input.empresa,
@@ -1262,52 +1289,14 @@ async function ensureRotacionCleanMatViewProbe(
 }
 
 /**
- * Variante de `queryRotationRows` que lee de la vista materializada
- * `rotacion_item_dia_clean`. Esta vista ya tiene:
- *   - Strings limpios (TRIM/COALESCE/LPAD/normalizacion)
- *   - Categorias y sedes excluidas filtradas (`PRODUCTO TERMINADO`, hidden sedes)
- *   - Metricas diarias pre-sumadas (venta_sin_impuesto_dia, cost_value_dia,
- *     margin_value_dia, unidades_vendidas_dia, inventory_units_dia,
- *     inventory_value_dia)
- *   - Agregado por (fecha, empresa, sede_id, item) ignorando bodega_local
- *
- * El query es significativamente mas simple que el original porque elimina:
- *   - El CTE `scoped` con todas las transformaciones de columnas
- *   - Los CTEs `item_day_margin` e `item_day_inventory` (las daily sums ya
- *     vienen pre-calculadas)
- *   - El filtro `buildHiddenSedeWhereClause` (ya pre-filtrado)
- *
- * Mantiene comportamiento equivalente: agrega por (empresa, sede, item) con
- * opening/latest inventory, AVG del margin %, MIN del inventory en el rango,
- * classification por status, etc.
- *
- * Evita el CTE `ranked` con window functions (sort de ~450k filas por sede/mes):
- * usa `item_bounds` (MIN/MAX fecha), `latest_attrs` (DISTINCT ON) y un solo
- * HashAggregate sobre `base`.
+ * SQL contra `rotacion_item_dia_clean`. Dos variantes conservadas:
+ * - `ranked`: window functions (default, ~10–11 s medido en prod).
+ * - `hashagg`: item_bounds + DISTINCT ON (alternativa; midió peor en prod).
  */
-async function queryRotationRowsViaMatview({
-  client,
-  startDate,
-  endDate,
-  maxSalesValue,
-  empresa,
-  sedeId,
-  lineasN1,
-  categoriaKeys,
-  explain,
-}: {
-  client: RotacionBaseQueryClient;
-  startDate: string;
-  endDate: string;
-  maxSalesValue: number | null;
-  empresa: string | null;
-  sedeId: string | null;
-  lineasN1: string[] | null;
-  categoriaKeys: string[] | null;
-  explain: boolean;
-}): Promise<RotationRow[] | ExplainPlanResult> {
-  const sqlStartTs = performance.now();
-  const baseSql = `
+const buildRotacionMatviewSql = (
+  strategy: RotacionMatviewSqlStrategy,
+): string => {
+  const baseCte = `
     WITH base AS (
       SELECT
         fecha,
@@ -1343,7 +1332,91 @@ async function queryRotationRowsViaMatview({
           OR COALESCE(linea_n1_codigo, '__sin_n1__') = ANY($7::text[])
         )
         AND ($10::text[] IS NULL OR categoria_key = ANY($10::text[]))
+    )`;
+
+  const rankedAggregated = `
+    ranked AS (
+      SELECT
+        base.*,
+        MIN(fecha) OVER (PARTITION BY empresa, sede_id, item) AS first_fecha,
+        MAX(fecha) OVER (PARTITION BY empresa, sede_id, item) AS latest_fecha,
+        ROW_NUMBER() OVER (
+          PARTITION BY empresa, sede_id, item
+          ORDER BY fecha DESC, carga_ts DESC NULLS LAST
+        ) AS latest_rank
+      FROM base
     ),
+    aggregated AS (
+      SELECT
+        empresa,
+        sede_id,
+        sede_name,
+        linea,
+        linea_n1_codigo,
+        item,
+        descripcion,
+        unidad,
+        SUM(venta_sin_impuesto_dia)::numeric AS total_sales,
+        SUM(cost_value_dia)::numeric AS total_cost,
+        SUM(margin_value_dia)::numeric AS total_margin,
+        COALESCE(
+          AVG(
+            CASE
+              WHEN venta_sin_impuesto_dia > 0
+              THEN (margin_value_dia / venta_sin_impuesto_dia) * 100
+              ELSE NULL
+            END
+          ),
+          0
+        )::numeric AS margin_daily_avg_pct,
+        SUM(unidades_vendidas_dia)::numeric AS total_units,
+        MAX(
+          CASE
+            WHEN COALESCE(fecha_ultima_compra, fecha_ultima_entrada)
+                 BETWEEN $1::date AND $2::date
+            THEN COALESCE(fecha_ultima_compra, fecha_ultima_entrada)
+            WHEN COALESCE(ultima_venta_pdv, ultima_venta_inventario)
+                 BETWEEN $1::date AND $2::date
+            THEN COALESCE(ultima_venta_pdv, ultima_venta_inventario)
+            ELSE NULL
+          END
+        ) AS last_movement_date,
+        MAX(COALESCE(ultima_venta_pdv, ultima_venta_inventario)) AS last_purchase_date,
+        SUM(
+          CASE WHEN fecha = first_fecha THEN inventory_units_dia ELSE 0 END
+        )::numeric AS opening_inventory_units,
+        MIN(inventory_units_dia)::numeric AS min_inventory_units,
+        SUM(
+          CASE WHEN fecha = latest_fecha THEN inventory_units_dia ELSE 0 END
+        )::numeric AS inventory_units,
+        SUM(
+          CASE WHEN fecha = latest_fecha THEN inventory_value_dia ELSE 0 END
+        )::numeric AS inventory_value,
+        MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
+        MAX(CASE WHEN latest_rank = 1 THEN categoria END) AS categoria,
+        MAX(CASE WHEN latest_rank = 1 THEN nombre_categoria END) AS nombre_categoria,
+        MAX(CASE WHEN latest_rank = 1 THEN linea_n1_codigo END) AS linea01,
+        MAX(CASE WHEN latest_rank = 1 THEN linea END) AS nombre_linea01,
+        COUNT(DISTINCT fecha)::int AS tracked_days,
+        COUNT(
+          DISTINCT CASE
+            WHEN unidades_vendidas_dia > 0 THEN fecha
+            ELSE NULL
+          END
+        )::int AS sales_effective_days
+      FROM ranked
+      GROUP BY
+        empresa,
+        sede_id,
+        sede_name,
+        linea,
+        linea_n1_codigo,
+        item,
+        descripcion,
+        unidad
+    )`;
+
+  const hashaggAggregated = `
     item_bounds AS (
       SELECT
         empresa,
@@ -1443,7 +1516,9 @@ async function queryRotationRowsViaMatview({
         b.empresa,
         b.sede_id,
         b.item
-    ),
+    )`;
+
+  const tail = `
     enriched AS (
       SELECT
         *,
@@ -1517,6 +1592,37 @@ async function queryRotationRowsViaMatview({
       inventory_value DESC,
       item ASC
   `;
+
+  const aggregated =
+    strategy === "hashagg" ? hashaggAggregated : rankedAggregated;
+  return `${baseCte},\n    ${aggregated},\n    ${tail}`;
+};
+
+async function queryRotationRowsViaMatview({
+  client,
+  startDate,
+  endDate,
+  maxSalesValue,
+  empresa,
+  sedeId,
+  lineasN1,
+  categoriaKeys,
+  matviewSqlStrategy,
+  explain,
+}: {
+  client: RotacionBaseQueryClient;
+  startDate: string;
+  endDate: string;
+  maxSalesValue: number | null;
+  empresa: string | null;
+  sedeId: string | null;
+  lineasN1: string[] | null;
+  categoriaKeys: string[] | null;
+  matviewSqlStrategy: RotacionMatviewSqlStrategy;
+  explain: boolean;
+}): Promise<RotationRow[] | ExplainPlanResult> {
+  const sqlStartTs = performance.now();
+  const baseSql = buildRotacionMatviewSql(matviewSqlStrategy);
   const params = [
     startDate, // $1: fecha desde (ISO)
     endDate, // $2: fecha hasta (ISO)
@@ -1561,7 +1667,7 @@ async function queryRotationRowsViaMatview({
       if (txnStarted) await client.query("COMMIT");
       const sqlElapsedMs = performance.now() - sqlStartTs;
       console.info(
-        `[rotacion API matview] EXPLAIN empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+        `[rotacion API matview] EXPLAIN strategy=${matviewSqlStrategy} empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
       );
       return {
         empresa,
@@ -1577,7 +1683,7 @@ async function queryRotationRowsViaMatview({
 
     const sqlElapsedMs = performance.now() - sqlStartTs;
     console.info(
-      `[rotacion API matview] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
+      `[rotacion API matview] sql strategy=${matviewSqlStrategy} empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
         result.rows?.length ?? 0
       } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
     );
@@ -1640,6 +1746,7 @@ async function queryRotationRows(args: {
   lineasN1: string[] | null;
   categoriaKeys: string[] | null;
   precomputedFields?: RotacionBaseSqlFields;
+  matviewSqlStrategy?: RotacionMatviewSqlStrategy;
   explain: true;
 }): Promise<ExplainPlanResult>;
 async function queryRotationRows(args: {
@@ -1651,6 +1758,7 @@ async function queryRotationRows(args: {
   lineasN1: string[] | null;
   categoriaKeys: string[] | null;
   precomputedFields?: RotacionBaseSqlFields;
+  matviewSqlStrategy?: RotacionMatviewSqlStrategy;
   explain?: false;
 }): Promise<RotationRow[]>;
 async function queryRotationRows({
@@ -1662,6 +1770,7 @@ async function queryRotationRows({
   lineasN1,
   categoriaKeys,
   precomputedFields,
+  matviewSqlStrategy = ROTACION_MATVIEW_SQL_DEFAULT,
   explain = false,
 }: {
   startDate: string;
@@ -1677,6 +1786,8 @@ async function queryRotationRows({
    * sede (cuando hay N sedes, esto ahorra N - 1 round-trips).
    */
   precomputedFields?: RotacionBaseSqlFields;
+  /** Variante SQL sobre matview (`ranked` default, `hashagg` alternativa). */
+  matviewSqlStrategy?: RotacionMatviewSqlStrategy;
   /**
    * Si es `true`, envuelve el query en `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)`
    * y devuelve el plan como string en vez de las filas. Util para diagnostico
@@ -1703,6 +1814,7 @@ async function queryRotationRows({
           sedeId,
           lineasN1,
           categoriaKeys,
+          matviewSqlStrategy,
           explain,
         });
       }
@@ -2339,6 +2451,11 @@ export async function GET(request: Request) {
         ),
       );
     }
+    const matviewSqlStrategy = resolveRotacionMatviewSqlStrategy(
+      session.user.role === "admin"
+        ? url.searchParams.get("matviewSql")
+        : null,
+    );
     const maxSalesValue = clampSalesThreshold(
       parsePositiveNumber(url.searchParams.get("maxSalesValue")),
     );
@@ -2609,6 +2726,7 @@ export async function GET(request: Request) {
         lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
         categoriaKeys: categoriaKeysForQuery,
         precomputedFields,
+        matviewSqlStrategy,
         explain: true,
       });
       const totalExplainMs = performance.now() - explainStartTs;
@@ -2622,10 +2740,11 @@ export async function GET(request: Request) {
               sedeName: targetSede.sedeName,
             },
             range: boundedRange,
+            matviewSql: matviewSqlStrategy,
             durationMs: Math.round(explainResult.durationMs),
             totalDurationMs: Math.round(totalExplainMs),
             plan: explainResult.plan,
-            note: "Plan generado con EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT). Solo primera sede seleccionada.",
+            note: "Plan generado con EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT). Solo primera sede seleccionada. Default matview SQL: ranked; alternativa: ?matviewSql=hashagg o ROTACION_MATVIEW_SQL=hashagg.",
           },
           {
             headers: {
@@ -2656,6 +2775,7 @@ export async function GET(request: Request) {
       async (sede) => {
         const sliceCacheKey = buildRotationRowsSliceCacheKey({
           dataSource,
+          matviewSql: dataSource === "matview" ? matviewSqlStrategy : null,
           startDate: boundedRange.start,
           endDate: boundedRange.end,
           empresa: sede.empresa,
@@ -2681,6 +2801,7 @@ export async function GET(request: Request) {
           lineasN1: lineasN1ForQuery,
           categoriaKeys: categoriaKeysForQuery,
           precomputedFields,
+          matviewSqlStrategy,
         });
         setRotationRowsSliceCache(sliceCacheKey, fetchedRows);
         return fetchedRows;
@@ -2693,7 +2814,7 @@ export async function GET(request: Request) {
         ? `${rowCacheHits}/${selectedVisibleSedes.length} hit`
         : "0/0 hit";
     console.info(
-      `[rotacion API] fetch completo en ${(totalElapsedMs / 1000).toFixed(2)}s (${rows.length} filas totales, source=${dataSource}, rowCache=${rowCacheSummary})`,
+      `[rotacion API] fetch completo en ${(totalElapsedMs / 1000).toFixed(2)}s (${rows.length} filas totales, source=${dataSource}, matviewSql=${dataSource === "matview" ? matviewSqlStrategy : "n/a"}, rowCache=${rowCacheSummary})`,
     );
 
     const stats = {
@@ -2723,6 +2844,9 @@ export async function GET(request: Request) {
           headers: {
             "Cache-Control": ROTATION_SUCCESS_CACHE_CONTROL,
             "X-Data-Source": dataSource,
+            ...(dataSource === "matview"
+              ? { "X-Matview-Sql": matviewSqlStrategy }
+              : {}),
             "X-Row-Cache": rowCacheSummary,
           },
         },
