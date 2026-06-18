@@ -15,6 +15,16 @@ const EMPRESA_HUMAN: Record<ExcelDianDbEmpresa, string> = {
   bgt: "Merkmios (bgt)",
 };
 
+/**
+ * Código contable de empresa (`id_emp`) dentro de cada base DIAN. No es '01' en
+ * todas: Mercamio contabiliza bajo '02'. Se usa para filtrar `cgmovimiento_contable`.
+ */
+export const EXCEL_DIAN_ID_EMP: Record<ExcelDianDbEmpresa, string> = {
+  mtodo: "01",
+  mio: "02",
+  bgt: "01",
+};
+
 type RequiredEnvSuffix = "DB_HOST" | "DB_NAME" | "DB_USER" | "DB_PASSWORD";
 
 const resolveRequiredEnv = (

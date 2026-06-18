@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import {
   EXCEL_DIAN_EMPRESA_OPTIONS,
+  isExcelDianEmpresaEnabled,
   type ExcelDianEmpresaValue,
 } from "./excel-dian-empresa";
 import {
@@ -195,6 +196,7 @@ export function ExcelDianPanel() {
 
   const empresaLabel =
     EXCEL_DIAN_EMPRESA_OPTIONS.find((e) => e.value === empresa)?.label ?? "-";
+  const empresaEnabled = isExcelDianEmpresaEnabled(empresa);
 
   const rangeDescription = useMemo(() => {
     if (!lapsoBounds) {
@@ -208,6 +210,12 @@ export function ExcelDianPanel() {
 
   const handleDownload = async () => {
     setDownloadError("");
+    if (!empresaEnabled) {
+      setDownloadError(
+        "Esa empresa está en construcción: aún no hay consulta estándar.",
+      );
+      return;
+    }
     if (!lapsoBounds) {
       setDownloadError(
         "El periodo seleccionado no es valido (futuro o sin datos).",
@@ -497,9 +505,11 @@ export function ExcelDianPanel() {
                     <SelectItem
                       key={e.value}
                       value={e.value}
+                      disabled={!e.enabled}
                       className={selectItemClassName}
                     >
                       {e.label}
+                      {e.enabled ? "" : " (en construcción)"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -619,7 +629,7 @@ export function ExcelDianPanel() {
             type="button"
             size="lg"
             onClick={handleDownload}
-            disabled={isDownloading || !lapsoBounds}
+            disabled={isDownloading || !lapsoBounds || !empresaEnabled}
             className="mt-7 h-11 w-full rounded-lg bg-slate-900 text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-400/60 focus-visible:ring-offset-2 disabled:opacity-60"
           >
             {isDownloading ? (
