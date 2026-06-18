@@ -1277,9 +1277,13 @@ async function ensureRotacionCleanMatViewProbe(
  *     vienen pre-calculadas)
  *   - El filtro `buildHiddenSedeWhereClause` (ya pre-filtrado)
  *
- * Mantiene comportamiento equivalente: window functions sobre (empresa, sede,
- * item) para opening/latest inventory, AVG del margin %, MIN del inventory en
- * el rango, classification por status, etc.
+ * Mantiene comportamiento equivalente: agrega por (empresa, sede, item) con
+ * opening/latest inventory, AVG del margin %, MIN del inventory en el rango,
+ * classification por status, etc.
+ *
+ * Evita el CTE `ranked` con window functions (sort de ~450k filas por sede/mes):
+ * usa `item_bounds` (MIN/MAX fecha), `latest_attrs` (DISTINCT ON) y un solo
+ * HashAggregate sobre `base`.
  */
 async function queryRotationRowsViaMatview({
   client,
@@ -1340,85 +1344,105 @@ async function queryRotationRowsViaMatview({
         )
         AND ($10::text[] IS NULL OR categoria_key = ANY($10::text[]))
     ),
-    ranked AS (
-      SELECT
-        base.*,
-        MIN(fecha) OVER (PARTITION BY empresa, sede_id, item) AS first_fecha,
-        MAX(fecha) OVER (PARTITION BY empresa, sede_id, item) AS latest_fecha,
-        ROW_NUMBER() OVER (
-          PARTITION BY empresa, sede_id, item
-          ORDER BY fecha DESC, carga_ts DESC NULLS LAST
-        ) AS latest_rank
-      FROM base
-    ),
-    aggregated AS (
+    item_bounds AS (
       SELECT
         empresa,
         sede_id,
-        sede_name,
-        linea,
-        linea_n1_codigo,
         item,
-        descripcion,
-        unidad,
-        SUM(venta_sin_impuesto_dia)::numeric AS total_sales,
-        SUM(cost_value_dia)::numeric AS total_cost,
-        SUM(margin_value_dia)::numeric AS total_margin,
+        MIN(fecha) AS first_fecha,
+        MAX(fecha) AS latest_fecha
+      FROM base
+      GROUP BY empresa, sede_id, item
+    ),
+    latest_attrs AS (
+      SELECT DISTINCT ON (b.empresa, b.sede_id, b.item)
+        b.empresa,
+        b.sede_id,
+        b.item,
+        b.bodega,
+        b.categoria,
+        b.nombre_categoria,
+        b.linea_n1_codigo AS linea01,
+        b.linea AS nombre_linea01
+      FROM base b
+      ORDER BY
+        b.empresa,
+        b.sede_id,
+        b.item,
+        b.fecha DESC,
+        b.carga_ts DESC NULLS LAST
+    ),
+    aggregated AS (
+      SELECT
+        b.empresa,
+        b.sede_id,
+        MAX(b.sede_name) AS sede_name,
+        MAX(b.linea) AS linea,
+        MAX(b.linea_n1_codigo) AS linea_n1_codigo,
+        b.item,
+        MAX(b.descripcion) AS descripcion,
+        MAX(b.unidad) AS unidad,
+        SUM(b.venta_sin_impuesto_dia)::numeric AS total_sales,
+        SUM(b.cost_value_dia)::numeric AS total_cost,
+        SUM(b.margin_value_dia)::numeric AS total_margin,
         COALESCE(
           AVG(
             CASE
-              WHEN venta_sin_impuesto_dia > 0
-              THEN (margin_value_dia / venta_sin_impuesto_dia) * 100
+              WHEN b.venta_sin_impuesto_dia > 0
+              THEN (b.margin_value_dia / b.venta_sin_impuesto_dia) * 100
               ELSE NULL
             END
           ),
           0
         )::numeric AS margin_daily_avg_pct,
-        SUM(unidades_vendidas_dia)::numeric AS total_units,
+        SUM(b.unidades_vendidas_dia)::numeric AS total_units,
         MAX(
           CASE
-            WHEN COALESCE(fecha_ultima_compra, fecha_ultima_entrada)
+            WHEN COALESCE(b.fecha_ultima_compra, b.fecha_ultima_entrada)
                  BETWEEN $1::date AND $2::date
-            THEN COALESCE(fecha_ultima_compra, fecha_ultima_entrada)
-            WHEN COALESCE(ultima_venta_pdv, ultima_venta_inventario)
+            THEN COALESCE(b.fecha_ultima_compra, b.fecha_ultima_entrada)
+            WHEN COALESCE(b.ultima_venta_pdv, b.ultima_venta_inventario)
                  BETWEEN $1::date AND $2::date
-            THEN COALESCE(ultima_venta_pdv, ultima_venta_inventario)
+            THEN COALESCE(b.ultima_venta_pdv, b.ultima_venta_inventario)
             ELSE NULL
           END
         ) AS last_movement_date,
-        MAX(COALESCE(ultima_venta_pdv, ultima_venta_inventario)) AS last_purchase_date,
+        MAX(COALESCE(b.ultima_venta_pdv, b.ultima_venta_inventario)) AS last_purchase_date,
         SUM(
-          CASE WHEN fecha = first_fecha THEN inventory_units_dia ELSE 0 END
+          CASE WHEN b.fecha = ib.first_fecha THEN b.inventory_units_dia ELSE 0 END
         )::numeric AS opening_inventory_units,
-        MIN(inventory_units_dia)::numeric AS min_inventory_units,
+        MIN(b.inventory_units_dia)::numeric AS min_inventory_units,
         SUM(
-          CASE WHEN fecha = latest_fecha THEN inventory_units_dia ELSE 0 END
+          CASE WHEN b.fecha = ib.latest_fecha THEN b.inventory_units_dia ELSE 0 END
         )::numeric AS inventory_units,
         SUM(
-          CASE WHEN fecha = latest_fecha THEN inventory_value_dia ELSE 0 END
+          CASE WHEN b.fecha = ib.latest_fecha THEN b.inventory_value_dia ELSE 0 END
         )::numeric AS inventory_value,
-        MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
-        MAX(CASE WHEN latest_rank = 1 THEN categoria END) AS categoria,
-        MAX(CASE WHEN latest_rank = 1 THEN nombre_categoria END) AS nombre_categoria,
-        MAX(CASE WHEN latest_rank = 1 THEN linea_n1_codigo END) AS linea01,
-        MAX(CASE WHEN latest_rank = 1 THEN linea END) AS nombre_linea01,
-        COUNT(DISTINCT fecha)::int AS tracked_days,
+        MAX(la.bodega) AS bodega,
+        MAX(la.categoria) AS categoria,
+        MAX(la.nombre_categoria) AS nombre_categoria,
+        MAX(la.linea01) AS linea01,
+        MAX(la.nombre_linea01) AS nombre_linea01,
+        COUNT(DISTINCT b.fecha)::int AS tracked_days,
         COUNT(
           DISTINCT CASE
-            WHEN unidades_vendidas_dia > 0 THEN fecha
+            WHEN b.unidades_vendidas_dia > 0 THEN b.fecha
             ELSE NULL
           END
         )::int AS sales_effective_days
-      FROM ranked
+      FROM base b
+      INNER JOIN item_bounds ib
+        ON ib.empresa = b.empresa
+       AND ib.sede_id = b.sede_id
+       AND ib.item = b.item
+      LEFT JOIN latest_attrs la
+        ON la.empresa = b.empresa
+       AND la.sede_id = b.sede_id
+       AND la.item = b.item
       GROUP BY
-        empresa,
-        sede_id,
-        sede_name,
-        linea,
-        linea_n1_codigo,
-        item,
-        descripcion,
-        unidad
+        b.empresa,
+        b.sede_id,
+        b.item
     ),
     enriched AS (
       SELECT
