@@ -10,6 +10,16 @@ import {
 import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
 import { ROTACION_SOURCE_V4 } from "@/lib/rotacion/source-tables";
 import { normalizeRotationCategoriaKey } from "@/lib/rotacion/dimensions";
+import type {
+  RotacionDataSource,
+  RotacionPeriodoStdMeta,
+} from "@/lib/rotacion/periodo-std";
+import {
+  getRotacionPeriodoStdMeta,
+  matchesRotacionPeriodoStdRange,
+  probeRotacionPeriodoStdReady,
+} from "@/lib/rotacion/periodo-std-server";
+import { getRollingMonthBackRange } from "@/lib/rotacion/rolling-month-range";
 
 /** Unifica codigos N1 para filtros (BD a veces devuelve "1" en vez de "01"). */
 const normalizeRotationLineaN1Code = (raw: string | null | undefined): string => {
@@ -211,7 +221,7 @@ type RotationRowsSliceCacheEntry = {
 const rotationRowsSliceCache = new Map<string, RotationRowsSliceCacheEntry>();
 
 const buildRotationRowsSliceCacheKey = (input: {
-  dataSource: "matview" | "raw";
+  dataSource: RotacionDataSource;
   matviewSql: RotacionMatviewSqlStrategy | null;
   startDate: string;
   endDate: string;
@@ -392,13 +402,6 @@ const computeRotationCatalogCompactRange = (
   const end = maxCompact;
   if (start > end) return { start: end, end: end };
   return { start, end };
-};
-
-/** Mismo día del mes anterior (p. ej. 14 abr → 14 mar), en ISO local vía UTC slice. */
-const shiftCalendarMonths = (dateKey: string, deltaMonths: number) => {
-  const date = new Date(`${dateKey}T12:00:00`);
-  date.setMonth(date.getMonth() + deltaMonths);
-  return date.toISOString().slice(0, 10);
 };
 
 const clampDateRange = ({
@@ -1251,6 +1254,148 @@ type ExplainPlanResult = {
   plan: string;
 };
 
+const mapRotationDbRows = (rows: RotationDbRow[]): RotationRow[] =>
+  rows
+    .map((row) => ({
+      empresa: row.empresa,
+      sedeId: row.sede_id,
+      sedeName: row.sede_name,
+      linea: row.linea,
+      lineaN1Codigo: row.linea_n1_codigo,
+      item: row.item,
+      descripcion: row.descripcion,
+      unidad: row.unidad,
+      bodega: toOptionalTrimmedString(row.bodega),
+      nombreBodega: toOptionalTrimmedString(row.nombre_bodega),
+      categoria: toOptionalTrimmedString(row.categoria),
+      nombreCategoria: toOptionalTrimmedString(row.nombre_categoria),
+      linea01: toOptionalTrimmedString(row.linea01),
+      nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
+      totalSales: toNumber(row.total_sales),
+      totalCost: toNumber(row.total_cost),
+      totalMargin: toNumber(row.total_margin),
+      marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
+      totalUnits: toNumber(row.total_units),
+      openingInventoryUnits: toNumber(row.opening_inventory_units),
+      minInventoryUnits: toNumber(row.min_inventory_units),
+      inventoryUnits: toNumber(row.inventory_units),
+      inventoryValue: toNumber(row.inventory_value),
+      rotation: toNumber(row.rotation),
+      trackedDays: toNumber(row.tracked_days),
+      salesEffectiveDays: toNumber(row.sales_effective_days),
+      lastMovementDate: row.last_movement_date,
+      lastPurchaseDate: row.last_purchase_date,
+      effectiveDays:
+        row.effective_days === null || row.effective_days === undefined
+          ? null
+          : toNumber(row.effective_days),
+      status: row.status,
+    }))
+    .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+
+/**
+ * Camino rapido (~1-3 s): lectura directa del snapshot nocturno del rango rolling
+ * default (`rotacion_item_periodo_std`), sin agregacion en vivo.
+ */
+async function queryRotationRowsViaPeriodoStd({
+  client,
+  maxSalesValue,
+  empresa,
+  sedeId,
+  lineasN1,
+  categoriaKeys,
+  explain,
+}: {
+  client: RotacionBaseQueryClient;
+  maxSalesValue: number | null;
+  empresa: string | null;
+  sedeId: string | null;
+  lineasN1: string[] | null;
+  categoriaKeys: string[] | null;
+  explain: boolean;
+}): Promise<RotationRow[] | ExplainPlanResult> {
+  const sqlStartTs = performance.now();
+  const baseSql = `
+    SELECT
+      empresa,
+      sede_id,
+      sede_name,
+      linea,
+      linea_n1_codigo,
+      item,
+      descripcion,
+      unidad,
+      bodega,
+      nombre_bodega,
+      categoria,
+      nombre_categoria,
+      linea01,
+      nombre_linea01,
+      total_sales,
+      total_cost,
+      total_margin,
+      margin_daily_avg_pct,
+      total_units,
+      opening_inventory_units,
+      min_inventory_units,
+      inventory_units,
+      inventory_value,
+      rotation,
+      tracked_days,
+      sales_effective_days,
+      TO_CHAR(last_movement_date, 'YYYY-MM-DD') AS last_movement_date,
+      TO_CHAR(last_purchase_date, 'YYYY-MM-DD') AS last_purchase_date,
+      effective_days,
+      status
+    FROM rotacion_item_periodo_std
+    WHERE ($1::text IS NULL OR empresa = $1)
+      AND ($2::text IS NULL OR sede_id = $2)
+      AND (
+        $3::text[] IS NULL
+        OR COALESCE(linea_n1_codigo, '__sin_n1__') = ANY($3::text[])
+      )
+      AND ($4::text[] IS NULL OR categoria_key = ANY($4::text[]))
+      AND ($5::numeric IS NULL OR total_sales <= $5::numeric)
+    ORDER BY
+      empresa ASC,
+      sede_name ASC,
+      total_sales DESC,
+      inventory_value DESC,
+      item ASC
+  `;
+  const params = [empresa, sedeId, lineasN1, categoriaKeys, maxSalesValue];
+
+  if (explain) {
+    const explainResult = await client.query(
+      `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${baseSql}`,
+      params,
+    );
+    const planLines = (explainResult.rows ?? [])
+      .map((row) => (row as { "QUERY PLAN": string })["QUERY PLAN"])
+      .filter((line): line is string => typeof line === "string");
+    const sqlElapsedMs = performance.now() - sqlStartTs;
+    console.info(
+      `[rotacion API periodo-std] EXPLAIN empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+    );
+    return {
+      empresa,
+      sedeId,
+      rows: 0,
+      durationMs: sqlElapsedMs,
+      plan: planLines.join("\n"),
+    } satisfies ExplainPlanResult;
+  }
+
+  const result = await client.query(baseSql, params);
+  const sqlElapsedMs = performance.now() - sqlStartTs;
+  console.info(
+    `[rotacion API periodo-std] sql empresa=${empresa ?? "*"} sede=${sedeId ?? "*"} rows=${
+      result.rows?.length ?? 0
+    } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
+  );
+  return mapRotationDbRows((result.rows ?? []) as RotationDbRow[]);
+}
+
 /**
  * Detecta si la matview `rotacion_item_dia_clean` existe en la BD.
  * Cache 5 min para no pagar el SELECT contra pg_matviews en cada request.
@@ -1688,43 +1833,7 @@ async function queryRotationRowsViaMatview({
       } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
     );
 
-    return ((result.rows ?? []) as RotationDbRow[])
-      .map((row) => ({
-        empresa: row.empresa,
-        sedeId: row.sede_id,
-        sedeName: row.sede_name,
-        linea: row.linea,
-        lineaN1Codigo: row.linea_n1_codigo,
-        item: row.item,
-        descripcion: row.descripcion,
-        unidad: row.unidad,
-        bodega: toOptionalTrimmedString(row.bodega),
-        nombreBodega: toOptionalTrimmedString(row.nombre_bodega),
-        categoria: toOptionalTrimmedString(row.categoria),
-        nombreCategoria: toOptionalTrimmedString(row.nombre_categoria),
-        linea01: toOptionalTrimmedString(row.linea01),
-        nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
-        totalSales: toNumber(row.total_sales),
-        totalCost: toNumber(row.total_cost),
-        totalMargin: toNumber(row.total_margin),
-        marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
-        totalUnits: toNumber(row.total_units),
-        openingInventoryUnits: toNumber(row.opening_inventory_units),
-        minInventoryUnits: toNumber(row.min_inventory_units),
-        inventoryUnits: toNumber(row.inventory_units),
-        inventoryValue: toNumber(row.inventory_value),
-        rotation: toNumber(row.rotation),
-        trackedDays: toNumber(row.tracked_days),
-        salesEffectiveDays: toNumber(row.sales_effective_days),
-        lastMovementDate: row.last_movement_date,
-        lastPurchaseDate: row.last_purchase_date,
-        effectiveDays:
-          row.effective_days === null || row.effective_days === undefined
-            ? null
-            : toNumber(row.effective_days),
-        status: row.status,
-      }))
-      .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+    return mapRotationDbRows((result.rows ?? []) as RotationDbRow[]);
   } catch (queryErr) {
     if (txnStarted) {
       try {
@@ -1747,6 +1856,7 @@ async function queryRotationRows(args: {
   categoriaKeys: string[] | null;
   precomputedFields?: RotacionBaseSqlFields;
   matviewSqlStrategy?: RotacionMatviewSqlStrategy;
+  periodoStdMeta?: RotacionPeriodoStdMeta | null;
   explain: true;
 }): Promise<ExplainPlanResult>;
 async function queryRotationRows(args: {
@@ -1759,6 +1869,7 @@ async function queryRotationRows(args: {
   categoriaKeys: string[] | null;
   precomputedFields?: RotacionBaseSqlFields;
   matviewSqlStrategy?: RotacionMatviewSqlStrategy;
+  periodoStdMeta?: RotacionPeriodoStdMeta | null;
   explain?: false;
 }): Promise<RotationRow[]>;
 async function queryRotationRows({
@@ -1771,6 +1882,7 @@ async function queryRotationRows({
   categoriaKeys,
   precomputedFields,
   matviewSqlStrategy = ROTACION_MATVIEW_SQL_DEFAULT,
+  periodoStdMeta = null,
   explain = false,
 }: {
   startDate: string;
@@ -1788,6 +1900,8 @@ async function queryRotationRows({
   precomputedFields?: RotacionBaseSqlFields;
   /** Variante SQL sobre matview (`ranked` default, `hashagg` alternativa). */
   matviewSqlStrategy?: RotacionMatviewSqlStrategy;
+  /** Metadata del snapshot nocturno; si el rango coincide, usa camino rapido. */
+  periodoStdMeta?: RotacionPeriodoStdMeta | null;
   /**
    * Si es `true`, envuelve el query en `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)`
    * y devuelve el plan como string en vez de las filas. Util para diagnostico
@@ -1798,6 +1912,21 @@ async function queryRotationRows({
 }): Promise<RotationRow[] | ExplainPlanResult> {
   const fetchRows = async (): Promise<RotationRow[] | ExplainPlanResult> =>
     withPoolClient(async (client) => {
+      if (
+        matchesRotacionPeriodoStdRange(periodoStdMeta, startDate, endDate) &&
+        (await probeRotacionPeriodoStdReady(client))
+      ) {
+        return queryRotationRowsViaPeriodoStd({
+          client,
+          maxSalesValue,
+          empresa,
+          sedeId,
+          lineasN1,
+          categoriaKeys,
+          explain,
+        });
+      }
+
       // Si la vista materializada rotacion_item_dia_clean existe, usamos el
       // camino simplificado que evita CTEs intermedias y aprovecha que las
       // metricas diarias ya estan pre-sumadas y los strings limpios. Si no
@@ -2263,43 +2392,7 @@ async function queryRotationRows({
           } duration=${(sqlElapsedMs / 1000).toFixed(2)}s`,
         );
 
-        return ((result.rows ?? []) as RotationDbRow[])
-          .map((row) => ({
-            empresa: row.empresa,
-            sedeId: row.sede_id,
-            sedeName: row.sede_name,
-            linea: row.linea,
-            lineaN1Codigo: row.linea_n1_codigo,
-            item: row.item,
-            descripcion: row.descripcion,
-            unidad: row.unidad,
-            bodega: toOptionalTrimmedString(row.bodega),
-            nombreBodega: toOptionalTrimmedString(row.nombre_bodega),
-            categoria: toOptionalTrimmedString(row.categoria),
-            nombreCategoria: toOptionalTrimmedString(row.nombre_categoria),
-            linea01: toOptionalTrimmedString(row.linea01),
-            nombreLinea01: toOptionalTrimmedString(row.nombre_linea01),
-            totalSales: toNumber(row.total_sales),
-            totalCost: toNumber(row.total_cost),
-            totalMargin: toNumber(row.total_margin),
-            marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
-            totalUnits: toNumber(row.total_units),
-            openingInventoryUnits: toNumber(row.opening_inventory_units),
-            minInventoryUnits: toNumber(row.min_inventory_units),
-            inventoryUnits: toNumber(row.inventory_units),
-            inventoryValue: toNumber(row.inventory_value),
-            rotation: toNumber(row.rotation),
-            trackedDays: toNumber(row.tracked_days),
-            salesEffectiveDays: toNumber(row.sales_effective_days),
-            lastMovementDate: row.last_movement_date,
-            lastPurchaseDate: row.last_purchase_date,
-            effectiveDays:
-              row.effective_days === null || row.effective_days === undefined
-                ? null
-                : toNumber(row.effective_days),
-            status: row.status,
-          }))
-          .filter((row) => !HIDDEN_SEDE_KEYS.has(normalizeKey(row.sedeName)));
+        return mapRotationDbRows((result.rows ?? []) as RotationDbRow[]);
       } catch (queryErr) {
         if (txnStarted) {
           try {
@@ -2461,9 +2554,13 @@ export async function GET(request: Request) {
     );
 
     const rawEndDate = isIsoDate(requestedEnd) ? requestedEnd! : maxAvailableDate;
+    const rollingDefault = getRollingMonthBackRange(
+      minAvailableDate,
+      maxAvailableDate,
+    );
     const rawStartDate = isIsoDate(requestedStart)
       ? requestedStart!
-      : shiftDate(shiftCalendarMonths(rawEndDate, -1), 1);
+      : rollingDefault.start;
 
     const effectiveRange = clampDateRange({
       start: rawStartDate,
@@ -2710,6 +2807,14 @@ export async function GET(request: Request) {
     const precomputedFields = await withPoolClient((client) =>
       resolveRotacionBaseSqlFields(client),
     );
+    const periodoStdMeta = await withPoolClient((client) =>
+      getRotacionPeriodoStdMeta(client),
+    );
+    const usePeriodoStd = matchesRotacionPeriodoStdRange(
+      periodoStdMeta,
+      boundedRange.start,
+      boundedRange.end,
+    );
 
     if (isExplain) {
       // Solo corremos EXPLAIN para la PRIMERA sede para no recargar la BD.
@@ -2727,6 +2832,7 @@ export async function GET(request: Request) {
         categoriaKeys: categoriaKeysForQuery,
         precomputedFields,
         matviewSqlStrategy,
+        periodoStdMeta,
         explain: true,
       });
       const totalExplainMs = performance.now() - explainStartTs;
@@ -2740,11 +2846,13 @@ export async function GET(request: Request) {
               sedeName: targetSede.sedeName,
             },
             range: boundedRange,
+            dataSource: usePeriodoStd ? "periodo-std" : "matview-or-raw",
             matviewSql: matviewSqlStrategy,
+            periodoStd: periodoStdMeta,
             durationMs: Math.round(explainResult.durationMs),
             totalDurationMs: Math.round(totalExplainMs),
             plan: explainResult.plan,
-            note: "Plan generado con EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT). Solo primera sede seleccionada. Default matview SQL: ranked; alternativa: ?matviewSql=hashagg o ROTACION_MATVIEW_SQL=hashagg.",
+            note: "Plan generado con EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT). Solo primera sede seleccionada. Camino rapido si rango == periodo std snapshot.",
           },
           {
             headers: {
@@ -2761,11 +2869,16 @@ export async function GET(request: Request) {
     console.info(
       `[rotacion API] iniciando fetch de filas para ${selectedVisibleSedes.length} sede(s)`,
     );
-    // Pre-probe para reportar en el header si esta usando matview o raw.
-    // El probe esta cacheado 5 min, asi que no pagamos un round-trip por sede.
-    const dataSource = await withPoolClient(async (client) =>
-      (await ensureRotacionCleanMatViewProbe(client)) ? "matview" : "raw",
-    );
+    // Pre-probe para reportar en el header que camino SQL se usa.
+    const dataSource: RotacionDataSource = await withPoolClient(async (client) => {
+      if (
+        usePeriodoStd &&
+        (await probeRotacionPeriodoStdReady(client))
+      ) {
+        return "periodo-std";
+      }
+      return (await ensureRotacionCleanMatViewProbe(client)) ? "matview" : "raw";
+    });
     const lineasN1ForQuery =
       requestedLineasN1.length > 0 ? requestedLineasN1 : null;
     let rowCacheHits = 0;
@@ -2802,6 +2915,7 @@ export async function GET(request: Request) {
           categoriaKeys: categoriaKeysForQuery,
           precomputedFields,
           matviewSqlStrategy,
+          periodoStdMeta,
         });
         setRotationRowsSliceCache(sliceCacheKey, fetchedRows);
         return fetchedRows;
@@ -2838,6 +2952,7 @@ export async function GET(request: Request) {
             sourceTable: getRotacionSourceTable(),
             maxSalesValue,
             abcdConfig: scopedAbcdConfig,
+            periodoStd: periodoStdMeta,
           },
         },
         {
@@ -2846,6 +2961,12 @@ export async function GET(request: Request) {
             "X-Data-Source": dataSource,
             ...(dataSource === "matview"
               ? { "X-Matview-Sql": matviewSqlStrategy }
+              : {}),
+            ...(dataSource === "periodo-std" && periodoStdMeta
+              ? {
+                  "X-Periodo-Std-Start": periodoStdMeta.periodoStart,
+                  "X-Periodo-Std-End": periodoStdMeta.periodoEnd,
+                }
               : {}),
             "X-Row-Cache": rowCacheSummary,
           },

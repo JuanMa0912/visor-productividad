@@ -4,6 +4,7 @@ import {
   type CeroRotacionEstado,
 } from "@/lib/rotacion/cero-estado";
 import { mapRawSedeToCanonical } from "@/lib/horarios/planilla-sede";
+import { getRollingMonthBackRange } from "@/lib/rotacion/rolling-month-range";
 import { formatDateLabel } from "@/lib/shared/utils";
 
 const getCookieValue = (name: string) => {
@@ -433,60 +434,6 @@ const clampDateKeyToBounds = (key: string, min: string, max: string) => {
   if (key < min) return min;
   if (key > max) return max;
   return key;
-};
-
-/**
- * Rango por defecto al entrar al modulo. Mantiene la idea original de
- * "una longitud de mes calendario", pero anclado al ultimo dato real:
- *   - end = ULTIMO DIA CON DATOS DISPONIBLES (`maxAvailable`). Tipicamente
- *     es "ayer" porque los datos del dia actual todavia no estan ingresados
- *     en el data warehouse. Asi el usuario siempre arranca viendo el dato
- *     mas reciente registrado.
- *   - start = end - (dias del mes calendario anterior a hoy - 1). De esta
- *     forma el rango siempre cubre exactamente 28/29/30/31 dias segun el
- *     largo del mes anterior, sin sumar dias adicionales por el solapamiento
- *     entre meses.
- *
- * Ambos extremos quedan acotados a `[minAvailable, maxAvailable]`.
- *
- * Ejemplos (asumiendo maxAvailable = ayer):
- *   - Hoy = 2026-06-02, mayo tiene 31 dias → May 02 .. Jun 01 (31 d).
- *   - Hoy = 2026-06-01, mayo tiene 31 dias → May 01 .. May 31 (31 d).
- *   - Hoy = 2026-07-15, junio tiene 30 dias → Jun 15 .. Jul 14 (30 d).
- *   - Hoy = 2026-03-10, feb tiene 28 dias  → Feb 10 .. Mar 09 (28 d).
- *   - Hoy = 2024-03-10, feb 2024 tiene 29  → Feb 10 .. Mar 09 (29 d).
- *
- * `new Date(y, m, 0).getDate()` devuelve el numero del ultimo dia del mes
- * m-1, que coincide con la cantidad total de dias de ese mes (truco
- * clasico de la API Date).
- */
-const getRollingMonthBackRange = (
-  minAvailable: string,
-  maxAvailable: string,
-): DateRange => {
-  const today = new Date();
-  const daysInPrevMonth = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    0,
-  ).getDate();
-
-  const endKey = clampDateKeyToBounds(
-    maxAvailable,
-    minAvailable,
-    maxAvailable,
-  );
-  const startDate = parseDateKey(endKey);
-  startDate.setDate(startDate.getDate() - (daysInPrevMonth - 1));
-  let startKey = clampDateKeyToBounds(
-    toDateKey(startDate),
-    minAvailable,
-    maxAvailable,
-  );
-  if (startKey > endKey) {
-    startKey = endKey;
-  }
-  return { start: startKey, end: endKey };
 };
 
 const buildRotacionRowsKey = (input: {

@@ -203,14 +203,15 @@ filas en `rotacion_base_item_dia_sede`. La solución tiene **tres capas**:
 | Capa | Qué hace | Dónde vive |
 |------|----------|------------|
 | **1. Matview BD** | Pre-limpia strings, filtra categorías/sedes, agrega por día | `rotacion_item_dia_clean` en Cloud SQL |
-| **2. API** | Lee matview con fallback a tabla cruda; cache HTTP 5 min | `/api/rotacion` |
+| **1b. Snapshot periodo std** | Pre-agrega rango rolling default (mes calendario anterior) | `rotacion_item_periodo_std` + meta |
+| **2. API** | Lee snapshot si rango coincide; si no matview; fallback raw | `/api/rotacion` |
 | **3. Cache cliente** | IndexedDB keyed por sede+fechas+filtros; TTL 5 min | Browser (`rotacion-rows-idb-cache.ts`) |
 
 ### Resultados medidos en producción (jun 2026)
 
 | Escenario | Antes (raw) | Después |
 |-----------|-------------|---------|
-| 1ª carga sede (30 días, ~22k filas) | ~20–35 s | **~10–11 s** (matview) |
+| 1ª carga sede (30 días, ~22k filas) | ~20–35 s | **~10–11 s** (matview) / **~1–3 s** (periodo-std) |
 | SQL por sede (logs servidor) | ~20–35 s | **~9–11 s** |
 | F5 / volver a misma sede (&lt;5 min) | ~11 s (re-fetch) | **~0.1–0.5 s** (IndexedDB) |
 | Cambio Floresta → Floralia | ~11 s | ~9–11 s (fetch nuevo, correcto) |
@@ -220,7 +221,8 @@ Header esperado en Network (request de datos):
 
 | Header | Valor |
 |--------|-------|
-| `X-Data-Source` | `matview` |
+| `X-Data-Source` | `periodo-std` / `matview` / `raw` |
+| `X-Periodo-Std-Start` / `End` | Solo en `periodo-std` (rango del snapshot) |
 | `Cache-Control` | `private, max-age=300, stale-while-revalidate=900` |
 
 ### Por qué `no-store` en fetch + IndexedDB (no mezcla sedes)
@@ -287,6 +289,41 @@ sudo -u visor bash -c '
 
 > Si la matview ya existe (query anterior devuelve filas), **no** re-correr la
 > migración salvo que falten índices.
+
+### Snapshot periodo std (`rotacion_item_periodo_std`) — camino ~1–3 s
+
+Aplicar **después** de `20260616_rotacion_clean_matview.sql`:
+
+```bash
+sudo -u visor bash -c '
+  set -a
+  source /opt/visor-productividad/.env.local
+  set +a
+  export PGPASSWORD="$DB_PASSWORD"
+  export PGSSLMODE=require
+  psql \
+    --host="$DB_HOST" \
+    --port="${DB_PORT:-5432}" \
+    --username="$DB_USER" \
+    --dbname="$DB_NAME" \
+    --set ON_ERROR_STOP=on \
+    -f /opt/visor-productividad/db/migrations/20260617_rotacion_periodo_std.sql
+'
+
+# Poblar snapshot (incluido en refresh diario; primera vez manual):
+sudo systemctl start visor-refresh-rotacion.service
+
+# Verificar meta
+sudo -u visor bash -c '
+  set -a; source /opt/visor-productividad/.env.local; set +a
+  export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+  psql --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER" --dbname="$DB_NAME" \
+    -c "SELECT periodo_start, periodo_end, row_count, refreshed_at FROM rotacion_item_periodo_std_meta;"
+'
+```
+
+La API usa `periodo-std` solo si `start`/`end` del request coinciden con
+`periodo_start`/`periodo_end` de esa meta (rango rolling default de la UI).
 
 ### Timer de refresh diario (06:15 UTC)
 

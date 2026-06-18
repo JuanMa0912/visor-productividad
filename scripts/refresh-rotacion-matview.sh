@@ -101,3 +101,18 @@ fi
 row_count=$("${PSQL[@]}" -c "SELECT COUNT(*) FROM rotacion_item_dia_clean;" | tr -d '[:space:]')
 elapsed=$(( $(date +%s) - start_ts ))
 log "Refresh completado: ${row_count} filas, ${elapsed}s"
+
+periodo_fn_exists=$("${PSQL[@]}" -c "SELECT 1 FROM pg_proc WHERE proname = 'refresh_rotacion_item_periodo_std' LIMIT 1;" | tr -d '[:space:]')
+if [[ -n "$periodo_fn_exists" ]]; then
+  periodo_start_ts=$(date +%s)
+  log "Iniciando refresh_rotacion_item_periodo_std()"
+  periodo_line=$("${PSQL[@]}" -c "SELECT out_periodo_start, out_periodo_end, out_row_count FROM refresh_rotacion_item_periodo_std();" | head -n 1)
+  periodo_elapsed=$(( $(date +%s) - periodo_start_ts ))
+  if [[ -n "$periodo_line" ]]; then
+    log "Periodo std refresh: ${periodo_line} (${periodo_elapsed}s)"
+  else
+    log "Periodo std refresh: sin filas (matview vacia o skip) (${periodo_elapsed}s)"
+  fi
+else
+  log "Funcion refresh_rotacion_item_periodo_std no existe; aplica db/migrations/20260617_rotacion_periodo_std.sql"
+fi

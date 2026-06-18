@@ -75,6 +75,8 @@ Orden completo despues de `schema-auth.sql`:
 21. `20260526_user_activity_log.sql`
 22. `20260529_ventas_x_item_perf_indexes.sql`
 23. `20260603_rotacion_cero_item_estado_empresa.sql`
+24. `20260616_rotacion_clean_matview.sql`
+25. `20260617_rotacion_periodo_std.sql`
 
 ## 4. Dominios y tablas
 
@@ -154,6 +156,9 @@ ANALYZE` si crece el volumen.
 | Tabla | Origen | Uso |
 | --- | --- | --- |
 | `rotacion_base_item_dia_sede` | ETL/servidor | rotacion, inventario x item, kardex |
+| `rotacion_item_dia_clean` | matview (migracion) | pre-limpia/agrega diario para `/api/rotacion` |
+| `rotacion_item_periodo_std` | refresh nocturno | snapshot agregado rango rolling default (~1-3 s) |
+| `rotacion_item_periodo_std_meta` | refresh nocturno | periodo_start/end y refreshed_at del snapshot |
 | `rotacion_v4` | ETL/servidor | vista tecnica `/rotacion-dos` |
 | `rotacion_abcd_config` | runtime/API | umbrales ABCD globales |
 | `rotacion_abcd_config_sede` | runtime/API | umbrales ABCD por empresa/sede |
