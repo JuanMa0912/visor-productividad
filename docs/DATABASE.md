@@ -77,6 +77,8 @@ Orden completo despues de `schema-auth.sql`:
 23. `20260603_rotacion_cero_item_estado_empresa.sql`
 24. `20260616_rotacion_clean_matview.sql`
 25. `20260617_rotacion_periodo_std.sql`
+26. `20260618_rotacion_refresh_timeouts.sql`
+27. `20260619_rotacion_periodo_std_fix_groupby.sql`
 
 ## 4. Dominios y tablas
 
