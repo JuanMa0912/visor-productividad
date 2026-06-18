@@ -9,7 +9,9 @@ Type=oneshot
 User=visor
 Group=visor
 WorkingDirectory=/opt/visor-productividad
-ExecStart=/opt/visor-productividad/scripts/refresh-rotacion-matview.sh
+# Invocar via bash: los .sh en git van sin +x (100644); systemd exige ejecutable
+# directo y falla con 203/EXEC "Permission denied" tras git pull.
+ExecStart=/bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
 StandardOutput=journal
 StandardError=journal
 # Endurecimientos basicos

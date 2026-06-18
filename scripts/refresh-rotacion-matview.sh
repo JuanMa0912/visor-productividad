@@ -8,8 +8,9 @@
 # planner tenga que sortear 478k filas por sede en cada request.
 #
 # Uso:
-#   sudo -u visor /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
-#   sudo -u visor /opt/visor-productividad/scripts/refresh-rotacion-matview.sh --no-concurrent
+#   sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
+#   sudo -u visor /bin/bash .../refresh-rotacion-matview.sh --no-concurrent
+#   sudo -u visor /bin/bash .../refresh-rotacion-matview.sh --periodo-only
 #
 # Pensado para correr via systemd timer:
 #   /etc/systemd/system/visor-refresh-rotacion.service
@@ -20,10 +21,12 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/opt/visor-productividad/.env.local}"
 LOG_FILE="${LOG_FILE:-/var/log/visor-refresh-rotacion.log}"
 CONCURRENT=1
+PERIODO_ONLY=0
 
 for arg in "$@"; do
   case "$arg" in
     --no-concurrent) CONCURRENT=0 ;;
+    --periodo-only) PERIODO_ONLY=1 ;;
     *) echo "Argumento desconocido: $arg" >&2; exit 2 ;;
   esac
 done
@@ -77,6 +80,21 @@ PSQL=(psql
   --set ON_ERROR_STOP=on
 )
 
+# Cloud SQL suele tener statement_timeout (~5-15 min). REFRESH CONCURRENTLY sobre
+# ~6M filas puede superarlo; desactivamos timeout en la sesion de mantenimiento.
+run_psql_maintenance() {
+  "${PSQL[@]}" -c "SET statement_timeout = 0;" -c "$1"
+}
+
+refresh_matview() {
+  local concurrent=$1
+  if [[ "$concurrent" -eq 1 ]]; then
+    run_psql_maintenance "REFRESH MATERIALIZED VIEW CONCURRENTLY rotacion_item_dia_clean;"
+  else
+    run_psql_maintenance "REFRESH MATERIALIZED VIEW rotacion_item_dia_clean;"
+  fi
+}
+
 # Verifica que la vista exista. Si no esta, salimos con codigo 0 (no es error,
 # probablemente la migracion 20260616_rotacion_clean_matview.sql todavia no se
 # aplico). El endpoint hace fallback a la tabla cruda.
@@ -86,27 +104,33 @@ if [[ -z "$exists" ]]; then
   exit 0
 fi
 
-start_ts=$(date +%s)
-log "Iniciando REFRESH MATERIALIZED VIEW rotacion_item_dia_clean (concurrent=${CONCURRENT})"
+if [[ "$PERIODO_ONLY" -eq 0 ]]; then
+  start_ts=$(date +%s)
+  log "Iniciando REFRESH MATERIALIZED VIEW rotacion_item_dia_clean (concurrent=${CONCURRENT})"
 
-if [[ "$CONCURRENT" -eq 1 ]]; then
-  "${PSQL[@]}" -c "REFRESH MATERIALIZED VIEW CONCURRENTLY rotacion_item_dia_clean;" > /dev/null
+  if [[ "$CONCURRENT" -eq 1 ]]; then
+    if ! refresh_matview 1; then
+      log "WARN: REFRESH CONCURRENTLY fallo; reintentando sin CONCURRENTLY (bloquea lecturas brevemente)"
+      refresh_matview 0
+    fi
+  else
+    refresh_matview 0
+  fi
+
+  run_psql_maintenance "ANALYZE rotacion_item_dia_clean;" > /dev/null
+
+  row_count=$("${PSQL[@]}" -c "SELECT COUNT(*) FROM rotacion_item_dia_clean;" | tr -d '[:space:]')
+  elapsed=$(( $(date +%s) - start_ts ))
+  log "Refresh completado: ${row_count} filas, ${elapsed}s"
 else
-  "${PSQL[@]}" -c "REFRESH MATERIALIZED VIEW rotacion_item_dia_clean;" > /dev/null
+  log "Modo --periodo-only: omitiendo REFRESH de rotacion_item_dia_clean"
 fi
-
-# ANALYZE despues del refresh para estadisticas frescas (el planner usa esto).
-"${PSQL[@]}" -c "ANALYZE rotacion_item_dia_clean;" > /dev/null
-
-row_count=$("${PSQL[@]}" -c "SELECT COUNT(*) FROM rotacion_item_dia_clean;" | tr -d '[:space:]')
-elapsed=$(( $(date +%s) - start_ts ))
-log "Refresh completado: ${row_count} filas, ${elapsed}s"
 
 periodo_fn_exists=$("${PSQL[@]}" -c "SELECT 1 FROM pg_proc WHERE proname = 'refresh_rotacion_item_periodo_std' LIMIT 1;" | tr -d '[:space:]')
 if [[ -n "$periodo_fn_exists" ]]; then
   periodo_start_ts=$(date +%s)
   log "Iniciando refresh_rotacion_item_periodo_std()"
-  periodo_line=$("${PSQL[@]}" -c "SELECT out_periodo_start, out_periodo_end, out_row_count FROM refresh_rotacion_item_periodo_std();" | head -n 1)
+  periodo_line=$(run_psql_maintenance "SELECT out_periodo_start, out_periodo_end, out_row_count FROM refresh_rotacion_item_periodo_std();" | head -n 1)
   periodo_elapsed=$(( $(date +%s) - periodo_start_ts ))
   if [[ -n "$periodo_line" ]]; then
     log "Periodo std refresh: ${periodo_line} (${periodo_elapsed}s)"

@@ -414,6 +414,8 @@ Quitar la variable (o `=ranked`) vuelve al default del código.
 | F5 sigue ~11 s, sin `Cache IDB hit` | IDB no guardó (quota) o filtros distintos | Consola: buscar `Cache IDB escritura fallida`; esperar `guardado` antes de F5 |
 | Floresta muestra datos de otra sede | No debería pasar con IDB | Reportar; clave incluye `sedeIds` |
 | API 404 en todo | Servicio caído o durante restart | `curl http://127.0.0.1:3000/api/auth/me` → debe ser 401 |
+| `canceling statement due to statement timeout` en refresh | Cloud SQL corta CONCURRENTLY (~6M filas) | Script con `SET statement_timeout=0`, `--no-concurrent`, o `--periodo-only` si matview al dia |
+| `203/EXEC` / `Permission denied` en refresh timer | Script `.sh` sin +x tras `git pull` | `chmod +x` **o** unit con `ExecStart=/bin/bash .../script.sh` (ver `deploy/systemd/`) |
 | `git pull` bloqueado | Cherry-pick a medias | `sudo -u visor git cherry-pick --abort` luego pull |
 
 ### Rollback solo de código (matview en BD se queda)

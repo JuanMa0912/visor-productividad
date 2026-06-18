@@ -9,7 +9,7 @@ Type=oneshot
 User=visor
 Group=visor
 WorkingDirectory=/opt/visor-productividad
-ExecStart=/opt/visor-productividad/scripts/refresh-margenes-matview.sh
+ExecStart=/bin/bash /opt/visor-productividad/scripts/refresh-margenes-matview.sh
 StandardOutput=journal
 StandardError=journal
 # Endurecimientos basicos
