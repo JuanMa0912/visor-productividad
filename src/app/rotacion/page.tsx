@@ -476,6 +476,14 @@ export function RotacionPageInner() {
           );
         }
 
+        const rowCount = payload.rows?.length ?? 0;
+        const apiElapsedMs = performance.now() - reloadStartTs;
+        const dataSource = response.headers.get("X-Data-Source") ?? "?";
+        const rowCache = response.headers.get("X-Row-Cache") ?? "?";
+        console.log(
+          `[rotacion] API respondio en ${formatLoadDuration(apiElapsedMs)} (${apiElapsedMs.toFixed(0)} ms, ${rowCount} filas, source=${dataSource}, rowCache=${rowCache}).`,
+        );
+
         setRows(normalizeRotationRows(payload.rows ?? []));
         setHasLoadedItems(true);
         if (
@@ -486,7 +494,14 @@ export function RotacionPageInner() {
           setAbcdConfig(normalizedConfig);
         }
         rotacionRowsFetchKeyRef.current = rowsFilterKey;
-        await writeRotacionRowsIdbCache(rowsCacheKey, {
+
+        const uiReadyMs = performance.now() - reloadStartTs;
+        console.log(
+          `[rotacion] Tabla lista en ${formatLoadDuration(uiReadyMs)} (${uiReadyMs.toFixed(0)} ms).`,
+        );
+
+        // IDB en segundo plano: no bloquea pintar la tabla ni infla el cronometro de datos.
+        void writeRotacionRowsIdbCache(rowsCacheKey, {
           rows: payload.rows ?? [],
           abcdConfig:
             targetSedeSelectionsForQuery.length === 1
@@ -508,14 +523,6 @@ export function RotacionPageInner() {
       } finally {
         window.clearInterval(tickerId);
         setIsLoadingData(false);
-        // Solo logueamos el tiempo final cuando la carga NO fue abortada
-        // (los aborts nunca llegan a recibir respuesta, asi que su tiempo no aporta).
-        if (!options?.signal?.aborted) {
-          const elapsedMs = performance.now() - reloadStartTs;
-          console.log(
-            `[rotacion] Tabla cargada en ${formatLoadDuration(elapsedMs)} (${elapsedMs.toFixed(0)} ms).`,
-          );
-        }
       }
     },
     [
