@@ -17,7 +17,9 @@
     "test:e2e-smoke": "python scripts/playwright_smoke.py",
     "ci": "npm run lint && npm run typecheck && npm run test:unit && npm run build",
     "db:test": "node scripts/test-db.js",
-    "db:test:postgres": "node scripts/test-db-postgres.js"
+    "db:test:postgres": "node scripts/test-db-postgres.js",
+    "benchmark:apis": "node scripts/benchmark-portal-apis.mjs",
+    "benchmark:rotacion-sql": "node scripts/benchmark-rotacion.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
