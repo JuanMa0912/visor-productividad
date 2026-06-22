@@ -93,6 +93,15 @@ WITH checks AS (
   FROM margenes_linea_co_dia_clean
 
   UNION ALL
+  SELECT 'margen_final',
+         COUNT(*)::bigint,
+         NULL::date,
+         MAX(fecha_dcto)::text
+  FROM margen_final
+  WHERE fecha_dcto IS NOT NULL
+    AND fecha_dcto ~ '^[0-9]{8}$'
+
+  UNION ALL
   SELECT 'ventas_item_diario',
          COUNT(*)::bigint,
          NULL::date,

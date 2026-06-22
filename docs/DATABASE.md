@@ -143,15 +143,16 @@ Notas:
 
 | Tabla | Uso |
 | --- | --- |
-| `margenes_linea_co_dia` | agregados por linea/sede/dia |
+| `margenes_linea_co_dia` | legacy: agregados por linea/sede/dia (feb 2026 en prod) |
+| `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD |
+| `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
 
-API: `/api/margenes`.
+API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`).
+
+Migracion nueva: `db/migrations/20260622_margen_final.sql`.
 
 Regla de margen agregado: `SUM(margen) / SUM(ventas) * 100`; no promediar
 porcentajes.
-
-No hay migracion versionada de indices para esta tabla; revisar `EXPLAIN
-ANALYZE` si crece el volumen.
 
 ### 4.4 Rotacion, inventario y kardex
 
