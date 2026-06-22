@@ -8,7 +8,8 @@ import { useAuth } from "@/lib/auth/auth-context";
 import type { AuthUser } from "@/lib/auth/types";
 
 const sanitizeFrom = (raw: string | null): string => {
-  if (!raw) return "/secciones";
+  // `/` es productividad por linea; tras login el hub del portal es `/secciones`.
+  if (!raw || raw === "/") return "/secciones";
   if (!raw.startsWith("/")) return "/secciones";
   if (raw.startsWith("//")) return "/secciones";
   if (raw.includes(":")) return "/secciones";

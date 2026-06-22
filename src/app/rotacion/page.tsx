@@ -147,6 +147,17 @@ import {
   readRotacionRowsIdbCache,
   writeRotacionRowsIdbCache,
 } from "./rotacion-rows-idb-cache";
+import {
+  buildUserLastSedeStorageKey,
+  fetchRotacionRowsForCache,
+  getInFlightRotacionRowsFetch,
+  readUserLastSedeSelection,
+  resolveRotacionPrefetchSedeValues,
+  type RotacionRowsFetchResult,
+} from "./rotacion-prefetch";
+
+/** Espera breve antes de recargar filas tras cambiar sede/rango (ms). */
+const ROTACION_ROWS_RELOAD_DEBOUNCE_MS = 100;
 
 /**
  * Formatea milisegundos a un string legible para el log de consola del
@@ -280,6 +291,11 @@ export function RotacionPageInner() {
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
   const skipSedeRestoreRef = useRef(false);
+  const rotacionPrefetchKeyRef = useRef<string | null>(null);
+  const userScopedLastSedeStorageKey = useMemo(
+    () => buildUserLastSedeStorageKey(lastSedeStorageKey, authUser?.id),
+    [authUser?.id, lastSedeStorageKey],
+  );
   const catalogBaseCacheRef = useRef<
     Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>
   >(new Map());
@@ -333,16 +349,16 @@ export function RotacionPageInner() {
     try {
       if (selectedSedes.length > 0) {
         localStorage.setItem(
-          lastSedeStorageKey,
+          userScopedLastSedeStorageKey,
           JSON.stringify(selectedSedes),
         );
       } else {
-        localStorage.removeItem(lastSedeStorageKey);
+        localStorage.removeItem(userScopedLastSedeStorageKey);
       }
     } catch {
       /* ignore quota / private mode */
     }
-  }, [selectedSedes, lastSedeStorageKey]);
+  }, [selectedSedes, userScopedLastSedeStorageKey]);
 
   const canEditAbcdConfig = useMemo(
     () => canEditRotacionAbcdConfig(specialRoles, isAdmin),
@@ -383,7 +399,11 @@ export function RotacionPageInner() {
         lineasN1: [],
         categoriaKeys: [],
       });
-      const rowsCacheKey = buildRotacionRowsCacheKey(apiBasePath, rowsScopeKey);
+      const rowsCacheKey = buildRotacionRowsCacheKey(
+        apiBasePath,
+        authUser?.id,
+        rowsScopeKey,
+      );
 
       const scopeChanged =
         rotacionRowsFetchKeyRef.current !== null &&
@@ -395,14 +415,31 @@ export function RotacionPageInner() {
       setIsLoadingData(true);
       setError(null);
 
-      // Cronometro en consola: tick cada 250ms mientras la carga este en curso.
-      // No se renderiza en la UI, solo se loguea para diagnosticos de rendimiento.
       const reloadStartTs = performance.now();
       console.log("[rotacion] Iniciando carga de tabla...");
       const tickerId = window.setInterval(() => {
         const elapsedMs = performance.now() - reloadStartTs;
         console.log(`[rotacion] Cargando... ${formatLoadDuration(elapsedMs)}`);
       }, 250);
+
+      const applyFetchedRows = (
+        result: RotacionRowsFetchResult,
+        sourceLabel: string,
+      ) => {
+        setRows(normalizeRotationRows(result.rows));
+        setHasLoadedItems(true);
+        if (
+          targetSedeSelectionsForQuery.length === 1 &&
+          result.abcdConfig
+        ) {
+          setAbcdConfig(normalizeAbcdConfig(result.abcdConfig));
+        }
+        rotacionRowsFetchKeyRef.current = rowsScopeKey;
+        const elapsedMs = performance.now() - reloadStartTs;
+        console.log(
+          `[rotacion] ${sourceLabel} en ${formatLoadDuration(elapsedMs)} (${elapsedMs.toFixed(0)} ms).`,
+        );
+      };
 
       try {
         if (
@@ -424,83 +461,60 @@ export function RotacionPageInner() {
             return false;
           }
           if (cached) {
-            setRows(normalizeRotationRows(cached.rows));
-            setHasLoadedItems(true);
-            if (
-              targetSedeSelectionsForQuery.length === 1 &&
-              cached.abcdConfig
-            ) {
-              setAbcdConfig(normalizeAbcdConfig(cached.abcdConfig));
-            }
-            rotacionRowsFetchKeyRef.current = rowsScopeKey;
-            const elapsedMs = performance.now() - reloadStartTs;
-            console.log(
-              `[rotacion] Cache IDB hit en ${formatLoadDuration(elapsedMs)} (${elapsedMs.toFixed(0)} ms).`,
-            );
+            applyFetchedRows(cached, "Cache IDB hit");
             return true;
+          }
+
+          const inFlight = getInFlightRotacionRowsFetch(rowsCacheKey);
+          if (inFlight) {
+            const prefetched = await inFlight;
+            if (options?.signal?.aborted) {
+              setHasLoadedItems(false);
+              return false;
+            }
+            if (prefetched) {
+              applyFetchedRows(prefetched, "Prefetch en vuelo");
+              void writeRotacionRowsIdbCache(rowsCacheKey, prefetched);
+              return true;
+            }
           }
         }
 
-        const params = new URLSearchParams();
-        if (dateRange.start && dateRange.end) {
-          params.set("start", dateRange.start);
-          params.set("end", dateRange.end);
-        }
-        targetSedeSelectionsForQuery.forEach((sedeMeta) => {
-          params.append("sedeScope", `${sedeMeta.empresa}::${sedeMeta.sedeId}`);
+        const fetchStartedMs = performance.now();
+        const fetched = await fetchRotacionRowsForCache({
+          apiBasePath,
+          cacheKey: rowsCacheKey,
+          start: dateRange.start ?? "",
+          end: dateRange.end ?? "",
+          sedeSelections: targetSedeSelectionsForQuery.map((sede) => ({
+            empresa: sede.empresa,
+            sedeId: sede.sedeId,
+          })),
+          signal: options?.signal,
+          onUnauthorized: () => {
+            router.replace("/login");
+          },
+          onForbidden: (message) => {
+            setError(message);
+            setHasLoadedItems(false);
+          },
         });
-        const response = await fetch(
-          `${apiBasePath}${params.size > 0 ? `?${params.toString()}` : ""}`,
-          { cache: "no-store", signal: options?.signal },
-        );
-        if (response.status === 401) {
-          router.replace("/login");
-          return false;
-        }
-        if (response.status === 403) {
-          setError(await readRotationApiForbiddenMessage(response));
+        if (options?.signal?.aborted) {
           setHasLoadedItems(false);
           return false;
         }
-        const payload = (await response.json()) as RotationApiResponse;
-        if (!response.ok) {
-          throw new Error(
-            payload.error ?? "No fue posible consultar la rotacion.",
-          );
+        if (!fetched) {
+          return false;
         }
 
-        const rowCount = payload.rows?.length ?? 0;
-        const apiElapsedMs = performance.now() - reloadStartTs;
-        const dataSource = response.headers.get("X-Data-Source") ?? "?";
-        const rowCache = response.headers.get("X-Row-Cache") ?? "?";
+        const rowCount = fetched.rows.length;
+        const apiElapsedMs = performance.now() - fetchStartedMs;
         console.log(
-          `[rotacion] API respondio en ${formatLoadDuration(apiElapsedMs)} (${apiElapsedMs.toFixed(0)} ms, ${rowCount} filas, source=${dataSource}, rowCache=${rowCache}).`,
+          `[rotacion] API respondio en ${formatLoadDuration(apiElapsedMs)} (${apiElapsedMs.toFixed(0)} ms, ${rowCount} filas).`,
         );
 
-        setRows(normalizeRotationRows(payload.rows ?? []));
-        setHasLoadedItems(true);
-        if (
-          targetSedeSelectionsForQuery.length === 1 &&
-          payload.meta?.abcdConfig
-        ) {
-          const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
-          setAbcdConfig(normalizedConfig);
-        }
-        rotacionRowsFetchKeyRef.current = rowsScopeKey;
-
-        const uiReadyMs = performance.now() - reloadStartTs;
-        console.log(
-          `[rotacion] Tabla lista en ${formatLoadDuration(uiReadyMs)} (${uiReadyMs.toFixed(0)} ms).`,
-        );
-
-        // IDB en segundo plano: no bloquea pintar la tabla ni infla el cronometro de datos.
-        void writeRotacionRowsIdbCache(rowsCacheKey, {
-          rows: payload.rows ?? [],
-          abcdConfig:
-            targetSedeSelectionsForQuery.length === 1
-              ? payload.meta?.abcdConfig
-              : undefined,
-        });
+        applyFetchedRows(fetched, "Tabla lista");
+        void writeRotacionRowsIdbCache(rowsCacheKey, fetched);
         return true;
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -520,6 +534,7 @@ export function RotacionPageInner() {
     },
     [
       router,
+      authUser?.id,
       filterCatalog.sedes,
       selectedSedeSet,
       dateRange.start,
@@ -560,7 +575,7 @@ export function RotacionPageInner() {
 
     const timer = window.setTimeout(() => {
       void reloadRotacionRows();
-    }, 480);
+    }, ROTACION_ROWS_RELOAD_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [
     ready,
@@ -1316,34 +1331,121 @@ export function RotacionPageInner() {
     if (skipSedeRestoreRef.current) return;
     if (allSedeOptions.length < 2) return;
 
-    try {
-      const raw = localStorage.getItem(lastSedeStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as string[];
-      const restored = Array.isArray(parsed)
-        ? parsed.filter((value) =>
-            allSedeOptions.some((option) => option.value === value),
-          )
-        : [];
-      if (restored.length === 0) return;
-      setSelectedSedes(restored);
-      const restoredCompanies = Array.from(
+    const validValues = new Set(allSedeOptions.map((option) => option.value));
+    const restored = readUserLastSedeSelection(
+      lastSedeStorageKey,
+      authUser?.id,
+      validValues,
+    );
+    if (restored.length === 0) return;
+
+    setSelectedSedes(restored);
+    setSelectedCompanies(
+      Array.from(
         new Set(
           allSedeOptions
             .filter((option) => restored.includes(option.value))
             .map((option) => option.empresa),
         ),
-      );
-      setSelectedCompanies(restoredCompanies);
-    } catch {
-      /* ignore */
-    }
+      ),
+    );
   }, [
     ready,
     isLoadingLineCatalog,
     selectedSedes,
     allSedeOptions,
     lastSedeStorageKey,
+    authUser?.id,
+  ]);
+
+  useEffect(() => {
+    if (!ready || isLoadingLineCatalog) return;
+    if (!authUser?.id || !dateRange.start || !dateRange.end) return;
+    if (
+      !isRangeWithinMaxMonths({
+        start: dateRange.start,
+        end: dateRange.end,
+      })
+    ) {
+      return;
+    }
+    if (filterCatalog.sedes.length === 0) return;
+
+    const allSedeOptionsForPrefetch = mapRotationSedeOptions(filterCatalog.sedes);
+    const prefetchSedeValues = resolveRotacionPrefetchSedeValues({
+      authUser,
+      allSedeOptions: allSedeOptionsForPrefetch,
+      selectedSedeValues: selectedSedes,
+      lastSedeStorageKey,
+      isUserScopedToSpecificSedes,
+    });
+    if (prefetchSedeValues.length === 0) return;
+
+    const targetSedes = allSedeOptionsForPrefetch.filter((option) =>
+      prefetchSedeValues.includes(option.value),
+    );
+    const rowsScopeKey = buildRotacionRowsKey({
+      start: dateRange.start,
+      end: dateRange.end,
+      empresas: targetSedes.map((s) => s.empresa),
+      sedeIds: targetSedes.map((s) => s.sedeId),
+      lineasN1: [],
+      categoriaKeys: [],
+    });
+    const rowsCacheKey = buildRotacionRowsCacheKey(
+      apiBasePath,
+      authUser.id,
+      rowsScopeKey,
+    );
+    if (rotacionPrefetchKeyRef.current === rowsCacheKey) return;
+    rotacionPrefetchKeyRef.current = rowsCacheKey;
+
+    void (async () => {
+      try {
+        const cached = await readRotacionRowsIdbCache(rowsCacheKey);
+        if (cached) {
+          console.info("[rotacion] Prefetch omitido: IDB ya caliente.");
+          return;
+        }
+        if (getInFlightRotacionRowsFetch(rowsCacheKey)) return;
+
+        console.info(
+          `[rotacion] Prefetch en background (${targetSedes.length} sede(s))...`,
+        );
+        const result = await fetchRotacionRowsForCache({
+          apiBasePath,
+          cacheKey: rowsCacheKey,
+          start: dateRange.start,
+          end: dateRange.end,
+          sedeSelections: targetSedes.map((sede) => ({
+            empresa: sede.empresa,
+            sedeId: sede.sedeId,
+          })),
+        });
+        if (!result) return;
+
+        await writeRotacionRowsIdbCache(rowsCacheKey, result);
+        console.info(
+          `[rotacion] Prefetch listo (${result.rows.length} filas en IDB).`,
+        );
+      } catch (err) {
+        console.warn(
+          "[rotacion] Prefetch fallido:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    })();
+  }, [
+    ready,
+    isLoadingLineCatalog,
+    authUser,
+    dateRange.start,
+    dateRange.end,
+    filterCatalog.sedes,
+    selectedSedes,
+    lastSedeStorageKey,
+    isUserScopedToSpecificSedes,
+    apiBasePath,
   ]);
 
   const catalogFilteredRows = useMemo(

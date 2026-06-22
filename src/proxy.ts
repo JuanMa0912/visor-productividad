@@ -44,7 +44,9 @@ export function proxy(request: NextRequest) {
   const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
   if (!hasSession) {
     const login = new URL("/login", request.url);
-    login.searchParams.set("from", pathname);
+    // La raiz `/` es un modulo concreto; el destino post-login del portal es `/secciones`.
+    const returnPath = pathname === "/" ? "/secciones" : pathname;
+    login.searchParams.set("from", returnPath);
     return NextResponse.redirect(login);
   }
 

@@ -3,20 +3,24 @@ import { test } from "node:test";
 import { buildRotacionRowsCacheKey } from "./rotacion-rows-idb-cache";
 import { buildRotacionRowsKey } from "./rotacion-preamble";
 
+const filterKeyFloresta = buildRotacionRowsKey({
+  start: "2026-05-03",
+  end: "2026-06-02",
+  empresas: ["mtodo"],
+  sedeIds: ["floresta"],
+  lineasN1: [],
+  categoriaKeys: [],
+});
+
 test("buildRotacionRowsCacheKey separa API path y filtros de sede", () => {
   const floresta = buildRotacionRowsCacheKey(
     "/api/rotacion",
-    buildRotacionRowsKey({
-      start: "2026-05-03",
-      end: "2026-06-02",
-      empresas: ["mtodo"],
-      sedeIds: ["floresta"],
-      lineasN1: [],
-      categoriaKeys: [],
-    }),
+    "user-a",
+    filterKeyFloresta,
   );
   const floraria = buildRotacionRowsCacheKey(
     "/api/rotacion",
+    "user-a",
     buildRotacionRowsKey({
       start: "2026-05-03",
       end: "2026-06-02",
@@ -28,7 +32,14 @@ test("buildRotacionRowsCacheKey separa API path y filtros de sede", () => {
   );
 
   assert.notEqual(floresta, floraria);
-  assert.match(floresta, /^\/api\/rotacion\|/);
+  assert.match(floresta, /^\/api\/rotacion\|user-a\|/);
+});
+
+test("buildRotacionRowsCacheKey separa usuarios en el mismo browser", () => {
+  assert.notEqual(
+    buildRotacionRowsCacheKey("/api/rotacion", "user-a", filterKeyFloresta),
+    buildRotacionRowsCacheKey("/api/rotacion", "user-b", filterKeyFloresta),
+  );
 });
 
 test("buildRotacionRowsCacheKey separa rotacion y rotacion-dos", () => {
@@ -42,7 +53,7 @@ test("buildRotacionRowsCacheKey separa rotacion y rotacion-dos", () => {
   });
 
   assert.notEqual(
-    buildRotacionRowsCacheKey("/api/rotacion", filterKey),
-    buildRotacionRowsCacheKey("/api/rotacion-dos", filterKey),
+    buildRotacionRowsCacheKey("/api/rotacion", "user-a", filterKey),
+    buildRotacionRowsCacheKey("/api/rotacion-dos", "user-a", filterKey),
   );
 });

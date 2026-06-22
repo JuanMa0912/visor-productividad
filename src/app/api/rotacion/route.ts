@@ -210,6 +210,8 @@ const ROTATION_LINEAS_N1_CACHE_TTL_MS = 3 * 60 * 1000;
 const ROTACION_CATEGORIA_LINEA_CACHE_TTL_MS = 3 * 60 * 1000;
 /** Alineado con ROTATION_SUCCESS_CACHE_CONTROL e IndexedDB cliente (5 min). */
 const ROTATION_ROWS_SLICE_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Snapshot periodo std cambia 1x/dia; cache mas largo acelera prefetch y revisits. */
+const ROTATION_ROWS_SLICE_CACHE_TTL_PERIODO_STD_MS = 30 * 60 * 1000;
 /** Cada entrada puede pesar ~2–15 MB; cap bajo para no saturar RAM del VM. */
 const ROTATION_ROWS_SLICE_CACHE_MAX = 20;
 
@@ -264,8 +266,16 @@ const getRotationRowsSliceFromCache = (key: string): RotationRow[] | null => {
   return entry.rows;
 };
 
-const setRotationRowsSliceCache = (key: string, rows: RotationRow[]) => {
+const setRotationRowsSliceCache = (
+  key: string,
+  rows: RotationRow[],
+  dataSource: RotacionDataSource,
+) => {
   const now = Date.now();
+  const ttlMs =
+    dataSource === "periodo-std"
+      ? ROTATION_ROWS_SLICE_CACHE_TTL_PERIODO_STD_MS
+      : ROTATION_ROWS_SLICE_CACHE_TTL_MS;
   for (const [cacheKey, entry] of rotationRowsSliceCache) {
     if (entry.expiresAt <= now) {
       rotationRowsSliceCache.delete(cacheKey);
@@ -278,7 +288,7 @@ const setRotationRowsSliceCache = (key: string, rows: RotationRow[]) => {
   }
   rotationRowsSliceCache.set(key, {
     rows,
-    expiresAt: now + ROTATION_ROWS_SLICE_CACHE_TTL_MS,
+    expiresAt: now + ttlMs,
   });
 };
 
@@ -2917,7 +2927,7 @@ export async function GET(request: Request) {
           matviewSqlStrategy,
           periodoStdMeta,
         });
-        setRotationRowsSliceCache(sliceCacheKey, fetchedRows);
+        setRotationRowsSliceCache(sliceCacheKey, fetchedRows, dataSource);
         return fetchedRows;
       },
     );

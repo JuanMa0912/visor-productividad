@@ -25,8 +25,12 @@ export type RotacionRowsIdbCacheValue = {
 
 export const buildRotacionRowsCacheKey = (
   apiBasePath: string,
+  userId: string | null | undefined,
   rowsFilterKey: string,
-): string => `${apiBasePath}|${rowsFilterKey}`;
+): string => {
+  const userScope = userId?.trim() || "anon";
+  return `${apiBasePath}|${userScope}|${rowsFilterKey}`;
+};
 
 const isIndexedDbAvailable = (): boolean =>
   typeof indexedDB !== "undefined";
