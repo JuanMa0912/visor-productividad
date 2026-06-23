@@ -1,4 +1,5 @@
 import { driver, type DriveStep, type Driver } from "driver.js";
+import { persistRotacionTourCompletedRemote } from "./rotacion-tour-persist";
 
 export const ROTACION_TOUR_STORAGE_KEY = "rotacion:tutorial-completed:v1";
 
@@ -154,6 +155,7 @@ export const startRotacionTour = (
       activeDriver = null;
       if (!options.skipPersist) {
         markRotacionTourCompleted(options.userId);
+        void persistRotacionTourCompletedRemote();
       }
     },
   });

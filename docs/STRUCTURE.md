@@ -116,6 +116,7 @@ Codigo compartido sin UI de pagina.
 | `margenes` | margen por linea/sede |
 | `rotacion`, `rotacion-dos` | rotacion legacy y vista V4 |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
+| `rotacion/tutorial` | tutorial interactivo visto (GET/POST) |
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets |
 | `kardex/*` | detalle, lookups, resumenes y totales |

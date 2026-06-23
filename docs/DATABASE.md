@@ -79,6 +79,8 @@ Orden completo despues de `schema-auth.sql`:
 25. `20260617_rotacion_periodo_std.sql`
 26. `20260618_rotacion_refresh_timeouts.sql`
 27. `20260619_rotacion_periodo_std_fix_groupby.sql`
+28. `20260622_margen_final.sql` (si aplica tablero margenes nuevo)
+29. `20260623_app_user_ui_state.sql`
 
 ## 4. Dominios y tablas
 
@@ -210,15 +212,18 @@ Origen: `20260409_ingresar_horarios.sql`.
 
 APIs: `/api/ingresar-horarios/*`, `/api/horarios-comparar`.
 
-### 4.7 Inventario presets
+### 4.7 Inventario presets y preferencias de UI
 
 | Tabla | Rol |
 | --- | --- |
 | `inventario_x_item_user_presets` | JSON de presets por `user_id` |
+| `app_user_ui_state` | preferencias de UI por usuario (`state` JSONB) |
 
-Origen: `20260504_inventario_x_item_user_presets.sql`.
+Origen presets: `20260504_inventario_x_item_user_presets.sql`.
 
-API: `/api/inventario-x-item/presets`.
+Origen UI state: `20260623_app_user_ui_state.sql`. Clave `rotacionTutorialV1` marca tutorial de Rotacion visto.
+
+APIs: `/api/inventario-x-item/presets`, `/api/rotacion/tutorial`.
 
 ### 4.8 Excel DIAN
 
