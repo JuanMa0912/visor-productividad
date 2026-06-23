@@ -195,10 +195,6 @@ export function RotacionPageInner() {
   const specialRoles = authUser?.specialRoles ?? null;
   const userAllowedSedes = authUser?.allowedSedes ?? null;
   const [ready, setReady] = useState(false);
-  const { startTour: startRotacionTourGuide } = useRotacionTour(
-    authUser?.id,
-    ready,
-  );
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -1556,6 +1552,15 @@ export function RotacionPageInner() {
     () => rowsBySede.map((group) => `${group.empresa}-${group.sedeId}`),
     [rowsBySede],
   );
+  const tableTourReady =
+    hasLoadedItems &&
+    rowsAfterProductFilter.length > 0 &&
+    rowsBySede.length > 0;
+  const { startTour: startRotacionTourGuide } = useRotacionTour(
+    authUser?.id,
+    ready,
+    tableTourReady,
+  );
 
   const setTableHostRef = useCallback(
     (groupKey: string, node: HTMLDivElement | null) => {
@@ -2458,6 +2463,7 @@ export function RotacionPageInner() {
                   ) : null}
                   {canEditAbcdConfig ? (
                     <Button
+                      id="rotacion-tour-abcd-config"
                       type="button"
                       className="group h-9 gap-2 rounded-full bg-amber-600 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_22px_-10px_rgba(217,119,6,0.7)] transition hover:bg-amber-700 hover:shadow-[0_12px_26px_-10px_rgba(180,83,9,0.75)]"
                       onClick={() => setIsAbcdModalOpen(true)}
@@ -3383,7 +3389,14 @@ export function RotacionPageInner() {
                                   </div>
                                 ) : null}
                               </div>
-                              <div className="flex w-fit max-w-full shrink-0 flex-wrap gap-2">
+                              <div
+                                id={
+                                  groupIndex === 0
+                                    ? "rotacion-tour-table-abcd"
+                                    : undefined
+                                }
+                                className="flex w-fit max-w-full shrink-0 flex-wrap gap-2"
+                              >
                                   <div className="flex w-fit flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
                                     <div className="mb-2 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-emerald-950">
@@ -3792,7 +3805,14 @@ export function RotacionPageInner() {
                               ) : null}
                             </div>
 
-                            <div className="border-t border-slate-200/90 pt-5">
+                            <div
+                              id={
+                                groupIndex === 0
+                                  ? "rotacion-tour-table-filters"
+                                  : undefined
+                              }
+                              className="border-t border-slate-200/90 pt-5"
+                            >
                               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                                 Filtros y resumen
                               </p>
@@ -3893,7 +3913,14 @@ export function RotacionPageInner() {
                                       </Button>
                                     </div>
                                   ) : null}
-                                  <label className="order-last mt-1 flex basis-full flex-col gap-1">
+                                  <label
+                                    id={
+                                      groupIndex === 0
+                                        ? "rotacion-tour-table-search"
+                                        : undefined
+                                    }
+                                    className="order-last mt-1 flex basis-full flex-col gap-1"
+                                  >
                                     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                                       Buscar producto
                                     </span>

@@ -9,12 +9,15 @@ import {
 } from "./rotacion-tour";
 
 const ROTACION_TOUR_AUTO_START_DELAY_MS = 900;
+/** Si la tabla tarda, igual mostramos el tour base tras este tope. */
+const ROTACION_TOUR_AUTO_START_MAX_WAIT_MS = 12_000;
 
 export type RotacionTourCompletionStatus = "loading" | "completed" | "pending";
 
 export const useRotacionTour = (
   userId: string | null | undefined,
   ready: boolean,
+  tableTourReady: boolean,
 ) => {
   const autoStartAttemptedRef = useRef(false);
   const [completionStatus, setCompletionStatus] =
@@ -57,13 +60,26 @@ export const useRotacionTour = (
     if (!ready || completionStatus !== "pending") return;
     if (autoStartAttemptedRef.current) return;
 
-    autoStartAttemptedRef.current = true;
-    const timer = window.setTimeout(() => {
+    const launchTour = () => {
+      if (autoStartAttemptedRef.current) return;
+      autoStartAttemptedRef.current = true;
       startRotacionTour({ userId });
-    }, ROTACION_TOUR_AUTO_START_DELAY_MS);
+    };
 
-    return () => window.clearTimeout(timer);
-  }, [ready, completionStatus, userId]);
+    if (tableTourReady) {
+      const timer = window.setTimeout(
+        launchTour,
+        ROTACION_TOUR_AUTO_START_DELAY_MS,
+      );
+      return () => window.clearTimeout(timer);
+    }
+
+    const fallbackTimer = window.setTimeout(
+      launchTour,
+      ROTACION_TOUR_AUTO_START_MAX_WAIT_MS,
+    );
+    return () => window.clearTimeout(fallbackTimer);
+  }, [ready, completionStatus, userId, tableTourReady]);
 
   return { startTour, completionStatus };
 };

@@ -51,7 +51,7 @@ const ROTACION_TOUR_STEP_DEFS: DriveStep[] = [
     popover: {
       title: "Bienvenido a Rotacion",
       description:
-        "Este recorrido muestra lo esencial: filtros, periodo, tabla y exportacion. Puedes repetirlo cuando quieras con el boton Ayuda.",
+        "Recorrido por filtros de consulta, tabla, filtros de analisis y exportacion. Repitelo cuando quieras con el boton Ayuda.",
       side: "bottom",
       align: "start",
     },
@@ -87,11 +87,51 @@ const ROTACION_TOUR_STEP_DEFS: DriveStep[] = [
     },
   },
   {
+    element: "#rotacion-tour-abcd-config",
+    popover: {
+      title: "Configurar ABCD",
+      description:
+        "Define los porcentajes que clasifican items en A, B, C y D. Los cambios aplican en la siguiente consulta de rotacion.",
+      side: "bottom",
+      align: "end",
+    },
+  },
+  {
     element: "#rotacion-tour-table",
     popover: {
       title: "Tabla de rotacion",
       description:
-        "Cada bloque muestra items con venta, inventario, rotacion (DIC), DI y DUV. Usa los filtros de la tabla (ABCD, cero rotacion, Venta ≤) para enfocar el analisis.",
+        "Cada bloque lista items con venta, inventario, rotacion (DIC), DI y DUV. Abajo veras filtros para enfocar el analisis sin volver a consultar.",
+      side: "top",
+      align: "start",
+    },
+  },
+  {
+    element: "#rotacion-tour-table-abcd",
+    popover: {
+      title: "Categorias ABCD y restock",
+      description:
+        "Filtra por clase de rotacion (A, B, C, D), cero rotacion, restock o nuevos.",
+      side: "left",
+      align: "start",
+    },
+  },
+  {
+    element: "#rotacion-tour-table-filters",
+    popover: {
+      title: "Filtros rapidos de tabla",
+      description:
+        "Cero rotacion: venta en cero con inventario. Venta ≤ e Inv ≥: escribe un valor y pulsa el boton para aplicar el tope. Los contadores entre parentesis muestran cuantos items quedarian. Al filtrar por cero rotacion o restock aparecen chips S.inventario para marcar el estado de surtido.",
+      side: "top",
+      align: "start",
+    },
+  },
+  {
+    element: "#rotacion-tour-table-search",
+    popover: {
+      title: "Buscar producto",
+      description:
+        "Filtra la tabla por codigo o nombre sin recargar datos. Combinalo con ABCD y los filtros rapidos; la exportacion respeta lo que ves.",
       side: "top",
       align: "start",
     },
