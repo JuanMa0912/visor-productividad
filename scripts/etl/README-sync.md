@@ -24,8 +24,11 @@ Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GC
    Agrega esa IP (`/32`) en GCP -> SQL -> instancia -> Connections -> Networking ->
    Authorized networks. Si la IP del server es **dinamica**, usa Cloud SQL Auth Proxy.
 
-2. **Credenciales del DESTINO (GCP):** ya estan en `/home/prodapp/visor-productividad/.env.local`
-   (vars `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSL`). El script las reusa.
+2. **Credenciales del DESTINO (GCP):** ya estan en el env de produccion del deploy
+   (vars `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSL`). El script lo
+   autodetecta en la raiz: prueba `.env.local`, luego `.env.production`, luego `.env`.
+   Si tu archivo tiene otro nombre/ruta, pasalo con `ENV_FILE=$PWD/.env.production`.
+   Revisa la linea `ENV destino:` y `Destino:` del log para confirmar que apunta a GCP.
 
 3. **Credenciales del ORIGEN (local):** crear `/home/prodapp/visor-productividad/.env.etl`
    (queda fuera de git por el patron `.env*`):
