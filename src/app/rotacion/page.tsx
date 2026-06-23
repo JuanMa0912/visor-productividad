@@ -140,6 +140,10 @@ import {
 import { RotacionItemDrilldown } from "@/app/rotacion/rotacion-item-drilldown";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { AbcdConfigModal } from "./abcd-config-modal";
+import { buildRotacionExportGroups } from "./rotacion-export-groups";
+import type { RotacionExportGroup } from "./rotacion-export-groups";
+import { RotacionExportSedeModal } from "./rotacion-export-sede-modal";
+import { prepareRotacionExportData } from "./rotacion-export-fetch";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
 import {
@@ -270,6 +274,7 @@ export function RotacionPageInner() {
     Record<string, GroupAbcdFilter>
   >({});
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportSedePickerOpen, setIsExportSedePickerOpen] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isWhatsAppSharing, setIsWhatsAppSharing] = useState(false);
   const [productSearchInput, setProductSearchInput] = useState("");
@@ -1515,6 +1520,30 @@ export function RotacionPageInner() {
         : buildRowsBySede(rowsAfterProductFilter),
     [rowsAfterProductFilter, targetSedeSelections.length],
   );
+  const perSedeExportSourceGroups = useMemo(
+    () => buildRowsBySede(rowsAfterProductFilter),
+    [rowsAfterProductFilter],
+  );
+  const perSedeBaseRowsByKey = useMemo(
+    () =>
+      new Map(
+        buildRowsBySede(sortedRows).map((group) => [
+          `${group.empresa}-${group.sedeId}`,
+          group.rows,
+        ]),
+      ),
+    [sortedRows],
+  );
+  const consolidatedFilterGroupKey = useMemo(
+    () =>
+      targetSedeSelections.length > 1 ? "Consolidado-__multi__" : null,
+    [targetSedeSelections.length],
+  );
+  const useConsolidatedTableFilters = targetSedeSelections.length > 1;
+  const defaultExportSedeValues = useMemo(
+    () => new Set(targetSedeSelections.map((sede) => sede.value)),
+    [targetSedeSelections],
+  );
   const rowsBySedeKeys = useMemo(
     () => rowsBySede.map((group) => `${group.empresa}-${group.sedeId}`),
     [rowsBySede],
@@ -1835,172 +1864,95 @@ export function RotacionPageInner() {
   const shouldReloadFirst =
     targetSedeSelections.length > 0 && !hasLoadedItems && !isLoadingLineCatalog;
 
-  const exportGroups = useMemo(
-    () =>
-      rowsBySede
-        .map((group) => {
-        const groupKey = `${group.empresa}-${group.sedeId}`;
-        const rowFilter = rowsQuickFilterByGroup[groupKey] ?? "none";
-        const categoryFilter = abcdFilterByGroup[groupKey] ?? "all";
-        const ventaHastaCap =
-          rowFilter === "venta_hasta" || rowFilter === "both"
-            ? (ventaHastaCapByGroup[groupKey] ?? null)
-            : null;
-        const isCeroTableContext =
-          rowFilter === "cero_rotacion" || categoryFilter === "0";
-        const isRestockCategoryView =
-          categoryFilter === "S" ||
-          categoryFilter === "R" ||
-          categoryFilter === "N";
-        const isSurtidoTrackingTableView =
-          isCeroTableContext || isRestockCategoryView;
-        const surTrackingExportLabel =
-          isCeroTableContext && !isRestockCategoryView
-            ? "Cero rotacion"
-            : isRestockCategoryView && !isCeroTableContext
-              ? "Restock"
-              : "Seguimiento inventario";
-        const estadoMapForFilter = isCeroTableContext
-          ? ceroEstadoByKey
-          : restockEstadoByKey;
-        const quickFilteredRowsBeforeInvMin = applyRowsQuickFilter(
-          group.rows,
-          rowFilter,
-          ventaHastaCap,
-          dateRange,
-        );
-        const invMinCap = invMinCapByGroup[groupKey] ?? null;
-        const quickFilteredRows =
-          invMinCap == null
-            ? quickFilteredRowsBeforeInvMin
-            : quickFilteredRowsBeforeInvMin.filter(
-                (row) => row.inventoryUnits >= invMinCap,
-              );
-        const zeroEstadoSet = normalizeGroupZeroEstadoSetFilter(
-          ceroEstadoFilterByGroup[groupKey],
-        );
-        const filterSurtidoByEstadoMulti =
-          isSurtidoTrackingTableView &&
-          zeroEstadoSet.length < CERO_ROTACION_ESTADO_VALUES.length;
-        const filteredRows = filterSurtidoByEstadoMulti
-          ? quickFilteredRows.filter((row) => {
-              const key = makeCeroRotacionEstadoKey(
-                row.empresa,
-                row.sedeId,
-                row.item,
-              );
-              const estado =
-                estadoMapForFilter[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
-              return zeroEstadoSet.includes(estado);
-            })
-          : quickFilteredRows;
-        /** Pareto ABCD sobre el universo del periodo + filtros superiores; no aplica filtros de tabla (cero rot., venta ≤). */
-        const sourceRowsForAbcd =
-          baseRowsBySedeByKey.get(groupKey) ?? group.rows;
-        const sourceRowsForAbcdFilterable =
-          sourceRowsForAbcd.filter(isAbcdFilterableRow);
-        const categoryByItem = buildAbcdCategoryByItem(
-          sourceRowsForAbcdFilterable,
-          abcdConfig,
-        );
-        const categoryFilteredRows =
-          categoryFilter === "all"
-            ? filteredRows
-            : categoryFilter === "0"
-              ? filteredRows.filter((row) =>
-                  isCeroRotacionExcludingNuevo(row, dateRange),
-                )
-              : categoryFilter === "S" || categoryFilter === "R" || categoryFilter === "N"
-                ? filteredRows.filter((row) => isNuevoItemInSelectedRange(row))
-                : Array.isArray(categoryFilter)
-                  ? filteredRows.filter((row) => {
-                      const cat = categoryByItem.get(row.item);
-                      return (
-                        isAbcdFilterableRow(row) &&
-                        cat !== undefined &&
-                        categoryFilter.includes(cat)
-                      );
-                    })
-                  : filteredRows;
-        const rows = categoryFilteredRows.map((row) => {
-          const displayCategory = isNuevoItemInSelectedRange(row)
-            ? "S"
-            : isCeroRotacionExcludingNuevo(row, dateRange)
-              ? "0"
-              : (categoryByItem.get(row.item) ?? "D");
-          const estadoKey = makeCeroRotacionEstadoKey(
-            row.empresa,
-            row.sedeId,
-            row.item,
-          );
-          const estadoMapForRow = isNuevoItemInSelectedRange(row)
-            ? restockEstadoByKey
-            : ceroEstadoByKey;
-          const surEstado =
-            estadoMapForRow[estadoKey] ?? DEFAULT_CERO_ROTACION_ESTADO;
-          const duvDays = calculateDuvDays(row.lastPurchaseDate);
-          const diSinceIngresoDays = calculateDiSinceLastIngresoDays(
-            row.lastMovementDate,
-          );
-          return {
-            empresa: formatCompanyLabel(row.empresa),
-            sede: displayRotationSedeName(row.sedeName),
-            item: row.item,
-            categoria: displayCategory,
-            ceroEstado: CERO_ROTACION_ESTADO_LABELS[surEstado],
-            descripcion: row.descripcion,
-            ventaPeriodo: row.totalSales,
-            costoPeriodo: row.totalCost,
-            margenPorcentaje: formatPercent(
-              rotationMarginPct(row.totalSales, row.totalCost),
-            ),
-            invCierre: row.inventoryUnits,
-            unidadesVendidas: row.totalUnits,
-            unidad: row.unidad ?? "",
-            valorInventario: row.inventoryValue,
-            rotacion: formatRotationOneDecimal(row.rotation),
-            diDesdeIngreso:
-              diSinceIngresoDays == null
-                ? "Sin fecha"
-                : diSinceIngresoDays.toLocaleString("es-CO"),
-            diaInventarioEfectivo: row.trackedDays.toLocaleString("es-CO"),
-            diaVentaEfectivo: row.salesEffectiveDays.toLocaleString("es-CO"),
-            duv:
-              duvDays == null ? "Sin fecha" : `${duvDays.toLocaleString("es-CO")} dias`,
-            ultimoIngreso: row.lastMovementDate
-              ? formatDateLabel(row.lastMovementDate, dateLabelOptions)
-              : "Sin fecha de ingreso",
-            fechaUltimaVenta: row.lastPurchaseDate
-              ? formatDateLabel(row.lastPurchaseDate, dateLabelOptions)
-              : "Sin fecha",
-          };
-        });
-        return {
-          groupKey,
-          isSurtidoTrackingTableView,
-          surTrackingExportLabel,
-          empresa: formatCompanyLabel(group.empresa),
-          sede: displayRotationSedeName(group.sedeName),
-          rows,
-        };
-      })
-      .filter((group) => group.rows.length > 0),
+  const loadedSedeValueSet = useMemo(() => {
+    const values = new Set<string>();
+    for (const row of rows) {
+      values.add(`${row.empresa}::${row.sedeId}`);
+    }
+    return values;
+  }, [rows]);
+
+  const buildExportGroupsForSedes = useCallback(
+    (
+      includedSedeValues: ReadonlySet<string>,
+      overrides?: {
+        perSedeExportSourceGroups?: typeof perSedeExportSourceGroups;
+        perSedeBaseRowsByKey?: Map<string, RotationRow[]>;
+        ceroEstadoByKey?: Record<string, CeroRotacionEstado>;
+        restockEstadoByKey?: Record<string, CeroRotacionEstado>;
+      },
+    ) =>
+      buildRotacionExportGroups({
+        perSedeGroups:
+          overrides?.perSedeExportSourceGroups ?? perSedeExportSourceGroups,
+        includedSedeValues,
+        consolidatedFilterGroupKey,
+        useConsolidatedTableFilters,
+        perSedeBaseRowsByKey:
+          overrides?.perSedeBaseRowsByKey ?? perSedeBaseRowsByKey,
+        rowsQuickFilterByGroup,
+        abcdFilterByGroup,
+        ventaHastaCapByGroup,
+        invMinCapByGroup,
+        ceroEstadoFilterByGroup,
+        ceroEstadoByKey: overrides?.ceroEstadoByKey ?? ceroEstadoByKey,
+        restockEstadoByKey:
+          overrides?.restockEstadoByKey ?? restockEstadoByKey,
+        abcdConfig,
+        dateRange,
+        isAbcdFilterableRow,
+        isNuevoItemInSelectedRange,
+      }),
     [
       abcdConfig,
       abcdFilterByGroup,
-      baseRowsBySedeByKey,
       ceroEstadoByKey,
       restockEstadoByKey,
       ceroEstadoFilterByGroup,
+      consolidatedFilterGroupKey,
       dateRange,
       invMinCapByGroup,
       isAbcdFilterableRow,
       isNuevoItemInSelectedRange,
-      rowsBySede,
+      perSedeBaseRowsByKey,
+      perSedeExportSourceGroups,
       rowsQuickFilterByGroup,
+      useConsolidatedTableFilters,
       ventaHastaCapByGroup,
     ],
   );
+
+  const exportGroups = useMemo(
+    () => buildExportGroupsForSedes(defaultExportSedeValues),
+    [buildExportGroupsForSedes, defaultExportSedeValues],
+  );
+
+  const exportRowCountBySedeValue = useMemo(() => {
+    const counts = new Map<string, number | undefined>();
+    for (const sede of allSedeOptions) {
+      if (!loadedSedeValueSet.has(sede.value)) {
+        counts.set(sede.value, undefined);
+        continue;
+      }
+      const groups = buildExportGroupsForSedes(new Set([sede.value]));
+      counts.set(
+        sede.value,
+        groups.reduce((acc, group) => acc + group.rows.length, 0),
+      );
+    }
+    return counts;
+  }, [allSedeOptions, buildExportGroupsForSedes, loadedSedeValueSet]);
+
+  const exportSedePickerOptions = useMemo(
+    () =>
+      allSedeOptions.map((sede) => ({
+        value: sede.value,
+        label: sede.label,
+      })),
+    [allSedeOptions],
+  );
+
+  const canPickSedesForExport = allSedeOptions.length > 1;
 
   const exportRowCount = useMemo(
     () => exportGroups.reduce((acc, group) => acc + group.rows.length, 0),
@@ -2107,148 +2059,233 @@ export function RotacionPageInner() {
     return doc;
   }, [exportGroups]);
 
-  const handleExportExcel = async () => {
-    if (exportRowCount === 0 || isExportingExcel) return;
-    setIsExportingExcel(true);
-    try {
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Rotacion");
-      sheet.columns = Array.from({ length: 14 }).map(() => ({ width: 18 }));
-      sheet.getColumn(1).width = 14;
-      sheet.getColumn(2).width = 8;
-      sheet.getColumn(3).width = 40;
+  const writeRotacionExcel = useCallback(async (groups: RotacionExportGroup[]) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Rotacion");
+    sheet.columns = Array.from({ length: 14 }).map(() => ({ width: 18 }));
+    sheet.getColumn(1).width = 14;
+    sheet.getColumn(2).width = 8;
+    sheet.getColumn(3).width = 40;
 
-      // Formatos contables: con `$` y separador de miles para que Excel
-      // sume/autosume y para conservar la legibilidad. Se aplican a celdas
-      // que reciben numeros crudos (no strings preformateados).
-      const COP_NUM_FMT = '"$"#,##0;[Red]-"$"#,##0';
-      const INT_NUM_FMT = "#,##0";
+    const COP_NUM_FMT = '"$"#,##0;[Red]-"$"#,##0';
+    const INT_NUM_FMT = "#,##0";
 
-      // Indices de columna (1-based) con formato numerico segun vista.
-      // surtido: 5 = Venta periodo, 7 = V. inv.
-      // general: 4 = Venta, 5 = Costo, 8 = U. vend., 9 = V. inv.
-      const SURTIDO_CURRENCY_COLS = [5, 7];
-      const GENERAL_CURRENCY_COLS = [4, 5, 9];
-      const GENERAL_INT_COLS = [8];
+    const SURTIDO_CURRENCY_COLS = [5, 7];
+    const GENERAL_CURRENCY_COLS = [4, 5, 9];
+    const GENERAL_INT_COLS = [8];
 
-      exportGroups.forEach((group) => {
-        const titleRow = sheet.addRow([
-          `${group.empresa} - ${group.sede} | Vista: ${
-            group.isSurtidoTrackingTableView
-              ? group.surTrackingExportLabel
-              : "Rotacion general"
-          }`,
-        ]);
-        titleRow.font = { bold: true, size: 11 };
-        titleRow.getCell(1).fill = {
+    groups.forEach((group) => {
+      const titleRow = sheet.addRow([
+        `${group.empresa} - ${group.sede} | Vista: ${
+          group.isSurtidoTrackingTableView
+            ? group.surTrackingExportLabel
+            : "Rotacion general"
+        }`,
+      ]);
+      titleRow.font = { bold: true, size: 11 };
+      titleRow.getCell(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE2E8F0" },
+      };
+
+      const headers = group.isSurtidoTrackingTableView
+        ? [
+            "Item",
+            "Cat.",
+            "S.inventario",
+            "Descripcion",
+            "Venta periodo",
+            "Inv.",
+            "V. inv.",
+            "DI",
+            "DUV",
+            "Ult. venta",
+            "Ult. ingr.",
+          ]
+        : [
+            "Item",
+            "Cat.",
+            "Descripcion",
+            "Venta",
+            "Costo",
+            "Margen %",
+            "Inv.",
+            "U. vend.",
+            "V. inv.",
+            "DIC",
+            "DI",
+            "DUV",
+            "Ult. venta",
+            "Ult. ingr.",
+          ];
+      const headerRow = sheet.addRow(headers);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: "FFE2E8F0" },
+          fgColor: { argb: "FFF8FAFC" },
         };
-
-        const headers = group.isSurtidoTrackingTableView
-          ? [
-              "Item",
-              "Cat.",
-              "S.inventario",
-              "Descripcion",
-              "Venta periodo",
-              "Inv.",
-              "V. inv.",
-              "DI",
-              "DUV",
-              "Ult. venta",
-              "Ult. ingr.",
-            ]
-          : [
-              "Item",
-              "Cat.",
-              "Descripcion",
-              "Venta",
-              "Costo",
-              "Margen %",
-              "Inv.",
-              "U. vend.",
-              "V. inv.",
-              "DIC",
-              "DI",
-              "DUV",
-              "Ult. venta",
-              "Ult. ingr.",
-            ];
-        const headerRow = sheet.addRow(headers);
-        headerRow.font = { bold: true };
-        headerRow.eachCell((cell) => {
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FFF8FAFC" },
-          };
-        });
-
-        group.rows.forEach((row) => {
-          let dataRow: ExcelJS.Row;
-          if (group.isSurtidoTrackingTableView) {
-            dataRow = sheet.addRow([
-              row.item,
-              row.categoria,
-              row.ceroEstado,
-              row.descripcion,
-              row.ventaPeriodo,
-              `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
-              row.valorInventario,
-              row.diDesdeIngreso,
-              row.duv,
-              row.fechaUltimaVenta,
-              row.ultimoIngreso,
-            ]);
-            SURTIDO_CURRENCY_COLS.forEach((col) => {
-              dataRow.getCell(col).numFmt = COP_NUM_FMT;
-            });
-          } else {
-            dataRow = sheet.addRow([
-              row.item,
-              row.categoria,
-              row.descripcion,
-              row.ventaPeriodo,
-              row.costoPeriodo,
-              row.margenPorcentaje,
-              `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
-              row.unidadesVendidas,
-              row.valorInventario,
-              row.rotacion,
-              row.diaInventarioEfectivo,
-              row.diaVentaEfectivo,
-              row.fechaUltimaVenta,
-              row.ultimoIngreso,
-            ]);
-            GENERAL_CURRENCY_COLS.forEach((col) => {
-              dataRow.getCell(col).numFmt = COP_NUM_FMT;
-            });
-            GENERAL_INT_COLS.forEach((col) => {
-              dataRow.getCell(col).numFmt = INT_NUM_FMT;
-            });
-          }
-        });
-        sheet.addRow([]);
       });
-      sheet.views = [{ state: "frozen", ySplit: 1 }];
 
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      group.rows.forEach((row) => {
+        let dataRow: ExcelJS.Row;
+        if (group.isSurtidoTrackingTableView) {
+          dataRow = sheet.addRow([
+            row.item,
+            row.categoria,
+            row.ceroEstado,
+            row.descripcion,
+            row.ventaPeriodo,
+            `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+            row.valorInventario,
+            row.diDesdeIngreso,
+            row.duv,
+            row.fechaUltimaVenta,
+            row.ultimoIngreso,
+          ]);
+          SURTIDO_CURRENCY_COLS.forEach((col) => {
+            dataRow.getCell(col).numFmt = COP_NUM_FMT;
+          });
+        } else {
+          dataRow = sheet.addRow([
+            row.item,
+            row.categoria,
+            row.descripcion,
+            row.ventaPeriodo,
+            row.costoPeriodo,
+            row.margenPorcentaje,
+            `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+            row.unidadesVendidas,
+            row.valorInventario,
+            row.rotacion,
+            row.diaInventarioEfectivo,
+            row.diaVentaEfectivo,
+            row.fechaUltimaVenta,
+            row.ultimoIngreso,
+          ]);
+          GENERAL_CURRENCY_COLS.forEach((col) => {
+            dataRow.getCell(col).numFmt = COP_NUM_FMT;
+          });
+          GENERAL_INT_COLS.forEach((col) => {
+            dataRow.getCell(col).numFmt = INT_NUM_FMT;
+          });
+        }
       });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `rotacion_${buildExportFileStamp()}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } finally {
-      setIsExportingExcel(false);
+      sheet.addRow([]);
+    });
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rotacion_${buildExportFileStamp()}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const runExcelExport = useCallback(
+    async (includedSedeValues: string[]) => {
+      if (includedSedeValues.length === 0 || isExportingExcel) return;
+      if (!dateRange.start || !dateRange.end) return;
+
+      setIsExportingExcel(true);
+      try {
+        const prepared = await prepareRotacionExportData({
+          apiBasePath,
+          authUserId: authUser?.id,
+          dateRange: { start: dateRange.start, end: dateRange.end },
+          selectedSedeValues: includedSedeValues,
+          allSedeOptions,
+          loadedSedeValueSet,
+          inMemoryPerSedeExportGroups: perSedeExportSourceGroups,
+          inMemoryPerSedeBaseRowsByKey: perSedeBaseRowsByKey,
+          inMemoryCeroEstadoByKey: ceroEstadoByKey,
+          inMemoryRestockEstadoByKey: restockEstadoByKey,
+          filterCatalogLineasN1: filterCatalog.lineasN1,
+          filterCatalogCategorias: filterCatalog.categorias,
+          selectedLineaN1Values,
+          selectedCategoriaKeys,
+          productSearchInput,
+          tableSortField,
+          tableSortDirection,
+          onUnauthorized: () => {
+            router.replace("/login");
+          },
+          onForbidden: (message) => {
+            setError(message);
+          },
+        });
+        if (!prepared) {
+          setError("No fue posible cargar datos para exportar.");
+          return;
+        }
+
+        const groups = buildExportGroupsForSedes(
+          new Set(includedSedeValues),
+          {
+            perSedeExportSourceGroups: prepared.perSedeExportSourceGroups,
+            perSedeBaseRowsByKey: prepared.perSedeBaseRowsByKey,
+            ceroEstadoByKey: prepared.ceroEstadoByKey,
+            restockEstadoByKey: prepared.restockEstadoByKey,
+          },
+        ).filter((group) => group.rows.length > 0);
+        const rowCount = groups.reduce(
+          (acc, group) => acc + group.rows.length,
+          0,
+        );
+        if (rowCount === 0) {
+          setError("No hay filas para exportar con los filtros actuales.");
+          return;
+        }
+
+        await writeRotacionExcel(groups);
+        setIsExportSedePickerOpen(false);
+      } finally {
+        setIsExportingExcel(false);
+      }
+    },
+    [
+      allSedeOptions,
+      apiBasePath,
+      authUser?.id,
+      buildExportGroupsForSedes,
+      ceroEstadoByKey,
+      dateRange.end,
+      dateRange.start,
+      filterCatalog.categorias,
+      filterCatalog.lineasN1,
+      isExportingExcel,
+      loadedSedeValueSet,
+      perSedeBaseRowsByKey,
+      perSedeExportSourceGroups,
+      productSearchInput,
+      restockEstadoByKey,
+      router,
+      selectedCategoriaKeys,
+      selectedLineaN1Values,
+      tableSortDirection,
+      tableSortField,
+      writeRotacionExcel,
+    ],
+  );
+
+  const handleExportExcelClick = () => {
+    if (isExportingExcel) return;
+    if (!dateRange.start || !dateRange.end) return;
+    if (canPickSedesForExport) {
+      setIsExportSedePickerOpen(true);
+      return;
     }
+    if (exportRowCount === 0) return;
+    void runExcelExport(targetSedeSelections.map((sede) => sede.value));
   };
 
   const handleExportPdf = () => {
@@ -4017,9 +4054,12 @@ export function RotacionPageInner() {
                             <Button
                               type="button"
                               variant="outline"
-                              onClick={handleExportExcel}
+                              onClick={handleExportExcelClick}
                               disabled={
-                                exportRowCount === 0 || isExportingExcel
+                                isExportingExcel ||
+                                (!canPickSedesForExport && exportRowCount === 0) ||
+                                (canPickSedesForExport &&
+                                  (!dateRange.start || !dateRange.end))
                               }
                               className="h-8 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
                             >
@@ -4856,6 +4896,17 @@ export function RotacionPageInner() {
           singleSelectedSedeTarget={singleSelectedSedeTarget}
           isSaving={isSavingAbcdConfig}
           onSave={(draft, scope) => handleSaveAbcdConfig(draft, scope)}
+        />
+      ) : null}
+
+      {isExportSedePickerOpen ? (
+        <RotacionExportSedeModal
+          sedeOptions={exportSedePickerOptions}
+          initialSelectedValues={targetSedeSelections.map((sede) => sede.value)}
+          rowCountBySedeValue={exportRowCountBySedeValue}
+          isExporting={isExportingExcel}
+          onClose={() => setIsExportSedePickerOpen(false)}
+          onConfirm={(selectedValues) => runExcelExport(selectedValues)}
         />
       ) : null}
     </div>

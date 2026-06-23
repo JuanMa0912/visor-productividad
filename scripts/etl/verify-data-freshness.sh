@@ -53,7 +53,34 @@ echo "Objetivo: datos hasta ${FECHA_OBJETIVO} (${FECHA_OBJETIVO_COMPACT} en colu
 echo "Host: ${DB_HOST}  DB: ${DB_NAME}"
 echo ""
 
-"${PSQL[@]}" -v fecha_obj="${FECHA_OBJETIVO}" -v fecha_compact="${FECHA_OBJETIVO_COMPACT}" <<'EOSQL'
+margen_final_exists=$("${PSQL[@]}" -tAc "
+  SELECT 1
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+    AND table_name = 'margen_final'
+  LIMIT 1
+" | tr -d '[:space:]')
+
+if [[ -n "$margen_final_exists" ]]; then
+  MARGEN_FINAL_CHECK_SQL="
+  UNION ALL
+  SELECT 'margen_final',
+         COUNT(*)::bigint,
+         NULL::date,
+         MAX(fecha_dcto)::text
+  FROM margen_final
+  WHERE fecha_dcto IS NOT NULL
+    AND fecha_dcto ~ '^[0-9]{8}$'"
+else
+  MARGEN_FINAL_CHECK_SQL="
+  UNION ALL
+  SELECT 'margen_final (sin migrar)',
+         0::bigint,
+         NULL::date,
+         NULL::text"
+fi
+
+"${PSQL[@]}" -v fecha_obj="${FECHA_OBJETIVO}" -v fecha_compact="${FECHA_OBJETIVO_COMPACT}" <<EOSQL
 \pset border 2
 \pset format aligned
 
@@ -92,14 +119,7 @@ WITH checks AS (
          NULL::text
   FROM margenes_linea_co_dia_clean
 
-  UNION ALL
-  SELECT 'margen_final',
-         COUNT(*)::bigint,
-         NULL::date,
-         MAX(fecha_dcto)::text
-  FROM margen_final
-  WHERE fecha_dcto IS NOT NULL
-    AND fecha_dcto ~ '^[0-9]{8}$'
+${MARGEN_FINAL_CHECK_SQL}
 
   UNION ALL
   SELECT 'ventas_item_diario',
@@ -160,6 +180,7 @@ normalized AS (
         AND TO_DATE(hasta_text, 'YYYYMMDD') >= DATE :'fecha_obj' THEN 'OK'
       WHEN hasta_text IS NOT NULL THEN 'ATRASADA'
       WHEN tabla = 'ventas_item_cargas' AND filas > 0 THEN 'OK (sin fecha)'
+      WHEN tabla = 'margen_final (sin migrar)' THEN 'SIN TABLA'
       ELSE 'REVISAR'
     END AS estado
   FROM checks
@@ -179,4 +200,4 @@ ORDER BY
 EOSQL
 
 echo ""
-echo "Leyenda: OK = hasta objetivo | ATRASADA = falta sync | VACIA = sin filas | REVISAR = formato fecha raro"
+echo "Leyenda: OK = hasta objetivo | ATRASADA = falta sync | VACIA = sin filas | SIN TABLA = migracion pendiente | REVISAR = formato fecha raro"
