@@ -37,6 +37,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# ETL: dumps de esquema locales (referencia, no versionar)
+db/_schema-*.sql
+
 # vercel
 .vercel
 
