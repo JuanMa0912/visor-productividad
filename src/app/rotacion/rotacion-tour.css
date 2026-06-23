@@ -1,0 +1,53 @@
+.rotacion-tour-popover.driver-popover {
+  border-radius: 1rem;
+  border: 1px solid rgb(253 230 138);
+  box-shadow:
+    0 22px 45px -28px rgba(15, 23, 42, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+  color: rgb(15 23 42);
+  max-width: min(22rem, calc(100vw - 2rem));
+}
+
+.rotacion-tour-popover .driver-popover-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: rgb(15 23 42);
+}
+
+.rotacion-tour-popover .driver-popover-description {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgb(71 85 105);
+}
+
+.rotacion-tour-popover .driver-popover-progress-text {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(180 83 9);
+}
+
+.rotacion-tour-popover button {
+  border-radius: 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-shadow: none;
+}
+
+.rotacion-tour-popover .driver-popover-next-btn,
+.rotacion-tour-popover .driver-popover-done-btn {
+  background: rgb(217 119 6);
+  color: white;
+  border: none;
+}
+
+.rotacion-tour-popover .driver-popover-prev-btn {
+  background: white;
+  color: rgb(71 85 105);
+  border: 1px solid rgb(226 232 240);
+}
+
+.rotacion-tour-popover .driver-popover-close-btn {
+  color: rgb(100 116 139);
+}

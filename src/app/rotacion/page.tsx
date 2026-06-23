@@ -17,6 +17,7 @@ import {
   Loader2,
   MapPin,
   PackageSearch,
+  CircleHelp,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -144,6 +145,9 @@ import { buildRotacionExportGroups } from "./rotacion-export-groups";
 import type { RotacionExportGroup } from "./rotacion-export-groups";
 import { RotacionExportSedeModal } from "./rotacion-export-sede-modal";
 import { prepareRotacionExportData } from "./rotacion-export-fetch";
+import { useRotacionTour } from "./use-rotacion-tour";
+import "driver.js/dist/driver.css";
+import "./rotacion-tour.css";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
 import {
@@ -191,6 +195,10 @@ export function RotacionPageInner() {
   const specialRoles = authUser?.specialRoles ?? null;
   const userAllowedSedes = authUser?.allowedSedes ?? null;
   const [ready, setReady] = useState(false);
+  const { startTour: startRotacionTourGuide } = useRotacionTour(
+    authUser?.id,
+    ready,
+  );
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -2396,7 +2404,7 @@ export function RotacionPageInner() {
         <Card className="overflow-hidden border-amber-200/80 bg-linear-to-br from-white via-amber-50/70 to-orange-50 shadow-[0_28px_70px_-45px_rgba(245,158,11,0.55)]">
           <CardContent className="px-6 py-6 sm:px-8 sm:py-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="max-w-3xl">
+              <div className="max-w-3xl" id="rotacion-tour-intro">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-amber-700">
                   Producto
                 </p>
@@ -2409,6 +2417,19 @@ export function RotacionPageInner() {
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
                 <div className="flex w-full flex-wrap justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="group h-9 gap-2 rounded-full border-slate-200 bg-white/90 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 shadow-sm backdrop-blur-xs transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-900"
+                    onClick={startRotacionTourGuide}
+                    title="Ver tutorial interactivo de Rotacion"
+                  >
+                    <CircleHelp
+                      className="h-4 w-4 text-amber-600 transition group-hover:text-amber-700"
+                      aria-hidden
+                    />
+                    Ayuda
+                  </Button>
                   {canViewSurtidoHistorial ? (
                     <Button
                       type="button"
@@ -2455,7 +2476,10 @@ export function RotacionPageInner() {
         </Card>
 
         <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,1fr)]">
-          <Card className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+          <Card
+            id="rotacion-tour-filters"
+            className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]"
+          >
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-slate-900">
                 <Filter className="h-5 w-5 text-amber-600" />
@@ -2522,7 +2546,10 @@ export function RotacionPageInner() {
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
                 />
               </div>
-              <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm">
+              <div
+                id="rotacion-tour-line-filters"
+                className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="space-y-1">
                     <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700">
@@ -2801,7 +2828,10 @@ export function RotacionPageInner() {
             </CardContent>
           </Card>
 
-          <Card className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+          <Card
+            id="rotacion-tour-dates"
+            className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]"
+          >
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-slate-900">
                 <CalendarDays className="h-5 w-5 text-amber-600" />
@@ -3011,10 +3041,11 @@ export function RotacionPageInner() {
             ) : (
               <>
                 <div
+                  id="rotacion-tour-table"
                   ref={rotacionTablesExportRef}
                   className="grid gap-5 bg-white p-2"
                 >
-                  {rowsBySede.map((group) => {
+                  {rowsBySede.map((group, groupIndex) => {
                     const groupKey = `${group.empresa}-${group.sedeId}`;
                     const rowFilter =
                       rowsQuickFilterByGroup[groupKey] ?? "none";
@@ -4034,7 +4065,12 @@ export function RotacionPageInner() {
                             </span>{" "}
                             items
                           </span>
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+                          <div
+                            className="flex flex-wrap items-center justify-end gap-2"
+                            {...(groupIndex === 0
+                              ? { id: "rotacion-tour-export" }
+                              : {})}
+                          >
                             <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                               Filas por pagina
                             </label>
