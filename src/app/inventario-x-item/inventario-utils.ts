@@ -143,6 +143,24 @@ export const calculateDiDays = (
   return (row.inventoryUnits * row.trackedDays) / row.totalUnits;
 };
 
+export type InventarioMatrixItemTotals = {
+  inventoryUnits: number;
+  inventoryValue: number;
+  soldUnits: number;
+  trackedDays: number;
+};
+
+/** DI del total de matriz: recalcula con inventario y vendido agregados, no suma DI por sede. */
+export const calculateMatrixItemTotalDiDays = (
+  totals: InventarioMatrixItemTotals,
+): number =>
+  calculateDiDays({
+    inventoryUnits: totals.inventoryUnits,
+    inventoryValue: totals.inventoryValue,
+    totalUnits: totals.soldUnits,
+    trackedDays: totals.trackedDays,
+  });
+
 export const buildSedeOptionValue = (empresa: string, sedeId: string) =>
   `${encodeURIComponent(empresa)}::${encodeURIComponent(sedeId)}`;
 

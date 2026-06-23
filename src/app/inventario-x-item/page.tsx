@@ -77,6 +77,8 @@ import {
   getDiPillClasses,
   formatDi,
   calculateDiDays,
+  calculateMatrixItemTotalDiDays,
+  type InventarioMatrixItemTotals,
   buildSedeOptionValue,
   parseSedeOptionValue,
 } from "./inventario-utils";
@@ -1365,19 +1367,18 @@ export default function InventarioXItemPage() {
   }, [filteredMatrixRows]);
 
   const matrixTotalsByItem = useMemo(() => {
-    const totals: Record<
-      string,
-      { inventoryUnits: number; inventoryValue: number; soldUnits: number }
-    > = {};
+    const totals: Record<string, InventarioMatrixItemTotals> = {};
     filteredMatrixRows.forEach((row) => {
       const acc = totals[row.item] ?? {
         inventoryUnits: 0,
         inventoryValue: 0,
         soldUnits: 0,
+        trackedDays: 0,
       };
       acc.inventoryUnits += row.inventoryUnits;
       acc.inventoryValue += row.inventoryValue;
       acc.soldUnits += row.totalUnits;
+      acc.trackedDays = Math.max(acc.trackedDays, row.trackedDays);
       totals[row.item] = acc;
     });
     return totals;
@@ -1616,12 +1617,13 @@ export default function InventarioXItemPage() {
               inventoryUnits: 0,
               inventoryValue: 0,
               soldUnits: 0,
+              trackedDays: 0,
             };
             return [
               formatUnits(itemTotals.inventoryUnits),
               formatPrice(itemTotals.inventoryValue),
               formatUnits(itemTotals.soldUnits),
-              formatDi(row.rotationDays),
+              formatDi(calculateMatrixItemTotalDiDays(itemTotals)),
             ];
           }),
         ],
@@ -2133,6 +2135,7 @@ export default function InventarioXItemPage() {
             inventoryUnits: 0,
             inventoryValue: 0,
             soldUnits: 0,
+            trackedDays: 0,
           };
           if (includeInv) {
             const invTotalCell = sheet.getCell(totalRow, startCol);
@@ -2173,7 +2176,7 @@ export default function InventarioXItemPage() {
           }
           const diCol = startCol + colsPerItem - 1;
           const diTotalCell = sheet.getCell(totalRow, diCol);
-          diTotalCell.value = row.rotationDays;
+          diTotalCell.value = calculateMatrixItemTotalDiDays(itemTotals);
           diTotalCell.numFmt = "0.0";
           diTotalCell.font = { bold: true };
           diTotalCell.alignment = { horizontal: "right", vertical: "middle" };
@@ -3079,7 +3082,13 @@ export default function InventarioXItemPage() {
                           inventoryUnits: 0,
                           inventoryValue: 0,
                           soldUnits: 0,
+                          trackedDays: 0,
                         };
+                        const totalDiDays =
+                          calculateMatrixItemTotalDiDays(itemTotals);
+                        const totalDiIsZero =
+                          itemTotals.inventoryUnits <= 0 ||
+                          itemTotals.inventoryValue <= 0;
                         const cells: ReactNode[] = [];
                         if (jpgExportMode !== "di-only") {
                           cells.push(
@@ -3115,9 +3124,19 @@ export default function InventarioXItemPage() {
                         cells.push(
                           <td
                             key={`total-${itemRow.item}-di`}
-                            className={`${matrixItemColMinClass} border-t-2 border-b border-r border-r-slate-100 border-t-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-bold text-slate-400`}
+                            className={`${matrixItemColMinClass} border-t-2 border-b border-r border-r-slate-100 border-t-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-bold tabular-nums`}
                           >
-                            —
+                            {totalDiIsZero ? (
+                              <span className="text-slate-300">
+                                {formatDi(totalDiDays)}
+                              </span>
+                            ) : (
+                              <span
+                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${getDiPillClasses(totalDiDays)}`}
+                              >
+                                {formatDi(totalDiDays)}
+                              </span>
+                            )}
                           </td>,
                         );
                         return cells;
