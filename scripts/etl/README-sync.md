@@ -24,10 +24,10 @@ Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GC
    Agrega esa IP (`/32`) en GCP -> SQL -> instancia -> Connections -> Networking ->
    Authorized networks. Si la IP del server es **dinamica**, usa Cloud SQL Auth Proxy.
 
-2. **Credenciales del DESTINO (GCP):** ya estan en `/opt/visor-productividad/.env.local`
+2. **Credenciales del DESTINO (GCP):** ya estan en `/home/prodapp/visor-productividad/.env.local`
    (vars `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSL`). El script las reusa.
 
-3. **Credenciales del ORIGEN (local):** crear `/opt/visor-productividad/.env.etl`
+3. **Credenciales del ORIGEN (local):** crear `/home/prodapp/visor-productividad/.env.etl`
    (queda fuera de git por el patron `.env*`):
    ```bash
    SRC_DB_HOST=localhost
@@ -37,7 +37,7 @@ Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GC
    SRC_DB_PASSWORD=*** la clave del postgres local ***
    # SRC_DB_SSL=disable   # opcional; default disable para localhost
    ```
-   Protegerlo: `chmod 600 /opt/visor-productividad/.env.etl`
+   Protegerlo: `chmod 600 /home/prodapp/visor-productividad/.env.etl`
 
 4. `chmod +x scripts/etl/sync-local-to-gcp.sh`
 
@@ -45,28 +45,28 @@ Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GC
 
 Validar conexion y conteos **sin escribir** antes del primer upsert real:
 ```bash
-sudo -u visor bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 1 --dry-run
+sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 1 --dry-run
 ```
 Si los conteos se ven bien, corre el real y verifica:
 ```bash
-sudo -u visor bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh --verify
+sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --verify
 ```
 
 ## 3. Cron (automatico)
 
-`crontab -e` del usuario `visor` (el local cierra ~7:45am; corremos 8:00am):
+`crontab -e` del usuario `prodapp` (el local cierra ~7:45am; corremos 8:00am):
 ```cron
 # Diario (dom a vie): solo el dia anterior, rapido
-0 8 * * 0-5 bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh >> /var/log/visor-etl-sync.log 2>&1
+0 8 * * 0-5 bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh >> /var/log/visor-etl-sync.log 2>&1
 # Sabado: reconciliacion de los ultimos 18 dias (atrapa correcciones de hasta ~10 dias)
-0 8 * * 6   bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 18 >> /var/log/visor-etl-sync.log 2>&1
+0 8 * * 6   bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 18 >> /var/log/visor-etl-sync.log 2>&1
 ```
 La ventana de 18 dias = 10 (lag de correccion) + 7 (cadencia semanal) + holgura.
 Con 7 dias se escaparian correcciones que llegan 8-10 dias tarde.
 
 ## 4. Corridas MANUALES (cuando falla, avisa o aun no hay datos)
 
-Todas como `sudo -u visor bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh ...`:
+Todas como `sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh ...`:
 
 | Situacion | Comando |
 | --- | --- |
@@ -82,13 +82,13 @@ Ejemplos:
 ```bash
 # El job de las 8am aviso "sin datos de ayer" porque el local no habia terminado.
 # Espera a que termine el cierre y re-corre (vuelve a hacer ayer, idempotente):
-sudo -u visor bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh --verify
+sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --verify
 
 # Falto un dia especifico (p.ej. el server estuvo caido):
-sudo -u visor bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh --date 2026-06-20
+sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --date 2026-06-20
 
 # Reconciliacion puntual mas amplia (un mes):
-sudo -u visor bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 31
+sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 31
 ```
 
 Re-correr es **siempre seguro**: el upsert no duplica ni borra; vuelve a dejar el

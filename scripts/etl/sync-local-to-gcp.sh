@@ -33,12 +33,16 @@
 
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-/opt/visor-productividad/.env.local}"
-SRC_ENV_FILE="${SRC_ENV_FILE:-/opt/visor-productividad/.env.etl}"
-LOG_FILE="${LOG_FILE:-/var/log/visor-etl-sync.log}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Credenciales: por default en la raiz del deploy (donde corre la app y vive .env.local),
+# resuelta desde la ubicacion del script. Funciona en cualquier ruta de deploy
+# (/home/prodapp/visor-productividad, /opt/visor-productividad, etc.). Override con
+# ENV_FILE / SRC_ENV_FILE si los .env estan en otro lado.
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.local}"
+SRC_ENV_FILE="${SRC_ENV_FILE:-$REPO_ROOT/.env.etl}"
+LOG_FILE="${LOG_FILE:-/var/log/visor-etl-sync.log}"
 
 DAYS=1
 ONE_DATE=""
