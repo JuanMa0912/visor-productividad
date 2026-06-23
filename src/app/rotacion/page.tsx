@@ -146,6 +146,7 @@ import type { RotacionExportGroup } from "./rotacion-export-groups";
 import { RotacionExportSedeModal } from "./rotacion-export-sede-modal";
 import { prepareRotacionExportData } from "./rotacion-export-fetch";
 import { useRotacionTour } from "./use-rotacion-tour";
+import { ROTACION_TOUR_ANCHOR } from "./rotacion-tour-anchors";
 import "driver.js/dist/driver.css";
 import "./rotacion-tour.css";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
@@ -2409,7 +2410,7 @@ export function RotacionPageInner() {
         <Card className="overflow-hidden border-amber-200/80 bg-linear-to-br from-white via-amber-50/70 to-orange-50 shadow-[0_28px_70px_-45px_rgba(245,158,11,0.55)]">
           <CardContent className="px-6 py-6 sm:px-8 sm:py-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="max-w-3xl" id="rotacion-tour-intro">
+              <div className="max-w-3xl" id={ROTACION_TOUR_ANCHOR.intro}>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-amber-700">
                   Producto
                 </p>
@@ -2427,7 +2428,7 @@ export function RotacionPageInner() {
                     variant="outline"
                     className="group h-9 gap-2 rounded-full border-slate-200 bg-white/90 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 shadow-sm backdrop-blur-xs transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-900"
                     onClick={startRotacionTourGuide}
-                    title="Ver tutorial interactivo de Rotacion"
+                    title="Ver tutorial interactivo de Rotación"
                   >
                     <CircleHelp
                       className="h-4 w-4 text-amber-600 transition group-hover:text-amber-700"
@@ -2463,7 +2464,7 @@ export function RotacionPageInner() {
                   ) : null}
                   {canEditAbcdConfig ? (
                     <Button
-                      id="rotacion-tour-abcd-config"
+                      id={ROTACION_TOUR_ANCHOR.abcdConfig}
                       type="button"
                       className="group h-9 gap-2 rounded-full bg-amber-600 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_8px_22px_-10px_rgba(217,119,6,0.7)] transition hover:bg-amber-700 hover:shadow-[0_12px_26px_-10px_rgba(180,83,9,0.75)]"
                       onClick={() => setIsAbcdModalOpen(true)}
@@ -2483,7 +2484,7 @@ export function RotacionPageInner() {
 
         <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,1fr)]">
           <Card
-            id="rotacion-tour-filters"
+            id={ROTACION_TOUR_ANCHOR.filters}
             className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]"
           >
             <CardHeader className="pb-4">
@@ -2553,7 +2554,7 @@ export function RotacionPageInner() {
                 />
               </div>
               <div
-                id="rotacion-tour-line-filters"
+                id={ROTACION_TOUR_ANCHOR.lineFilters}
                 className="rounded-2xl border border-violet-200 bg-white px-4 py-3 shadow-sm"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2835,7 +2836,7 @@ export function RotacionPageInner() {
           </Card>
 
           <Card
-            id="rotacion-tour-dates"
+            id={ROTACION_TOUR_ANCHOR.dates}
             className="h-full border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]"
           >
             <CardHeader className="pb-4">
@@ -3047,7 +3048,7 @@ export function RotacionPageInner() {
             ) : (
               <>
                 <div
-                  id="rotacion-tour-table"
+                  id={ROTACION_TOUR_ANCHOR.table}
                   ref={rotacionTablesExportRef}
                   className="grid gap-5 bg-white p-2"
                 >
@@ -3392,7 +3393,7 @@ export function RotacionPageInner() {
                               <div
                                 id={
                                   groupIndex === 0
-                                    ? "rotacion-tour-table-abcd"
+                                    ? ROTACION_TOUR_ANCHOR.tableAbcd
                                     : undefined
                                 }
                                 className="flex w-fit max-w-full shrink-0 flex-wrap gap-2"
@@ -3808,7 +3809,7 @@ export function RotacionPageInner() {
                             <div
                               id={
                                 groupIndex === 0
-                                  ? "rotacion-tour-table-filters"
+                                  ? ROTACION_TOUR_ANCHOR.tableFilters
                                   : undefined
                               }
                               className="border-t border-slate-200/90 pt-5"
@@ -3916,7 +3917,7 @@ export function RotacionPageInner() {
                                   <label
                                     id={
                                       groupIndex === 0
-                                        ? "rotacion-tour-table-search"
+                                        ? ROTACION_TOUR_ANCHOR.tableSearch
                                         : undefined
                                     }
                                     className="order-last mt-1 flex basis-full flex-col gap-1"
@@ -4095,7 +4096,7 @@ export function RotacionPageInner() {
                           <div
                             className="flex flex-wrap items-center justify-end gap-2"
                             {...(groupIndex === 0
-                              ? { id: "rotacion-tour-export" }
+                              ? { id: ROTACION_TOUR_ANCHOR.export }
                               : {})}
                           >
                             <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">

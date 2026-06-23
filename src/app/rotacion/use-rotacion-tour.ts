@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchRotacionTourCompletedRemote } from "./rotacion-tour-persist";
 import {
-  fetchRotacionTourCompletedRemote,
-} from "./rotacion-tour-persist";
-import {
+  ROTACION_TOUR_AUTO_START_DELAY_MS,
+  ROTACION_TOUR_AUTO_START_MAX_WAIT_MS,
   isRotacionTourCompleted,
   markRotacionTourCompleted,
+  scheduleRotacionTourStart,
   startRotacionTour,
 } from "./rotacion-tour";
-
-const ROTACION_TOUR_AUTO_START_DELAY_MS = 900;
-/** Si la tabla tarda, igual mostramos el tour base tras este tope. */
-const ROTACION_TOUR_AUTO_START_MAX_WAIT_MS = 12_000;
 
 export type RotacionTourCompletionStatus = "loading" | "completed" | "pending";
 
@@ -51,34 +48,24 @@ export const useRotacionTour = (
   }, [ready, userId]);
 
   const startTour = useCallback(() => {
-    window.setTimeout(() => {
-      startRotacionTour({ userId });
-    }, 120);
+    scheduleRotacionTourStart({ userId });
   }, [userId]);
 
   useEffect(() => {
     if (!ready || completionStatus !== "pending") return;
     if (autoStartAttemptedRef.current) return;
 
-    const launchTour = () => {
+    const delayMs = tableTourReady
+      ? ROTACION_TOUR_AUTO_START_DELAY_MS
+      : ROTACION_TOUR_AUTO_START_MAX_WAIT_MS;
+
+    const timer = window.setTimeout(() => {
       if (autoStartAttemptedRef.current) return;
       autoStartAttemptedRef.current = true;
       startRotacionTour({ userId });
-    };
+    }, delayMs);
 
-    if (tableTourReady) {
-      const timer = window.setTimeout(
-        launchTour,
-        ROTACION_TOUR_AUTO_START_DELAY_MS,
-      );
-      return () => window.clearTimeout(timer);
-    }
-
-    const fallbackTimer = window.setTimeout(
-      launchTour,
-      ROTACION_TOUR_AUTO_START_MAX_WAIT_MS,
-    );
-    return () => window.clearTimeout(fallbackTimer);
+    return () => window.clearTimeout(timer);
   }, [ready, completionStatus, userId, tableTourReady]);
 
   return { startTour, completionStatus };
