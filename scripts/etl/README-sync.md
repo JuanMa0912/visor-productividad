@@ -11,7 +11,7 @@ Sube el dia a dia de las tablas de **hechos** desde el Postgres **local**
 - **No toca:** tablas de estado de la app (usuarios, sesiones, `rotacion_cero_*`,
   `rotacion_abcd_*`, horarios, presets), matviews, `margenes_*` (local vacio) ni
   `ventas_item_diario` (lo maneja un ETL aparte del local).
-- Al terminar refresca la matview de rotacion en GCP (reusa `refresh-rotacion-matview.sh`).
+- Al terminar refresca la matview de rotacion en GCP (refresh inline, no depende de scripts externos).
 
 Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GCP).
 
@@ -24,25 +24,35 @@ Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GC
    Agrega esa IP (`/32`) en GCP -> SQL -> instancia -> Connections -> Networking ->
    Authorized networks. Si la IP del server es **dinamica**, usa Cloud SQL Auth Proxy.
 
-2. **Credenciales del DESTINO (GCP):** ya estan en el env de produccion del deploy
-   (vars `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSL`). El script lo
-   autodetecta en la raiz: prueba `.env.local`, luego `.env.production`, luego `.env`.
-   Si tu archivo tiene otro nombre/ruta, pasalo con `ENV_FILE=$PWD/.env.production`.
-   Revisa la linea `ENV destino:` y `Destino:` del log para confirmar que apunta a GCP.
-
-3. **Credenciales del ORIGEN (local):** crear `/home/prodapp/visor-productividad/.env.etl`
-   (queda fuera de git por el patron `.env*`):
+2. **Config del ETL (UN solo archivo, nombres explicitos por extremo).** Crea
+   `.env.etl` en la raiz del deploy a partir del template y ponle las claves:
    ```bash
-   SRC_DB_HOST=localhost
-   SRC_DB_PORT=5432
-   SRC_DB_NAME=produXdia
-   SRC_DB_USER=postgres
-   SRC_DB_PASSWORD=*** la clave del postgres local ***
-   # SRC_DB_SSL=disable   # opcional; default disable para localhost
+   cd /home/prodapp/visor-productividad
+   cp scripts/etl/env.etl.example .env.etl
+   chmod 600 .env.etl
+   nano .env.etl   # rellena DB_PASSWORD_LOCAL y DB_PASSWORD_GCP
    ```
-   Protegerlo: `chmod 600 /home/prodapp/visor-productividad/.env.etl`
+   El archivo trae los dos extremos sin ambiguedad (`.env.etl` queda fuera de git
+   por el patron `.env*`):
+   ```bash
+   # ORIGEN local
+   DB_HOST_LOCAL=localhost
+   DB_PORT_LOCAL=5432
+   DB_NAME_LOCAL=produXdia          # X mayuscula (local)
+   DB_USER_LOCAL=postgres
+   DB_PASSWORD_LOCAL='clave_local'  # comillas simples si tiene $ u otros simbolos
+   # DESTINO GCP
+   DB_HOST_GCP=34.73.63.145
+   DB_PORT_GCP=5432
+   DB_NAME_GCP=produxdia            # minuscula (GCP)
+   DB_USER_GCP=visor
+   DB_PASSWORD_GCP='clave_gcp'
+   # DB_SSL_GCP=require             # default ya es require para GCP
+   ```
+   El ETL **NO** usa el `.env.local`/`.env.production` de la app: todo sale de aqui,
+   asi no se confunde local con GCP. El log imprime `Destino(GCP): ...` para confirmar.
 
-4. `chmod +x scripts/etl/sync-local-to-gcp.sh`
+3. `chmod +x scripts/etl/sync-local-to-gcp.sh`
 
 ## 2. Primer arranque (seguro)
 

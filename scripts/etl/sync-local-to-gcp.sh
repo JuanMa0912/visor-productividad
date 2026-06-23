@@ -17,17 +17,18 @@
 # Otros flags:
 #   --dry-run     solo cuenta filas en local, no escribe en GCP.
 #   --no-refresh  no refresca la matview de rotacion al final.
-#   --verify      corre verify-data-freshness.sh al terminar.
+#   --verify      chequea la fecha maxima por tabla en GCP al terminar.
 #   -h|--help     ayuda.
 #
-# Credenciales:
-#   - DESTINO (GCP):  ENV_FILE (default /opt/visor-productividad/.env.local), vars DB_*.
-#   - ORIGEN (local): SRC_ENV_FILE (default /opt/visor-productividad/.env.etl), vars SRC_DB_*.
+# Config: UN solo archivo .env.etl en la raiz del deploy, con nombres EXPLICITOS
+# por extremo (no se confunde local con GCP). Override la ruta con ETL_ENV_FILE=...
+#   Origen local:  DB_HOST_LOCAL DB_PORT_LOCAL DB_NAME_LOCAL DB_USER_LOCAL DB_PASSWORD_LOCAL [DB_SSL_LOCAL]
+#   Destino GCP:   DB_HOST_GCP   DB_PORT_GCP   DB_NAME_GCP   DB_USER_GCP   DB_PASSWORD_GCP   [DB_SSL_GCP]
 #
-# Uso tipico (en el server 192.168.35.232, como el usuario de la app):
-#   sudo -u visor bash /opt/visor-productividad/scripts/etl/sync-local-to-gcp.sh
-#   sudo -u visor bash .../sync-local-to-gcp.sh --days 18          # reconciliacion semanal
-#   sudo -u visor bash .../sync-local-to-gcp.sh --date 2026-06-22  # un dia puntual
+# Uso tipico (en 192.168.35.232, como el usuario dueno del deploy):
+#   sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh
+#   sudo -u prodapp bash .../sync-local-to-gcp.sh --days 18          # reconciliacion semanal
+#   sudo -u prodapp bash .../sync-local-to-gcp.sh --date 2026-06-22  # un dia puntual
 #
 # Codigos de salida: 0 = OK | 3 = WARNING (sin datos de ayer) | 1 = ERROR.
 
@@ -36,17 +37,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Credenciales DESTINO (GCP): por default se autodetecta en la raiz del deploy
-# (resuelta desde la ubicacion del script) el primer env que exista entre los
-# nombres comunes. Funciona en cualquier ruta de deploy y con .env.local o
-# .env.production. Override con ENV_FILE si esta en otro lado o con otro nombre.
-if [[ -z "${ENV_FILE:-}" ]]; then
-  for _cand in "$REPO_ROOT/.env.local" "$REPO_ROOT/.env.production" "$REPO_ROOT/.env"; do
-    if [[ -f "$_cand" ]]; then ENV_FILE="$_cand"; break; fi
-  done
-fi
-ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.local}"
-SRC_ENV_FILE="${SRC_ENV_FILE:-$REPO_ROOT/.env.etl}"
+ETL_ENV_FILE="${ETL_ENV_FILE:-$REPO_ROOT/.env.etl}"
 LOG_FILE="${LOG_FILE:-/var/log/visor-etl-sync.log}"
 
 DAYS=1
@@ -87,47 +78,43 @@ log() {
   fi
 }
 
-# --- Cargar credenciales ---------------------------------------------------
-[[ -f "$ENV_FILE" ]]     || { log "ERROR: no encuentro ENV_FILE (GCP): $ENV_FILE"; exit 1; }
-[[ -f "$SRC_ENV_FILE" ]] || { log "ERROR: no encuentro SRC_ENV_FILE (local): $SRC_ENV_FILE"; exit 1; }
+# --- Cargar config (un solo archivo, nombres explicitos por extremo) --------
+[[ -f "$ETL_ENV_FILE" ]] || { log "ERROR: no encuentro la config del ETL: $ETL_ENV_FILE (ver scripts/etl/env.etl.example)"; exit 1; }
 
 set -a
 # shellcheck source=/dev/null
-source "$ENV_FILE"
-# shellcheck source=/dev/null
-source "$SRC_ENV_FILE"
+source "$ETL_ENV_FILE"
 set +a
 
-: "${DB_HOST:?DB_HOST (GCP) no definido en $ENV_FILE}"
-: "${DB_NAME:?DB_NAME (GCP) no definido en $ENV_FILE}"
-: "${DB_USER:?DB_USER (GCP) no definido en $ENV_FILE}"
-: "${DB_PASSWORD:?DB_PASSWORD (GCP) no definido en $ENV_FILE}"
-: "${SRC_DB_PASSWORD:?SRC_DB_PASSWORD (local) no definido en $SRC_ENV_FILE}"
+: "${DB_HOST_GCP:?DB_HOST_GCP no definido en $ETL_ENV_FILE}"
+: "${DB_NAME_GCP:?DB_NAME_GCP no definido en $ETL_ENV_FILE}"
+: "${DB_USER_GCP:?DB_USER_GCP no definido en $ETL_ENV_FILE}"
+: "${DB_PASSWORD_GCP:?DB_PASSWORD_GCP no definido en $ETL_ENV_FILE}"
+: "${DB_PASSWORD_LOCAL:?DB_PASSWORD_LOCAL no definido en $ETL_ENV_FILE}"
 
-SRC_DB_HOST="${SRC_DB_HOST:-localhost}"
-SRC_DB_PORT="${SRC_DB_PORT:-5432}"
-SRC_DB_NAME="${SRC_DB_NAME:-produXdia}"
-SRC_DB_USER="${SRC_DB_USER:-postgres}"
+DB_HOST_LOCAL="${DB_HOST_LOCAL:-localhost}"
+DB_PORT_LOCAL="${DB_PORT_LOCAL:-5432}"
+DB_NAME_LOCAL="${DB_NAME_LOCAL:-produXdia}"
+DB_USER_LOCAL="${DB_USER_LOCAL:-postgres}"
+DB_PORT_GCP="${DB_PORT_GCP:-5432}"
 
-# SSL GCP: igual que src/lib/db/index.ts y refresh-rotacion-matview.sh.
-db_ssl="$(echo "${DB_SSL:-}" | tr '[:upper:]' '[:lower:]')"
-if   [[ "$db_ssl" == "true"  || "$db_ssl" == "1" || "$db_ssl" == "require" ]]; then GCP_SSL=require
-elif [[ "$db_ssl" == "false" || "$db_ssl" == "0" || "$db_ssl" == "disable" ]]; then GCP_SSL=disable
-elif [[ "$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1" || "$DB_HOST" == "::1" ]]; then GCP_SSL=disable
-else GCP_SSL=require; fi
+# SSL por extremo (default: require para GCP no-loopback; disable para local).
+resolve_ssl() {  # raw_value host -> imprime require|disable
+  local raw host; raw="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"; host="$2"
+  if   [[ "$raw" == "true"  || "$raw" == "1" || "$raw" == "require" ]]; then echo require
+  elif [[ "$raw" == "false" || "$raw" == "0" || "$raw" == "disable" ]]; then echo disable
+  elif [[ "$host" == "localhost" || "$host" == "127.0.0.1" || "$host" == "::1" ]]; then echo disable
+  else echo require; fi
+}
+GCP_SSL="$(resolve_ssl "${DB_SSL_GCP:-}" "$DB_HOST_GCP")"
+LOCAL_SSL="$(resolve_ssl "${DB_SSL_LOCAL:-}" "$DB_HOST_LOCAL")"
 
-src_ssl="$(echo "${SRC_DB_SSL:-}" | tr '[:upper:]' '[:lower:]')"
-if   [[ "$src_ssl" == "true" || "$src_ssl" == "require" ]]; then SRC_SSL=require
-elif [[ "$src_ssl" == "false" || "$src_ssl" == "disable" ]]; then SRC_SSL=disable
-elif [[ "$SRC_DB_HOST" == "localhost" || "$SRC_DB_HOST" == "127.0.0.1" || "$SRC_DB_HOST" == "::1" ]]; then SRC_SSL=disable
-else SRC_SSL=disable; fi
-
-SRC_PSQL=(env "PGPASSWORD=$SRC_DB_PASSWORD" "PGSSLMODE=$SRC_SSL" psql
-  --host="$SRC_DB_HOST" --port="$SRC_DB_PORT" --username="$SRC_DB_USER"
-  --dbname="$SRC_DB_NAME" --no-password --set ON_ERROR_STOP=on)
-GCP_PSQL=(env "PGPASSWORD=$DB_PASSWORD" "PGSSLMODE=$GCP_SSL" psql
-  --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER"
-  --dbname="$DB_NAME" --no-password --set ON_ERROR_STOP=on)
+SRC_PSQL=(env "PGPASSWORD=$DB_PASSWORD_LOCAL" "PGSSLMODE=$LOCAL_SSL" psql
+  --host="$DB_HOST_LOCAL" --port="$DB_PORT_LOCAL" --username="$DB_USER_LOCAL"
+  --dbname="$DB_NAME_LOCAL" --no-password --set ON_ERROR_STOP=on)
+GCP_PSQL=(env "PGPASSWORD=$DB_PASSWORD_GCP" "PGSSLMODE=$GCP_SSL" psql
+  --host="$DB_HOST_GCP" --port="$DB_PORT_GCP" --username="$DB_USER_GCP"
+  --dbname="$DB_NAME_GCP" --no-password --set ON_ERROR_STOP=on)
 
 # --- Ventana de fechas -----------------------------------------------------
 if [[ -n "$ONE_DATE" ]]; then
@@ -240,9 +227,50 @@ SQL
   log "[$tbl] upsert OK ($cnt filas)"
 }
 
+# Refresca las matviews de rotacion en GCP (la app lee de ahi). Inline, usa la
+# conexion GCP ya construida; no depende de scripts/env externos.
+refresh_matviews() {
+  local mv="rotacion_item_dia_clean" exists fn
+  exists="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_matviews WHERE matviewname='$mv' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -z "$exists" ]]; then log "Matview $mv no existe en GCP; omito refresh."; return 0; fi
+  log "Refrescando $mv (CONCURRENTLY)..."
+  if ! "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "REFRESH MATERIALIZED VIEW CONCURRENTLY $mv;" >/dev/null 2>&1; then
+    log "WARN: REFRESH CONCURRENTLY fallo; reintento sin CONCURRENTLY (bloquea lecturas brevemente)"
+    "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "REFRESH MATERIALIZED VIEW $mv;" >/dev/null 2>&1 \
+      || { log "WARN: refresh de $mv fallo; el tablero de rotacion puede quedar un ciclo atrasado."; return 0; }
+  fi
+  "${GCP_PSQL[@]}" -c "ANALYZE $mv;" >/dev/null 2>&1 || true
+  fn="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_proc WHERE proname='refresh_rotacion_item_periodo_std' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -n "$fn" ]]; then
+    log "Refrescando snapshot rotacion_item_periodo_std()..."
+    "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_rotacion_item_periodo_std();" >/dev/null 2>&1 \
+      || log "WARN: refresh de periodo_std fallo."
+  fi
+  log "Refresh de matviews OK."
+}
+
+# Chequeo simple: fecha maxima por tabla en GCP vs el objetivo (HASTA).
+verify_freshness() {
+  log "Verificando frescura en GCP (objetivo $HASTA)..."
+  "${GCP_PSQL[@]}" -v obj="$HASTAC" -P pager=off -c "
+    WITH m AS (
+      SELECT 'ventas_cajas' t, max(fecha_dcto) d FROM ventas_cajas
+      UNION ALL SELECT 'ventas_fruver', max(fecha_dcto) FROM ventas_fruver
+      UNION ALL SELECT 'ventas_carnes', max(fecha_dcto) FROM ventas_carnes
+      UNION ALL SELECT 'ventas_asadero', max(fecha_dcto) FROM ventas_asadero
+      UNION ALL SELECT 'ventas_pollo_pesc', max(fecha_dcto) FROM ventas_pollo_pesc
+      UNION ALL SELECT 'ventas_industria', max(fecha_dcto) FROM ventas_industria
+      UNION ALL SELECT 'rotacion_base_item_dia_sede', to_char(max(fecha_dia),'YYYYMMDD') FROM rotacion_base_item_dia_sede
+      UNION ALL SELECT 'asistencia_horas', to_char(max(fecha),'YYYYMMDD') FROM asistencia_horas
+    )
+    SELECT t AS tabla, COALESCE(d,'-') AS hasta,
+           CASE WHEN d >= :'obj' THEN 'OK' ELSE 'ATRASADA' END AS estado
+    FROM m ORDER BY estado DESC, tabla;" || log "WARN: verificacion fallo."
+}
+
 log "=== ETL local -> GCP | ventana [$DESDE..$HASTA] | dias=$DAYS | dry_run=$DRY_RUN ==="
-log "ENV destino: $ENV_FILE | ENV origen: $SRC_ENV_FILE"
-log "Origen: $SRC_DB_HOST/$SRC_DB_NAME  ->  Destino: $DB_HOST/$DB_NAME (ssl=$GCP_SSL)"
+log "Config: $ETL_ENV_FILE"
+log "Origen(local): $DB_HOST_LOCAL/$DB_NAME_LOCAL  ->  Destino(GCP): $DB_HOST_GCP/$DB_NAME_GCP (ssl=$GCP_SSL)"
 
 for t in "${TABLES[@]}"; do
   process_table "$t"
@@ -255,14 +283,11 @@ if [[ "$MODE_DAILY" -eq 1 && "${#CANARY_EMPTY[@]}" -gt 0 ]]; then
 fi
 
 if [[ "$DRY_RUN" -eq 0 && "$NO_REFRESH" -eq 0 ]]; then
-  log "Refrescando matview de rotacion en GCP (CONCURRENTLY)..."
-  ENV_FILE="$ENV_FILE" bash "$REPO_ROOT/scripts/refresh-rotacion-matview.sh" \
-    || log "WARN: refresh de matview fallo; el tablero de rotacion puede quedar un ciclo atrasado."
+  refresh_matviews
 fi
 
 if [[ "$RUN_VERIFY" -eq 1 ]]; then
-  log "Verificando frescura de datos en GCP..."
-  FECHA_OBJETIVO="$HASTA" ENV_FILE="$ENV_FILE" bash "$SCRIPT_DIR/verify-data-freshness.sh" || true
+  verify_freshness
 fi
 
 if [[ "$WARN" -eq 1 ]]; then
