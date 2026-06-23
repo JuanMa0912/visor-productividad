@@ -36,10 +36,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Credenciales: por default en la raiz del deploy (donde corre la app y vive .env.local),
-# resuelta desde la ubicacion del script. Funciona en cualquier ruta de deploy
-# (/home/prodapp/visor-productividad, /opt/visor-productividad, etc.). Override con
-# ENV_FILE / SRC_ENV_FILE si los .env estan en otro lado.
+# Credenciales DESTINO (GCP): por default se autodetecta en la raiz del deploy
+# (resuelta desde la ubicacion del script) el primer env que exista entre los
+# nombres comunes. Funciona en cualquier ruta de deploy y con .env.local o
+# .env.production. Override con ENV_FILE si esta en otro lado o con otro nombre.
+if [[ -z "${ENV_FILE:-}" ]]; then
+  for _cand in "$REPO_ROOT/.env.local" "$REPO_ROOT/.env.production" "$REPO_ROOT/.env"; do
+    if [[ -f "$_cand" ]]; then ENV_FILE="$_cand"; break; fi
+  done
+fi
 ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.local}"
 SRC_ENV_FILE="${SRC_ENV_FILE:-$REPO_ROOT/.env.etl}"
 LOG_FILE="${LOG_FILE:-/var/log/visor-etl-sync.log}"
@@ -236,6 +241,7 @@ SQL
 }
 
 log "=== ETL local -> GCP | ventana [$DESDE..$HASTA] | dias=$DAYS | dry_run=$DRY_RUN ==="
+log "ENV destino: $ENV_FILE | ENV origen: $SRC_ENV_FILE"
 log "Origen: $SRC_DB_HOST/$SRC_DB_NAME  ->  Destino: $DB_HOST/$DB_NAME (ssl=$GCP_SSL)"
 
 for t in "${TABLES[@]}"; do
