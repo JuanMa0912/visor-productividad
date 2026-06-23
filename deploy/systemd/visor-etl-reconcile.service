@@ -1,0 +1,19 @@
+[Unit]
+Description=Visor - reconciliacion semanal ETL local -> GCP (ultimos 7 dias)
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/README-sync.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=prodapp
+Group=prodapp
+WorkingDirectory=/home/prodapp/visor-productividad
+# Re-sube (upsert) los ultimos 7 dias para atrapar correcciones de la semana.
+ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 7 --verify
+StandardOutput=journal
+StandardError=journal
+# Endurecimientos. NO usar ProtectHome (deploy y .env.etl viven en /home/prodapp).
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
