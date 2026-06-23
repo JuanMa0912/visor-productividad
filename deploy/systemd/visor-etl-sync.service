@@ -1,0 +1,26 @@
+[Unit]
+Description=Visor - ETL diario local -> GCP (sube el dia anterior)
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/README-sync.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=prodapp
+Group=prodapp
+WorkingDirectory=/home/prodapp/visor-productividad
+# Invocar via bash: los .sh en git van sin +x (100644); systemd exige ejecutable
+# directo y falla con 203/EXEC "Permission denied" tras git pull.
+ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --verify
+# Exit 3 = WARNING "sin datos de ayer" (el cierre del local aun no termino).
+# No es un fallo real: lo tratamos como exito para no ensuciar systemctl --failed.
+# La senal queda igual en el journal (lineas WARNING). Revisar con:
+#   journalctl -u visor-etl-sync.service -n 80 --no-pager
+SuccessExitStatus=3
+StandardOutput=journal
+StandardError=journal
+# Endurecimientos. OJO: NO usar ProtectHome aqui: el deploy y el .env.etl viven
+# en /home/prodapp; ProtectHome los ocultaria y el servicio fallaria.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
