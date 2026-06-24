@@ -40,6 +40,10 @@ yarn-error.log*
 # ETL: dumps de esquema locales (referencia, no versionar)
 db/_schema-*.sql
 
+# python (scripts ETL)
+__pycache__/
+*.pyc
+
 # vercel
 .vercel
 
