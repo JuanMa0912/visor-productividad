@@ -1,127 +1,68 @@
-import { driver, type Driver } from "driver.js";
 import { ROTACION_TOUR_STEPS } from "./rotacion-tour-steps";
-import { persistRotacionTourCompletedRemote } from "./rotacion-tour-persist";
+import {
+  TUTORIAL_LOCAL_STORAGE_KEYS,
+  TUTORIAL_STATE_KEYS,
+} from "@/lib/ui/tutorial-keys";
+import {
+  PRODUCT_TOUR_AUTO_START_DELAY_MS,
+  PRODUCT_TOUR_AUTO_START_MAX_WAIT_MS,
+  PRODUCT_TOUR_START_DELAY_MS,
+  destroyProductTour,
+  scheduleProductTourStart,
+  startProductTour,
+} from "@/lib/ui/product-tour/driver-tour";
+import {
+  buildTourLocalStorageKey,
+  clearTourCompletedLocally,
+  isTourCompletedLocally,
+  markTourCompletedLocally,
+} from "@/lib/ui/product-tour/storage";
 
-export const ROTACION_TOUR_STORAGE_KEY = "rotacion:tutorial-completed:v1";
+export const ROTACION_TOUR_STORAGE_KEY = TUTORIAL_LOCAL_STORAGE_KEYS.rotacion;
 
-/** Retraso breve para que el DOM termine de pintar antes de medir anclas. */
-export const ROTACION_TOUR_START_DELAY_MS = 120;
-
-/** Espera tras cargar tabla antes del auto-inicio. */
-export const ROTACION_TOUR_AUTO_START_DELAY_MS = 900;
-
-/** Si la tabla no carga, mostramos el tour base tras este tope. */
-export const ROTACION_TOUR_AUTO_START_MAX_WAIT_MS = 12_000;
+export {
+  PRODUCT_TOUR_START_DELAY_MS as ROTACION_TOUR_START_DELAY_MS,
+  PRODUCT_TOUR_AUTO_START_DELAY_MS as ROTACION_TOUR_AUTO_START_DELAY_MS,
+  PRODUCT_TOUR_AUTO_START_MAX_WAIT_MS as ROTACION_TOUR_AUTO_START_MAX_WAIT_MS,
+};
 
 export const buildRotacionTourStorageKey = (
   userId: string | null | undefined,
-): string =>
-  userId
-    ? `${ROTACION_TOUR_STORAGE_KEY}.${userId}`
-    : ROTACION_TOUR_STORAGE_KEY;
+): string => buildTourLocalStorageKey(ROTACION_TOUR_STORAGE_KEY, userId);
 
 export const isRotacionTourCompleted = (
   userId: string | null | undefined,
-): boolean => {
-  if (typeof window === "undefined") return true;
-  try {
-    return (
-      window.localStorage.getItem(buildRotacionTourStorageKey(userId)) === "1"
-    );
-  } catch {
-    return true;
-  }
-};
+): boolean => isTourCompletedLocally(ROTACION_TOUR_STORAGE_KEY, userId);
 
 export const markRotacionTourCompleted = (
   userId: string | null | undefined,
-): void => {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(buildRotacionTourStorageKey(userId), "1");
-  } catch {
-    /* quota / private mode */
-  }
-};
+): void => markTourCompletedLocally(ROTACION_TOUR_STORAGE_KEY, userId);
 
 export const clearRotacionTourCompleted = (
   userId: string | null | undefined,
-): void => {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(buildRotacionTourStorageKey(userId));
-  } catch {
-    /* ignore */
-  }
-};
-
-export const resolveActiveRotacionTourSteps = () =>
-  ROTACION_TOUR_STEPS.filter((step) => {
-    const selector = step.element;
-    if (!selector || typeof selector !== "string") return false;
-    return Boolean(document.querySelector(selector));
-  });
+): void => clearTourCompletedLocally(ROTACION_TOUR_STORAGE_KEY, userId);
 
 export type StartRotacionTourOptions = {
   userId?: string | null;
-  /** Si true, no guarda completado al cerrar (útil para pruebas). */
   skipPersist?: boolean;
 };
 
-let activeDriver: Driver | null = null;
+const rotacionTourOptions = (options: StartRotacionTourOptions = {}) => ({
+  steps: ROTACION_TOUR_STEPS,
+  theme: "amber" as const,
+  localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.rotacion,
+  stateKey: TUTORIAL_STATE_KEYS.rotacion,
+  userId: options.userId,
+  skipPersist: options.skipPersist,
+});
 
-export const destroyRotacionTour = (): void => {
-  activeDriver?.destroy();
-  activeDriver = null;
-};
+export const destroyRotacionTour = destroyProductTour;
 
 export const startRotacionTour = (
   options: StartRotacionTourOptions = {},
-): boolean => {
-  if (typeof window === "undefined") return false;
-
-  const steps = resolveActiveRotacionTourSteps();
-  if (steps.length === 0) return false;
-
-  destroyRotacionTour();
-
-  const driverObj = driver({
-    animate: true,
-    showProgress: true,
-    progressText: "{{current}} de {{total}}",
-    nextBtnText: "Siguiente",
-    prevBtnText: "Anterior",
-    doneBtnText: "Listo",
-    allowClose: true,
-    allowKeyboardControl: true,
-    overlayColor: "#0f172a",
-    overlayOpacity: 0.55,
-    smoothScroll: true,
-    stagePadding: 10,
-    stageRadius: 14,
-    popoverOffset: 12,
-    popoverClass: "rotacion-tour-popover",
-    steps,
-    onDestroyed: () => {
-      activeDriver = null;
-      if (!options.skipPersist) {
-        markRotacionTourCompleted(options.userId);
-        void persistRotacionTourCompletedRemote();
-      }
-    },
-  });
-
-  activeDriver = driverObj;
-  driverObj.drive();
-  return true;
-};
+): boolean => startProductTour(rotacionTourOptions(options));
 
 export const scheduleRotacionTourStart = (
   options: StartRotacionTourOptions = {},
-  delayMs = ROTACION_TOUR_START_DELAY_MS,
-): void => {
-  if (typeof window === "undefined") return;
-  window.setTimeout(() => {
-    startRotacionTour(options);
-  }, delayMs);
-};
+  delayMs = PRODUCT_TOUR_START_DELAY_MS,
+): void => scheduleProductTourStart(rotacionTourOptions(options), delayMs);

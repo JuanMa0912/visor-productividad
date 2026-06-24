@@ -1,5 +1,10 @@
-/** Clave en app_user_ui_state.state para el tutorial de Rotacion v1. */
-export const ROTACION_TUTORIAL_STATE_KEY = "rotacionTutorialV1";
+import {
+  TUTORIAL_STATE_KEYS,
+  readTutorialCompletedFromState,
+} from "@/lib/ui/tutorial-keys";
+
+/** @deprecated Usar `TUTORIAL_STATE_KEYS.rotacion`. */
+export const ROTACION_TUTORIAL_STATE_KEY = TUTORIAL_STATE_KEYS.rotacion;
 
 export type RotacionTutorialStateResponse = {
   completed: boolean;
@@ -7,7 +12,5 @@ export type RotacionTutorialStateResponse = {
 
 export const readRotacionTutorialCompletedFromState = (
   state: unknown,
-): boolean => {
-  if (!state || typeof state !== "object") return false;
-  return (state as Record<string, unknown>)[ROTACION_TUTORIAL_STATE_KEY] === true;
-};
+): boolean =>
+  readTutorialCompletedFromState(state, ROTACION_TUTORIAL_STATE_KEY);

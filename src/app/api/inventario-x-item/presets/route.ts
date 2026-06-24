@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
-import { applySessionCookies, requireAuthSession, verifyCsrf } from "@/lib/auth";
+import {
+  applySessionCookies,
+  requireAuthSession,
+  verifyCsrf,
+} from "@/lib/auth";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -19,7 +23,7 @@ const ensurePresetsTable = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS inventario_x_item_user_presets (
         user_id uuid PRIMARY KEY REFERENCES app_users (id) ON DELETE CASCADE,
-        presets jsonb NOT NULL DEFAULT '[]'::jsonb,
+        presets jsonb NOT NULL DEFAULT '[]'::jsonb,no e
         updated_at timestamptz NOT NULL DEFAULT now()
       )
     `);
@@ -64,7 +68,11 @@ export async function GET() {
   }
 
   if (!assertInventarioAccess(session)) {
-    return jsonWithSession(session, { error: "No tienes permisos para esta seccion." }, 403);
+    return jsonWithSession(
+      session,
+      { error: "No tienes permisos para esta seccion." },
+      403,
+    );
   }
 
   try {
@@ -82,12 +90,18 @@ export async function GET() {
       );
       const raw = result.rows?.[0]?.presets ?? [];
       const presets = normalizeItemPresetsFromUnknown(raw);
-      return jsonWithSession(session, { presets } satisfies { presets: ItemPreset[] });
+      return jsonWithSession(session, { presets } satisfies {
+        presets: ItemPreset[];
+      });
     } finally {
       client.release();
     }
   } catch {
-    return jsonWithSession(session, { error: "No se pudieron cargar los presets." }, 500);
+    return jsonWithSession(
+      session,
+      { error: "No se pudieron cargar los presets." },
+      500,
+    );
   }
 }
 
@@ -105,7 +119,11 @@ export async function PUT(request: Request) {
   }
 
   if (!assertInventarioAccess(session)) {
-    return jsonWithSession(session, { error: "No tienes permisos para esta seccion." }, 403);
+    return jsonWithSession(
+      session,
+      { error: "No tienes permisos para esta seccion." },
+      403,
+    );
   }
 
   let body: unknown;
@@ -116,16 +134,28 @@ export async function PUT(request: Request) {
   }
 
   if (!body || typeof body !== "object" || !("presets" in body)) {
-    return jsonWithSession(session, { error: "Se requiere el campo presets (arreglo)." }, 400);
+    return jsonWithSession(
+      session,
+      { error: "Se requiere el campo presets (arreglo)." },
+      400,
+    );
   }
 
   const rawPresets = (body as { presets: unknown }).presets;
   if (!Array.isArray(rawPresets)) {
-    return jsonWithSession(session, { error: "presets debe ser un arreglo." }, 400);
+    return jsonWithSession(
+      session,
+      { error: "presets debe ser un arreglo." },
+      400,
+    );
   }
 
   if (rawPresets.length > MAX_ITEM_PRESETS) {
-    return jsonWithSession(session, { error: `Máximo ${MAX_ITEM_PRESETS} presets.` }, 400);
+    return jsonWithSession(
+      session,
+      { error: `Máximo ${MAX_ITEM_PRESETS} presets.` },
+      400,
+    );
   }
 
   const presets = normalizeItemPresetsFromUnknown(rawPresets);
@@ -149,6 +179,10 @@ export async function PUT(request: Request) {
       client.release();
     }
   } catch {
-    return jsonWithSession(session, { error: "No se pudieron guardar los presets." }, 500);
+    return jsonWithSession(
+      session,
+      { error: "No se pudieron guardar los presets." },
+      500,
+    );
   }
 }

@@ -85,6 +85,7 @@ type HubHeroCardProps = {
   title: string;
   description: string;
   moduleCount: number;
+  tourAnchorId?: string;
 };
 
 export function PortalHubHeroCard({
@@ -94,12 +95,14 @@ export function PortalHubHeroCard({
   title,
   description,
   moduleCount,
+  tourAnchorId,
 }: HubHeroCardProps) {
   const styles = HUB_THEME_STYLES[theme];
   const countLabel = String(Math.max(0, moduleCount)).padStart(2, "0");
 
   return (
     <div
+      id={tourAnchorId}
       className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 ${styles.topBorderClass}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -212,6 +215,7 @@ type HubModuleGridProps = {
   items: HubModuleItem[];
   onNavigate: (href: string) => void;
   columnsClassName?: string;
+  tourAnchorId?: string;
 };
 
 export function PortalHubModuleGrid({
@@ -219,10 +223,11 @@ export function PortalHubModuleGrid({
   items,
   onNavigate,
   columnsClassName = "gap-4 sm:grid-cols-2 lg:grid-cols-3",
+  tourAnchorId,
 }: HubModuleGridProps) {
   const total = items.length;
   return (
-    <div className={`mt-6 grid ${columnsClassName}`}>
+    <div id={tourAnchorId} className={`mt-6 grid ${columnsClassName}`}>
       {items.map((item, index) => (
         <PortalHubModuleCard
           key={item.id}

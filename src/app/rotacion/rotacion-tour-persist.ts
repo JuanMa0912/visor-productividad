@@ -1,33 +1,14 @@
-import type { RotacionTutorialStateResponse } from "@/lib/rotacion/tutorial-state";
-import { getCookieValue } from "./rotacion-preamble";
+import { TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
+import {
+  fetchTutorialCompletedRemote,
+  persistTutorialCompletedRemote,
+} from "@/lib/ui/product-tour/persist";
 
+/** @deprecated Usar API genérica `/api/ui-state/tutorial`. */
 export const fetchRotacionTourCompletedRemote = async (): Promise<
   boolean | null
-> => {
-  try {
-    const response = await fetch("/api/rotacion/tutorial", {
-      cache: "no-store",
-    });
-    if (response.status === 401) return null;
-    if (!response.ok) return null;
-    const payload = (await response.json()) as RotacionTutorialStateResponse;
-    return Boolean(payload.completed);
-  } catch {
-    return null;
-  }
-};
+> => fetchTutorialCompletedRemote(TUTORIAL_STATE_KEYS.rotacion);
 
-export const persistRotacionTourCompletedRemote = async (): Promise<boolean> => {
-  const csrf = getCookieValue("vp_csrf");
-  if (!csrf) return false;
-  try {
-    const response = await fetch("/api/rotacion/tutorial", {
-      method: "POST",
-      headers: { "x-csrf-token": csrf },
-      cache: "no-store",
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-};
+/** @deprecated Usar API genérica `/api/ui-state/tutorial`. */
+export const persistRotacionTourCompletedRemote = async (): Promise<boolean> =>
+  persistTutorialCompletedRemote(TUTORIAL_STATE_KEYS.rotacion);

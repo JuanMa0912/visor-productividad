@@ -1,13 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchRotacionTourCompletedRemote } from "./rotacion-tour-persist";
-import {
-  ROTACION_TOUR_AUTO_START_DELAY_MS,
-  ROTACION_TOUR_AUTO_START_MAX_WAIT_MS,
-  isRotacionTourCompleted,
-  markRotacionTourCompleted,
-  scheduleRotacionTourStart,
-  startRotacionTour,
-} from "./rotacion-tour";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
+import { ROTACION_TOUR_STEPS } from "./rotacion-tour-steps";
 
 export type RotacionTourCompletionStatus = "loading" | "completed" | "pending";
 
@@ -15,58 +8,13 @@ export const useRotacionTour = (
   userId: string | null | undefined,
   ready: boolean,
   tableTourReady: boolean,
-) => {
-  const autoStartAttemptedRef = useRef(false);
-  const [completionStatus, setCompletionStatus] =
-    useState<RotacionTourCompletionStatus>("loading");
-
-  useEffect(() => {
-    if (!ready) return;
-
-    let cancelled = false;
-    void (async () => {
-      if (isRotacionTourCompleted(userId)) {
-        if (!cancelled) setCompletionStatus("completed");
-        return;
-      }
-
-      const remoteCompleted = await fetchRotacionTourCompletedRemote();
-      if (cancelled) return;
-
-      if (remoteCompleted === true) {
-        markRotacionTourCompleted(userId);
-        setCompletionStatus("completed");
-        return;
-      }
-
-      setCompletionStatus("pending");
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, userId]);
-
-  const startTour = useCallback(() => {
-    scheduleRotacionTourStart({ userId });
-  }, [userId]);
-
-  useEffect(() => {
-    if (!ready || completionStatus !== "pending") return;
-    if (autoStartAttemptedRef.current) return;
-
-    const delayMs = tableTourReady
-      ? ROTACION_TOUR_AUTO_START_DELAY_MS
-      : ROTACION_TOUR_AUTO_START_MAX_WAIT_MS;
-
-    const timer = window.setTimeout(() => {
-      if (autoStartAttemptedRef.current) return;
-      autoStartAttemptedRef.current = true;
-      startRotacionTour({ userId });
-    }, delayMs);
-
-    return () => window.clearTimeout(timer);
-  }, [ready, completionStatus, userId, tableTourReady]);
-
-  return { startTour, completionStatus };
-};
+) =>
+  useProductTour({
+    localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.rotacion,
+    stateKey: TUTORIAL_STATE_KEYS.rotacion,
+    steps: ROTACION_TOUR_STEPS,
+    theme: "amber",
+    userId,
+    ready,
+    contentReady: tableTourReady,
+  });

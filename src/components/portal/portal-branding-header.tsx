@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CalendarDays, Sparkles, Users } from "lucide-react";
 import { UserMenu } from "./user-menu";
+import { PortalTourHelpButton } from "./portal-tour-help-button";
 
 export const PORTAL_APP_VERSION = "v4.0";
 
@@ -27,6 +28,8 @@ export type PortalBrandingHeaderProps = {
   /** Usuario actual; si se provee se muestra el avatar con menu (cambiar contrasena / cerrar sesion). */
   username?: string | null;
   sede?: string | null;
+  /** Si se provee, muestra boton Ayuda para el tutorial interactivo. */
+  onTourHelp?: () => void;
 };
 
 export function PortalBrandingHeader({
@@ -38,6 +41,7 @@ export function PortalBrandingHeader({
   compact = false,
   username = null,
   sede = null,
+  onTourHelp,
 }: PortalBrandingHeaderProps) {
   const router = useRouter();
   // Cronograma/Usuarios solo en /secciones (cuando no hay ningun shortcut/back).
@@ -186,6 +190,7 @@ export function PortalBrandingHeader({
               )}
             </div>
           ) : null}
+          {onTourHelp ? <PortalTourHelpButton onClick={onTourHelp} /> : null}
           {username !== null ? (
             <UserMenu
               username={username}

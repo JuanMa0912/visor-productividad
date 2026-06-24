@@ -18,6 +18,19 @@ import { DEFAULT_SEDES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-button";
+import { useRequireAuth } from "@/lib/auth/auth-context";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import {
+  TUTORIAL_LOCAL_STORAGE_KEYS,
+  TUTORIAL_STATE_KEYS,
+} from "@/lib/ui/tutorial-keys";
+import {
+  JORNADA_TOUR_ANCHOR,
+  JORNADA_TOUR_STEPS,
+} from "@/lib/ui/portal-tours/jornada-tour-steps";
+import "driver.js/dist/driver.css";
+import "@/lib/ui/product-tour/product-tour.css";
 
 type ApiResponse = {
   dates?: string[];
@@ -182,6 +195,8 @@ const ALEX_TABLE_CELL_BORDER_CLASS = "border-2 border-slate-900";
 
 export default function JornadaExtendidaPage() {
   const router = useRouter();
+  const { user, status } = useRequireAuth();
+  const authReady = status === "authenticated" && Boolean(user);
   const [ready, setReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +250,18 @@ export default function JornadaExtendidaPage() {
     monthToDateTotals: AlexReportTotals;
   } | null>(null);
   const alexExportMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const tourContentReady = ready && availableDates.length > 0 && !error;
+
+  const { startTour: startJornadaTour } = useProductTour({
+    localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.jornadaExtendida,
+    stateKey: TUTORIAL_STATE_KEYS.jornadaExtendida,
+    steps: JORNADA_TOUR_STEPS,
+    theme: "operacion",
+    userId: user?.id,
+    ready: authReady,
+    contentReady: tourContentReady,
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -1312,7 +1339,10 @@ export default function JornadaExtendidaPage() {
       <AppTopBar backHref="/horario" backLabel="Volver a horario" />
       <div className="px-4 py-10">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="relative mb-5 overflow-hidden rounded-3xl border border-rose-200/70 bg-linear-to-br from-rose-100 via-rose-50/40 to-white p-7 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.32)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-rose-500">
+        <div
+          id={JORNADA_TOUR_ANCHOR.intro}
+          className="relative mb-5 overflow-hidden rounded-3xl border border-rose-200/70 bg-linear-to-br from-rose-100 via-rose-50/40 to-white p-7 shadow-[0_18px_35px_-30px_rgba(244,63,94,0.32)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-rose-500"
+        >
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(244,63,94,0.32),transparent_60%)]"
@@ -1343,6 +1373,7 @@ export default function JornadaExtendidaPage() {
             </div>
 
             <div className="ml-auto flex shrink-0 flex-col items-end gap-3">
+              <PortalTourHelpButton onClick={startJornadaTour} />
               <div className="rounded-2xl border border-slate-200/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
                 <div className="flex items-center gap-3">
                   <MercamioLogo className="h-10 w-auto rounded-lg bg-white object-cover shadow-sm" />
@@ -1360,7 +1391,10 @@ export default function JornadaExtendidaPage() {
         ) : (
           <>
             {canSeeAlexReport && (
-              <div className="mb-5 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+              <div
+                id={JORNADA_TOUR_ANCHOR.alexBoard}
+                className="mb-5 rounded-3xl border border-slate-200/70 bg-white p-5 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]"
+              >
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                   <div className="max-w-3xl">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-500">
@@ -1915,6 +1949,7 @@ export default function JornadaExtendidaPage() {
               </div>
             )}
 
+            <div id={JORNADA_TOUR_ANCHOR.hourly}>
             <HourlyAnalysis
               availableDates={availableDates}
               availableSedes={availableSedes}
@@ -1933,6 +1968,7 @@ export default function JornadaExtendidaPage() {
               dashboardContext="jornada-extendida"
               headerActions={
                 <button
+                  id={JORNADA_TOUR_ANCHOR.tiposHorario}
                   type="button"
                   onClick={() => setTiposHorarioOpen(true)}
                   className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3.5 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100"
@@ -1942,6 +1978,8 @@ export default function JornadaExtendidaPage() {
                 </button>
               }
             />
+
+            </div>
 
             <TiposHorarioPanel
               open={tiposHorarioOpen}

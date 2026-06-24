@@ -24,6 +24,14 @@ import {
   canAccessRotacionV4Board,
 } from "@/lib/shared/special-role-features";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import { PORTAL_HUB_TOUR_CONFIG } from "@/lib/ui/portal-tours/hub-tour-config";
+import {
+  PORTAL_HUB_TOUR_ANCHOR,
+  buildPortalHubTourSteps,
+} from "@/lib/ui/portal-tours/hub-tour-steps";
+import "driver.js/dist/driver.css";
+import "@/lib/ui/product-tour/product-tour.css";
 
 const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
   {
@@ -66,16 +74,19 @@ const ROTACION_V4_MODULE: HubModuleItem = {
   href: "/rotacion-dos",
 };
 
+const hubTour = PORTAL_HUB_TOUR_CONFIG.producto;
+
 export default function ProductividadHubPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSection, hasSpecialRole } = usePermissions();
+  const ready = status === "authenticated" && Boolean(user);
 
   useEffect(() => {
-    if (status === "authenticated" && !hasSection("producto")) {
+    if (ready && !hasSection("producto")) {
       router.replace("/secciones");
     }
-  }, [status, hasSection, router]);
+  }, [ready, hasSection, router]);
 
   const canSeeRotacion = useMemo(
     () =>
@@ -110,14 +121,26 @@ export default function ProductividadHubPage() {
   );
 
   useEffect(() => {
-    if (status === "authenticated" && visibleModules.length === 0) {
+    if (ready && visibleModules.length === 0) {
       router.replace("/secciones");
     }
-  }, [status, router, visibleModules.length]);
+  }, [ready, router, visibleModules.length]);
+
+  const tourSteps = useMemo(() => buildPortalHubTourSteps("producto"), []);
+
+  const { startTour } = useProductTour({
+    localStorageKey: hubTour.localStorageKey,
+    stateKey: hubTour.stateKey,
+    steps: tourSteps,
+    theme: hubTour.theme,
+    userId: user?.id,
+    ready,
+    contentReady: visibleModules.length > 0,
+  });
 
   const canAccessCronograma = hasSpecialRole("cronograma");
 
-  if (status !== "authenticated" || !user) {
+  if (!ready || !user) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
@@ -135,22 +158,25 @@ export default function ProductividadHubPage() {
         username={user.username}
         sede={user.sede}
         showSeccionesShortcut
+        onTourHelp={startTour}
       />
       <PortalHubShell>
-      <PortalHubHeroCard
-        theme="producto"
-        icon={Boxes}
-        eyebrow="Producto • Enfoque • Causa"
-        title="Causa comercial del resultado"
-        description="Usa esta seccion para entender que lineas, productos y margenes explican el resultado del negocio por sede."
-        moduleCount={visibleModules.length}
-      />
-      <PortalHubModuleGrid
-        theme="producto"
-        items={visibleModules}
-        onNavigate={(href) => router.push(href)}
-        columnsClassName="gap-4 md:grid-cols-2 xl:grid-cols-4"
-      />
+        <PortalHubHeroCard
+          theme="producto"
+          icon={Boxes}
+          eyebrow="Producto • Enfoque • Causa"
+          title="Causa comercial del resultado"
+          description="Usa esta seccion para entender que lineas, productos y margenes explican el resultado del negocio por sede."
+          moduleCount={visibleModules.length}
+          tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.hero}
+        />
+        <PortalHubModuleGrid
+          theme="producto"
+          items={visibleModules}
+          onNavigate={(href) => router.push(href)}
+          columnsClassName="gap-4 md:grid-cols-2 xl:grid-cols-4"
+          tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.modules}
+        />
       </PortalHubShell>
     </div>
   );

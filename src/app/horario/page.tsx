@@ -16,6 +16,14 @@ import {
 } from "@/lib/shared/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import { PORTAL_HUB_TOUR_CONFIG } from "@/lib/ui/portal-tours/hub-tour-config";
+import {
+  PORTAL_HUB_TOUR_ANCHOR,
+  buildPortalHubTourSteps,
+} from "@/lib/ui/portal-tours/hub-tour-steps";
+import "driver.js/dist/driver.css";
+import "@/lib/ui/product-tour/product-tour.css";
 
 const BASE_OPERACION_MODULES: HubModuleItem[] = [
   {
@@ -48,18 +56,19 @@ const COMPARAR_MODULE: HubModuleItem = {
   href: "/horarios-comparar",
 };
 
+const hubTour = PORTAL_HUB_TOUR_CONFIG.operacion;
+
 export default function HorarioHubPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSection, hasSpecialRole } = usePermissions();
+  const ready = status === "authenticated" && Boolean(user);
 
-  // Si el usuario esta autenticado pero no tiene la seccion `operacion`,
-  // lo mandamos al hub raiz (`/secciones`).
   useEffect(() => {
-    if (status === "authenticated" && !hasSection("operacion")) {
+    if (ready && !hasSection("operacion")) {
       router.replace("/secciones");
     }
-  }, [status, hasSection, router]);
+  }, [ready, hasSection, router]);
 
   const canSeeCompararHorarios = useMemo(
     () =>
@@ -74,26 +83,37 @@ export default function HorarioHubPage() {
 
   const allowedSubdashboards = user?.allowedSubdashboards ?? null;
   const visibleModules = useMemo(
-    () => {
-      return modules.filter((module) => {
+    () =>
+      modules.filter((module) => {
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);
         if (!subId) return false;
         return canAccessPortalSubsection(allowedSubdashboards, subId);
-      });
-    },
+      }),
     [allowedSubdashboards, isAdmin, modules],
   );
 
   useEffect(() => {
-    if (status === "authenticated" && visibleModules.length === 0) {
+    if (ready && visibleModules.length === 0) {
       router.replace("/secciones");
     }
-  }, [status, router, visibleModules.length]);
+  }, [ready, router, visibleModules.length]);
+
+  const tourSteps = useMemo(() => buildPortalHubTourSteps("operacion"), []);
+
+  const { startTour } = useProductTour({
+    localStorageKey: hubTour.localStorageKey,
+    stateKey: hubTour.stateKey,
+    steps: tourSteps,
+    theme: hubTour.theme,
+    userId: user?.id,
+    ready,
+    contentReady: visibleModules.length > 0,
+  });
 
   const canAccessCronograma = hasSpecialRole("cronograma");
 
-  if (status !== "authenticated" || !user) {
+  if (!ready || !user) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
@@ -111,22 +131,25 @@ export default function HorarioHubPage() {
         username={user.username}
         sede={user.sede}
         showSeccionesShortcut
+        onTourHelp={startTour}
       />
       <PortalHubShell>
-      <PortalHubHeroCard
-        theme="operacion"
-        icon={Activity}
-        eyebrow="Operación • Enfoque • Ejecución"
-        title="Ejecucion del negocio"
-        description="Aqui se explica como la operacion soporta el resultado: uso de horas, personal, novedades y turnos por sede."
-        moduleCount={visibleModules.length}
-      />
-      <PortalHubModuleGrid
-        theme="operacion"
-        items={visibleModules}
-        onNavigate={(href) => router.push(href)}
-        columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
-      />
+        <PortalHubHeroCard
+          theme="operacion"
+          icon={Activity}
+          eyebrow="Operación • Enfoque • Ejecución"
+          title="Ejecucion del negocio"
+          description="Aqui se explica como la operacion soporta el resultado: uso de horas, personal, novedades y turnos por sede."
+          moduleCount={visibleModules.length}
+          tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.hero}
+        />
+        <PortalHubModuleGrid
+          theme="operacion"
+          items={visibleModules}
+          onNavigate={(href) => router.push(href)}
+          columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.modules}
+        />
       </PortalHubShell>
     </div>
   );

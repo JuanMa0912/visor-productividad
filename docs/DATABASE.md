@@ -221,9 +221,9 @@ APIs: `/api/ingresar-horarios/*`, `/api/horarios-comparar`.
 
 Origen presets: `20260504_inventario_x_item_user_presets.sql`.
 
-Origen UI state: `20260623_app_user_ui_state.sql`. Clave `rotacionTutorialV1` marca tutorial de Rotacion visto.
+Origen UI state: `20260623_app_user_ui_state.sql`. Claves en `state` (ver `src/lib/ui/tutorial-keys.ts`): `rotacionTutorialV1`, `portalSectionsTutorialV1`, hubs por sección y `jornadaExtendidaTutorialV1`.
 
-APIs: `/api/inventario-x-item/presets`, `/api/rotacion/tutorial`.
+APIs: `/api/inventario-x-item/presets`, `/api/ui-state/tutorial?key=...` (genérico). `/api/rotacion/tutorial` se mantiene por compatibilidad.
 
 ### 4.8 Excel DIAN
 

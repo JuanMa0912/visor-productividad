@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, BarChart3, Boxes, ChevronRight } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
@@ -8,6 +9,15 @@ import {
   type PortalSectionId,
 } from "@/lib/shared/portal-sections";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import {
+  TUTORIAL_LOCAL_STORAGE_KEYS,
+  TUTORIAL_STATE_KEYS,
+} from "@/lib/ui/tutorial-keys";
+import { PORTAL_SECTIONS_TOUR_ANCHOR } from "@/lib/ui/portal-tours/sections-anchors";
+import { buildPortalSectionsTourSteps } from "@/lib/ui/portal-tours/sections-tour-steps";
+import "driver.js/dist/driver.css";
+import "@/lib/ui/product-tour/product-tour.css";
 
 const SECTION_STYLES: Record<
   PortalSectionId,
@@ -55,14 +65,12 @@ const SECTION_STYLES: Record<
   },
 };
 
-/** Texto ceja bajo el contador, alineado a los hubs por sección. */
 const SECTION_EYEBROW: Record<PortalSectionId, string> = {
   venta: "Venta • Enfoque • Resultado",
   producto: "Producto • Enfoque • Causa",
   operacion: "Operación • Enfoque • Ejecución",
 };
 
-/** Etiqueta en la pastilla (con viñeta al inicio). */
 const SECTION_BADGE_TAG: Record<PortalSectionId, string> = {
   venta: "VENTA",
   producto: "PRODUCTO",
@@ -79,8 +87,34 @@ export default function SeccionesPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
+  const ready = status === "authenticated" && Boolean(user);
 
-  if (status !== "authenticated" || !user) {
+  const visibleSections = useMemo(() => {
+    if (!user) return [];
+    const allowedDashboards = user.allowedDashboards;
+    return isAdmin || allowedDashboards === null
+      ? PORTAL_SECTIONS
+      : PORTAL_SECTIONS.filter((section) =>
+          allowedDashboards.includes(section.id),
+        );
+  }, [user, isAdmin]);
+
+  const tourSteps = useMemo(
+    () => buildPortalSectionsTourSteps(visibleSections.map((s) => s.id)),
+    [visibleSections],
+  );
+
+  const { startTour } = useProductTour({
+    localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.portalSections,
+    stateKey: TUTORIAL_STATE_KEYS.portalSections,
+    steps: tourSteps,
+    theme: "portal",
+    userId: user?.id,
+    ready,
+    contentReady: visibleSections.length > 0,
+  });
+
+  if (!ready || !user) {
     return (
       <div className="min-h-screen bg-background px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-md rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
@@ -90,13 +124,6 @@ export default function SeccionesPage() {
     );
   }
 
-  const allowedDashboards = user.allowedDashboards;
-  const visibleSections =
-    isAdmin || allowedDashboards === null
-      ? PORTAL_SECTIONS
-      : PORTAL_SECTIONS.filter((section) =>
-          allowedDashboards.includes(section.id),
-        );
   const canAccessCronograma = hasSpecialRole("cronograma");
   const sectionCount = visibleSections.length;
 
@@ -107,9 +134,13 @@ export default function SeccionesPage() {
         isAdmin={isAdmin}
         username={user.username}
         sede={user.sede}
+        onTourHelp={startTour}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 lg:px-6">
-        <p className="max-w-5xl text-sm leading-6 text-slate-600">
+        <p
+          id={PORTAL_SECTIONS_TOUR_ANCHOR.intro}
+          className="max-w-5xl text-sm leading-6 text-slate-600"
+        >
           El Portal UAID integra en un solo entorno la vision completa del
           negocio a traves de tres dimensiones clave:{" "}
           <strong className="font-semibold text-slate-800">Venta</strong>,{" "}
@@ -119,7 +150,10 @@ export default function SeccionesPage() {
           la forma en que se ejecuta.
         </p>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div
+          id={PORTAL_SECTIONS_TOUR_ANCHOR.grid}
+          className="grid gap-4 lg:grid-cols-3"
+        >
           {visibleSections.map((section, index) => {
             const styles = SECTION_STYLES[section.id];
             const Icon = SECTION_ICONS[section.id];
@@ -131,6 +165,7 @@ export default function SeccionesPage() {
             return (
               <button
                 key={section.id}
+                id={PORTAL_SECTIONS_TOUR_ANCHOR.card(section.id)}
                 type="button"
                 onClick={() => router.push(section.href)}
                 className={`group relative flex min-h-[280px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 hover:-translate-y-1 hover:border-foreground/15 hover:shadow-floating ${styles.topBorderClass}`}

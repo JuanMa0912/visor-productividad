@@ -148,7 +148,7 @@ import { prepareRotacionExportData } from "./rotacion-export-fetch";
 import { useRotacionTour } from "./use-rotacion-tour";
 import { ROTACION_TOUR_ANCHOR } from "./rotacion-tour-anchors";
 import "driver.js/dist/driver.css";
-import "./rotacion-tour.css";
+import "@/lib/ui/product-tour/product-tour.css";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
 import {

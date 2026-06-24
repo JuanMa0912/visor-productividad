@@ -15,6 +15,14 @@ import {
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import { PORTAL_HUB_TOUR_CONFIG } from "@/lib/ui/portal-tours/hub-tour-config";
+import {
+  PORTAL_HUB_TOUR_ANCHOR,
+  buildPortalHubTourSteps,
+} from "@/lib/ui/portal-tours/hub-tour-steps";
+import "driver.js/dist/driver.css";
+import "@/lib/ui/product-tour/product-tour.css";
 
 const VENTA_MODULES: HubModuleItem[] = [
   {
@@ -46,18 +54,19 @@ const VENTA_MODULES: HubModuleItem[] = [
   },
 ];
 
+const hubTour = PORTAL_HUB_TOUR_CONFIG.venta;
+
 export default function VentaHubPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSection, hasSpecialRole } = usePermissions();
+  const ready = status === "authenticated" && Boolean(user);
 
-  // Si esta autenticado pero no tiene acceso a la seccion `venta`,
-  // lo mandamos al hub raiz.
   useEffect(() => {
-    if (status === "authenticated" && !hasSection("venta")) {
+    if (ready && !hasSection("venta")) {
       router.replace("/secciones");
     }
-  }, [status, hasSection, router]);
+  }, [ready, hasSection, router]);
 
   const allowedSubdashboards = user?.allowedSubdashboards ?? null;
   const visibleModules = useMemo(
@@ -72,14 +81,26 @@ export default function VentaHubPage() {
   );
 
   useEffect(() => {
-    if (status === "authenticated" && visibleModules.length === 0) {
+    if (ready && visibleModules.length === 0) {
       router.replace("/secciones");
     }
-  }, [status, router, visibleModules.length]);
+  }, [ready, router, visibleModules.length]);
+
+  const tourSteps = useMemo(() => buildPortalHubTourSteps("venta"), []);
+
+  const { startTour } = useProductTour({
+    localStorageKey: hubTour.localStorageKey,
+    stateKey: hubTour.stateKey,
+    steps: tourSteps,
+    theme: hubTour.theme,
+    userId: user?.id,
+    ready,
+    contentReady: visibleModules.length > 0,
+  });
 
   const canAccessCronograma = hasSpecialRole("cronograma");
 
-  if (status !== "authenticated" || !user) {
+  if (!ready || !user) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
@@ -97,6 +118,7 @@ export default function VentaHubPage() {
         username={user.username}
         sede={user.sede}
         showSeccionesShortcut
+        onTourHelp={startTour}
       />
       <PortalHubShell>
         <PortalHubHeroCard
@@ -106,12 +128,14 @@ export default function VentaHubPage() {
           title="Resultado comercial del negocio"
           description="Usa esta seccion para leer el desempeno comercial, seguir tendencias por sede e ingresar a los modulos que explican la venta por item."
           moduleCount={visibleModules.length}
+          tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.hero}
         />
         <PortalHubModuleGrid
           theme="venta"
           items={visibleModules}
           onNavigate={(href) => router.push(href)}
           columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.modules}
         />
       </PortalHubShell>
     </div>
