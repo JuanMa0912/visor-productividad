@@ -473,3 +473,66 @@ sudo journalctl -u visor --since "10 minutes ago" | grep -i "\[security\]"
 - 2FA / MFA en login (scope grande).
 - Restringir SSH al VM a IPs específicas (firewall GCP).
 - Limpiar registro DNS AAAA (IPv6) apuntando a Hostinger.
+
+---
+
+## 12. Ventas x ítem — lentitud (`/ventas-x-item`)
+
+### Diagnóstico rápido
+
+La carga principal es `mode=summary` (GROUP BY empresa, fecha, id_co, id_item). Sin los índices correctos en GCP, Postgres hace **seq scan + sort** y puede tardar minutos.
+
+En DevTools → Network, revisa el header **`X-Duration-Ms`** de la respuesta `mode=summary` (solo tiempo del query summary en el servidor).
+
+### Verificar índices en GCP
+
+```bash
+sudo -u visor bash -c 'set -a && source /opt/visor-productividad/.env.local && set +a && \
+  psql --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER" --dbname="$DB_NAME" \
+    -c "SELECT indexname FROM pg_indexes WHERE tablename = '\''ventas_item_diario'\'' AND indexname LIKE '\''ventas_item_diario_idx_%'\'' ORDER BY 1;"'
+```
+
+Deben existir al menos:
+
+| Índice | Rol |
+|--------|-----|
+| `ventas_item_diario_idx_fecha_empresa_expr` | Filtro `fecha_dcto` + expresión empresa |
+| `ventas_item_diario_idx_summary` | Soporte GROUP BY summary |
+| `ventas_item_diario_idx_summary_covering` | Index-only scan en agregación (INCLUDE) |
+
+Migraciones: `20260529_ventas_x_item_perf_indexes.sql` y `20260624_ventas_x_item_summary_covering_index.sql`.
+
+### Aplicar migraciones (si faltan)
+
+```bash
+cd /opt/visor-productividad
+sudo -u visor bash -c 'set -a && source .env.local && set +a && \
+  psql --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER" --dbname="$DB_NAME" \
+    -f db/migrations/20260529_ventas_x_item_perf_indexes.sql && \
+  psql --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER" --dbname="$DB_NAME" \
+    -f db/migrations/20260624_ventas_x_item_summary_covering_index.sql'
+```
+
+Luego deploy del código (validación de rango sin MIN/MAX global + sin ORDER BY en summary):
+
+```bash
+sudo -u visor git pull origin main
+sudo -u visor npm run build:server
+sudo systemctl restart visor
+```
+
+### EXPLAIN en GCP (opcional)
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT base.empresa, base.fecha_dcto, base.id_co, base.id_item,
+  MAX(base.descripcion), MAX(base.linea),
+  SUM(COALESCE(base.und_dia::numeric, 0)),
+  SUM(COALESCE(base.venta_sin_impuesto_dia::numeric, 0))
+FROM ventas_item_diario base
+WHERE base.fecha_dcto >= '20260601' AND base.fecha_dcto <= '20260615'
+  AND COALESCE(NULLIF(base.empresa_norm, ''), base.empresa) = ANY(ARRAY['mercamio','mtodo','bogota'])
+GROUP BY base.empresa, base.fecha_dcto, base.id_co, base.id_item;
+```
+
+Esperado con índices: **Index Scan** o **Index Only Scan** sobre `ventas_item_diario_idx_summary_covering`, no `Seq Scan`.

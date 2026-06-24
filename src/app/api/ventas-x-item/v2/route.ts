@@ -4,6 +4,7 @@ import { getDbPool } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 import {
   buildDateNotFoundError,
+  enrichVentasXItemAvailabilityBounds,
   getVentasXItemDateAvailability,
   validateVentasXItemDateRange,
 } from "@/lib/ventas/x-item-date-range";
@@ -189,10 +190,15 @@ export async function GET(request: Request) {
       const empresaClause = buildEmpresaWhereClause("", metaParams, empresas);
       if (empresaClause) metaWhere.push(empresaClause);
 
-      const availability = await getVentasXItemDateAvailability(client, {
-        whereClauses: metaWhere,
-        params: metaParams,
-      });
+      const availability = await getVentasXItemDateAvailability(
+        client,
+        {
+          whereClauses: metaWhere,
+          params: metaParams,
+        },
+        undefined,
+        { skipTotalCount: true },
+      );
 
       return withSession(
         NextResponse.json(
@@ -235,13 +241,29 @@ export async function GET(request: Request) {
         startCompact: validatedRange.startCompact,
         endCompact: validatedRange.endCompact,
       },
+      { skipGlobalBounds: true, skipTotalCount: true },
     );
 
-    const missingDateError = buildDateNotFoundError(
+    let missingDateError = buildDateNotFoundError(
       availability,
       validatedRange.start,
       validatedRange.end,
     );
+    if (missingDateError) {
+      const availabilityWithBounds = await enrichVentasXItemAvailabilityBounds(
+        client,
+        {
+          whereClauses: availabilityWhere,
+          params: availabilityParams,
+        },
+        availability,
+      );
+      missingDateError = buildDateNotFoundError(
+        availabilityWithBounds,
+        validatedRange.start,
+        validatedRange.end,
+      );
+    }
     if (missingDateError) {
       return withSession(
         NextResponse.json(missingDateError, { status: 400 }),
@@ -249,6 +271,7 @@ export async function GET(request: Request) {
     }
 
     if (mode === "summary") {
+      const summaryStartedAt = performance.now();
       const summaryParams: unknown[] = [
         validatedRange.startCompact,
         validatedRange.endCompact,
@@ -282,7 +305,6 @@ export async function GET(request: Request) {
         FROM ventas_item_diario base
         WHERE ${summaryWhere.join(" AND ")}
         GROUP BY base.empresa, base.fecha_dcto, base.id_co, base.id_item
-        ORDER BY base.fecha_dcto DESC, base.empresa, base.id_co, base.id_item
         `,
         summaryParams,
       );
@@ -308,7 +330,14 @@ export async function GET(request: Request) {
             range: { start: validatedRange.start, end: validatedRange.end },
             source: "database-v2-summary",
           },
-          { headers: { "Cache-Control": "no-store" } },
+          {
+            headers: {
+              "Cache-Control": "no-store",
+              "X-Duration-Ms": String(
+                Math.round(performance.now() - summaryStartedAt),
+              ),
+            },
+          },
         ),
       );
     }

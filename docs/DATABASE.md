@@ -81,6 +81,7 @@ Orden completo despues de `schema-auth.sql`:
 27. `20260619_rotacion_periodo_std_fix_groupby.sql`
 28. `20260622_margen_final.sql` (si aplica tablero margenes nuevo)
 29. `20260623_app_user_ui_state.sql`
+30. `20260624_ventas_x_item_summary_covering_index.sql`
 
 ## 4. Dominios y tablas
 
@@ -197,7 +198,8 @@ APIs relacionadas: `/api/rotacion`, `/api/rotacion-dos`,
 Migraciones:
 
 - `20260303_ventas_x_item.sql`: tablas base.
-- `20260529_ventas_x_item_perf_indexes.sql`: indices de rendimiento.
+- `20260529_ventas_x_item_perf_indexes.sql`: indices de rendimiento (filtro fecha+empresa, summary).
+- `20260624_ventas_x_item_summary_covering_index.sql`: indice covering para GROUP BY summary.
 
 APIs: `/api/ventas-x-item`, `/api/ventas-x-item/v2`.
 

@@ -57,6 +57,16 @@ type DateAvailabilityFilter = {
   params?: unknown[];
 };
 
+type DateAvailabilityOptions = {
+  /** mode=meta no usa totalRows en la UI; omitir COUNT(*) evita seq scan global. */
+  skipTotalCount?: boolean;
+  /**
+   * Con rango pedido (summary/default): solo `EXISTS` en [start,end], sin MIN/MAX
+   * globales. Evita un seq scan extra antes del GROUP BY pesado.
+   */
+  skipGlobalBounds?: boolean;
+};
+
 export const isIsoDateKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 export const isoDateToCompactDate = (value: string) => value.replace(/-/g, "");
@@ -153,6 +163,7 @@ export const getVentasXItemDateAvailability = async (
   client: DbLikeClient,
   filter: DateAvailabilityFilter = {},
   requestedRange?: { startCompact: string; endCompact: string },
+  options: DateAvailabilityOptions = {},
 ): Promise<VentasXItemDateAvailability> => {
   const params = [...(filter.params ?? [])];
   const baseWhere = filter.whereClauses ?? [];
@@ -168,7 +179,9 @@ export const getVentasXItemDateAvailability = async (
    */
   let hasStartSql = "FALSE";
   let hasEndSql = "FALSE";
-  let totalRowsSql = "COUNT(*) AS total_rows";
+  let totalRowsSql = options.skipTotalCount
+    ? "0::bigint AS total_rows"
+    : "COUNT(*)::bigint AS total_rows";
 
   if (requestedRange) {
     const existsClauses = [
@@ -194,7 +207,16 @@ export const getVentasXItemDateAvailability = async (
     baseWhere.length > 0 ? `WHERE ${baseWhere.join(" AND ")}` : "";
 
   const result = await client.query(
+    options.skipGlobalBounds && requestedRange
+      ? `
+    SELECT
+      NULL::text AS min_fecha,
+      NULL::text AS max_fecha,
+      ${totalRowsSql},
+      ${hasStartSql} AS has_start,
+      ${hasEndSql} AS has_end
     `
+      : `
     SELECT
       MIN(fecha_dcto)::text AS min_fecha,
       MAX(fecha_dcto)::text AS max_fecha,
@@ -219,5 +241,24 @@ export const getVentasXItemDateAvailability = async (
     totalRows: Number(row?.total_rows ?? 0),
     hasStart: Boolean(row?.has_start),
     hasEnd: Boolean(row?.has_end),
+  };
+};
+
+/** Completa min/max para mensajes DATE_NOT_FOUND cuando se omitieron bounds globales. */
+export const enrichVentasXItemAvailabilityBounds = async (
+  client: DbLikeClient,
+  filter: DateAvailabilityFilter,
+  availability: VentasXItemDateAvailability,
+): Promise<VentasXItemDateAvailability> => {
+  if (availability.minDate && availability.maxDate) return availability;
+  const bounds = await getVentasXItemDateAvailability(client, filter, undefined, {
+    skipTotalCount: true,
+  });
+  return {
+    ...availability,
+    minCompactDate: bounds.minCompactDate,
+    maxCompactDate: bounds.maxCompactDate,
+    minDate: bounds.minDate,
+    maxDate: bounds.maxDate,
   };
 };
