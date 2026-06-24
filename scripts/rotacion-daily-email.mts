@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import nodemailer from "nodemailer";
+import { buildSmtpTransportOptions, resolveSmtpPort } from "@/lib/shared/smtp-transport";
 import { buildRotacionCriticalDigest } from "@/lib/rotacion/critical-digest";
 import {
   buildRotacionCriticalDigestHtml,
@@ -71,22 +72,13 @@ const buildSmtpTransporter = (
   smtpPort: number,
   smtpUser: string,
   smtpPassword: string,
-) => {
-  const authMethod = process.env.SMTP_AUTH_METHOD?.trim();
-  return nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort === 465,
-    requireTLS: smtpPort === 587,
-    auth: { user: smtpUser, pass: smtpPassword },
-    ...(authMethod ? { authMethod } : {}),
-    tls: {
-      minVersion: "TLSv1.2",
-      rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== "false",
-      servername: process.env.SMTP_TLS_SERVERNAME?.trim() || undefined,
-    },
-  });
-};
+) =>
+  nodemailer.createTransport(
+    buildSmtpTransportOptions(smtpHost, smtpPort, {
+      user: smtpUser,
+      pass: smtpPassword,
+    }),
+  );
 
 const main = async () => {
   const envFile =
@@ -95,7 +87,7 @@ const main = async () => {
 
   const dryRun = isTruthy(process.env.ROTACION_EMAIL_DRY_RUN);
   const smtpHost = process.env.SMTP_HOST?.trim();
-  const smtpPort = Number(process.env.SMTP_PORT ?? 587);
+  const smtpPort = resolveSmtpPort(process.env.SMTP_PORT);
   const smtpUser =
     process.env.SMTP_AUTH_USER?.trim() || process.env.SMTP_USER?.trim();
   const smtpPassword = process.env.SMTP_PASSWORD;

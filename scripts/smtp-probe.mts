@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import nodemailer from "nodemailer";
+import {
+  buildSmtpTransportOptions,
+  resolveSmtpPort,
+} from "@/lib/shared/smtp-transport";
 
 const parseEnvValue = (raw: string) => {
   let value = raw.trim();
@@ -56,17 +60,13 @@ const tryVerify = async (
   user: string | null,
   pass: string | null,
 ) => {
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    requireTLS: port === 587,
-    ...(user && pass ? { auth: { user, pass } } : {}),
-    tls: {
-      minVersion: "TLSv1.2",
-      rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== "false",
-    },
-  });
+  const transporter = nodemailer.createTransport(
+    buildSmtpTransportOptions(
+      host,
+      port,
+      user && pass ? { user, pass } : undefined,
+    ),
+  );
   try {
     await transporter.verify();
     console.log(`[OK] ${label}`);
@@ -89,17 +89,30 @@ const main = async () => {
   const pass = process.env.SMTP_PASSWORD ?? "";
   const email = process.env.SMTP_USER?.trim() ?? "";
   const localPart = email.includes("@") ? email.split("@")[0] : email;
+  const configuredHost = process.env.SMTP_HOST?.trim();
+  const configuredPort = process.env.SMTP_PORT
+    ? resolveSmtpPort(process.env.SMTP_PORT)
+    : null;
   const hosts = Array.from(
     new Set(
       [
-        process.env.SMTP_HOST?.trim(),
+        configuredHost,
         "smtp.mercamio.com",
         "imap.mercamio.com",
         "correo.mercamio.com",
       ].filter(Boolean) as string[],
     ),
   );
-  const ports = [587, 465];
+  const ports = Array.from(
+    new Set(
+      [
+        configuredPort,
+        3465,
+        587,
+        465,
+      ].filter((value): value is number => value !== null),
+    ),
+  );
   const users = Array.from(
     new Set([email, localPart, `${localPart}@mercamio.com.co`].filter(Boolean)),
   );
@@ -110,6 +123,9 @@ const main = async () => {
   }
 
   console.log(`Contraseña leída: ${pass.length} caracteres`);
+  console.log(
+    "Puertos Mercamio (sistemas): SMTP 3465 · IMAP 3993 (solo referencia; envío usa SMTP).",
+  );
   console.log("Probando combinaciones SMTP (solo verify, sin enviar)...\n");
 
   let anyOk = false;
@@ -144,9 +160,10 @@ const main = async () => {
     console.log(
       [
         "\nNinguna combinación autenticó.",
-        "Probado desde PC y desde app-server: mismo 535 → no es bloqueo por IP.",
-        "Siguiente paso: pedir a sistemas host/puerto SMTP para envío programático",
-        "o relay interno desde esta VM (192.168.35.232).",
+        "Mercamio (sistemas): SMTP 3465, IMAP 3993.",
+        "En .env.local: SMTP_HOST=smtp.mercamio.com SMTP_PORT=3465",
+        "Si falla TLS: SMTP_TLS_REJECT_UNAUTHORIZED=false",
+        "Si el puerto usa SSL directo: SMTP_SECURE=true",
       ].join("\n"),
     );
     process.exit(1);

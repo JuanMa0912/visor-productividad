@@ -23,10 +23,17 @@ Por sede, con la misma lógica que `/rotacion`:
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | servidor SMTP |
 | `SMTP_FROM` | remitente (opcional; default `SMTP_USER`) |
 
-**Mercamio (Zimbra):** `SMTP_HOST=smtp.mercamio.com` (webmail en
-`correo.mercamio.com`), puerto `587`. Si `587` falla, probar `465` con
-`SMTP_PORT=465`. La contraseña con `#` o `=` debe ir entre comillas en
-`.env.local`.
+**Mercamio (Zimbra):** según sistemas, **SMTP `3465`** e **IMAP `3993`**
+(solo referencia). Envío programático:
+
+```env
+SMTP_HOST=smtp.mercamio.com
+SMTP_PORT=3465
+```
+
+Webmail: `correo.mercamio.com`. El puerto **3465** usa **SMTPS** (TLS directo,
+como `465`); no usar `587` salvo que sistemas indique lo contrario. **IMAP
+3993** es solo lectura de buzón, no aplica al envío.
 | `ROTACION_EMAIL_FLORESTA_TO` | destinatarios Floresta, separados por coma |
 | `ROTACION_EMAIL_DRY_RUN` | `true` imprime en consola sin enviar |
 | `ENV_FILE` | default `/opt/visor-productividad/.env.local` |
@@ -92,7 +99,7 @@ Antes del primer envío, agrega en `/opt/visor-productividad/.env.local` (como
 
 ```env
 SMTP_HOST=smtp.mercamio.com
-SMTP_PORT=587
+SMTP_PORT=3465
 SMTP_USER=notificaciones.uaid@mercamio.com
 SMTP_PASSWORD='...'
 SMTP_FROM="Notificaciones UAID <notificaciones.uaid@mercamio.com>"
