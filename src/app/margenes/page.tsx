@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Loader2 } from "lucide-react";
+import { AppTopBar } from "@/components/portal/app-top-bar";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 
 type MargenMeta = {
@@ -71,8 +72,11 @@ export default function MargenesPage() {
 
   if (status !== "authenticated" || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0d0f18] text-[#dde3f0]">
-        <Loader2 className="h-6 w-6 animate-spin text-[#4f8ef7]" />
+      <div className="flex min-h-screen flex-col bg-[#0d0f18] text-[#dde3f0]">
+        <AppTopBar />
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-[#4f8ef7]" />
+        </div>
       </div>
     );
   }
@@ -84,6 +88,7 @@ export default function MargenesPage() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f18] text-[13px] text-[#dde3f0]">
+      <AppTopBar />
       <header className="flex shrink-0 items-center gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2.5">
         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-[#4f8ef7] to-[#a78bfa]">
           <BarChart3 className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
