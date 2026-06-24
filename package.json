@@ -20,6 +20,7 @@
     "db:test:postgres": "node scripts/test-db-postgres.js",
     "benchmark:apis": "node scripts/benchmark-portal-apis.mjs",
     "benchmark:rotacion-sql": "node scripts/benchmark-rotacion.mjs",
+    "benchmark:ventas-x-item": "node scripts/benchmark-ventas-x-item.mjs",
     "rotacion:email": "tsx scripts/rotacion-daily-email.mts",
     "smtp:probe": "tsx scripts/smtp-probe.mts"
   },
