@@ -210,17 +210,25 @@ const getAvailableDateRange = async () => {
   const client = await (await getDbPool()).connect();
   try {
     const { dateColumn } = await resolveRotacionBaseSqlFields(client);
+    const minMaxSelect =
+      dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
+        ? `TO_CHAR(MIN(${dateColumn}::date), 'YYYYMMDD')`
+        : `MIN(${dateColumn})`;
+    const maxSelect =
+      dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
+        ? `TO_CHAR(MAX(${dateColumn}::date), 'YYYYMMDD')`
+        : `MAX(${dateColumn})`;
+    const dateWhere =
+      dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
+        ? `${dateColumn} IS NOT NULL`
+        : `${dateColumn} ~ '^[0-9]{8}$'`;
     const result = await client.query(
       `
       SELECT
-        MIN(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
-        MAX(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
+        ${minMaxSelect} AS min_date,
+        ${maxSelect} AS max_date
       FROM rotacion_base_item_dia_sede
-      WHERE ${
-        dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
-          ? `${dateColumn} IS NOT NULL`
-          : `${dateColumn} ~ '^[0-9]{8}$'`
-      }
+      WHERE ${dateWhere}
       `,
     );
 
@@ -600,6 +608,127 @@ const queryInventorySummaryRows = async ({
   }
 };
 
+const appendMatrixDimensionFilters = ({
+  fields,
+  params,
+  whereClauses,
+  empresas,
+  sedes,
+  lines,
+  subcategory,
+}: {
+  fields: RotacionBaseSqlFields;
+  params: Array<string | string[] | null>;
+  whereClauses: string[];
+  empresas: string[];
+  sedes: string[];
+  lines: InventoryLineFilter[];
+  subcategory: InventarioSubcategoryKey | null;
+}) => {
+  params.push(empresas.length > 0 ? empresas : null);
+  const empresaParam = params.length;
+  params.push(sedes.length > 0 ? sedes : null);
+  const sedeParam = params.length;
+
+  whereClauses.push(
+    fields.itemPresentCondition,
+    `($${empresaParam}::text[] IS NULL OR ${fields.empresaExpr} = ANY($${empresaParam}::text[]))`,
+    `($${sedeParam}::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($${sedeParam}::text[]))`,
+    buildHiddenSedeWhereClause(fields.sedeNameExpr),
+  );
+
+  if (subcategory === "perecederos") {
+    whereClauses.push(
+      `COALESCE(${fields.n1CodeExpr}, 'sin_codigo') IN ('01', '02', '03', '04', '12')`,
+    );
+  } else if (subcategory === "manufacturas") {
+    whereClauses.push(
+      `COALESCE(${fields.n1CodeExpr}, 'sin_codigo') NOT IN ('01', '02', '03', '04', '12')`,
+    );
+  }
+
+  if (lines.length > 0) {
+    const lineConditions = lines.map((line) => {
+      params.push(line.lineaName.toLowerCase());
+      const lineNameParam = params.length;
+
+      if (line.lineaN1Codigo) {
+        params.push(line.lineaN1Codigo);
+        const lineCodeParam = params.length;
+        return `(
+          LOWER(${fields.lineExpr}) = $${lineNameParam}
+          AND COALESCE(${fields.n1CodeExpr}, 'sin_codigo') = $${lineCodeParam}
+        )`;
+      }
+
+      return `(
+        LOWER(${fields.lineExpr}) = $${lineNameParam}
+        AND ${fields.n1CodeExpr} IS NULL
+      )`;
+    });
+
+    whereClauses.push(`(${lineConditions.join(" OR ")})`);
+  }
+};
+
+/**
+ * Top 10 items por valor de inventario en la fecha fin del rango (1 dia).
+ * Se usa para acotar `scoped` antes del window function en mode=table.
+ */
+const resolveDefaultMatrixItems = async ({
+  client,
+  dateEndCompact,
+  empresas,
+  sedes,
+  lines,
+  subcategory,
+  precomputedFields,
+}: {
+  client: import("pg").PoolClient;
+  dateEndCompact: string;
+  empresas: string[];
+  sedes: string[];
+  lines: InventoryLineFilter[];
+  subcategory: InventarioSubcategoryKey | null;
+  precomputedFields: RotacionBaseSqlFields;
+}): Promise<string[]> => {
+  const fields = precomputedFields;
+  const dateColumn = fields.dateColumn;
+  const params: Array<string | string[] | null> = [dateEndCompact];
+  const whereClauses = [buildEndDateEqualsSql(dateColumn)];
+
+  appendMatrixDimensionFilters({
+    fields,
+    params,
+    whereClauses,
+    empresas,
+    sedes,
+    lines,
+    subcategory,
+  });
+
+  const result = await client.query(
+    `
+    SELECT ${fields.itemExpr} AS item
+    FROM rotacion_base_item_dia_sede
+    WHERE ${whereClauses.join("\n      AND ")}
+    GROUP BY ${fields.itemExpr}
+    HAVING
+      SUM(${fields.closingUnitsExpr}) > 0
+      OR SUM(${fields.inventoryValueExpr}) > 0
+    ORDER BY
+      SUM(${fields.inventoryValueExpr}) DESC NULLS LAST,
+      ${fields.itemExpr} ASC
+    LIMIT 10
+    `,
+    params,
+  );
+
+  return ((result.rows ?? []) as Array<{ item: string | null }>)
+    .map((row) => row.item ?? "")
+    .filter(Boolean);
+};
+
 const queryInventoryMatrixRows = async ({
   dateRangeCompact,
   empresas,
@@ -622,85 +751,44 @@ const queryInventoryMatrixRows = async ({
     const fields =
       precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
     const dateColumn = fields.dateColumn;
+
+    let matrixItems = items;
+    if (matrixItems.length === 0) {
+      matrixItems = await resolveDefaultMatrixItems({
+        client,
+        dateEndCompact: dateRangeCompact.end,
+        empresas,
+        sedes,
+        lines,
+        subcategory,
+        precomputedFields: fields,
+      });
+    }
+    if (matrixItems.length === 0) {
+      return [];
+    }
+
     const params: Array<string | string[] | null> = [
       dateRangeCompact.start,
       dateRangeCompact.end,
-      empresas.length > 0 ? empresas : null,
-      sedes.length > 0 ? sedes : null,
     ];
+    const whereClauses = [buildCompactDateRangeSql(dateColumn)];
 
-    const whereClauses = [
-      buildCompactDateRangeSql(dateColumn),
-      fields.itemPresentCondition,
-      `($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))`,
-      `($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))`,
-      // Excluye sedes administrativas / centros de distribucion antes del window function,
-      // alineado con HIDDEN_SEDE_KEYS y el filtro defensivo posterior en Node.
-      buildHiddenSedeWhereClause(fields.sedeNameExpr),
-    ];
+    appendMatrixDimensionFilters({
+      fields,
+      params,
+      whereClauses,
+      empresas,
+      sedes,
+      lines,
+      subcategory,
+    });
 
-    if (subcategory === "perecederos") {
-      whereClauses.push(
-        `COALESCE(${fields.n1CodeExpr}, 'sin_codigo') IN ('01', '02', '03', '04', '12')`,
-      );
-    } else if (subcategory === "manufacturas") {
-      whereClauses.push(
-        `COALESCE(${fields.n1CodeExpr}, 'sin_codigo') NOT IN ('01', '02', '03', '04', '12')`,
-      );
-    }
+    params.push(matrixItems);
+    whereClauses.push(`${fields.itemExpr} = ANY($${params.length}::text[])`);
 
-    if (lines.length > 0) {
-      const lineConditions = lines.map((line) => {
-        params.push(line.lineaName.toLowerCase());
-        const lineNameParam = params.length;
+    const matrixStartedAt = performance.now();
 
-        if (line.lineaN1Codigo) {
-          params.push(line.lineaN1Codigo);
-          const lineCodeParam = params.length;
-          return `(
-            LOWER(${fields.lineExpr}) = $${lineNameParam}
-            AND COALESCE(${fields.n1CodeExpr}, 'sin_codigo') = $${lineCodeParam}
-          )`;
-        }
-
-        return `(
-          LOWER(${fields.lineExpr}) = $${lineNameParam}
-          AND ${fields.n1CodeExpr} IS NULL
-        )`;
-      });
-
-      whereClauses.push(`(${lineConditions.join(" OR ")})`);
-    }
-
-    const itemFilterParam =
-      items.length > 0 ? (() => {
-        params.push(items);
-        return params.length;
-      })() : null;
-
-    // Cuando el usuario ya filtro por items concretos, no tiene sentido evaluar el
-    // CTE `top_items` (un GROUP BY + ORDER BY SUM(...) DESC sobre `ranked`).
-    // En ese caso lo omitimos por completo y filtramos directo en `aggregated`.
-    const topItemsCte = itemFilterParam
-      ? ""
-      : `,
-      top_items AS (
-        SELECT item
-        FROM ranked
-        WHERE consulta_date = latest_consulta_date
-        GROUP BY item
-        ORDER BY SUM(inventory_value) DESC NULLS LAST, item ASC
-        LIMIT 10
-      )`;
-
-    const itemMembershipClause = itemFilterParam
-      ? `item = ANY($${itemFilterParam}::text[])`
-      : "item IN (SELECT item FROM top_items)";
-
-    // Window function: para el dataset real (millones de filas con muchos PARTITION BY),
-    // resulta mas rapida que un GROUP BY + INNER JOIN porque Postgres resuelve MAX OVER
-    // en un solo pass ordenado y evita el hash join sobre tablas materializadas grandes.
-    // Probamos la variante con CTE `latest_dates` + JOIN y resulto 6x mas lenta.
     const result = await client.query(
       `
       WITH scoped AS (
@@ -728,7 +816,7 @@ const queryInventoryMatrixRows = async ({
             PARTITION BY empresa, sede_id, item
           ) AS latest_consulta_date
         FROM scoped
-      )${topItemsCte},
+      ),
       aggregated AS (
         SELECT
           empresa,
@@ -754,7 +842,6 @@ const queryInventoryMatrixRows = async ({
             END
           )::numeric AS inventory_value
         FROM ranked
-        WHERE ${itemMembershipClause}
         GROUP BY
           empresa,
           sede_id,
@@ -794,6 +881,11 @@ const queryInventoryMatrixRows = async ({
         item ASC
       `,
       params,
+    );
+
+    const matrixDurationMs = Math.round(performance.now() - matrixStartedAt);
+    console.info(
+      `[inventario-x-item] matrix query ${matrixDurationMs}ms items=${matrixItems.length}`,
     );
 
     return ((result.rows ?? []) as InventoryMatrixDbRow[])

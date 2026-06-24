@@ -89,8 +89,8 @@ try {
 
   await timed("meta MIN/MAX fechas", () =>
     client.query(`
-      SELECT MIN(TO_CHAR(fecha_dia::date, 'YYYYMMDD')) AS min_date,
-             MAX(TO_CHAR(fecha_dia::date, 'YYYYMMDD')) AS max_date
+      SELECT TO_CHAR(MIN(fecha_dia::date), 'YYYYMMDD') AS min_date,
+             TO_CHAR(MAX(fecha_dia::date), 'YYYYMMDD') AS max_date
       FROM rotacion_base_item_dia_sede WHERE fecha_dia IS NOT NULL
     `),
   );
@@ -133,7 +133,26 @@ try {
   );
   console.log(`  filas filters: ${(filters.rows ?? []).length}`);
 
-  const { result: matrix } = await timed("mode=table matrix (rango + window fn)", () =>
+  const { result: topItems } = await timed("prefetch top 10 items (fecha fin)", () =>
+    client.query(
+      `
+      SELECT ${fields.itemExpr} AS item
+      FROM rotacion_base_item_dia_sede
+      WHERE ${buildEndDateEqualsSql(dateColumn)}
+        AND ${fields.itemPresentCondition}
+        AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
+      GROUP BY ${fields.itemExpr}
+      HAVING SUM(${fields.closingUnitsExpr}) > 0 OR SUM(${fields.inventoryValueExpr}) > 0
+      ORDER BY SUM(${fields.inventoryValueExpr}) DESC NULLS LAST, ${fields.itemExpr} ASC
+      LIMIT 10
+      `,
+      [endCompact],
+    ),
+  );
+  const matrixItemIds = (topItems.rows ?? []).map((r) => r.item).filter(Boolean);
+  console.log(`  top items: ${matrixItemIds.length}`);
+
+  const { result: matrix } = await timed("mode=table matrix (rango acotado a top 10)", () =>
     client.query(
       `
       WITH scoped AS (
@@ -146,6 +165,46 @@ try {
           ${fields.itemExpr} AS item,
           ${fields.descriptionExpr} AS descripcion,
           ${fields.unitExpr} AS unidad,
+          ${fields.closingUnitsExpr} AS inventory_units,
+          ${fields.inventoryValueExpr} AS inventory_value,
+          ${fields.unitsSoldExpr} AS total_units,
+          ${buildConsultaDateSql(dateColumn)} AS consulta_date
+        FROM rotacion_base_item_dia_sede
+        WHERE ${buildCompactDateRangeSql(dateColumn)}
+          AND ${fields.itemPresentCondition}
+          AND ${fields.itemExpr} = ANY($3::text[])
+          AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
+      ),
+      ranked AS (
+        SELECT *,
+          MAX(consulta_date) OVER (PARTITION BY empresa, sede_id, item) AS latest_consulta_date
+        FROM scoped
+      ),
+      aggregated AS (
+        SELECT empresa, sede_id, sede_name, linea, linea_n1_codigo, item, descripcion, unidad,
+          SUM(total_units)::numeric AS total_units,
+          COUNT(DISTINCT consulta_date)::int AS tracked_days,
+          SUM(CASE WHEN consulta_date = latest_consulta_date THEN inventory_units ELSE 0 END)::numeric AS inventory_units,
+          SUM(CASE WHEN consulta_date = latest_consulta_date THEN inventory_value ELSE 0 END)::numeric AS inventory_value
+        FROM ranked
+        GROUP BY empresa, sede_id, sede_name, linea, linea_n1_codigo, item, descripcion, unidad
+      )
+      SELECT * FROM aggregated
+      WHERE inventory_units > 0 OR inventory_value > 0
+      `,
+      [startCompact, endCompact, matrixItemIds],
+    ),
+  );
+  console.log(`  filas matrix (top 10 items): ${(matrix.rows ?? []).length}`);
+
+  await timed("mode=table matrix LEGACY (sin prefetch, referencia)", () =>
+    client.query(
+      `
+      WITH scoped AS (
+        SELECT
+          ${fields.empresaExpr} AS empresa,
+          ${fields.sedeIdExpr} AS sede_id,
+          ${fields.itemExpr} AS item,
           ${fields.closingUnitsExpr} AS inventory_units,
           ${fields.inventoryValueExpr} AS inventory_value,
           ${fields.unitsSoldExpr} AS total_units,
@@ -168,22 +227,17 @@ try {
         LIMIT 10
       ),
       aggregated AS (
-        SELECT empresa, sede_id, sede_name, linea, linea_n1_codigo, item, descripcion, unidad,
-          SUM(total_units)::numeric AS total_units,
-          COUNT(DISTINCT consulta_date)::int AS tracked_days,
-          SUM(CASE WHEN consulta_date = latest_consulta_date THEN inventory_units ELSE 0 END)::numeric AS inventory_units,
+        SELECT item,
           SUM(CASE WHEN consulta_date = latest_consulta_date THEN inventory_value ELSE 0 END)::numeric AS inventory_value
         FROM ranked
         WHERE item IN (SELECT item FROM top_items)
-        GROUP BY empresa, sede_id, sede_name, linea, linea_n1_codigo, item, descripcion, unidad
+        GROUP BY item
       )
-      SELECT * FROM aggregated
-      WHERE inventory_units > 0 OR inventory_value > 0
+      SELECT COUNT(*)::int AS n FROM aggregated
       `,
       [startCompact, endCompact],
     ),
   );
-  console.log(`  filas matrix (top 10 items): ${(matrix.rows ?? []).length}`);
 
   if (explain) {
     const plan = await client.query(
