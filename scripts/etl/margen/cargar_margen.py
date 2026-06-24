@@ -15,15 +15,11 @@ Config: UN solo .env.etl en la raiz del deploy, COMPARTIDO con sync-local-to-gcp
 (ver scripts/etl/env.etl.example). Override la ruta con ETL_ENV_FILE.
 El destino (produXdia 232) sale de DB_*_LOCAL; el origen POS (217) de DB_*_POS.
 
-Destinos: SIEMPRE local (DB_*_LOCAL). Con --gcp tambien sube a GCP (DB_*_GCP);
-mismo COPY del POS (una lectura, dos escrituras), borra-dia+inserta en ambos.
-
-Uso (python3 del sistema; el server no tiene venv):
-  python3 cargar_margen.py                       # ayer, solo local
-  python3 cargar_margen.py --gcp                 # ayer, local + GCP
-  python3 cargar_margen.py --date 20260623 --gcp # un dia, local + GCP
-  python3 cargar_margen.py --desde 20260601 --hasta 20260623 --gcp   # rango
-  python3 cargar_margen.py --dry-run             # solo cuenta filas en origen, no escribe
+Uso (idealmente con el python del venv):
+  python cargar_margen.py                       # ayer
+  python cargar_margen.py --date 20260623       # un dia
+  python cargar_margen.py --desde 20260601 --hasta 20260623   # rango / emergencia
+  python cargar_margen.py --dry-run             # solo cuenta filas en origen, no escribe
 
 Codigos de salida: 0 OK | 1 error | 2 uso invalido.
 """
@@ -178,42 +174,20 @@ def build_query(db: dict, fecha_ini: str, fecha_fin: str) -> str:
     )
 
 
-def _dsn_local(env: dict) -> dict:
-    return dict(
+def cargar(env: dict, desde: str, hasta: str, dry_run: bool) -> int:
+    src_host = require(env, "DB_HOST_POS")
+    src_port = env.get("DB_PORT_POS", "5432")
+    tgt_dsn = dict(
         host=require(env, "DB_HOST_LOCAL"), port=env.get("DB_PORT_LOCAL", "5432"),
         dbname=require(env, "DB_NAME_LOCAL"), user=require(env, "DB_USER_LOCAL"),
         password=require(env, "DB_PASSWORD_LOCAL"),
     )
 
-
-def _dsn_gcp(env: dict) -> dict:
-    raw = (env.get("DB_SSL_GCP") or "require").strip().lower()
-    sslmode = "disable" if raw in ("false", "0", "disable") else "require"
-    return dict(
-        host=require(env, "DB_HOST_GCP"), port=env.get("DB_PORT_GCP", "5432"),
-        dbname=require(env, "DB_NAME_GCP"), user=require(env, "DB_USER_GCP"),
-        password=require(env, "DB_PASSWORD_GCP"), sslmode=sslmode,
-    )
-
-
-def cargar(env: dict, desde: str, hasta: str, dry_run: bool, to_gcp: bool) -> int:
-    src_host = require(env, "DB_HOST_POS")
-    src_port = env.get("DB_PORT_POS", "5432")
-
-    # Destinos: local siempre; GCP si --gcp. Si GCP no conecta, se sigue con local.
-    conns = []  # [(nombre, conexion)]
-    if not dry_run:
-        conns.append(("local", psycopg2.connect(**_dsn_local(env))))
-        if to_gcp:
-            try:
-                conns.append(("gcp", psycopg2.connect(**_dsn_gcp(env))))
-            except Exception as e:  # noqa: BLE001
-                log(f"WARN: no pude conectar a GCP ({e}); se carga SOLO local.")
-        for _, c in conns:
-            c.autocommit = False
-
     total = 0
+    tgt = None if dry_run else psycopg2.connect(**tgt_dsn)
     try:
+        if tgt:
+            tgt.autocommit = False
         for db in EMPRESAS:
             pwd = require(env, db["pwd_env"])
             with psycopg2.connect(host=src_host, port=src_port, dbname=db["db"],
@@ -227,32 +201,30 @@ def cargar(env: dict, desde: str, hasta: str, dry_run: bool, to_gcp: bool) -> in
                         log(f"[{db['empresa']} {dia}] DRY-RUN: {n} filas en origen")
                         total += n
                         continue
-                    # 1) COPY out del origen UNA vez (formato texto = NULL-safe)
+                    # 1) COPY out del origen a un buffer (formato texto = NULL-safe)
                     buf = io.StringIO()
                     with src.cursor() as sc:
                         sc.copy_expert(f"COPY ({q}) TO STDOUT", buf)
-                    # 2) a cada destino: borra-dia+empresa + COPY, transaccional
-                    rows = 0
-                    for name, conn in conns:
-                        buf.seek(0)
-                        try:
-                            with conn.cursor() as tc:
-                                tc.execute(
-                                    "DELETE FROM margen_final WHERE fecha_dcto = %s AND empresa = %s",
-                                    (dia, db["empresa"]),
-                                )
-                                tc.copy_expert(f"COPY margen_final ({COLS}) FROM STDIN", buf)
-                                rows = tc.rowcount
-                            conn.commit()
-                            log(f"[{db['empresa']} {dia} -> {name}] cargadas {rows} filas")
-                        except Exception:
-                            conn.rollback()
-                            raise
-                    total += rows
+                    buf.seek(0)
+                    # 2) reemplazar el dia+empresa en destino e insertar, transaccional
+                    with tgt.cursor() as tc:
+                        tc.execute(
+                            "DELETE FROM margen_final WHERE fecha_dcto = %s AND empresa = %s",
+                            (dia, db["empresa"]),
+                        )
+                        tc.copy_expert(f"COPY margen_final ({COLS}) FROM STDIN", buf)
+                        n = tc.rowcount
+                    tgt.commit()
+                    log(f"[{db['empresa']} {dia}] cargadas {n} filas")
+                    total += n
         return total
+    except Exception:
+        if tgt:
+            tgt.rollback()
+        raise
     finally:
-        for _, c in conns:
-            c.close()
+        if tgt:
+            tgt.close()
 
 
 def main() -> int:
@@ -261,8 +233,6 @@ def main() -> int:
     ap.add_argument("--desde", type=valid_date, help="inicio del rango YYYYMMDD")
     ap.add_argument("--hasta", type=valid_date, help="fin del rango YYYYMMDD")
     ap.add_argument("--dry-run", action="store_true", help="solo cuenta filas en origen")
-    ap.add_argument("--gcp", action="store_true",
-                    help="ademas de local, sube tambien a GCP (DB_*_GCP del .env.etl)")
     args = ap.parse_args()
 
     if args.date and (args.desde or args.hasta):
@@ -279,13 +249,11 @@ def main() -> int:
         desde = hasta = ayer
 
     env = load_env(ENV_FILE)
-    destinos = f"{env.get('DB_HOST_LOCAL')}/{env.get('DB_NAME_LOCAL')}"
-    if args.gcp:
-        destinos += f"  +  GCP {env.get('DB_HOST_GCP')}/{env.get('DB_NAME_GCP')}"
-    log(f"=== ETL margenes | [{desde}..{hasta}] | dry_run={args.dry_run} | gcp={args.gcp} ===")
-    log(f"Origen POS: {env.get('DB_HOST_POS')} (mercamio/mtodo/bogota)  ->  Destino(s): {destinos}")
+    log(f"=== ETL margenes | [{desde}..{hasta}] | dry_run={args.dry_run} ===")
+    log(f"Origen POS: {env.get('DB_HOST_POS')} (mercamio/mtodo/bogota)  ->  "
+        f"Destino: {env.get('DB_HOST_LOCAL')}/{env.get('DB_NAME_LOCAL')}.margen_final")
     try:
-        total = cargar(env, desde, hasta, args.dry_run, args.gcp)
+        total = cargar(env, desde, hasta, args.dry_run)
     except Exception as e:  # noqa: BLE001
         log(f"ERROR: {e}")
         return 1

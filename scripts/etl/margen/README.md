@@ -6,8 +6,9 @@ origen (**192.168.35.217**: mercamio / mtodo / bogota) a **`produXdia.margen_fin
 
 - **Estrategia:** por cada empresa y dia → `DELETE (fecha_dcto, empresa)` + **COPY
   postgres->postgres** (formato texto, NULL-safe). Idempotente: re-correr no duplica.
-- Carga a **local (232)** siempre; con `--gcp` tambien a **GCP** (mismo COPY del POS,
-  una lectura y dos escrituras, borra-dia+inserta en ambos lados).
+- Carga **solo a local (232)**. La replicacion a GCP la hace el sync local->GCP
+  (`sync-local-to-gcp.sh`, 07:50), que incluye `margen_final` en modo "replace"
+  (borra-ventana + inserta, por no tener clave natural).
 - Corre en el server (232) con `python3` del sistema (tiene `psycopg2-binary`; no hay venv).
 
 ## Config
@@ -24,32 +25,18 @@ Ver `scripts/etl/env.etl.example`. La ruta del `.env.etl` se puede sobreescribir
 
 ```bash
 cd /home/prodapp/visor-productividad
-python3 scripts/etl/margen/cargar_margen.py                       # ayer, solo local
-python3 scripts/etl/margen/cargar_margen.py --gcp                 # ayer, local + GCP
-python3 scripts/etl/margen/cargar_margen.py --date 20260623 --gcp # un dia, local + GCP
-python3 scripts/etl/margen/cargar_margen.py --desde 20260601 --hasta 20260623 --gcp  # rango
-python3 scripts/etl/margen/cargar_margen.py --date 20260623 --dry-run             # solo cuenta
+python3 scripts/etl/margen/cargar_margen.py                       # ayer
+python3 scripts/etl/margen/cargar_margen.py --date 20260623       # un dia
+python3 scripts/etl/margen/cargar_margen.py --desde 20260601 --hasta 20260623  # rango
+python3 scripts/etl/margen/cargar_margen.py --date 20260623 --dry-run          # solo cuenta
 ```
-
-`--gcp` toma las credenciales de GCP de `DB_*_GCP` (mismo `.env.etl`). Si GCP no
-conecta, sigue cargando solo local (avisa con WARN). Si GCP conecta pero falla la
-carga (p.ej. la tabla no existe alla), aborta con error 1.
 
 Codigos de salida: `0` OK | `1` error | `2` uso invalido.
-
-## Subir a GCP (una vez)
-
-Antes de usar `--gcp`, crea `margen_final` en GCP (igual que en local). Desde 232:
-```bash
-PGPASSWORD='LA_CLAVE_GCP' psql "host=34.73.63.145 port=5432 dbname=produxdia user=visor sslmode=require" \
-  -f db/migrations/20260622_margen_final.sql
-```
-Idempotente (`CREATE TABLE/INDEX IF NOT EXISTS`). Despues, `--gcp` carga a ambos.
 
 ## Programacion (systemd)
 
 Units en `deploy/systemd/`: `visor-etl-margen.{service,timer}` → **todos los dias 07:15**,
-carga el dia anterior a **local Y GCP** (el `ExecStart` usa `--gcp`).
+carga el dia anterior.
 
 ```bash
 cd /home/prodapp/visor-productividad
