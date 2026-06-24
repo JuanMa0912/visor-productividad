@@ -161,7 +161,7 @@ const main = async () => {
           "Checklist:",
           `· Host ${smtpHost}:${smtpPort} · usuario auth: ${smtpUser}`,
           `· Longitud contraseña leída: ${smtpPassword?.length ?? 0} caracteres`,
-          "· Si el webmail entra pero SMTP falla: suele ser IP externa bloqueada o contraseña distinta en .env.local",
+          "· Si el webmail entra pero SMTP falla con 535: la cuenta puede no tener SMTP habilitado (pedir a sistemas)",
           "· Prueba: npm run smtp:probe",
           "· O ejecuta desde la VM interna (192.168.35.232)",
         ].join("\n"),

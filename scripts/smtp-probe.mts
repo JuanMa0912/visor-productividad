@@ -53,15 +53,15 @@ const tryVerify = async (
   label: string,
   host: string,
   port: number,
-  user: string,
-  pass: string,
+  user: string | null,
+  pass: string | null,
 ) => {
   const transporter = nodemailer.createTransport({
     host,
     port,
     secure: port === 465,
     requireTLS: port === 587,
-    auth: { user, pass },
+    ...(user && pass ? { auth: { user, pass } } : {}),
     tls: {
       minVersion: "TLSv1.2",
       rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== "false",
@@ -128,9 +128,26 @@ const main = async () => {
     }
   }
 
+  console.log("\nRelay interno sin autenticación (puerto 25):");
+  for (const host of hosts) {
+    const ok = await tryVerify(
+      `${host}:25 · sin auth (relay interno)`,
+      host,
+      25,
+      null,
+      null,
+    );
+    anyOk = anyOk || ok;
+  }
+
   if (!anyOk) {
     console.log(
-      "\nNinguna combinación autenticó. Si el webmail funciona, pide a sistemas habilitar SMTP o prueba desde la VM interna.",
+      [
+        "\nNinguna combinación autenticó.",
+        "Probado desde PC y desde app-server: mismo 535 → no es bloqueo por IP.",
+        "Siguiente paso: pedir a sistemas host/puerto SMTP para envío programático",
+        "o relay interno desde esta VM (192.168.35.232).",
+      ].join("\n"),
     );
     process.exit(1);
   }
