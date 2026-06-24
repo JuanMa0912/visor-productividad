@@ -504,13 +504,24 @@ Migraciones: `20260529_ventas_x_item_perf_indexes.sql` y `20260624_ventas_x_item
 
 ### Aplicar migraciones (si faltan)
 
+Los scripts Node usan la misma logica SSL que la app (`DB_SSL` o SSL automatico si
+`DB_HOST` no es loopback). Si ves `pg_hba.conf rejects ... no encryption`, haz
+`git pull` y vuelve a correr con el script actualizado.
+
 ```bash
 cd /opt/visor-productividad
-sudo -u visor bash -c 'set -a && source .env.local && set +a && \
-  psql --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER" --dbname="$DB_NAME" \
-    -f db/migrations/20260529_ventas_x_item_perf_indexes.sql && \
-  psql --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER" --dbname="$DB_NAME" \
-    -f db/migrations/20260624_ventas_x_item_summary_covering_index.sql'
+sudo -u visor git pull origin main
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260529_ventas_x_item_perf_indexes.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260624_ventas_x_item_summary_covering_index.sql
+sudo -u visor npm run benchmark:ventas-x-item
+```
+
+Alternativa con `psql` (SSL explicito):
+
+```bash
+sudo -u visor bash -c 'set -a && source /opt/visor-productividad/.env.local && set +a && \
+  PGSSLMODE=require psql --host="$DB_HOST" --port="${DB_PORT:-5432}" --username="$DB_USER" --dbname="$DB_NAME" \
+    -f db/migrations/20260529_ventas_x_item_perf_indexes.sql'
 ```
 
 Luego deploy del código (validación de rango sin MIN/MAX global + sin ORDER BY en summary):

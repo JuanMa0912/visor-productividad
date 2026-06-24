@@ -11,35 +11,10 @@
  *   BENCHMARK_EXPLAIN=1          (muestra plan del summary, sin ANALYZE)
  */
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { loadEnvFiles, resolvePgClientConfig } from "./db-client-config.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, "..");
-
-function loadEnv(filePath) {
-  if (!fs.existsSync(filePath)) return;
-  for (const line of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq <= 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (!process.env[key]) process.env[key] = value;
-  }
-}
-
-loadEnv(path.join(root, ".env.local"));
-loadEnv(path.join(root, ".env"));
+loadEnvFiles();
 
 const empresas = (process.env.BENCHMARK_EMPRESAS ?? "mercamio,mtodo,bogota")
   .split(",")
@@ -57,13 +32,7 @@ const timed = async (label, fn) => {
   return { result, elapsedMs };
 };
 
-const client = new pg.Client({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT || 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-});
+const client = new pg.Client(resolvePgClientConfig());
 
 await client.connect();
 
