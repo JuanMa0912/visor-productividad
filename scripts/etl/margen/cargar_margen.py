@@ -33,7 +33,7 @@ from pathlib import Path
 
 import psycopg2
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]  # scripts/etl/margen/ -> raiz del repo
 ENV_FILE = Path(os.environ.get("ETL_ENV_FILE", REPO_ROOT / ".env.etl"))
 
 # Metadata por empresa (no secreta). La clave sale del .env unico (pwd_env).
