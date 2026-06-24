@@ -547,3 +547,58 @@ GROUP BY base.empresa, base.fecha_dcto, base.id_co, base.id_item;
 ```
 
 Esperado con índices: **Index Scan** o **Index Only Scan** sobre `ventas_item_diario_idx_summary_covering`, no `Seq Scan`.
+
+---
+
+## 13. Inventario x ítem — lentitud (`/inventario-x-item`)
+
+### Arquitectura de consultas
+
+Fuente: tabla **`rotacion_base_item_dia_sede`** (~11M filas en prod).
+
+| Modo API | Cuándo | Query | Costo típico (sin índices perf) |
+|----------|--------|-------|----------------------------------|
+| `mode=filters` | Carga inicial (empresas/sedes) | `DISTINCT` sobre **1 día** (`dateEnd`) | ~1 s |
+| `mode=catalog` | Listado de ítems/líneas | `GROUP BY` sobre **1 día** | ~2–3 s |
+| `mode=table` | Matriz existencias + DI | CTE `scoped` (rango completo) + `MAX() OVER (PARTITION BY empresa, sede, item)` + top 10 ítems | **~50 s** |
+
+El cuello de botella es **`queryInventoryMatrixRows`**: escanea todo el rango de fechas y aplica window functions sobre millones de filas.
+
+### Verificar índices en GCP
+
+```bash
+sudo -u visor bash -c 'set -a && source /opt/visor-productividad/.env.local && set +a && \
+  PGSSLMODE=require psql --host="$DB_HOST" --username="$DB_USER" --dbname="$DB_NAME" \
+    -c "SELECT indexname FROM pg_indexes WHERE tablename = '\''rotacion_base_item_dia_sede'\'' AND indexname LIKE '\''rotacion_base%'\'' ORDER BY 1;"'
+```
+
+Deben existir (migración `20260427_rotacion_new_fields_indexes.sql`):
+
+- `rotacion_base_new_idx_fecha_dia`
+- `rotacion_base_new_idx_empresa_sede_fecha`
+- `rotacion_base_new_idx_fecha_empresa_sede_item`
+- (y otros de esa migración)
+
+Si solo ves `rotacion_base_item_dia_sede_pkey`, **falta aplicar la migración** (mismo patrón que ventas x ítem).
+
+### Aplicar migración + benchmark
+
+```bash
+cd /opt/visor-productividad
+sudo -u visor git pull origin main
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260427_rotacion_new_fields_indexes.sql
+sudo -u visor npm run benchmark:inventario-x-item
+```
+
+La creación de índices sobre ~11M filas puede tardar **varios minutos**.
+
+### Medición local (referencia sin índices perf)
+
+```
+meta MIN/MAX:     ~11 s
+mode=catalog:     ~2.5 s  (1 día)
+mode=filters:     ~1.1 s  (1 día)
+mode=table matrix: ~50 s  (mes × window fn)  ← problema principal
+```
+
+Tras índices, el matrix debería bajar a rango de **segundos a ~15 s** según filtros; si sigue alto, acotar sedes/empresas o rango de fechas.
