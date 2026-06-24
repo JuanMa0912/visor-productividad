@@ -20,7 +20,8 @@
     "db:test:postgres": "node scripts/test-db-postgres.js",
     "benchmark:apis": "node scripts/benchmark-portal-apis.mjs",
     "benchmark:rotacion-sql": "node scripts/benchmark-rotacion.mjs",
-    "rotacion:email": "tsx scripts/rotacion-daily-email.mts"
+    "rotacion:email": "tsx scripts/rotacion-daily-email.mts",
+    "smtp:probe": "tsx scripts/smtp-probe.mts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

@@ -31,7 +31,7 @@ const loadEnvFile = (envPath: string) => {
     if (eq <= 0) continue;
     const key = trimmed.slice(0, eq).trim();
     const value = parseEnvValue(trimmed.slice(eq + 1));
-    if (key && !process.env[key]) process.env[key] = value;
+    if (key) process.env[key] = value;
   }
 };
 
@@ -74,8 +74,9 @@ const main = async () => {
   const dryRun = isTruthy(process.env.ROTACION_EMAIL_DRY_RUN);
   const smtpHost = process.env.SMTP_HOST?.trim();
   const smtpPort = Number(process.env.SMTP_PORT ?? 587);
-  const smtpUser = process.env.SMTP_USER?.trim();
-  const smtpPassword = process.env.SMTP_PASSWORD?.trim();
+  const smtpUser =
+    process.env.SMTP_AUTH_USER?.trim() || process.env.SMTP_USER?.trim();
+  const smtpPassword = process.env.SMTP_PASSWORD;
   const smtpFrom =
     process.env.SMTP_FROM?.trim() ??
     process.env.SMTP_USER?.trim() ??
@@ -133,6 +134,16 @@ const main = async () => {
       console.log(`[OK] Correo de prueba enviado → ${to}`);
     } catch (error) {
       console.error("[SMTP] Envío de prueba fallido:", error);
+      console.error(
+        [
+          "Checklist:",
+          `· Host ${smtpHost}:${smtpPort} · usuario auth: ${smtpUser}`,
+          `· Longitud contraseña leída: ${smtpPassword?.length ?? 0} caracteres`,
+          "· Si el webmail entra pero SMTP falla: suele ser IP externa bloqueada o contraseña distinta en .env.local",
+          "· Prueba: npm run smtp:probe",
+          "· O ejecuta desde la VM interna (192.168.35.232)",
+        ].join("\n"),
+      );
       process.exit(1);
     }
     return;
