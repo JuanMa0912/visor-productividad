@@ -1,0 +1,12 @@
+[Unit]
+Description=Visor - timer correo diario rotación (08:00 hora local)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=visor-rotacion-email.service
+
+[Install]
+WantedBy=timers.target

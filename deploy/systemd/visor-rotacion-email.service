@@ -1,0 +1,18 @@
+[Unit]
+Description=Visor - correo diario resumen rotación (críticos D+0+S)
+Documentation=file:///opt/visor-productividad/scripts/rotacion-daily-email.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=visor
+Group=visor
+WorkingDirectory=/opt/visor-productividad
+ExecStart=/opt/visor-productividad/scripts/rotacion-daily-email.sh
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true

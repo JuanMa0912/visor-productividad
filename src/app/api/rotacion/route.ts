@@ -3132,3 +3132,15 @@ export async function PUT(request: Request) {
     );
   }
 }
+
+export {
+  queryRotationRows,
+  getAvailableBounds,
+  getRotacionAbcdConfigForScope,
+  clampDateRange,
+  compactToIsoDate,
+  isIsoDate,
+  limitDateRangeWindow,
+};
+
+export type { RotationRow };

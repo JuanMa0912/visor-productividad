@@ -19,7 +19,8 @@
     "db:test": "node scripts/test-db.js",
     "db:test:postgres": "node scripts/test-db-postgres.js",
     "benchmark:apis": "node scripts/benchmark-portal-apis.mjs",
-    "benchmark:rotacion-sql": "node scripts/benchmark-rotacion.mjs"
+    "benchmark:rotacion-sql": "node scripts/benchmark-rotacion.mjs",
+    "rotacion:email": "tsx scripts/rotacion-daily-email.mts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -40,6 +41,7 @@
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.562.0",
     "next": "^16.2.9",
+    "nodemailer": "^9.0.1",
     "pg": "^8.17.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -51,6 +53,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.11.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
