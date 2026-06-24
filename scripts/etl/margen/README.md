@@ -6,7 +6,9 @@ origen (**192.168.35.217**: mercamio / mtodo / bogota) a **`produXdia.margen_fin
 
 - **Estrategia:** por cada empresa y dia → `DELETE (fecha_dcto, empresa)` + **COPY
   postgres->postgres** (formato texto, NULL-safe). Idempotente: re-correr no duplica.
-- **Solo carga a la BD local (232)** por ahora. Subir a GCP se agregara despues.
+- Carga **solo a local (232)**. La replicacion a GCP la hace el sync local->GCP
+  (`sync-local-to-gcp.sh`, 07:50), que incluye `margen_final` en modo "replace"
+  (borra-ventana + inserta, por no tener clave natural).
 - Corre en el server (232) con `python3` del sistema (tiene `psycopg2-binary`; no hay venv).
 
 ## Config

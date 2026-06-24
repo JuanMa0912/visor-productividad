@@ -6,9 +6,11 @@
 #
 # Tablas (allowlist fija; NO toca tablas de estado de la app ni matviews):
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
-#   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario
-# (ventas_item_diario: el ETL que lo LLENA en el local corre aparte en Windows; aqui
-#  solo lo replicamos local->GCP. Se excluyen su id serial y el FK source_load_id.)
+#   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario,
+#   margen_final
+# (ventas_item_diario y margen_final: sus ETLs de carga al local corren aparte; aqui solo
+#  los replicamos local->GCP. margen_final NO tiene clave natural -> modo "replace": borra
+#  la ventana en GCP y reinserta, excluyendo su id serial.)
 #
 # Ventana:
 #   - default (sin flags) = solo AYER (rapido, para no retrasar la subida del dia).
@@ -128,14 +130,16 @@ DESDEC="${DESDE//-/}"; HASTAC="${HASTA//-/}"
 
 # --- Configuracion por tabla ----------------------------------------------
 TABLES=(ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
-        ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario)
+        ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario
+        margen_final)
 CANARIES="ventas_cajas rotacion_base_item_dia_sede asistencia_horas"
 
 # KEY      = columnas de identidad (no se actualizan en el upsert).
 # CONFLICT = target del ON CONFLICT; default "(KEY)". Override cuando el indice unico
 #            usa expresiones (p.ej. COALESCE) en vez de columnas planas.
 # EXCLUDE  = columnas que NO se insertan (serial id, FKs); lista separada por comas.
-declare -A KEY DATECOL DATETYPE EXCLUDE CONFLICT
+# MODE     = "upsert" (default) o "replace" (borra-ventana+inserta, tablas sin clave natural).
+declare -A KEY DATECOL DATETYPE EXCLUDE CONFLICT MODE
 VENTAS_FULL="empresa_bd,centro_operacion,sede,caja,fecha_dcto,id_tipdoc_fc,documento_fc,id_vend_cc,categoria,linea"
 KEY[ventas_cajas]="empresa_bd,centro_operacion,fecha_dcto,id_tipdoc_fc,consecutivo_doc,id_vend_cc"
 KEY[ventas_fruver]="$VENTAS_FULL"
@@ -156,6 +160,9 @@ done
 DATECOL[rotacion_base_item_dia_sede]="fecha_dia"; DATETYPE[rotacion_base_item_dia_sede]="date"; EXCLUDE[rotacion_base_item_dia_sede]=""
 DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"
 DATECOL[ventas_item_diario]="fecha_dcto"; DATETYPE[ventas_item_diario]="text"; EXCLUDE[ventas_item_diario]="id,source_load_id"
+# margen_final: SIN clave natural (solo id serial). Modo "replace" -> borra la ventana en
+# GCP y reinserta (excluye el id serial). Lo alimenta el ETL de margenes en local (07:15).
+DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"; MODE[margen_final]="replace"
 
 build_where() {
   local tbl="$1" col="${DATECOL[$1]}"
@@ -201,7 +208,7 @@ CANARY_EMPTY=()
 WARN=0
 
 process_table() {
-  local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt _ec
+  local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt _ec mode
   where="$(build_where "$tbl")"
   cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl WHERE $where")"
   log "[$tbl] local tiene $cnt filas en [$DESDE..$HASTA]"
@@ -214,14 +221,33 @@ process_table() {
 
   cols="$(build_cols "$tbl")"
   [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
+  mode="${MODE[$tbl]:-upsert}"
+
+  tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
+  "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
+
+  # Modo "replace" (tablas sin clave natural, p.ej. margen_final): borra la ventana en GCP
+  # y reinserta. La guarda cnt==0 de arriba evita borrar si local esta vacio para la ventana.
+  if [[ "$mode" == "replace" ]]; then
+    "${GCP_PSQL[@]}" <<SQL
+\set ON_ERROR_STOP on
+BEGIN;
+SET statement_timeout = 0;
+DELETE FROM public.$tbl WHERE $where;
+\copy public.$tbl ($cols) FROM '$tmp' WITH (FORMAT csv)
+COMMIT;
+SQL
+    rm -f "$tmp"
+    log "[$tbl] replace OK ($cnt filas)"
+    return 0
+  fi
+
+  # Modo "upsert" (default): staging temporal + INSERT ... ON CONFLICT.
   keylist="${KEY[$tbl]}"; conflict="${CONFLICT[$tbl]:-($keylist)}"
   setclause="$(build_set "$cols" "$keylist")"
   if [[ -n "$setclause" ]]; then on_conflict="DO UPDATE SET $setclause"; else on_conflict="DO NOTHING"; fi
   drop_stmt=""
   for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
-
-  tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
-  "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
 
   "${GCP_PSQL[@]}" <<SQL
 \set ON_ERROR_STOP on
