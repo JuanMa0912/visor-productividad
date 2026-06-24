@@ -16,6 +16,8 @@ export type AppTopBarProps = {
   backHref?: string;
   /** Variante compacta para paginas con contenido cercano al header. */
   compact?: boolean;
+  /** Abre el manual interactivo (driver.js) del tablero actual. */
+  onTourHelp?: () => void;
 };
 
 /**
@@ -30,6 +32,7 @@ export function AppTopBar({
   backLabel = "Volver a secciones",
   backHref = "/secciones",
   compact = false,
+  onTourHelp,
 }: AppTopBarProps) {
   const router = useRouter();
   const { user, status } = useAuth();
@@ -54,6 +57,7 @@ export function AppTopBar({
         username={null}
         compact={compact}
         showSeccionesShortcut={showBack}
+        onTourHelp={onTourHelp}
         {...backProps}
       />
     );
@@ -69,6 +73,7 @@ export function AppTopBar({
       username={user.username ?? null}
       sede={user.sede}
       showSeccionesShortcut={showBack}
+      onTourHelp={onTourHelp}
       {...backProps}
     />
   );

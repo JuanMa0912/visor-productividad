@@ -35,6 +35,12 @@ import {
   type VentasXItemRawRow,
 } from "@/lib/ventas/x-item";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
+import { VENTAS_X_ITEM_TOUR_ANCHOR } from "@/lib/ui/portal-tours/ventas-x-item-tour-anchors";
+import { VENTAS_X_ITEM_TOUR_STEPS } from "@/lib/ui/portal-tours/ventas-x-item-tour-steps";
+import "driver.js/dist/driver.css";
+import "@/lib/ui/product-tour/product-tour.css";
 
 const EMPRESA_LABELS: Record<string, string> = {
   mercamio: "MERCAMIO",
@@ -125,7 +131,7 @@ type ParityCheckResult = {
 
 export default function VentasXItemPage() {
   const router = useRouter();
-  const { status: authStatus } = useRequireAuth();
+  const { status: authStatus, user } = useRequireAuth();
   const { hasSection, hasSubsection } = usePermissions();
   const ready = authStatus === "authenticated";
   const [loadingDb, setLoadingDb] = useState(false);
@@ -168,6 +174,16 @@ export default function VentasXItemPage() {
   const deepLinkInitRef = useRef(false);
   /** Garantiza que `onLoadMeta` se llame una sola vez por montaje (min/max globales son estables). */
   const metaLoadedRef = useRef(false);
+
+  const { startTour: startVentasXItemTour } = useProductTour({
+    localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.ventasXItem,
+    stateKey: TUTORIAL_STATE_KEYS.ventasXItem,
+    steps: VENTAS_X_ITEM_TOUR_STEPS,
+    theme: "venta",
+    userId: user?.id,
+    ready,
+    contentReady: Boolean(dbMinDate || dbMaxDate || !loadingDb),
+  });
 
   useEffect(() => {
     if (authStatus !== "authenticated") return;
@@ -1149,7 +1165,11 @@ export default function VentasXItemPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_55%),linear-gradient(180deg,#f8fafc,#eef4ff)] text-foreground">
-      <AppTopBar backHref="/venta" backLabel="Volver a venta" />
+      <AppTopBar
+        backHref="/venta"
+        backLabel="Volver a venta"
+        onTourHelp={startVentasXItemTour}
+      />
       <div className="px-4 py-8 lg:px-6">
       <div className="mx-auto w-full max-w-7xl">
         <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
@@ -1159,7 +1179,7 @@ export default function VentasXItemPage() {
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(59,130,246,0.32),transparent_60%)]"
           />
           <div className="relative flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
+            <div className="max-w-3xl" id={VENTAS_X_ITEM_TOUR_ANCHOR.intro}>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-600">
                 Venta
               </p>
@@ -1198,7 +1218,10 @@ export default function VentasXItemPage() {
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white px-4 py-4 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.18)]">
+        <div
+          id={VENTAS_X_ITEM_TOUR_ANCHOR.loadDb}
+          className="mt-6 rounded-2xl border border-slate-200/70 bg-white px-4 py-4 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.18)]"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
               <Database className="h-3.5 w-3.5 text-blue-500" aria-hidden />
@@ -1364,7 +1387,7 @@ export default function VentasXItemPage() {
                 <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
                   Descargas
                 </span>
-                <div ref={exportMenuRef} className="relative self-start">
+                <div ref={exportMenuRef} id={VENTAS_X_ITEM_TOUR_ANCHOR.export} className="relative self-start">
                   <button
                     type="button"
                     onClick={() => setExportMenuOpen((open) => !open)}
@@ -1498,7 +1521,7 @@ export default function VentasXItemPage() {
                   </p>
                 )}
               </div>
-              <div>
+              <div id={VENTAS_X_ITEM_TOUR_ANCHOR.items}>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
                   Ítems ({itemsSel.length}/{itemLimit})
                 </p>
@@ -1581,6 +1604,7 @@ export default function VentasXItemPage() {
             </div>
 
             <div
+              id={VENTAS_X_ITEM_TOUR_ANCHOR.results}
               className="relative mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
             >
               <h2 className="text-base font-bold text-slate-900">{title}</h2>
@@ -1678,7 +1702,10 @@ export default function VentasXItemPage() {
             </div>
 
             {pivot && !summaryLoading && (
-              <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
+              <div
+                id={VENTAS_X_ITEM_TOUR_ANCHOR.charts}
+                className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
+              >
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-base font-bold text-slate-900">Gráficas</h3>
                 </div>

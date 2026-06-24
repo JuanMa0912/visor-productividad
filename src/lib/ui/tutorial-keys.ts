@@ -6,6 +6,9 @@ export const TUTORIAL_STATE_KEYS = {
   portalHubProducto: "portalHubProductoTutorialV1",
   portalHubOperacion: "portalHubOperacionTutorialV1",
   jornadaExtendida: "jornadaExtendidaTutorialV1",
+  ventasXItem: "ventasXItemTutorialV1",
+  inventarioXItem: "inventarioXItemTutorialV1",
+  margenes: "margenesTutorialV1",
 } as const;
 
 export type TutorialStateKey =
@@ -19,6 +22,9 @@ export const TUTORIAL_LOCAL_STORAGE_KEYS = {
   portalHubProducto: "portal:tutorial:hub-producto:v1",
   portalHubOperacion: "portal:tutorial:hub-operacion:v1",
   jornadaExtendida: "portal:tutorial:jornada-extendida:v1",
+  ventasXItem: "portal:tutorial:ventas-x-item:v1",
+  inventarioXItem: "portal:tutorial:inventario-x-item:v1",
+  margenes: "portal:tutorial:margenes:v1",
 } as const;
 
 export type TutorialLocalStorageKey =

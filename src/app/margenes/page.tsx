@@ -4,7 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Loader2 } from "lucide-react";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-button";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
+import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
+import { MARGENES_TOUR_ANCHOR } from "@/lib/ui/portal-tours/margenes-tour-anchors";
+import { MARGENES_TOUR_STEPS } from "@/lib/ui/portal-tours/margenes-tour-steps";
+import "driver.js/dist/driver.css";
+import "@/lib/ui/product-tour/product-tour.css";
 
 type MargenMeta = {
   ready: boolean;
@@ -19,7 +26,7 @@ type MargenMeta = {
 
 const KPI_PLACEHOLDER = "—";
 
-function MargenesPageInner() {
+function MargenesPageInner({ onTourHelp }: { onTourHelp: () => void }) {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { hasSection, hasSubsection } = usePermissions();
@@ -85,7 +92,10 @@ function MargenesPageInner() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0d0f18] text-[13px] text-[#dde3f0]">
-      <header className="flex shrink-0 items-center gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2.5">
+      <header
+        id={MARGENES_TOUR_ANCHOR.intro}
+        className="flex shrink-0 items-center gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2.5"
+      >
         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-[#4f8ef7] to-[#a78bfa]">
           <BarChart3 className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
         </div>
@@ -104,16 +114,25 @@ function MargenesPageInner() {
         <span className="rounded-full border border-[#2a2f47] bg-[#232740] px-2.5 py-0.5 text-[11px] text-[#6b7590]">
           {rangeLabel}
         </span>
-        <span className="ml-auto whitespace-nowrap text-[11px] text-[#6b7590]">
-          {loadingMeta
-            ? "Consultando tabla…"
-            : meta?.ready
-              ? `${meta.rowCount.toLocaleString("es-CO")} filas · ${meta.sedeCount} sede(s)`
-              : "Pendiente ETL"}
+        <span className="ml-auto flex items-center gap-2">
+          <PortalTourHelpButton
+            onClick={onTourHelp}
+            className="border-[#2a2f47] bg-[#1b1e2e]/90 text-[#dde3f0] hover:border-[#4f8ef7]/60 hover:bg-[#232740] hover:text-[#dde3f0]"
+          />
+          <span className="whitespace-nowrap text-[11px] text-[#6b7590]">
+            {loadingMeta
+              ? "Consultando tabla…"
+              : meta?.ready
+                ? `${meta.rowCount.toLocaleString("es-CO")} filas · ${meta.sedeCount} sede(s)`
+                : "Pendiente ETL"}
+          </span>
         </span>
       </header>
 
-      <div className="flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2 opacity-50">
+      <div
+        id={MARGENES_TOUR_ANCHOR.filters}
+        className="flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2 opacity-50"
+      >
         {["Empresa", "Sede", "Fecha", "Categoría", "Línea", "Sublínea", "Ítem"].map(
           (label) => (
             <div key={label} className="flex min-w-[105px] flex-col gap-0.5">
@@ -128,7 +147,10 @@ function MargenesPageInner() {
         )}
       </div>
 
-      <div className="flex shrink-0 border-b border-[#2a2f47] bg-[#141720] px-4">
+      <div
+        id={MARGENES_TOUR_ANCHOR.tabs}
+        className="flex shrink-0 border-b border-[#2a2f47] bg-[#141720] px-4"
+      >
         {[
           { id: "producto", label: "📦 Producto", active: true },
           { id: "factura", label: "📋 Por Factura", active: false },
@@ -149,7 +171,10 @@ function MargenesPageInner() {
         ))}
       </div>
 
-      <div className="flex shrink-0 border-b border-[#2a2f47] bg-[#141720]">
+      <div
+        id={MARGENES_TOUR_ANCHOR.kpi}
+        className="flex shrink-0 border-b border-[#2a2f47] bg-[#141720]"
+      >
         {[
           { label: "Ventas netas (miles)", valueClass: "text-[#4f8ef7]" },
           { label: "Costo total (miles)", valueClass: "text-[#dde3f0]" },
@@ -170,7 +195,10 @@ function MargenesPageInner() {
         ))}
       </div>
 
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+      <main
+        id={MARGENES_TOUR_ANCHOR.main}
+        className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center"
+      >
         <div className="max-w-lg rounded-xl border border-[#2a2f47] bg-[#141720] p-6 shadow-[0_12px_36px_rgba(0,0,0,0.45)]">
           <h2 className="text-base font-bold text-[#dde3f0]">
             Nuevo tablero de margen unificado
@@ -201,10 +229,25 @@ function MargenesPageInner() {
 }
 
 export default function MargenesPage() {
+  const { user, status } = useRequireAuth();
+  const ready = status === "authenticated" && Boolean(user);
+  const { startTour: startMargenesTour } = useProductTour({
+    localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.margenes,
+    stateKey: TUTORIAL_STATE_KEYS.margenes,
+    steps: MARGENES_TOUR_STEPS,
+    theme: "producto",
+    userId: user?.id,
+    ready,
+  });
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f18] text-[#dde3f0]">
-      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
-      <MargenesPageInner />
+      <AppTopBar
+        backHref="/productividad"
+        backLabel="Volver a productividad"
+        onTourHelp={startMargenesTour}
+      />
+      <MargenesPageInner onTourHelp={startMargenesTour} />
     </div>
   );
 }
