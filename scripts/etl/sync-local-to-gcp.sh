@@ -6,8 +6,9 @@
 #
 # Tablas (allowlist fija; NO toca tablas de estado de la app ni matviews):
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
-#   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas
-# (ventas_item_diario NO va aqui: lo maneja un ETL aparte del local.)
+#   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario
+# (ventas_item_diario: el ETL que lo LLENA en el local corre aparte en Windows; aqui
+#  solo lo replicamos local->GCP. Se excluyen su id serial y el FK source_load_id.)
 #
 # Ventana:
 #   - default (sin flags) = solo AYER (rapido, para no retrasar la subida del dia).
@@ -127,10 +128,14 @@ DESDEC="${DESDE//-/}"; HASTAC="${HASTA//-/}"
 
 # --- Configuracion por tabla ----------------------------------------------
 TABLES=(ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
-        ventas_industria rotacion_base_item_dia_sede asistencia_horas)
+        ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario)
 CANARIES="ventas_cajas rotacion_base_item_dia_sede asistencia_horas"
 
-declare -A KEY DATECOL DATETYPE EXCLUDE
+# KEY      = columnas de identidad (no se actualizan en el upsert).
+# CONFLICT = target del ON CONFLICT; default "(KEY)". Override cuando el indice unico
+#            usa expresiones (p.ej. COALESCE) en vez de columnas planas.
+# EXCLUDE  = columnas que NO se insertan (serial id, FKs); lista separada por comas.
+declare -A KEY DATECOL DATETYPE EXCLUDE CONFLICT
 VENTAS_FULL="empresa_bd,centro_operacion,sede,caja,fecha_dcto,id_tipdoc_fc,documento_fc,id_vend_cc,categoria,linea"
 KEY[ventas_cajas]="empresa_bd,centro_operacion,fecha_dcto,id_tipdoc_fc,consecutivo_doc,id_vend_cc"
 KEY[ventas_fruver]="$VENTAS_FULL"
@@ -140,12 +145,17 @@ KEY[ventas_pollo_pesc]="$VENTAS_FULL"
 KEY[ventas_industria]="empresa_bd,centro_operacion,sede,caja,fecha_dcto,id_tipdoc_fc,documento_fc,id_vend_cc,categoria"
 KEY[rotacion_base_item_dia_sede]="empresa,fecha_dia,sede,bodega_local,id_item"
 KEY[asistencia_horas]="numero,fecha"
+# ventas_item_diario: PK serial (id) + FK (source_load_id) -> se excluyen. Su unico
+# natural usa COALESCE, asi que el ON CONFLICT va con la expresion (no columnas planas).
+KEY[ventas_item_diario]="fecha_dcto,empresa,empresa_norm,id_co,id_co_norm,id_item,linea"
+CONFLICT[ventas_item_diario]="(fecha_dcto, COALESCE(empresa_norm, empresa), COALESCE(id_co_norm, id_co), id_item, linea)"
 
 for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc ventas_industria; do
   DATECOL[$t]="fecha_dcto"; DATETYPE[$t]="text"; EXCLUDE[$t]=""
 done
 DATECOL[rotacion_base_item_dia_sede]="fecha_dia"; DATETYPE[rotacion_base_item_dia_sede]="date"; EXCLUDE[rotacion_base_item_dia_sede]=""
 DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"
+DATECOL[ventas_item_diario]="fecha_dcto"; DATETYPE[ventas_item_diario]="text"; EXCLUDE[ventas_item_diario]="id,source_load_id"
 
 build_where() {
   local tbl="$1" col="${DATECOL[$1]}"
@@ -158,12 +168,13 @@ build_where() {
 
 # Columnas comunes (existentes en ambos), en orden de GCP, menos la excluida.
 build_cols() {
-  local tbl="$1" exclude="${EXCLUDE[$1]}" localset out="" c
+  local tbl="$1" exclude=",${EXCLUDE[$1]}," localset out="" c
   localset=" $("${SRC_PSQL[@]}" -tA -c \
     "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$tbl';" \
     | tr '\n' ' ') "
   while IFS= read -r c; do
-    [[ -z "$c" || "$c" == "$exclude" ]] && continue
+    [[ -z "$c" ]] && continue
+    [[ "$exclude" == *",$c,"* ]] && continue
     [[ "$localset" == *" $c "* ]] || continue
     out+="${out:+, }$c"
   done < <("${GCP_PSQL[@]}" -tA -c \
@@ -190,7 +201,7 @@ CANARY_EMPTY=()
 WARN=0
 
 process_table() {
-  local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt
+  local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt _ec
   where="$(build_where "$tbl")"
   cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl WHERE $where")"
   log "[$tbl] local tiene $cnt filas en [$DESDE..$HASTA]"
@@ -203,10 +214,11 @@ process_table() {
 
   cols="$(build_cols "$tbl")"
   [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
-  keylist="${KEY[$tbl]}"; conflict="($keylist)"
+  keylist="${KEY[$tbl]}"; conflict="${CONFLICT[$tbl]:-($keylist)}"
   setclause="$(build_set "$cols" "$keylist")"
   if [[ -n "$setclause" ]]; then on_conflict="DO UPDATE SET $setclause"; else on_conflict="DO NOTHING"; fi
-  drop_stmt=""; [[ -n "${EXCLUDE[$tbl]}" ]] && drop_stmt="ALTER TABLE _stg DROP COLUMN ${EXCLUDE[$tbl]};"
+  drop_stmt=""
+  for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
 
   tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
   "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
