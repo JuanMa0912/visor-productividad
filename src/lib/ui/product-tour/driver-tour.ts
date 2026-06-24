@@ -89,9 +89,17 @@ export const startProductTour = (
 export const scheduleProductTourStart = (
   options: StartProductTourOptions,
   delayMs = PRODUCT_TOUR_START_DELAY_MS,
+  attempt = 0,
 ): void => {
   if (typeof window === "undefined") return;
   window.setTimeout(() => {
-    startProductTour(options);
+    const started = startProductTour(options);
+    if (!started && attempt < 4) {
+      scheduleProductTourStart(
+        options,
+        Math.min(250 * (attempt + 1), 800),
+        attempt + 1,
+      );
+    }
   }, delayMs);
 };

@@ -92,8 +92,13 @@ export const useProductTour = (config: UseProductTourConfig) => {
 
     const timer = window.setTimeout(() => {
       if (autoStartAttemptedRef.current) return;
+      const started = startProductTour(tourOptions);
+      if (started) {
+        autoStartAttemptedRef.current = true;
+        return;
+      }
+      scheduleProductTourStart(tourOptions, 300, 0);
       autoStartAttemptedRef.current = true;
-      startProductTour(tourOptions);
     }, delayMs);
 
     return () => window.clearTimeout(timer);
