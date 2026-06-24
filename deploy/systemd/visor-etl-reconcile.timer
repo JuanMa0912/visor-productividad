@@ -1,0 +1,14 @@
+[Unit]
+Description=Visor - timer semanal de reconciliacion ETL (domingos 16:00, 7 dias)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Domingos a las 16:00 (hora del sistema). Re-sube los ultimos 7 dias.
+OnCalendar=Sun *-*-* 16:00:00
+# Si la VM estaba apagada, ejecutar al arrancar.
+Persistent=true
+RandomizedDelaySec=300
+Unit=visor-etl-reconcile.service
+
+[Install]
+WantedBy=timers.target

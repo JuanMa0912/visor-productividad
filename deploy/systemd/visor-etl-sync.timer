@@ -1,0 +1,14 @@
+[Unit]
+Description=Visor - timer diario del ETL local -> GCP (todos los dias 07:50)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Todos los dias a las 07:50 (hora del sistema). El cierre del local termina
+# ~07:45; si algun dia se atrasa, el ETL avisa (WARNING) y se re-corre manual.
+OnCalendar=*-*-* 07:50:00
+# Si la VM estaba apagada en ese momento, ejecutar al arrancar.
+Persistent=true
+Unit=visor-etl-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -11,7 +11,7 @@ Sube el dia a dia de las tablas de **hechos** desde el Postgres **local**
 - **No toca:** tablas de estado de la app (usuarios, sesiones, `rotacion_cero_*`,
   `rotacion_abcd_*`, horarios, presets), matviews, `margenes_*` (local vacio) ni
   `ventas_item_diario` (lo maneja un ETL aparte del local).
-- Al terminar refresca la matview de rotacion en GCP (reusa `refresh-rotacion-matview.sh`).
+- Al terminar refresca la matview de rotacion en GCP (refresh inline, no depende de scripts externos).
 
 Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GCP).
 
@@ -24,25 +24,35 @@ Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GC
    Agrega esa IP (`/32`) en GCP -> SQL -> instancia -> Connections -> Networking ->
    Authorized networks. Si la IP del server es **dinamica**, usa Cloud SQL Auth Proxy.
 
-2. **Credenciales del DESTINO (GCP):** ya estan en el env de produccion del deploy
-   (vars `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSL`). El script lo
-   autodetecta en la raiz: prueba `.env.local`, luego `.env.production`, luego `.env`.
-   Si tu archivo tiene otro nombre/ruta, pasalo con `ENV_FILE=$PWD/.env.production`.
-   Revisa la linea `ENV destino:` y `Destino:` del log para confirmar que apunta a GCP.
-
-3. **Credenciales del ORIGEN (local):** crear `/home/prodapp/visor-productividad/.env.etl`
-   (queda fuera de git por el patron `.env*`):
+2. **Config del ETL (UN solo archivo, nombres explicitos por extremo).** Crea
+   `.env.etl` en la raiz del deploy a partir del template y ponle las claves:
    ```bash
-   SRC_DB_HOST=localhost
-   SRC_DB_PORT=5432
-   SRC_DB_NAME=produXdia
-   SRC_DB_USER=postgres
-   SRC_DB_PASSWORD=*** la clave del postgres local ***
-   # SRC_DB_SSL=disable   # opcional; default disable para localhost
+   cd /home/prodapp/visor-productividad
+   cp scripts/etl/env.etl.example .env.etl
+   chmod 600 .env.etl
+   nano .env.etl   # rellena DB_PASSWORD_LOCAL y DB_PASSWORD_GCP
    ```
-   Protegerlo: `chmod 600 /home/prodapp/visor-productividad/.env.etl`
+   El archivo trae los dos extremos sin ambiguedad (`.env.etl` queda fuera de git
+   por el patron `.env*`):
+   ```bash
+   # ORIGEN local
+   DB_HOST_LOCAL=localhost
+   DB_PORT_LOCAL=5432
+   DB_NAME_LOCAL=produXdia          # X mayuscula (local)
+   DB_USER_LOCAL=postgres
+   DB_PASSWORD_LOCAL='clave_local'  # comillas simples si tiene $ u otros simbolos
+   # DESTINO GCP
+   DB_HOST_GCP=34.73.63.145
+   DB_PORT_GCP=5432
+   DB_NAME_GCP=produxdia            # minuscula (GCP)
+   DB_USER_GCP=visor
+   DB_PASSWORD_GCP='clave_gcp'
+   # DB_SSL_GCP=require             # default ya es require para GCP
+   ```
+   El ETL **NO** usa el `.env.local`/`.env.production` de la app: todo sale de aqui,
+   asi no se confunde local con GCP. El log imprime `Destino(GCP): ...` para confirmar.
 
-4. `chmod +x scripts/etl/sync-local-to-gcp.sh`
+3. `chmod +x scripts/etl/sync-local-to-gcp.sh`
 
 ## 2. Primer arranque (seguro)
 
@@ -55,17 +65,41 @@ Si los conteos se ven bien, corre el real y verifica:
 sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --verify
 ```
 
-## 3. Cron (automatico)
+## 3. Programacion (systemd timers)
 
-`crontab -e` del usuario `prodapp` (el local cierra ~7:45am; corremos 8:00am):
-```cron
-# Diario (dom a vie): solo el dia anterior, rapido
-0 8 * * 0-5 bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh >> /var/log/visor-etl-sync.log 2>&1
-# Sabado: reconciliacion de los ultimos 18 dias (atrapa correcciones de hasta ~10 dias)
-0 8 * * 6   bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 18 >> /var/log/visor-etl-sync.log 2>&1
+Units en `deploy/systemd/`:
+- `visor-etl-sync.{service,timer}` -> **todos los dias 07:50**, sube ayer.
+- `visor-etl-reconcile.{service,timer}` -> **domingos 16:00**, re-sube los ultimos 7 dias.
+
+Instalar (como root):
+```bash
+cd /home/prodapp/visor-productividad
+sudo cp deploy/systemd/visor-etl-* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now visor-etl-sync.timer visor-etl-reconcile.timer
 ```
-La ventana de 18 dias = 10 (lag de correccion) + 7 (cadencia semanal) + holgura.
-Con 7 dias se escaparian correcciones que llegan 8-10 dias tarde.
+
+Ver estado / proximos disparos / logs:
+```bash
+systemctl list-timers 'visor-etl-*'
+journalctl -u visor-etl-sync.service -n 80 --no-pager        # ver el diario
+journalctl -u visor-etl-reconcile.service -n 80 --no-pager   # ver la reconciliacion
+```
+
+Probar el service a mano (sin esperar el timer):
+```bash
+sudo systemctl start visor-etl-sync.service
+```
+
+Notas:
+- Los units corren como `prodapp` con `WorkingDirectory=/home/prodapp/visor-productividad`.
+  Si tu deploy esta en otra ruta/usuario, edita los units antes de copiarlos.
+- El diario sale 3 si no hay datos de ayer; el unit lo trata como exito
+  (`SuccessExitStatus=3`) para no marcarse failed. La senal queda en el journal
+  (lineas `WARNING`). Re-corre manual cuando el cierre del local termine.
+- Reconciliacion de **7 dias**: atrapa correcciones de ~1 semana. Si necesitas
+  cubrir correcciones que llegan 8-10 dias tarde, sube `--days` en el ExecStart de
+  `visor-etl-reconcile.service`.
 
 ## 4. Corridas MANUALES (cuando falla, avisa o aun no hay datos)
 
@@ -75,7 +109,7 @@ Todas como `sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/s
 | --- | --- |
 | Re-correr AYER (tras un fallo) | *(sin flags)* |
 | Subir un dia puntual / backfill | `--date 2026-06-22` |
-| Reconciliacion manual de N dias | `--days 18` |
+| Reconciliacion manual de N dias | `--days 7` |
 | Probar sin escribir (solo conteos) | `--days 7 --dry-run` |
 | Mas rapido, sin refrescar matview | `--no-refresh` |
 | Con verificacion de frescura al final | `--verify` |
@@ -100,7 +134,8 @@ estado correcto.
 ## 5. Codigos de salida y logs
 
 - `0` OK · `3` WARNING (sin datos de ayer en las tablas canary) · `1` ERROR · `2` uso invalido.
-- Log: `/var/log/visor-etl-sync.log`.
+- Logs: journal de systemd (`journalctl -u visor-etl-sync.service`); ademas
+  `/var/log/visor-etl-sync.log` si el usuario tiene permiso de escritura ahi.
 - El WARNING (exit 3) casi siempre significa: el cierre del local todavia no termino.
   Solucion: esperar y re-correr el comando default, o usar `--date`.
 
