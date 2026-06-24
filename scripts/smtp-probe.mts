@@ -14,8 +14,32 @@ const parseEnvValue = (raw: string) => {
 };
 
 const loadEnvFile = (envPath: string) => {
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, "utf-8").split("\n")) {
+  if (!fs.existsSync(envPath)) {
+    console.error(`No existe el archivo de entorno: ${envPath}`);
+    process.exit(1);
+  }
+  let envContent: string;
+  try {
+    envContent = fs.readFileSync(envPath, "utf-8");
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as NodeJS.ErrnoException).code)
+        : "";
+    if (code === "EACCES") {
+      console.error(
+        [
+          `Sin permiso para leer ${envPath}`,
+          "En la VM suele estar restringido al usuario visor. Prueba:",
+          `  sudo -u visor ENV_FILE=${envPath} npm run smtp:probe`,
+          "O agrega las variables SMTP a ese archivo como root/visor.",
+        ].join("\n"),
+      );
+      process.exit(1);
+    }
+    throw error;
+  }
+  for (const line of envContent.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");

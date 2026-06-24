@@ -70,12 +70,40 @@ sudo cp deploy/systemd/visor-rotacion-email.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-Prueba manual:
+Prueba manual (como usuario `visor`, que es dueño de `.env.local`):
 
 ```bash
-sudo -u visor ROTACION_EMAIL_DRY_RUN=true \
+sudo -u visor ENV_FILE=/opt/visor-productividad/.env.local \
   /opt/visor-productividad/scripts/rotacion-daily-email.sh
-tail -n 80 /var/log/visor-rotacion-email.log
+```
+
+Probe SMTP sin enviar correo:
+
+```bash
+cd /opt/visor-productividad
+sudo -u visor npm run smtp:probe
+```
+
+Si corres como otro usuario (`juanfelipegomez0105`, etc.) verás `EACCES` al leer
+`.env.local`; es intencional (el archivo tiene permisos restrictivos).
+
+Antes del primer envío, agrega en `/opt/visor-productividad/.env.local` (como
+`visor` o root):
+
+```env
+SMTP_HOST=smtp.mercamio.com
+SMTP_PORT=587
+SMTP_USER=notificaciones.uaid@mercamio.com
+SMTP_PASSWORD='...'
+SMTP_FROM="Notificaciones UAID <notificaciones.uaid@mercamio.com>"
+ROTACION_EMAIL_FLORESTA_TO=aprendizppt@mercamio.com
+SMTP_TLS_REJECT_UNAUTHORIZED=false
+```
+
+Prueba de envío:
+
+```bash
+sudo -u visor bash -c 'cd /opt/visor-productividad && ROTACION_EMAIL_SMTP_TEST_ONLY=true npm run rotacion:email'
 ```
 
 Activar timer:
