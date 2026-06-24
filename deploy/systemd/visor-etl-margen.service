@@ -9,8 +9,9 @@ Type=oneshot
 User=prodapp
 Group=prodapp
 WorkingDirectory=/home/prodapp/visor-productividad
-# python3 del sistema (tiene psycopg2-binary). No hay venv. Sin flags = ayer.
-ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/margen/cargar_margen.py
+# python3 del sistema (tiene psycopg2-binary). No hay venv. Sin --date = ayer.
+# --gcp: sube a local (232) Y a GCP en la misma corrida.
+ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/margen/cargar_margen.py --gcp
 StandardOutput=journal
 StandardError=journal
 # Endurecimientos. NO usar ProtectHome: el deploy y el .env.etl viven en /home/prodapp.
