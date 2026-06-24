@@ -19,7 +19,7 @@ type MargenMeta = {
 
 const KPI_PLACEHOLDER = "—";
 
-export default function MargenesPage() {
+function MargenesPageInner() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { hasSection, hasSubsection } = usePermissions();
@@ -72,11 +72,8 @@ export default function MargenesPage() {
 
   if (status !== "authenticated" || !user) {
     return (
-      <div className="flex min-h-screen flex-col bg-[#0d0f18] text-[#dde3f0]">
-        <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-[#4f8ef7]" />
-        </div>
+      <div className="flex flex-1 items-center justify-center bg-[#0d0f18] text-[#dde3f0]">
+        <Loader2 className="h-6 w-6 animate-spin text-[#4f8ef7]" />
       </div>
     );
   }
@@ -87,8 +84,7 @@ export default function MargenesPage() {
       : "Sin rango cargado";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f18] text-[13px] text-[#dde3f0]">
-      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0d0f18] text-[13px] text-[#dde3f0]">
       <header className="flex shrink-0 items-center gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2.5">
         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-[#4f8ef7] to-[#a78bfa]">
           <BarChart3 className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
@@ -200,6 +196,15 @@ export default function MargenesPage() {
           </ul>
         </div>
       </main>
+    </div>
+  );
+}
+
+export default function MargenesPage() {
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f18] text-[#dde3f0]">
+      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
+      <MargenesPageInner />
     </div>
   );
 }

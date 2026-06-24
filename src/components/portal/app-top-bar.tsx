@@ -35,28 +35,31 @@ export function AppTopBar({
   const { user, status } = useAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
 
-  // Mientras la sesion esta cargando, mostramos solo la barra vacia para
-  // mantener el layout estable (sin CLS). Si no hay sesion (unauthenticated),
-  // tambien renderizamos la barra vacia: el usuario sera redirigido a /login
-  // por la pagina que use `useRequireAuth()`.
+  const hasDistinctBack = showBack && backHref !== "/secciones";
+  const backProps = hasDistinctBack
+    ? {
+        onBackToSecciones: () => router.push(backHref),
+        backLabel,
+      }
+    : {};
+
+  // Mientras la sesion carga, conservamos marca + navegacion (volver / secciones).
+  // Antes la barra quedaba vacia y en navegacion client-side desde un hub el boton
+  // "Volver a productividad" no aparecia hasta un refresh completo.
   if (status === "loading" || !user) {
     return (
-      <header
-        className={
-          compact
-            ? "sticky top-0 z-50 h-[40px] w-full border-b border-border/50 bg-background/70 backdrop-blur-xl"
-            : "sticky top-0 z-50 h-[57px] w-full border-b border-border/50 bg-background/70 backdrop-blur-xl"
-        }
+      <PortalBrandingHeader
+        canAccessCronograma={false}
+        isAdmin={false}
+        username={null}
+        compact={compact}
+        showSeccionesShortcut={showBack}
+        {...backProps}
       />
     );
   }
 
   const canAccessCronograma = hasSpecialRole("cronograma");
-
-  // Solo mostramos el boton "Volver a X" cuando apunta a un hub distinto a
-  // `/secciones` (ej. `/venta`, `/horario`). Si apunta a `/secciones`, el icono
-  // Grid2x2 ya cumple esa funcion y no duplicamos.
-  const hasDistinctBack = showBack && backHref !== "/secciones";
 
   return (
     <PortalBrandingHeader
@@ -66,12 +69,7 @@ export function AppTopBar({
       username={user.username ?? null}
       sede={user.sede}
       showSeccionesShortcut={showBack}
-      {...(hasDistinctBack
-        ? {
-            onBackToSecciones: () => router.push(backHref),
-            backLabel,
-          }
-        : {})}
+      {...backProps}
     />
   );
 }
