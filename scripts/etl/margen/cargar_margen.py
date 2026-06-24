@@ -11,7 +11,9 @@ ETL de margenes: carga "movimiento unificado" desde las BD POS de origen
 - Por ahora SOLO carga a la BD. Si en el futuro se quiere volver a generar el CSV,
   ver la nota en consolidate_csv() (desactivada).
 
-Config: .env.margen en la raiz del deploy (ver scripts/etl/margen/env.margen.example).
+Config: UN solo .env.etl en la raiz del deploy, COMPARTIDO con sync-local-to-gcp.sh
+(ver scripts/etl/env.etl.example). Override la ruta con ETL_ENV_FILE.
+El destino (produXdia 232) sale de DB_*_LOCAL; el origen POS (217) de DB_*_POS.
 
 Uso (idealmente con el python del venv):
   python cargar_margen.py                       # ayer
@@ -32,13 +34,13 @@ from pathlib import Path
 import psycopg2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = Path(os.environ.get("MARGEN_ENV_FILE", REPO_ROOT / ".env.margen"))
+ENV_FILE = Path(os.environ.get("ETL_ENV_FILE", REPO_ROOT / ".env.etl"))
 
-# Metadata por empresa (no secreta). La clave sale del .env (pwd_env).
+# Metadata por empresa (no secreta). La clave sale del .env unico (pwd_env).
 EMPRESAS = [
-    {"empresa": "mercamio", "id_empresa": "02", "db": "mercamio", "user": "mercamio", "pwd_env": "SRC_PWD_MERCAMIO"},
-    {"empresa": "mtodo",    "id_empresa": "01", "db": "mtodo",    "user": "mtodo",    "pwd_env": "SRC_PWD_MTODO"},
-    {"empresa": "bogota",   "id_empresa": "01", "db": "bogota",   "user": "bogota",   "pwd_env": "SRC_PWD_BOGOTA"},
+    {"empresa": "mercamio", "id_empresa": "02", "db": "mercamio", "user": "mercamio", "pwd_env": "DB_PWD_POS_MERCAMIO"},
+    {"empresa": "mtodo",    "id_empresa": "01", "db": "mtodo",    "user": "mtodo",    "pwd_env": "DB_PWD_POS_MTODO"},
+    {"empresa": "bogota",   "id_empresa": "01", "db": "bogota",   "user": "bogota",   "pwd_env": "DB_PWD_POS_BOGOTA"},
 ]
 
 # Columnas destino (orden EXACTO de margen_final, sin el id serial).
@@ -126,7 +128,7 @@ def load_env(path: Path) -> dict:
     """Parser minimo de .env (KEY=VALUE, ignora # y comillas)."""
     if not path.exists():
         log(f"ERROR: no encuentro la config del ETL: {path} "
-            f"(ver scripts/etl/margen/env.margen.example)")
+            f"(ver scripts/etl/env.etl.example)")
         sys.exit(1)
     env = {}
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -173,12 +175,12 @@ def build_query(db: dict, fecha_ini: str, fecha_fin: str) -> str:
 
 
 def cargar(env: dict, desde: str, hasta: str, dry_run: bool) -> int:
-    src_host = require(env, "SRC_HOST")
-    src_port = env.get("SRC_PORT", "5432")
+    src_host = require(env, "DB_HOST_POS")
+    src_port = env.get("DB_PORT_POS", "5432")
     tgt_dsn = dict(
-        host=require(env, "TGT_HOST"), port=env.get("TGT_PORT", "5432"),
-        dbname=require(env, "TGT_DB"), user=require(env, "TGT_USER"),
-        password=require(env, "TGT_PASSWORD"),
+        host=require(env, "DB_HOST_LOCAL"), port=env.get("DB_PORT_LOCAL", "5432"),
+        dbname=require(env, "DB_NAME_LOCAL"), user=require(env, "DB_USER_LOCAL"),
+        password=require(env, "DB_PASSWORD_LOCAL"),
     )
 
     total = 0
@@ -248,8 +250,8 @@ def main() -> int:
 
     env = load_env(ENV_FILE)
     log(f"=== ETL margenes | [{desde}..{hasta}] | dry_run={args.dry_run} ===")
-    log(f"Origen: {env.get('SRC_HOST')} (mercamio/mtodo/bogota)  ->  "
-        f"Destino: {env.get('TGT_HOST')}/{env.get('TGT_DB')}.margen_final")
+    log(f"Origen POS: {env.get('DB_HOST_POS')} (mercamio/mtodo/bogota)  ->  "
+        f"Destino: {env.get('DB_HOST_LOCAL')}/{env.get('DB_NAME_LOCAL')}.margen_final")
     try:
         total = cargar(env, desde, hasta, args.dry_run)
     except Exception as e:  # noqa: BLE001
