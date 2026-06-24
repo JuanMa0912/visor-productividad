@@ -1,0 +1,14 @@
+[Unit]
+Description=Visor - timer diario del ETL de margenes (todos los dias 07:15)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Todos los dias a las 07:15 (hora del sistema). Asume que el POS (217) ya tiene
+# cerrado el dia anterior a esa hora; ajustar si hace falta.
+OnCalendar=*-*-* 07:15:00
+# Si la VM estaba apagada, ejecutar al arrancar.
+Persistent=true
+Unit=visor-etl-margen.service
+
+[Install]
+WantedBy=timers.target
