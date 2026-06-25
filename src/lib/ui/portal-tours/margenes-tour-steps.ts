@@ -17,7 +17,7 @@ export const MARGENES_TOUR_STEPS: DriveStep[] = [
     popover: {
       title: "Filtros de negocio",
       description:
-        "Empresa, sede, fechas y jerarquía de producto acotarán ventas, costos y margen cuando el ETL esté disponible.",
+        "Primero elige la sede en el modal; luego empresa, fechas y jerarquía de producto acotan ventas, costos y margen.",
       side: "bottom",
       align: "start",
     },

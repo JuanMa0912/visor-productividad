@@ -7,11 +7,15 @@ import { AppTopBar } from "@/components/portal/app-top-bar";
 import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-button";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { formatMiles, formatPercent, formatPesos } from "@/lib/margenes/format";
-import { compactDateToIso } from "@/lib/margenes/margen-final-query";
+import { compactDateToIso, parseSedeKey } from "@/lib/margenes/margen-final-query";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
 import { MARGENES_TOUR_ANCHOR } from "@/lib/ui/portal-tours/margenes-tour-anchors";
 import { MARGENES_TOUR_STEPS } from "@/lib/ui/portal-tours/margenes-tour-steps";
+import {
+  MargenesSedePickerModal,
+  type MargenSedePickerOption,
+} from "@/app/margenes/margenes-sede-picker-modal";
 import "driver.js/dist/driver.css";
 import "@/lib/ui/product-tour/product-tour.css";
 
@@ -147,6 +151,12 @@ export default function MargenesPage() {
   const [sedeRows, setSedeRows] = useState<SedeRow[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [dataCommitted, setDataCommitted] = useState(false);
+  const [sedePickerOpen, setSedePickerOpen] = useState(false);
+  const [pendingSede, setPendingSede] = useState("");
+  const [catalogSedes, setCatalogSedes] = useState<MargenSedePickerOption[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const { startTour: startMargenesTour } = useProductTour({
     localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.margenes,
@@ -155,7 +165,7 @@ export default function MargenesPage() {
     theme: "producto",
     userId: user?.id,
     ready: boardReady,
-    contentReady: anchorsReady,
+    contentReady: anchorsReady && dataCommitted,
   });
 
   useEffect(() => {
@@ -185,6 +195,9 @@ export default function MargenesPage() {
             const to = compactDateToIso(payload.maxDate);
             if (from) setDateStart(from);
             if (to) setDateEnd(to);
+          }
+          if (payload.ready) {
+            setSedePickerOpen(true);
           }
         }
       } catch {
@@ -225,8 +238,74 @@ export default function MargenesPage() {
     [dateStart, dateEnd, empresa, sede, categoria, linea, sublinea, item],
   );
 
-  const loadData = useCallback(async () => {
+  const loadSedeCatalog = useCallback(async () => {
     if (!dateStart || !dateEnd || !meta?.ready) return;
+    setLoadingCatalog(true);
+    setCatalogError(null);
+    try {
+      const query = buildQuery({ from: dateStart, to: dateEnd });
+      const response = await fetch(`/api/margenes/data?mode=sedes&${query}`, {
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "No se pudo listar las sedes.");
+      }
+      const payload = (await response.json()) as { sedes: MargenSedePickerOption[] };
+      setCatalogSedes(payload.sedes);
+      if (
+        pendingSede &&
+        !payload.sedes.some((option) => option.value === pendingSede)
+      ) {
+        setPendingSede("");
+      }
+    } catch (error) {
+      setCatalogSedes([]);
+      setCatalogError(
+        error instanceof Error ? error.message : "No se pudo listar las sedes.",
+      );
+    } finally {
+      setLoadingCatalog(false);
+    }
+  }, [dateStart, dateEnd, meta?.ready, pendingSede, router]);
+
+  useEffect(() => {
+    if (!sedePickerOpen || !meta?.ready || !dateStart || !dateEnd) return;
+    void loadSedeCatalog();
+  }, [sedePickerOpen, meta?.ready, dateStart, dateEnd, loadSedeCatalog]);
+
+  const openSedePicker = useCallback(() => {
+    setDataCommitted(false);
+    setSummary(null);
+    setProductoRows([]);
+    setFacturaRows([]);
+    setSedeRows([]);
+    setFilterOptions(null);
+    setDataError(null);
+    setPendingSede(sede);
+    setSedePickerOpen(true);
+  }, [sede]);
+
+  const confirmSedeSelection = useCallback(() => {
+    if (!pendingSede) return;
+    const parsed = parseSedeKey(pendingSede);
+    if (!parsed) return;
+    setSede(pendingSede);
+    setEmpresa(parsed.empresa);
+    setCategoria("");
+    setLinea("");
+    setSublinea("");
+    setItem("");
+    setDataCommitted(true);
+    setSedePickerOpen(false);
+  }, [pendingSede]);
+
+  const loadData = useCallback(async () => {
+    if (!dateStart || !dateEnd || !meta?.ready || !sede || !dataCommitted) return;
     setLoadingData(true);
     setDataError(null);
     try {
@@ -281,12 +360,14 @@ export default function MargenesPage() {
     } finally {
       setLoadingData(false);
     }
-  }, [dateStart, dateEnd, meta?.ready, queryBase, router]);
+  }, [dateStart, dateEnd, meta?.ready, dataCommitted, sede, queryBase, router]);
 
   useEffect(() => {
-    if (!boardReady || !meta?.ready || !dateStart || !dateEnd) return;
+    if (!boardReady || !meta?.ready || !dataCommitted || !sede || !dateStart || !dateEnd) {
+      return;
+    }
     void loadData();
-  }, [boardReady, meta?.ready, dateStart, dateEnd, loadData]);
+  }, [boardReady, meta?.ready, dataCommitted, sede, dateStart, dateEnd, queryBase, loadData]);
 
   useLayoutEffect(() => {
     if (!boardReady) {
@@ -294,10 +375,18 @@ export default function MargenesPage() {
       return;
     }
     setAnchorsReady(Boolean(document.getElementById(MARGENES_TOUR_ANCHOR.intro)));
-  }, [boardReady, loadingMeta, loadingData]);
+  }, [boardReady, loadingMeta, loadingData, dataCommitted]);
 
   const rangeLabel =
     dateStart && dateEnd ? `${dateStart} → ${dateEnd}` : "Sin rango cargado";
+
+  const selectedSedeLabel = useMemo(() => {
+    if (!sede) return null;
+    const fromCatalog = catalogSedes.find((option) => option.value === sede);
+    if (fromCatalog) return fromCatalog.label;
+    const fromFilters = filterOptions?.sedes.find((option) => option.value === sede);
+    return fromFilters?.label ?? sede;
+  }, [sede, catalogSedes, filterOptions?.sedes]);
 
   const sedeOptions = useMemo(() => {
     if (!filterOptions) return [];
@@ -338,13 +427,18 @@ export default function MargenesPage() {
             </span>
             <button
               type="button"
-              onClick={() => void loadData()}
-              disabled={!meta?.ready || loadingData || !dateStart || !dateEnd}
+              onClick={openSedePicker}
+              disabled={!meta?.ready || loadingData}
               className="ml-1 inline-flex items-center gap-1.5 rounded-md border border-[#2a2f47] bg-[#1b1e2e] px-3 py-1.5 text-xs text-[#dde3f0] hover:border-[#4f8ef7]/60 disabled:opacity-50"
             >
               <RefreshCcw className={`h-3.5 w-3.5 ${loadingData ? "animate-spin" : ""}`} />
-              Actualizar
+              Cambiar selección
             </button>
+            {selectedSedeLabel ? (
+              <span className="rounded-full border border-[#4f8ef7]/40 bg-[#4f8ef7]/10 px-2.5 py-0.5 text-[11px] text-[#4f8ef7]">
+                {selectedSedeLabel}
+              </span>
+            ) : null}
             <span className="rounded-full border border-[#2a2f47] bg-[#232740] px-2.5 py-0.5 text-[11px] text-[#6b7590]">
               {rangeLabel}
             </span>
@@ -365,7 +459,7 @@ export default function MargenesPage() {
 
           <div
             id={MARGENES_TOUR_ANCHOR.filters}
-            className="flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2"
+            className={`flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2 ${!dataCommitted ? "pointer-events-none opacity-50" : ""}`}
           >
             <div className="flex min-w-[120px] flex-col gap-0.5">
               <span className="text-[10px] tracking-wide text-[#6b7590] uppercase">Desde</span>
@@ -397,42 +491,42 @@ export default function MargenesPage() {
                 setEmpresa(value);
                 setSede("");
               }}
-              disabled={!meta?.ready}
+              disabled={!meta?.ready || dataCommitted}
             />
             <FilterSelect
               label="Sede"
               value={sede}
               options={sedeOptions}
               onChange={setSede}
-              disabled={!meta?.ready}
+              disabled={!meta?.ready || dataCommitted}
             />
             <FilterSelect
               label="Categoría"
               value={categoria}
               options={filterOptions?.categorias ?? []}
               onChange={setCategoria}
-              disabled={!meta?.ready}
+              disabled={!meta?.ready || !dataCommitted}
             />
             <FilterSelect
               label="Línea"
               value={linea}
               options={filterOptions?.lineas ?? []}
               onChange={setLinea}
-              disabled={!meta?.ready}
+              disabled={!meta?.ready || !dataCommitted}
             />
             <FilterSelect
               label="Sublínea"
               value={sublinea}
               options={filterOptions?.sublineas ?? []}
               onChange={setSublinea}
-              disabled={!meta?.ready}
+              disabled={!meta?.ready || !dataCommitted}
             />
             <FilterSelect
               label="Ítem"
               value={item}
               options={filterOptions?.items ?? []}
               onChange={setItem}
-              disabled={!meta?.ready}
+              disabled={!meta?.ready || !dataCommitted}
             />
           </div>
 
@@ -521,6 +615,10 @@ export default function MargenesPage() {
             {!meta?.ready ? (
               <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#6b7590]">
                 Tabla margen_final sin datos. Aplica la migración y carga el CSV/ETL.
+              </div>
+            ) : !dataCommitted ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#6b7590]">
+                Elige una sede en el modal para cargar el análisis de margen.
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-auto">
@@ -660,6 +758,16 @@ export default function MargenesPage() {
           </main>
         </div>
       )}
+      <MargenesSedePickerModal
+        open={Boolean(meta?.ready && sedePickerOpen)}
+        rangeLabel={rangeLabel}
+        sedes={catalogSedes}
+        selectedSede={pendingSede}
+        loading={loadingCatalog}
+        error={catalogError}
+        onSelect={setPendingSede}
+        onConfirm={confirmSedeSelection}
+      />
     </div>
   );
 }

@@ -22,7 +22,15 @@ import {
 const CACHE_CONTROL = "no-store, private";
 const TABLE_ROW_LIMIT = 1000;
 
-type DataMode = "summary" | "filters" | MargenViewMode;
+type DataMode = "sedes" | "summary" | "filters" | MargenViewMode;
+
+const HEAVY_MODES: DataMode[] = [
+  "summary",
+  "filters",
+  "producto",
+  "factura",
+  "sede",
+];
 
 const toNumber = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
@@ -69,6 +77,57 @@ const querySummary = async (
     margenPesos,
     margenPct: toMargenPct(ventasNetas, margenPesos),
     rowCount: Number(row?.row_count ?? 0),
+    from: compactDateToIso(filters.fromCompact),
+    to: compactDateToIso(filters.toCompact),
+  };
+};
+
+const querySedesCatalog = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+) => {
+  const params: unknown[] = [];
+  const where = buildMargenWhereClause(
+    {
+      ...filters,
+      empresas: [],
+      sedes: [],
+      categorias: [],
+      lineas: [],
+      sublineas: [],
+      items: [],
+    },
+    params,
+  );
+
+  const result = await client.query<{
+    empresa: string;
+    id_co: string;
+    row_count: string;
+  }>(
+    `
+    SELECT
+      LOWER(TRIM(COALESCE(empresa, ''))) AS empresa,
+      LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co,
+      COUNT(*)::bigint AS row_count
+    FROM margen_final
+    WHERE ${where}
+      AND TRIM(COALESCE(empresa, '')) <> ''
+      AND TRIM(COALESCE(id_co, '')) <> ''
+    GROUP BY 1, 2
+    ORDER BY 1, 2
+    `,
+    params,
+  );
+
+  return {
+    sedes: result.rows.map((row) => ({
+      value: sedeKey(row.empresa, row.id_co),
+      label: sedeLabel(row.empresa, row.id_co),
+      empresa: row.empresa,
+      idCo: row.id_co,
+      rowCount: Number(row.row_count ?? 0),
+    })),
     from: compactDateToIso(filters.fromCompact),
     to: compactDateToIso(filters.toCompact),
   };
@@ -328,13 +387,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const mode = (url.searchParams.get("mode") ?? "summary") as DataMode;
-  const allowedModes: DataMode[] = [
-    "summary",
-    "filters",
-    "producto",
-    "factura",
-    "sede",
-  ];
+  const allowedModes: DataMode[] = ["sedes", ...HEAVY_MODES];
   if (!allowedModes.includes(mode)) {
     return NextResponse.json(
       { error: "Modo invalido." },
@@ -364,8 +417,17 @@ export async function GET(request: Request) {
       );
     }
 
+    if (HEAVY_MODES.includes(mode) && parsed.sedes.length === 0) {
+      return NextResponse.json(
+        { error: "Selecciona una sede antes de consultar datos." },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      );
+    }
+
     let payload: unknown;
-    if (mode === "summary") {
+    if (mode === "sedes") {
+      payload = await querySedesCatalog(client, parsed);
+    } else if (mode === "summary") {
       payload = await querySummary(client, parsed);
     } else if (mode === "filters") {
       payload = await queryFilters(client, parsed);
