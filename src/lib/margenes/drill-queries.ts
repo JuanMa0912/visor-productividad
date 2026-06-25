@@ -718,59 +718,130 @@ export const queryFilterOptions = async (
     params,
   );
 
-  const [empresas, sedes, fechas, categorias, lineas, sublineas, items] =
-    await Promise.all([
-      client.query(
-        `SELECT DISTINCT LOWER(TRIM(empresa)) AS value FROM margen_final WHERE ${where} AND TRIM(empresa) <> '' ORDER BY 1`,
-        params,
-      ),
-      client.query(
-        `SELECT DISTINCT LOWER(TRIM(empresa)) AS empresa, LPAD(TRIM(id_co),3,'0') AS id_co FROM margen_final WHERE ${where} ORDER BY 1,2`,
-        params,
-      ),
-      client.query(
-        `SELECT DISTINCT fecha_dcto AS value FROM margen_final WHERE ${where} ORDER BY 1 DESC`,
-        params,
-      ),
-      client.query(
-        `SELECT DISTINCT TRIM(id_tipo::text) AS value, TRIM(id_tipo::text) AS label FROM margen_final WHERE ${where} AND TRIM(id_tipo::text) <> '' ORDER BY 1`,
-        params,
-      ),
-      client.query(
-        `SELECT DISTINCT TRIM(id_linea1::text) AS value, COALESCE(NULLIF(TRIM(nombre_linea1),''), TRIM(id_linea1::text)) AS label FROM margen_final WHERE ${where} AND TRIM(id_linea1::text) <> '' ORDER BY 2`,
-        params,
-      ),
-      client.query(
-        `SELECT DISTINCT TRIM(id_linea2::text) AS value, COALESCE(NULLIF(TRIM(nombre_linea2),''), TRIM(id_linea2::text)) AS label FROM margen_final WHERE ${where} AND TRIM(id_linea2::text) <> '' ORDER BY 2`,
-        params,
-      ),
-      client.query(
-        `SELECT DISTINCT TRIM(id_item::text) AS value, COALESCE(NULLIF(TRIM(item_descripcion),''), TRIM(id_item::text)) AS label FROM margen_final WHERE ${where} AND TRIM(id_item::text) <> '' ORDER BY 2 LIMIT 500`,
-        params,
-      ),
-    ]);
+  // Una sola pasada MATERIALIZED sobre el rango filtrado; evita 7 scans completos
+  // en paralelo (disparaban 504 en el LB con ~8M filas en GCP).
+  const result = await client.query<{
+    empresas: Array<{ value: string }> | null;
+    sedes: Array<{ empresa: string; id_co: string }> | null;
+    fechas: Array<{ value: string }> | null;
+    categorias: Array<{ value: string; label: string }> | null;
+    lineas: Array<{ value: string; label: string }> | null;
+    sublineas: Array<{ value: string; label: string }> | null;
+    items: Array<{ value: string; label: string }> | null;
+  }>(
+    `
+    WITH filtered AS MATERIALIZED (
+      SELECT
+        LOWER(TRIM(COALESCE(empresa, ''))) AS empresa_norm,
+        LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co_norm,
+        fecha_dcto,
+        TRIM(COALESCE(id_tipo::text, '')) AS id_tipo,
+        TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
+        COALESCE(NULLIF(TRIM(nombre_linea1), ''), TRIM(COALESCE(id_linea1::text, ''))) AS nombre_linea1,
+        TRIM(COALESCE(id_linea2::text, '')) AS id_linea2,
+        COALESCE(NULLIF(TRIM(nombre_linea2), ''), TRIM(COALESCE(id_linea2::text, ''))) AS nombre_linea2,
+        TRIM(COALESCE(id_item::text, '')) AS id_item,
+        COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS item_label
+      FROM margen_final
+      WHERE ${where}
+    )
+    SELECT
+      (
+        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
+        FROM (
+          SELECT DISTINCT empresa_norm AS value
+          FROM filtered
+          WHERE empresa_norm <> ''
+          ORDER BY 1
+        ) t
+      ) AS empresas,
+      (
+        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
+        FROM (
+          SELECT DISTINCT empresa_norm AS empresa, id_co_norm AS id_co
+          FROM filtered
+          ORDER BY 1, 2
+        ) t
+      ) AS sedes,
+      (
+        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
+        FROM (
+          SELECT DISTINCT fecha_dcto AS value
+          FROM filtered
+          ORDER BY 1 DESC
+        ) t
+      ) AS fechas,
+      (
+        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
+        FROM (
+          SELECT DISTINCT id_tipo AS value, id_tipo AS label
+          FROM filtered
+          WHERE id_tipo <> ''
+          ORDER BY 1
+        ) t
+      ) AS categorias,
+      (
+        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
+        FROM (
+          SELECT DISTINCT id_linea1 AS value, nombre_linea1 AS label
+          FROM filtered
+          WHERE id_linea1 <> ''
+          ORDER BY 2
+        ) t
+      ) AS lineas,
+      (
+        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
+        FROM (
+          SELECT DISTINCT id_linea2 AS value, nombre_linea2 AS label
+          FROM filtered
+          WHERE id_linea2 <> ''
+          ORDER BY 2
+        ) t
+      ) AS sublineas,
+      (
+        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
+        FROM (
+          SELECT DISTINCT id_item AS value, item_label AS label
+          FROM filtered
+          WHERE id_item <> ''
+          ORDER BY 2
+          LIMIT 500
+        ) t
+      ) AS items
+    `,
+    params,
+  );
+
+  const row = result.rows[0] ?? {};
+  const empresas = row.empresas ?? [];
+  const sedes = row.sedes ?? [];
+  const fechas = row.fechas ?? [];
+  const categorias = row.categorias ?? [];
+  const lineas = row.lineas ?? [];
+  const sublineas = row.sublineas ?? [];
+  const items = row.items ?? [];
 
   return {
-    empresas: empresas.rows.map((r) => ({
+    empresas: empresas.map((r) => ({
       value: r.value,
       label: empresaLabel(String(r.value)),
     })),
-    sedes: sedes.rows.map((r) => ({
+    sedes: sedes.map((r) => ({
       value: `${r.empresa}|${r.id_co}`,
       label: sedeLabel(String(r.empresa), String(r.id_co)),
       empresa: String(r.empresa),
       idCo: String(r.id_co),
     })),
-    fechas: fechas.rows.map((r) => ({
+    fechas: fechas.map((r) => ({
       value: String(r.value),
       label: formatDayLabel(String(r.value)),
     })),
-    categorias: categorias.rows.map((r) => ({
+    categorias: categorias.map((r) => ({
       value: String(r.value),
       label: tipoLabel(String(r.value)),
     })),
-    lineas: lineas.rows,
-    sublineas: sublineas.rows,
-    items: items.rows,
+    lineas,
+    sublineas,
+    items,
   };
 };

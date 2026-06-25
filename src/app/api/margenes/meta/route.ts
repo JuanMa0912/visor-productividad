@@ -82,18 +82,26 @@ export async function GET() {
       WHERE fecha_dcto IS NOT NULL
     `);
 
-    const datesResult = await client.query<{ fecha_dcto: string; row_count: string }>(`
-      SELECT fecha_dcto, COUNT(*)::bigint AS row_count
-      FROM margen_final
-      WHERE fecha_dcto ~ '^[0-9]{8}$'
-      GROUP BY 1
-      ORDER BY 1
-    `);
-
     const row = stats.rows[0];
     const rowCount = Number(row?.row_count ?? 0);
     const distinctDateCount = Number(row?.distinct_dates ?? 0);
     const invalidDateRows = Number(row?.invalid_dates ?? 0);
+
+    let dates: Array<{ value: string; rowCount: number }> = [];
+    if (rowCount > 0 && distinctDateCount > 0 && distinctDateCount <= 31) {
+      const datesResult = await client.query<{ fecha_dcto: string; row_count: string }>(`
+        SELECT fecha_dcto, COUNT(*)::bigint AS row_count
+        FROM margen_final
+        WHERE fecha_dcto ~ '^[0-9]{8}$'
+        GROUP BY 1
+        ORDER BY 1
+      `);
+      dates = datesResult.rows.map((entry) => ({
+        value: entry.fecha_dcto,
+        rowCount: Number(entry.row_count ?? 0),
+      }));
+    }
+
     const response = NextResponse.json(
       {
         ready: rowCount > 0,
@@ -103,10 +111,7 @@ export async function GET() {
         maxDate: row?.max_date ?? null,
         distinctDateCount,
         invalidDateRows,
-        dates: datesResult.rows.map((entry) => ({
-          value: entry.fecha_dcto,
-          rowCount: Number(entry.row_count ?? 0),
-        })),
+        dates,
         sedeCount: Number(row?.sede_count ?? 0),
         message:
           rowCount > 0
