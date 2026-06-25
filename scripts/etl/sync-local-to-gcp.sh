@@ -385,10 +385,12 @@ verify_freshness() {
     fi
   done
   [[ -n "$cte" ]] || { log "verify: sin tablas que verificar."; return 0; }
-  "${GCP_PSQL[@]}" -v obj="$HASTAC" -P pager=off -c "
+  # $HASTAC es YYYYMMDD ya validado (8 digitos) -> se inyecta como literal SQL.
+  # OJO: psql NO interpola :'var' dentro de -c, por eso aqui no se usa variable de psql.
+  "${GCP_PSQL[@]}" -P pager=off -c "
     WITH m AS ($cte)
     SELECT t AS tabla, COALESCE(d,'-') AS hasta,
-           CASE WHEN d >= :'obj' THEN 'OK' ELSE 'ATRASADA' END AS estado
+           CASE WHEN d >= '$HASTAC' THEN 'OK' ELSE 'ATRASADA' END AS estado
     FROM m ORDER BY estado DESC, tabla;" || log "WARN: verificacion fallo."
 }
 
