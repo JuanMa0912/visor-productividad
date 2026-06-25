@@ -26,12 +26,19 @@ export type StartProductTourOptions = {
   stateKey: TutorialStateKey;
   userId?: string | null;
   skipPersist?: boolean;
+  onCompleted?: () => void;
 };
 
 let activeDriver: Driver | null = null;
+let destroySkipPersist = false;
 
-export const destroyProductTour = (): void => {
-  activeDriver?.destroy();
+export const destroyProductTour = (options?: { skipPersist?: boolean }): void => {
+  if (!activeDriver) {
+    destroySkipPersist = false;
+    return;
+  }
+  destroySkipPersist = options?.skipPersist ?? false;
+  activeDriver.destroy();
   activeDriver = null;
 };
 
@@ -43,7 +50,7 @@ export const startProductTour = (
   const steps = resolveActiveProductTourSteps(options.steps);
   if (steps.length === 0) return false;
 
-  destroyProductTour();
+  destroyProductTour({ skipPersist: true });
 
   const theme = options.theme ?? "portal";
   const popoverClass = productTourPopoverClass(theme);
@@ -74,9 +81,13 @@ export const startProductTour = (
     onDestroyed: () => {
       activeDriver = null;
       document.documentElement.style.removeProperty("--product-tour-highlight-rgb");
-      if (!options.skipPersist) {
+      const skipPersist =
+        options.skipPersist || destroySkipPersist;
+      destroySkipPersist = false;
+      if (!skipPersist) {
         markTourCompletedLocally(options.localStorageKey, options.userId);
         void persistTutorialCompletedRemote(options.stateKey);
+        options.onCompleted?.();
       }
     },
   });

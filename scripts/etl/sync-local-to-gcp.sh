@@ -7,16 +7,10 @@
 # Tablas (allowlist fija; NO toca tablas de estado de la app ni matviews):
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
 #   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario,
-<<<<<<< HEAD
-#   margen_final (DELETE por ventana o --margen-full; ver README-sync.md)
-# (ventas_item_diario: el ETL que lo LLENA en el local corre aparte en Windows; aqui
-#  solo lo replicamos local->GCP. Se excluyen su id serial y el FK source_load_id.)
-=======
-#   margen_final
+#   margen_final (modo replace por ventana; --margen-full para snapshot completo)
 # (ventas_item_diario y margen_final: sus ETLs de carga al local corren aparte; aqui solo
-#  los replicamos local->GCP. margen_final NO tiene clave natural -> modo "replace": borra
-#  la ventana en GCP y reinserta, excluyendo su id serial.)
->>>>>>> 25a1b1466a4a25d601f6c00955ae87c13c755e7d
+#  los replicamos local->GCP. margen_final NO tiene clave natural -> borra ventana en GCP
+#  y reinserta, excluyendo su id serial.)
 #
 # Ventana:
 #   - default (sin flags) = solo AYER (rapido, para no retrasar la subida del dia).
@@ -169,26 +163,25 @@ done
 DATECOL[rotacion_base_item_dia_sede]="fecha_dia"; DATETYPE[rotacion_base_item_dia_sede]="date"; EXCLUDE[rotacion_base_item_dia_sede]=""
 DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"
 DATECOL[ventas_item_diario]="fecha_dcto"; DATETYPE[ventas_item_diario]="text"; EXCLUDE[ventas_item_diario]="id,source_load_id"
-<<<<<<< HEAD
-DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"
+DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"; MODE[margen_final]="replace"
 
-process_table_replace() {
-  local tbl="$1" where cols tmp cnt drop_stmt
-  if [[ "$tbl" == "margen_final" && "$MARGEN_FULL" -eq 1 ]]; then
-    cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl")"
-    log "[$tbl] local tiene $cnt filas (carga completa --margen-full)"
-    if [[ "$cnt" == "0" ]]; then
-      log "[$tbl] sin filas en local; skip"
-      return 0
-    fi
-    if [[ "$DRY_RUN" -eq 1 ]]; then log "[$tbl] dry-run: no escribe"; return 0; fi
-    cols="$(build_cols "$tbl")"
-    [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
-    drop_stmt=""
-    for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
-    tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
-    "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl) TO STDOUT WITH (FORMAT csv)" > "$tmp"
-    "${GCP_PSQL[@]}" <<SQL
+process_table_margen_full() {
+  local tbl="margen_final" cols tmp cnt drop_stmt _ec
+  cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl")"
+  log "[$tbl] local tiene $cnt filas (carga completa --margen-full)"
+  if [[ "$cnt" == "0" ]]; then
+    log "[$tbl] sin filas en local; skip"
+    return 0
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then log "[$tbl] dry-run: no escribe"; return 0; fi
+
+  cols="$(build_cols "$tbl")"
+  [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
+  drop_stmt=""
+  for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
+  tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
+  "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl) TO STDOUT WITH (FORMAT csv)" > "$tmp"
+  "${GCP_PSQL[@]}" <<SQL
 \set ON_ERROR_STOP on
 BEGIN;
 SET statement_timeout = 0;
@@ -200,46 +193,9 @@ INSERT INTO public.$tbl ($cols)
 SELECT $cols FROM _stg;
 COMMIT;
 SQL
-    rm -f "$tmp"
-    log "[$tbl] carga completa OK ($cnt filas)"
-    return 0
-  fi
-
-  where="$(build_where "$tbl")"
-  cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl WHERE $where")"
-  log "[$tbl] local tiene $cnt filas en [$DESDE..$HASTA] (replace)"
-  if [[ "$cnt" == "0" ]]; then
-    log "[$tbl] sin filas; skip"
-    return 0
-  fi
-  if [[ "$DRY_RUN" -eq 1 ]]; then log "[$tbl] dry-run: no escribe"; return 0; fi
-
-  cols="$(build_cols "$tbl")"
-  [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
-  drop_stmt=""
-  for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
-  tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
-  "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
-  "${GCP_PSQL[@]}" <<SQL
-\set ON_ERROR_STOP on
-BEGIN;
-SET statement_timeout = 0;
-DELETE FROM public.$tbl WHERE $where;
-CREATE TEMP TABLE _stg (LIKE public.$tbl INCLUDING DEFAULTS) ON COMMIT DROP;
-$drop_stmt
-\copy _stg ($cols) FROM '$tmp' WITH (FORMAT csv)
-INSERT INTO public.$tbl ($cols)
-SELECT $cols FROM _stg;
-COMMIT;
-SQL
   rm -f "$tmp"
-  log "[$tbl] replace OK ($cnt filas)"
+  log "[$tbl] carga completa OK ($cnt filas)"
 }
-=======
-# margen_final: SIN clave natural (solo id serial). Modo "replace" -> borra la ventana en
-# GCP y reinserta (excluye el id serial). Lo alimenta el ETL de margenes en local (07:15).
-DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"; MODE[margen_final]="replace"
->>>>>>> 25a1b1466a4a25d601f6c00955ae87c13c755e7d
 
 build_where() {
   local tbl="$1" col="${DATECOL[$1]}"
@@ -389,13 +345,18 @@ log "Config: $ETL_ENV_FILE"
 log "Origen(local): $DB_HOST_LOCAL/$DB_NAME_LOCAL  ->  Destino(GCP): $DB_HOST_GCP/$DB_NAME_GCP (ssl=$GCP_SSL)"
 
 for t in "${TABLES[@]}"; do
+  if [[ "$t" == "margen_final" && "$MARGEN_FULL" -eq 1 ]]; then
+    continue
+  fi
   process_table "$t"
 done
 
-process_table_replace margen_final
+if [[ "$MARGEN_FULL" -eq 1 ]]; then
+  process_table_margen_full
+fi
 
 if [[ "$MARGEN_FULL" -eq 1 ]]; then
-  log "Nota: --margen-full omitio ventana diaria de margen_final; el resto de tablas uso [$DESDE..$HASTA]."
+  log "Nota: --margen-full reemplazo completo de margen_final en GCP; el resto de tablas uso ventana [$DESDE..$HASTA]."
 fi
 
 if [[ "$MODE_DAILY" -eq 1 && "${#CANARY_EMPTY[@]}" -gt 0 ]]; then

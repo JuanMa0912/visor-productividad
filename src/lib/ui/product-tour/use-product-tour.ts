@@ -40,6 +40,10 @@ export const useProductTour = (config: UseProductTourConfig) => {
   const [completionStatus, setCompletionStatus] =
     useState<ProductTourCompletionStatus>("loading");
 
+  const handleTourCompleted = useCallback(() => {
+    setCompletionStatus("completed");
+  }, []);
+
   const tourOptions = useMemo(
     () => ({
       steps,
@@ -47,15 +51,20 @@ export const useProductTour = (config: UseProductTourConfig) => {
       localStorageKey,
       stateKey,
       userId,
+      onCompleted: handleTourCompleted,
     }),
-    [steps, theme, localStorageKey, stateKey, userId],
+    [steps, theme, localStorageKey, stateKey, userId, handleTourCompleted],
   );
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !userId) return;
 
     let cancelled = false;
+
     void (async () => {
+      setCompletionStatus("loading");
+      if (cancelled) return;
+
       if (isTourCompletedLocally(localStorageKey, userId)) {
         if (!cancelled) setCompletionStatus("completed");
         return;
@@ -83,7 +92,7 @@ export const useProductTour = (config: UseProductTourConfig) => {
   }, [tourOptions]);
 
   useEffect(() => {
-    if (!autoStart || !ready || completionStatus !== "pending") return;
+    if (!autoStart || !ready || !userId || completionStatus !== "pending") return;
     if (autoStartAttemptedRef.current) return;
 
     const delayMs = contentReady
@@ -105,6 +114,7 @@ export const useProductTour = (config: UseProductTourConfig) => {
   }, [
     autoStart,
     ready,
+    userId,
     completionStatus,
     contentReady,
     tourOptions,

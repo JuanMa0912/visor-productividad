@@ -6,14 +6,8 @@ origen (**192.168.35.217**: mercamio / mtodo / bogota) a **`produXdia.margen_fin
 
 - **Estrategia:** por cada empresa y dia → `DELETE (fecha_dcto, empresa)` + **COPY
   postgres->postgres** (formato texto, NULL-safe). Idempotente: re-correr no duplica.
-<<<<<<< HEAD
 - Solo carga a la BD local (232). La subida a GCP la hace `sync-local-to-gcp.sh`
-  (`--margen-full` la primera vez; luego el sync diario con `--days`).
-=======
-- Carga **solo a local (232)**. La replicacion a GCP la hace el sync local->GCP
-  (`sync-local-to-gcp.sh`, 07:50), que incluye `margen_final` en modo "replace"
-  (borra-ventana + inserta, por no tener clave natural).
->>>>>>> 25a1b1466a4a25d601f6c00955ae87c13c755e7d
+  (`--margen-full` la primera vez o cuando hay backfill; luego el sync diario con ventana).
 - Corre en el server (232) con `python3` del sistema (tiene `psycopg2-binary`; no hay venv).
 
 ## Config

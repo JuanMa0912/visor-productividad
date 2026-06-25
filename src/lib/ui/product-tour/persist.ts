@@ -12,13 +12,13 @@ export type TutorialRemoteResponse = {
   completed: boolean;
 };
 
-export const fetchTutorialCompletedRemote = async (
+const fetchTutorialCompletedRemoteOnce = async (
   stateKey: TutorialStateKey,
 ): Promise<boolean | null> => {
   try {
     const response = await fetch(
       `/api/ui-state/tutorial?key=${encodeURIComponent(stateKey)}`,
-      { cache: "no-store" },
+      { cache: "no-store", credentials: "include" },
     );
     if (response.status === 401) return null;
     if (!response.ok) return null;
@@ -29,22 +29,39 @@ export const fetchTutorialCompletedRemote = async (
   }
 };
 
+export const fetchTutorialCompletedRemote = async (
+  stateKey: TutorialStateKey,
+): Promise<boolean | null> => {
+  const first = await fetchTutorialCompletedRemoteOnce(stateKey);
+  if (first !== null) return first;
+  await new Promise((resolve) => window.setTimeout(resolve, 400));
+  return fetchTutorialCompletedRemoteOnce(stateKey);
+};
+
 export const persistTutorialCompletedRemote = async (
   stateKey: TutorialStateKey,
 ): Promise<boolean> => {
   const csrf = getCookieValue("vp_csrf");
   if (!csrf) return false;
-  try {
-    const response = await fetch(
-      `/api/ui-state/tutorial?key=${encodeURIComponent(stateKey)}`,
-      {
-        method: "POST",
-        headers: { "x-csrf-token": csrf },
-        cache: "no-store",
-      },
-    );
-    return response.ok;
-  } catch {
-    return false;
-  }
+
+  const postOnce = async (): Promise<boolean> => {
+    try {
+      const response = await fetch(
+        `/api/ui-state/tutorial?key=${encodeURIComponent(stateKey)}`,
+        {
+          method: "POST",
+          headers: { "x-csrf-token": csrf },
+          cache: "no-store",
+          credentials: "include",
+        },
+      );
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  if (await postOnce()) return true;
+  await new Promise((resolve) => window.setTimeout(resolve, 400));
+  return postOnce();
 };
