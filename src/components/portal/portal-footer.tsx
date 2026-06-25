@@ -8,7 +8,7 @@ import { PORTAL_APP_VERSION } from "./portal-branding-header";
  * Rutas en las que el footer global NO debe renderizarse porque la pagina
  * ya provee su propio footer/branding autocontenido (split-panel, hero, etc).
  */
-const ROUTES_WITHOUT_FOOTER: readonly string[] = ["/login"];
+const ROUTES_WITHOUT_FOOTER: readonly string[] = ["/login", "/margenes"];
 
 /**
  * Pie de pagina global del Portal UAID.
