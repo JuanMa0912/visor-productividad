@@ -122,6 +122,20 @@ const colsForDrillLevel = (level: number): ColDef[] => {
 
   const metricsTail: ColDef[] = [
     {
+      key: "facturas",
+      label: "Facturas",
+      align: "right",
+      sortValue: (row) => row.facturas,
+      render: (row) => row.facturas.toLocaleString("es-CO"),
+    },
+    {
+      key: "cantidad",
+      label: "Cant.",
+      align: "right",
+      sortValue: (row) => row.cantidad,
+      render: (row) => formatDecimals(row.cantidad),
+    },
+    {
       key: "pvuIva",
       label: "P.Vta/Und c/IVA",
       align: "right",
@@ -135,30 +149,76 @@ const colsForDrillLevel = (level: number): ColDef[] => {
       sortValue: (row) => row.pcu,
       render: (row) => formatDecimals(row.pcu),
     },
-    {
-      key: "cantidad",
-      label: "Cant.",
-      align: "right",
-      sortValue: (row) => row.cantidad,
-      render: (row) => formatDecimals(row.cantidad),
-    },
-    {
-      key: "facturas",
-      label: "Facturas",
-      align: "right",
-      sortValue: (row) => row.facturas,
-      render: (row) => row.facturas.toLocaleString("es-CO"),
-    },
   ];
+
+  if (level === -1) {
+    return [
+      {
+        key: "empresa",
+        label: "Empresa",
+        sortValue: (row) => (row as DrillRow & { empresa?: string }).empresa ?? "",
+        render: (row) => (row as DrillRow & { empresa?: string }).empresa ?? "—",
+      },
+      {
+        key: "cod",
+        label: "Cód.",
+        sortValue: (row) => row.cod,
+        render: (row) => (
+          <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+            {row.cod}
+          </span>
+        ),
+      },
+      {
+        key: "sede",
+        label: "Sede",
+        drill: true,
+        sortValue: (row) => (row as DrillRow & { sede?: string }).sede ?? row.label,
+        render: (row) => (row as DrillRow & { sede?: string }).sede ?? row.label,
+      },
+      {
+        key: "dias",
+        label: "Días",
+        align: "right",
+        sortValue: (row) => (row as DrillRow & { dias?: number }).dias ?? 0,
+        render: (row) => (row as DrillRow & { dias?: number }).dias ?? 0,
+      },
+      {
+        key: "items",
+        label: "Ítems",
+        align: "right",
+        sortValue: (row) => row.items ?? 0,
+        render: (row) => row.items ?? 0,
+      },
+      ...metricsTail,
+      ...base,
+    ];
+  }
 
   if (level === 0) {
     return [
-      { key: "label", label: "Fecha", drill: true, sortValue: (row) => row.cod, render: (row) => row.label },
+      {
+        key: "label",
+        label: "Fecha",
+        drill: true,
+        sortValue: (row) => row.cod,
+        render: (row) =>
+          row.isAcum ? (
+            <span>
+              ACUMULADO{" "}
+              <span className="font-extrabold tracking-wide text-[#fbbf24]">
+                {row.acumMes ?? ""}
+              </span>
+            </span>
+          ) : (
+            row.label
+          ),
+      },
       { key: "categorias", label: "Categ.", align: "right", sortValue: (row) => row.categorias ?? 0, render: (row) => row.categorias ?? 0 },
       { key: "lineas", label: "Líneas", align: "right", sortValue: (row) => row.lineas ?? 0, render: (row) => row.lineas ?? 0 },
       { key: "sublineas", label: "Sublín.", align: "right", sortValue: (row) => row.sublineas ?? 0, render: (row) => row.sublineas ?? 0 },
       { key: "items", label: "Ítems", align: "right", sortValue: (row) => row.items ?? 0, render: (row) => row.items ?? 0 },
-      ...metricsTail.slice(3),
+      ...metricsTail,
       ...base,
     ];
   }
@@ -194,15 +254,15 @@ const colsForDrillLevel = (level: number): ColDef[] => {
   }
   if (level === 4) {
     return [
-      { key: "cod", label: "Cód.", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
-      { key: "label", label: "Ítem", drill: true, sortValue: (row) => row.label, render: (row) => <span className="max-w-[240px] truncate">{row.label}</span> },
+      { key: "cod", label: "Cód. Ítem", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
+      { key: "label", label: "Descripción", drill: true, sortValue: (row) => row.label, render: (row) => <span className="max-w-[240px] truncate">{row.label}</span> },
       ...metricsTail,
       ...base,
     ];
   }
   if (level === 5) {
     return [
-      { key: "label", label: "Factura", drill: true, sortValue: (row) => row.label, render: (row) => row.label },
+      { key: "label", label: "# Factura", drill: true, sortValue: (row) => row.label, render: (row) => row.label },
       ...metricsTail.slice(1),
       ...base,
     ];
@@ -215,12 +275,6 @@ const colsForDrillLevel = (level: number): ColDef[] => {
     ...base,
   ];
 };
-
-const colsForSede = (): ColDef[] => [
-  { key: "sede", label: "Sede", drill: true, sortValue: (row) => (row as DrillRow & { sede?: string }).sede ?? row.label, render: (row) => (row as DrillRow & { sede?: string }).sede ?? row.label },
-  { key: "dias", label: "Días", align: "right", sortValue: (row) => (row as DrillRow & { dias?: number }).dias ?? 0, render: (row) => (row as DrillRow & { dias?: number }).dias ?? 0 },
-  ...colsForDrillLevel(0).slice(-4),
-];
 
 export const MargenesBoard = ({
   dateStart,
@@ -391,7 +445,7 @@ export const MargenesBoard = ({
   const activeLevel = mode === "sede" ? -1 : (payload?.level ?? 0);
   const columns =
     mode === "sede"
-      ? colsForSede()
+      ? colsForDrillLevel(-1)
       : colsForDrillLevel(activeLevel);
 
   const rawRows = useMemo(
@@ -411,13 +465,19 @@ export const MargenesBoard = ({
           return String(av).localeCompare(String(bv), "es");
         });
       }
+    } else if (mode === "sede") {
+      rows.sort((a, b) =>
+        mgSortDir === "desc"
+          ? b.ventasNetas - a.ventasNetas
+          : a.ventasNetas - b.ventasNetas,
+      );
     } else {
       rows.sort((a, b) =>
         mgSortDir === "desc" ? b.margenPct - a.margenPct : a.margenPct - b.margenPct,
       );
     }
     return rows;
-  }, [rawRows, sortKey, columns, mgSortDir]);
+  }, [rawRows, sortKey, columns, mgSortDir, mode]);
 
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const pageRows = sortedRows.slice(page * pageSize, (page + 1) * pageSize);
@@ -486,11 +546,17 @@ export const MargenesBoard = ({
   const showSearch =
     dataCommitted &&
     ((mode === "drill" && (activeLevel === 4 || drillSearch.trim() !== "")) ||
-      (mode === "fact" && factTab === "list"));
+      mode === "fact");
 
   const showSortBar =
     dataCommitted &&
-    (activeLevel >= 5 || mode === "fact" || (mode === "drill" && drillSearch.trim() !== ""));
+    (mode === "sede" ||
+      activeLevel >= 5 ||
+      mode === "fact" ||
+      (mode === "drill" && drillSearch.trim() !== ""));
+
+  const sortLabel =
+    mode === "sede" ? "Ordenar por ventas:" : "Ordenar por margen:";
 
   if (!dataCommitted) {
     return (
@@ -713,7 +779,7 @@ export const MargenesBoard = ({
 
       {showSortBar ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-[#2a2f47] bg-[#141720] px-4 py-1.5">
-          <span className="text-[11px] text-[#6b7590]">Ordenar por margen:</span>
+          <span className="text-[11px] text-[#6b7590]">{sortLabel}</span>
           <div className="flex overflow-hidden rounded-md border border-[#2a2f47]">
             <button
               type="button"

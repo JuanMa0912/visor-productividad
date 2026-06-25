@@ -17,7 +17,7 @@ import {
   type FactNavStep,
 } from "@/lib/margenes/fact-path";
 import {
-  KPI_MERCADO_TIPO,
+  MERCADO_TIPO_SQL,
   METRICS_SQL,
   marginPct,
   toNum,
@@ -26,6 +26,32 @@ import {
 } from "@/lib/margenes/metrics";
 
 const DAY_NAMES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const MONTH_NAMES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+const acumMonthLabel = (fechas: string[]) => {
+  const months = new Set(
+    fechas
+      .filter((fecha) => /^\d{8}$/.test(fecha))
+      .map((fecha) => fecha.slice(4, 6)),
+  );
+  return [...months]
+    .sort()
+    .map((month) => MONTH_NAMES[Number(month) - 1] ?? month)
+    .join("/");
+};
 
 const dayName = (compact: string) => {
   const iso = compactDateToIso(compact);
@@ -52,6 +78,7 @@ export type DrillRow = {
   drillable: boolean;
   drillStep?: DrillPathStep;
   isAcum?: boolean;
+  acumMes?: string;
   ventasNetas: number;
   costoTotal: number;
   margenPesos: number;
@@ -77,7 +104,7 @@ const buildWhere = (
   const drill = drillPathSqlFilters(path, params);
   const parts = [base, ...drill];
   if (kpiMercadoOnly) {
-    parts.push(`TRIM(COALESCE(id_tipo::text, '')) = '${KPI_MERCADO_TIPO}'`);
+    parts.push(MERCADO_TIPO_SQL);
   }
   return parts.join(" AND ");
 };
@@ -162,11 +189,12 @@ export const queryDrillRows = async (
   const where = buildWhere(filters, path, params);
 
   if (level === 0) {
+    const dayWhere = `${where} AND ${MERCADO_TIPO_SQL}`;
     const result = await client.query(
       `
       SELECT fecha_dcto, ${METRICS_SQL}
       FROM margen_final
-      WHERE ${where}
+      WHERE ${dayWhere}
       GROUP BY fecha_dcto
       ORDER BY fecha_dcto
       `,
@@ -185,43 +213,26 @@ export const queryDrillRows = async (
       };
     });
     if (rows.length > 1) {
-      const acc = rows.reduce(
-        (sum, row) => ({
-          ventasNetas: sum.ventasNetas + row.ventasNetas,
-          costoTotal: sum.costoTotal + row.costoTotal,
-          margenPesos: sum.margenPesos + row.margenPesos,
-          cantidad: sum.cantidad + row.cantidad,
-          ventasConIva: sum.ventasConIva + row.ventasConIva,
-          facturas: sum.facturas + row.facturas,
-          categorias: Math.max(sum.categorias ?? 0, row.categorias ?? 0),
-          lineas: Math.max(sum.lineas ?? 0, row.lineas ?? 0),
-          sublineas: Math.max(sum.sublineas ?? 0, row.sublineas ?? 0),
-          items: Math.max(sum.items ?? 0, row.items ?? 0),
-        }),
-        {
-          ventasNetas: 0,
-          costoTotal: 0,
-          margenPesos: 0,
-          cantidad: 0,
-          ventasConIva: 0,
-          facturas: 0,
-          categorias: 0,
-          lineas: 0,
-          sublineas: 0,
-          items: 0,
-        },
+      const acumResult = await client.query(
+        `
+        SELECT ${METRICS_SQL}
+        FROM margen_final
+        WHERE ${dayWhere}
+        `,
+        params,
       );
+      const acc = mapMetrics(acumResult.rows[0] ?? {});
+      const mes = acumMonthLabel(rows.map((row) => row.cod));
+      const acumLabel = `ACUMULADO ${mes}`;
       rows.unshift({
         key: "acum",
         cod: "TODAS",
-        label: "▣ ACUMULADO · todas las fechas",
+        label: acumLabel,
+        acumMes: mes,
         drillable: true,
         isAcum: true,
-        drillStep: { type: "acum", label: "ACUMULADO · todas las fechas" },
+        drillStep: { type: "acum", label: acumLabel },
         ...acc,
-        margenPct: marginPct(acc.ventasNetas, acc.margenPesos),
-        pvuIva: unitSaleWithTax(acc.ventasConIva, acc.cantidad),
-        pcu: unitCost(acc.costoTotal, acc.cantidad),
       });
     }
     return { level, levelName: "Día", rows };

@@ -40,3 +40,5 @@ export const unitCost = (costo: number, cantidad: number) =>
 
 /** Regla del prototipo: KPI en niveles día/categoría solo cuenta id_tipo = 4 (MERCADO). */
 export const KPI_MERCADO_TIPO = "4";
+
+export const MERCADO_TIPO_SQL = `TRIM(COALESCE(id_tipo::text, '')) = '${KPI_MERCADO_TIPO}'`;

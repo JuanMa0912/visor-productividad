@@ -7,6 +7,7 @@ import { AppTopBar } from "@/components/portal/app-top-bar";
 import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-button";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { compactDateToIso } from "@/lib/margenes/margen-final-query";
+import { formatDayLabel } from "@/lib/margenes/drill-queries";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
 import { MARGENES_TOUR_ANCHOR } from "@/lib/ui/portal-tours/margenes-tour-anchors";
@@ -25,6 +26,9 @@ type MargenMeta = {
   rowCount: number;
   minDate: string | null;
   maxDate: string | null;
+  distinctDateCount?: number;
+  invalidDateRows?: number;
+  dates?: Array<{ value: string; rowCount: number }>;
   sedeCount: number;
   message?: string | null;
   error?: string;
@@ -35,6 +39,11 @@ const buildQuery = (params: { from?: string; to?: string }) => {
   if (params.from) search.set("from", params.from);
   if (params.to) search.set("to", params.to);
   return search.toString();
+};
+
+const monthStartIsoFromCompact = (compact: string | null | undefined): string | null => {
+  if (!compact || !/^\d{8}$/.test(compact)) return null;
+  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-01`;
 };
 
 export default function MargenesPage() {
@@ -93,7 +102,9 @@ export default function MargenesPage() {
           if (payload.minDate && payload.maxDate) {
             const from = compactDateToIso(payload.minDate);
             const to = compactDateToIso(payload.maxDate);
-            if (from) setDateStart(from);
+            const monthStart = monthStartIsoFromCompact(payload.maxDate);
+            if (monthStart) setDateStart(monthStart);
+            else if (from) setDateStart(from);
             if (to) setDateEnd(to);
           }
           if (payload.ready) {
@@ -270,7 +281,7 @@ export default function MargenesPage() {
                 {loadingMeta
                   ? "Consultando tabla…"
                   : meta?.ready
-                    ? `${meta.rowCount.toLocaleString("es-CO")} filas · ${meta.sedeCount} sede(s)`
+                    ? `${meta.rowCount.toLocaleString("es-CO")} filas · ${meta.distinctDateCount ?? "?"} día(s) · ${meta.sedeCount} sede(s)`
                     : "Pendiente ETL"}
               </span>
             </span>
@@ -313,6 +324,14 @@ export default function MargenesPage() {
             {meta?.message ? (
               <p className="shrink-0 border-b border-[#2a2f47] bg-[#141720] px-4 py-2 text-xs text-[#fbbf24]">
                 {meta.message}
+                {meta.dates?.length ? (
+                  <span className="mt-1 block text-[#6b7590]">
+                    Fechas en BD:{" "}
+                    {meta.dates
+                      .map((entry) => formatDayLabel(entry.value).split(" ·")[0])
+                      .join(", ")}
+                  </span>
+                ) : null}
               </p>
             ) : null}
             {!meta?.ready ? (

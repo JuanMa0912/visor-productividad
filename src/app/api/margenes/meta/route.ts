@@ -66,19 +66,34 @@ export async function GET() {
       min_date: string | null;
       max_date: string | null;
       sede_count: string;
+      distinct_dates: string;
+      invalid_dates: string;
     }>(`
       SELECT
         COUNT(*)::bigint AS row_count,
-        MIN(fecha_dcto) AS min_date,
-        MAX(fecha_dcto) AS max_date,
-        COUNT(DISTINCT (COALESCE(empresa, ''), COALESCE(id_co, '')))::bigint AS sede_count
+        MIN(fecha_dcto) FILTER (WHERE fecha_dcto ~ '^[0-9]{8}$') AS min_date,
+        MAX(fecha_dcto) FILTER (WHERE fecha_dcto ~ '^[0-9]{8}$') AS max_date,
+        COUNT(DISTINCT (COALESCE(empresa, ''), COALESCE(id_co, '')))::bigint AS sede_count,
+        COUNT(DISTINCT fecha_dcto) FILTER (WHERE fecha_dcto ~ '^[0-9]{8}$')::bigint AS distinct_dates,
+        COUNT(*) FILTER (
+          WHERE fecha_dcto IS NOT NULL AND fecha_dcto !~ '^[0-9]{8}$'
+        )::bigint AS invalid_dates
       FROM margen_final
       WHERE fecha_dcto IS NOT NULL
-        AND fecha_dcto ~ '^[0-9]{8}$'
+    `);
+
+    const datesResult = await client.query<{ fecha_dcto: string; row_count: string }>(`
+      SELECT fecha_dcto, COUNT(*)::bigint AS row_count
+      FROM margen_final
+      WHERE fecha_dcto ~ '^[0-9]{8}$'
+      GROUP BY 1
+      ORDER BY 1
     `);
 
     const row = stats.rows[0];
     const rowCount = Number(row?.row_count ?? 0);
+    const distinctDateCount = Number(row?.distinct_dates ?? 0);
+    const invalidDateRows = Number(row?.invalid_dates ?? 0);
     const response = NextResponse.json(
       {
         ready: rowCount > 0,
@@ -86,10 +101,18 @@ export async function GET() {
         rowCount,
         minDate: row?.min_date ?? null,
         maxDate: row?.max_date ?? null,
+        distinctDateCount,
+        invalidDateRows,
+        dates: datesResult.rows.map((entry) => ({
+          value: entry.fecha_dcto,
+          rowCount: Number(entry.row_count ?? 0),
+        })),
         sedeCount: Number(row?.sede_count ?? 0),
         message:
           rowCount > 0
-            ? null
+            ? distinctDateCount <= 2
+              ? `Solo hay ${distinctDateCount} día(s) cargado(s) en margen_final. Si esperas el mes completo, falta ETL o sync a GCP.`
+              : null
             : "Tabla margen_final vacia. Pendiente carga ETL desde origen.",
       },
       { headers: { "Cache-Control": CACHE_CONTROL } },
