@@ -7,10 +7,13 @@ Sube el dia a dia de las tablas de **hechos** desde el Postgres **local**
   No borra; las PK/UNIQUE son identicas en ambos lados, asi que **no puede duplicar**.
 - **Tablas (allowlist):** `ventas_cajas`, `ventas_fruver`, `ventas_carnes`,
   `ventas_asadero`, `ventas_pollo_pesc`, `ventas_industria`,
-  `rotacion_base_item_dia_sede`, `asistencia_horas`.
+  `rotacion_base_item_dia_sede`, `asistencia_horas`, `ventas_item_diario`,
+  `margen_final`.
 - **No toca:** tablas de estado de la app (usuarios, sesiones, `rotacion_cero_*`,
-  `rotacion_abcd_*`, horarios, presets), matviews, `margenes_*` (local vacio) ni
-  `ventas_item_diario` (lo maneja un ETL aparte del local).
+  `rotacion_abcd_*`, horarios, presets), matviews, `margenes_linea_co_dia` (legacy).
+- **`margen_final`:** no tiene clave natural unica; se replica con **DELETE del
+  rango de fechas en GCP + COPY** (igual que el ETL local). Primera carga historica:
+  `--margen-full` (borra toda `margen_final` en GCP y sube el snapshot local).
 - Al terminar refresca la matview de rotacion en GCP (refresh inline, no depende de scripts externos).
 
 Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GCP).
@@ -110,6 +113,8 @@ Todas como `sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/s
 | Re-correr AYER (tras un fallo) | *(sin flags)* |
 | Subir un dia puntual / backfill | `--date 2026-06-22` |
 | Reconciliacion manual de N dias | `--days 7` |
+| **Primera carga `margen_final` (todo el historico local)** | `--margen-full --no-refresh --verify` |
+| Subir `margen_final` de un rango | `--days 31` (o `--date YYYY-MM-DD`) |
 | Probar sin escribir (solo conteos) | `--days 7 --dry-run` |
 | Mas rapido, sin refrescar matview | `--no-refresh` |
 | Con verificacion de frescura al final | `--verify` |
@@ -124,8 +129,8 @@ sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to
 # Falto un dia especifico (p.ej. el server estuvo caido):
 sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --date 2026-06-20
 
-# Reconciliacion puntual mas amplia (un mes):
-sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 31
+# Backfill de margen_final (todo lo que hay en local):
+sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --margen-full --no-refresh --verify
 ```
 
 Re-correr es **siempre seguro**: el upsert no duplica ni borra; vuelve a dejar el

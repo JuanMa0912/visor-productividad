@@ -6,7 +6,8 @@
 #
 # Tablas (allowlist fija; NO toca tablas de estado de la app ni matviews):
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
-#   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario
+#   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario,
+#   margen_final (DELETE por ventana o --margen-full; ver README-sync.md)
 # (ventas_item_diario: el ETL que lo LLENA en el local corre aparte en Windows; aqui
 #  solo lo replicamos local->GCP. Se excluyen su id serial y el FK source_load_id.)
 #
@@ -19,6 +20,7 @@
 #   --dry-run     solo cuenta filas en local, no escribe en GCP.
 #   --no-refresh  no refresca la matview de rotacion al final.
 #   --verify      chequea la fecha maxima por tabla en GCP al terminar.
+#   --margen-full carga TODA margen_final local -> GCP (borra la tabla en GCP antes).
 #   -h|--help     ayuda.
 #
 # Config: UN solo archivo .env.etl en la raiz del deploy, con nombres EXPLICITOS
@@ -46,6 +48,7 @@ ONE_DATE=""
 DRY_RUN=0
 NO_REFRESH=0
 RUN_VERIFY=0
+MARGEN_FULL=0
 MODE_DAILY=1   # 1 solo cuando es la corrida diaria (default, sin --days ni --date)
 
 usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
@@ -59,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run)   DRY_RUN=1; shift ;;
     --no-refresh) NO_REFRESH=1; shift ;;
     --verify)    RUN_VERIFY=1; shift ;;
+    --margen-full) MARGEN_FULL=1; shift ;;
     -h|--help)   usage; exit 0 ;;
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
@@ -156,6 +160,71 @@ done
 DATECOL[rotacion_base_item_dia_sede]="fecha_dia"; DATETYPE[rotacion_base_item_dia_sede]="date"; EXCLUDE[rotacion_base_item_dia_sede]=""
 DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"
 DATECOL[ventas_item_diario]="fecha_dcto"; DATETYPE[ventas_item_diario]="text"; EXCLUDE[ventas_item_diario]="id,source_load_id"
+DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"
+
+process_table_replace() {
+  local tbl="$1" where cols tmp cnt drop_stmt
+  if [[ "$tbl" == "margen_final" && "$MARGEN_FULL" -eq 1 ]]; then
+    cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl")"
+    log "[$tbl] local tiene $cnt filas (carga completa --margen-full)"
+    if [[ "$cnt" == "0" ]]; then
+      log "[$tbl] sin filas en local; skip"
+      return 0
+    fi
+    if [[ "$DRY_RUN" -eq 1 ]]; then log "[$tbl] dry-run: no escribe"; return 0; fi
+    cols="$(build_cols "$tbl")"
+    [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
+    drop_stmt=""
+    for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
+    tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
+    "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl) TO STDOUT WITH (FORMAT csv)" > "$tmp"
+    "${GCP_PSQL[@]}" <<SQL
+\set ON_ERROR_STOP on
+BEGIN;
+SET statement_timeout = 0;
+DELETE FROM public.$tbl;
+CREATE TEMP TABLE _stg (LIKE public.$tbl INCLUDING DEFAULTS) ON COMMIT DROP;
+$drop_stmt
+\copy _stg ($cols) FROM '$tmp' WITH (FORMAT csv)
+INSERT INTO public.$tbl ($cols)
+SELECT $cols FROM _stg;
+COMMIT;
+SQL
+    rm -f "$tmp"
+    log "[$tbl] carga completa OK ($cnt filas)"
+    return 0
+  fi
+
+  where="$(build_where "$tbl")"
+  cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl WHERE $where")"
+  log "[$tbl] local tiene $cnt filas en [$DESDE..$HASTA] (replace)"
+  if [[ "$cnt" == "0" ]]; then
+    log "[$tbl] sin filas; skip"
+    return 0
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then log "[$tbl] dry-run: no escribe"; return 0; fi
+
+  cols="$(build_cols "$tbl")"
+  [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
+  drop_stmt=""
+  for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
+  tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
+  "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
+  "${GCP_PSQL[@]}" <<SQL
+\set ON_ERROR_STOP on
+BEGIN;
+SET statement_timeout = 0;
+DELETE FROM public.$tbl WHERE $where;
+CREATE TEMP TABLE _stg (LIKE public.$tbl INCLUDING DEFAULTS) ON COMMIT DROP;
+$drop_stmt
+\copy _stg ($cols) FROM '$tmp' WITH (FORMAT csv)
+INSERT INTO public.$tbl ($cols)
+SELECT $cols FROM _stg;
+COMMIT;
+SQL
+  rm -f "$tmp"
+  log "[$tbl] replace OK ($cnt filas)"
+}
 
 build_where() {
   local tbl="$1" col="${DATECOL[$1]}"
@@ -274,6 +343,7 @@ verify_freshness() {
       UNION ALL SELECT 'ventas_industria', max(fecha_dcto) FROM ventas_industria
       UNION ALL SELECT 'rotacion_base_item_dia_sede', to_char(max(fecha_dia),'YYYYMMDD') FROM rotacion_base_item_dia_sede
       UNION ALL SELECT 'asistencia_horas', to_char(max(fecha),'YYYYMMDD') FROM asistencia_horas
+      UNION ALL SELECT 'margen_final', max(fecha_dcto) FROM margen_final
     )
     SELECT t AS tabla, COALESCE(d,'-') AS hasta,
            CASE WHEN d >= :'obj' THEN 'OK' ELSE 'ATRASADA' END AS estado
@@ -287,6 +357,12 @@ log "Origen(local): $DB_HOST_LOCAL/$DB_NAME_LOCAL  ->  Destino(GCP): $DB_HOST_GC
 for t in "${TABLES[@]}"; do
   process_table "$t"
 done
+
+process_table_replace margen_final
+
+if [[ "$MARGEN_FULL" -eq 1 ]]; then
+  log "Nota: --margen-full omitio ventana diaria de margen_final; el resto de tablas uso [$DESDE..$HASTA]."
+fi
 
 if [[ "$MODE_DAILY" -eq 1 && "${#CANARY_EMPTY[@]}" -gt 0 ]]; then
   log "WARNING: sin datos de AYER ($HASTA) en: ${CANARY_EMPTY[*]}."
