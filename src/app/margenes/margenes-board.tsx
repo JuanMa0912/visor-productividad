@@ -590,10 +590,14 @@ export const MargenesBoard = ({
     }
   };
 
+  const viewingInvoiceDetail =
+    (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
+    (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura");
+
   const showSearch =
     dataCommitted &&
     ((mode === "drill" && (activeLevel === 4 || drillSearch.trim() !== "")) ||
-      mode === "fact");
+      (mode === "fact" && !viewingInvoiceDetail));
 
   const showSortBar =
     dataCommitted &&
@@ -815,10 +819,14 @@ export const MargenesBoard = ({
         </div>
       ) : null}
 
-      {mode === "fact" && factTab === "nav" ? (
+      {mode === "fact" && (factTab === "nav" || viewingInvoiceDetail) ? (
         <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#2a2f47] bg-[#141720] px-4 py-1.5 text-xs">
-          <button type="button" className="text-[#4f8ef7] hover:underline" onClick={() => setFactPath([])}>
-            Inicio
+          <button
+            type="button"
+            className="text-[#4f8ef7] hover:underline"
+            onClick={() => setFactPath([])}
+          >
+            {factTab === "list" ? "Lista de facturas" : "Inicio"}
           </button>
           {factPath.map((step, index) => (
             <span key={`${step.type}-${index}`} className="flex items-center gap-1">

@@ -75,4 +75,14 @@ export const drillPathSqlFilters = (
   return parts;
 };
 
-export const drillLevelFromPath = (path: DrillPathStep[]): number => path.length;
+/** Al ver el detalle de una factura, solo filtrar por documento + tipdoc (no por ítem/ruta). */
+export const drillPathForInvoiceDetail = (
+  path: DrillPathStep[],
+): DrillPathStep[] => {
+  const factura = path.find((step) => step.type === "factura");
+  return factura ? [factura] : path;
+};
+
+export const isInvoiceDetailDrillPath = (path: DrillPathStep[]): boolean =>
+  path.some((step) => step.type === "factura") &&
+  path[path.length - 1]?.type === "factura";

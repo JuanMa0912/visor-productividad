@@ -13,8 +13,8 @@ import {
   type MargenQueryFilters,
   type MargenViewMode,
 } from "@/lib/margenes/margen-final-query";
-import { parseDrillPath } from "@/lib/margenes/drill-path";
-import { parseFactPath } from "@/lib/margenes/fact-path";
+import { parseDrillPath, drillPathForInvoiceDetail } from "@/lib/margenes/drill-path";
+import { parseFactPath, factPathToInvoiceKpiDrillPath } from "@/lib/margenes/fact-path";
 import {
   queryDrillRows,
   queryFactListRows,
@@ -348,16 +348,18 @@ export async function GET(request: Request) {
     } else if (mode === "drill") {
       const drillPath = parseDrillPath(url.searchParams.get("drillPath"));
       const search = url.searchParams.get("search") ?? undefined;
+      const kpiPath = drillPathForInvoiceDetail(drillPath);
       const [kpi, table] = await Promise.all([
-        queryKpi(client, parsed, drillPath),
+        queryKpi(client, parsed, kpiPath),
         queryDrillRows(client, parsed, drillPath, search),
       ]);
       payload = { kpi, ...table };
     } else if (mode === "fact-nav") {
       const factPath = parseFactPath(url.searchParams.get("factPath"));
       const search = url.searchParams.get("search") ?? undefined;
+      const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
       const [kpi, table] = await Promise.all([
-        queryKpi(client, parsed, [], { mercadoOnly: false }),
+        queryKpi(client, parsed, kpiPath, { mercadoOnly: false }),
         queryFactNavRows(client, parsed, factPath, search),
       ]);
       payload = { kpi, ...table };
@@ -366,8 +368,9 @@ export async function GET(request: Request) {
       const factPath = parseFactPath(url.searchParams.get("factPath"));
       const mercadoOnly = false;
       if (factPath.some((step) => step.type === "factura")) {
+        const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
         const [kpi, table] = await Promise.all([
-          queryKpi(client, parsed, [], { mercadoOnly }),
+          queryKpi(client, parsed, kpiPath, { mercadoOnly }),
           queryFactNavRows(client, parsed, factPath, search),
         ]);
         payload = { kpi, ...table };

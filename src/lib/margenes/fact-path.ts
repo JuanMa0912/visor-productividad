@@ -1,3 +1,5 @@
+import type { DrillPathStep } from "@/lib/margenes/drill-path";
+
 export type FactNavStep =
   | { type: "fecha"; fecha: string; label: string }
   | { type: "tipo"; id: string; label: string }
@@ -37,4 +39,22 @@ export const factPathSqlFilters = (
     );
   }
   return parts;
+};
+
+export const isInvoiceDetailFactPath = (path: FactNavStep[]): boolean =>
+  path.some((step) => step.type === "factura");
+
+export const factPathToInvoiceKpiDrillPath = (
+  path: FactNavStep[],
+): DrillPathStep[] => {
+  const factura = path.find((step) => step.type === "factura");
+  if (factura?.type !== "factura") return [];
+  return [
+    {
+      type: "factura",
+      documento: factura.documento,
+      tipdoc: factura.tipdoc,
+      label: factura.label,
+    },
+  ];
 };

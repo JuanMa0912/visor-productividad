@@ -119,6 +119,75 @@ const buildFactWhere = (
   return [base, ...fact].join(" AND ");
 };
 
+const mapInvoiceLineRows = (
+  rows: Array<Record<string, string | number>>,
+): DrillRow[] =>
+  rows.map((row) => {
+    const ventasNetas = toNum(row.ventas_netas);
+    const costoTotal = toNum(row.costo_total);
+    const margenPesos = ventasNetas - costoTotal;
+    const cantidad = toNum(row.cantidad);
+    const ventasConIva = toNum(row.ventas_con_iva);
+    return {
+      key: String(row.id_item),
+      cod: String(row.id_item),
+      label: String(row.descripcion),
+      descripcion: String(row.descripcion),
+      linea: String(row.linea),
+      drillable: false,
+      cantidad,
+      ventasNetas,
+      costoTotal,
+      margenPesos,
+      margenPct: marginPct(ventasNetas, margenPesos),
+      ventasConIva,
+      pvuIva: unitSaleWithTax(ventasConIva, cantidad),
+      pcu: unitCost(costoTotal, cantidad),
+      facturas: 1,
+    };
+  });
+
+/** Todas las líneas de una factura (sin filtros de ítem/categoría del drill). */
+const queryInvoiceLineRows = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  documento: string,
+  tipdoc: string,
+  level: number,
+): Promise<{ level: number; levelName: string; rows: DrillRow[] }> => {
+  const params: unknown[] = [];
+  let where = buildMargenWhereClause(filters, params);
+  params.push(documento, tipdoc);
+  where += ` AND TRIM(COALESCE(documento_fc::text, '')) = $${params.length - 1}`;
+  where += ` AND TRIM(COALESCE(id_tipdoc_fc::text, '')) = $${params.length}`;
+  where += ` AND NULLIF(TRIM(documento_fc::text), '') IS NOT NULL`;
+
+  const result = await client.query(
+    `
+    SELECT
+      TRIM(COALESCE(id_item::text, '')) AS id_item,
+      COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS descripcion,
+      TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
+      COALESCE(NULLIF(TRIM(nombre_linea1), ''), TRIM(COALESCE(id_linea1::text, ''))) AS linea,
+      COALESCE(SUM(COALESCE(cantidad, 0)), 0) AS cantidad,
+      COALESCE(SUM(COALESCE(vlrtot_bru, 0)), 0) AS ventas_netas,
+      COALESCE(SUM(COALESCE(tot_costo, 0)), 0) AS costo_total,
+      COALESCE(SUM(COALESCE(ven_totales, 0)), 0) AS ventas_con_iva
+    FROM margen_final
+    WHERE ${where}
+    GROUP BY 1, 2, 3, 4
+    ORDER BY ventas_netas DESC
+    `,
+    params,
+  );
+
+  return {
+    level,
+    levelName: "Ítems de factura",
+    rows: mapInvoiceLineRows(result.rows),
+  };
+};
+
 const mapMetrics = (row: Record<string, string | number>): Omit<
   DrillRow,
   "key" | "cod" | "label" | "drillable"
@@ -416,51 +485,21 @@ export const queryDrillRows = async (
     };
   }
 
-  const result = await client.query(
-    `
-    SELECT
-      TRIM(COALESCE(id_item::text, '')) AS id_item,
-      COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS descripcion,
-      TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
-      COALESCE(NULLIF(TRIM(nombre_linea1), ''), TRIM(COALESCE(id_linea1::text, ''))) AS linea,
-      COALESCE(SUM(COALESCE(cantidad, 0)), 0) AS cantidad,
-      COALESCE(SUM(COALESCE(vlrtot_bru, 0)), 0) AS ventas_netas,
-      COALESCE(SUM(COALESCE(tot_costo, 0)), 0) AS costo_total,
-      COALESCE(SUM(COALESCE(ven_totales, 0)), 0) AS ventas_con_iva
-    FROM margen_final
-    WHERE ${where}
-    GROUP BY 1, 2, 3, 4
-    ORDER BY ventas_netas DESC
-    `,
-    params,
-  );
+  const factura = path.find((step) => step.type === "factura");
+  if (factura?.type === "factura") {
+    return queryInvoiceLineRows(
+      client,
+      filters,
+      factura.documento,
+      factura.tipdoc,
+      6,
+    );
+  }
+
   return {
     level: 6,
     levelName: "Ítems de factura",
-    rows: result.rows.map((row) => {
-      const ventasNetas = toNum(row.ventas_netas);
-      const costoTotal = toNum(row.costo_total);
-      const margenPesos = ventasNetas - costoTotal;
-      const cantidad = toNum(row.cantidad);
-      const ventasConIva = toNum(row.ventas_con_iva);
-      return {
-        key: String(row.id_item),
-        cod: String(row.id_item),
-        label: String(row.descripcion),
-        descripcion: String(row.descripcion),
-        linea: String(row.linea),
-        drillable: false,
-        cantidad,
-        ventasNetas,
-        costoTotal,
-        margenPesos,
-        margenPct: marginPct(ventasNetas, margenPesos),
-        ventasConIva,
-        pvuIva: unitSaleWithTax(ventasConIva, cantidad),
-        pcu: unitCost(costoTotal, cantidad),
-        facturas: 1,
-      };
-    }),
+    rows: [],
   };
 };
 
@@ -470,6 +509,17 @@ export const queryFactNavRows = async (
   path: FactNavStep[],
   search?: string,
 ): Promise<{ level: number; levelName: string; rows: DrillRow[] }> => {
+  const factura = path.find((step) => step.type === "factura");
+  if (factura?.type === "factura") {
+    return queryInvoiceLineRows(
+      client,
+      filters,
+      factura.documento,
+      factura.tipdoc,
+      3,
+    );
+  }
+
   const level = path.length;
   const params: unknown[] = [];
   const where = buildFactWhere(filters, path, params);
@@ -573,51 +623,10 @@ export const queryFactNavRows = async (
     };
   }
 
-  const result = await client.query(
-    `
-    SELECT
-      TRIM(COALESCE(id_item::text, '')) AS id_item,
-      COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS descripcion,
-      TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
-      COALESCE(NULLIF(TRIM(nombre_linea1), ''), TRIM(COALESCE(id_linea1::text, ''))) AS linea,
-      COALESCE(SUM(COALESCE(cantidad, 0)), 0) AS cantidad,
-      COALESCE(SUM(COALESCE(vlrtot_bru, 0)), 0) AS ventas_netas,
-      COALESCE(SUM(COALESCE(tot_costo, 0)), 0) AS costo_total,
-      COALESCE(SUM(COALESCE(ven_totales, 0)), 0) AS ventas_con_iva
-    FROM margen_final
-    WHERE ${where}
-    GROUP BY 1, 2, 3, 4
-    ORDER BY ventas_netas DESC
-    `,
-    params,
-  );
   return {
-    level: 3,
-    levelName: "Ítems de factura",
-    rows: result.rows.map((row) => {
-      const ventasNetas = toNum(row.ventas_netas);
-      const costoTotal = toNum(row.costo_total);
-      const margenPesos = ventasNetas - costoTotal;
-      const cantidad = toNum(row.cantidad);
-      const ventasConIva = toNum(row.ventas_con_iva);
-      return {
-        key: String(row.id_item),
-        cod: String(row.id_item),
-        label: String(row.descripcion),
-        descripcion: String(row.descripcion),
-        linea: String(row.linea),
-        drillable: false,
-        cantidad,
-        ventasNetas,
-        costoTotal,
-        margenPesos,
-        margenPct: marginPct(ventasNetas, margenPesos),
-        ventasConIva,
-        pvuIva: unitSaleWithTax(ventasConIva, cantidad),
-        pcu: unitCost(costoTotal, cantidad),
-        facturas: 1,
-      };
-    }),
+    level,
+    levelName: "Factura",
+    rows: [],
   };
 };
 
