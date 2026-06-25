@@ -12,7 +12,12 @@ import {
   marginBadgeClass,
   marginToneClass,
 } from "@/lib/margenes/format";
-import { sedeKey } from "@/lib/margenes/margen-final-query";
+import {
+  empresaLabel,
+  parseSedeKey,
+  sedeKey,
+  sedeLabel,
+} from "@/lib/margenes/margen-final-query";
 import { DRILL_LEVEL_NAMES } from "@/lib/margenes/drill-path";
 import { MargenesMultiSelect } from "@/app/margenes/margenes-multi-select";
 
@@ -315,6 +320,7 @@ export const MargenesBoard = ({
   const [sedeRows, setSedeRows] = useState<DrillRow[]>([]);
   const [sedeKpi, setSedeKpi] = useState<MargenKpi | null>(null);
   const [loading, setLoading] = useState(false);
+  const [filtersLoading, setFiltersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const effectiveSedes = useMemo(
@@ -358,18 +364,64 @@ export const MargenesBoard = ({
     setItems([]);
   }, []);
 
+  const seededFilterOptions = useMemo<MargenFiltersPayload>(() => {
+    const empresas = [
+      ...new Set(
+        selectedSedes
+          .map((value) => parseSedeKey(value)?.empresa)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ].map((value) => ({ value, label: empresaLabel(value) }));
+
+    const sedes = selectedSedes
+      .map((value) => {
+        const parsed = parseSedeKey(value);
+        if (!parsed) return null;
+        return {
+          value,
+          label: sedeLabel(parsed.empresa, parsed.idCo),
+          empresa: parsed.empresa,
+          idCo: parsed.idCo,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    return {
+      empresas,
+      sedes,
+      fechas: [],
+      categorias: [],
+      lineas: [],
+      sublineas: [],
+      items: [],
+    };
+  }, [selectedSedes]);
+
+  const activeFilterOptions = filterOptions ?? seededFilterOptions;
+
   const loadFilters = useCallback(async () => {
-    const response = await fetch(`/api/margenes/data?mode=filters&${queryBase}`, {
-      cache: "no-store",
-    });
-    if (!response.ok) return;
-    const data = (await response.json()) as MargenFiltersPayload;
-    setFilterOptions(data);
+    setFiltersLoading(true);
+    try {
+      const response = await fetch(`/api/margenes/data?mode=filters&${queryBase}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as MargenFiltersPayload;
+      setFilterOptions(data);
+    } finally {
+      setFiltersLoading(false);
+    }
   }, [queryBase]);
+
+  const ensureFilters = useCallback(() => {
+    if (filtersLoading) return;
+    void loadFilters();
+  }, [filtersLoading, loadFilters]);
 
   const loadBoard = useCallback(async () => {
     if (!dataCommitted || selectedSedes.length === 0) return;
     setLoading(true);
+    setFilterOptions(null);
     setError(null);
     try {
       if (mode === "sede") {
@@ -425,11 +477,6 @@ export const MargenesBoard = ({
     factSearch,
     queryBase,
   ]);
-
-  useEffect(() => {
-    if (!dataCommitted) return;
-    void loadFilters();
-  }, [dataCommitted, queryBase, loadFilters]);
 
   useEffect(() => {
     setPage(0);
@@ -572,50 +619,64 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Empresa"
           values={empresas}
-          options={filterOptions?.empresas ?? []}
+          options={activeFilterOptions.empresas}
           onChange={setEmpresas}
+          onOpen={ensureFilters}
+          loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Sede"
           values={sedes}
           options={
-            filterOptions?.sedes.map((option) => ({
+            activeFilterOptions.sedes.map((option) => ({
               value: option.value,
               label: option.label,
               code: option.idCo,
-            })) ?? []
+            }))
           }
           onChange={setSedes}
+          onOpen={ensureFilters}
+          loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Fecha"
           values={fechas}
-          options={filterOptions?.fechas ?? []}
+          options={activeFilterOptions.fechas}
           onChange={setFechas}
+          onOpen={ensureFilters}
+          loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Categoría"
           values={categorias}
-          options={filterOptions?.categorias ?? []}
+          options={activeFilterOptions.categorias}
           onChange={setCategorias}
+          onOpen={ensureFilters}
+          loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Línea"
           values={lineas}
-          options={filterOptions?.lineas ?? []}
+          options={activeFilterOptions.lineas}
           onChange={setLineas}
+          onOpen={ensureFilters}
+          loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Sublínea"
           values={sublineas}
-          options={filterOptions?.sublineas ?? []}
+          options={activeFilterOptions.sublineas}
           onChange={setSublineas}
+          onOpen={ensureFilters}
+          loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Ítem"
           values={items}
-          options={filterOptions?.items ?? []}
+          options={activeFilterOptions.items}
           onChange={setItems}
+          onOpen={ensureFilters}
+          loading={filtersLoading && !filterOptions}
         />
         <button
           type="button"

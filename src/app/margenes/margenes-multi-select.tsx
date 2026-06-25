@@ -15,6 +15,8 @@ export const MargenesMultiSelect = ({
   onChange,
   disabled,
   emptyLabel = "Todos",
+  onOpen,
+  loading,
 }: {
   label: string;
   values: string[];
@@ -22,6 +24,8 @@ export const MargenesMultiSelect = ({
   onChange: (values: string[]) => void;
   disabled?: boolean;
   emptyLabel?: string;
+  onOpen?: () => void;
+  loading?: boolean;
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -72,12 +76,20 @@ export const MargenesMultiSelect = ({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setOpen((current) => {
+            const next = !current;
+            if (next) onOpen?.();
+            return next;
+          });
+        }}
         className={`flex items-center gap-1.5 rounded-md border bg-[#1b1e2e] px-2.5 py-1.5 text-left text-xs text-[#dde3f0] disabled:opacity-50 ${
           open ? "border-[#4f8ef7]" : "border-[#2a2f47] hover:border-[#4f8ef7]/60"
         }`}
       >
-        <span className="min-w-0 flex-1 truncate">{buttonLabel}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {loading ? "Cargando…" : buttonLabel}
+        </span>
         {values.length > 0 ? (
           <span className="rounded-full bg-[#4f8ef7] px-1.5 py-0.5 text-[10px] font-bold text-white">
             {values.length}

@@ -116,10 +116,7 @@ export const buildMargenWhereClause = (
   filters: MargenQueryFilters,
   params: unknown[],
 ): string => {
-  const parts = [
-    "fecha_dcto IS NOT NULL",
-    "fecha_dcto ~ '^[0-9]{8}$'",
-  ];
+  const parts = ["fecha_dcto IS NOT NULL"];
 
   if (filters.fechas.length > 0) {
     params.push(filters.fechas);

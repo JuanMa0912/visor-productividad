@@ -7,6 +7,11 @@ import { AppTopBar } from "@/components/portal/app-top-bar";
 import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-button";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { compactDateToIso } from "@/lib/margenes/margen-final-query";
+import {
+  defaultMargenDateRange,
+  margenDefaultRangeDays,
+} from "@/lib/margenes/date-range";
+import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
 import { formatDayLabel } from "@/lib/margenes/drill-queries";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
@@ -35,10 +40,6 @@ type MargenMeta = {
   error?: string;
 };
 
-const monthStartIsoFromCompact = (compact: string | null | undefined): string | null => {
-  if (!compact || !/^\d{8}$/.test(compact)) return null;
-  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-01`;
-};
 
 export default function MargenesPage() {
   const router = useRouter();
@@ -56,9 +57,9 @@ export default function MargenesPage() {
   const [dataCommitted, setDataCommitted] = useState(false);
   const [sedePickerOpen, setSedePickerOpen] = useState(false);
   const [pendingSedes, setPendingSedes] = useState<string[]>([]);
-  const [catalogSedes, setCatalogSedes] = useState<MargenSedePickerOption[]>([]);
-  const [loadingCatalog, setLoadingCatalog] = useState(false);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogSedes] = useState<MargenSedePickerOption[]>(() =>
+    listMargenSedeCatalogOptions(),
+  );
   const [boardSedes, setBoardSedes] = useState<string[]>([]);
 
   const { startTour: startMargenesTour } = useProductTour({
@@ -94,12 +95,11 @@ export default function MargenesPage() {
         if (!cancelled) {
           setMeta(payload);
           if (payload.minDate && payload.maxDate) {
-            const from = compactDateToIso(payload.minDate);
-            const to = compactDateToIso(payload.maxDate);
-            const monthStart = monthStartIsoFromCompact(payload.maxDate);
-            if (monthStart) setDateStart(monthStart);
-            else if (from) setDateStart(from);
-            if (to) setDateEnd(to);
+            const range = defaultMargenDateRange(payload.minDate, payload.maxDate);
+            if (range) {
+              setDateStart(range.start);
+              setDateEnd(range.end);
+            }
           }
           if (payload.ready) {
             setSedePickerOpen(true);
@@ -127,44 +127,6 @@ export default function MargenesPage() {
       cancelled = true;
     };
   }, [boardReady, router]);
-
-  const loadSedeCatalog = useCallback(async () => {
-    if (!meta?.ready) return;
-    setLoadingCatalog(true);
-    setCatalogError(null);
-    try {
-      const response = await fetch("/api/margenes/data?mode=sedes", {
-        cache: "no-store",
-      });
-      if (response.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? "No se pudo listar las sedes.");
-      }
-      const payload = (await response.json()) as { sedes: MargenSedePickerOption[] };
-      setCatalogSedes(payload.sedes);
-      setPendingSedes((current) =>
-        current.filter((value) =>
-          payload.sedes.some((option) => option.value === value),
-        ),
-      );
-    } catch (error) {
-      setCatalogSedes([]);
-      setCatalogError(
-        error instanceof Error ? error.message : "No se pudo listar las sedes.",
-      );
-    } finally {
-      setLoadingCatalog(false);
-    }
-  }, [meta?.ready, router]);
-
-  useEffect(() => {
-    if (!sedePickerOpen || !meta?.ready) return;
-    void loadSedeCatalog();
-  }, [sedePickerOpen, meta?.ready, loadSedeCatalog]);
 
   const openSedePicker = useCallback(() => {
     setDataCommitted(false);
@@ -372,8 +334,9 @@ export default function MargenesPage() {
         onDateEndChange={setDateEnd}
         sedes={catalogSedes}
         selectedSedes={pendingSedes}
-        loading={loadingCatalog}
-        error={catalogError}
+        loading={false}
+        error={null}
+        defaultRangeDays={margenDefaultRangeDays}
         onToggleSede={togglePendingSede}
         onToggleEmpresa={togglePendingEmpresa}
         onConfirm={confirmSedeSelection}

@@ -718,11 +718,9 @@ export const queryFilterOptions = async (
     params,
   );
 
-  // Una sola pasada MATERIALIZED sobre el rango filtrado; evita 7 scans completos
-  // en paralelo (disparaban 504 en el LB con ~8M filas en GCP).
+  const sedesLocked = filters.sedes.length > 0;
+
   const result = await client.query<{
-    empresas: Array<{ value: string }> | null;
-    sedes: Array<{ empresa: string; id_co: string }> | null;
     fechas: Array<{ value: string }> | null;
     categorias: Array<{ value: string; label: string }> | null;
     lineas: Array<{ value: string; label: string }> | null;
@@ -732,8 +730,6 @@ export const queryFilterOptions = async (
     `
     WITH filtered AS MATERIALIZED (
       SELECT
-        LOWER(TRIM(COALESCE(empresa, ''))) AS empresa_norm,
-        LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co_norm,
         fecha_dcto,
         TRIM(COALESCE(id_tipo::text, '')) AS id_tipo,
         TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
@@ -746,23 +742,6 @@ export const queryFilterOptions = async (
       WHERE ${where}
     )
     SELECT
-      (
-        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
-        FROM (
-          SELECT DISTINCT empresa_norm AS value
-          FROM filtered
-          WHERE empresa_norm <> ''
-          ORDER BY 1
-        ) t
-      ) AS empresas,
-      (
-        SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
-        FROM (
-          SELECT DISTINCT empresa_norm AS empresa, id_co_norm AS id_co
-          FROM filtered
-          ORDER BY 1, 2
-        ) t
-      ) AS sedes,
       (
         SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
         FROM (
@@ -813,25 +792,41 @@ export const queryFilterOptions = async (
   );
 
   const row = result.rows[0] ?? {};
-  const empresas = row.empresas ?? [];
-  const sedes = row.sedes ?? [];
   const fechas = row.fechas ?? [];
   const categorias = row.categorias ?? [];
   const lineas = row.lineas ?? [];
   const sublineas = row.sublineas ?? [];
   const items = row.items ?? [];
 
+  const empresas = sedesLocked
+    ? [...new Set(
+        filters.sedes
+          .map((key) => key.split("|")[0]?.trim().toLowerCase())
+          .filter(Boolean),
+      )].map((value) => ({
+        value,
+        label: empresaLabel(value),
+      }))
+    : [];
+
+  const sedes = sedesLocked
+    ? filters.sedes
+        .map((value) => {
+          const [empresa, idCo] = value.split("|");
+          if (!empresa || !idCo) return null;
+          return {
+            value,
+            label: sedeLabel(empresa, idCo),
+            empresa,
+            idCo,
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    : [];
+
   return {
-    empresas: empresas.map((r) => ({
-      value: r.value,
-      label: empresaLabel(String(r.value)),
-    })),
-    sedes: sedes.map((r) => ({
-      value: `${r.empresa}|${r.id_co}`,
-      label: sedeLabel(String(r.empresa), String(r.id_co)),
-      empresa: String(r.empresa),
-      idCo: String(r.id_co),
-    })),
+    empresas,
+    sedes,
     fechas: fechas.map((r) => ({
       value: String(r.value),
       label: formatDayLabel(String(r.value)),
