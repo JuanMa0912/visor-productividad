@@ -61,61 +61,88 @@ export async function GET() {
       return response;
     }
 
-    const stats = await client.query<{
-      row_count: string;
+    const bounds = await client.query<{
       min_date: string | null;
       max_date: string | null;
-      sede_count: string;
-      distinct_dates: string;
-      invalid_dates: string;
+      has_rows: boolean;
+      row_estimate: string | null;
     }>(`
       SELECT
-        COUNT(*)::bigint AS row_count,
-        MIN(fecha_dcto) FILTER (WHERE fecha_dcto ~ '^[0-9]{8}$') AS min_date,
-        MAX(fecha_dcto) FILTER (WHERE fecha_dcto ~ '^[0-9]{8}$') AS max_date,
-        COUNT(DISTINCT (COALESCE(empresa, ''), COALESCE(id_co, '')))::bigint AS sede_count,
-        COUNT(DISTINCT fecha_dcto) FILTER (WHERE fecha_dcto ~ '^[0-9]{8}$')::bigint AS distinct_dates,
-        COUNT(*) FILTER (
-          WHERE fecha_dcto IS NOT NULL AND fecha_dcto !~ '^[0-9]{8}$'
-        )::bigint AS invalid_dates
-      FROM margen_final
-      WHERE fecha_dcto IS NOT NULL
+        (
+          SELECT MIN(fecha_dcto)
+          FROM margen_final
+          WHERE fecha_dcto ~ '^[0-9]{8}$'
+        ) AS min_date,
+        (
+          SELECT MAX(fecha_dcto)
+          FROM margen_final
+          WHERE fecha_dcto ~ '^[0-9]{8}$'
+        ) AS max_date,
+        EXISTS (
+          SELECT 1
+          FROM margen_final
+          WHERE fecha_dcto IS NOT NULL
+            AND fecha_dcto ~ '^[0-9]{8}$'
+          LIMIT 1
+        ) AS has_rows,
+        (
+          SELECT GREATEST(c.reltuples::bigint, 0)
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relname = 'margen_final'
+        ) AS row_estimate
     `);
 
-    const row = stats.rows[0];
-    const rowCount = Number(row?.row_count ?? 0);
-    const distinctDateCount = Number(row?.distinct_dates ?? 0);
-    const invalidDateRows = Number(row?.invalid_dates ?? 0);
+    const row = bounds.rows[0];
+    const rowCount = Number(row?.row_estimate ?? 0);
+    const hasRows = Boolean(row?.has_rows);
+    const minDate = row?.min_date ?? null;
+    const maxDate = row?.max_date ?? null;
 
+    let distinctDateCount = 0;
     let dates: Array<{ value: string; rowCount: number }> = [];
-    if (rowCount > 0 && distinctDateCount > 0 && distinctDateCount <= 31) {
-      const datesResult = await client.query<{ fecha_dcto: string; row_count: string }>(`
-        SELECT fecha_dcto, COUNT(*)::bigint AS row_count
-        FROM margen_final
-        WHERE fecha_dcto ~ '^[0-9]{8}$'
-        GROUP BY 1
-        ORDER BY 1
-      `);
-      dates = datesResult.rows.map((entry) => ({
-        value: entry.fecha_dcto,
-        rowCount: Number(entry.row_count ?? 0),
-      }));
+    if (hasRows && minDate && maxDate && minDate <= maxDate) {
+      const spanResult = await client.query<{ distinct_dates: string }>(`
+        SELECT COUNT(*)::bigint AS distinct_dates
+        FROM (
+          SELECT DISTINCT fecha_dcto
+          FROM margen_final
+          WHERE fecha_dcto BETWEEN $1 AND $2
+        ) d
+      `, [minDate, maxDate]);
+      distinctDateCount = Number(spanResult.rows[0]?.distinct_dates ?? 0);
+      if (distinctDateCount > 0 && distinctDateCount <= 31) {
+        const datesResult = await client.query<{ fecha_dcto: string; row_count: string }>(`
+          SELECT fecha_dcto, COUNT(*)::bigint AS row_count
+          FROM margen_final
+          WHERE fecha_dcto BETWEEN $1 AND $2
+            AND fecha_dcto ~ '^[0-9]{8}$'
+          GROUP BY 1
+          ORDER BY 1
+        `, [minDate, maxDate]);
+        dates = datesResult.rows.map((entry) => ({
+          value: entry.fecha_dcto,
+          rowCount: Number(entry.row_count ?? 0),
+        }));
+      }
     }
 
     const response = NextResponse.json(
       {
-        ready: rowCount > 0,
+        ready: hasRows,
         table: "margen_final",
         rowCount,
-        minDate: row?.min_date ?? null,
-        maxDate: row?.max_date ?? null,
+        minDate,
+        maxDate,
         distinctDateCount,
-        invalidDateRows,
+        invalidDateRows: 0,
         dates,
-        sedeCount: Number(row?.sede_count ?? 0),
+        sedeCount: 0,
+        rowCountIsEstimate: true,
         message:
-          rowCount > 0
-            ? distinctDateCount <= 2
+          hasRows
+            ? distinctDateCount > 0 && distinctDateCount <= 2
               ? `Solo hay ${distinctDateCount} día(s) cargado(s) en margen_final. Si esperas el mes completo, falta ETL o sync a GCP.`
               : null
             : "Tabla margen_final vacia. Pendiente carga ETL desde origen.",

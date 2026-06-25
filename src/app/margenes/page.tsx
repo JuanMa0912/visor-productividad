@@ -24,6 +24,7 @@ type MargenMeta = {
   ready: boolean;
   table: string;
   rowCount: number;
+  rowCountIsEstimate?: boolean;
   minDate: string | null;
   maxDate: string | null;
   distinctDateCount?: number;
@@ -32,13 +33,6 @@ type MargenMeta = {
   sedeCount: number;
   message?: string | null;
   error?: string;
-};
-
-const buildQuery = (params: { from?: string; to?: string }) => {
-  const search = new URLSearchParams();
-  if (params.from) search.set("from", params.from);
-  if (params.to) search.set("to", params.to);
-  return search.toString();
 };
 
 const monthStartIsoFromCompact = (compact: string | null | undefined): string | null => {
@@ -135,12 +129,11 @@ export default function MargenesPage() {
   }, [boardReady, router]);
 
   const loadSedeCatalog = useCallback(async () => {
-    if (!dateStart || !dateEnd || !meta?.ready) return;
+    if (!meta?.ready) return;
     setLoadingCatalog(true);
     setCatalogError(null);
     try {
-      const query = buildQuery({ from: dateStart, to: dateEnd });
-      const response = await fetch(`/api/margenes/data?mode=sedes&${query}`, {
+      const response = await fetch("/api/margenes/data?mode=sedes", {
         cache: "no-store",
       });
       if (response.status === 401) {
@@ -166,12 +159,12 @@ export default function MargenesPage() {
     } finally {
       setLoadingCatalog(false);
     }
-  }, [dateStart, dateEnd, meta?.ready, router]);
+  }, [meta?.ready, router]);
 
   useEffect(() => {
-    if (!sedePickerOpen || !meta?.ready || !dateStart || !dateEnd) return;
+    if (!sedePickerOpen || !meta?.ready) return;
     void loadSedeCatalog();
-  }, [sedePickerOpen, meta?.ready, dateStart, dateEnd, loadSedeCatalog]);
+  }, [sedePickerOpen, meta?.ready, loadSedeCatalog]);
 
   const openSedePicker = useCallback(() => {
     setDataCommitted(false);
@@ -280,9 +273,13 @@ export default function MargenesPage() {
               <span className="whitespace-nowrap text-[11px] text-[#6b7590]">
                 {loadingMeta
                   ? "Consultando tabla…"
-                  : meta?.ready
-                    ? `${meta.rowCount.toLocaleString("es-CO")} filas · ${meta.distinctDateCount ?? "?"} día(s) · ${meta.sedeCount} sede(s)`
-                    : "Pendiente ETL"}
+                  : meta?.error
+                    ? meta.error
+                    : !meta?.ready
+                      ? "Pendiente ETL"
+                      : !dataCommitted
+                        ? "Elige sede(s) para cargar"
+                        : `${meta.rowCountIsEstimate ? "~" : ""}${meta.rowCount.toLocaleString("es-CO")} filas · ${meta.distinctDateCount ?? "?"} día(s)`}
               </span>
             </span>
           </header>
@@ -334,9 +331,23 @@ export default function MargenesPage() {
                 ) : null}
               </p>
             ) : null}
-            {!meta?.ready ? (
+            {loadingMeta ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#6b7590]">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin text-[#4f8ef7]" />
+                Consultando disponibilidad de margen_final…
+              </div>
+            ) : meta?.error ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#f87171]">
+                {meta.error}
+              </div>
+            ) : !meta?.ready ? (
               <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#6b7590]">
                 Tabla margen_final sin datos. Aplica la migración y carga el CSV/ETL.
+              </div>
+            ) : !dataCommitted ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#6b7590]">
+                Elige una o más sedes y el rango de fechas en el modal. Los datos pesados
+                solo se cargan después de pulsar «Cargar datos».
               </div>
             ) : (
               <MargenesBoard
@@ -353,6 +364,12 @@ export default function MargenesPage() {
       <MargenesSedePickerModal
         open={Boolean(meta?.ready && sedePickerOpen)}
         rangeLabel={rangeLabel}
+        dateStart={dateStart}
+        dateEnd={dateEnd}
+        minDate={compactDateToIso(meta?.minDate ?? "") ?? undefined}
+        maxDate={compactDateToIso(meta?.maxDate ?? "") ?? undefined}
+        onDateStartChange={setDateStart}
+        onDateEndChange={setDateEnd}
         sedes={catalogSedes}
         selectedSedes={pendingSedes}
         loading={loadingCatalog}

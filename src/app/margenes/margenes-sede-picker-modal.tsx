@@ -15,6 +15,12 @@ export type MargenSedePickerOption = {
 type MargenesSedePickerModalProps = {
   open: boolean;
   rangeLabel: string;
+  dateStart: string;
+  dateEnd: string;
+  minDate?: string;
+  maxDate?: string;
+  onDateStartChange: (value: string) => void;
+  onDateEndChange: (value: string) => void;
   sedes: MargenSedePickerOption[];
   selectedSedes: string[];
   loading: boolean;
@@ -27,6 +33,12 @@ type MargenesSedePickerModalProps = {
 export function MargenesSedePickerModal({
   open,
   rangeLabel,
+  dateStart,
+  dateEnd,
+  minDate,
+  maxDate,
+  onDateStartChange,
+  onDateEndChange,
   sedes,
   selectedSedes,
   loading,
@@ -84,9 +96,34 @@ export function MargenesSedePickerModal({
                 Elige las sedes a analizar
               </h2>
               <p className="mt-1 text-sm text-[#9aa3bc]">
-                Marca una o varias sedes por empresa. Rango:{" "}
-                <span className="font-medium text-[#dde3f0]">{rangeLabel}</span>
+                Primero elige sede(s) y el rango. El análisis detallado se consulta solo
+                al pulsar «Cargar datos».
               </p>
+              <div className="mt-3 flex flex-wrap items-end gap-3">
+                <label className="flex min-w-[130px] flex-col gap-1 text-[10px] tracking-wide text-[#6b7590] uppercase">
+                  Desde
+                  <input
+                    type="date"
+                    value={dateStart}
+                    min={minDate}
+                    max={dateEnd || maxDate}
+                    onChange={(event) => onDateStartChange(event.target.value)}
+                    className="rounded-md border border-[#2a2f47] bg-[#1b1e2e] px-2.5 py-1.5 text-xs normal-case text-[#dde3f0]"
+                  />
+                </label>
+                <label className="flex min-w-[130px] flex-col gap-1 text-[10px] tracking-wide text-[#6b7590] uppercase">
+                  Hasta
+                  <input
+                    type="date"
+                    value={dateEnd}
+                    min={dateStart || minDate}
+                    max={maxDate}
+                    onChange={(event) => onDateEndChange(event.target.value)}
+                    className="rounded-md border border-[#2a2f47] bg-[#1b1e2e] px-2.5 py-1.5 text-xs normal-case text-[#dde3f0]"
+                  />
+                </label>
+                <span className="pb-1 text-[11px] text-[#6b7590]">{rangeLabel}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -102,7 +139,7 @@ export function MargenesSedePickerModal({
             </p>
           ) : sedes.length === 0 ? (
             <p className="text-sm text-[#6b7590]">
-              No hay sedes con datos en el rango seleccionado.
+              No hay sedes con datos en margen_final.
             </p>
           ) : (
             <div className="space-y-4">
@@ -160,8 +197,7 @@ export function MargenesSedePickerModal({
                                 {sede.label}
                               </span>
                               <span className="mt-0.5 block text-[11px] text-[#6b7590]">
-                                {sede.idCo} ·{" "}
-                                {sede.rowCount.toLocaleString("es-CO")} filas
+                                Código sede {sede.idCo}
                               </span>
                             </span>
                           </label>
@@ -185,7 +221,7 @@ export function MargenesSedePickerModal({
           </p>
           <button
             type="button"
-            disabled={selectedSedes.length === 0 || loading}
+            disabled={selectedSedes.length === 0 || loading || !dateStart || !dateEnd}
             onClick={onConfirm}
             className="shrink-0 rounded-md bg-[#4f8ef7] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3b7de0] disabled:opacity-50"
           >

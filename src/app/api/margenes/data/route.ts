@@ -103,42 +103,22 @@ const querySummary = async (
   };
 };
 
-const querySedesCatalog = async (
-  client: PoolClient,
-  filters: MargenQueryFilters,
-) => {
-  const params: unknown[] = [];
-  const where = buildMargenWhereClause(
-    {
-      ...filters,
-      empresas: [],
-      sedes: [],
-      categorias: [],
-      lineas: [],
-      sublineas: [],
-      items: [],
-    },
-    params,
-  );
-
+const querySedesCatalog = async (client: PoolClient) => {
   const result = await client.query<{
     empresa: string;
     id_co: string;
-    row_count: string;
   }>(
     `
-    SELECT
+    SELECT DISTINCT
       LOWER(TRIM(COALESCE(empresa, ''))) AS empresa,
-      LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co,
-      COUNT(*)::bigint AS row_count
+      LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co
     FROM margen_final
-    WHERE ${where}
+    WHERE fecha_dcto IS NOT NULL
+      AND fecha_dcto ~ '^[0-9]{8}$'
       AND TRIM(COALESCE(empresa, '')) <> ''
       AND TRIM(COALESCE(id_co, '')) <> ''
-    GROUP BY 1, 2
     ORDER BY 1, 2
     `,
-    params,
   );
 
   return {
@@ -147,10 +127,8 @@ const querySedesCatalog = async (
       label: sedeLabel(row.empresa, row.id_co),
       empresa: row.empresa,
       idCo: row.id_co,
-      rowCount: Number(row.row_count ?? 0),
+      rowCount: 0,
     })),
-    from: compactDateToIso(filters.fromCompact),
-    to: compactDateToIso(filters.toCompact),
   };
 };
 
@@ -290,6 +268,45 @@ export async function GET(request: Request) {
     );
   }
 
+  if (mode === "sedes") {
+    const pool = await getDbPool();
+    const client = await pool.connect();
+    try {
+      const tableExists = await ensureMargenTable(client);
+      if (!tableExists) {
+        return NextResponse.json(
+          {
+            error:
+              "Tabla margen_final no existe. Aplica db/migrations/20260622_margen_final.sql.",
+          },
+          { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+        );
+      }
+
+      const payload = await querySedesCatalog(client);
+      const response = NextResponse.json(payload, {
+        headers: { "Cache-Control": CACHE_CONTROL },
+      });
+      response.cookies.set(
+        "vp_session",
+        session.token,
+        getSessionCookieOptions(session.expiresAt),
+      );
+      return response;
+    } catch (error) {
+      console.error("[margenes/data] error", {
+        mode,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return NextResponse.json(
+        { error: "Error consultando margen_final." },
+        { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
+      );
+    } finally {
+      client.release();
+    }
+  }
+
   const parsed = parseMargenFilters(url.searchParams);
   if ("error" in parsed) {
     return NextResponse.json(
@@ -320,9 +337,7 @@ export async function GET(request: Request) {
     }
 
     let payload: unknown;
-    if (mode === "sedes") {
-      payload = await querySedesCatalog(client, parsed);
-    } else if (mode === "summary") {
+    if (mode === "summary") {
       payload = await querySummary(client, parsed);
     } else if (mode === "filters") {
       payload = await queryFilterOptions(client, parsed);
