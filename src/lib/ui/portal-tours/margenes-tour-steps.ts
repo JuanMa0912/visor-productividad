@@ -17,7 +17,7 @@ export const MARGENES_TOUR_STEPS: DriveStep[] = [
     popover: {
       title: "Filtros de negocio",
       description:
-        "Primero elige la sede en el modal; luego empresa, fechas y jerarquía de producto acotan ventas, costos y margen.",
+        "Primero elige una o más sedes en el modal (agrupadas por empresa); luego fechas y jerarquía de producto acotan ventas, costos y margen.",
       side: "bottom",
       align: "start",
     },

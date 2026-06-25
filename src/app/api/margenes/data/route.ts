@@ -5,7 +5,6 @@ import { getDbPool } from "@/lib/db";
 import {
   buildMargenWhereClause,
   compactDateToIso,
-  empresaLabel,
   margenMetricSelect,
   parseMargenFilters,
   sedeKey,
@@ -14,6 +13,16 @@ import {
   type MargenQueryFilters,
   type MargenViewMode,
 } from "@/lib/margenes/margen-final-query";
+import { parseDrillPath } from "@/lib/margenes/drill-path";
+import { parseFactPath } from "@/lib/margenes/fact-path";
+import {
+  queryDrillRows,
+  queryFactListRows,
+  queryFactNavRows,
+  queryFilterOptions,
+  queryKpi,
+  querySedeCompare,
+} from "@/lib/margenes/drill-queries";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -22,11 +31,23 @@ import {
 const CACHE_CONTROL = "no-store, private";
 const TABLE_ROW_LIMIT = 1000;
 
-type DataMode = "sedes" | "summary" | "filters" | MargenViewMode;
+type DataMode =
+  | "sedes"
+  | "summary"
+  | "filters"
+  | "kpi"
+  | "drill"
+  | "fact-nav"
+  | "fact-list"
+  | MargenViewMode;
 
 const HEAVY_MODES: DataMode[] = [
   "summary",
   "filters",
+  "kpi",
+  "drill",
+  "fact-nav",
+  "fact-list",
   "producto",
   "factura",
   "sede",
@@ -130,132 +151,6 @@ const querySedesCatalog = async (
     })),
     from: compactDateToIso(filters.fromCompact),
     to: compactDateToIso(filters.toCompact),
-  };
-};
-
-const queryFilters = async (
-  client: PoolClient,
-  filters: MargenQueryFilters,
-) => {
-  const params: unknown[] = [];
-  const where = buildMargenWhereClause(
-    {
-      ...filters,
-      categorias: [],
-      lineas: [],
-      sublineas: [],
-      items: [],
-    },
-    params,
-  );
-
-  const [empresas, sedes, fechas, categorias, lineas, sublineas, items] =
-    await Promise.all([
-      client.query<{ value: string }>(
-        `
-        SELECT DISTINCT LOWER(TRIM(COALESCE(empresa, ''))) AS value
-        FROM margen_final
-        WHERE ${where}
-          AND TRIM(COALESCE(empresa, '')) <> ''
-        ORDER BY 1
-        `,
-        params,
-      ),
-      client.query<{
-        empresa: string;
-        id_co: string;
-      }>(
-        `
-        SELECT DISTINCT
-          LOWER(TRIM(COALESCE(empresa, ''))) AS empresa,
-          LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co
-        FROM margen_final
-        WHERE ${where}
-          AND TRIM(COALESCE(empresa, '')) <> ''
-          AND TRIM(COALESCE(id_co, '')) <> ''
-        ORDER BY 1, 2
-        `,
-        params,
-      ),
-      client.query<{ value: string }>(
-        `
-        SELECT DISTINCT fecha_dcto AS value
-        FROM margen_final
-        WHERE ${where}
-        ORDER BY 1 DESC
-        `,
-        params,
-      ),
-      client.query<{ value: string; label: string }>(
-        `
-        SELECT DISTINCT
-          TRIM(COALESCE(id_tipo::text, '')) AS value,
-          TRIM(COALESCE(id_tipo::text, '')) AS label
-        FROM margen_final
-        WHERE ${where}
-          AND TRIM(COALESCE(id_tipo::text, '')) <> ''
-        ORDER BY 1
-        `,
-        params,
-      ),
-      client.query<{ value: string; label: string }>(
-        `
-        SELECT DISTINCT
-          TRIM(COALESCE(id_linea1::text, '')) AS value,
-          COALESCE(NULLIF(TRIM(nombre_linea1), ''), TRIM(COALESCE(id_linea1::text, ''))) AS label
-        FROM margen_final
-        WHERE ${where}
-          AND TRIM(COALESCE(id_linea1::text, '')) <> ''
-        ORDER BY 2
-        `,
-        params,
-      ),
-      client.query<{ value: string; label: string }>(
-        `
-        SELECT DISTINCT
-          TRIM(COALESCE(id_linea2::text, '')) AS value,
-          COALESCE(NULLIF(TRIM(nombre_linea2), ''), TRIM(COALESCE(id_linea2::text, ''))) AS label
-        FROM margen_final
-        WHERE ${where}
-          AND TRIM(COALESCE(id_linea2::text, '')) <> ''
-        ORDER BY 2
-        `,
-        params,
-      ),
-      client.query<{ value: string; label: string }>(
-        `
-        SELECT DISTINCT
-          TRIM(COALESCE(id_item::text, '')) AS value,
-          COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS label
-        FROM margen_final
-        WHERE ${where}
-          AND TRIM(COALESCE(id_item::text, '')) <> ''
-        ORDER BY 2
-        LIMIT 500
-        `,
-        params,
-      ),
-    ]);
-
-  return {
-    empresas: empresas.rows.map((row) => ({
-      value: row.value,
-      label: empresaLabel(row.value),
-    })),
-    sedes: sedes.rows.map((row) => ({
-      value: sedeKey(row.empresa, row.id_co),
-      label: sedeLabel(row.empresa, row.id_co),
-      empresa: row.empresa,
-      idCo: row.id_co,
-    })),
-    fechas: fechas.rows.map((row) => ({
-      value: row.value,
-      label: compactDateToIso(row.value) ?? row.value,
-    })),
-    categorias: categorias.rows,
-    lineas: lineas.rows,
-    sublineas: sublineas.rows,
-    items: items.rows,
   };
 };
 
@@ -430,11 +325,59 @@ export async function GET(request: Request) {
     } else if (mode === "summary") {
       payload = await querySummary(client, parsed);
     } else if (mode === "filters") {
-      payload = await queryFilters(client, parsed);
+      payload = await queryFilterOptions(client, parsed);
+    } else if (mode === "kpi") {
+      const drillPath = parseDrillPath(url.searchParams.get("drillPath"));
+      const mercadoOnly = url.searchParams.get("mercadoOnly") !== "false";
+      payload = await queryKpi(client, parsed, drillPath, { mercadoOnly });
+    } else if (mode === "drill") {
+      const drillPath = parseDrillPath(url.searchParams.get("drillPath"));
+      const search = url.searchParams.get("search") ?? undefined;
+      const [kpi, table] = await Promise.all([
+        queryKpi(client, parsed, drillPath),
+        queryDrillRows(client, parsed, drillPath, search),
+      ]);
+      payload = { kpi, ...table };
+    } else if (mode === "fact-nav") {
+      const factPath = parseFactPath(url.searchParams.get("factPath"));
+      const search = url.searchParams.get("search") ?? undefined;
+      const [kpi, table] = await Promise.all([
+        queryKpi(client, parsed, [], { mercadoOnly: false }),
+        queryFactNavRows(client, parsed, factPath, search),
+      ]);
+      payload = { kpi, ...table };
+    } else if (mode === "fact-list") {
+      const search = url.searchParams.get("search") ?? undefined;
+      const factPath = parseFactPath(url.searchParams.get("factPath"));
+      const mercadoOnly = false;
+      if (factPath.some((step) => step.type === "factura")) {
+        const [kpi, table] = await Promise.all([
+          queryKpi(client, parsed, [], { mercadoOnly }),
+          queryFactNavRows(client, parsed, factPath, search),
+        ]);
+        payload = { kpi, ...table };
+      } else {
+        const [kpi, rows] = await Promise.all([
+          queryKpi(client, parsed, [], { mercadoOnly }),
+          queryFactListRows(client, parsed, search),
+        ]);
+        payload = {
+          kpi,
+          level: 0,
+          levelName: "Factura",
+          rows,
+        };
+      }
+    } else if (mode === "sede") {
+      const [kpi, rows] = await Promise.all([
+        queryKpi(client, parsed, [], { mercadoOnly: false }),
+        querySedeCompare(client, parsed),
+      ]);
+      payload = { kpi, rows };
     } else {
       payload = {
         rows: await queryTable(client, parsed, mode),
-        limit: mode === "sede" ? null : TABLE_ROW_LIMIT,
+        limit: TABLE_ROW_LIMIT,
       };
     }
 

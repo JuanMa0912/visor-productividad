@@ -5,12 +5,22 @@ export type MargenViewMode = "producto" | "factura" | "sede";
 export type MargenQueryFilters = {
   fromCompact: string;
   toCompact: string;
+  fechas: string[];
   empresas: string[];
   sedes: string[];
   categorias: string[];
   lineas: string[];
   sublineas: string[];
   items: string[];
+};
+
+const TIPO_LABELS: Record<string, string> = {
+  "4": "MERCADO",
+};
+
+export const tipoLabel = (idTipo: string | null | undefined): string => {
+  const id = String(idTipo ?? "").trim();
+  return TIPO_LABELS[id] ?? (id || "—");
 };
 
 const EMPRESA_LABELS: Record<string, string> = {
@@ -92,6 +102,7 @@ export const parseMargenFilters = (
   return {
     fromCompact,
     toCompact,
+    fechas: parseList(searchParams.get("fecha")).filter((value) => /^\d{8}$/.test(value)),
     empresas: parseList(searchParams.get("empresa")).map(normalizeEmpresa),
     sedes: parseList(searchParams.get("sede")),
     categorias: parseList(searchParams.get("categoria")),
@@ -110,8 +121,13 @@ export const buildMargenWhereClause = (
     "fecha_dcto ~ '^[0-9]{8}$'",
   ];
 
-  params.push(filters.fromCompact, filters.toCompact);
-  parts.push(`fecha_dcto BETWEEN $${params.length - 1} AND $${params.length}`);
+  if (filters.fechas.length > 0) {
+    params.push(filters.fechas);
+    parts.push(`fecha_dcto = ANY($${params.length}::text[])`);
+  } else {
+    params.push(filters.fromCompact, filters.toCompact);
+    parts.push(`fecha_dcto BETWEEN $${params.length - 1} AND $${params.length}`);
+  }
 
   if (filters.empresas.length > 0) {
     params.push(filters.empresas);

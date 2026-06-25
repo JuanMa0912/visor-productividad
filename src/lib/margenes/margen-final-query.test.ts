@@ -42,6 +42,7 @@ test("buildMargenWhereClause agrega filtros parametrizados", () => {
     {
       fromCompact: "20260623",
       toCompact: "20260624",
+      fechas: [],
       empresas: ["mercamio"],
       sedes: [sedeKey("mercamio", "3")],
       categorias: ["4"],

@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { Building2, Loader2 } from "lucide-react";
+import { empresaLabel } from "@/lib/margenes/margen-final-query";
 
 export type MargenSedePickerOption = {
   value: string;
@@ -14,10 +16,11 @@ type MargenesSedePickerModalProps = {
   open: boolean;
   rangeLabel: string;
   sedes: MargenSedePickerOption[];
-  selectedSede: string;
+  selectedSedes: string[];
   loading: boolean;
   error: string | null;
-  onSelect: (value: string) => void;
+  onToggleSede: (value: string) => void;
+  onToggleEmpresa: (empresa: string, values: string[]) => void;
   onConfirm: () => void;
 };
 
@@ -25,15 +28,40 @@ export function MargenesSedePickerModal({
   open,
   rangeLabel,
   sedes,
-  selectedSede,
+  selectedSedes,
   loading,
   error,
-  onSelect,
+  onToggleSede,
+  onToggleEmpresa,
   onConfirm,
 }: MargenesSedePickerModalProps) {
-  if (!open) return null;
+  const grouped = useMemo(() => {
+    const map = new Map<string, MargenSedePickerOption[]>();
+    for (const sede of sedes) {
+      const bucket = map.get(sede.empresa) ?? [];
+      bucket.push(sede);
+      map.set(sede.empresa, bucket);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => empresaLabel(a).localeCompare(empresaLabel(b), "es"))
+      .map(([empresa, items]) => ({
+        empresa,
+        label: empresaLabel(empresa),
+        sedes: items.sort((a, b) => a.label.localeCompare(b.label, "es")),
+      }));
+  }, [sedes]);
 
-  const selected = sedes.find((sede) => sede.value === selectedSede);
+  const selectedSet = useMemo(() => new Set(selectedSedes), [selectedSedes]);
+
+  const selectedLabels = useMemo(
+    () =>
+      sedes
+        .filter((sede) => selectedSet.has(sede.value))
+        .map((sede) => sede.label),
+    [sedes, selectedSet],
+  );
+
+  if (!open) return null;
 
   return (
     <div
@@ -53,10 +81,10 @@ export function MargenesSedePickerModal({
                 id="margenes-sede-picker-title"
                 className="text-base font-bold text-[#dde3f0]"
               >
-                Elige la sede a analizar
+                Elige las sedes a analizar
               </h2>
               <p className="mt-1 text-sm text-[#9aa3bc]">
-                Solo cargamos datos de la sede que elijas. Rango:{" "}
+                Marca una o varias sedes por empresa. Rango:{" "}
                 <span className="font-medium text-[#dde3f0]">{rangeLabel}</span>
               </p>
             </div>
@@ -77,26 +105,70 @@ export function MargenesSedePickerModal({
               No hay sedes con datos en el rango seleccionado.
             </p>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {sedes.map((sede) => {
-                const active = sede.value === selectedSede;
+            <div className="space-y-4">
+              {grouped.map((group) => {
+                const groupValues = group.sedes.map((sede) => sede.value);
+                const selectedInGroup = groupValues.filter((value) =>
+                  selectedSet.has(value),
+                ).length;
+                const allInGroup =
+                  groupValues.length > 0 &&
+                  selectedInGroup === groupValues.length;
+
                 return (
-                  <button
-                    key={sede.value}
-                    type="button"
-                    onClick={() => onSelect(sede.value)}
-                    className={`rounded-lg border px-4 py-3 text-left transition ${
-                      active
-                        ? "border-[#4f8ef7] bg-[#4f8ef7]/10 text-[#dde3f0]"
-                        : "border-[#2a2f47] bg-[#1b1e2e] text-[#dde3f0] hover:border-[#4f8ef7]/50"
-                    }`}
+                  <section
+                    key={group.empresa}
+                    className="rounded-lg border border-[#2a2f47] bg-[#1b1e2e]"
                   >
-                    <div className="text-sm font-semibold">{sede.label}</div>
-                    <div className="mt-1 text-[11px] text-[#6b7590]">
-                      {sede.empresa.toUpperCase()} · {sede.idCo} ·{" "}
-                      {sede.rowCount.toLocaleString("es-CO")} filas
+                    <div className="flex items-center justify-between gap-3 border-b border-[#2a2f47] px-4 py-2.5">
+                      <div>
+                        <h3 className="text-sm font-semibold text-[#dde3f0]">
+                          {group.label}
+                        </h3>
+                        <p className="text-[11px] text-[#6b7590]">
+                          {selectedInGroup}/{group.sedes.length} sede(s)
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onToggleEmpresa(group.empresa, groupValues)}
+                        className="text-xs font-medium text-[#4f8ef7] hover:text-[#3b7de0]"
+                      >
+                        {allInGroup ? "Quitar todas" : "Marcar todas"}
+                      </button>
                     </div>
-                  </button>
+                    <div className="grid gap-1 p-2 sm:grid-cols-2">
+                      {group.sedes.map((sede) => {
+                        const checked = selectedSet.has(sede.value);
+                        return (
+                          <label
+                            key={sede.value}
+                            className={`flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 transition ${
+                              checked
+                                ? "border-[#4f8ef7]/60 bg-[#4f8ef7]/10"
+                                : "border-transparent hover:border-[#2a2f47] hover:bg-[#141720]"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => onToggleSede(sede.value)}
+                              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#2a2f47] bg-[#141720] text-[#4f8ef7] focus:ring-[#4f8ef7]/40"
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-sm font-medium text-[#dde3f0]">
+                                {sede.label}
+                              </span>
+                              <span className="mt-0.5 block text-[11px] text-[#6b7590]">
+                                {sede.idCo} ·{" "}
+                                {sede.rowCount.toLocaleString("es-CO")} filas
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </section>
                 );
               })}
             </div>
@@ -104,16 +176,18 @@ export function MargenesSedePickerModal({
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-[#2a2f47] px-5 py-4">
-          <p className="text-xs text-[#6b7590]">
-            {selected
-              ? `Seleccionada: ${selected.label}`
-              : "Selecciona una sede para continuar."}
+          <p className="min-w-0 text-xs text-[#6b7590]">
+            {selectedSedes.length === 0
+              ? "Marca al menos una sede para continuar."
+              : selectedSedes.length === 1
+                ? `1 sede: ${selectedLabels[0]}`
+                : `${selectedSedes.length} sedes seleccionadas`}
           </p>
           <button
             type="button"
-            disabled={!selectedSede || loading}
+            disabled={selectedSedes.length === 0 || loading}
             onClick={onConfirm}
-            className="rounded-md bg-[#4f8ef7] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3b7de0] disabled:opacity-50"
+            className="shrink-0 rounded-md bg-[#4f8ef7] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3b7de0] disabled:opacity-50"
           >
             Cargar datos
           </button>
