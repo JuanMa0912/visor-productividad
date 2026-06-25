@@ -113,6 +113,8 @@ Todas como `sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/s
 | Re-correr AYER (tras un fallo) | *(sin flags)* |
 | Subir un dia puntual / backfill | `--date 2026-06-22` |
 | Reconciliacion manual de N dias | `--days 7` |
+| **Backfill de UNA sola tabla** (quirurgico, no toca las demas) | `--only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24` |
+| Rango fijo de fechas (cualquier dia de corrida) | `--desde 2026-06-01 --hasta 2026-06-24` |
 | **Primera carga `margen_final` (todo el historico local)** | `--margen-full --no-refresh --verify` |
 | Subir `margen_final` de un rango | `--days 31` (o `--date YYYY-MM-DD`) |
 | Probar sin escribir (solo conteos) | `--days 7 --dry-run` |
@@ -131,7 +133,15 @@ sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to
 
 # Backfill de margen_final (todo lo que hay en local):
 sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --margen-full --no-refresh --verify
+
+# Backfill SOLO de ventas_item_diario de un rango fijo (sin tocar el resto de tablas):
+sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh \
+  --only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24 --verify
 ```
+
+> `--desde/--hasta` define un rango fijo, no depende del dia en que lo corras (a
+> diferencia de `--days N`, que siempre termina en "ayer"). Para un dia suelto:
+> `--only TABLA --date YYYY-MM-DD`. El `--verify` ahora tambien reporta `ventas_item_diario`.
 
 Re-correr es **siempre seguro**: el upsert no duplica ni borra; vuelve a dejar el
 estado correcto.

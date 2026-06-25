@@ -13,11 +13,14 @@
 #  y reinserta, excluyendo su id serial.)
 #
 # Ventana:
-#   - default (sin flags) = solo AYER (rapido, para no retrasar la subida del dia).
-#   - --days N            = ultimos N dias terminando ayer (reconciliacion; ej. sabado --days 18).
-#   - --date YYYY-MM-DD   = un solo dia (re-correr/backfill manual).
+#   - default (sin flags)        = solo AYER (rapido, para no retrasar la subida del dia).
+#   - --days N                   = ultimos N dias terminando ayer (reconciliacion; ej. sabado --days 18).
+#   - --date YYYY-MM-DD          = un solo dia (re-correr/backfill manual).
+#   - --desde A --hasta B        = rango fijo [A..B] (backfill historico; independiente del dia de corrida).
 #
 # Otros flags:
+#   --only T[,T]  solo procesa esa(s) tabla(s) de la allowlist (backfill quirurgico).
+#                 repetible y/o separado por comas. Ej: --only ventas_item_diario.
 #   --dry-run     solo cuenta filas en local, no escribe en GCP.
 #   --no-refresh  no refresca la matview de rotacion al final.
 #   --verify      chequea la fecha maxima por tabla en GCP al terminar.
@@ -46,10 +49,13 @@ LOG_FILE="${LOG_FILE:-/var/log/visor-etl-sync.log}"
 
 DAYS=1
 ONE_DATE=""
+RANGE_FROM=""
+RANGE_TO=""
 DRY_RUN=0
 NO_REFRESH=0
 RUN_VERIFY=0
 MARGEN_FULL=0
+ONLY_TABLES=""
 MODE_DAILY=1   # 1 solo cuando es la corrida diaria (default, sin --days ni --date)
 
 usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
@@ -60,6 +66,14 @@ while [[ $# -gt 0 ]]; do
     --days=*)    DAYS="${1#*=}"; MODE_DAILY=0; shift ;;
     --date)      ONE_DATE="${2:?--date requiere YYYY-MM-DD}"; MODE_DAILY=0; shift 2 ;;
     --date=*)    ONE_DATE="${1#*=}"; MODE_DAILY=0; shift ;;
+    --desde|--from) RANGE_FROM="${2:?--desde requiere YYYY-MM-DD}"; MODE_DAILY=0; shift 2 ;;
+    --desde=*|--from=*) RANGE_FROM="${1#*=}"; MODE_DAILY=0; shift ;;
+    --hasta|--to)   RANGE_TO="${2:?--hasta requiere YYYY-MM-DD}"; MODE_DAILY=0; shift 2 ;;
+    --hasta=*|--to=*)   RANGE_TO="${1#*=}"; MODE_DAILY=0; shift ;;
+    --only)      ONLY_TABLES+=" ${2:?--only requiere nombre(s) de tabla}"; shift 2 ;;
+    --only=*)    ONLY_TABLES+=" ${1#*=}"; shift ;;
+    --table)     ONLY_TABLES+=" ${2:?--table requiere nombre(s) de tabla}"; shift 2 ;;
+    --table=*)   ONLY_TABLES+=" ${1#*=}"; shift ;;
     --dry-run)   DRY_RUN=1; shift ;;
     --no-refresh) NO_REFRESH=1; shift ;;
     --verify)    RUN_VERIFY=1; shift ;;
@@ -74,6 +88,15 @@ if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [[ "$DAYS" -lt 1 ]]; then
 fi
 if [[ -n "$ONE_DATE" ]] && ! [[ "$ONE_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
   echo "ERROR: --date debe ser YYYY-MM-DD" >&2; exit 2
+fi
+for _d in "$RANGE_FROM" "$RANGE_TO"; do
+  [[ -z "$_d" ]] && continue
+  [[ "$_d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "ERROR: fecha debe ser YYYY-MM-DD: $_d" >&2; exit 2; }
+done
+if [[ -n "$RANGE_FROM" || -n "$RANGE_TO" ]]; then
+  [[ -n "$RANGE_FROM" && -n "$RANGE_TO" ]] || { echo "ERROR: --desde y --hasta van juntos" >&2; exit 2; }
+  [[ -z "$ONE_DATE" ]] || { echo "ERROR: --date no se combina con --desde/--hasta" >&2; exit 2; }
+  [[ "$RANGE_FROM" > "$RANGE_TO" ]] && { echo "ERROR: --desde ($RANGE_FROM) es mayor que --hasta ($RANGE_TO)" >&2; exit 2; }
 fi
 
 log() {
@@ -123,7 +146,9 @@ GCP_PSQL=(env "PGPASSWORD=$DB_PASSWORD_GCP" "PGSSLMODE=$GCP_SSL" psql
   --dbname="$DB_NAME_GCP" --no-password --set ON_ERROR_STOP=on)
 
 # --- Ventana de fechas -----------------------------------------------------
-if [[ -n "$ONE_DATE" ]]; then
+if [[ -n "$RANGE_FROM" ]]; then
+  DESDE="$RANGE_FROM"; HASTA="$RANGE_TO"
+elif [[ -n "$ONE_DATE" ]]; then
   DESDE="$ONE_DATE"; HASTA="$ONE_DATE"
 else
   HASTA="$(date -d 'yesterday' +%F)"
@@ -136,6 +161,23 @@ TABLES=(ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pes
         ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario
         margen_final)
 CANARIES="ventas_cajas rotacion_base_item_dia_sede asistencia_horas"
+
+# --only / --table: filtra la allowlist a un subconjunto (backfill quirurgico).
+ONLY_TABLES="${ONLY_TABLES//,/ }"   # acepta comas ademas de repetir el flag
+if [[ -n "${ONLY_TABLES// /}" ]]; then
+  for o in $ONLY_TABLES; do
+    case " ${TABLES[*]} " in
+      *" $o "*) ;;
+      *) echo "ERROR: --only '$o' no esta en la allowlist: ${TABLES[*]}" >&2; exit 2 ;;
+    esac
+  done
+fi
+table_selected() {  # 0 si la tabla esta seleccionada (o si no hay filtro)
+  local t="$1" o
+  [[ -z "${ONLY_TABLES// /}" ]] && return 0
+  for o in $ONLY_TABLES; do [[ "$o" == "$t" ]] && return 0; done
+  return 1
+}
 
 # KEY      = columnas de identidad (no se actualizan en el upsert).
 # CONFLICT = target del ON CONFLICT; default "(KEY)". Override cuando el indice unico
@@ -320,21 +362,31 @@ refresh_matviews() {
   log "Refresh de matviews OK."
 }
 
+# Expresion de "fecha maxima" (como texto YYYYMMDD) por tabla, para el verify.
+declare -A MAXEXPR
+for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc \
+         ventas_industria ventas_item_diario margen_final; do
+  MAXEXPR[$t]="max(fecha_dcto)"
+done
+MAXEXPR[rotacion_base_item_dia_sede]="to_char(max(fecha_dia),'YYYYMMDD')"
+MAXEXPR[asistencia_horas]="to_char(max(fecha),'YYYYMMDD')"
+
 # Chequeo simple: fecha maxima por tabla en GCP vs el objetivo (HASTA).
+# Respeta --only para no referenciar tablas que tal vez no existan aun en GCP.
 verify_freshness() {
   log "Verificando frescura en GCP (objetivo $HASTA)..."
+  local cte="" t
+  for t in "${TABLES[@]}"; do
+    table_selected "$t" || continue
+    if [[ -z "$cte" ]]; then
+      cte="SELECT '$t' t, ${MAXEXPR[$t]} d FROM $t"
+    else
+      cte+=" UNION ALL SELECT '$t', ${MAXEXPR[$t]} FROM $t"
+    fi
+  done
+  [[ -n "$cte" ]] || { log "verify: sin tablas que verificar."; return 0; }
   "${GCP_PSQL[@]}" -v obj="$HASTAC" -P pager=off -c "
-    WITH m AS (
-      SELECT 'ventas_cajas' t, max(fecha_dcto) d FROM ventas_cajas
-      UNION ALL SELECT 'ventas_fruver', max(fecha_dcto) FROM ventas_fruver
-      UNION ALL SELECT 'ventas_carnes', max(fecha_dcto) FROM ventas_carnes
-      UNION ALL SELECT 'ventas_asadero', max(fecha_dcto) FROM ventas_asadero
-      UNION ALL SELECT 'ventas_pollo_pesc', max(fecha_dcto) FROM ventas_pollo_pesc
-      UNION ALL SELECT 'ventas_industria', max(fecha_dcto) FROM ventas_industria
-      UNION ALL SELECT 'rotacion_base_item_dia_sede', to_char(max(fecha_dia),'YYYYMMDD') FROM rotacion_base_item_dia_sede
-      UNION ALL SELECT 'asistencia_horas', to_char(max(fecha),'YYYYMMDD') FROM asistencia_horas
-      UNION ALL SELECT 'margen_final', max(fecha_dcto) FROM margen_final
-    )
+    WITH m AS ($cte)
     SELECT t AS tabla, COALESCE(d,'-') AS hasta,
            CASE WHEN d >= :'obj' THEN 'OK' ELSE 'ATRASADA' END AS estado
     FROM m ORDER BY estado DESC, tabla;" || log "WARN: verificacion fallo."
@@ -345,13 +397,14 @@ log "Config: $ETL_ENV_FILE"
 log "Origen(local): $DB_HOST_LOCAL/$DB_NAME_LOCAL  ->  Destino(GCP): $DB_HOST_GCP/$DB_NAME_GCP (ssl=$GCP_SSL)"
 
 for t in "${TABLES[@]}"; do
+  table_selected "$t" || continue
   if [[ "$t" == "margen_final" && "$MARGEN_FULL" -eq 1 ]]; then
     continue
   fi
   process_table "$t"
 done
 
-if [[ "$MARGEN_FULL" -eq 1 ]]; then
+if [[ "$MARGEN_FULL" -eq 1 ]] && table_selected margen_final; then
   process_table_margen_full
 fi
 
