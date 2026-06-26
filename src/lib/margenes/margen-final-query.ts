@@ -12,6 +12,8 @@ export type MargenQueryFilters = {
   lineas: string[];
   sublineas: string[];
   items: string[];
+  orderBy?: string;
+  orderDir?: "asc" | "desc";
 };
 
 const TIPO_LABELS: Record<string, string> = {
@@ -109,6 +111,8 @@ export const parseMargenFilters = (
     lineas: parseList(searchParams.get("linea")),
     sublineas: parseList(searchParams.get("sublinea")),
     items: parseList(searchParams.get("item")),
+    orderBy: searchParams.get("orderBy") ?? undefined,
+    orderDir: searchParams.get("orderDir") === "asc" ? "asc" : searchParams.get("orderDir") === "desc" ? "desc" : undefined,
   };
 };
 
