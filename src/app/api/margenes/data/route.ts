@@ -28,6 +28,7 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
+import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 
 const CACHE_CONTROL = "no-store, private";
 const TABLE_ROW_LIMIT = 1000;
@@ -337,6 +338,24 @@ export async function GET(request: Request) {
       );
     }
 
+    const cacheKey = url.search;
+    const cachedPayload = getCachedQuery(cacheKey);
+    if (cachedPayload !== null) {
+      const cachedResponse = NextResponse.json(cachedPayload, {
+        headers: { "Cache-Control": CACHE_CONTROL },
+      });
+      cachedResponse.cookies.set(
+        "vp_session",
+        session.token,
+        getSessionCookieOptions(session.expiresAt),
+      );
+      return cachedResponse;
+    }
+
+    // Sube work_mem solo para estas consultas pesadas: los sorts de los COUNT(DISTINCT)
+    // caben en RAM (sin disco) y el planner elige el indice sede-first. Se RESETea en finally.
+    await client.query("SET work_mem = '128MB'");
+
     let payload: unknown;
     if (mode === "summary") {
       payload = await querySummary(client, parsed);
@@ -400,6 +419,8 @@ export async function GET(request: Request) {
       };
     }
 
+    setCachedQuery(cacheKey, payload);
+
     const response = NextResponse.json(payload, {
       headers: { "Cache-Control": CACHE_CONTROL },
     });
@@ -419,6 +440,7 @@ export async function GET(request: Request) {
       { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
     );
   } finally {
+    await client.query("RESET work_mem").catch(() => {});
     client.release();
   }
 }
