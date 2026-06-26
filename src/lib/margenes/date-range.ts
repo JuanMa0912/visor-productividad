@@ -1,28 +1,23 @@
 import { compactDateToIso, isoDateToCompact } from "@/lib/margenes/margen-final-query";
 
-const DEFAULT_RANGE_DAYS = 7;
-
-/** Rango corto por defecto (últimos N días) para primera carga más rápida. */
+/**
+ * Rango por defecto = MES EN CURSO: del día 1 del mes de `maxCompact` hasta `maxCompact`.
+ * Como el ETL deja la BD hasta "ayer", si hoy es día 1 entonces `maxCompact` cae en el
+ * mes anterior y se muestra ese mes completo (sin lógica de reloj ni casos especiales).
+ */
 export const defaultMargenDateRange = (
   minCompact: string | null | undefined,
   maxCompact: string | null | undefined,
-  days = DEFAULT_RANGE_DAYS,
 ): { start: string; end: string } | null => {
   const endIso = compactDateToIso(maxCompact);
   const minIso = compactDateToIso(minCompact);
   if (!endIso) return null;
 
-  const end = new Date(`${endIso}T12:00:00`);
-  const start = new Date(end);
-  start.setDate(start.getDate() - (days - 1));
-
-  let startIso = start.toISOString().slice(0, 10);
+  let startIso = `${endIso.slice(0, 7)}-01`; // primer día del mes de maxDate
   if (minIso && startIso < minIso) startIso = minIso;
 
   return { start: startIso, end: endIso };
 };
-
-export const margenDefaultRangeDays = DEFAULT_RANGE_DAYS;
 
 export const compactRangeSpanDays = (
   fromCompact: string,

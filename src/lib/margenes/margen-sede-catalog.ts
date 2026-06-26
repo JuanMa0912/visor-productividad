@@ -20,9 +20,7 @@ const STATIC_SEDE_ENTRIES: Array<{ idCo: string; empresa: string }> = [
   { idCo: "004", empresa: "mercamio" },
   { idCo: "005", empresa: "mercamio" },
   { idCo: "006", empresa: "mercamio" },
-  { idCo: "997", empresa: "mercamio" },
-  { idCo: "998", empresa: "mercamio" },
-  { idCo: "999", empresa: "mercamio" },
+  // Plantas excluidas (no son tiendas): 997 Desprese Pollo, 998 Panificadora, 999 Desposte Mixto.
   { idCo: "001", empresa: "mtodo" },
   { idCo: "002", empresa: "mtodo" },
   { idCo: "003", empresa: "mtodo" },
