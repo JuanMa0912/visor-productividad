@@ -84,6 +84,15 @@ const marginBar = (pct: number) => (
   />
 );
 
+/** Recorrido: la factura se muestra como "Fact: 000000" (6 dígitos). */
+const formatStepLabel = (step: DrillPathStep | FactNavStep): string => {
+  if (step.type === "factura" && "documento" in step && step.documento) {
+    const doc = String(step.documento).trim();
+    return `Fact: ${/^\d+$/.test(doc) ? doc.padStart(6, "0") : doc}`;
+  }
+  return step.label;
+};
+
 const colsForDrillLevel = (level: number): ColDef[] => {
   const base: ColDef[] = [
     {
@@ -149,7 +158,7 @@ const colsForDrillLevel = (level: number): ColDef[] => {
     },
     {
       key: "pcu",
-      label: "P.Costo/Und",
+      label: "Costo X Unidad",
       align: "right",
       sortValue: (row) => row.pcu,
       render: (row) => formatDecimals(row.pcu),
@@ -809,7 +818,7 @@ export const MargenesBoard = ({
                 className="text-[#4f8ef7] hover:underline"
                 onClick={() => setDrillPath(drillPath.slice(0, index + 1))}
               >
-                {step.label}
+                {formatStepLabel(step)}
               </button>
             </span>
           ))}
@@ -836,7 +845,7 @@ export const MargenesBoard = ({
                 className="text-[#4f8ef7] hover:underline"
                 onClick={() => setFactPath(factPath.slice(0, index + 1))}
               >
-                {step.label}
+                {formatStepLabel(step)}
               </button>
             </span>
           ))}

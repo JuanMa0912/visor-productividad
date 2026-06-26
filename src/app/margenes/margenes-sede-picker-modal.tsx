@@ -28,7 +28,6 @@ type MargenesSedePickerModalProps = {
   onToggleSede: (value: string) => void;
   onToggleEmpresa: (empresa: string, values: string[]) => void;
   onConfirm: () => void;
-  defaultRangeDays?: number;
 };
 
 export function MargenesSedePickerModal({
@@ -47,7 +46,6 @@ export function MargenesSedePickerModal({
   onToggleSede,
   onToggleEmpresa,
   onConfirm,
-  defaultRangeDays = 7,
 }: MargenesSedePickerModalProps) {
   const grouped = useMemo(() => {
     const map = new Map<string, MargenSedePickerOption[]>();
@@ -98,9 +96,8 @@ export function MargenesSedePickerModal({
                 Elige las sedes a analizar
               </h2>
               <p className="mt-1 text-sm text-[#9aa3bc]">
-                Primero elige sede(s) y el rango. Por defecto se cargan los últimos{" "}
-                {defaultRangeDays} días para una respuesta más rápida; amplía el rango si
-                lo necesitas.
+                Primero elige sede(s) y el rango. Por defecto se carga el mes en
+                curso (del 1 a ayer); ajústalo si lo necesitas.
               </p>
               <div className="mt-3 flex flex-wrap items-end gap-3">
                 <label className="flex min-w-[130px] flex-col gap-1 text-[10px] tracking-wide text-[#6b7590] uppercase">

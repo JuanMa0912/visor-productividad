@@ -7,10 +7,7 @@ import { AppTopBar } from "@/components/portal/app-top-bar";
 import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-button";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { compactDateToIso } from "@/lib/margenes/margen-final-query";
-import {
-  defaultMargenDateRange,
-  margenDefaultRangeDays,
-} from "@/lib/margenes/date-range";
+import { defaultMargenDateRange } from "@/lib/margenes/date-range";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
 import { formatDayLabel } from "@/lib/margenes/drill-queries";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
@@ -336,7 +333,6 @@ export default function MargenesPage() {
         selectedSedes={pendingSedes}
         loading={false}
         error={null}
-        defaultRangeDays={margenDefaultRangeDays}
         onToggleSede={togglePendingSede}
         onToggleEmpresa={togglePendingEmpresa}
         onConfirm={confirmSedeSelection}
