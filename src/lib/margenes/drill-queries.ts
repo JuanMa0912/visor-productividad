@@ -17,6 +17,7 @@ import {
   type FactNavStep,
 } from "@/lib/margenes/fact-path";
 import {
+  buildMargenOrderBy,
   MERCADO_TIPO_SQL,
   METRICS_SQL,
   marginPct,
@@ -176,7 +177,7 @@ const queryInvoiceLineRows = async (
     FROM margen_final
     WHERE ${where}
     GROUP BY 1, 2, 3, 4
-    ORDER BY ventas_netas DESC
+    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
     `,
     params,
   );
@@ -265,7 +266,7 @@ export const queryDrillRows = async (
       FROM margen_final
       WHERE ${dayWhere}
       GROUP BY fecha_dcto
-      ORDER BY fecha_dcto
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "fecha_dcto DESC")}
       `,
       params,
     );
@@ -314,7 +315,7 @@ export const queryDrillRows = async (
       FROM margen_final
       WHERE ${where}
       GROUP BY 1
-      ORDER BY 1
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "1")}
       `,
       params,
     );
@@ -347,7 +348,7 @@ export const queryDrillRows = async (
       FROM margen_final
       WHERE ${where}
       GROUP BY 1
-      ORDER BY 2
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "2")}
       `,
       params,
     );
@@ -379,7 +380,7 @@ export const queryDrillRows = async (
       FROM margen_final
       WHERE ${where}
       GROUP BY 1
-      ORDER BY 2
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "2")}
       `,
       params,
     );
@@ -419,7 +420,7 @@ export const queryDrillRows = async (
       FROM margen_final
       WHERE ${itemWhere}
       GROUP BY 1
-      ORDER BY ventas_netas DESC
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
       LIMIT 1000
       `,
       params,
@@ -454,7 +455,7 @@ export const queryDrillRows = async (
       WHERE ${where}
         AND NULLIF(TRIM(documento_fc::text), '') IS NOT NULL
       GROUP BY 1, 2
-      ORDER BY ventas_netas DESC
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
       LIMIT 1000
       `,
       params,
@@ -531,7 +532,7 @@ export const queryFactNavRows = async (
       FROM margen_final
       WHERE ${where}
       GROUP BY fecha_dcto
-      ORDER BY fecha_dcto
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "fecha_dcto DESC")}
       `,
       params,
     );
@@ -598,7 +599,7 @@ export const queryFactNavRows = async (
       WHERE ${factWhere}
         AND NULLIF(TRIM(documento_fc::text), '') IS NOT NULL
       GROUP BY 1, 2
-      ORDER BY ventas_netas DESC
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
       LIMIT 1000
       `,
       params,
@@ -654,7 +655,7 @@ export const queryFactListRows = async (
     WHERE ${where}
       AND NULLIF(TRIM(documento_fc::text), '') IS NOT NULL
     GROUP BY 1, 2, 3, 4, 5
-    ORDER BY ventas_netas DESC
+    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
     LIMIT 1000
     `,
     params,
@@ -693,7 +694,7 @@ export const querySedeCompare = async (
     FROM margen_final
     WHERE ${where}
     GROUP BY 1, 2
-    ORDER BY ventas_netas DESC
+    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
     `,
     params,
   );

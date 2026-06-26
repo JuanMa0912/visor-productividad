@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import type { DrillPathStep } from "@/lib/margenes/drill-path";
 import type { FactNavStep } from "@/lib/margenes/fact-path";
 import type { DrillRow } from "@/lib/margenes/drill-queries";
+import { MARGEN_SORT_COLUMNS } from "@/lib/margenes/metrics";
 import {
   formatDecimals,
   formatMiles,
@@ -56,6 +57,9 @@ type TablePayload = {
 
 const PAGE_SIZES = [50, 100, 200];
 const KPI_PLACEHOLDER = "—";
+
+/** Columnas que el servidor sabe ordenar (las demas se ordenan en cliente sobre lo cargado). */
+const SERVER_SORT_KEYS = new Set(Object.keys(MARGEN_SORT_COLUMNS));
 
 const buildQuery = (params: Record<string, string | undefined>) => {
   const search = new URLSearchParams();
@@ -363,6 +367,14 @@ export const MargenesBoard = ({
     ],
   );
 
+  const orderParam = useMemo(
+    () =>
+      sortKey && SERVER_SORT_KEYS.has(sortKey)
+        ? `orderBy=${encodeURIComponent(sortKey)}&orderDir=${mgSortDir}`
+        : "",
+    [sortKey, mgSortDir],
+  );
+
   const resetFilters = useCallback(() => {
     setEmpresas([]);
     setSedes([]);
@@ -434,7 +446,8 @@ export const MargenesBoard = ({
     setError(null);
     try {
       if (mode === "sede") {
-        const response = await fetch(`/api/margenes/data?mode=sede&${queryBase}`, {
+        const sedeUrl = `/api/margenes/data?mode=sede&${queryBase}${orderParam ? `&${orderParam}` : ""}`;
+        const response = await fetch(sedeUrl, {
           cache: "no-store",
         });
         if (!response.ok) {
@@ -460,6 +473,7 @@ export const MargenesBoard = ({
         if (factSearch.trim()) url += `&search=${encodeURIComponent(factSearch.trim())}`;
       }
 
+      if (orderParam) url += `&${orderParam}`;
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -485,11 +499,12 @@ export const MargenesBoard = ({
     drillSearch,
     factSearch,
     queryBase,
+    orderParam,
   ]);
 
   useEffect(() => {
     setPage(0);
-  }, [mode, factTab, drillPath, factPath, drillSearch, factSearch, queryBase]);
+  }, [mode, factTab, drillPath, factPath, drillSearch, factSearch, queryBase, sortKey, mgSortDir]);
 
   useEffect(() => {
     if (!dataCommitted) return;
@@ -509,31 +524,28 @@ export const MargenesBoard = ({
     [mode, sedeRows, payload?.rows],
   );
 
+  // El ACUMULADO va FIJO arriba: se saca de las filas, no lo tocan orden/paginacion/filtros.
+  const acumRow = useMemo(() => rawRows.find((row) => row.isAcum) ?? null, [rawRows]);
+  const dataRows = useMemo(() => rawRows.filter((row) => !row.isAcum), [rawRows]);
+
+  // El orden por columnas-metrica lo hace el SERVIDOR (orderParam -> refetch, respeta el LIMIT).
+  // Aqui solo ordenamos en cliente las columnas de dimension (no estan en SERVER_SORT_KEYS).
   const sortedRows = useMemo(() => {
-    const rows = [...rawRows];
-    if (sortKey) {
+    const rows = [...dataRows];
+    if (sortKey && !SERVER_SORT_KEYS.has(sortKey)) {
       const col = columns.find((column) => column.key === sortKey);
       if (col?.sortValue) {
+        const factor = mgSortDir === "desc" ? -1 : 1;
         rows.sort((a, b) => {
           const av = col.sortValue!(a);
           const bv = col.sortValue!(b);
-          if (typeof av === "number" && typeof bv === "number") return av - bv;
-          return String(av).localeCompare(String(bv), "es");
+          if (typeof av === "number" && typeof bv === "number") return (av - bv) * factor;
+          return String(av).localeCompare(String(bv), "es") * factor;
         });
       }
-    } else if (mode === "sede") {
-      rows.sort((a, b) =>
-        mgSortDir === "desc"
-          ? b.ventasNetas - a.ventasNetas
-          : a.ventasNetas - b.ventasNetas,
-      );
-    } else {
-      rows.sort((a, b) =>
-        mgSortDir === "desc" ? b.margenPct - a.margenPct : a.margenPct - b.margenPct,
-      );
     }
     return rows;
-  }, [rawRows, sortKey, columns, mgSortDir, mode]);
+  }, [dataRows, sortKey, columns, mgSortDir]);
 
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const pageRows = sortedRows.slice(page * pageSize, (page + 1) * pageSize);
@@ -911,13 +923,18 @@ export const MargenesBoard = ({
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide ${column.align === "right" ? "text-right" : ""}`}
+                  className={`cursor-pointer px-2.5 py-2 text-[10px] font-semibold tracking-wide uppercase select-none hover:text-[#dde3f0] ${column.align === "right" ? "text-right" : ""}`}
                   onClick={() => {
                     setSortKey(column.key);
                     setMgSortDir((current) => (sortKey === column.key && current === "desc" ? "asc" : "desc"));
                   }}
                 >
-                  {column.label}
+                  <span className="inline-flex items-center gap-0.5">
+                    {column.label}
+                    {sortKey === column.key ? (
+                      <span className="text-[#4f8ef7]">{mgSortDir === "desc" ? "↓" : "↑"}</span>
+                    ) : null}
+                  </span>
                 </th>
               ))}
             </tr>
@@ -935,6 +952,22 @@ export const MargenesBoard = ({
                 <td colSpan={columns.length} className="px-3 py-8 text-center text-[#6b7590]">
                   Sin filas para el rango y filtros seleccionados.
                 </td>
+              </tr>
+            ) : null}
+            {!loading && acumRow ? (
+              <tr
+                key="acum-fijo"
+                className="cursor-pointer border-t border-[#4f8ef7]/30 bg-[#232740] font-semibold hover:bg-[#2a3050]"
+                onClick={() => handleDrillRow(acumRow)}
+              >
+                {columns.map((column) => (
+                  <td
+                    key={column.key}
+                    className={`px-2.5 py-1.5 ${column.align === "right" ? "text-right" : ""} ${column.drill ? "text-[#dde3f0] after:ml-0.5 after:opacity-40 after:content-['›']" : ""}`}
+                  >
+                    {column.render ? column.render(acumRow) : null}
+                  </td>
+                ))}
               </tr>
             ) : null}
             {pageRows.map((row) => (

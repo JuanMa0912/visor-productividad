@@ -13,6 +13,7 @@ import {
   type MargenQueryFilters,
   type MargenViewMode,
 } from "@/lib/margenes/margen-final-query";
+import { buildMargenOrderBy } from "@/lib/margenes/metrics";
 import { parseDrillPath, drillPathForInvoiceDetail } from "@/lib/margenes/drill-path";
 import { parseFactPath, factPathToInvoiceKpiDrillPath } from "@/lib/margenes/fact-path";
 import {
@@ -152,7 +153,7 @@ const queryTable = async (
       FROM margen_final
       WHERE ${where}
       GROUP BY 1, 2, 3
-      ORDER BY ventas_netas DESC
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos", "cantidad"])}
       LIMIT ${TABLE_ROW_LIMIT}
       `,
       params,
@@ -187,7 +188,7 @@ const queryTable = async (
       WHERE ${where}
         AND TRIM(COALESCE(documento_fc::text, '')) <> ''
       GROUP BY 1, 2, 3, 4, 5
-      ORDER BY ventas_netas DESC
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos"])}
       LIMIT ${TABLE_ROW_LIMIT}
       `,
       params,
@@ -218,7 +219,7 @@ const queryTable = async (
     FROM margen_final
     WHERE ${where}
     GROUP BY 1, 2
-    ORDER BY ventas_netas DESC
+    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos"])}
   `,
     params,
   );
