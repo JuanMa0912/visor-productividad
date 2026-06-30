@@ -1,26 +1,31 @@
-const readMigrationNoticeFlag = (): string | undefined =>
-  process.env.NEXT_PUBLIC_LOCAL_PORTAL_MIGRATION_NOTICE?.trim().toLowerCase();
+const isTruthyEnv = (value: string | undefined): boolean => {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes";
+};
 
-const isTruthyEnv = (value: string | undefined): boolean =>
-  value === "true" || value === "1" || value === "yes";
+const readMigrationNoticeFlag = (): string | undefined =>
+  process.env.LOCAL_PORTAL_MIGRATION_NOTICE?.trim().toLowerCase();
+
+/** VM GCP suele ir detrás de proxy con TRUST_PROXY=true; el entorno local no. */
+const isLikelyGcpServer = (): boolean =>
+  isTruthyEnv(process.env.TRUST_PROXY?.trim().toLowerCase());
 
 /**
  * Aviso de migración de acceso al portal.
- * Solo debe activarse en `.env.local` del entorno de desarrollo en tu PC.
- * Nunca configurar en GCP: en producción la bandera se ignora aunque exista.
+ * Activar solo en `.env.local` de tu PC con `npm run build` + `npm start`.
+ * Nunca definir en el servidor GCP (ni la variable ni desplegar con ella).
  */
 export const isLocalPortalMigrationNoticeEnabled = (): boolean => {
-  const flag = readMigrationNoticeFlag();
-  if (!isTruthyEnv(flag)) return false;
-  return process.env.NODE_ENV === "development";
+  if (!isTruthyEnv(readMigrationNoticeFlag())) return false;
+  return !isLikelyGcpServer();
 };
 
 if (
   typeof process !== "undefined" &&
-  process.env.NODE_ENV === "production" &&
+  isLikelyGcpServer() &&
   isTruthyEnv(readMigrationNoticeFlag())
 ) {
   console.warn(
-    "[local-notice] NEXT_PUBLIC_LOCAL_PORTAL_MIGRATION_NOTICE está definida pero se ignora en producción (p. ej. GCP). No mostrar este aviso en servidores.",
+    "[local-notice] LOCAL_PORTAL_MIGRATION_NOTICE ignorada en servidor GCP (TRUST_PROXY=true). Quita esa variable del .env.local del servidor.",
   );
 }

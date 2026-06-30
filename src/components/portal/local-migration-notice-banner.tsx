@@ -51,7 +51,7 @@ export function LocalMigrationNoticeBanner() {
             normalidad.
           </p>
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-            Aviso de desarrollo local
+            Aviso del entorno local
           </p>
         </div>
         <button
