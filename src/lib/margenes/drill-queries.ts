@@ -240,9 +240,9 @@ const buildKpiPayload = (row: Record<string, string | number>): MargenKpi => {
 
 const sortDayRows = (rows: DrillRow[], filters: MargenQueryFilters) => {
   const col = filters.orderBy;
-  const dir = filters.orderDir === "asc" ? 1 : -1;
+  const dir = filters.orderDir === "desc" ? -1 : 1;
   if (!col) {
-    rows.sort((a, b) => b.cod.localeCompare(a.cod));
+    rows.sort((a, b) => a.cod.localeCompare(b.cod) * dir);
     return;
   }
   const key = col as keyof DrillRow;

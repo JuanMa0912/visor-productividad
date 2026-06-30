@@ -300,12 +300,15 @@ export const MargenesBoard = ({
   selectedSedes,
   dataCommitted,
   onSedeDrill,
+  allowedSedeKeys = null,
 }: {
   dateStart: string;
   dateEnd: string;
   selectedSedes: string[];
   dataCommitted: boolean;
   onSedeDrill?: (sede: string) => void;
+  /** null = todas las sedes del catálogo (admin / Todas). */
+  allowedSedeKeys?: string[] | null;
 }) => {
   const detalle = selectedSedes.length <= 3;
 
@@ -324,7 +327,7 @@ export const MargenesBoard = ({
   const [factPath, setFactPath] = useState<FactNavStep[]>([]);
   const [drillSearch, setDrillSearch] = useState("");
   const [factSearch, setFactSearch] = useState("");
-  const [mgSortDir, setMgSortDir] = useState<"asc" | "desc">("desc");
+  const [mgSortDir, setMgSortDir] = useState<"asc" | "desc">("asc");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
@@ -367,13 +370,13 @@ export const MargenesBoard = ({
     ],
   );
 
-  const orderParam = useMemo(
-    () =>
-      sortKey && SERVER_SORT_KEYS.has(sortKey)
-        ? `orderBy=${encodeURIComponent(sortKey)}&orderDir=${mgSortDir}`
-        : "",
-    [sortKey, mgSortDir],
-  );
+  const orderParam = useMemo(() => {
+    const parts = [`orderDir=${mgSortDir}`];
+    if (sortKey && SERVER_SORT_KEYS.has(sortKey)) {
+      parts.unshift(`orderBy=${encodeURIComponent(sortKey)}`);
+    }
+    return parts.join("&");
+  }, [sortKey, mgSortDir]);
 
   const resetFilters = useCallback(() => {
     setEmpresas([]);
@@ -419,6 +422,19 @@ export const MargenesBoard = ({
   }, [selectedSedes]);
 
   const activeFilterOptions = filterOptions ?? seededFilterOptions;
+
+  const scopedFilterOptions = useMemo(() => {
+    if (!allowedSedeKeys || allowedSedeKeys.length === 0) {
+      return activeFilterOptions;
+    }
+    const allowed = new Set(allowedSedeKeys);
+    return {
+      ...activeFilterOptions,
+      sedes: activeFilterOptions.sedes.filter((option) =>
+        allowed.has(option.value),
+      ),
+    };
+  }, [activeFilterOptions, allowedSedeKeys]);
 
   const loadFilters = useCallback(async () => {
     setFiltersLoading(true);
@@ -644,7 +660,7 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Empresa"
           values={empresas}
-          options={activeFilterOptions.empresas}
+          options={scopedFilterOptions.empresas}
           onChange={setEmpresas}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
@@ -653,7 +669,7 @@ export const MargenesBoard = ({
           label="Sede"
           values={sedes}
           options={
-            activeFilterOptions.sedes.map((option) => ({
+            scopedFilterOptions.sedes.map((option) => ({
               value: option.value,
               label: option.label,
               code: option.idCo,
@@ -666,7 +682,7 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Fecha"
           values={fechas}
-          options={activeFilterOptions.fechas}
+          options={scopedFilterOptions.fechas}
           onChange={setFechas}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
@@ -674,7 +690,7 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Categoría"
           values={categorias}
-          options={activeFilterOptions.categorias}
+          options={scopedFilterOptions.categorias}
           onChange={setCategorias}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
@@ -682,7 +698,7 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Línea"
           values={lineas}
-          options={activeFilterOptions.lineas}
+          options={scopedFilterOptions.lineas}
           onChange={setLineas}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
@@ -690,7 +706,7 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Sublínea"
           values={sublineas}
-          options={activeFilterOptions.sublineas}
+          options={scopedFilterOptions.sublineas}
           onChange={setSublineas}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
@@ -698,7 +714,7 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Ítem"
           values={items}
-          options={activeFilterOptions.items}
+          options={scopedFilterOptions.items}
           onChange={setItems}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}

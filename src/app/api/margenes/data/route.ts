@@ -36,6 +36,10 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
+import {
+  assertMargenSedesAllowed,
+  filterMargenSedeCatalogForUser,
+} from "@/lib/margenes/margen-sede-scope";
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 
 const CACHE_CONTROL = "no-store, private";
@@ -346,7 +350,20 @@ export async function GET(request: Request) {
 
       const dataTable = await resolveMargenDataSource(client);
       const payload = await querySedesCatalog(client, dataTable);
-      const response = NextResponse.json(payload, {
+      const allowedCatalog = filterMargenSedeCatalogForUser(session.user);
+      const allowedValues =
+        allowedCatalog.length > 0
+          ? new Set(allowedCatalog.map((option) => option.value))
+          : null;
+      const scopedPayload =
+        allowedValues === null
+          ? payload
+          : {
+              sedes: payload.sedes.filter((option) =>
+                allowedValues.has(option.value),
+              ),
+            };
+      const response = NextResponse.json(scopedPayload, {
         headers: { "Cache-Control": CACHE_CONTROL },
       });
       response.cookies.set(
@@ -395,6 +412,14 @@ export async function GET(request: Request) {
       return NextResponse.json(
         { error: "Selecciona una sede antes de consultar datos." },
         { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      );
+    }
+
+    const sedeAccess = assertMargenSedesAllowed(parsed.sedes, session.user);
+    if (!sedeAccess.ok) {
+      return NextResponse.json(
+        { error: sedeAccess.error },
+        { status: sedeAccess.status, headers: { "Cache-Control": CACHE_CONTROL } },
       );
     }
 

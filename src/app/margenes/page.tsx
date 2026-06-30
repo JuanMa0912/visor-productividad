@@ -8,7 +8,7 @@ import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-butto
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { compactDateToIso } from "@/lib/margenes/margen-final-query";
 import { defaultMargenDateRange } from "@/lib/margenes/date-range";
-import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
+import { filterMargenSedeCatalogForUser } from "@/lib/margenes/margen-sede-scope";
 import { formatDayLabel } from "@/lib/margenes/drill-queries";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
@@ -54,10 +54,32 @@ export default function MargenesPage() {
   const [dataCommitted, setDataCommitted] = useState(false);
   const [sedePickerOpen, setSedePickerOpen] = useState(false);
   const [pendingSedes, setPendingSedes] = useState<string[]>([]);
-  const [catalogSedes] = useState<MargenSedePickerOption[]>(() =>
-    listMargenSedeCatalogOptions(),
-  );
+  const catalogSedes = useMemo<MargenSedePickerOption[]>(() => {
+    if (!user) return [];
+    return filterMargenSedeCatalogForUser(user);
+  }, [user]);
   const [boardSedes, setBoardSedes] = useState<string[]>([]);
+
+  const isAdmin = user?.role === "admin";
+  const isUserScopedToSpecificSedes = useMemo(() => {
+    if (!Array.isArray(user?.allowedSedes)) return false;
+    const normalized = user.allowedSedes
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value) => value.length > 0)
+      .map((value) => value.toLowerCase());
+    if (normalized.length === 0) return false;
+    if (normalized.includes("todas")) return false;
+    return true;
+  }, [user?.allowedSedes]);
+
+  const allowedSedeKeys = useMemo(() => {
+    if (!user || isAdmin) return null;
+    const allowed = user.allowedSedes ?? [];
+    if (allowed.some((sede) => sede.trim().toLowerCase() === "todas")) {
+      return null;
+    }
+    return catalogSedes.map((option) => option.value);
+  }, [user, isAdmin, catalogSedes]);
 
   const { startTour: startMargenesTour } = useProductTour({
     localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.margenes,
@@ -98,9 +120,6 @@ export default function MargenesPage() {
               setDateEnd(range.end);
             }
           }
-          if (payload.ready) {
-            setSedePickerOpen(true);
-          }
         }
       } catch {
         if (!cancelled) {
@@ -124,6 +143,31 @@ export default function MargenesPage() {
       cancelled = true;
     };
   }, [boardReady, router]);
+
+  useEffect(() => {
+    if (!meta?.ready || catalogSedes.length === 0 || dataCommitted) return;
+    setSedePickerOpen(true);
+  }, [meta?.ready, catalogSedes.length, dataCommitted]);
+
+  useEffect(() => {
+    if (!boardReady || catalogSedes.length === 0) return;
+    if (dataCommitted || pendingSedes.length > 0) return;
+
+    const shouldAutoSelectAll =
+      catalogSedes.length === 1 ||
+      !isAdmin ||
+      isUserScopedToSpecificSedes;
+    if (!shouldAutoSelectAll) return;
+
+    setPendingSedes(catalogSedes.map((option) => option.value));
+  }, [
+    boardReady,
+    catalogSedes,
+    dataCommitted,
+    isAdmin,
+    isUserScopedToSpecificSedes,
+    pendingSedes.length,
+  ]);
 
   const openSedePicker = useCallback(() => {
     setDataCommitted(false);
@@ -307,6 +351,10 @@ export default function MargenesPage() {
               <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#6b7590]">
                 Tabla margen_final sin datos. Aplica la migración y carga el CSV/ETL.
               </div>
+            ) : catalogSedes.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#f87171]">
+                Tu usuario no tiene sedes asignadas para márgenes. Contacta al administrador.
+              </div>
             ) : !dataCommitted ? (
               <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#6b7590]">
                 Elige una o más sedes y el rango de fechas en el modal. Los datos pesados
@@ -319,6 +367,7 @@ export default function MargenesPage() {
                 selectedSedes={boardSedes.length > 0 ? boardSedes : selectedSedes}
                 dataCommitted={dataCommitted}
                 onSedeDrill={handleSedeDrill}
+                allowedSedeKeys={allowedSedeKeys}
               />
             )}
           </main>
