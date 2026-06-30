@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
 export function LocalMigrationNotice() {
   const [visible, setVisible] = useState(false);
@@ -46,8 +46,13 @@ export function LocalMigrationNotice() {
             <p className="text-xs font-black uppercase tracking-[0.22em] text-yellow-300">
               Aviso importante · lea antes de continuar
             </p>
-            <p className="text-lg font-black uppercase leading-tight tracking-wide text-white sm:text-2xl">
-              Actualización del portal en curso
+            <p className="flex flex-wrap items-center gap-2.5 text-lg font-black uppercase leading-tight tracking-wide text-white sm:text-2xl">
+              <Loader2
+                className="h-7 w-7 shrink-0 animate-spin text-yellow-300 sm:h-8 sm:w-8"
+                strokeWidth={2.75}
+                aria-hidden="true"
+              />
+              <span>Actualización del portal en curso</span>
             </p>
             <p className="max-w-4xl text-sm font-semibold leading-relaxed text-red-50 sm:text-base">
               Estamos implementando mejoras en la plataforma de Inteligencia de
