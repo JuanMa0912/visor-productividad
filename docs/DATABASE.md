@@ -161,11 +161,20 @@ API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`).
 
 Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`.
 
-Tras cada carga ETL de `margen_final`, refrescar el rollup:
+Tras cada carga ETL de `margen_final`, refrescar el rollup (en GCP como usuario `visor`):
 
 ```bash
-npm run margen:refresh-roll
-# o en SQL: SELECT * FROM refresh_margen_final_roll();
+cd /opt/visor-productividad
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260702_margen_final_roll.sql   # solo la primera vez
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260703_margen_final_roll_refresh_chunks.sql
+sudo -u visor npm run margen:refresh-roll
+```
+
+Equivalente SQL (misma conexion remota que `DB_HOST` en `.env.local`):
+
+```bash
+sudo -u visor npm run db:test:postgres   # verifica host/usuario
+# o: sudo -u visor node -e "..." con resolvePgClientConfig — preferir npm run margen:refresh-roll
 ```
 
 La API usa `margen_final_roll` automaticamente si existe y tiene filas (`MARGEN_FORCE_RAW=1` fuerza detalle).

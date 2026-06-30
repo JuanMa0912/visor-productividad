@@ -53,8 +53,11 @@ sudo systemctl start visor-etl-margen.service             # correrlo a mano sin 
 Tras cada carga (o al final del timer diario), refrescar el agregado que usa `/api/margenes/data`:
 
 ```bash
-cd /home/prodapp/visor-productividad
-npm run margen:refresh-roll
+cd /opt/visor-productividad
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260703_margen_final_roll_refresh_chunks.sql
+sudo -u visor npm run margen:refresh-roll
+# Tras ETL diario (solo el día nuevo):
+sudo -u visor bash -c 'MARGEN_ROLL_FROM=20260615 MARGEN_ROLL_TO=20260615 npm run margen:refresh-roll'
 ```
 
 Requiere la migracion `db/migrations/20260702_margen_final_roll.sql` aplicada en la BD del portal.
