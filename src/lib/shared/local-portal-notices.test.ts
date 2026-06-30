@@ -2,32 +2,29 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 describe("isLocalPortalMigrationNoticeEnabled", () => {
-  it("activa el aviso en build local y lo bloquea en servidor GCP", async () => {
-    const prevNodeEnv = process.env.NODE_ENV;
+  it("activa el aviso fuera de GCP y lo bloquea con VISOR_DEPLOYMENT=gcp", async () => {
     const prevFlag = process.env.LOCAL_PORTAL_MIGRATION_NOTICE;
-    const prevTrustProxy = process.env.TRUST_PROXY;
+    const prevDeployment = process.env.VISOR_DEPLOYMENT;
 
-    process.env.NODE_ENV = "production";
     process.env.LOCAL_PORTAL_MIGRATION_NOTICE = "true";
-    process.env.TRUST_PROXY = "false";
+    delete process.env.VISOR_DEPLOYMENT;
     const { isLocalPortalMigrationNoticeEnabled } = await import(
       "@/lib/shared/local-portal-notices"
     );
     assert.equal(isLocalPortalMigrationNoticeEnabled(), true);
 
-    process.env.TRUST_PROXY = "true";
+    process.env.VISOR_DEPLOYMENT = "gcp";
     assert.equal(isLocalPortalMigrationNoticeEnabled(), false);
 
-    process.env.NODE_ENV = prevNodeEnv;
     if (prevFlag === undefined) {
       delete process.env.LOCAL_PORTAL_MIGRATION_NOTICE;
     } else {
       process.env.LOCAL_PORTAL_MIGRATION_NOTICE = prevFlag;
     }
-    if (prevTrustProxy === undefined) {
-      delete process.env.TRUST_PROXY;
+    if (prevDeployment === undefined) {
+      delete process.env.VISOR_DEPLOYMENT;
     } else {
-      process.env.TRUST_PROXY = prevTrustProxy;
+      process.env.VISOR_DEPLOYMENT = prevDeployment;
     }
   });
 });
