@@ -223,10 +223,9 @@ function CambiarContrasenaPageInner() {
               />
             </div>
 
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              <PasswordStrengthMeter password={newPassword} compact />
-              <PasswordPolicyChecklist password={newPassword} compact />
-            </div>
+            <PasswordStrengthMeter password={newPassword} compact />
+
+            <PasswordPolicyChecklist password={newPassword} compact />
 
             <button
               type="submit"
