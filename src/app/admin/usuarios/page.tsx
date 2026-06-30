@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { PasswordStrengthMeter } from "@/components/portal/password-strength-meter";
 import {
   PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTION_LABEL_BY_ID,
@@ -1402,6 +1403,10 @@ export default function AdminUsuariosPage() {
                           }))
                         }
                         className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                      <PasswordStrengthMeter
+                        password={formState.password}
+                        className="mt-2"
                       />
                     </label>
 

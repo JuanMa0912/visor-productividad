@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { PasswordStrengthMeter } from "@/components/portal/password-strength-meter";
 import { useAuth, useRequireAuth } from "@/lib/auth/auth-context";
 import type { PasswordChangeReason } from "@/lib/auth/types";
 import { PASSWORD_POLICY_HINT } from "@/lib/auth/password-policy";
@@ -191,6 +192,7 @@ function CambiarContrasenaPageInner() {
                 autoComplete="new-password"
                 className="mt-1 w-full rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
+              <PasswordStrengthMeter password={newPassword} className="mt-2" />
             </label>
 
             <label className="block text-sm text-slate-700">
