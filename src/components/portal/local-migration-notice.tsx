@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Info, X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 
 const DISMISS_STORAGE_KEY = "vp-local-migration-notice-dismissed-v1";
 
@@ -40,32 +40,32 @@ export function LocalMigrationNotice() {
     <div
       role="status"
       aria-live="polite"
-      className="border-b border-sky-200/80 bg-gradient-to-r from-sky-50 via-white to-sky-50"
+      className="border-b border-rose-300/90 bg-gradient-to-r from-rose-50 via-rose-50/80 to-red-50"
     >
       <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3 sm:px-6 lg:px-8">
-        <Info
-          className="mt-0.5 h-5 w-5 shrink-0 text-sky-700"
+        <AlertTriangle
+          className="mt-0.5 h-5 w-5 shrink-0 text-rose-700"
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1 space-y-1 pr-2">
-          <p className="text-sm font-semibold text-sky-950">
+          <p className="text-sm font-semibold text-rose-950">
             Actualización del portal en curso
           </p>
-          <p className="text-sm leading-relaxed text-slate-700">
+          <p className="text-sm leading-relaxed text-rose-900/85">
             Estamos implementando mejoras en la plataforma de Inteligencia de
             Datos de la UAID. En los próximos días el acceso a este entorno
             cambiará; les informaremos oportunamente la nueva dirección de
             ingreso. Mientras tanto, puede seguir utilizando el portal con
             normalidad.
           </p>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-rose-600/80">
             Aviso del entorno local
           </p>
         </div>
         <button
           type="button"
           onClick={dismiss}
-          className="shrink-0 rounded-md p-1.5 text-slate-500 transition hover:bg-sky-100 hover:text-slate-800"
+          className="shrink-0 rounded-md p-1.5 text-rose-600 transition hover:bg-rose-100 hover:text-rose-900"
           aria-label="Ocultar aviso"
         >
           <X className="h-4 w-4" aria-hidden="true" />
