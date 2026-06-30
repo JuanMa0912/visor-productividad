@@ -23,6 +23,7 @@ import {
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { PasswordStrengthMeter } from "@/components/portal/password-strength-meter";
+import { useDomInputSync } from "@/hooks/use-dom-input-sync";
 import {
   PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTION_LABEL_BY_ID,
@@ -339,6 +340,16 @@ export default function AdminUsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [formState, setFormState] = useState<UserFormState>(emptyForm);
+  const setPasswordValue = useCallback(
+    (value: React.SetStateAction<string>) => {
+      setFormState((prev) => ({
+        ...prev,
+        password: typeof value === "function" ? value(prev.password) : value,
+      }));
+    },
+    [],
+  );
+  const passwordInputRef = useDomInputSync(setPasswordValue);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "user">("all");
@@ -1391,9 +1402,16 @@ export default function AdminUsuariosPage() {
                       </div>
                     </label>
 
-                    <label className="block text-sm font-medium text-slate-700">
-                      Contraseña {formState.id ? "(opcional)" : "(mín 8)"}
+                    <div className="space-y-2">
+                      <label
+                        className="block text-sm font-medium text-slate-700"
+                        htmlFor="admin-user-password"
+                      >
+                        Contraseña {formState.id ? "(opcional)" : "(mín 8)"}
+                      </label>
                       <input
+                        id="admin-user-password"
+                        ref={passwordInputRef}
                         type="password"
                         value={formState.password}
                         onChange={(e) =>
@@ -1402,13 +1420,16 @@ export default function AdminUsuariosPage() {
                             password: e.target.value,
                           }))
                         }
-                        className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        onInput={(e) =>
+                          setFormState((prev) => ({
+                            ...prev,
+                            password: (e.target as HTMLInputElement).value,
+                          }))
+                        }
+                        className="w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 vp-sync-autofill"
                       />
-                      <PasswordStrengthMeter
-                        password={formState.password}
-                        className="mt-2"
-                      />
-                    </label>
+                      <PasswordStrengthMeter password={formState.password} />
+                    </div>
 
                     <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
                       Secciones permitidas (vacio = todas)

@@ -6,6 +6,7 @@ import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { PasswordStrengthMeter } from "@/components/portal/password-strength-meter";
+import { useDomInputSync } from "@/hooks/use-dom-input-sync";
 import { useAuth, useRequireAuth } from "@/lib/auth/auth-context";
 import type { PasswordChangeReason } from "@/lib/auth/types";
 import { PASSWORD_POLICY_HINT } from "@/lib/auth/password-policy";
@@ -41,6 +42,7 @@ function CambiarContrasenaPageInner() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const newPasswordRef = useDomInputSync(setNewPassword);
 
   const bannerText = useMemo(
     () => reasonCopy(user?.passwordChangeReason),
@@ -181,19 +183,29 @@ function CambiarContrasenaPageInner() {
               />
             </label>
 
-            <label className="block text-sm text-slate-700">
-              Nueva contraseña
+            <div className="space-y-2">
+              <label
+                className="block text-sm text-slate-700"
+                htmlFor="new-password"
+              >
+                Nueva contraseña
+              </label>
               <input
+                id="new-password"
+                ref={newPasswordRef}
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
+                onInput={(e) =>
+                  setNewPassword((e.target as HTMLInputElement).value)
+                }
                 required
                 minLength={8}
                 autoComplete="new-password"
-                className="mt-1 w-full rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200/70 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 vp-sync-autofill"
               />
-              <PasswordStrengthMeter password={newPassword} className="mt-2" />
-            </label>
+              <PasswordStrengthMeter password={newPassword} />
+            </div>
 
             <label className="block text-sm text-slate-700">
               Confirmar nueva contraseña
