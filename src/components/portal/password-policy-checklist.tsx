@@ -22,24 +22,30 @@ const RULES: Array<{
 type PasswordPolicyChecklistProps = {
   password: string;
   className?: string;
+  compact?: boolean;
 };
 
 export function PasswordPolicyChecklist({
   password,
   className = "",
+  compact = false,
 }: PasswordPolicyChecklistProps) {
   const checks = useMemo(() => getPasswordPolicyChecks(password), [password]);
   const hasInput = password.length > 0;
 
   return (
     <div
-      className={`rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 ${className}`.trim()}
+      className={`rounded-xl border border-slate-200/80 bg-slate-50/80 ${compact ? "p-2.5" : "rounded-2xl p-4"} ${className}`.trim()}
       aria-label="Requisitos de contraseña"
     >
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+      <p
+        className={`font-semibold uppercase tracking-[0.12em] text-slate-600 ${compact ? "text-[10px]" : "text-xs"}`}
+      >
         Requisitos de seguridad
       </p>
-      <ul className="mt-3 space-y-2">
+      <ul
+        className={`${compact ? "mt-1.5 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2" : "mt-3 space-y-2"}`}
+      >
         {RULES.map(({ key, label }) => {
           const met = checks[key];
           const Icon = met ? Check : Circle;
@@ -55,9 +61,12 @@ export function PasswordPolicyChecklist({
               : "text-slate-500";
 
           return (
-            <li key={key} className="flex items-start gap-2.5 text-sm">
+            <li
+              key={key}
+              className={`flex items-center gap-1.5 ${compact ? "text-[11px] leading-tight" : "items-start gap-2.5 text-sm"}`}
+            >
               <Icon
-                className={`mt-0.5 h-4 w-4 shrink-0 ${iconClass} ${met ? "stroke-[2.5]" : ""}`}
+                className={`shrink-0 ${iconClass} ${met ? "stroke-[2.5]" : ""} ${compact ? "h-3 w-3" : "mt-0.5 h-4 w-4"}`}
                 aria-hidden
               />
               <span className={textClass}>{label}</span>

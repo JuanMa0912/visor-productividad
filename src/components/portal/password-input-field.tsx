@@ -14,6 +14,7 @@ type PasswordInputFieldProps = {
   minLength?: number;
   inputRef?: Ref<HTMLInputElement>;
   placeholder?: string;
+  compact?: boolean;
 };
 
 export function PasswordInputField({
@@ -27,6 +28,7 @@ export function PasswordInputField({
   minLength,
   inputRef,
   placeholder = "••••••••",
+  compact = false,
 }: PasswordInputFieldProps) {
   const [visible, setVisible] = useState(false);
 
@@ -34,11 +36,11 @@ export function PasswordInputField({
     <div>
       <label
         htmlFor={id}
-        className="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
+        className={`block font-semibold uppercase tracking-[0.12em] text-slate-700 ${compact ? "text-[10px]" : "text-xs"}`}
       >
         {label}
       </label>
-      <div className="relative mt-2">
+      <div className={`relative ${compact ? "mt-1" : "mt-2"}`}>
         <Lock
           className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
           aria-hidden
@@ -58,7 +60,7 @@ export function PasswordInputField({
           minLength={minLength}
           autoComplete={autoComplete}
           placeholder={placeholder}
-          className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pr-11 pl-10 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none vp-sync-autofill"
+          className={`w-full rounded-xl border border-slate-200 bg-white pr-11 pl-10 text-sm text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none vp-sync-autofill ${compact ? "py-2" : "py-2.5"}`}
         />
         <button
           type="button"

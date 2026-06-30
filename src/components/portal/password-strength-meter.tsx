@@ -13,6 +13,7 @@ type PasswordStrengthMeterProps = {
   className?: string;
   /** Si true, muestra la barra aunque el campo esté vacío. */
   showWhenEmpty?: boolean;
+  compact?: boolean;
 };
 
 const emptyStrength = {
@@ -37,6 +38,7 @@ export function PasswordStrengthMeter({
   password,
   className = "",
   showWhenEmpty = true,
+  compact = false,
 }: PasswordStrengthMeterProps) {
   const strength = useMemo(
     () => (password ? scorePasswordStrength(password) : emptyStrength),
@@ -57,15 +59,17 @@ export function PasswordStrengthMeter({
 
   return (
     <div
-      className={`space-y-2 ${className}`.trim()}
+      className={`${compact ? "space-y-1" : "space-y-2"} ${className}`.trim()}
       aria-live="polite"
       data-testid="password-strength-meter"
     >
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+        <p
+          className={`font-semibold uppercase tracking-[0.12em] text-slate-600 ${compact ? "text-[10px]" : "text-xs"}`}
+        >
           Fortaleza
         </p>
-        <p className={`text-xs font-semibold ${textClass}`}>
+        <p className={`font-semibold ${compact ? "text-[10px]" : "text-xs"} ${textClass}`}>
           {password ? strength.label : "—"}
         </p>
       </div>
@@ -84,7 +88,7 @@ export function PasswordStrengthMeter({
         {[0, 1, 2].map((index) => (
           <div
             key={index}
-            className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"
+            className={`flex-1 overflow-hidden rounded-full bg-slate-200 ${compact ? "h-1.5" : "h-2"}`}
           >
             <div
               className={`h-full rounded-full transition-all duration-300 ease-out ${
@@ -97,25 +101,27 @@ export function PasswordStrengthMeter({
           </div>
         ))}
       </div>
-      <p className={`text-xs leading-relaxed ${textClass}`}>
-        {password ? (
-          <>
-            {strength.passesPolicy ? (
-              <span className="font-medium text-emerald-700">
-                Cumple la política del portal.
-              </span>
-            ) : strength.level === "medium" ? (
-              <span>
-                Va por buen camino. Complete los requisitos pendientes.
-              </span>
-            ) : (
-              <span>Elija una contraseña más robusta para continuar.</span>
-            )}
-          </>
-        ) : (
-          "La barra se actualiza mientras escribe la nueva contraseña."
-        )}
-      </p>
+      {!compact ? (
+        <p className={`text-xs leading-relaxed ${textClass}`}>
+          {password ? (
+            <>
+              {strength.passesPolicy ? (
+                <span className="font-medium text-emerald-700">
+                  Cumple la política del portal.
+                </span>
+              ) : strength.level === "medium" ? (
+                <span>
+                  Va por buen camino. Complete los requisitos pendientes.
+                </span>
+              ) : (
+                <span>Elija una contraseña más robusta para continuar.</span>
+              )}
+            </>
+          ) : (
+            "La barra se actualiza mientras escribe la nueva contraseña."
+          )}
+        </p>
+      ) : null}
     </div>
   );
 }

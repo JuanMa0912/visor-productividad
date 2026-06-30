@@ -26,7 +26,7 @@ const reasonCopy = (reason: PasswordChangeReason | null | undefined) => {
     case "weak":
       return "Su contraseña actual no cumple la política de seguridad. Debe definir una nueva antes de continuar.";
     case "expired":
-      return "Han transcurrido 30 días desde su último cambio de contraseña. Debe actualizarla para seguir usando el portal.";
+      return "Han transcurrido 30 días desde su último cambio. Debe actualizarla para seguir usando el portal.";
     case "unset":
       return "Debe registrar una contraseña segura para continuar.";
     default:
@@ -139,54 +139,54 @@ function CambiarContrasenaPageInner() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
-      <AuthBrandingPanel className="min-h-[280px] lg:min-h-screen" />
+    <div className="fixed inset-0 z-30 grid h-dvh max-h-dvh grid-cols-1 overflow-hidden lg:grid-cols-[1.1fr_1fr]">
+      <AuthBrandingPanel className="hidden h-full min-h-0 lg:flex" />
 
-      <main className="flex items-center justify-center overflow-y-auto bg-slate-50 px-6 py-10 lg:px-12 lg:py-12">
-        <div className="w-full max-w-md">
-          <div className="mb-8 flex items-center justify-center gap-5 border-b border-slate-200 pb-6">
-            <MercamioLogo className="h-16 w-auto" />
-            <MercatodoLogo className="h-16 w-auto" />
+      <main className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-slate-50 px-4 py-3 sm:px-8 sm:py-4">
+        <div className="w-full max-w-xl">
+          <div className="flex items-center justify-center gap-4 border-b border-slate-200 pb-3">
+            <MercamioLogo className="h-9 w-auto sm:h-10" />
+            <MercatodoLogo className="h-9 w-auto sm:h-10" />
           </div>
 
-          <h1 className="text-3xl font-bold text-slate-900">Cambiar contraseña</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            {required
-              ? "Ingrese su contraseña actual y defina una nueva que cumpla la política de seguridad."
-              : "Actualice su contraseña para mantener su cuenta protegida."}
-          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">
+              Cambiar contraseña
+            </h1>
+            {!required && user?.passwordDaysUntilExpiry != null ? (
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                <Clock3 className="h-3 w-3 text-slate-400" aria-hidden />
+                Vence en {user.passwordDaysUntilExpiry} día
+                {user.passwordDaysUntilExpiry === 1 ? "" : "s"}
+              </div>
+            ) : null}
+          </div>
+
+          {!required ? (
+            <p className="mt-1 text-xs text-slate-600">
+              Actualice su contraseña para mantener su cuenta protegida.
+            </p>
+          ) : null}
 
           {required ? (
             <div
               role="alert"
-              className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+              className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
             >
               <ShieldAlert
-                className="mt-0.5 h-5 w-5 shrink-0 text-amber-700"
+                className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
                 aria-hidden
               />
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-amber-950">
-                  {alertTitle}
-                </p>
-                <p className="text-sm leading-relaxed text-amber-900/90">
-                  {bannerText}
-                </p>
-              </div>
-            </div>
-          ) : null}
-
-          {!required && user?.passwordDaysUntilExpiry != null ? (
-            <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
-              <Clock3 className="h-3.5 w-3.5 text-slate-400" aria-hidden />
-              Su contraseña vence en {user.passwordDaysUntilExpiry} día
-              {user.passwordDaysUntilExpiry === 1 ? "" : "s"}.
+              <p className="text-xs leading-snug text-amber-950">
+                <span className="font-semibold">{alertTitle}. </span>
+                {bannerText}
+              </p>
             </div>
           ) : null}
 
           <form
             onSubmit={handleSubmit}
-            className={`space-y-5 ${required || user?.passwordDaysUntilExpiry != null ? "mt-6" : "mt-8"}`}
+            className={`space-y-2.5 ${required ? "mt-2.5" : "mt-3"}`}
           >
             <PasswordInputField
               id="current-password"
@@ -195,9 +195,10 @@ function CambiarContrasenaPageInner() {
               onChange={setCurrentPassword}
               required
               autoComplete="current-password"
+              compact
             />
 
-            <div className="space-y-3">
+            <div className="grid gap-2.5 sm:grid-cols-2">
               <PasswordInputField
                 id="new-password"
                 label="Nueva contraseña"
@@ -208,26 +209,29 @@ function CambiarContrasenaPageInner() {
                 required
                 minLength={8}
                 autoComplete="new-password"
+                compact
               />
-              <PasswordStrengthMeter password={newPassword} />
+              <PasswordInputField
+                id="confirm-password"
+                label="Confirmar"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                compact
+              />
             </div>
 
-            <PasswordInputField
-              id="confirm-password"
-              label="Confirmar nueva contraseña"
-              value={confirmPassword}
-              onChange={setConfirmPassword}
-              required
-              minLength={8}
-              autoComplete="new-password"
-            />
-
-            <PasswordPolicyChecklist password={newPassword} />
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <PasswordStrengthMeter password={newPassword} compact />
+              <PasswordPolicyChecklist password={newPassword} compact />
+            </div>
 
             <button
               type="submit"
               disabled={isSaving}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition-all hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition-all hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSaving ? (
                 <>
@@ -240,9 +244,9 @@ function CambiarContrasenaPageInner() {
             </button>
           </form>
 
-          <p className="mt-8 text-center text-xs text-slate-500">
+          <p className="mt-2 text-center text-[11px] leading-snug text-slate-500">
             {required ? (
-              <>Debe completar este paso para acceder al portal.</>
+              <span>Debe completar este paso para acceder al portal. </span>
             ) : (
               <>
                 <button
@@ -255,12 +259,11 @@ function CambiarContrasenaPageInner() {
                 {" · "}
               </>
             )}
-            ¿Problemas?{" "}
             <a
               href="mailto:soporte@mercamio.com.co"
               className="font-semibold text-blue-600 underline-offset-4 hover:underline"
             >
-              Contacte al administrador
+              Soporte
             </a>
           </p>
         </div>
@@ -271,10 +274,10 @@ function CambiarContrasenaPageInner() {
 
 function CambiarContrasenaPageFallback() {
   return (
-    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
+    <div className="grid h-dvh max-h-dvh grid-cols-1 overflow-hidden lg:grid-cols-[1.1fr_1fr]">
       <AuthBrandingPanelFallback />
-      <div className="flex items-center justify-center bg-slate-50 px-6">
-        <div className="h-[480px] w-full max-w-md animate-pulse rounded-2xl bg-slate-200/60" />
+      <div className="flex h-full items-center justify-center bg-slate-50 px-6">
+        <div className="h-80 w-full max-w-xl animate-pulse rounded-2xl bg-slate-200/60" />
       </div>
     </div>
   );
