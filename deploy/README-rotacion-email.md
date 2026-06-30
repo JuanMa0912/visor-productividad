@@ -19,7 +19,7 @@ Cada bloque incluye:
 
 | Bloque | Métricas |
 | --- | --- |
-| **Total D+0+S** | cantidad de productos + total inventario ($) |
+| **Total D+0+S** | cantidad de productos + total inventario (pesos completos, ej. `$ 403.000.000`) |
 | **D · Demanda** | ítems, total inventario, días de inventario |
 | **0 · Cero rotación** | ítems, sin verificar, seguimiento, surtido (% surtidos) |
 | **S · Restock** | ítems, sin verificar, seguimiento, surtido (% surtidos) |

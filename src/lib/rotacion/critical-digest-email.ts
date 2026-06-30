@@ -4,12 +4,15 @@ import {
   type RotacionCriticalDigestSection,
 } from "@/lib/rotacion/critical-digest";
 import {
-  formatPriceWithoutSixZeros,
+  formatPrice,
   formatRangeLabel,
   formatRotationOneDecimal,
   LINEA_N1_FAMILY_LABELS,
   NO_SALES_DI_VALUE,
 } from "@/app/rotacion/rotacion-preamble";
+
+/** Monto completo en pesos (con ceros de millones); solo para el correo. */
+const formatEmailInventario = (value: number) => formatPrice(value);
 
 const formatCount = (value: number) =>
   value.toLocaleString("es-CO", { maximumFractionDigits: 0 });
@@ -66,7 +69,7 @@ const renderSectionBlock = (
         ${familyLabel}
       </div>
       <div style="margin-top:6px;font-size:12px;color:#64748b;">
-        ${formatCount(section.total.itemCount)} productos · inventario ${formatPriceWithoutSixZeros(section.total.totalInventario)}
+        ${formatCount(section.total.itemCount)} productos · inventario ${formatEmailInventario(section.total.totalInventario)}
       </div>
     </td>
   </tr>
@@ -80,7 +83,7 @@ const renderSectionBlock = (
         </div>
         <div style="text-align:right;">
           <div style="font-size:12px;color:#64748b;">Total inventario</div>
-          <div style="font-size:20px;font-weight:800;color:#0f172a;">${formatPriceWithoutSixZeros(section.total.totalInventario)}</div>
+          <div style="font-size:20px;font-weight:800;color:#0f172a;">${formatEmailInventario(section.total.totalInventario)}</div>
         </div>
       </div>
     </td>
@@ -96,7 +99,7 @@ const renderSectionBlock = (
   </tr>
   <tr>
     <td style="padding:6px 0;color:#475569;">Total inventario</td>
-    <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${formatPriceWithoutSixZeros(section.demandaD.totalInventario)}</td>
+    <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${formatEmailInventario(section.demandaD.totalInventario)}</td>
   </tr>
   <tr>
     <td style="padding:6px 0;color:#475569;">Días de inventario</td>
@@ -119,11 +122,11 @@ const renderSectionText = (familyLabel: string, section: RotacionCriticalDigestS
     `=== ${familyLabel.toUpperCase()} ===`,
     `TOTAL D+0+S`,
     `  Productos: ${formatCount(section.total.itemCount)}`,
-    `  Total inventario: ${formatPriceWithoutSixZeros(section.total.totalInventario)}`,
+    `  Total inventario: ${formatEmailInventario(section.total.totalInventario)}`,
     "",
     `D · DEMANDA`,
     `  Ítems: ${formatCount(section.demandaD.itemCount)}`,
-    `  Total inventario: ${formatPriceWithoutSixZeros(section.demandaD.totalInventario)}`,
+    `  Total inventario: ${formatEmailInventario(section.demandaD.totalInventario)}`,
     `  Días de inventario: ${formatDiasInventario(section.demandaD.diasInventario)}`,
     "",
     estadoLines("0 · CERO ROTACIÓN", section.ceroRotacion),
@@ -170,7 +173,7 @@ export const buildRotacionCriticalDigestHtml = (
                 </div>
                 <div style="text-align:right;">
                   <div style="font-size:12px;color:#9f1239;">Total inventario</div>
-                  <div style="font-size:22px;font-weight:800;color:#881337;">${formatPriceWithoutSixZeros(digest.total.totalInventario)}</div>
+                  <div style="font-size:22px;font-weight:800;color:#881337;">${formatEmailInventario(digest.total.totalInventario)}</div>
                 </div>
               </div>
             </td>
@@ -201,7 +204,7 @@ export const buildRotacionCriticalDigestText = (
     "",
     `TOTAL SEDE D+0+S`,
     `  Productos: ${formatCount(digest.total.itemCount)}`,
-    `  Total inventario: ${formatPriceWithoutSixZeros(digest.total.totalInventario)}`,
+    `  Total inventario: ${formatEmailInventario(digest.total.totalInventario)}`,
     "",
     renderSectionText(LINEA_N1_FAMILY_LABELS.perecederos, digest.perecederos),
     "",

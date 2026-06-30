@@ -206,5 +206,6 @@ describe("buildRotacionCriticalDigest", () => {
     assert.match(text, /PERECEDEROS/);
     assert.match(text, /MANUFACTURA/);
     assert.match(text, /TOTAL SEDE D\+0\+S/);
+    assert.match(text, /600\.000/);
   });
 });
