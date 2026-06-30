@@ -27,6 +27,7 @@ type MargenesSedePickerModalProps = {
   error: string | null;
   onToggleSede: (value: string) => void;
   onToggleEmpresa: (empresa: string, values: string[]) => void;
+  onClearAll: () => void;
   onConfirm: () => void;
 };
 
@@ -45,6 +46,7 @@ export function MargenesSedePickerModal({
   error,
   onToggleSede,
   onToggleEmpresa,
+  onClearAll,
   onConfirm,
 }: MargenesSedePickerModalProps) {
   const grouped = useMemo(() => {
@@ -143,6 +145,16 @@ export function MargenesSedePickerModal({
             </p>
           ) : (
             <div className="space-y-4">
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={onClearAll}
+                  disabled={selectedSedes.length === 0}
+                  className="text-xs font-medium text-[#4f8ef7] hover:text-[#3b7de0] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Limpiar todas
+                </button>
+              </div>
               {grouped.map((group) => {
                 const groupValues = group.sedes.map((sede) => sede.value);
                 const selectedInGroup = groupValues.filter((value) =>

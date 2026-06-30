@@ -150,6 +150,10 @@ export default function MargenesPage() {
     });
   }, []);
 
+  const clearPendingSedes = useCallback(() => {
+    setPendingSedes([]);
+  }, []);
+
   const confirmSedeSelection = useCallback(() => {
     if (pendingSedes.length === 0) return;
     setSelectedSedes(pendingSedes);
@@ -335,6 +339,7 @@ export default function MargenesPage() {
         error={null}
         onToggleSede={togglePendingSede}
         onToggleEmpresa={togglePendingEmpresa}
+        onClearAll={clearPendingSedes}
         onConfirm={confirmSedeSelection}
       />
     </div>
