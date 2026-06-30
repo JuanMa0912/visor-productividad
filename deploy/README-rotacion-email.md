@@ -111,7 +111,7 @@ SMTP_PORT=3465
 SMTP_USER=notificaciones.uaid@mercamio.com
 SMTP_PASSWORD='...'
 SMTP_FROM="Notificaciones UAID <notificaciones.uaid@mercamio.com>"
-ROTACION_EMAIL_FLORESTA_TO=aprendizppt@mercamio.com
+ROTACION_EMAIL_FLORESTA_TO=aprendizppt@mercamio.com,alexander@mercamio.com
 SMTP_TLS_REJECT_UNAUTHORIZED=false
 ```
 
