@@ -9,9 +9,11 @@ El runbook general está en [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
 Por sede, con la misma lógica que `/rotacion`, en **un solo correo** con dos bloques:
 
-1. **Resumen total sede** (D+0+S agregado).
-2. **Perecederos** (líneas N1 01, 02, 03, 04, 12): total, D, 0 y S.
-3. **Manufactura** (resto de líneas N1): total, D, 0 y S.
+1. **Resumen total sede** (D+0+S agregado, ABCD calculado sobre **todo** el catálogo de la sede — como la UI sin filtro de familia).
+2. **Perecederos** (líneas N1 01, 02, 03, 04, 12): total, D, 0 y S (ABCD **solo** entre perecederos — como filtrar familia Perecederos en la UI).
+3. **Manufactura** (resto de líneas N1): total, D, 0 y S (ABCD **solo** entre manufactura — como filtrar familia Manufactura en la UI).
+
+Los conteos **0** y **S** no dependen del ABCD; **D** sí cambia al filtrar familia. Por eso el total sede puede no coincidir con la suma de D de cada bloque, aunque D+0+S por bloque sí debe cuadrar con la UI al aplicar el mismo filtro de familia.
 
 Cada bloque incluye:
 

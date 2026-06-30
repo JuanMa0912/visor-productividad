@@ -112,6 +112,33 @@ describe("buildRotacionCriticalDigest", () => {
     assert.ok(digest.manufactura.total.itemCount >= 0);
   });
 
+  it("clasifica D con ABCD por familia (como filtro manufactura en la UI)", () => {
+    const rows = [
+      baseRow({
+        item: "p1",
+        linea: "01",
+        lineaN1Codigo: "01",
+        totalSales: 50_000,
+        totalUnits: 500,
+      }),
+      ...[2000, 1900, 1800, 1700, 1600, 1500, 1400, 1300, 1200, 1100].map(
+        (totalSales, index) =>
+          baseRow({
+            item: `m${index + 1}`,
+            linea: String(10 + index),
+            lineaN1Codigo: String(10 + index),
+            totalSales,
+            totalUnits: totalSales / 100,
+          }),
+      ),
+    ];
+
+    const digest = buildRotacionCriticalDigest(sourceForRows(rows));
+
+    assert.equal(digest.manufactura.demandaD.itemCount, 1);
+    assert.equal(digest.total.itemCount, 2);
+  });
+
   it("genera asunto y cuerpo con sede y rango", () => {
     const digest: RotacionCriticalDigest = {
       sedeName: "Floresta",

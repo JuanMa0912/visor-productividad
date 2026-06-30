@@ -139,6 +139,16 @@ const filterRowsByFamily = (
     ),
   );
 
+const buildAbcdCategoryByItemForRows = (
+  rows: RotationRow[],
+  dateRange: DateRange,
+  abcdConfig: AbcdConfig,
+) =>
+  buildAbcdCategoryByItem(
+    rows.filter((row) => isAbcdFilterableRow(row, dateRange)),
+    abcdConfig,
+  );
+
 const buildDigestSection = (
   rows: RotationRow[],
   dateRange: DateRange,
@@ -171,37 +181,86 @@ const buildDigestSection = (
   };
 };
 
+const buildFamilyDigestSection = (
+  allRows: RotationRow[],
+  family: RotacionCriticalDigestFamily,
+  dateRange: DateRange,
+  abcdConfig: AbcdConfig,
+  ceroEstadoByKey: Record<string, CeroRotacionEstado>,
+  restockEstadoByKey: Record<string, CeroRotacionEstado>,
+  daysConsulted: number,
+): RotacionCriticalDigestSection => {
+  const familyRows = filterRowsByFamily(allRows, family);
+  const categoryByItem = buildAbcdCategoryByItemForRows(
+    familyRows,
+    dateRange,
+    abcdConfig,
+  );
+  return buildDigestSection(
+    familyRows,
+    dateRange,
+    categoryByItem,
+    ceroEstadoByKey,
+    restockEstadoByKey,
+    daysConsulted,
+  );
+};
+
 export const buildRotacionCriticalDigest = (
   source: RotacionCriticalDigestSource,
 ): RotacionCriticalDigest => {
   const dateRange = source.dateRange;
   const rows = normalizeRotationRows(source.rows);
   const daysConsulted = countInclusiveDays(dateRange);
+  const abcdConfig = source.abcdConfig as AbcdConfig;
 
-  const sourceRowsForAbcd = rows.filter((row) =>
-    isAbcdFilterableRow(row, dateRange),
-  );
-  const categoryByItem = buildAbcdCategoryByItem(
-    sourceRowsForAbcd,
-    source.abcdConfig as AbcdConfig,
-  );
-
-  const perecederos = buildDigestSection(
-    filterRowsByFamily(rows, "perecederos"),
+  const perecederos = buildFamilyDigestSection(
+    rows,
+    "perecederos",
     dateRange,
-    categoryByItem,
+    abcdConfig,
     source.ceroEstadoByKey,
     source.restockEstadoByKey,
     daysConsulted,
   );
-  const manufactura = buildDigestSection(
-    filterRowsByFamily(rows, "manufactura"),
+  const manufactura = buildFamilyDigestSection(
+    rows,
+    "manufactura",
     dateRange,
-    categoryByItem,
+    abcdConfig,
     source.ceroEstadoByKey,
     source.restockEstadoByKey,
     daysConsulted,
   );
+
+  /** Total sede: misma regla que la UI sin filtro de familia (ABCD sobre todo el catálogo). */
+  const globalCategoryByItem = buildAbcdCategoryByItemForRows(
+    rows,
+    dateRange,
+    abcdConfig,
+  );
+  const globalDemandaDRows = filterDemandaDRows(
+    rows,
+    dateRange,
+    globalCategoryByItem,
+  );
+  const globalCeroRows = rows.filter((row) =>
+    isCeroRotacionExcludingNuevo(row, dateRange),
+  );
+  const globalRestockRows = rows.filter((row) =>
+    isNuevoItemInSelectedRange(row, dateRange),
+  );
+  const total = {
+    itemCount:
+      globalDemandaDRows.length +
+      globalCeroRows.length +
+      globalRestockRows.length,
+    totalInventario: sumInventoryValue([
+      ...globalDemandaDRows,
+      ...globalCeroRows,
+      ...globalRestockRows,
+    ]),
+  };
 
   return {
     sedeName: source.sedeName,
@@ -209,11 +268,7 @@ export const buildRotacionCriticalDigest = (
     sedeId: source.sedeId,
     dateRange,
     daysConsulted,
-    total: {
-      itemCount: perecederos.total.itemCount + manufactura.total.itemCount,
-      totalInventario:
-        perecederos.total.totalInventario + manufactura.total.totalInventario,
-    },
+    total,
     perecederos,
     manufactura,
   };
