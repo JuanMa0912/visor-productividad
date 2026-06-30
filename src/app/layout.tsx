@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import { AuthProvider } from "@/lib/auth/auth-context";
+import { LocalMigrationNotice } from "@/components/portal/local-migration-notice";
 import { PortalToaster } from "@/components/portal/portal-toaster";
 
 // ============================================================================
@@ -96,6 +97,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       >
         <AuthProvider>
           <PresenceHeartbeat />
+          <LocalMigrationNotice />
           <main className="flex-1">{children}</main>
           <PortalToaster />
         </AuthProvider>
