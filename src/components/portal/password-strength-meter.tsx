@@ -22,6 +22,17 @@ const emptyStrength = {
   passesPolicy: false,
 };
 
+const segmentCountForLevel = (level: PasswordStrengthLevel): number => {
+  switch (level) {
+    case "strong":
+      return 3;
+    case "medium":
+      return 2;
+    default:
+      return 1;
+  }
+};
+
 export function PasswordStrengthMeter({
   password,
   className = "",
@@ -34,22 +45,32 @@ export function PasswordStrengthMeter({
 
   if (!password && !showWhenEmpty) return null;
 
+  const activeSegments = password
+    ? segmentCountForLevel(strength.level)
+    : 0;
   const barClass = password
     ? passwordStrengthBarClass(strength.level)
     : "bg-slate-300";
-
   const textClass = password
     ? passwordStrengthTextClass(strength.level)
     : "text-slate-500";
 
   return (
     <div
-      className={`space-y-1.5 ${className}`.trim()}
+      className={`space-y-2 ${className}`.trim()}
       aria-live="polite"
       data-testid="password-strength-meter"
     >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+          Fortaleza
+        </p>
+        <p className={`text-xs font-semibold ${textClass}`}>
+          {password ? strength.label : "—"}
+        </p>
+      </div>
       <div
-        className="h-2.5 overflow-hidden rounded-full bg-slate-200 ring-1 ring-slate-200/80"
+        className="flex gap-1.5"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
@@ -60,30 +81,39 @@ export function PasswordStrengthMeter({
             : "Fortaleza de contraseña sin evaluar"
         }
       >
-        <div
-          className={`h-full min-w-[4%] rounded-full transition-all duration-300 ease-out ${barClass}`}
-          style={{ width: `${Math.max(password ? 4 : 0, strength.score)}%` }}
-        />
+        {[0, 1, 2].map((index) => (
+          <div
+            key={index}
+            className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"
+          >
+            <div
+              className={`h-full rounded-full transition-all duration-300 ease-out ${
+                index < activeSegments ? barClass : "bg-transparent"
+              }`}
+              style={{
+                width: index < activeSegments ? "100%" : "0%",
+              }}
+            />
+          </div>
+        ))}
       </div>
-      <p className={`text-xs font-semibold ${textClass}`}>
+      <p className={`text-xs leading-relaxed ${textClass}`}>
         {password ? (
           <>
-            Fortaleza: {strength.label}
-            {!strength.passesPolicy && strength.level !== "weak" ? (
-              <span className="font-normal text-slate-500">
-                {" "}
-                · Falta cumplir todos los requisitos
-              </span>
-            ) : null}
             {strength.passesPolicy ? (
-              <span className="font-normal text-emerald-600">
-                {" "}
-                · Cumple la política del portal
+              <span className="font-medium text-emerald-700">
+                Cumple la política del portal.
               </span>
-            ) : null}
+            ) : strength.level === "medium" ? (
+              <span>
+                Va por buen camino. Complete los requisitos pendientes.
+              </span>
+            ) : (
+              <span>Elija una contraseña más robusta para continuar.</span>
+            )}
           </>
         ) : (
-          "Escriba la nueva contraseña para ver si es débil, media o segura."
+          "La barra se actualiza mientras escribe la nueva contraseña."
         )}
       </p>
     </div>

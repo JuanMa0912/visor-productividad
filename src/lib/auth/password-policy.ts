@@ -129,3 +129,23 @@ export const evaluatePasswordChangeRequirement = (input: {
 
 export const PASSWORD_POLICY_HINT =
   "Mínimo 8 caracteres, con mayúscula, minúscula, número y carácter especial. No use contraseñas obvias como 12345678.";
+
+export type PasswordPolicyChecks = {
+  minLength: boolean;
+  uppercase: boolean;
+  lowercase: boolean;
+  number: boolean;
+  special: boolean;
+  notCommon: boolean;
+};
+
+export const getPasswordPolicyChecks = (
+  password: string,
+): PasswordPolicyChecks => ({
+  minLength: password.length >= PASSWORD_MIN_CHARS,
+  uppercase: /[A-ZÁÉÍÓÚÑ]/.test(password),
+  lowercase: /[a-záéíóúñ]/.test(password),
+  number: /[0-9]/.test(password),
+  special: /[^A-Za-zÁÉÍÓÚáéíóúÑñ0-9]/.test(password),
+  notCommon: password.length > 0 && !isKnownWeakPassword(password),
+});
