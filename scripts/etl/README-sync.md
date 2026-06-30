@@ -161,3 +161,24 @@ estado correcto.
   **no existe en GCP**; habria que crearla alla y agregarla a la allowlist del script.
 - Archivo en formato Unix (LF). Si lo editas en Windows, asegura `LF` (no CRLF) o el
   shebang fallara en Debian.
+
+## 7. Auditoria S.inventario (`rotacion_cero_item_estado_audit`)
+
+El sync diario **no** incluye esta tabla (es estado/auditoria de la app). Para
+replicar el historial completo local -> GCP:
+
+```bash
+chmod +x scripts/etl/sync-rotacion-cero-audit-to-gcp.sh
+sudo -u prodapp bash scripts/etl/sync-rotacion-cero-audit-to-gcp.sh --dry-run
+sudo -u prodapp bash scripts/etl/sync-rotacion-cero-audit-to-gcp.sh
+```
+
+Requisitos en **ambos** lados: migraciones `20260515_rotacion_cero_item_estado_audit.sql`
+y `20260603_rotacion_cero_item_estado_empresa.sql` (columna `empresa`).
+
+- Por defecto: inserta filas nuevas (`ON CONFLICT (id) DO NOTHING`).
+- `--replace`: borra la tabla en GCP y la vuelve a cargar (espejo exacto del local).
+- `changed_by` se deja en NULL si ese usuario no existe en `app_users` de GCP.
+
+Para el **estado actual** de los items (no solo historial), replica tambien
+`rotacion_cero_item_estado` con el mismo patron o un dump puntual.

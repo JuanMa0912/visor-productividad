@@ -9,10 +9,10 @@ import type { RotationRow, AbcdConfig, DateRange } from "@/app/rotacion/rotacion
 import {
   NO_SALES_DI_VALUE,
   buildAbcdCategoryByItem,
-  countAbcdItemsByCategory,
   countInclusiveDays,
   isCeroRotacionExcludingNuevo,
   isNuevoItemRow,
+  matchesLineaN1Family,
   normalizeRotationRows,
   parseDateKey,
 } from "@/app/rotacion/rotacion-preamble";
@@ -32,6 +32,18 @@ export type DemandaDDigest = {
   diasInventario: number;
 };
 
+export type RotacionCriticalDigestSection = {
+  total: {
+    itemCount: number;
+    totalInventario: number;
+  };
+  demandaD: DemandaDDigest;
+  ceroRotacion: SurtidoEstadoBreakdown;
+  restockS: SurtidoEstadoBreakdown;
+};
+
+export type RotacionCriticalDigestFamily = "perecederos" | "manufactura";
+
 export type RotacionCriticalDigest = {
   sedeName: string;
   empresa: string;
@@ -42,9 +54,8 @@ export type RotacionCriticalDigest = {
     itemCount: number;
     totalInventario: number;
   };
-  demandaD: DemandaDDigest;
-  ceroRotacion: SurtidoEstadoBreakdown;
-  restockS: SurtidoEstadoBreakdown;
+  perecederos: RotacionCriticalDigestSection;
+  manufactura: RotacionCriticalDigestSection;
 };
 
 const isNuevoItemInSelectedRange = (
@@ -117,6 +128,49 @@ const filterDemandaDRows = (
     return isAbcdFilterableRow(row, dateRange) && cat === "D";
   });
 
+const filterRowsByFamily = (
+  rows: RotationRow[],
+  family: RotacionCriticalDigestFamily,
+) =>
+  rows.filter((row) =>
+    matchesLineaN1Family(
+      row.lineaN1Codigo ?? row.linea ?? "",
+      new Set([family]),
+    ),
+  );
+
+const buildDigestSection = (
+  rows: RotationRow[],
+  dateRange: DateRange,
+  categoryByItem: Map<string, "A" | "B" | "C" | "D">,
+  ceroEstadoByKey: Record<string, CeroRotacionEstado>,
+  restockEstadoByKey: Record<string, CeroRotacionEstado>,
+  daysConsulted: number,
+): RotacionCriticalDigestSection => {
+  const ceroRows = rows.filter((row) =>
+    isCeroRotacionExcludingNuevo(row, dateRange),
+  );
+  const restockRows = rows.filter((row) =>
+    isNuevoItemInSelectedRange(row, dateRange),
+  );
+  const demandaDRows = filterDemandaDRows(rows, dateRange, categoryByItem);
+  const criticalRows = [...demandaDRows, ...ceroRows, ...restockRows];
+
+  return {
+    total: {
+      itemCount: demandaDRows.length + ceroRows.length + restockRows.length,
+      totalInventario: sumInventoryValue(criticalRows),
+    },
+    demandaD: {
+      itemCount: demandaDRows.length,
+      totalInventario: sumInventoryValue(demandaDRows),
+      diasInventario: computeSalesCoverageDays(demandaDRows, daysConsulted),
+    },
+    ceroRotacion: countEstadoBreakdown(ceroRows, ceroEstadoByKey),
+    restockS: countEstadoBreakdown(restockRows, restockEstadoByKey),
+  };
+};
+
 export const buildRotacionCriticalDigest = (
   source: RotacionCriticalDigestSource,
 ): RotacionCriticalDigest => {
@@ -131,22 +185,23 @@ export const buildRotacionCriticalDigest = (
     sourceRowsForAbcd,
     source.abcdConfig as AbcdConfig,
   );
-  const abcdCounts = countAbcdItemsByCategory(
-    sourceRowsForAbcd,
+
+  const perecederos = buildDigestSection(
+    filterRowsByFamily(rows, "perecederos"),
+    dateRange,
     categoryByItem,
+    source.ceroEstadoByKey,
+    source.restockEstadoByKey,
+    daysConsulted,
   );
-
-  const ceroRows = rows.filter((row) =>
-    isCeroRotacionExcludingNuevo(row, dateRange),
+  const manufactura = buildDigestSection(
+    filterRowsByFamily(rows, "manufactura"),
+    dateRange,
+    categoryByItem,
+    source.ceroEstadoByKey,
+    source.restockEstadoByKey,
+    daysConsulted,
   );
-  const restockRows = rows.filter((row) =>
-    isNuevoItemInSelectedRange(row, dateRange),
-  );
-  const demandaDRows = filterDemandaDRows(rows, dateRange, categoryByItem);
-
-  const criticalItemCount =
-    abcdCounts.D + ceroRows.length + restockRows.length;
-  const criticalRows = [...demandaDRows, ...ceroRows, ...restockRows];
 
   return {
     sedeName: source.sedeName,
@@ -155,16 +210,12 @@ export const buildRotacionCriticalDigest = (
     dateRange,
     daysConsulted,
     total: {
-      itemCount: criticalItemCount,
-      totalInventario: sumInventoryValue(criticalRows),
+      itemCount: perecederos.total.itemCount + manufactura.total.itemCount,
+      totalInventario:
+        perecederos.total.totalInventario + manufactura.total.totalInventario,
     },
-    demandaD: {
-      itemCount: abcdCounts.D,
-      totalInventario: sumInventoryValue(demandaDRows),
-      diasInventario: computeSalesCoverageDays(demandaDRows, daysConsulted),
-    },
-    ceroRotacion: countEstadoBreakdown(ceroRows, source.ceroEstadoByKey),
-    restockS: countEstadoBreakdown(restockRows, source.restockEstadoByKey),
+    perecederos,
+    manufactura,
   };
 };
 

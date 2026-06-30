@@ -7,7 +7,13 @@ El runbook general está en [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
 ## Contenido del correo
 
-Por sede, con la misma lógica que `/rotacion`:
+Por sede, con la misma lógica que `/rotacion`, en **un solo correo** con dos bloques:
+
+1. **Resumen total sede** (D+0+S agregado).
+2. **Perecederos** (líneas N1 01, 02, 03, 04, 12): total, D, 0 y S.
+3. **Manufactura** (resto de líneas N1): total, D, 0 y S.
+
+Cada bloque incluye:
 
 | Bloque | Métricas |
 | --- | --- |

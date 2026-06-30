@@ -104,12 +104,12 @@ describe("buildRotacionCriticalDigest", () => {
       ),
     );
 
-    assert.equal(digest.ceroRotacion.itemCount, 1);
-    assert.equal(digest.ceroRotacion.seguimiento, 1);
-    assert.equal(digest.restockS.surtido, 1);
-    assert.equal(digest.restockS.surtidoPct, 100);
+    assert.equal(digest.perecederos.ceroRotacion.seguimiento + digest.manufactura.ceroRotacion.seguimiento, 1);
+    assert.equal(digest.perecederos.restockS.surtido + digest.manufactura.restockS.surtido, 1);
     assert.equal(digest.total.totalInventario, 2500);
     assert.ok(digest.total.itemCount >= 2);
+    assert.ok(digest.perecederos.total.itemCount >= 0);
+    assert.ok(digest.manufactura.total.itemCount >= 0);
   });
 
   it("genera asunto y cuerpo con sede y rango", () => {
@@ -120,24 +120,49 @@ describe("buildRotacionCriticalDigest", () => {
       dateRange: { start: "2026-05-01", end: "2026-06-15" },
       daysConsulted: 46,
       total: { itemCount: 10, totalInventario: 1_000_000 },
-      demandaD: {
-        itemCount: 5,
-        totalInventario: 500_000,
-        diasInventario: 12.5,
+      perecederos: {
+        total: { itemCount: 6, totalInventario: 600_000 },
+        demandaD: {
+          itemCount: 3,
+          totalInventario: 300_000,
+          diasInventario: 12.5,
+        },
+        ceroRotacion: {
+          itemCount: 2,
+          sinVerificar: 1,
+          seguimiento: 1,
+          surtido: 0,
+          surtidoPct: 0,
+        },
+        restockS: {
+          itemCount: 1,
+          sinVerificar: 0,
+          seguimiento: 0,
+          surtido: 1,
+          surtidoPct: 100,
+        },
       },
-      ceroRotacion: {
-        itemCount: 3,
-        sinVerificar: 1,
-        seguimiento: 1,
-        surtido: 1,
-        surtidoPct: 33.3,
-      },
-      restockS: {
-        itemCount: 2,
-        sinVerificar: 0,
-        seguimiento: 1,
-        surtido: 1,
-        surtidoPct: 50,
+      manufactura: {
+        total: { itemCount: 4, totalInventario: 400_000 },
+        demandaD: {
+          itemCount: 2,
+          totalInventario: 200_000,
+          diasInventario: 8,
+        },
+        ceroRotacion: {
+          itemCount: 1,
+          sinVerificar: 0,
+          seguimiento: 0,
+          surtido: 1,
+          surtidoPct: 100,
+        },
+        restockS: {
+          itemCount: 1,
+          sinVerificar: 0,
+          seguimiento: 1,
+          surtido: 0,
+          surtidoPct: 0,
+        },
       },
     };
 
@@ -146,12 +171,13 @@ describe("buildRotacionCriticalDigest", () => {
     assert.match(subject, /Críticos/);
 
     const html = buildRotacionCriticalDigestHtml(digest);
-    assert.match(html, /Total inventario/);
-    assert.match(html, /Días de inventario/);
-    assert.match(html, /Cero rotación/);
+    assert.match(html, /Perecederos/);
+    assert.match(html, /Manufactura/);
+    assert.match(html, /Total sede D\+0\+S/);
 
     const text = buildRotacionCriticalDigestText(digest);
-    assert.match(text, /TOTAL D\+0\+S/);
-    assert.match(text, /Surtido/);
+    assert.match(text, /PERECEDEROS/);
+    assert.match(text, /MANUFACTURA/);
+    assert.match(text, /TOTAL SEDE D\+0\+S/);
   });
 });
