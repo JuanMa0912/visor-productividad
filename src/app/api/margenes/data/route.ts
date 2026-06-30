@@ -3,9 +3,7 @@ import type { PoolClient } from "pg";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import {
-  buildMargenWhereClause,
   compactDateToIso,
-  margenMetricSelect,
   parseMargenFilters,
   sedeKey,
   sedeLabel,
@@ -13,11 +11,21 @@ import {
   type MargenQueryFilters,
   type MargenViewMode,
 } from "@/lib/margenes/margen-final-query";
-import { buildMargenOrderBy } from "@/lib/margenes/metrics";
-import { parseDrillPath, drillPathForInvoiceDetail } from "@/lib/margenes/drill-path";
+import {
+  buildMargenWhereForTable,
+  isRollTable,
+  resolveMargenDataSource,
+  sedeSelectSql,
+  type MargenDataTable,
+} from "@/lib/margenes/margen-data-source";
+import {
+  buildMargenOrderBy,
+  summaryMetricsSqlFor,
+} from "@/lib/margenes/metrics";
+import { parseDrillPath } from "@/lib/margenes/drill-path";
 import { parseFactPath, factPathToInvoiceKpiDrillPath } from "@/lib/margenes/fact-path";
 import {
-  queryDrillRows,
+  queryDrillBoard,
   queryFactListRows,
   queryFactNavRows,
   queryFilterOptions,
@@ -72,9 +80,11 @@ const ensureMargenTable = async (client: PoolClient) => {
 const querySummary = async (
   client: PoolClient,
   filters: MargenQueryFilters,
+  table: MargenDataTable,
 ) => {
   const params: unknown[] = [];
-  const where = buildMargenWhereClause(filters, params);
+  const where = buildMargenWhereForTable(filters, params, table);
+  const metrics = summaryMetricsSqlFor(table);
   const result = await client.query<{
     ventas_netas: string;
     costo_total: string;
@@ -83,9 +93,9 @@ const querySummary = async (
   }>(
     `
     SELECT
-      ${margenMetricSelect},
+      ${metrics},
       COUNT(*)::bigint AS row_count
-    FROM margen_final
+    FROM ${table}
     WHERE ${where}
     `,
     params,
@@ -105,16 +115,30 @@ const querySummary = async (
   };
 };
 
-const querySedesCatalog = async (client: PoolClient) => {
+const querySedesCatalog = async (
+  client: PoolClient,
+  table: MargenDataTable,
+) => {
+  const roll = isRollTable(table);
   const result = await client.query<{
     empresa: string;
     id_co: string;
   }>(
+    roll
+      ? `
+    SELECT DISTINCT empresa_norm AS empresa, id_co_norm AS id_co
+    FROM ${table}
+    WHERE fecha_dcto IS NOT NULL
+      AND fecha_dcto ~ '^[0-9]{8}$'
+      AND empresa_norm <> ''
+      AND id_co_norm <> ''
+    ORDER BY 1, 2
     `
+      : `
     SELECT DISTINCT
       LOWER(TRIM(COALESCE(empresa, ''))) AS empresa,
       LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co
-    FROM margen_final
+    FROM ${table}
     WHERE fecha_dcto IS NOT NULL
       AND fecha_dcto ~ '^[0-9]{8}$'
       AND TRIM(COALESCE(empresa, '')) <> ''
@@ -138,20 +162,37 @@ const queryTable = async (
   client: PoolClient,
   filters: MargenQueryFilters,
   mode: MargenViewMode,
+  table: MargenDataTable,
 ) => {
   const params: unknown[] = [];
-  const where = buildMargenWhereClause(filters, params);
+  const where = buildMargenWhereForTable(filters, params, table);
+  const metrics = summaryMetricsSqlFor(table);
+  const roll = isRollTable(table);
 
   if (mode === "producto") {
     const result = await client.query(
+      roll
+        ? `
+      SELECT
+        id_item,
+        COALESCE(NULLIF(MAX(item_descripcion), ''), id_item) AS descripcion,
+        COALESCE(NULLIF(MAX(nombre_linea1), ''), MAX(id_linea1)) AS linea,
+        COALESCE(SUM(cantidad), 0) AS cantidad,
+        ${metrics}
+      FROM ${table}
+      WHERE ${where}
+      GROUP BY id_item
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos", "cantidad"])}
+      LIMIT ${TABLE_ROW_LIMIT}
       `
+        : `
       SELECT
         TRIM(COALESCE(id_item::text, '')) AS id_item,
         COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS descripcion,
         COALESCE(NULLIF(TRIM(nombre_linea1), ''), TRIM(COALESCE(id_linea1::text, ''))) AS linea,
         COALESCE(SUM(COALESCE(cantidad, 0)), 0) AS cantidad,
-        ${margenMetricSelect}
-      FROM margen_final
+        ${metrics}
+      FROM ${table}
       WHERE ${where}
       GROUP BY 1, 2, 3
       ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos", "cantidad"])}
@@ -176,18 +217,36 @@ const queryTable = async (
   }
 
   if (mode === "factura") {
+    const sedeCols = sedeSelectSql(table);
+    const docFilter = roll
+      ? `documento_fc <> ''`
+      : `TRIM(COALESCE(documento_fc::text, '')) <> ''`;
     const result = await client.query(
+      roll
+        ? `
+      SELECT
+        documento_fc AS documento,
+        id_tipdoc_fc AS tipdoc,
+        fecha_dcto,
+        ${sedeCols},
+        ${metrics}
+      FROM ${table}
+      WHERE ${where}
+        AND ${docFilter}
+      GROUP BY 1, 2, 3, 4, 5
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos"])}
+      LIMIT ${TABLE_ROW_LIMIT}
       `
+        : `
       SELECT
         TRIM(COALESCE(documento_fc::text, '')) AS documento,
         TRIM(COALESCE(id_tipdoc_fc::text, '')) AS tipdoc,
         fecha_dcto,
-        LOWER(TRIM(COALESCE(empresa, ''))) AS empresa,
-        LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co,
-        ${margenMetricSelect}
-      FROM margen_final
+        ${sedeCols},
+        ${metrics}
+      FROM ${table}
       WHERE ${where}
-        AND TRIM(COALESCE(documento_fc::text, '')) <> ''
+        AND ${docFilter}
       GROUP BY 1, 2, 3, 4, 5
       ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos"])}
       LIMIT ${TABLE_ROW_LIMIT}
@@ -210,14 +269,14 @@ const queryTable = async (
     });
   }
 
+  const sedeCols = sedeSelectSql(table);
   const result = await client.query(
     `
     SELECT
-      LOWER(TRIM(COALESCE(empresa, ''))) AS empresa,
-      LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co,
-      ${margenMetricSelect},
+      ${sedeCols},
+      ${metrics},
       COUNT(*)::bigint AS lineas
-    FROM margen_final
+    FROM ${table}
     WHERE ${where}
     GROUP BY 1, 2
     ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC", ["ventasNetas", "costoTotal", "margenPesos"])}
@@ -285,7 +344,8 @@ export async function GET(request: Request) {
         );
       }
 
-      const payload = await querySedesCatalog(client);
+      const dataTable = await resolveMargenDataSource(client);
+      const payload = await querySedesCatalog(client, dataTable);
       const response = NextResponse.json(payload, {
         headers: { "Cache-Control": CACHE_CONTROL },
       });
@@ -352,35 +412,34 @@ export async function GET(request: Request) {
       return cachedResponse;
     }
 
-    // Sube work_mem solo para estas consultas pesadas: los sorts de los COUNT(DISTINCT)
-    // caben en RAM (sin disco) y el planner elige el indice sede-first. Se RESETea en finally.
-    await client.query("SET work_mem = '128MB'");
+    // Sube work_mem solo para estas consultas pesadas (LOCAL se revierte al COMMIT).
+    await client.query("BEGIN");
+    await client.query("SET LOCAL work_mem = '256MB'");
+
+    const dataTable = await resolveMargenDataSource(client);
 
     let payload: unknown;
     if (mode === "summary") {
-      payload = await querySummary(client, parsed);
+      payload = await querySummary(client, parsed, dataTable);
     } else if (mode === "filters") {
-      payload = await queryFilterOptions(client, parsed);
+      payload = await queryFilterOptions(client, parsed, dataTable);
     } else if (mode === "kpi") {
       const drillPath = parseDrillPath(url.searchParams.get("drillPath"));
       const mercadoOnly = url.searchParams.get("mercadoOnly") !== "false";
-      payload = await queryKpi(client, parsed, drillPath, { mercadoOnly });
+      payload = await queryKpi(client, parsed, drillPath, dataTable, {
+        mercadoOnly,
+      });
     } else if (mode === "drill") {
       const drillPath = parseDrillPath(url.searchParams.get("drillPath"));
       const search = url.searchParams.get("search") ?? undefined;
-      const kpiPath = drillPathForInvoiceDetail(drillPath);
-      const [kpi, table] = await Promise.all([
-        queryKpi(client, parsed, kpiPath),
-        queryDrillRows(client, parsed, drillPath, search),
-      ]);
-      payload = { kpi, ...table };
+      payload = await queryDrillBoard(client, parsed, drillPath, dataTable, search);
     } else if (mode === "fact-nav") {
       const factPath = parseFactPath(url.searchParams.get("factPath"));
       const search = url.searchParams.get("search") ?? undefined;
       const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
       const [kpi, table] = await Promise.all([
-        queryKpi(client, parsed, kpiPath, { mercadoOnly: false }),
-        queryFactNavRows(client, parsed, factPath, search),
+        queryKpi(client, parsed, kpiPath, dataTable, { mercadoOnly: false }),
+        queryFactNavRows(client, parsed, factPath, dataTable, search),
       ]);
       payload = { kpi, ...table };
     } else if (mode === "fact-list") {
@@ -390,14 +449,14 @@ export async function GET(request: Request) {
       if (factPath.some((step) => step.type === "factura")) {
         const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
         const [kpi, table] = await Promise.all([
-          queryKpi(client, parsed, kpiPath, { mercadoOnly }),
-          queryFactNavRows(client, parsed, factPath, search),
+          queryKpi(client, parsed, kpiPath, dataTable, { mercadoOnly }),
+          queryFactNavRows(client, parsed, factPath, dataTable, search),
         ]);
         payload = { kpi, ...table };
       } else {
         const [kpi, rows] = await Promise.all([
-          queryKpi(client, parsed, [], { mercadoOnly }),
-          queryFactListRows(client, parsed, search),
+          queryKpi(client, parsed, [], dataTable, { mercadoOnly }),
+          queryFactListRows(client, parsed, dataTable, search),
         ]);
         payload = {
           kpi,
@@ -408,16 +467,18 @@ export async function GET(request: Request) {
       }
     } else if (mode === "sede") {
       const [kpi, rows] = await Promise.all([
-        queryKpi(client, parsed, [], { mercadoOnly: false }),
-        querySedeCompare(client, parsed),
+        queryKpi(client, parsed, [], dataTable, { mercadoOnly: false }),
+        querySedeCompare(client, parsed, dataTable),
       ]);
       payload = { kpi, rows };
     } else {
       payload = {
-        rows: await queryTable(client, parsed, mode),
+        rows: await queryTable(client, parsed, mode, dataTable),
         limit: TABLE_ROW_LIMIT,
       };
     }
+
+    await client.query("COMMIT");
 
     setCachedQuery(cacheKey, payload);
 
@@ -431,6 +492,7 @@ export async function GET(request: Request) {
     );
     return response;
   } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
     console.error("[margenes/data] error", {
       mode,
       error: error instanceof Error ? error.message : String(error),
@@ -440,7 +502,6 @@ export async function GET(request: Request) {
       { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
     );
   } finally {
-    await client.query("RESET work_mem").catch(() => {});
     client.release();
   }
 }

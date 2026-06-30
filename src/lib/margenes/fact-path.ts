@@ -1,5 +1,8 @@
 import type { DrillPathStep } from "@/lib/margenes/drill-path";
 
+import type { MargenDataTable } from "@/lib/margenes/margen-data-source";
+import { isRollTable } from "@/lib/margenes/margen-data-source";
+
 export type FactNavStep =
   | { type: "fecha"; fecha: string; label: string }
   | { type: "tipo"; id: string; label: string }
@@ -18,8 +21,17 @@ export const parseFactPath = (raw: string | null): FactNavStep[] => {
 export const factPathSqlFilters = (
   path: FactNavStep[],
   params: unknown[],
+  table: MargenDataTable = "margen_final",
 ): string[] => {
   const parts: string[] = [];
+  const idTipo = isRollTable(table) ? "id_tipo" : `TRIM(COALESCE(id_tipo::text, ''))`;
+  const documentoFc = isRollTable(table)
+    ? "documento_fc"
+    : `TRIM(COALESCE(documento_fc::text, ''))`;
+  const tipdocFc = isRollTable(table)
+    ? "id_tipdoc_fc"
+    : `TRIM(COALESCE(id_tipdoc_fc::text, ''))`;
+
   const fecha = path.find((step) => step.type === "fecha");
   if (fecha?.type === "fecha") {
     params.push(fecha.fecha);
@@ -28,14 +40,14 @@ export const factPathSqlFilters = (
   const tipo = path.find((step) => step.type === "tipo");
   if (tipo?.type === "tipo") {
     params.push(tipo.id);
-    parts.push(`TRIM(COALESCE(id_tipo::text, '')) = $${params.length}`);
+    parts.push(`${idTipo} = $${params.length}`);
   }
   const factura = path.find((step) => step.type === "factura");
   if (factura?.type === "factura") {
     params.push(factura.documento, factura.tipdoc);
     parts.push(
-      `TRIM(COALESCE(documento_fc::text, '')) = $${params.length - 1}`,
-      `TRIM(COALESCE(id_tipdoc_fc::text, '')) = $${params.length}`,
+      `${documentoFc} = $${params.length - 1}`,
+      `${tipdocFc} = $${params.length}`,
     );
   }
   return parts;

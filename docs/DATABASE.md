@@ -80,8 +80,9 @@ Orden completo despues de `schema-auth.sql`:
 26. `20260618_rotacion_refresh_timeouts.sql`
 27. `20260619_rotacion_periodo_std_fix_groupby.sql`
 28. `20260622_margen_final.sql` (si aplica tablero margenes nuevo)
-29. `20260623_app_user_ui_state.sql`
-30. `20260624_ventas_x_item_summary_covering_index.sql`
+29. `20260702_margen_final_roll.sql` (rollup factura+item para `/margenes`; poblar con `npm run margen:refresh-roll`)
+30. `20260623_app_user_ui_state.sql`
+31. `20260624_ventas_x_item_summary_covering_index.sql`
 
 ## 4. Dominios y tablas
 
@@ -153,11 +154,21 @@ Notas:
 | --- | --- |
 | `margenes_linea_co_dia` | legacy: agregados por linea/sede/dia (feb 2026 en prod) |
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD |
+| `margen_final_roll` | rollup factura+item/dia/sede; alimenta consultas pesadas del tablero |
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
 
 API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`).
 
-Migracion nueva: `db/migrations/20260622_margen_final.sql`.
+Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`.
+
+Tras cada carga ETL de `margen_final`, refrescar el rollup:
+
+```bash
+npm run margen:refresh-roll
+# o en SQL: SELECT * FROM refresh_margen_final_roll();
+```
+
+La API usa `margen_final_roll` automaticamente si existe y tiene filas (`MARGEN_FORCE_RAW=1` fuerza detalle).
 
 Regla de margen agregado: `SUM(margen) / SUM(ventas) * 100`; no promediar
 porcentajes.

@@ -1,3 +1,6 @@
+import type { MargenDataTable } from "@/lib/margenes/margen-data-source";
+import { isRollTable } from "@/lib/margenes/margen-data-source";
+
 export type DrillPathStep =
   | { type: "day"; fecha: string; label: string }
   | { type: "acum"; label: string }
@@ -29,9 +32,21 @@ export const parseDrillPath = (raw: string | null): DrillPathStep[] => {
 export const drillPathSqlFilters = (
   path: DrillPathStep[],
   params: unknown[],
+  table: MargenDataTable = "margen_final",
 ): string[] => {
   const parts: string[] = [];
   if (path.length === 0) return parts;
+
+  const idTipo = isRollTable(table) ? "id_tipo" : `TRIM(COALESCE(id_tipo::text, ''))`;
+  const idLinea1 = isRollTable(table) ? "id_linea1" : `TRIM(COALESCE(id_linea1::text, ''))`;
+  const idLinea2 = isRollTable(table) ? "id_linea2" : `TRIM(COALESCE(id_linea2::text, ''))`;
+  const idItem = isRollTable(table) ? "id_item" : `TRIM(COALESCE(id_item::text, ''))`;
+  const documentoFc = isRollTable(table)
+    ? "documento_fc"
+    : `TRIM(COALESCE(documento_fc::text, ''))`;
+  const tipdocFc = isRollTable(table)
+    ? "id_tipdoc_fc"
+    : `TRIM(COALESCE(id_tipdoc_fc::text, ''))`;
 
   const day = path[0];
   if (day?.type === "day") {
@@ -42,33 +57,33 @@ export const drillPathSqlFilters = (
   const tipo = path.find((step) => step.type === "tipo");
   if (tipo?.type === "tipo") {
     params.push(tipo.id);
-    parts.push(`TRIM(COALESCE(id_tipo::text, '')) = $${params.length}`);
+    parts.push(`${idTipo} = $${params.length}`);
   }
 
   const linea1 = path.find((step) => step.type === "linea1");
   if (linea1?.type === "linea1") {
     params.push(linea1.id);
-    parts.push(`TRIM(COALESCE(id_linea1::text, '')) = $${params.length}`);
+    parts.push(`${idLinea1} = $${params.length}`);
   }
 
   const linea2 = path.find((step) => step.type === "linea2");
   if (linea2?.type === "linea2") {
     params.push(linea2.id);
-    parts.push(`TRIM(COALESCE(id_linea2::text, '')) = $${params.length}`);
+    parts.push(`${idLinea2} = $${params.length}`);
   }
 
   const item = path.find((step) => step.type === "item");
   if (item?.type === "item") {
     params.push(item.id);
-    parts.push(`TRIM(COALESCE(id_item::text, '')) = $${params.length}`);
+    parts.push(`${idItem} = $${params.length}`);
   }
 
   const factura = path.find((step) => step.type === "factura");
   if (factura?.type === "factura") {
     params.push(factura.documento, factura.tipdoc);
     parts.push(
-      `TRIM(COALESCE(documento_fc::text, '')) = $${params.length - 1}`,
-      `TRIM(COALESCE(id_tipdoc_fc::text, '')) = $${params.length}`,
+      `${documentoFc} = $${params.length - 1}`,
+      `${tipdocFc} = $${params.length}`,
     );
   }
 

@@ -1,3 +1,5 @@
+import { margenMetricSelect } from "@/lib/margenes/margen-final-query";
+
 export const METRICS_SQL = `
   COALESCE(SUM(COALESCE(vlrtot_bru, 0)), 0) AS ventas_netas,
   COALESCE(SUM(COALESCE(tot_costo, 0)), 0) AS costo_total,
@@ -80,3 +82,35 @@ export const unitCost = (costo: number, cantidad: number) =>
 export const KPI_MERCADO_TIPO = "4";
 
 export const MERCADO_TIPO_SQL = `TRIM(COALESCE(id_tipo::text, '')) = '${KPI_MERCADO_TIPO}'`;
+
+/** Métricas sobre margen_final_roll (columnas ya agregadas por factura+ítem). */
+export const ROLL_METRICS_SQL = `
+  COALESCE(SUM(ventas_netas), 0) AS ventas_netas,
+  COALESCE(SUM(costo_total), 0) AS costo_total,
+  COALESCE(SUM(margen_pesos), 0) AS margen_pesos,
+  COALESCE(SUM(cantidad), 0) AS cantidad,
+  COALESCE(SUM(ventas_con_iva), 0) AS ventas_con_iva,
+  COUNT(DISTINCT NULLIF(documento_fc, '')) FILTER (
+    WHERE NULLIF(documento_fc, '') IS NOT NULL
+  ) AS facturas,
+  COUNT(DISTINCT NULLIF(id_tipo, '')) AS categorias,
+  COUNT(DISTINCT NULLIF(id_linea1, '')) AS lineas,
+  COUNT(DISTINCT NULLIF(id_linea2, '')) AS sublineas,
+  COUNT(DISTINCT NULLIF(id_item, '')) AS items
+  , CASE WHEN SUM(COALESCE(ventas_netas,0)) > 0 THEN SUM(COALESCE(margen_pesos,0)) / SUM(COALESCE(ventas_netas,0)) ELSE 0 END AS margen_pct
+  , CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(ventas_con_iva,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pvu_iva
+  , CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(costo_total,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pcu
+`;
+
+export const metricsSqlFor = (table: "margen_final" | "margen_final_roll") =>
+  table === "margen_final_roll" ? ROLL_METRICS_SQL : METRICS_SQL;
+
+export const ROLL_SUMMARY_METRICS_SQL = `
+  COALESCE(SUM(ventas_netas), 0) AS ventas_netas,
+  COALESCE(SUM(costo_total), 0) AS costo_total,
+  COALESCE(SUM(margen_pesos), 0) AS margen_pesos
+`;
+
+export const summaryMetricsSqlFor = (
+  table: "margen_final" | "margen_final_roll",
+) => (table === "margen_final_roll" ? ROLL_SUMMARY_METRICS_SQL : margenMetricSelect);

@@ -48,6 +48,18 @@ journalctl -u visor-etl-margen.service -n 80 --no-pager   # (con sudo si no ves 
 sudo systemctl start visor-etl-margen.service             # correrlo a mano sin esperar
 ```
 
+## Rollup del tablero (`margen_final_roll`)
+
+Tras cada carga (o al final del timer diario), refrescar el agregado que usa `/api/margenes/data`:
+
+```bash
+cd /home/prodapp/visor-productividad
+npm run margen:refresh-roll
+```
+
+Requiere la migracion `db/migrations/20260702_margen_final_roll.sql` aplicada en la BD del portal.
+Sin rollup poblado, el tablero sigue leyendo `margen_final` (mas lento).
+
 ## CSV (desactivado)
 
 El `consulta_Movimiento_bd.py` original genera CSVs a `\\192.168.35.236\...\
