@@ -2,10 +2,13 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Clock3, KeyRound, ShieldAlert } from "lucide-react";
+import { Clock3, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
-import { AppTopBar } from "@/components/portal/app-top-bar";
-import { MercamioLogo } from "@/components/portal/brand-logos";
+import {
+  AuthBrandingPanel,
+  AuthBrandingPanelFallback,
+} from "@/components/portal/auth-branding-panel";
+import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
 import { PasswordInputField } from "@/components/portal/password-input-field";
 import { PasswordPolicyChecklist } from "@/components/portal/password-policy-checklist";
 import { PasswordStrengthMeter } from "@/components/portal/password-strength-meter";
@@ -136,142 +139,123 @@ function CambiarContrasenaPageInner() {
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-100 via-slate-50 to-blue-50/40 text-foreground">
-      {required ? (
-        <header className="border-b border-slate-200/70 bg-white/80 px-6 py-4 backdrop-blur">
-          <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
-            <MercamioLogo className="h-10 w-auto" />
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Seguridad de cuenta
-            </p>
-          </div>
-        </header>
-      ) : (
-        <AppTopBar showBack />
-      )}
+    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
+      <AuthBrandingPanel className="min-h-[280px] lg:min-h-screen" />
 
-      <main className="flex items-center justify-center px-4 py-10 sm:py-14">
-        <div className="w-full max-w-2xl">
-          <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_24px_80px_-40px_rgba(15,23,42,0.35)]">
-            <div className="border-b border-slate-200/70 bg-linear-to-r from-slate-50 via-blue-50/60 to-slate-50 px-6 py-6 sm:px-8 sm:py-7">
-              <div className="flex items-start gap-4">
-                <div className="rounded-2xl bg-blue-600 p-3 text-white shadow-lg shadow-blue-600/20">
-                  <KeyRound className="h-6 w-6" aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                    Cambiar contraseña
-                  </h1>
-                  <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
-                    {required
-                      ? "Ingrese su contraseña actual y defina una nueva que cumpla la política de seguridad."
-                      : "Actualice su contraseña para mantener su cuenta protegida."}
-                  </p>
-                </div>
+      <main className="flex items-center justify-center overflow-y-auto bg-slate-50 px-6 py-10 lg:px-12 lg:py-12">
+        <div className="w-full max-w-md">
+          <div className="mb-8 flex items-center justify-center gap-5 border-b border-slate-200 pb-6">
+            <MercamioLogo className="h-16 w-auto" />
+            <MercatodoLogo className="h-16 w-auto" />
+          </div>
+
+          <h1 className="text-3xl font-bold text-slate-900">Cambiar contraseña</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            {required
+              ? "Ingrese su contraseña actual y defina una nueva que cumpla la política de seguridad."
+              : "Actualice su contraseña para mantener su cuenta protegida."}
+          </p>
+
+          {required ? (
+            <div
+              role="alert"
+              className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+            >
+              <ShieldAlert
+                className="mt-0.5 h-5 w-5 shrink-0 text-amber-700"
+                aria-hidden
+              />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-amber-950">
+                  {alertTitle}
+                </p>
+                <p className="text-sm leading-relaxed text-amber-900/90">
+                  {bannerText}
+                </p>
               </div>
             </div>
+          ) : null}
 
-            <div className="space-y-6 px-6 py-6 sm:px-8 sm:py-8">
-              {required ? (
-                <div
-                  role="alert"
-                  className="flex items-start gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/90 px-4 py-4"
-                >
-                  <div className="rounded-xl bg-amber-100 p-2 text-amber-700">
-                    <ShieldAlert className="h-5 w-5" aria-hidden />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-amber-950">
-                      {alertTitle}
-                    </p>
-                    <p className="text-sm leading-relaxed text-amber-900/90">
-                      {bannerText}
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-
-              {!required && user?.passwordDaysUntilExpiry != null ? (
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600">
-                  <Clock3 className="h-3.5 w-3.5 text-slate-400" aria-hidden />
-                  Su contraseña vence en {user.passwordDaysUntilExpiry} día
-                  {user.passwordDaysUntilExpiry === 1 ? "" : "s"}.
-                </div>
-              ) : null}
-
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <PasswordInputField
-                  id="current-password"
-                  label="Contraseña actual"
-                  value={currentPassword}
-                  onChange={setCurrentPassword}
-                  required
-                  autoComplete="current-password"
-                />
-
-                <div className="space-y-3">
-                  <PasswordInputField
-                    id="new-password"
-                    label="Nueva contraseña"
-                    value={newPassword}
-                    onChange={setNewPassword}
-                    onInput={setNewPassword}
-                    inputRef={newPasswordRef}
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                  />
-                  <PasswordStrengthMeter password={newPassword} />
-                </div>
-
-                <PasswordInputField
-                  id="confirm-password"
-                  label="Confirmar nueva contraseña"
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                />
-
-                <PasswordPolicyChecklist password={newPassword} />
-
-                <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
-                  {!required ? (
-                    <button
-                      type="button"
-                      onClick={() => router.push("/secciones")}
-                      className="order-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 sm:order-1"
-                    >
-                      Volver a secciones
-                    </button>
-                  ) : (
-                    <p className="order-2 text-xs text-slate-500 sm:order-1">
-                      Debe completar este paso para acceder al portal.
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={isSaving}
-                    className="order-1 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition-all hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 sm:order-2 sm:w-auto sm:min-w-[220px]"
-                  >
-                    {isSaving ? (
-                      <>
-                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                        Guardando...
-                      </>
-                    ) : (
-                      "Actualizar contraseña"
-                    )}
-                  </button>
-                </div>
-              </form>
+          {!required && user?.passwordDaysUntilExpiry != null ? (
+            <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+              <Clock3 className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+              Su contraseña vence en {user.passwordDaysUntilExpiry} día
+              {user.passwordDaysUntilExpiry === 1 ? "" : "s"}.
             </div>
-          </div>
+          ) : null}
 
-          <p className="mt-6 text-center text-xs text-slate-500">
-            ¿Problemas para cambiar la contraseña?{" "}
+          <form
+            onSubmit={handleSubmit}
+            className={`space-y-5 ${required || user?.passwordDaysUntilExpiry != null ? "mt-6" : "mt-8"}`}
+          >
+            <PasswordInputField
+              id="current-password"
+              label="Contraseña actual"
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              required
+              autoComplete="current-password"
+            />
+
+            <div className="space-y-3">
+              <PasswordInputField
+                id="new-password"
+                label="Nueva contraseña"
+                value={newPassword}
+                onChange={setNewPassword}
+                onInput={setNewPassword}
+                inputRef={newPasswordRef}
+                required
+                minLength={8}
+                autoComplete="new-password"
+              />
+              <PasswordStrengthMeter password={newPassword} />
+            </div>
+
+            <PasswordInputField
+              id="confirm-password"
+              label="Confirmar nueva contraseña"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              required
+              minLength={8}
+              autoComplete="new-password"
+            />
+
+            <PasswordPolicyChecklist password={newPassword} />
+
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition-all hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Guardando...
+                </>
+              ) : (
+                "Actualizar contraseña"
+              )}
+            </button>
+          </form>
+
+          <p className="mt-8 text-center text-xs text-slate-500">
+            {required ? (
+              <>Debe completar este paso para acceder al portal.</>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => router.push("/secciones")}
+                  className="font-semibold text-blue-600 underline-offset-4 hover:underline"
+                >
+                  Volver a secciones
+                </button>
+                {" · "}
+              </>
+            )}
+            ¿Problemas?{" "}
             <a
               href="mailto:soporte@mercamio.com.co"
               className="font-semibold text-blue-600 underline-offset-4 hover:underline"
@@ -285,9 +269,20 @@ function CambiarContrasenaPageInner() {
   );
 }
 
+function CambiarContrasenaPageFallback() {
+  return (
+    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
+      <AuthBrandingPanelFallback />
+      <div className="flex items-center justify-center bg-slate-50 px-6">
+        <div className="h-[480px] w-full max-w-md animate-pulse rounded-2xl bg-slate-200/60" />
+      </div>
+    </div>
+  );
+}
+
 export default function CambiarContrasenaPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<CambiarContrasenaPageFallback />}>
       <CambiarContrasenaPageInner />
     </Suspense>
   );
