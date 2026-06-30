@@ -483,7 +483,7 @@ export const queryDrillRows = async (
       FROM ${table}
       WHERE ${where}
       GROUP BY 1
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "2")}
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "1")}
       `,
       params,
     );
@@ -518,7 +518,7 @@ export const queryDrillRows = async (
       FROM ${table}
       WHERE ${where}
       GROUP BY 1
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "2")}
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "1")}
       `,
       params,
     );

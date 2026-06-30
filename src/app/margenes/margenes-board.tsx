@@ -519,6 +519,18 @@ export const MargenesBoard = ({
   ]);
 
   useEffect(() => {
+    if (mode !== "drill") return;
+    const level = drillPath.length;
+    if (level >= 1 && level <= 4) {
+      setSortKey("cod");
+      setMgSortDir("asc");
+    } else if (level === 0) {
+      setSortKey(null);
+      setMgSortDir("asc");
+    }
+  }, [mode, drillPath]);
+
+  useEffect(() => {
     setPage(0);
   }, [mode, factTab, drillPath, factPath, drillSearch, factSearch, queryBase, sortKey, mgSortDir]);
 
@@ -556,7 +568,9 @@ export const MargenesBoard = ({
           const av = col.sortValue!(a);
           const bv = col.sortValue!(b);
           if (typeof av === "number" && typeof bv === "number") return (av - bv) * factor;
-          return String(av).localeCompare(String(bv), "es") * factor;
+          return (
+            String(av).localeCompare(String(bv), "es", { numeric: true }) * factor
+          );
         });
       }
     }

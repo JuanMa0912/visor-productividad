@@ -48,7 +48,13 @@ export const buildMargenOrderBy = (
 ): string => {
   const ok = orderBy && (!allowed || allowed.includes(orderBy));
   const col = ok ? MARGEN_SORT_COLUMNS[orderBy] : undefined;
-  if (!col) return `ORDER BY ${fallback}`;
+  if (!col) {
+    if (/\s+(ASC|DESC)\b/i.test(fallback)) {
+      return `ORDER BY ${fallback}`;
+    }
+    const dir = orderDir === "desc" ? " DESC" : " ASC";
+    return `ORDER BY ${fallback}${dir}`;
+  }
   const dir = orderDir === "asc" ? "ASC" : "DESC";
   return `ORDER BY ${col} ${dir} NULLS LAST`;
 };
