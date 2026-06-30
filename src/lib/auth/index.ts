@@ -9,6 +9,27 @@ import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
+import {
+  getPasswordDaysUntilExpiry,
+  isPasswordExpired,
+  validatePasswordLength,
+  validatePasswordPolicy,
+  type PasswordChangeReason,
+} from "@/lib/auth/password-policy";
+
+export {
+  PASSWORD_MIN_CHARS,
+  PASSWORD_MAX_BYTES,
+  PASSWORD_MAX_AGE_DAYS,
+  PASSWORD_POLICY_HINT,
+  validatePasswordLength,
+  validatePasswordPolicy,
+  evaluatePasswordChangeRequirement,
+  isKnownWeakPassword,
+  isPasswordExpired,
+  getPasswordDaysUntilExpiry,
+} from "@/lib/auth/password-policy";
+export type { PasswordChangeReason } from "@/lib/auth/password-policy";
 
 // La definicion del tipo vive en ./types.ts para que sea importable desde
 // codigo cliente sin arrastrar dependencias de Node. Aqui lo importamos para
@@ -40,26 +61,9 @@ const shouldUseSecureCookies = () => {
 // bcrypt trunca silenciosamente todo lo que excede 72 bytes UTF-8: dos passwords
 // distintas con los mismos primeros 72 bytes producirian el mismo hash. Validamos
 // upfront para evitar esa colision invisible.
-export const PASSWORD_MIN_CHARS = 8;
-export const PASSWORD_MAX_BYTES = 72;
-
-/**
- * Devuelve `null` si la password cumple los limites; en caso contrario, un
- * mensaje listo para responder al cliente. Centraliza la regla para login,
- * cambio de password y creacion/edicion de usuarios desde admin.
- */
-export const validatePasswordLength = (password: string): string | null => {
-  if (password.length < PASSWORD_MIN_CHARS) {
-    return `La contrasena debe tener minimo ${PASSWORD_MIN_CHARS} caracteres.`;
-  }
-  if (Buffer.byteLength(password, "utf8") > PASSWORD_MAX_BYTES) {
-    return `La contrasena no puede exceder ${PASSWORD_MAX_BYTES} bytes (acentos y emojis cuentan como 2-4).`;
-  }
-  return null;
-};
 
 export const hashPassword = async (password: string) => {
-  const validationError = validatePasswordLength(password);
+  const validationError = validatePasswordPolicy(password);
   if (validationError) {
     throw new Error(validationError);
   }
@@ -152,20 +156,44 @@ export const createSession = async (
   ip: string | null,
   userAgent: string | null,
   dbClient?: PoolClient,
+  options?: {
+    passwordChangeRequired?: boolean;
+    passwordChangeReason?: PasswordChangeReason | null;
+  },
 ) => {
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
   const expiresAt = getSessionExpiry();
+  const passwordChangeRequired = options?.passwordChangeRequired === true;
+  const passwordChangeReason = passwordChangeRequired
+    ? (options?.passwordChangeReason ?? "weak")
+    : null;
 
   const ownClient = !dbClient;
   const client = dbClient ?? (await (await getDbPool()).connect());
   try {
     await client.query(
       `
-      INSERT INTO app_user_sessions (user_id, token_hash, expires_at, ip, user_agent)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO app_user_sessions (
+        user_id,
+        token_hash,
+        expires_at,
+        ip,
+        user_agent,
+        password_change_required,
+        password_change_reason
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       `,
-      [userId, tokenHash, expiresAt.toISOString(), ip, userAgent],
+      [
+        userId,
+        tokenHash,
+        expiresAt.toISOString(),
+        ip,
+        userAgent,
+        passwordChangeRequired,
+        passwordChangeReason,
+      ],
     );
   } finally {
     if (ownClient) {
@@ -173,7 +201,7 @@ export const createSession = async (
     }
   }
 
-  return { token, expiresAt };
+  return { token, expiresAt, passwordChangeRequired };
 };
 
 /**
@@ -185,6 +213,10 @@ export const createSessionReplacingOthers = async (
   ip: string | null,
   userAgent: string | null,
   dbClient: PoolClient,
+  options?: {
+    passwordChangeRequired?: boolean;
+    passwordChangeReason?: PasswordChangeReason | null;
+  },
 ) => {
   await dbClient.query("BEGIN");
   try {
@@ -193,7 +225,7 @@ export const createSessionReplacingOthers = async (
       [SESSION_LOGIN_ADVISORY_KEY1, userId],
     );
     await revokeAllSessionsForUser(userId, dbClient);
-    const session = await createSession(userId, ip, userAgent, dbClient);
+    const session = await createSession(userId, ip, userAgent, dbClient, options);
     await dbClient.query("COMMIT");
     return session;
   } catch (error) {
@@ -391,15 +423,73 @@ export const applySessionCookies = async (
   return response;
 };
 
+export type UserSession = {
+  user: AuthUser;
+  token: string;
+  expiresAt: Date;
+  passwordChangeRequired: boolean;
+};
+
+export type RequireAuthSessionOptions = {
+  /** Permite la sesión mientras el usuario debe cambiar contraseña (p. ej. /api/auth/me). */
+  allowPasswordChangePending?: boolean;
+};
+
+const resolvePasswordChangeState = (row: {
+  password_change_required: boolean;
+  password_change_reason: string | null;
+  password_changed_at: string | null;
+}): {
+  required: boolean;
+  reason: PasswordChangeReason | null;
+  daysUntilExpiry: number | null;
+} => {
+  const expired = isPasswordExpired(row.password_changed_at);
+  const required = row.password_change_required || expired;
+  if (!required) {
+    return {
+      required: false,
+      reason: null,
+      daysUntilExpiry: getPasswordDaysUntilExpiry(row.password_changed_at),
+    };
+  }
+
+  let reason: PasswordChangeReason = "weak";
+  if (expired) {
+    reason = "expired";
+  } else if (row.password_change_reason === "unset") {
+    reason = "unset";
+  } else if (row.password_change_reason === "expired") {
+    reason = "expired";
+  } else if (row.password_change_reason === "weak") {
+    reason = "weak";
+  } else if (!row.password_changed_at) {
+    reason = "unset";
+  }
+
+  return {
+    required: true,
+    reason,
+    daysUntilExpiry: getPasswordDaysUntilExpiry(row.password_changed_at),
+  };
+};
+
+const attachPasswordPolicyToUser = (
+  user: AuthUser,
+  state: ReturnType<typeof resolvePasswordChangeState>,
+): AuthUser => ({
+  ...user,
+  passwordChangeRequired: state.required,
+  passwordChangeReason: state.reason,
+  passwordDaysUntilExpiry: state.daysUntilExpiry,
+});
+
 export const getSessionToken = async () => {
   const cookieStore = await cookies();
   return cookieStore.get(SESSION_COOKIE)?.value ?? null;
 };
 
-export const getUserSession = async (): Promise<
-  | { user: AuthUser; token: string; expiresAt: Date }
-  | null
-> => {
+export const getUserSession = async (): Promise<UserSession | null> => {
   const token = await getSessionToken();
   if (!token) return null;
   const tokenHash = hashToken(token);
@@ -421,7 +511,10 @@ export const getUserSession = async (): Promise<
         u.is_active,
         u.last_login_at,
         u.last_login_ip,
-        s.expires_at
+        u.password_changed_at,
+        s.expires_at,
+        s.password_change_required,
+        s.password_change_reason
       FROM app_user_sessions s
       JOIN app_users u ON u.id = s.user_id
       WHERE s.token_hash = $1
@@ -433,14 +526,43 @@ export const getUserSession = async (): Promise<
     );
 
     if (!result.rows || result.rows.length === 0) return null;
-    const user = result.rows[0] as AuthUser;
-    user.allowedDashboards = normalizeAllowedPortalSections(user.allowedDashboards);
-    user.allowedSubdashboards = normalizeAllowedPortalSubsections(
-      user.allowedSubdashboards,
+    const row = result.rows[0] as AuthUser & {
+      password_changed_at: string | null;
+      password_change_required: boolean;
+      password_change_reason: string | null;
+    };
+    const passwordState = resolvePasswordChangeState({
+      password_change_required: row.password_change_required,
+      password_change_reason: row.password_change_reason,
+      password_changed_at: row.password_changed_at,
+    });
+    const user = attachPasswordPolicyToUser(
+      {
+        id: row.id,
+        username: row.username,
+        role: row.role,
+        sede: row.sede,
+        allowedSedes: row.allowedSedes,
+        allowedLines: row.allowedLines,
+        allowedDashboards: normalizeAllowedPortalSections(row.allowedDashboards),
+        allowedSubdashboards: normalizeAllowedPortalSubsections(
+          row.allowedSubdashboards,
+        ),
+        specialRoles: row.specialRoles,
+        is_active: row.is_active,
+        last_login_at: row.last_login_at,
+        last_login_ip: row.last_login_ip,
+      },
+      passwordState,
     );
     const expiresAt = getSessionExpiry();
     await refreshSession(tokenHash, expiresAt);
-    return { user, token, expiresAt };
+    return {
+      user,
+      token,
+      expiresAt,
+      passwordChangeRequired: passwordState.required,
+    };
   } finally {
     client.release();
   }
@@ -459,9 +581,17 @@ export const requireAuthUser = async () => {
   return user;
 };
 
-export const requireAuthSession = async () => {
+export const requireAuthSession = async (
+  options?: RequireAuthSessionOptions,
+) => {
   const session = await getUserSession();
   if (!session) {
+    return null;
+  }
+  if (
+    session.passwordChangeRequired &&
+    !options?.allowPasswordChangePending
+  ) {
     return null;
   }
   return session;

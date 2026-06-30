@@ -8,18 +8,19 @@ import {
   hashPassword,
   requireAuthSession,
   revokeAllSessionsForUser,
-  validatePasswordLength,
+  validatePasswordPolicy,
   verifyPassword,
   verifyCsrf,
 } from "@/lib/auth";
 
 export async function POST(req: Request) {
-  const session = await requireAuthSession();
+  const session = await requireAuthSession({ allowPasswordChangePending: true });
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
-  const withSession = (response: NextResponse) => applySessionCookies(response, session);
+  const withSession = (response: NextResponse) =>
+    applySessionCookies(response, session);
 
   if (!(await verifyCsrf(req))) {
     return withSession(
@@ -44,10 +45,10 @@ export async function POST(req: Request) {
     );
   }
 
-  const passwordLengthError = validatePasswordLength(newPassword);
-  if (passwordLengthError) {
+  const passwordPolicyError = validatePasswordPolicy(newPassword);
+  if (passwordPolicyError) {
     return withSession(
-      NextResponse.json({ error: passwordLengthError }, { status: 400 }),
+      NextResponse.json({ error: passwordPolicyError }, { status: 400 }),
     );
   }
 
@@ -94,13 +95,15 @@ export async function POST(req: Request) {
     await client.query(
       `
       UPDATE app_users
-      SET password_hash = $2, updated_at = now()
+      SET password_hash = $2,
+          password_changed_at = now(),
+          updated_at = now()
       WHERE id = $1
       `,
       [session.user.id, newHash],
     );
 
-    await revokeAllSessionsForUser(session.user.id);
+    await revokeAllSessionsForUser(session.user.id, client);
     const clientIp = getClientIp(req);
     const auditNetworkId = getAuditNetworkId(clientIp);
     const ipForDb = auditNetworkId ?? clientIp ?? null;
@@ -109,15 +112,18 @@ export async function POST(req: Request) {
       session.user.id,
       ipForDb,
       userAgent,
+      client,
+      { passwordChangeRequired: false, passwordChangeReason: null },
     );
     const response = NextResponse.json({ ok: true });
     return applySessionCookies(response, newSession);
-  } catch {
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "No se pudo actualizar la contraseña.";
     return withSession(
-      NextResponse.json(
-        { error: "No se pudo actualizar la contraseña." },
-        { status: 500 },
-      ),
+      NextResponse.json({ error: message }, { status: 500 }),
     );
   } finally {
     client.release();

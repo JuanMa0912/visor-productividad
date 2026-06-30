@@ -8,6 +8,8 @@
 
 export type AuthRole = "admin" | "user";
 
+export type PasswordChangeReason = "weak" | "expired" | "unset";
+
 export type AuthUser = {
   id: string;
   username: string;
@@ -25,6 +27,10 @@ export type AuthUser = {
   is_active?: boolean;
   last_login_at?: string | null;
   last_login_ip?: string | null;
+  passwordChangeRequired?: boolean;
+  passwordChangeReason?: PasswordChangeReason | null;
+  /** Días restantes antes del cambio obligatorio (30 días desde el último cambio). */
+  passwordDaysUntilExpiry?: number | null;
 };
 
 /** Subset compacto util para la mayoria de UIs (no expone metadatos de login). */

@@ -4,7 +4,7 @@ import {
   applySessionCookies,
   hashPassword,
   requireAdminSession,
-  validatePasswordLength,
+  validatePasswordPolicy,
   verifyCsrf,
 } from "@/lib/auth";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
@@ -423,10 +423,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const passwordLengthError = validatePasswordLength(password);
-  if (passwordLengthError) {
+  const passwordPolicyError = validatePasswordPolicy(password);
+  if (passwordPolicyError) {
     return NextResponse.json(
-      { error: passwordLengthError },
+      { error: passwordPolicyError },
       { status: 400 },
     );
   }

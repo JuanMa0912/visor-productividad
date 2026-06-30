@@ -107,7 +107,12 @@ Columnas relevantes de `app_users`:
 | `allowed_subdashboards` | permisos granulares |
 | `special_roles` | capacidades especiales |
 | `is_active` | bloqueo de acceso |
+| `password_changed_at` | ultimo cambio de contraseña (rotacion cada 30 dias) |
 | `last_login_at`, `last_login_ip` | trazabilidad |
+
+`app_user_sessions.password_change_required` y `password_change_reason` marcan sesiones que deben ir a `/cuenta/contrasena` antes de usar el portal.
+
+Migracion: `db/migrations/20260701_app_users_password_policy.sql`.
 
 APIs relacionadas: `/api/auth/*`, `/api/admin/users*`,
 `/api/admin/login-logs`, `/api/admin/user-presence`,

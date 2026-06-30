@@ -4,7 +4,7 @@ import {
   applySessionCookies,
   hashPassword,
   requireAdminSession,
-  validatePasswordLength,
+  validatePasswordPolicy,
   verifyCsrf,
 } from "@/lib/auth";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
@@ -589,15 +589,16 @@ export async function PATCH(req: Request, { params }: Params) {
       addUpdate("is_active", body.is_active);
     }
     if (typeof body.password === "string" && body.password.length > 0) {
-      const passwordLengthError = validatePasswordLength(body.password);
-      if (passwordLengthError) {
+      const passwordPolicyError = validatePasswordPolicy(body.password);
+      if (passwordPolicyError) {
         return NextResponse.json(
-          { error: passwordLengthError },
+          { error: passwordPolicyError },
           { status: 400 },
         );
       }
       const passwordHash = await hashPassword(body.password);
       addUpdate("password_hash", passwordHash);
+      addUpdate("password_changed_at", new Date().toISOString());
     }
 
     if (updates.length === 0) {

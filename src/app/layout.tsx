@@ -4,6 +4,7 @@ import "./globals.css";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { LocalMigrationNotice } from "@/components/portal/local-migration-notice";
+import { PasswordChangeEnforcer } from "@/components/portal/password-change-enforcer";
 import { PortalToaster } from "@/components/portal/portal-toaster";
 
 // ============================================================================
@@ -98,6 +99,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <AuthProvider>
           <PresenceHeartbeat />
           <LocalMigrationNotice />
+          <PasswordChangeEnforcer />
           <main className="flex-1">{children}</main>
           <PortalToaster />
         </AuthProvider>

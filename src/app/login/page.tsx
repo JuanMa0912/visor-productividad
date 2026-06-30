@@ -52,6 +52,11 @@ function LoginPageInner() {
 
       signIn(payload.user);
 
+      if (payload.user.passwordChangeRequired) {
+        router.push("/cuenta/contrasena?required=1");
+        return;
+      }
+
       const destination = sanitizeFrom(searchParams.get("from"));
       router.push(destination);
     } catch (err) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   applySessionCookies,
   createSessionReplacingOthers,
+  evaluatePasswordChangeRequirement,
   getAuditNetworkId,
   getClientIp,
   getDummyPasswordHash,
@@ -129,7 +130,8 @@ export async function POST(req: Request) {
           to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
           to_jsonb(u)->'special_roles' AS "specialRoles",
           u.is_active,
-          u.password_hash
+          u.password_hash,
+          u.password_changed_at
         FROM app_users u
         WHERE u.username = $1
         LIMIT 1
@@ -163,6 +165,7 @@ export async function POST(req: Request) {
         specialRoles: string[] | null;
         is_active: boolean;
         password_hash: string;
+        password_changed_at: string | null;
       };
       const allowedDashboards = normalizeAllowedPortalSections(user.allowedDashboards);
       const allowedSubdashboards = normalizeAllowedPortalSubsections(
@@ -189,8 +192,21 @@ export async function POST(req: Request) {
       }
 
       clearFailedLoginAttempts(rateLimitKey, userKey);
+      const passwordRequirement = evaluatePasswordChangeRequirement({
+        loginPassword: password,
+        passwordChangedAt: user.password_changed_at,
+      });
       const userAgent = req.headers.get("user-agent");
-      const session = await createSessionReplacingOthers(user.id, ipForDb, userAgent, client);
+      const session = await createSessionReplacingOthers(
+        user.id,
+        ipForDb,
+        userAgent,
+        client,
+        {
+          passwordChangeRequired: passwordRequirement.required,
+          passwordChangeReason: passwordRequirement.reason,
+        },
+      );
 
       await client.query(
         `
@@ -220,6 +236,9 @@ export async function POST(req: Request) {
           allowedDashboards,
           allowedSubdashboards,
           specialRoles: user.specialRoles,
+          passwordChangeRequired: passwordRequirement.required,
+          passwordChangeReason: passwordRequirement.reason,
+          passwordDaysUntilExpiry: passwordRequirement.daysUntilExpiry,
         },
       });
       return applySessionCookies(response, session);
