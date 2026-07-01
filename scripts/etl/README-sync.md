@@ -107,6 +107,12 @@ Notas:
 - Reconciliacion de **7 dias**: atrapa correcciones de ~1 semana. Si necesitas
   cubrir correcciones que llegan 8-10 dias tarde, sube `--days` en el ExecStart de
   `visor-etl-reconcile.service`.
+- El reconcile corre con **`--replace`**: reemplaza en GCP las fechas presentes en el
+  local (borra-esas-fechas + reinserta) en vez de solo upsert. Asi ademas de correcciones
+  limpia **huerfanas**: filas que quedaron en GCP cuando el local perdio filas (el upsert
+  nunca borra). Es seguro — no toca fechas que el local no tenga, y si el local esta vacio
+  en la ventana no borra nada. El daily (07:50) sigue en upsert (rapido); la limpieza va
+  en el reconcile semanal.
 
 ## 4. Corridas MANUALES (cuando falla, avisa o aun no hay datos)
 
@@ -121,6 +127,7 @@ Todas como `sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/s
 | Rango fijo de fechas (cualquier dia de corrida) | `--desde 2026-06-01 --hasta 2026-06-24` |
 | **Primera carga `margen_final` (todo el historico local)** | `--margen-full --no-refresh --verify` |
 | Subir `margen_final` de un rango | `--days 31` (o `--date YYYY-MM-DD`) |
+| **Limpiar huerfanas** (el local perdio filas y GCP quedo con de mas) | `--only <tabla> --desde A --hasta B --replace --no-refresh --verify` |
 | Probar sin escribir (solo conteos) | `--days 7 --dry-run` |
 | Mas rapido, sin refrescar matview | `--no-refresh` |
 | Con verificacion de frescura al final | `--verify` |
