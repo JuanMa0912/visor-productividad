@@ -9,7 +9,8 @@ export function LocalMigrationNotice() {
   useEffect(() => {
     void fetch("/api/local-portal-migration-notice", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : { enabled: false }))
-      .then((data: { enabled?: boolean }) => {
+      .then((data: { enabled?: boolean; closed?: boolean }) => {
+        if (data.closed) return;
         if (data.enabled) setVisible(true);
       })
       .catch(() => {

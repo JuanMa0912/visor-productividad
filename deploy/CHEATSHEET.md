@@ -68,7 +68,41 @@ sudo systemctl status visor --no-pager
 
 ---
 
-## 4. Rollback (revertir deploy malo)
+## 3b. Cerrar portal local (migración a la nube)
+
+Solo en **ServPruebas / PC local** (nunca en GCP con `VISOR_DEPLOYMENT=gcp`).
+
+**1. Subir código** (PowerShell + `git push` como en §3).
+
+**2. En el servidor local**, revocar todas las sesiones activas:
+
+```bash
+cd /opt/visor-productividad   # o la ruta del repo local
+sudo -u visor node scripts/revoke-all-sessions.mjs
+```
+
+**3. En `.env.local` del servidor local**, activar cierre y quitar el aviso de migración si estaba:
+
+```bash
+# Quitar o comentar:
+# LOCAL_PORTAL_MIGRATION_NOTICE=true
+
+LOCAL_PORTAL_CLOSED=true
+LOCAL_PORTAL_CLOUD_URL=https://uaid.mercamio.com.co
+```
+
+**4. Rebuild y reinicio:**
+
+```bash
+sudo -u visor npm run build:server
+sudo systemctl restart visor
+```
+
+**Efecto:** nadie puede iniciar sesión; quien tenga cookie es redirigido a `/login` con pantalla de cierre y enlace al portal en la nube. Las APIs responden `503` salvo `/api/health` y `/api/local-portal-migration-notice`.
+
+**Verificar:** abrir el portal local → solo mensaje «Este portal ya no está disponible» + botón a `uaid.mercamio.com.co`.
+
+---
 
 **VM**:
 ```bash

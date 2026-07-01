@@ -44,17 +44,57 @@ const resolveEnvValue = (key: string): string | undefined => {
 const isGcpDeployment = (): boolean =>
   resolveEnvValue("VISOR_DEPLOYMENT")?.trim().toLowerCase() === "gcp";
 
+export const DEFAULT_LOCAL_PORTAL_CLOUD_URL = "https://uaid.mercamio.com.co";
+
+/**
+ * Cierre definitivo del portal local (sin login). Activar en ServPruebas / PC
+ * tras migrar usuarios a la nube. En GCP usar `VISOR_DEPLOYMENT=gcp` y no
+ * definir `LOCAL_PORTAL_CLOSED`.
+ */
+export const isLocalPortalClosed = (): boolean => {
+  if (!isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_CLOSED"))) {
+    return false;
+  }
+  return !isGcpDeployment();
+};
+
+/** URL del portal en la nube para redirigir desde el entorno local cerrado. */
+export const getLocalPortalCloudUrl = (): string => {
+  const raw = resolveEnvValue("LOCAL_PORTAL_CLOUD_URL")?.trim();
+  if (!raw) return DEFAULT_LOCAL_PORTAL_CLOUD_URL;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return DEFAULT_LOCAL_PORTAL_CLOUD_URL;
+    }
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return DEFAULT_LOCAL_PORTAL_CLOUD_URL;
+  }
+};
+
 /**
  * Aviso de migración de acceso al portal.
  * Activar en `.env.local` de ServPruebas / PC con `npm run build` + PM2 o `npm start`.
  * En GCP usar `VISOR_DEPLOYMENT=gcp` y no definir `LOCAL_PORTAL_MIGRATION_NOTICE`.
  */
 export const isLocalPortalMigrationNoticeEnabled = (): boolean => {
+  if (isLocalPortalClosed()) return false;
   if (!isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_MIGRATION_NOTICE"))) {
     return false;
   }
   return !isGcpDeployment();
 };
+
+if (
+  typeof process !== "undefined" &&
+  isGcpDeployment() &&
+  isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_CLOSED"))
+) {
+  console.warn(
+    "[local-notice] LOCAL_PORTAL_CLOSED ignorada (VISOR_DEPLOYMENT=gcp).",
+  );
+}
 
 if (
   typeof process !== "undefined" &&
