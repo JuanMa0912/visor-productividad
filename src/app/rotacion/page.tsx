@@ -2076,17 +2076,18 @@ export function RotacionPageInner() {
   const writeRotacionExcel = useCallback(async (groups: RotacionExportGroup[]) => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Rotacion");
-    sheet.columns = Array.from({ length: 14 }).map(() => ({ width: 18 }));
+    sheet.columns = Array.from({ length: 15 }).map(() => ({ width: 18 }));
     sheet.getColumn(1).width = 14;
     sheet.getColumn(2).width = 8;
     sheet.getColumn(3).width = 40;
 
     const COP_NUM_FMT = '"$"#,##0;[Red]-"$"#,##0';
-    const INT_NUM_FMT = "#,##0";
+    const QTY_NUM_FMT = "#,##0.###";
 
-    const SURTIDO_CURRENCY_COLS = [5, 7];
-    const GENERAL_CURRENCY_COLS = [4, 5, 9];
-    const GENERAL_INT_COLS = [8];
+    const SURTIDO_CURRENCY_COLS = [5, 8];
+    const SURTIDO_QTY_COLS = [6];
+    const GENERAL_CURRENCY_COLS = [4, 5, 10];
+    const GENERAL_QTY_COLS = [7, 9];
 
     groups.forEach((group) => {
       const titleRow = sheet.addRow([
@@ -2111,6 +2112,7 @@ export function RotacionPageInner() {
             "Descripcion",
             "Venta periodo",
             "Inv.",
+            "Unid.",
             "V. inv.",
             "DI",
             "DUV",
@@ -2125,6 +2127,7 @@ export function RotacionPageInner() {
             "Costo",
             "Margen %",
             "Inv.",
+            "Unid.",
             "U. vend.",
             "V. inv.",
             "DIC",
@@ -2152,7 +2155,8 @@ export function RotacionPageInner() {
             row.ceroEstado,
             row.descripcion,
             row.ventaPeriodo,
-            `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+            row.invCierre,
+            row.unidad,
             row.valorInventario,
             row.diDesdeIngreso,
             row.duv,
@@ -2162,6 +2166,9 @@ export function RotacionPageInner() {
           SURTIDO_CURRENCY_COLS.forEach((col) => {
             dataRow.getCell(col).numFmt = COP_NUM_FMT;
           });
+          SURTIDO_QTY_COLS.forEach((col) => {
+            dataRow.getCell(col).numFmt = QTY_NUM_FMT;
+          });
         } else {
           dataRow = sheet.addRow([
             row.item,
@@ -2170,7 +2177,8 @@ export function RotacionPageInner() {
             row.ventaPeriodo,
             row.costoPeriodo,
             row.margenPorcentaje,
-            `${row.invCierre.toLocaleString("es-CO")} ${row.unidad}`.trim(),
+            row.invCierre,
+            row.unidad,
             row.unidadesVendidas,
             row.valorInventario,
             row.rotacion,
@@ -2182,8 +2190,8 @@ export function RotacionPageInner() {
           GENERAL_CURRENCY_COLS.forEach((col) => {
             dataRow.getCell(col).numFmt = COP_NUM_FMT;
           });
-          GENERAL_INT_COLS.forEach((col) => {
-            dataRow.getCell(col).numFmt = INT_NUM_FMT;
+          GENERAL_QTY_COLS.forEach((col) => {
+            dataRow.getCell(col).numFmt = QTY_NUM_FMT;
           });
         }
       });
