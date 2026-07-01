@@ -13,6 +13,7 @@ import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
+import { resolveValidPortalProfile } from "@/lib/shared/portal-profiles";
 
 const FAILED_LOGIN_WINDOW_MS = 15 * 60_000;
 const FAILED_LOGIN_MAX_PER_IP = 10;
@@ -129,6 +130,7 @@ export async function POST(req: Request) {
           to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
           to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
           to_jsonb(u)->'special_roles' AS "specialRoles",
+          to_jsonb(u)->>'portal_profile' AS "portalProfile",
           u.is_active,
           u.password_hash,
           u.password_changed_at
@@ -163,6 +165,7 @@ export async function POST(req: Request) {
         allowedDashboards: string[] | null;
         allowedSubdashboards: string[] | null;
         specialRoles: string[] | null;
+        portalProfile: string | null;
         is_active: boolean;
         password_hash: string;
         password_changed_at: string | null;
@@ -171,6 +174,7 @@ export async function POST(req: Request) {
       const allowedSubdashboards = normalizeAllowedPortalSubsections(
         user.allowedSubdashboards,
       );
+      const profileResult = resolveValidPortalProfile(user.portalProfile);
 
       if (!user.is_active) {
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
@@ -236,6 +240,7 @@ export async function POST(req: Request) {
           allowedDashboards,
           allowedSubdashboards,
           specialRoles: user.specialRoles,
+          portalProfile: profileResult.ok ? profileResult.value : null,
           passwordChangeRequired: passwordRequirement.required,
           passwordChangeReason: passwordRequirement.reason,
           passwordDaysUntilExpiry: passwordRequirement.daysUntilExpiry,

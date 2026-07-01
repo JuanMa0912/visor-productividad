@@ -14,6 +14,11 @@ import {
   resolvePortalSectionId,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
+import {
+  inferPortalProfileFromStoredPermissions,
+  resolveAdminUserPermissionsFromBody,
+  resolveValidPortalProfile,
+} from "@/lib/shared/portal-profiles";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 const ALL_SEDES_VALUE = "Todas";
@@ -131,6 +136,21 @@ const hasSpecialRolesColumn = async (client: {
     FROM information_schema.columns
     WHERE table_name = 'app_users'
       AND column_name = 'special_roles'
+    LIMIT 1
+    `,
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const hasPortalProfileColumn = async (client: {
+  query: (queryText: string) => Promise<{ rows?: unknown[] }>;
+}) => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'app_users'
+      AND column_name = 'portal_profile'
     LIMIT 1
     `,
   );
@@ -337,6 +357,7 @@ export async function GET(req: Request) {
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
         to_jsonb(u)->'special_roles' AS "specialRoles",
+        to_jsonb(u)->>'portal_profile' AS "portalProfile",
         u.is_active,
         u.created_at,
         u.updated_at,
@@ -348,11 +369,26 @@ export async function GET(req: Request) {
     );
     const users = (result.rows ?? []).map((row) => {
       const user = row as {
+        role: "admin" | "user";
         allowedDashboards?: string[] | null;
         allowedSubdashboards?: string[] | null;
+        allowedLines?: string[] | null;
+        specialRoles?: string[] | null;
+        portalProfile?: string | null;
       };
+      const profileResult = resolveValidPortalProfile(user.portalProfile);
+      const portalProfile = profileResult.ok
+        ? profileResult.value
+        : inferPortalProfileFromStoredPermissions({
+            role: user.role,
+            allowedDashboards: user.allowedDashboards,
+            allowedSubdashboards: user.allowedSubdashboards,
+            allowedLines: user.allowedLines,
+            specialRoles: user.specialRoles,
+          });
       return {
         ...user,
+        portalProfile,
         allowedDashboards: normalizeAllowedPortalSections(user.allowedDashboards),
         allowedSubdashboards: normalizeAllowedPortalSubsections(
           user.allowedSubdashboards,
@@ -397,6 +433,7 @@ export async function POST(req: Request) {
     username?: string;
     password?: string;
     role?: "admin" | "user";
+    portalProfile?: string;
     sede?: string | null;
     allowedSedes?: string[] | null;
     allowedLines?: string[] | null;
@@ -407,15 +444,25 @@ export async function POST(req: Request) {
 
   const username = body.username?.trim();
   const password = body.password ?? "";
-  const role = body.role ?? "user";
+  const permissionsResult = resolveAdminUserPermissionsFromBody(body);
+  if (!permissionsResult.ok) {
+    return NextResponse.json(
+      { error: permissionsResult.error },
+      { status: 400 },
+    );
+  }
+  const resolved = permissionsResult.value;
+  const role = resolved.role;
   const sede = resolveValidSede(body.sede);
-  const allowedSedesResult = resolveValidAllowedSedes(body.allowedSedes);
-  const allowedLinesResult = resolveValidAllowedLines(body.allowedLines);
-  const allowedDashboardsResult = resolveValidAllowedDashboards(body.allowedDashboards);
-  const allowedSubdashboardsResult = resolveValidAllowedSubdashboards(
-    body.allowedSubdashboards,
+  const allowedSedesResult = resolveValidAllowedSedes(resolved.allowedSedes);
+  const allowedLinesResult = resolveValidAllowedLines(resolved.allowedLines);
+  const allowedDashboardsResult = resolveValidAllowedDashboards(
+    resolved.allowedDashboards,
   );
-  const specialRolesResult = resolveValidSpecialRoles(body.specialRoles);
+  const allowedSubdashboardsResult = resolveValidAllowedSubdashboards(
+    resolved.allowedSubdashboards,
+  );
+  const specialRolesResult = resolveValidSpecialRoles(resolved.specialRoles);
 
   if (!username) {
     return NextResponse.json(
@@ -482,6 +529,7 @@ export async function POST(req: Request) {
     const allowedDashboardsEnabled = await hasAllowedDashboardsColumn(client);
     const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
+    const portalProfileEnabled = await hasPortalProfileColumn(client);
     if (!allowedSubdashboardsEnabled && body.allowedSubdashboards !== undefined) {
       return NextResponse.json(
         {
@@ -510,6 +558,7 @@ export async function POST(req: Request) {
     const allowedSubdashboards =
       role === "admin" ? null : allowedSubdashboardsResult.value;
     const specialRoles = role === "admin" ? null : specialRolesResult.value;
+    const portalProfile = resolved.portalProfile;
 
     if (!sedeEnabled && role === "user") {
       return NextResponse.json(
@@ -526,14 +575,23 @@ export async function POST(req: Request) {
       allowedLinesEnabled &&
       allowedDashboardsEnabled
         ? specialRolesEnabled
-          ? await client.query(
-              `
+          ? portalProfileEnabled
+            ? await client.query(
+                `
+              INSERT INTO app_users (username, password_hash, role, sede, allowed_sedes, allowed_lines, allowed_dashboards, allowed_subdashboards, special_roles, portal_profile)
+              VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
+              RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", allowed_subdashboards AS "allowedSubdashboards", special_roles AS "specialRoles", portal_profile AS "portalProfile", is_active, created_at, updated_at
+              `,
+                [username, passwordHash, role, effectiveSedeForLegacy, allowedSedesJson, allowedLines, allowedDashboards, allowedSubdashboardsEnabled ? allowedSubdashboards : null, specialRoles, portalProfile],
+              )
+            : await client.query(
+                `
               INSERT INTO app_users (username, password_hash, role, sede, allowed_sedes, allowed_lines, allowed_dashboards, allowed_subdashboards, special_roles)
               VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
-              RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", allowed_subdashboards AS "allowedSubdashboards", special_roles AS "specialRoles", is_active, created_at, updated_at
+              RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", allowed_subdashboards AS "allowedSubdashboards", special_roles AS "specialRoles", NULL::text AS "portalProfile", is_active, created_at, updated_at
               `,
-              [username, passwordHash, role, effectiveSedeForLegacy, allowedSedesJson, allowedLines, allowedDashboards, allowedSubdashboardsEnabled ? allowedSubdashboards : null, specialRoles],
-            )
+                [username, passwordHash, role, effectiveSedeForLegacy, allowedSedesJson, allowedLines, allowedDashboards, allowedSubdashboardsEnabled ? allowedSubdashboards : null, specialRoles],
+              )
           : await client.query(
               `
               INSERT INTO app_users (username, password_hash, role, sede, allowed_sedes, allowed_lines, allowed_dashboards)

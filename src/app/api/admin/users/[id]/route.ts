@@ -14,6 +14,11 @@ import {
   resolvePortalSectionId,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
+import {
+  inferPortalProfileFromStoredPermissions,
+  resolveAdminUserPermissionsFromBody,
+  resolveValidPortalProfile,
+} from "@/lib/shared/portal-profiles";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 type Params = { params: Promise<{ id: string }> };
@@ -133,6 +138,21 @@ const hasSpecialRolesColumn = async (client: {
     FROM information_schema.columns
     WHERE table_name = 'app_users'
       AND column_name = 'special_roles'
+    LIMIT 1
+    `,
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const hasPortalProfileColumn = async (client: {
+  query: (queryText: string) => Promise<{ rows?: unknown[] }>;
+}) => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'app_users'
+      AND column_name = 'portal_profile'
     LIMIT 1
     `,
   );
@@ -319,6 +339,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = (await req.json()) as {
     username?: string;
     role?: "admin" | "user";
+    portalProfile?: string;
     sede?: string | null;
     allowedSedes?: string[] | null;
     allowedLines?: string[] | null;
@@ -341,6 +362,7 @@ export async function PATCH(req: Request, { params }: Params) {
     const allowedDashboardsEnabled = await hasAllowedDashboardsColumn(client);
     const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
+    const portalProfileEnabled = await hasPortalProfileColumn(client);
     const wantsAllowedSubdashboardsUpdate =
       body.allowedSubdashboards !== undefined &&
       body.allowedSubdashboards !== null &&
@@ -377,7 +399,8 @@ export async function PATCH(req: Request, { params }: Params) {
         to_jsonb(u)->'allowed_lines' AS "allowedLines",
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
-        to_jsonb(u)->'special_roles' AS "specialRoles"
+        to_jsonb(u)->'special_roles' AS "specialRoles",
+        to_jsonb(u)->>'portal_profile' AS "portalProfile"
       FROM app_users u
       WHERE id = $1
       LIMIT 1
@@ -399,6 +422,7 @@ export async function PATCH(req: Request, { params }: Params) {
       allowedDashboards: string[] | null;
       allowedSubdashboards: string[] | null;
       specialRoles: string[] | null;
+      portalProfile: string | null;
     };
     currentUser.allowedDashboards = normalizeAllowedPortalSections(
       currentUser.allowedDashboards,
@@ -406,13 +430,64 @@ export async function PATCH(req: Request, { params }: Params) {
     currentUser.allowedSubdashboards = normalizeAllowedPortalSubsections(
       currentUser.allowedSubdashboards,
     );
-    const allowedSedesResult = resolveValidAllowedSedes(body.allowedSedes);
-    const allowedLinesResult = resolveValidAllowedLines(body.allowedLines);
-    const allowedDashboardsResult = resolveValidAllowedDashboards(body.allowedDashboards);
+    const currentProfileResult = resolveValidPortalProfile(currentUser.portalProfile);
+    const currentProfile = currentProfileResult.ok
+      ? currentProfileResult.value
+      : inferPortalProfileFromStoredPermissions(currentUser);
+
+    const permissionsTouched =
+      body.portalProfile !== undefined ||
+      body.role !== undefined ||
+      body.allowedSedes !== undefined ||
+      body.allowedLines !== undefined ||
+      body.allowedDashboards !== undefined ||
+      body.allowedSubdashboards !== undefined ||
+      body.specialRoles !== undefined;
+
+    let nextRole = currentUser.role;
+    let nextPortalProfile = currentProfile;
+    let nextAllowedSedes = currentUser.allowedSedes;
+    let nextAllowedLines = currentUser.allowedLines;
+    let nextAllowedDashboards = currentUser.allowedDashboards;
+    let nextAllowedSubdashboards = currentUser.allowedSubdashboards;
+    let nextSpecialRoles = currentUser.specialRoles;
+
+    if (permissionsTouched) {
+      const permissionsResult = resolveAdminUserPermissionsFromBody({
+        portalProfile: body.portalProfile ?? currentProfile,
+        role: body.role,
+        allowedSedes: body.allowedSedes ?? currentUser.allowedSedes,
+        allowedLines: body.allowedLines ?? currentUser.allowedLines,
+        allowedDashboards:
+          body.allowedDashboards ?? currentUser.allowedDashboards,
+        allowedSubdashboards:
+          body.allowedSubdashboards ?? currentUser.allowedSubdashboards,
+        specialRoles: body.specialRoles ?? currentUser.specialRoles,
+      });
+      if (!permissionsResult.ok) {
+        return NextResponse.json(
+          { error: permissionsResult.error },
+          { status: 400 },
+        );
+      }
+      const resolved = permissionsResult.value;
+      nextRole = resolved.role;
+      nextPortalProfile = resolved.portalProfile;
+      nextAllowedSedes = resolved.allowedSedes;
+      nextAllowedLines = resolved.allowedLines;
+      nextAllowedDashboards = resolved.allowedDashboards;
+      nextAllowedSubdashboards = resolved.allowedSubdashboards;
+      nextSpecialRoles = resolved.specialRoles;
+    }
+
+    const allowedSedesResult = resolveValidAllowedSedes(nextAllowedSedes);
+    const allowedLinesResult = resolveValidAllowedLines(nextAllowedLines);
+    const allowedDashboardsResult =
+      resolveValidAllowedDashboards(nextAllowedDashboards);
     const allowedSubdashboardsResult = resolveValidAllowedSubdashboards(
-      body.allowedSubdashboards,
+      nextAllowedSubdashboards,
     );
-    const specialRolesResult = resolveValidSpecialRoles(body.specialRoles);
+    const specialRolesResult = resolveValidSpecialRoles(nextSpecialRoles);
 
     if (
       typeof body.sede === "string" &&
@@ -455,34 +530,12 @@ export async function PATCH(req: Request, { params }: Params) {
       );
     }
 
-    const nextRole =
-      body.role === "admin" || body.role === "user" ? body.role : currentUser.role;
     const nextSede =
       body.sede === null
         ? null
         : typeof body.sede === "string"
           ? resolveValidSede(body.sede)
           : currentUser.sede;
-    const nextAllowedSedes =
-      body.allowedSedes === undefined
-        ? currentUser.allowedSedes
-        : allowedSedesResult.value;
-    const nextAllowedLines =
-      body.allowedLines === undefined
-        ? currentUser.allowedLines
-        : allowedLinesResult.value;
-    const nextAllowedDashboards =
-      body.allowedDashboards === undefined
-        ? currentUser.allowedDashboards
-        : allowedDashboardsResult.value;
-    const nextAllowedSubdashboards =
-      body.allowedSubdashboards === undefined
-        ? currentUser.allowedSubdashboards
-        : allowedSubdashboardsResult.value;
-    const nextSpecialRoles =
-      body.specialRoles === undefined
-        ? currentUser.specialRoles
-        : specialRolesResult.value;
 
     if (nextRole === "user" && !nextSede && (!nextAllowedSedes || nextAllowedSedes.length === 0)) {
       return NextResponse.json(
@@ -511,7 +564,73 @@ export async function PATCH(req: Request, { params }: Params) {
     if (typeof body.username === "string") {
       addUpdate("username", body.username.trim());
     }
-    if (body.role === "admin" || body.role === "user") {
+    if (permissionsTouched) {
+      addUpdate("role", nextRole);
+      if (portalProfileEnabled) {
+        addUpdate("portal_profile", nextPortalProfile);
+      }
+      if (nextRole === "admin" && body.sede === undefined) {
+        addUpdate("sede", null);
+      }
+      if (allowedSedesEnabled) {
+        updates.push(`allowed_sedes = $${idx++}::jsonb`);
+        values.push(
+          nextRole === "admin" || nextAllowedSedes === null
+            ? null
+            : JSON.stringify(allowedSedesResult.ok ? allowedSedesResult.value : nextAllowedSedes),
+        );
+        if (sedeEnabled && body.sede === undefined) {
+          addUpdate(
+            "sede",
+            nextRole === "admin"
+              ? null
+              : (allowedSedesResult.ok ? allowedSedesResult.value?.[0] : nextAllowedSedes?.[0]) ??
+                  nextSede ??
+                  null,
+          );
+        }
+      }
+      if (allowedLinesEnabled) {
+        addUpdate(
+          "allowed_lines",
+          nextRole === "admin"
+            ? null
+            : allowedLinesResult.ok
+              ? allowedLinesResult.value
+              : nextAllowedLines,
+        );
+      }
+      if (allowedDashboardsEnabled) {
+        addUpdate(
+          "allowed_dashboards",
+          nextRole === "admin"
+            ? null
+            : allowedDashboardsResult.ok
+              ? allowedDashboardsResult.value
+              : nextAllowedDashboards,
+        );
+      }
+      if (allowedSubdashboardsEnabled) {
+        addUpdate(
+          "allowed_subdashboards",
+          nextRole === "admin"
+            ? null
+            : allowedSubdashboardsResult.ok
+              ? allowedSubdashboardsResult.value
+              : nextAllowedSubdashboards,
+        );
+      }
+      if (specialRolesEnabled) {
+        addUpdate(
+          "special_roles",
+          nextRole === "admin"
+            ? null
+            : specialRolesResult.ok
+              ? specialRolesResult.value
+              : nextSpecialRoles,
+        );
+      }
+    } else if (body.role === "admin" || body.role === "user") {
       addUpdate("role", body.role);
       if (body.role === "admin" && body.sede === undefined) {
         addUpdate("sede", null);
@@ -551,40 +670,6 @@ export async function PATCH(req: Request, { params }: Params) {
     if (sedeEnabled && body.sede !== undefined) {
       addUpdate("sede", nextSede);
     }
-    if (allowedSedesEnabled && body.allowedSedes !== undefined) {
-      updates.push(`allowed_sedes = $${idx++}::jsonb`);
-      values.push(
-        nextRole === "admin" || nextAllowedSedes === null
-          ? null
-          : JSON.stringify(nextAllowedSedes),
-      );
-      if (sedeEnabled && body.sede === undefined) {
-        addUpdate("sede", nextRole === "admin" ? null : nextAllowedSedes?.[0] ?? nextSede ?? null);
-      }
-    } else if (!allowedSedesEnabled && sedeEnabled && body.allowedSedes !== undefined) {
-      addUpdate("sede", nextRole === "admin" ? null : nextAllowedSedes?.[0] ?? nextSede ?? null);
-    }
-    if (allowedLinesEnabled && body.allowedLines !== undefined) {
-      addUpdate("allowed_lines", nextRole === "admin" ? null : nextAllowedLines);
-    }
-    if (allowedDashboardsEnabled && body.allowedDashboards !== undefined) {
-      addUpdate(
-        "allowed_dashboards",
-        nextRole === "admin" ? null : nextAllowedDashboards,
-      );
-    }
-    if (allowedSubdashboardsEnabled && body.allowedSubdashboards !== undefined) {
-      addUpdate(
-        "allowed_subdashboards",
-        nextRole === "admin" ? null : nextAllowedSubdashboards,
-      );
-    }
-    if (specialRolesEnabled && body.specialRoles !== undefined) {
-      addUpdate(
-        "special_roles",
-        nextRole === "admin" ? null : nextSpecialRoles,
-      );
-    }
     if (typeof body.is_active === "boolean") {
       addUpdate("is_active", body.is_active);
     }
@@ -616,7 +701,7 @@ export async function PATCH(req: Request, { params }: Params) {
       UPDATE app_users
       SET ${updates.join(", ")}
       WHERE id = $${idx}
-      RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", to_jsonb(app_users)->'allowed_subdashboards' AS "allowedSubdashboards", to_jsonb(app_users)->'special_roles' AS "specialRoles", is_active, created_at, updated_at, last_login_at, last_login_ip
+      RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", to_jsonb(app_users)->'allowed_subdashboards' AS "allowedSubdashboards", to_jsonb(app_users)->'special_roles' AS "specialRoles", to_jsonb(app_users)->>'portal_profile' AS "portalProfile", is_active, created_at, updated_at, last_login_at, last_login_ip
       `,
       values,
     );

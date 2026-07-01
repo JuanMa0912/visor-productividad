@@ -9,6 +9,7 @@ import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
+import { resolveValidPortalProfile } from "@/lib/shared/portal-profiles";
 import {
   getPasswordDaysUntilExpiry,
   isPasswordExpired,
@@ -508,6 +509,7 @@ export const getUserSession = async (): Promise<UserSession | null> => {
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
         to_jsonb(u)->'special_roles' AS "specialRoles",
+        to_jsonb(u)->>'portal_profile' AS "portalProfile",
         u.is_active,
         u.last_login_at,
         u.last_login_ip,
@@ -530,12 +532,14 @@ export const getUserSession = async (): Promise<UserSession | null> => {
       password_changed_at: string | null;
       password_change_required: boolean;
       password_change_reason: string | null;
+      portalProfile?: string | null;
     };
     const passwordState = resolvePasswordChangeState({
       password_change_required: row.password_change_required,
       password_change_reason: row.password_change_reason,
       password_changed_at: row.password_changed_at,
     });
+    const profileResult = resolveValidPortalProfile(row.portalProfile);
     const user = attachPasswordPolicyToUser(
       {
         id: row.id,
@@ -549,6 +553,7 @@ export const getUserSession = async (): Promise<UserSession | null> => {
           row.allowedSubdashboards,
         ),
         specialRoles: row.specialRoles,
+        portalProfile: profileResult.ok ? profileResult.value : null,
         is_active: row.is_active,
         last_login_at: row.last_login_at,
         last_login_ip: row.last_login_ip,

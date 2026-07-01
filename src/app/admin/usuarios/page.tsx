@@ -31,6 +31,17 @@ import {
   resolvePortalSubsectionId,
   resolvePortalSectionId,
 } from "@/lib/shared/portal-sections";
+import type { PortalProfileId } from "@/lib/auth/types";
+import {
+  getPortalProfileLabel,
+  inferPortalProfileFromStoredPermissions,
+  materializePortalProfilePermissions,
+  PORTAL_PROFILE_OPTIONS,
+  portalPermissionsToFormArrays,
+  portalProfileRequiresAssignedSedes,
+  portalProfileSuggestsAllSedes,
+  portalProfileUsesManualPermissions,
+} from "@/lib/shared/portal-profiles";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 
@@ -51,6 +62,7 @@ type UserRow = {
   id: string;
   username: string;
   role: "admin" | "user";
+  portalProfile?: PortalProfileId | null;
   sede: string | null;
   allowedSedes: string[] | null;
   allowedLines: string[] | null;
@@ -76,6 +88,7 @@ type LogRow = {
 type UserFormState = {
   id?: string;
   username: string;
+  portalProfile: PortalProfileId;
   role: "admin" | "user";
   sede: string;
   allowedSedes: string[];
@@ -89,6 +102,7 @@ type UserFormState = {
 
 const emptyForm: UserFormState = {
   username: "",
+  portalProfile: "gerente",
   role: "user",
   sede: "",
   allowedSedes: [],
@@ -99,6 +113,52 @@ const emptyForm: UserFormState = {
   password: "",
   is_active: true,
 };
+
+const applyPortalProfileToForm = (
+  prev: UserFormState,
+  portalProfile: PortalProfileId,
+): UserFormState => {
+  const materialized = materializePortalProfilePermissions(
+    portalProfile,
+    portalProfileUsesManualPermissions(portalProfile)
+      ? {
+          allowedDashboards: prev.allowedDashboards,
+          allowedSubdashboards: prev.allowedSubdashboards,
+          allowedLines: prev.allowedLines,
+          specialRoles: prev.specialRoles,
+        }
+      : {},
+  );
+  const formArrays = portalPermissionsToFormArrays(materialized);
+  let allowedSedes = prev.allowedSedes;
+  if (portalProfile === "admin") {
+    allowedSedes = [];
+  } else if (portalProfileRequiresAssignedSedes(portalProfile)) {
+    allowedSedes = allowedSedes.filter((sede) => sede !== ALL_SEDES_VALUE);
+  } else if (
+    portalProfileSuggestsAllSedes(portalProfile) &&
+    allowedSedes.length === 0
+  ) {
+    allowedSedes = [ALL_SEDES_VALUE];
+  }
+
+  return {
+    ...prev,
+    portalProfile,
+    ...formArrays,
+    allowedSedes,
+  };
+};
+
+const resolveUserPortalProfile = (user: UserRow): PortalProfileId =>
+  user.portalProfile ??
+  inferPortalProfileFromStoredPermissions({
+    role: user.role,
+    allowedDashboards: user.allowedDashboards,
+    allowedSubdashboards: user.allowedSubdashboards,
+    allowedLines: user.allowedLines,
+    specialRoles: user.specialRoles,
+  });
 
 const USERS_PAGE_SIZE = 10;
 const RECENT_ACCESS_LOGS_LIMIT = 6;
@@ -558,29 +618,39 @@ export default function AdminUsuariosPage() {
   }, [formOpen]);
 
   const openCreate = () => {
-    setFormState(emptyForm);
+    setFormState(applyPortalProfileToForm(emptyForm, emptyForm.portalProfile));
     setFormOpen(true);
   };
 
   const openEdit = (user: UserRow) => {
+    const portalProfile = resolveUserPortalProfile(user);
     const allowedSedesRaw =
       user.allowedSedes ?? (user.sede ? [user.sede] : []);
     const allowedSedes = allowedSedesRaw.filter((sede) =>
       USER_SEDE_OPTION_SET.has(sede),
     );
+    const materialized = materializePortalProfilePermissions(
+      portalProfile,
+      portalProfileUsesManualPermissions(portalProfile)
+        ? {
+            allowedDashboards: user.allowedDashboards ?? [],
+            allowedSubdashboards: user.allowedSubdashboards ?? [],
+            allowedLines: user.allowedLines ?? [],
+            specialRoles: user.specialRoles ?? [],
+          }
+        : {},
+    );
+    const formArrays = portalPermissionsToFormArrays(materialized);
     setFormState({
       id: user.id,
       username: user.username,
-      role: user.role,
+      portalProfile,
       sede:
         user.sede && allowedSedes.includes(user.sede)
           ? user.sede
           : (allowedSedes[0] ?? inferSedeFromUsername(user.username) ?? ""),
       allowedSedes,
-      allowedLines: user.allowedLines ?? [],
-      allowedDashboards: user.allowedDashboards ?? [],
-      allowedSubdashboards: user.allowedSubdashboards ?? [],
-      specialRoles: user.specialRoles ?? [],
+      ...formArrays,
       password: "",
       is_active: user.is_active,
     });
@@ -603,9 +673,12 @@ export default function AdminUsuariosPage() {
         return;
       }
 
-      if (formState.role === "user" && formState.allowedSedes.length === 0) {
+      if (
+        formState.portalProfile !== "admin" &&
+        formState.allowedSedes.length === 0
+      ) {
         throw new Error(
-          "Debes seleccionar al menos una sede para usuarios de rol user.",
+          "Debes seleccionar al menos una sede para este perfil.",
         );
       }
 
@@ -615,38 +688,39 @@ export default function AdminUsuariosPage() {
       }
       const payload: Record<string, unknown> = {
         username: formState.username.trim(),
+        portalProfile: formState.portalProfile,
         role: formState.role,
         sede:
-          formState.role === "admin"
+          formState.portalProfile === "admin"
             ? null
             : (formState.allowedSedes[0] ??
               (formState.sede.trim() ? formState.sede.trim() : null)),
         allowedSedes:
-          formState.role === "admin"
+          formState.portalProfile === "admin"
             ? null
             : formState.allowedSedes.length > 0
               ? formState.allowedSedes
               : null,
         allowedLines:
-          formState.role === "admin"
+          formState.portalProfile === "admin"
             ? null
             : formState.allowedLines.length > 0
               ? formState.allowedLines
               : null,
         allowedDashboards:
-          formState.role === "admin"
+          formState.portalProfile === "admin"
             ? null
             : formState.allowedDashboards.length > 0
               ? formState.allowedDashboards
               : null,
         allowedSubdashboards:
-          formState.role === "admin"
+          formState.portalProfile === "admin"
             ? null
             : formState.allowedSubdashboards.length > 0
               ? formState.allowedSubdashboards
               : null,
         specialRoles:
-          formState.role === "admin"
+          formState.portalProfile === "admin"
             ? null
             : formState.specialRoles.length > 0
               ? formState.specialRoles
@@ -740,6 +814,15 @@ export default function AdminUsuariosPage() {
     await loadData();
     toast.success("Accesos recientes borrados.");
   };
+
+  const isAdminProfile = formState.portalProfile === "admin";
+  const canEditManualPermissions = portalProfileUsesManualPermissions(
+    formState.portalProfile,
+  );
+  const selectedProfileSummary =
+    PORTAL_PROFILE_OPTIONS.find(
+      (option) => option.id === formState.portalProfile,
+    )?.summary ?? "";
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
@@ -1002,7 +1085,7 @@ export default function AdminUsuariosPage() {
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                         <th className="px-4 py-3">Usuario</th>
-                        <th className="px-3 py-3">Rol</th>
+                        <th className="px-3 py-3">Perfil</th>
                         <th className="px-3 py-3">Sede</th>
                         <th className="px-3 py-3">Líneas</th>
                         <th className="px-3 py-3">Secciones</th>
@@ -1039,17 +1122,22 @@ export default function AdminUsuariosPage() {
                               </div>
                             </td>
                             <td className="px-3 py-3">
-                              {user.role === "admin" ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-800">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                  Admin
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                                  User
-                                </span>
-                              )}
+                              <span
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                                  user.role === "admin"
+                                    ? "border-indigo-100 bg-indigo-50 text-indigo-800"
+                                    : "border-slate-200 bg-slate-50 text-slate-600"
+                                }`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    user.role === "admin"
+                                      ? "bg-indigo-500"
+                                      : "bg-slate-400"
+                                  }`}
+                                />
+                                {getPortalProfileLabel(resolveUserPortalProfile(user))}
+                              </span>
                             </td>
                             <td className="max-w-[140px] px-3 py-3 text-xs text-slate-600">
                               {user.role === "admin"
@@ -1327,41 +1415,40 @@ export default function AdminUsuariosPage() {
                   </label>
 
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block text-sm font-medium text-slate-700">
-                      Rol
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Perfil del portal
                       <select
-                        value={formState.role}
+                        value={formState.portalProfile}
                         onChange={(e) =>
-                          setFormState((prev) => ({
-                            ...prev,
-                            role: e.target.value as "admin" | "user",
-                            sede: e.target.value === "admin" ? "" : prev.sede,
-                            allowedSedes:
-                              e.target.value === "admin"
-                                ? []
-                                : prev.allowedSedes,
-                            specialRoles:
-                              e.target.value === "admin"
-                                ? []
-                                : prev.specialRoles,
-                            allowedSubdashboards:
-                              e.target.value === "admin"
-                                ? []
-                                : prev.allowedSubdashboards,
-                          }))
+                          setFormState((prev) =>
+                            applyPortalProfileToForm(
+                              prev,
+                              e.target.value as PortalProfileId,
+                            ),
+                          )
                         }
                         className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                       >
-                        <option value="user">Usuario</option>
-                        <option value="admin">Administrador</option>
+                        {PORTAL_PROFILE_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
+                      {!canEditManualPermissions ? (
+                        <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                          {selectedProfileSummary}
+                        </p>
+                      ) : null}
                     </label>
 
                     <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
                       Sedes permitidas{" "}
-                      {formState.role === "user"
-                        ? "(obligatoria: 1 o más)"
-                        : "(solo user)"}
+                      {!isAdminProfile
+                        ? portalProfileRequiresAssignedSedes(formState.portalProfile)
+                          ? "(obligatoria: 1 o más, sin «Todas»)"
+                          : "(obligatoria: 1 o más)"
+                        : "(solo perfiles no admin)"}
                       <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                         {USER_SEDE_OPTIONS.map((sede) => {
                           const checked = formState.allowedSedes.includes(sede);
@@ -1373,7 +1460,7 @@ export default function AdminUsuariosPage() {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                disabled={formState.role !== "user"}
+                                disabled={isAdminProfile}
                                 onChange={() =>
                                   setFormState((prev) => {
                                     if (checked) {
@@ -1431,6 +1518,8 @@ export default function AdminUsuariosPage() {
                       <PasswordStrengthMeter password={formState.password} />
                     </div>
 
+                    {canEditManualPermissions ? (
+                      <>
                     <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
                       Secciones permitidas (vacio = todas)
                       <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
@@ -1446,7 +1535,6 @@ export default function AdminUsuariosPage() {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                disabled={formState.role !== "user"}
                                 onChange={() =>
                                   setFormState((prev) => ({
                                     ...prev,
@@ -1489,7 +1577,6 @@ export default function AdminUsuariosPage() {
                                     <input
                                       type="checkbox"
                                       checked={checked}
-                                      disabled={formState.role !== "user"}
                                       onChange={() =>
                                         setFormState((prev) => ({
                                           ...prev,
@@ -1536,7 +1623,6 @@ export default function AdminUsuariosPage() {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                disabled={formState.role !== "user"}
                                 onChange={() =>
                                   setFormState((prev) => ({
                                     ...prev,
@@ -1573,7 +1659,6 @@ export default function AdminUsuariosPage() {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                disabled={formState.role !== "user"}
                                 onChange={() =>
                                   setFormState((prev) => ({
                                     ...prev,
@@ -1594,6 +1679,8 @@ export default function AdminUsuariosPage() {
                         })}
                       </div>
                     </label>
+                      </>
+                    ) : null}
                   </div>
 
                   <label className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">

@@ -83,6 +83,7 @@ Orden completo despues de `schema-auth.sql`:
 29. `20260702_margen_final_roll.sql` (rollup factura+item para `/margenes`; poblar con `npm run margen:refresh-roll`)
 30. `20260623_app_user_ui_state.sql`
 31. `20260624_ventas_x_item_summary_covering_index.sql`
+32. `20260704_app_users_portal_profile.sql` (perfiles de portal en `app_users`)
 
 ## 4. Dominios y tablas
 
@@ -107,6 +108,7 @@ Columnas relevantes de `app_users`:
 | `allowed_dashboards` | secciones UAID |
 | `allowed_subdashboards` | permisos granulares |
 | `special_roles` | capacidades especiales |
+| `portal_profile` | perfil de negocio (`admin`, `subadmin`, `gerente`, `director_comercial`, `rrhh`, `personalizado`) |
 | `is_active` | bloqueo de acceso |
 | `password_changed_at` | ultimo cambio de contraseña (rotacion cada 30 dias) |
 | `last_login_at`, `last_login_ip` | trazabilidad |

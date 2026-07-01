@@ -8,12 +8,21 @@
 
 export type AuthRole = "admin" | "user";
 
+export type PortalProfileId =
+  | "admin"
+  | "subadmin"
+  | "gerente"
+  | "director_comercial"
+  | "rrhh"
+  | "personalizado";
+
 export type PasswordChangeReason = "weak" | "expired" | "unset";
 
 export type AuthUser = {
   id: string;
   username: string;
   role: AuthRole;
+  portalProfile?: PortalProfileId | null;
   sede: string | null;
   allowedSedes: string[] | null;
   allowedLines: string[] | null;
@@ -45,4 +54,5 @@ export type AuthUserPublic = Pick<
   | "allowedDashboards"
   | "allowedSubdashboards"
   | "specialRoles"
+  | "portalProfile"
 >;
