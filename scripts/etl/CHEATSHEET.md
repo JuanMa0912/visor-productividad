@@ -25,6 +25,7 @@ SYNC="sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-lo
 | **Una tabla, rango fijo** | `$SYNC --only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24 --no-refresh --verify` |
 | Una tabla, un dia | `$SYNC --only ventas_cajas --date 2026-06-20` |
 | Una tabla, ultimos N dias | `$SYNC --only asistencia_horas --days 7` |
+| **Solo asistencia** (subir/corregir un rango) | `$SYNC --only asistencia_horas --desde 2026-06-01 --hasta 2026-06-30 --no-refresh --verify` |
 | Varias tablas a la vez | `$SYNC --only ventas_cajas,ventas_fruver --days 3` |
 | Rango fijo, todas las tablas | `$SYNC --desde 2026-06-01 --hasta 2026-06-24` |
 | Primera carga `margen_final` (historico) | `$SYNC --margen-full --no-refresh --verify` |
