@@ -67,6 +67,11 @@ Para llevar ese margen a GCP despues, usa el sync (seccion 1):
 `$SYNC --only margen_final --desde 2026-06-01 --hasta 2026-06-23 --no-refresh --verify`
 (requiere que `margen_final` exista en GCP).
 
+> El tablero de margenes en GCP lee de la tabla `margen_final_roll` (rollup), NO del crudo.
+> El sync ahora **refresca ese roll automaticamente para la ventana sincronizada** cuando toca
+> `margen_final` (aunque venga `--no-refresh`, que solo aplica a la matview de rotacion). Para
+> saltar el roll explicitamente: `--no-roll`. Sin el refresh el tablero mostraria datos viejos.
+
 ---
 
 ## 3. Codigos de salida

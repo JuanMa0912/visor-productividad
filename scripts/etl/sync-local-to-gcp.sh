@@ -22,7 +22,9 @@
 #   --only T[,T]  solo procesa esa(s) tabla(s) de la allowlist (backfill quirurgico).
 #                 repetible y/o separado por comas. Ej: --only ventas_item_diario.
 #   --dry-run     solo cuenta filas en local, no escribe en GCP.
-#   --no-refresh  no refresca la matview de rotacion al final.
+#   --no-refresh  no refresca la matview de rotacion al final (NO afecta el rollup de margen).
+#   --no-roll     no refresca el rollup margen_final_roll (por defecto SI se refresca cuando
+#                 se sincronizo margen_final; el tablero de margenes lee de esa tabla).
 #   --verify      chequea la fecha maxima por tabla en GCP al terminar.
 #   --margen-full carga TODA margen_final local -> GCP (borra la tabla en GCP antes).
 #   -h|--help     ayuda.
@@ -53,6 +55,7 @@ RANGE_FROM=""
 RANGE_TO=""
 DRY_RUN=0
 NO_REFRESH=0
+NO_ROLL=0
 RUN_VERIFY=0
 MARGEN_FULL=0
 ONLY_TABLES=""
@@ -76,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --table=*)   ONLY_TABLES+=" ${1#*=}"; shift ;;
     --dry-run)   DRY_RUN=1; shift ;;
     --no-refresh) NO_REFRESH=1; shift ;;
+    --no-roll)   NO_ROLL=1; shift ;;
     --verify)    RUN_VERIFY=1; shift ;;
     --margen-full) MARGEN_FULL=1; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -362,6 +366,30 @@ refresh_matviews() {
   log "Refresh de matviews OK."
 }
 
+# Refresca el rollup margen_final_roll en GCP para la ventana sincronizada.
+# El tablero de margenes (/api/margenes/data) lee de esta tabla, NO del crudo margen_final;
+# si margen_final cambia pero el roll no se refresca, el tablero muestra datos viejos aunque
+# el crudo ya este al dia. La funcion soporta rango (p_from,p_to): reemplaza SOLO esa ventana
+# (DELETE+INSERT) dejando el resto del historico intacto; sin args reconstruye todo.
+refresh_margen_roll() {
+  local fn
+  table_selected margen_final || return 0   # solo tiene sentido si se sincronizo margen_final
+  fn="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_proc WHERE proname='refresh_margen_final_roll' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -z "$fn" ]]; then log "Funcion refresh_margen_final_roll no existe en GCP; omito rollup."; return 0; fi
+  if [[ "$MARGEN_FULL" -eq 1 ]]; then
+    log "Refrescando margen_final_roll COMPLETO (--margen-full)..."
+    "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_margen_final_roll();" >/dev/null 2>&1 \
+      || { log "WARN: refresh de margen_final_roll fallo; el tablero de margenes puede quedar atrasado."; return 0; }
+  else
+    # $DESDEC/$HASTAC = ventana YYYYMMDD ya validada (8 digitos) -> se inyecta como literal SQL.
+    log "Refrescando margen_final_roll [$DESDEC..$HASTAC]..."
+    "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_margen_final_roll('$DESDEC', '$HASTAC');" >/dev/null 2>&1 \
+      || { log "WARN: refresh de margen_final_roll fallo; el tablero de margenes puede quedar atrasado."; return 0; }
+  fi
+  "${GCP_PSQL[@]}" -c "ANALYZE margen_final_roll;" >/dev/null 2>&1 || true
+  log "Refresh de margen_final_roll OK."
+}
+
 # Expresion de "fecha maxima" (como texto YYYYMMDD) por tabla, para el verify.
 declare -A MAXEXPR
 for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc \
@@ -422,6 +450,13 @@ fi
 
 if [[ "$DRY_RUN" -eq 0 && "$NO_REFRESH" -eq 0 ]]; then
   refresh_matviews
+fi
+
+# El rollup de margen se refresca aunque venga --no-refresh (ese flag es para la matview de
+# rotacion). Se salta solo con --dry-run o --no-roll: sin esto, sincronizar margen_final deja
+# el tablero de margenes mostrando datos viejos porque lee de margen_final_roll.
+if [[ "$DRY_RUN" -eq 0 && "$NO_ROLL" -eq 0 ]]; then
+  refresh_margen_roll
 fi
 
 if [[ "$RUN_VERIFY" -eq 1 ]]; then
