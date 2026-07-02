@@ -27,7 +27,8 @@ export type ScheduleDraft = {
   seccion: string;
   fechaInicial: string;
   fechaFinal: string;
-  mes: string;
+  /** @deprecated Ya no se captura en UI; conservado por borradores antiguos. */
+  mes?: string;
   rows: RowSchedule[];
   updatedAt: string;
   /** Replicar horarios del lunes al resto de dias (por fila) */

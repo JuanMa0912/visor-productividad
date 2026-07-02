@@ -816,11 +816,6 @@ export default function HorariosGuardadosPage() {
                                 <span className="inline-flex items-center rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white">
                                   #{form.id}
                                 </span>
-                                {form.mes ? (
-                                  <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                                    {form.mes}
-                                  </span>
-                                ) : null}
                               </div>
                               <p className="mt-1.5 truncate text-sm font-semibold text-slate-900">
                                 {form.sede}
@@ -925,7 +920,7 @@ export default function HorariosGuardadosPage() {
                       </h2>
                       <p className="mt-1 text-sm text-slate-500">
                         {formatDateLabel(selectedForm.fechaInicial)} a{" "}
-                        {formatDateLabel(selectedForm.fechaFinal)} · {selectedForm.mes || "Sin mes"}
+                        {formatDateLabel(selectedForm.fechaFinal)}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-2 text-right text-xs text-slate-500">
@@ -1010,7 +1005,7 @@ export default function HorariosGuardadosPage() {
                         Planilla De Programacion Semanal De Horarios
                       </div>
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-3 text-[11px] sm:grid-cols-5">
+                    <div className="mt-2 grid grid-cols-2 gap-3 text-[11px] sm:grid-cols-4">
                       <div>
                         <span className="font-semibold">SEDE:</span>{" "}
                         {selectedForm.sede || "-"}
@@ -1026,10 +1021,6 @@ export default function HorariosGuardadosPage() {
                       <div>
                         <span className="font-semibold">FECHA FINAL:</span>{" "}
                         {selectedForm.fechaFinal || "-"}
-                      </div>
-                      <div>
-                        <span className="font-semibold">MES:</span>{" "}
-                        {selectedForm.mes || "-"}
                       </div>
                     </div>
                   </div>

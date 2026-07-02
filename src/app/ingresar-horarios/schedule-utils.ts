@@ -66,21 +66,6 @@ export const SCHEDULE_CELL_BORDER_CLASS =
 export const TIME_SLOT_TD_CLASS = `${SCHEDULE_CELL_BORDER_CLASS} px-1.5 py-1 align-middle whitespace-nowrap print:whitespace-normal print:px-0.5 print:text-center print:align-middle`;
 export const TIME_SLOT_TH_CLASS = `${SCHEDULE_CELL_BORDER_CLASS} px-1 py-2 text-center align-middle uppercase print:px-0.5`;
 
-export const MONTH_OPTIONS = [
-  "Enero",
-  "Febrero",
-  "Marzo",
-  "Abril",
-  "Mayo",
-  "Junio",
-  "Julio",
-  "Agosto",
-  "Septiembre",
-  "Octubre",
-  "Noviembre",
-  "Diciembre",
-];
-
 export const LOCAL_DRAFT_VERSION = 1;
 export const INITIAL_ROW_COUNT = 16;
 

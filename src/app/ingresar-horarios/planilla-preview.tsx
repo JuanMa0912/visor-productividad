@@ -30,7 +30,6 @@ type PlanillaPreviewProps = {
   seccion: string;
   fechaInicial: string;
   fechaFinal: string;
-  mes: string;
   dayNumbersByKey: Partial<Record<PlanillaDayKey, string>>;
   /** Determina densidad y tipografia */
   mode: "jpg" | "print";
@@ -73,7 +72,6 @@ export function PlanillaPreview({
   seccion,
   fechaInicial,
   fechaFinal,
-  mes,
   dayNumbersByKey,
   mode,
   containerRef,
@@ -84,8 +82,8 @@ export function PlanillaPreview({
   const headerTextClass = isCompact ? "text-[10px]" : "text-xs";
   const headerPadding = isCompact ? "px-2 py-1" : "px-3 py-2";
   const innerHeaderGap = isCompact
-    ? "mt-1 grid-cols-5 gap-2 text-[10px] leading-tight"
-    : "mt-2 grid-cols-5 gap-3 text-[11px]";
+    ? "mt-1 grid-cols-4 gap-2 text-[10px] leading-tight"
+    : "mt-2 grid-cols-4 gap-3 text-[11px]";
   const cellPadding = isCompact ? "px-1 py-1" : "px-1.5 py-1";
   const timeCellPadding = isCompact ? "px-0.5 py-1" : "px-1 py-1";
 
@@ -126,9 +124,6 @@ export function PlanillaPreview({
           <div>
             <span className="font-semibold">FECHA FINAL:</span>{" "}
             {fechaFinal || "-"}
-          </div>
-          <div>
-            <span className="font-semibold">MES:</span> {mes || "-"}
           </div>
         </div>
       </div>

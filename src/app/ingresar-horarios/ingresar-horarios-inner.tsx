@@ -54,7 +54,6 @@ import type {
 } from "./types";
 import {
   DAY_ORDER,
-  MONTH_OPTIONS,
   LOCAL_DRAFT_VERSION,
   INITIAL_ROW_COUNT,
   COL_W_NUM,
@@ -106,7 +105,6 @@ export function IngresarHorariosInner() {
   const [seccion, setSeccion] = useState("Cajas");
   const [fechaInicial, setFechaInicial] = useState("");
   const [fechaFinal, setFechaFinal] = useState("");
-  const [mes, setMes] = useState("");
   const [sedesOptions, setSedesOptions] = useState<
     Array<{ id: string; name: string }>
   >([]);
@@ -385,7 +383,6 @@ export function IngresarHorariosInner() {
           setSeccion(draft.seccion);
           setFechaInicial(draft.fechaInicial);
           setFechaFinal(draft.fechaFinal);
-          setMes(draft.mes);
           setRows(draft.rows);
           setSyncLunesToRest(canSync && (draft.syncLunesToRest ?? false));
           lunesIndependenceRef.current = parseLunesIndependence(
@@ -478,7 +475,6 @@ export function IngresarHorariosInner() {
         seccion,
         fechaInicial,
         fechaFinal,
-        mes,
         rows,
         syncLunesToRest: lunesSyncActive,
         lunesIndependentByRow: serializeLunesIndependence(
@@ -500,7 +496,6 @@ export function IngresarHorariosInner() {
     fechaFinal,
     fechaInicial,
     lunesIndVersion,
-    mes,
     rows,
     sede,
     seccion,
@@ -569,7 +564,6 @@ export function IngresarHorariosInner() {
         setSeccion(f.seccion);
         setFechaInicial(isDuplicate ? "" : (f.fechaInicial ?? ""));
         setFechaFinal(isDuplicate ? "" : (f.fechaFinal ?? ""));
-        setMes(isDuplicate ? "" : (f.mes ?? ""));
         setRows(mergeLoadedPlanillaRows(f.rows ?? []));
         setLunesPresetChoiceByRow({});
         lunesIndependenceRef.current.clear();
@@ -925,7 +919,7 @@ export function IngresarHorariosInner() {
         seccion,
         fechaInicial,
         fechaFinal,
-        mes,
+        mes: "",
         rows: normalizeScheduleRowsForSave(rows),
       };
       const updatingId = editingPlanillaId;
@@ -963,7 +957,6 @@ export function IngresarHorariosInner() {
       );
       setFechaInicial("");
       setFechaFinal("");
-      setMes("");
       setSyncLunesToRest(false);
       lunesIndependenceRef.current.clear();
       setLunesIndVersion((n) => n + 1);
@@ -986,7 +979,6 @@ export function IngresarHorariosInner() {
     editingPlanillaId,
     fechaFinal,
     fechaInicial,
-    mes,
     router,
     rows,
     savingForm,
@@ -1135,14 +1127,14 @@ export function IngresarHorariosInner() {
       });
       const link = document.createElement("a");
       link.href = dataUrl;
-      link.download = `planilla-horarios-${sede || "sede"}-${mes || "mes"}.jpg`;
+      link.download = `planilla-horarios-${sede || "sede"}-${fechaInicial || "inicio"}-${fechaFinal || "fin"}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } finally {
       setExportingJpg(false);
     }
-  }, [mes, sede]);
+  }, [fechaFinal, fechaInicial, sede]);
 
   if (!ready) {
     return (
@@ -1209,7 +1201,6 @@ export function IngresarHorariosInner() {
             seccion={seccion}
             fechaInicial={fechaInicial}
             fechaFinal={fechaFinal}
-            mes={mes}
             dayNumbersByKey={dayNumbersByKey}
             mode="jpg"
           />
@@ -1368,7 +1359,7 @@ export function IngresarHorariosInner() {
             index={1}
             title="Configuracion"
             description="Sede, seccion y periodo"
-            isCompleted={Boolean(sede && fechaInicial && fechaFinal && mes)}
+            isCompleted={Boolean(sede && fechaInicial && fechaFinal)}
             isOpen={openSteps.config}
             onToggle={() => toggleStep("config")}
             summary={
@@ -1377,11 +1368,10 @@ export function IngresarHorariosInner() {
                 {fechaInicial && fechaFinal
                   ? ` · ${fechaInicial} → ${fechaFinal}`
                   : ""}
-                {mes ? ` · ${mes}` : ""}
               </span>
             }
           >
-            <div className="grid gap-3 md:grid-cols-5">
+            <div className="grid gap-3 md:grid-cols-4">
               <div className="block">
                 <label
                   htmlFor="ih-sede"
@@ -1447,27 +1437,6 @@ export function IngresarHorariosInner() {
                   onChange={(e) => setFechaFinal(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
                 />
-              </div>
-              <div className="block">
-                <label
-                  htmlFor="ih-mes"
-                  className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"
-                >
-                  Mes
-                </label>
-                <select
-                  id="ih-mes"
-                  value={mes}
-                  onChange={(e) => setMes(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                >
-                  <option value="">Selecciona mes</option>
-                  {MONTH_OPTIONS.map((month) => (
-                    <option key={month} value={month}>
-                      {month}
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
 
@@ -1735,7 +1704,6 @@ export function IngresarHorariosInner() {
             seccion={seccion}
             fechaInicial={fechaInicial}
             fechaFinal={fechaFinal}
-            mes={mes}
             dayNumbersByKey={dayNumbersByKey}
             mode="print"
           />
