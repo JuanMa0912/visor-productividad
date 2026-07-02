@@ -8,21 +8,34 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  BarChart3,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Download,
+  Loader2,
   LogOut,
   Search,
   Sparkles,
   X,
 } from "lucide-react";
+import {
+  buildLoginLogsExportFilename,
+  downloadLoginLogsCsv,
+  fetchAllLoginLogs,
+  getLoginLogDateRangeForShortcut,
+  LOGIN_LOG_DATE_SHORTCUTS,
+  type LoginLogDateShortcutId,
+  type LoginLogRow,
+} from "@/lib/admin/login-logs-utils";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { getPathLabel } from "@/lib/shared/path-labels";
 import { AppTopBar } from "@/components/portal/app-top-bar";
@@ -31,15 +44,6 @@ const APP_VERSION_LABEL = "UAID V4.0";
 const PAGE_SIZE = 15;
 const PRESENCE_REFRESH_MS = 20_000;
 const PRESENCE_ACTIVE_MAX_MS = 10 * 60_000;
-
-type LogRow = {
-  id: number;
-  logged_at: string;
-  ip: string | null;
-  user_agent: string | null;
-  user_id: string;
-  username: string;
-};
 
 type PresenceEntry = {
   lastActivityAt: string;
@@ -115,17 +119,20 @@ function buildPageList(current: number, totalPages: number): (number | "gap")[] 
 
 export default function AdminUsuariosAccesosPage() {
   const router = useRouter();
-  const [logs, setLogs] = useState<LogRow[]>([]);
+  const searchParams = useSearchParams();
+  const initialUserFilter = (searchParams.get("user") ?? "").trim();
+  const [logs, setLogs] = useState<LoginLogRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<SortKey>("logged_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [userInput, setUserInput] = useState("");
-  const [debouncedUser, setDebouncedUser] = useState("");
-  const skipUserDebouncePageReset = useRef(true);
+  const [userInput, setUserInput] = useState(initialUserFilter);
+  const [debouncedUser, setDebouncedUser] = useState(initialUserFilter);
+  const skipUserDebouncePageReset = useRef(!initialUserFilter);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [presenceByUserId, setPresenceByUserId] = useState<
     Record<string, PresenceEntry>
@@ -188,7 +195,7 @@ export default function AdminUsuariosAccesosPage() {
       if (!res.ok) {
         throw new Error("No se pudo cargar el registro de accesos.");
       }
-      const data = (await res.json()) as { logs: LogRow[]; total?: number };
+      const data = (await res.json()) as { logs: LoginLogRow[]; total?: number };
       setLogs(data.logs ?? []);
       setTotal(typeof data.total === "number" ? data.total : 0);
     } catch (err) {
@@ -276,6 +283,61 @@ export default function AdminUsuariosAccesosPage() {
     ) : (
       <ArrowDown className="ml-1 inline h-3.5 w-3.5 text-indigo-600" aria-hidden />
     );
+  };
+
+  const activeDateShortcut = useMemo((): LoginLogDateShortcutId | null => {
+    if (!dateFrom || !dateTo) return null;
+    for (const shortcut of LOGIN_LOG_DATE_SHORTCUTS) {
+      const range = getLoginLogDateRangeForShortcut(shortcut.id);
+      if (range.from === dateFrom && range.to === dateTo) {
+        return shortcut.id;
+      }
+    }
+    return null;
+  }, [dateFrom, dateTo]);
+
+  const applyDateShortcut = (shortcut: LoginLogDateShortcutId) => {
+    const range = getLoginLogDateRangeForShortcut(shortcut);
+    setDateFrom(range.from);
+    setDateTo(range.to);
+    setPage(1);
+  };
+
+  const handleExportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { rows, total, truncated } = await fetchAllLoginLogs({
+        sort: sortBy,
+        order,
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+        user: debouncedUser || undefined,
+      });
+      if (rows.length === 0) {
+        toast.message("No hay accesos para exportar con el filtro actual.");
+        return;
+      }
+      downloadLoginLogsCsv(
+        rows,
+        buildLoginLogsExportFilename({
+          from: dateFrom || undefined,
+          to: dateTo || undefined,
+          user: debouncedUser || undefined,
+        }),
+      );
+      toast.success(
+        truncated
+          ? `Exportados ${rows.length.toLocaleString("es-CO")} de ${total.toLocaleString("es-CO")} registros (límite de exportación).`
+          : `Exportados ${rows.length.toLocaleString("es-CO")} accesos.`,
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "No se pudo exportar el CSV.",
+      );
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -410,6 +472,19 @@ export default function AdminUsuariosAccesosPage() {
               <div className="flex flex-wrap gap-2 pb-0.5 lg:ml-auto">
                 <button
                   type="button"
+                  onClick={() => void handleExportCsv()}
+                  disabled={exporting || loading}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 text-xs font-semibold text-indigo-800 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {exporting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  Exportar CSV
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setDateFrom("");
                     setDateTo("");
@@ -424,6 +499,28 @@ export default function AdminUsuariosAccesosPage() {
                   Limpiar
                 </button>
               </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold text-slate-500">
+                Atajos:
+              </span>
+              {LOGIN_LOG_DATE_SHORTCUTS.map((shortcut) => {
+                const isActive = activeDateShortcut === shortcut.id;
+                return (
+                  <button
+                    key={shortcut.id}
+                    type="button"
+                    onClick={() => applyDateShortcut(shortcut.id)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                      isActive
+                        ? "border-indigo-300 bg-indigo-50 text-indigo-900"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    {shortcut.label}
+                  </button>
+                );
+              })}
             </div>
             {(dateFrom || dateTo || debouncedUser) && (
               <p className="mt-3 text-[11px] text-slate-500">
@@ -444,6 +541,10 @@ export default function AdminUsuariosAccesosPage() {
                 Historial de inicios de sesión
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
+                Cada fila es un login exitoso. La columna «En línea ahora» refleja
+                la sesión activa actual, no el momento del acceso.
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
                 {loading
                   ? "Cargando…"
                   : total === 0
@@ -495,15 +596,16 @@ export default function AdminUsuariosAccesosPage() {
                 Sin accesos registrados.
               </p>
             ) : (
-              <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     <th className="hidden w-12 px-4 py-3 sm:table-cell">#</th>
                     <th className="px-4 py-3">Usuario</th>
                     <th className="px-4 py-3">Fecha y hora</th>
                     <th className="hidden px-4 py-3 md:table-cell">Relativo</th>
-                    <th className="px-4 py-3">Tablero actual</th>
-                    <th className="hidden min-w-[200px] px-4 py-3 lg:table-cell">
+                    <th className="px-4 py-3">IP</th>
+                    <th className="px-4 py-3">En línea ahora</th>
+                    <th className="hidden min-w-[180px] px-4 py-3 lg:table-cell">
                       Navegador / dispositivo
                     </th>
                   </tr>
@@ -533,9 +635,25 @@ export default function AdminUsuariosAccesosPage() {
                           {n}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="font-semibold text-slate-900">
-                            {log.username}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <Link
+                              href={`/admin/usuarios/${log.user_id}/metricas`}
+                              className="inline-flex w-fit items-center gap-1 font-semibold text-indigo-700 transition hover:text-indigo-900 hover:underline"
+                              title="Ver métricas de actividad"
+                            >
+                              {log.username}
+                              <BarChart3
+                                className="h-3.5 w-3.5 shrink-0 opacity-70"
+                                aria-hidden
+                              />
+                            </Link>
+                            <Link
+                              href={`/admin/usuarios/accesos?user=${encodeURIComponent(log.username)}`}
+                              className="w-fit text-[11px] font-medium text-slate-500 transition hover:text-slate-700 hover:underline"
+                            >
+                              Filtrar accesos
+                            </Link>
+                          </div>
                         </td>
                         <td
                           suppressHydrationWarning
@@ -548,6 +666,17 @@ export default function AdminUsuariosAccesosPage() {
                           className="hidden whitespace-nowrap px-4 py-3 text-xs text-slate-500 md:table-cell"
                         >
                           {formatRelativeTime(log.logged_at)}
+                        </td>
+                        <td
+                          className="px-4 py-3"
+                          title={log.user_agent ?? "Sin User-Agent registrado"}
+                        >
+                          <span className="font-mono text-xs text-slate-600">
+                            {log.ip ?? "—"}
+                          </span>
+                          <span className="mt-1 block text-[11px] leading-snug text-slate-500 lg:hidden">
+                            {formatUserAgentLabel(log.user_agent)}
+                          </span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs">
                           {isOnline && presence ? (

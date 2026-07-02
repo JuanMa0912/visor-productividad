@@ -111,7 +111,9 @@ const normalizePortalSectionToken = (value?: string | null) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
-export const resolvePortalSectionId = (value?: string | null): PortalSectionId | null =>
+export const resolvePortalSectionId = (
+  value?: string | null,
+): PortalSectionId | null =>
   PORTAL_SECTION_ALIAS_MAP[normalizePortalSectionToken(value)] ?? null;
 
 export const resolvePortalSubsectionId = (

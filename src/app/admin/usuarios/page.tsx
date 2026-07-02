@@ -41,6 +41,7 @@ import {
   portalProfileUsesManualPermissions,
 } from "@/lib/shared/portal-profiles";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
+import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import {
   UserFormModal,
@@ -1315,9 +1316,12 @@ export default function AdminUsuariosPage() {
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <span className="font-semibold text-slate-900">
+                              <Link
+                                href={`/admin/usuarios/${log.user_id}/metricas`}
+                                className="font-semibold text-slate-900 transition hover:text-indigo-700 hover:underline"
+                              >
                                 {log.username}
-                              </span>
+                              </Link>
                               <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                 Login
                               </span>
@@ -1327,6 +1331,12 @@ export default function AdminUsuariosPage() {
                             </p>
                             <p className="mt-1 text-[11px] text-slate-400">
                               {log.ip ?? "Origen auditado desconocido"}
+                            </p>
+                            <p
+                              className="mt-0.5 text-[11px] text-slate-500"
+                              title={log.user_agent ?? undefined}
+                            >
+                              {formatUserAgentLabel(log.user_agent)}
                             </p>
                           </div>
                         </li>
