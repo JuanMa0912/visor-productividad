@@ -101,7 +101,7 @@ Codigo compartido sin UI de pagina.
 | Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario` |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/rotacion-dos`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
-| Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/[id]/metricas` |
+| Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/[id]/metricas` |
 | Otros | `/ExcelDian` (PascalCase historico de URL) |
 
 ### APIs
@@ -110,7 +110,7 @@ Codigo compartido sin UI de pagina.
 | --- | --- |
 | `auth/*` | login, logout, me, cambio de password y heartbeat |
 | `admin/users`, `admin/users/[id]`, `admin/users/[id]/metrics` | usuarios y metricas por usuario |
-| `admin/login-logs`, `admin/user-presence` | accesos y presencia |
+| `admin/login-logs`, `admin/user-presence`, `admin/uso-tableros` | accesos, presencia y uso de tableros |
 | `productivity` | productividad por linea con cache de archivo opcional |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por linea/sede |

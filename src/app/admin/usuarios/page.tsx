@@ -1366,13 +1366,19 @@ export default function AdminUsuariosPage() {
                     </p>
                   )}
                 </div>
-                <div className="border-t border-slate-100 p-4">
+                <div className="border-t border-slate-100 p-4 space-y-2">
                   <Link
                     href="/admin/usuarios/accesos"
                     className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
                   >
                     Ver registro completo
                     <span aria-hidden>→</span>
+                  </Link>
+                  <Link
+                    href="/admin/usuarios/uso-tableros"
+                    className="block text-sm font-medium text-violet-700 transition hover:text-violet-800 hover:underline"
+                  >
+                    Uso de tableros
                   </Link>
                 </div>
               </aside>

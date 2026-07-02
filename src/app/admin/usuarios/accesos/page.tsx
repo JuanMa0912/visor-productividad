@@ -29,6 +29,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  LayoutGrid,
   X,
 } from "lucide-react";
 import { BRANCH_LOCATIONS } from "@/lib/shared/constants";
@@ -506,6 +507,13 @@ export default function AdminUsuariosAccesosPage() {
                 >
                   Ver accesos por mes
                   <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+                <Link
+                  href="/admin/usuarios/uso-tableros"
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-violet-200/80 bg-linear-to-r from-violet-50 to-indigo-50/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-violet-800 shadow-sm transition hover:border-violet-300 hover:from-violet-100 hover:to-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40"
+                >
+                  <LayoutGrid className="h-4 w-4" aria-hidden />
+                  Uso de tableros
                 </Link>
               </div>
             </div>
