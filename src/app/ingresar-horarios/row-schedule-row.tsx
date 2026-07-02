@@ -46,6 +46,8 @@ export type RowScheduleRowProps = {
   onClearLunesPresetChoice: (rowIndex: number) => void;
   schedulePresets: readonly LunesSchedulePreset[];
   presetSelectColStyle: CSSProperties;
+  canRemoveRow: boolean;
+  onRemoveRow: (rowIndex: number) => void;
 };
 
 function rowScheduleRowPropsAreEqual(
@@ -66,7 +68,9 @@ function rowScheduleRowPropsAreEqual(
     prev.onApplyLunesPreset === next.onApplyLunesPreset &&
     prev.onClearLunesPresetChoice === next.onClearLunesPresetChoice &&
     prev.schedulePresets === next.schedulePresets &&
-    prev.presetSelectColStyle === next.presetSelectColStyle
+    prev.presetSelectColStyle === next.presetSelectColStyle &&
+    prev.canRemoveRow === next.canRemoveRow &&
+    prev.onRemoveRow === next.onRemoveRow
   );
 }
 
@@ -86,12 +90,27 @@ export const RowScheduleRow = memo(
     onClearLunesPresetChoice,
     schedulePresets,
     presetSelectColStyle,
+    canRemoveRow,
+    onRemoveRow,
   }: RowScheduleRowProps) => (
     <tr className="odd:bg-white even:bg-slate-50/40">
       <td
-        className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-0 z-10 bg-white px-1.5 py-0.5 align-top text-center text-[11px] leading-tight text-slate-600 shadow-[1px_0_0_0_rgb(203_213_225)] print:static print:bg-transparent print:shadow-none`}
+        className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-0 z-10 bg-white px-1 py-0.5 align-top text-center text-[11px] leading-tight text-slate-600 shadow-[1px_0_0_0_rgb(203_213_225)] print:static print:bg-transparent print:shadow-none`}
       >
-        {rowIndex + 1}
+        <div className="flex flex-col items-center justify-center gap-0.5">
+          <span>{rowIndex + 1}</span>
+          {canRemoveRow ? (
+            <button
+              type="button"
+              onClick={() => onRemoveRow(rowIndex)}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-rose-200 bg-rose-50 text-sm font-bold leading-none text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 print:hidden"
+              title={`Eliminar fila ${rowIndex + 1}`}
+              aria-label={`Eliminar fila ${rowIndex + 1}`}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
       </td>
       <td
         className={`${SCHEDULE_CELL_BORDER_CLASS} sticky left-11 z-10 bg-white align-top px-1.5 py-0.5 shadow-[1px_0_0_0_rgb(203_213_225)] print:static print:bg-transparent print:shadow-none`}

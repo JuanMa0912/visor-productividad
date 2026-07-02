@@ -73,6 +73,8 @@ import {
   listEmployeeNamesForSede,
   buildRowsFromEmployeeNames,
   rowScheduleHasContent,
+  reindexRowMapAfterRemoval,
+  reindexRowRecordAfterRemoval,
 } from "./schedule-utils";
 import {
   getCookieValue,
@@ -1002,50 +1004,42 @@ export function IngresarHorariosInner() {
     });
   }, []);
 
-  const handleRemoveLastRow = useCallback(() => {
+  const handleRemoveRow = useCallback((rowIndex: number) => {
     setRows((prev) => {
-      // Permitimos quitar hasta dejar solo 1 fila (incluso por debajo de las
-      // 16 iniciales) para planillas con pocos empleados.
       if (prev.length <= 1) return prev;
-      const lastIndex = prev.length - 1;
-      const last = prev[lastIndex];
-      const hasContent =
-        (last.nombre && last.nombre.trim()) ||
-        (last.firma && last.firma.trim()) ||
-        DAY_ORDER.some((d) => {
-          const day = last.days[d];
-          if (!day) return false;
-          return (
-            day.conDescanso ||
-            (day.he1 && day.he1.trim()) ||
-            (day.hs1 && day.hs1.trim()) ||
-            (day.he2 && day.he2.trim()) ||
-            (day.hs2 && day.hs2.trim())
-          );
-        });
+      const row = prev[rowIndex];
+      if (!row) return prev;
       if (
-        hasContent &&
+        rowScheduleHasContent(row) &&
         typeof window !== "undefined" &&
         !window.confirm(
-          `La fila ${lastIndex + 1} contiene datos. ¿Seguro que quieres eliminarla?`,
+          `La fila ${rowIndex + 1} contiene datos. ¿Seguro que quieres eliminarla?`,
         )
       ) {
         return prev;
       }
-      // Limpiar estado asociado al indice removido para que no quede
-      // referenciado al volver a agregar otra fila.
-      setLunesPresetChoiceByRow((choices) => {
-        if (!(lastIndex in choices)) return choices;
-        const next = { ...choices };
-        delete next[lastIndex];
-        return next;
+
+      setLunesPresetChoiceByRow((choices) =>
+        reindexRowRecordAfterRemoval(choices, rowIndex),
+      );
+      lunesIndependenceRef.current = reindexRowMapAfterRemoval(
+        lunesIndependenceRef.current,
+        rowIndex,
+      );
+      setEmployeeDuplicateError((err) => {
+        if (!err) return null;
+        if (err.rowIndex === rowIndex) return null;
+        if (err.rowIndex > rowIndex) {
+          return { ...err, rowIndex: err.rowIndex - 1 };
+        }
+        return err;
       });
-      lunesIndependenceRef.current.delete(lastIndex);
-      return prev.slice(0, lastIndex);
+
+      return prev.filter((_, index) => index !== rowIndex);
     });
   }, []);
 
-  const canRemoveLastRow = rows.length > 1;
+  const canRemoveRow = rows.length > 1;
 
   const handleClearDraft = useCallback(() => {
     if (!currentUsername) return;
@@ -1872,6 +1866,8 @@ export function IngresarHorariosInner() {
                   onClearLunesPresetChoice={clearLunesPresetChoiceForRow}
                   schedulePresets={lunesPresetDefinitions}
                   presetSelectColStyle={lunesPresetColumnStyle}
+                  canRemoveRow={canRemoveRow}
+                  onRemoveRow={handleRemoveRow}
                 />
               ))}
             </tbody>
@@ -1902,20 +1898,6 @@ export function IngresarHorariosInner() {
               className={`h-3.5 w-3.5 ${refreshingEmployees ? "animate-spin" : ""}`}
             />
             Actualizar empleados
-          </button>
-          <button
-            type="button"
-            onClick={handleRemoveLastRow}
-            disabled={!canRemoveLastRow}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-300 bg-rose-50 text-lg font-bold leading-none text-rose-700 transition-all hover:border-rose-400 hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:hover:border-slate-200 disabled:hover:bg-slate-50"
-            title={
-              canRemoveLastRow
-                ? `Quitar fila ${rows.length}`
-                : "Debe quedar al menos 1 fila"
-            }
-            aria-label="Quitar la ultima fila agregada"
-          >
-            −
           </button>
           <button
             type="button"

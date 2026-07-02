@@ -173,6 +173,32 @@ export const rowScheduleHasContent = (row: RowSchedule): boolean => {
   });
 };
 
+/** Reindexa mapas keyed por indice de fila tras eliminar una fila intermedia. */
+export const reindexRowMapAfterRemoval = <T>(
+  source: Map<number, T>,
+  removedIndex: number,
+): Map<number, T> => {
+  const next = new Map<number, T>();
+  for (const [idx, value] of source.entries()) {
+    if (idx === removedIndex) continue;
+    next.set(idx > removedIndex ? idx - 1 : idx, value);
+  }
+  return next;
+};
+
+export const reindexRowRecordAfterRemoval = <T>(
+  source: Record<number, T>,
+  removedIndex: number,
+): Record<number, T> => {
+  const next: Record<number, T> = {};
+  for (const [rawKey, value] of Object.entries(source)) {
+    const idx = Number(rawKey);
+    if (!Number.isFinite(idx) || idx === removedIndex) continue;
+    next[idx > removedIndex ? idx - 1 : idx] = value;
+  }
+  return next;
+};
+
 /**
  * Crea una fila por empleado de la sede. Si no hay empleados, conserva las
  * filas vacias iniciales para captura manual.
