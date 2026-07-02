@@ -485,21 +485,25 @@ export function UserFormModal({
                   {getPortalProfileLabel(formState.portalProfile)}
                 </SelectValue>
               </SelectTrigger>
-              <SelectContent className="max-h-80 w-[var(--radix-select-trigger-width)]">
+              <SelectContent
+                position="popper"
+                className="max-h-72 w-[var(--radix-select-trigger-width)]"
+              >
                 {PORTAL_PROFILE_OPTIONS.map((option) => (
                   <SelectItem
                     key={option.id}
                     value={option.id}
+                    textValue={option.label}
                     className="items-start py-2.5 pr-8"
                   >
-                    <span className="flex flex-col gap-0.5 text-left">
+                    <div className="flex flex-col gap-0.5 text-left">
                       <span className="font-semibold text-slate-900">
                         {option.label}
                       </span>
                       <span className="text-xs leading-snug font-normal text-slate-500">
                         {option.summary}
                       </span>
-                    </span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
