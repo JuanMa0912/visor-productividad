@@ -247,16 +247,27 @@ export function IngresarHorariosInner() {
         prev.map((p) => {
           if (p.key !== key) return p;
           if (field === "label") {
-            const def = DEFAULT_LUNES_SCHEDULE_PRESETS.find(
-              (d) => d.key === key,
-            );
-            // Para presets originales caemos al nombre por defecto si quedan
-            // vacios; para los creados conservamos el ultimo valor mostrado.
-            const label = raw.trim() || (def ? def.label : p.label);
-            return { ...p, label };
+            return { ...p, label: raw };
           }
           const t = normalizeScheduleTime(raw);
           return { ...p, [field]: t || p[field] };
+        }),
+      );
+    },
+    [],
+  );
+
+  /** Al salir del nombre: recorta espacios; si queda vacio, restaura default en originales. */
+  const finalizeLunesPresetLabel = useCallback(
+    (key: LunesSchedulePresetKey, raw: string) => {
+      setLunesPresetDefinitions((prev) =>
+        prev.map((p, idx) => {
+          if (p.key !== key) return p;
+          const trimmed = raw.trim();
+          if (trimmed) return { ...p, label: trimmed };
+          const def = DEFAULT_LUNES_SCHEDULE_PRESETS.find((d) => d.key === key);
+          if (def) return { ...p, label: def.label };
+          return { ...p, label: `Horario ${idx + 1}` };
         }),
       );
     },
@@ -1555,6 +1566,9 @@ export function IngresarHorariosInner() {
                                   "label",
                                   e.target.value,
                                 )
+                              }
+                              onBlur={(e) =>
+                                finalizeLunesPresetLabel(p.key, e.target.value)
                               }
                               className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-900"
                             />
