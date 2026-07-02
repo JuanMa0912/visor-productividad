@@ -14,6 +14,9 @@ type LoginLogContextResponse = {
     id: string;
     ip: string | null;
     startedAt: string;
+    lastPath: string | null;
+    lastActivityAt: string | null;
+    isActive: boolean;
   } | null;
   activityWindow: {
     endsAt: string | null;
@@ -23,6 +26,7 @@ type LoginLogContextResponse = {
     lastPath: string | null;
     firstObservedAt: string | null;
     lastObservedAt: string | null;
+    inferredFromSession?: boolean;
   };
 };
 
@@ -90,10 +94,20 @@ export function LoginLogDetailPanel({ logId }: { logId: number }) {
           <li>
             <span className="text-slate-500">Minutos activos:</span>{" "}
             <strong>{data.activityWindow.activeMinutes}</strong>
+            {data.activityWindow.inferredFromSession ? (
+              <span className="ml-1 text-xs text-slate-500">
+                (estimado desde sesión)
+              </span>
+            ) : null}
           </li>
           <li>
             <span className="text-slate-500">Pings:</span>{" "}
             {data.activityWindow.observationCount}
+            {data.activityWindow.inferredFromSession ? (
+              <span className="ml-1 text-xs text-slate-500">
+                (sin heartbeats aún)
+              </span>
+            ) : null}
           </li>
           <li>
             <span className="text-slate-500">Hasta:</span>{" "}
@@ -116,6 +130,12 @@ export function LoginLogDetailPanel({ logId }: { logId: number }) {
             <span className="text-slate-500">Último tablero:</span>{" "}
             {getPathLabel(data.activityWindow.lastPath)}
           </li>
+          {data.session?.isActive && data.session.lastPath ? (
+            <li>
+              <span className="text-slate-500">En línea ahora:</span>{" "}
+              {getPathLabel(data.session.lastPath)}
+            </li>
+          ) : null}
           {data.session ? (
             <li>
               <span className="text-slate-500">Sesión desde:</span>{" "}

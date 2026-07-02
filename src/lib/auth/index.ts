@@ -309,7 +309,8 @@ export const updateSessionLastPath = async (pathValue: string) => {
     await client.query(
       `
       UPDATE app_user_sessions
-      SET last_path = $2
+      SET last_path = $2,
+          last_activity_at = now()
       WHERE token_hash = $1 AND revoked_at IS NULL
       `,
       [tokenHash, safePath],
