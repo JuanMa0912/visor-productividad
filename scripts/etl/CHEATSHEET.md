@@ -25,13 +25,17 @@ SYNC="sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-lo
 | **Una tabla, rango fijo** | `$SYNC --only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24 --no-refresh --verify` |
 | Una tabla, un dia | `$SYNC --only ventas_cajas --date 2026-06-20` |
 | Una tabla, ultimos N dias | `$SYNC --only asistencia_horas --days 7` |
+| **Solo asistencia** (subir/corregir un rango) | `$SYNC --only asistencia_horas --desde 2026-06-01 --hasta 2026-06-30 --no-refresh --verify` |
 | Varias tablas a la vez | `$SYNC --only ventas_cajas,ventas_fruver --days 3` |
 | Rango fijo, todas las tablas | `$SYNC --desde 2026-06-01 --hasta 2026-06-24` |
 | Primera carga `margen_final` (historico) | `$SYNC --margen-full --no-refresh --verify` |
+| **Limpiar HUERFANAS** (el local perdio filas y GCP quedo con de mas) | `$SYNC --only asistencia_horas --desde 2026-06-01 --hasta 2026-06-30 --replace --no-refresh --verify` |
 | **Probar sin escribir** (solo cuenta) | agrega `--dry-run` a cualquiera |
 
 Flags utiles: `--dry-run` (no escribe), `--verify` (fecha max por tabla),
-`--no-refresh` (no refresca matview de rotacion), `--help`.
+`--no-refresh` (no refresca matview de rotacion), `--replace` (reemplaza las fechas
+presentes en el local en vez de upsert; limpia huerfanas cuando el local perdio filas),
+`--help`.
 
 **Tablas validas** (allowlist; otra cosa aborta con error):
 `ventas_cajas` `ventas_fruver` `ventas_carnes` `ventas_asadero` `ventas_pollo_pesc`

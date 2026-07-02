@@ -9,8 +9,10 @@ Type=oneshot
 User=prodapp
 Group=prodapp
 WorkingDirectory=/home/prodapp/visor-productividad
-# Re-sube (upsert) los ultimos 7 dias para atrapar correcciones de la semana.
-ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 7 --verify
+# Reconcilia los ultimos 7 dias con --replace: reemplaza en GCP las fechas presentes en el local
+# (borra-esas-fechas + reinserta) para atrapar correcciones Y limpiar huerfanas que el upsert deja
+# cuando el local pierde filas. Seguro: no borra dias que el local no tenga (ver sync-local-to-gcp.sh).
+ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 7 --replace --verify
 StandardOutput=journal
 StandardError=journal
 # Endurecimientos. NO usar ProtectHome (deploy y .env.etl viven en /home/prodapp).

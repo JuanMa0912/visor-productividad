@@ -25,6 +25,11 @@
 #   --no-refresh  no refresca la matview de rotacion al final (NO afecta el rollup de margen).
 #   --no-roll     no refresca el rollup margen_final_roll (por defecto SI se refresca cuando
 #                 se sincronizo margen_final; el tablero de margenes lee de esa tabla).
+#   --replace     para las tablas seleccionadas, en vez de upsert REEMPLAZA en GCP las FECHAS
+#                 presentes en el local (borra-esas-fechas + reinserta). Usalo cuando el local
+#                 perdio filas (re-importacion/limpieza) y GCP quedo con HUERFANAS que el upsert
+#                 no borra. Seguro: no toca fechas que el local no tenga, y si el local esta
+#                 vacio en la ventana no borra nada.
 #   --verify      chequea la fecha maxima por tabla en GCP al terminar.
 #   --margen-full carga TODA margen_final local -> GCP (borra la tabla en GCP antes).
 #   -h|--help     ayuda.
@@ -56,6 +61,7 @@ RANGE_TO=""
 DRY_RUN=0
 NO_REFRESH=0
 NO_ROLL=0
+FORCE_REPLACE=0
 RUN_VERIFY=0
 MARGEN_FULL=0
 ONLY_TABLES=""
@@ -80,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run)   DRY_RUN=1; shift ;;
     --no-refresh) NO_REFRESH=1; shift ;;
     --no-roll)   NO_ROLL=1; shift ;;
+    --replace)   FORCE_REPLACE=1; shift ;;
     --verify)    RUN_VERIFY=1; shift ;;
     --margen-full) MARGEN_FULL=1; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -287,7 +294,7 @@ CANARY_EMPTY=()
 WARN=0
 
 process_table() {
-  local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt _ec mode
+  local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt _ec mode datecol
   where="$(build_where "$tbl")"
   cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl WHERE $where")"
   log "[$tbl] local tiene $cnt filas en [$DESDE..$HASTA]"
@@ -301,23 +308,32 @@ process_table() {
   cols="$(build_cols "$tbl")"
   [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
   mode="${MODE[$tbl]:-upsert}"
+  [[ "$FORCE_REPLACE" -eq 1 ]] && mode="replace"   # --replace: forzar borra-fechas + reinserta
 
   tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
   "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
 
-  # Modo "replace" (tablas sin clave natural, p.ej. margen_final): borra la ventana en GCP
-  # y reinserta. La guarda cnt==0 de arriba evita borrar si local esta vacio para la ventana.
+  # Modo "replace": reemplaza en GCP SOLO las fechas presentes en el local (via staging), no toda
+  # la ventana -> nunca borra dias que el local no tenga (seguro para corridas parciales/automaticas).
+  # La guarda cnt==0 de arriba ya evita tocar GCP si el local no tiene filas en la ventana.
   if [[ "$mode" == "replace" ]]; then
+    datecol="${DATECOL[$tbl]}"
+    [[ -n "$datecol" ]] || { log "[$tbl] ERROR: replace requiere DATECOL definido"; return 1; }
+    drop_stmt=""
+    for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
     "${GCP_PSQL[@]}" <<SQL
 \set ON_ERROR_STOP on
 BEGIN;
 SET statement_timeout = 0;
-DELETE FROM public.$tbl WHERE $where;
-\copy public.$tbl ($cols) FROM '$tmp' WITH (FORMAT csv)
+CREATE TEMP TABLE _stg (LIKE public.$tbl INCLUDING DEFAULTS) ON COMMIT DROP;
+$drop_stmt
+\copy _stg ($cols) FROM '$tmp' WITH (FORMAT csv)
+DELETE FROM public.$tbl t WHERE t.$datecol IN (SELECT DISTINCT $datecol FROM _stg);
+INSERT INTO public.$tbl ($cols) SELECT $cols FROM _stg;
 COMMIT;
 SQL
     rm -f "$tmp"
-    log "[$tbl] replace OK ($cnt filas)"
+    log "[$tbl] replace OK ($cnt filas; reemplazo por fechas presentes en local)"
     return 0
   fi
 
