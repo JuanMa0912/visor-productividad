@@ -128,6 +128,8 @@ export type FetchLoginLogsParams = {
   from?: string;
   to?: string;
   user?: string;
+  sede?: string;
+  profile?: string;
 };
 
 export const fetchAllLoginLogs = async (
@@ -147,6 +149,8 @@ export const fetchAllLoginLogs = async (
     if (params.from) search.set("from", params.from);
     if (params.to) search.set("to", params.to);
     if (params.user) search.set("user", params.user);
+    if (params.sede) search.set("sede", params.sede);
+    if (params.profile) search.set("profile", params.profile);
 
     const response = await fetch(`/api/admin/login-logs?${search.toString()}`);
     if (!response.ok) {
@@ -174,6 +178,8 @@ export const buildLoginLogsExportFilename = (params: {
   from?: string;
   to?: string;
   user?: string;
+  sede?: string;
+  profile?: string;
 }): string => {
   const stamp = formatYmdInBogota(new Date());
   const range =
@@ -187,5 +193,9 @@ export const buildLoginLogsExportFilename = (params: {
   const userPart = params.user
     ? `_usuario_${params.user.replace(/[^\w.-]+/g, "_").slice(0, 40)}`
     : "";
-  return `accesos_${range}${userPart}_${stamp}`;
+  const sedePart = params.sede
+    ? `_sede_${params.sede.replace(/[^\w.-]+/g, "_").slice(0, 40)}`
+    : "";
+  const profilePart = params.profile ? `_perfil_${params.profile}` : "";
+  return `accesos_${range}${userPart}${sedePart}${profilePart}_${stamp}`;
 };

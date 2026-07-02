@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, LayoutGrid, LogOut, Search, Sparkles } from "lucide-react";
+import { BarChart3, ChevronLeft, LayoutGrid, LogOut, Search, Sparkles } from "lucide-react";
+import { getPathLabel } from "@/lib/shared/path-labels";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 
 const APP_VERSION_LABEL = "UAID V4.0";
@@ -13,6 +14,16 @@ type MonthlyUserAccessRow = {
   user_id: string;
   username: string;
   days_count: number;
+  login_count: number;
+  active_minutes: number;
+  top_path: string | null;
+};
+
+const formatMinutes = (minutes: number) => {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours} h` : `${hours} h ${remainder} min`;
 };
 
 const getInitialMonthKey = () =>
@@ -67,7 +78,7 @@ export default function AdminUsuariosAccesosPorMesPage() {
     setMonthlyError(null);
     try {
       const params = new URLSearchParams({
-        summary: "monthly_days",
+        summary: "monthly_stats",
         month: monthKey,
       });
       if (debouncedUser) params.set("user", debouncedUser);
@@ -130,8 +141,8 @@ export default function AdminUsuariosAccesosPorMesPage() {
                 Usuarios / accesos por mes
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-                Cada usuario suma un día por fecha con ingreso dentro del mes
-                seleccionado (máximo 31 por usuario).
+                Días con login, cantidad de ingresos, minutos activos estimados
+                (heartbeats) y tablero más visitado en el mes.
               </p>
               <Link
                 href="/admin/usuarios/accesos"
@@ -218,12 +229,19 @@ export default function AdminUsuariosAccesosPorMesPage() {
                 Sin usuarios con accesos en el mes seleccionado.
               </p>
             ) : (
-              <table className="w-full min-w-[460px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[720px] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     <th className="w-14 px-4 py-3 sm:px-6">#</th>
                     <th className="px-4 py-3 sm:px-6">Usuario</th>
-                    <th className="px-4 py-3 text-right sm:px-6">Días del mes</th>
+                    <th className="px-4 py-3 text-right sm:px-6">Días</th>
+                    <th className="px-4 py-3 text-right sm:px-6">Logins</th>
+                    <th className="hidden px-4 py-3 text-right sm:table-cell sm:px-6">
+                      Minutos activos
+                    </th>
+                    <th className="hidden px-4 py-3 sm:table-cell sm:px-6">
+                      Tablero principal
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -232,11 +250,36 @@ export default function AdminUsuariosAccesosPorMesPage() {
                       <td className="px-4 py-3 text-xs tabular-nums text-slate-500 sm:px-6">
                         {idx + 1}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-slate-900 sm:px-6">
-                        {user.username}
+                      <td className="px-4 py-3 sm:px-6">
+                        <div className="flex flex-col gap-1">
+                          <Link
+                            href={`/admin/usuarios/${user.user_id}/metricas`}
+                            className="inline-flex w-fit items-center gap-1 font-semibold text-indigo-700 hover:underline"
+                          >
+                            {user.username}
+                            <BarChart3 className="h-3.5 w-3.5 opacity-70" />
+                          </Link>
+                          <Link
+                            href={`/admin/usuarios/accesos?user=${encodeURIComponent(user.username)}`}
+                            className="w-fit text-[11px] font-medium text-slate-500 hover:underline"
+                          >
+                            Ver logins del mes
+                          </Link>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-emerald-700 sm:px-6">
                         {Math.min(31, Math.max(0, user.days_count))}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800 sm:px-6">
+                        {user.login_count}
+                      </td>
+                      <td className="hidden px-4 py-3 text-right text-slate-700 sm:table-cell sm:px-6">
+                        {formatMinutes(user.active_minutes)}
+                      </td>
+                      <td className="hidden px-4 py-3 text-slate-700 sm:table-cell sm:px-6">
+                        {user.top_path
+                          ? getPathLabel(user.top_path)
+                          : "—"}
                       </td>
                     </tr>
                   ))}

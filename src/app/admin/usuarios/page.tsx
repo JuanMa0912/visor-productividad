@@ -772,12 +772,29 @@ export default function AdminUsuariosPage() {
   };
 
   const handleClearLogs = async () => {
-    if (!confirm("¿Deseas borrar todos los accesos recientes?")) return;
+    if (
+      !confirm(
+        "¿Borrar TODO el historial de accesos? Esta acción no se puede deshacer.",
+      )
+    ) {
+      return;
+    }
+    if (
+      !confirm(
+        "Confirma de nuevo: se eliminarán todos los registros de login del portal.",
+      )
+    ) {
+      return;
+    }
     const csrfToken = requireCsrfToken();
     if (!csrfToken) return;
     const response = await fetch("/api/admin/login-logs", {
       method: "DELETE",
-      headers: { "x-csrf-token": csrfToken },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({ confirmAll: true }),
     });
     if (handleAuthFailure(response.status)) {
       return;

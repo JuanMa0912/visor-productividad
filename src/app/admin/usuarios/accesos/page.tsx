@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  Fragment,
 } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -16,6 +17,7 @@ import {
   ArrowUpDown,
   BarChart3,
   CalendarRange,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -23,10 +25,17 @@ import {
   Download,
   Loader2,
   LogOut,
+  Radio,
   Search,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
+import { BRANCH_LOCATIONS } from "@/lib/shared/constants";
+import {
+  PORTAL_PROFILE_OPTIONS,
+  getPortalProfileLabel,
+} from "@/lib/shared/portal-profiles";
 import {
   buildLoginLogsExportFilename,
   downloadLoginLogsCsv,
@@ -39,11 +48,25 @@ import {
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { getPathLabel } from "@/lib/shared/path-labels";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { LoginLogDetailPanel } from "@/app/admin/usuarios/accesos/login-log-detail-panel";
 
 const APP_VERSION_LABEL = "UAID V4.0";
 const PAGE_SIZE = 15;
 const PRESENCE_REFRESH_MS = 20_000;
 const PRESENCE_ACTIVE_MAX_MS = 10 * 60_000;
+const SEDE_FILTER_OPTIONS = ["", ...BRANCH_LOCATIONS];
+
+type AccessKpis = {
+  loginsToday: number;
+  logins7d: number;
+  uniqueUsers7d: number;
+  uniqueUsers30d: number;
+  usersActive: number;
+  usersTotal: number;
+  usersInactive: number;
+  activeAccountRate: number;
+  onlineNow: number;
+};
 
 type PresenceEntry = {
   lastActivityAt: string;
@@ -128,11 +151,18 @@ export default function AdminUsuariosAccesosPage() {
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [sedeFilter, setSedeFilter] = useState("");
+  const [profileFilter, setProfileFilter] = useState("");
   const [userInput, setUserInput] = useState(initialUserFilter);
   const [debouncedUser, setDebouncedUser] = useState(initialUserFilter);
   const skipUserDebouncePageReset = useRef(!initialUserFilter);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [purgeConfirmAll, setPurgeConfirmAll] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState<number | null>(null);
+  const [kpis, setKpis] = useState<AccessKpis | null>(null);
+  const [kpisLoading, setKpisLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [presenceByUserId, setPresenceByUserId] = useState<
     Record<string, PresenceEntry>
@@ -190,6 +220,8 @@ export default function AdminUsuariosAccesosPage() {
       if (dateFrom) params.set("from", dateFrom);
       if (dateTo) params.set("to", dateTo);
       if (debouncedUser) params.set("user", debouncedUser);
+      if (sedeFilter) params.set("sede", sedeFilter);
+      if (profileFilter) params.set("profile", profileFilter);
       const res = await fetch(`/api/admin/login-logs?${params.toString()}`);
       if (handleAuthFailure(res.status)) return;
       if (!res.ok) {
@@ -205,7 +237,26 @@ export default function AdminUsuariosAccesosPage() {
     } finally {
       setLoading(false);
     }
-  }, [handleAuthFailure, page, sortBy, order, dateFrom, dateTo, debouncedUser]);
+  }, [handleAuthFailure, page, sortBy, order, dateFrom, dateTo, debouncedUser, sedeFilter, profileFilter]);
+
+  const fetchKpis = useCallback(async () => {
+    setKpisLoading(true);
+    try {
+      const response = await fetch("/api/admin/login-logs?summary=kpis");
+      if (handleAuthFailure(response.status)) return;
+      if (!response.ok) return;
+      const payload = (await response.json()) as AccessKpis;
+      setKpis(payload);
+    } catch {
+      setKpis(null);
+    } finally {
+      setKpisLoading(false);
+    }
+  }, [handleAuthFailure]);
+
+  useEffect(() => {
+    void fetchKpis();
+  }, [fetchKpis]);
 
   useEffect(() => {
     void fetchLogs();
@@ -313,6 +364,8 @@ export default function AdminUsuariosAccesosPage() {
         from: dateFrom || undefined,
         to: dateTo || undefined,
         user: debouncedUser || undefined,
+        sede: sedeFilter || undefined,
+        profile: profileFilter || undefined,
       });
       if (rows.length === 0) {
         toast.message("No hay accesos para exportar con el filtro actual.");
@@ -324,6 +377,8 @@ export default function AdminUsuariosAccesosPage() {
           from: dateFrom || undefined,
           to: dateTo || undefined,
           user: debouncedUser || undefined,
+          sede: sedeFilter || undefined,
+          profile: profileFilter || undefined,
         }),
       );
       toast.success(
@@ -337,6 +392,64 @@ export default function AdminUsuariosAccesosPage() {
       );
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleDeleteLogs = async () => {
+    const hasScope = Boolean(
+      dateFrom || dateTo || debouncedUser || sedeFilter || profileFilter,
+    );
+    if (!purgeConfirmAll && !hasScope) {
+      toast.error(
+        "Define un filtro (fechas, usuario, sede o perfil) o marca borrar todo el historial.",
+      );
+      return;
+    }
+    const message = purgeConfirmAll
+      ? "¿Borrar TODO el historial de accesos? Esta acción no se puede deshacer."
+      : "¿Borrar los accesos que coinciden con el filtro actual?";
+    if (!confirm(message)) return;
+
+    const csrfToken = getCookieValue("vp_csrf");
+    if (!csrfToken) {
+      toast.error("No se encontró token CSRF.");
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const response = await fetch("/api/admin/login-logs", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({
+          from: dateFrom || undefined,
+          to: dateTo || undefined,
+          user: debouncedUser || undefined,
+          sede: sedeFilter || undefined,
+          profile: profileFilter || undefined,
+          confirmAll: purgeConfirmAll,
+        }),
+      });
+      if (handleAuthFailure(response.status)) return;
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error ?? "No se pudieron borrar los accesos.");
+      }
+      const payload = (await response.json()) as { deleted?: number };
+      toast.success(
+        `Se eliminaron ${(payload.deleted ?? 0).toLocaleString("es-CO")} registro(s).`,
+      );
+      setExpandedLogId(null);
+      setPage(1);
+      void fetchLogs();
+      void fetchKpis();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al borrar.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -381,6 +494,13 @@ export default function AdminUsuariosAccesosPage() {
                   Volver a usuarios
                 </Link>
                 <Link
+                  href="/admin/usuarios/accesos/en-linea"
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 to-teal-50/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:from-emerald-100 hover:to-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+                >
+                  <Radio className="h-4 w-4" aria-hidden />
+                  Quién está en línea
+                </Link>
+                <Link
                   href="/admin/usuarios/accesos/pormes"
                   className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 to-emerald-100/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:from-emerald-100 hover:to-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
                 >
@@ -407,6 +527,50 @@ export default function AdminUsuariosAccesosPage() {
             {error}
           </div>
         )}
+
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              label: "Logins hoy",
+              value: kpis?.loginsToday,
+              hint: "Inicios de sesión exitosos",
+            },
+            {
+              label: "Logins 7 días",
+              value: kpis?.logins7d,
+              hint: `${kpis?.uniqueUsers7d ?? "—"} usuarios únicos`,
+            },
+            {
+              label: "En línea ahora",
+              value: kpis?.onlineNow,
+              hint: "Actividad últimos 10 min",
+            },
+            {
+              label: "Cuentas activas",
+              value: kpis
+                ? `${kpis.usersActive}/${kpis.usersTotal}`
+                : undefined,
+              hint: kpis ? `${kpis.activeAccountRate}% del total` : "—",
+            },
+          ].map((card) => (
+            <div
+              key={card.label}
+              className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                {card.label}
+              </p>
+              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
+                {kpisLoading
+                  ? "—"
+                  : typeof card.value === "number"
+                    ? card.value.toLocaleString("es-CO")
+                    : (card.value ?? "—")}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">{card.hint}</p>
+            </div>
+          ))}
+        </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.12)]">
           <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
@@ -469,6 +633,46 @@ export default function AdminUsuariosAccesosPage() {
                   />
                 </div>
               </label>
+              <label className="flex min-w-40 flex-1 flex-col gap-1.5">
+                <span className="text-[11px] font-semibold text-slate-500">
+                  Sede
+                </span>
+                <select
+                  value={sedeFilter}
+                  onChange={(e) => {
+                    setSedeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="">Todas</option>
+                  {SEDE_FILTER_OPTIONS.filter(Boolean).map((sede) => (
+                    <option key={sede} value={sede}>
+                      {sede}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex min-w-44 flex-1 flex-col gap-1.5">
+                <span className="text-[11px] font-semibold text-slate-500">
+                  Perfil
+                </span>
+                <select
+                  value={profileFilter}
+                  onChange={(e) => {
+                    setProfileFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <option value="">Todos</option>
+                  {PORTAL_PROFILE_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="flex flex-wrap gap-2 pb-0.5 lg:ml-auto">
                 <button
                   type="button"
@@ -488,6 +692,8 @@ export default function AdminUsuariosAccesosPage() {
                   onClick={() => {
                     setDateFrom("");
                     setDateTo("");
+                    setSedeFilter("");
+                    setProfileFilter("");
                     setUserInput("");
                     setDebouncedUser("");
                     skipUserDebouncePageReset.current = true;
@@ -522,13 +728,16 @@ export default function AdminUsuariosAccesosPage() {
                 );
               })}
             </div>
-            {(dateFrom || dateTo || debouncedUser) && (
+            {(dateFrom || dateTo || debouncedUser || sedeFilter || profileFilter) && (
               <p className="mt-3 text-[11px] text-slate-500">
                 Activo:{" "}
                 {[
                   dateFrom && `desde ${dateFrom.replace(/-/g, "/")}`,
                   dateTo && `hasta ${dateTo.replace(/-/g, "/")}`,
                   debouncedUser && `usuario “${debouncedUser}”`,
+                  sedeFilter && `sede “${sedeFilter}”`,
+                  profileFilter &&
+                    `perfil “${getPortalProfileLabel(profileFilter as Parameters<typeof getPortalProfileLabel>[0])}”`,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
@@ -600,6 +809,7 @@ export default function AdminUsuariosAccesosPage() {
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     <th className="hidden w-12 px-4 py-3 sm:table-cell">#</th>
+                    <th className="w-10 px-2 py-3" aria-label="Detalle" />
                     <th className="px-4 py-3">Usuario</th>
                     <th className="px-4 py-3">Fecha y hora</th>
                     <th className="hidden px-4 py-3 md:table-cell">Relativo</th>
@@ -627,12 +837,35 @@ export default function AdminUsuariosAccesosPage() {
                       ? getPathLabel(presence.lastPath)
                       : "—";
                     return (
+                      <Fragment key={log.id}>
                       <tr
-                        key={`${log.id}-${log.logged_at}`}
                         className="transition hover:bg-indigo-50/40"
                       >
                         <td className="hidden whitespace-nowrap px-4 py-3 text-xs tabular-nums text-slate-400 sm:table-cell">
                           {n}
+                        </td>
+                        <td className="px-2 py-3">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedLogId((current) =>
+                                current === log.id ? null : log.id,
+                              )
+                            }
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+                            aria-expanded={expandedLogId === log.id}
+                            aria-label={
+                              expandedLogId === log.id
+                                ? "Ocultar detalle de sesión"
+                                : "Ver detalle de sesión"
+                            }
+                          >
+                            <ChevronDown
+                              className={`h-4 w-4 transition ${
+                                expandedLogId === log.id ? "rotate-180" : ""
+                              }`}
+                            />
+                          </button>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-col gap-1">
@@ -706,6 +939,14 @@ export default function AdminUsuariosAccesosPage() {
                           </span>
                         </td>
                       </tr>
+                      {expandedLogId === log.id ? (
+                        <tr>
+                          <td colSpan={9} className="p-0">
+                            <LoginLogDetailPanel logId={log.id} />
+                          </td>
+                        </tr>
+                      ) : null}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -787,6 +1028,45 @@ export default function AdminUsuariosAccesosPage() {
               </nav>
             </div>
           ) : null}
+        </section>
+
+        <section className="rounded-2xl border border-rose-200/80 bg-rose-50/40 p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-base font-bold text-rose-950">
+                Borrar historial de accesos
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm text-rose-900/80">
+                Por defecto se eliminan solo los registros que coinciden con los
+                filtros activos. Marca la casilla inferior solo si necesitas
+                vaciar todo el historial.
+              </p>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-rose-950">
+                <input
+                  type="checkbox"
+                  checked={purgeConfirmAll}
+                  onChange={(e) => setPurgeConfirmAll(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-200"
+                />
+                <span>
+                  Borrar <strong>todo</strong> el historial (ignorar filtros)
+                </span>
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleDeleteLogs()}
+              disabled={deleting}
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:opacity-60"
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Borrar accesos
+            </button>
+          </div>
         </section>
 
         </div>
