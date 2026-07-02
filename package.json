@@ -33,6 +33,7 @@
     "@mui/material": "^7.3.7",
     "@mui/x-charts": "^8.26.0",
     "@notionhq/client": "^5.22.0",
+    "@radix-ui/react-dialog": "^1.1.18",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
     "animejs": "^4.2.2",

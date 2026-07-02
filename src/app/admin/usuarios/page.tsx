@@ -44,8 +44,8 @@ import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import {
   UserFormModal,
-  type UserFormState,
 } from "@/app/admin/usuarios/user-form-modal";
+import type { UserFormState } from "@/app/admin/usuarios/user-form-validation";
 
 const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [
@@ -591,19 +591,6 @@ export default function AdminUsuariosPage() {
     return () => window.clearInterval(tickId);
   }, [isAdmin]);
 
-  useEffect(() => {
-    if (!formOpen) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeForm();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [formOpen]);
-
   const openCreate = () => {
     setFormState(applyPortalProfileToForm(emptyForm, emptyForm.portalProfile));
     setFormOpen(true);
@@ -739,10 +726,11 @@ export default function AdminUsuariosPage() {
       }
 
       closeForm();
+      const savedUsername = formState.username.trim();
       toast.success(
         isUpdate
-          ? "Usuario actualizado correctamente."
-          : "Usuario creado correctamente.",
+          ? `Usuario «${savedUsername}» actualizado correctamente.`
+          : `Usuario «${savedUsername}» creado correctamente.`,
       );
       void loadData();
     } catch (err) {
