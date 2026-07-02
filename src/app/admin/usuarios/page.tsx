@@ -22,10 +22,8 @@ import {
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
-import { PasswordStrengthMeter } from "@/components/portal/password-strength-meter";
 import { useDomInputSync } from "@/hooks/use-dom-input-sync";
 import {
-  PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTION_LABEL_BY_ID,
   PORTAL_SECTIONS,
   resolvePortalSubsectionId,
@@ -44,6 +42,10 @@ import {
 } from "@/lib/shared/portal-profiles";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  UserFormModal,
+  type UserFormState,
+} from "@/app/admin/usuarios/user-form-modal";
 
 const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [
@@ -83,21 +85,6 @@ type LogRow = {
   user_agent: string | null;
   user_id: string;
   username: string;
-};
-
-type UserFormState = {
-  id?: string;
-  username: string;
-  portalProfile: PortalProfileId;
-  role: "admin" | "user";
-  sede: string;
-  allowedSedes: string[];
-  allowedLines: string[];
-  allowedDashboards: string[];
-  allowedSubdashboards: string[];
-  specialRoles: string[];
-  password: string;
-  is_active: boolean;
 };
 
 const emptyForm: UserFormState = {
@@ -1379,348 +1366,25 @@ export default function AdminUsuariosPage() {
         )}
       </div>
 
-      {formOpen && (
-        <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/45 p-2 backdrop-blur-[2px] sm:p-4"
-          onClick={closeForm}
-        >
-          <div className="flex min-h-full items-start justify-center py-2 sm:items-center sm:py-4">
-            <div
-              className="flex w-full max-w-xl max-h-[calc(100vh-1rem)] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_35px_90px_-45px_rgba(15,23,42,0.6)] sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="shrink-0 border-b border-slate-200/70 bg-linear-to-r from-slate-50 to-blue-50/45 px-4 py-4 sm:px-6 sm:py-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
-                  Administración
-                </p>
-                <h2 className="mt-1 text-lg font-semibold text-slate-900 sm:text-xl">
-                  {formState.id ? "Editar usuario" : "Nuevo usuario"}
-                </h2>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
-                <div className="space-y-4">
-                  <label className="block text-sm font-medium text-slate-700">
-                    Usuario
-                    <input
-                      value={formState.username}
-                      onChange={(e) =>
-                        setFormState((prev) => ({
-                          ...prev,
-                          username: e.target.value,
-                        }))
-                      }
-                      className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </label>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Perfil del portal
-                      <select
-                        value={formState.portalProfile}
-                        onChange={(e) =>
-                          setFormState((prev) =>
-                            applyPortalProfileToForm(
-                              prev,
-                              e.target.value as PortalProfileId,
-                            ),
-                          )
-                        }
-                        className="mt-1.5 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-                      >
-                        {PORTAL_PROFILE_OPTIONS.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      {!canEditManualPermissions ? (
-                        <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                          {selectedProfileSummary}
-                        </p>
-                      ) : null}
-                    </label>
-
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Sedes permitidas{" "}
-                      {!isAdminProfile
-                        ? portalProfileRequiresAssignedSedes(formState.portalProfile)
-                          ? "(obligatoria: 1 o más, sin «Todas»)"
-                          : "(obligatoria: 1 o más)"
-                        : "(solo perfiles no admin)"}
-                      <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
-                        {USER_SEDE_OPTIONS.map((sede) => {
-                          const checked = formState.allowedSedes.includes(sede);
-                          return (
-                            <label
-                              key={sede}
-                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={isAdminProfile}
-                                onChange={() =>
-                                  setFormState((prev) => {
-                                    if (checked) {
-                                      return {
-                                        ...prev,
-                                        allowedSedes: prev.allowedSedes.filter(
-                                          (id) => id !== sede,
-                                        ),
-                                      };
-                                    }
-                                    return {
-                                      ...prev,
-                                      allowedSedes: [
-                                        ...prev.allowedSedes,
-                                        sede,
-                                      ],
-                                    };
-                                  })
-                                }
-                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                              />
-                              <span className="wrap-break-words">{sede}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </label>
-
-                    <div className="space-y-2">
-                      <label
-                        className="block text-sm font-medium text-slate-700"
-                        htmlFor="admin-user-password"
-                      >
-                        Contraseña {formState.id ? "(opcional)" : "(mín 8)"}
-                      </label>
-                      <input
-                        id="admin-user-password"
-                        ref={passwordInputRef}
-                        type="password"
-                        value={formState.password}
-                        onChange={(e) =>
-                          setFormState((prev) => ({
-                            ...prev,
-                            password: e.target.value,
-                          }))
-                        }
-                        onInput={(e) =>
-                          setFormState((prev) => ({
-                            ...prev,
-                            password: (e.target as HTMLInputElement).value,
-                          }))
-                        }
-                        className="w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-all focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 vp-sync-autofill"
-                      />
-                      <PasswordStrengthMeter password={formState.password} />
-                    </div>
-
-                    {canEditManualPermissions ? (
-                      <>
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Secciones permitidas (vacio = todas)
-                      <div className="mt-1.5 grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
-                        {SECTION_OPTIONS.map((section) => {
-                          const checked = formState.allowedDashboards.includes(
-                            section.id,
-                          );
-                          return (
-                            <label
-                              key={section.id}
-                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setFormState((prev) => ({
-                                    ...prev,
-                                    allowedDashboards: checked
-                                      ? prev.allowedDashboards.filter(
-                                          (id) => id !== section.id,
-                                        )
-                                      : [...prev.allowedDashboards, section.id],
-                                  }))
-                                }
-                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                              />
-                              <span className="wrap-break-words">
-                                {section.label}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </label>
-
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Subtableros permitidos (vacio = todos)
-                      <div className="mt-1.5 space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm">
-                        {PORTAL_SECTIONS.map((section) => (
-                          <div key={section.id}>
-                            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                              {section.label}
-                            </p>
-                            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3">
-                              {PORTAL_SUBSECTIONS_BY_SECTION[section.id].map((subId) => {
-                                const checked = formState.allowedSubdashboards.includes(
-                                  subId,
-                                );
-                                return (
-                                  <label
-                                    key={subId}
-                                    className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() =>
-                                        setFormState((prev) => ({
-                                          ...prev,
-                                          allowedSubdashboards: checked
-                                            ? prev.allowedSubdashboards.filter(
-                                                (id) => id !== subId,
-                                              )
-                                            : [...prev.allowedSubdashboards, subId],
-                                        }))
-                                      }
-                                      className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                                    />
-                                    <span className="wrap-break-words">
-                                      {SUBSECTION_LABELS[subId] ?? subId}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </label>
-
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Roles especiales
-                      <p className="mt-1 text-[11px] font-normal leading-snug text-slate-500">
-                        El acceso a Rotacion lo controla el subtablero Rotacion;
-                        el rol Rotacion queda solo como compatibilidad. El rol
-                        ABCD permite editar umbrales de clasificacion en
-                        Rotacion y el historial S.inventario habilita ese
-                        historial.
-                      </p>
-                      <div className="mt-1.5 grid max-h-20 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
-                        {SPECIAL_ROLE_OPTIONS.map((role) => {
-                          const checked = formState.specialRoles.includes(
-                            role.id,
-                          );
-                          return (
-                            <label
-                              key={role.id}
-                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setFormState((prev) => ({
-                                    ...prev,
-                                    specialRoles: checked
-                                      ? prev.specialRoles.filter(
-                                          (id) => id !== role.id,
-                                        )
-                                      : [...prev.specialRoles, role.id],
-                                  }))
-                                }
-                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                              />
-                              <span className="wrap-break-words">
-                                {role.label}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </label>
-
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Lineas permitidas (vacío = todas)
-                      <div className="mt-1.5 grid max-h-32 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 shadow-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
-                        {DEFAULT_LINES.map((line) => {
-                          const checked = formState.allowedLines.includes(
-                            line.id,
-                          );
-                          return (
-                            <label
-                              key={line.id}
-                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setFormState((prev) => ({
-                                    ...prev,
-                                    allowedLines: checked
-                                      ? prev.allowedLines.filter(
-                                          (id) => id !== line.id,
-                                        )
-                                      : [...prev.allowedLines, line.id],
-                                  }))
-                                }
-                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-200 disabled:cursor-not-allowed"
-                              />
-                              <span className="wrap-break-words">
-                                {line.name}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </label>
-                      </>
-                    ) : null}
-                  </div>
-
-                  <label className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
-                    <input
-                      type="checkbox"
-                      checked={formState.is_active}
-                      onChange={(e) =>
-                        setFormState((prev) => ({
-                          ...prev,
-                          is_active: e.target.checked,
-                        }))
-                      }
-                      className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-200"
-                    />
-                    Cuenta activa
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200/70 bg-slate-50/60 px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
-                <button
-                  type="button"
-                  onClick={closeForm}
-                  className="rounded-full border border-slate-300/80 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 transition-colors hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="rounded-full border border-indigo-500/80 bg-indigo-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-[0_10px_24px_-14px_rgba(79,70,229,0.45)] transition-all hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {saving ? "Guardando..." : "Guardar"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <UserFormModal
+        open={formOpen}
+        formState={formState}
+        setFormState={setFormState}
+        onClose={closeForm}
+        onSave={handleSave}
+        saving={saving}
+        isAdminProfile={isAdminProfile}
+        canEditManualPermissions={canEditManualPermissions}
+        selectedProfileSummary={selectedProfileSummary}
+        sedeOptions={USER_SEDE_OPTIONS}
+        sectionOptions={SECTION_OPTIONS}
+        subsectionLabels={SUBSECTION_LABELS}
+        specialRoleOptions={SPECIAL_ROLE_OPTIONS}
+        passwordInputRef={passwordInputRef}
+        onPortalProfileChange={(portalProfile) =>
+          setFormState((prev) => applyPortalProfileToForm(prev, portalProfile))
+        }
+      />
       </div>
     </div>
   );
