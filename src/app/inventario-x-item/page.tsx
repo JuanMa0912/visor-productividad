@@ -1632,14 +1632,13 @@ export default function InventarioXItemPage() {
       ];
 
       const marginX = 10;
-      const pdfSedeColMm = 42;
-      const dataColCount = summaryRows.length * colsPerItem;
-      const usableWidthMm = pageWidth - marginX * 2 - pdfSedeColMm;
-      /** Ancho por columna numérica: si no cabe en una página, autotable reparte con salto horizontal. */
-      const pdfDataColMm = Math.max(8.5, usableWidthMm / Math.max(1, dataColCount));
-      const tableNaturalWidthMm = pdfSedeColMm + dataColCount * pdfDataColMm;
+      const pdfSedeColMm = 30;
+      const pdfInvColMm = 17;
+      const pdfDiColMm = 11;
+      const tableNaturalWidthMm =
+        pdfSedeColMm + summaryRows.length * (pdfInvColMm + pdfDiColMm);
       const pdfFontSize = Math.max(
-        5,
+        5.5,
         Math.min(7, 7.0 - summaryRows.length * 0.16),
       );
 
@@ -1653,8 +1652,15 @@ export default function InventarioXItemPage() {
           fontStyle: "bold",
         },
       };
-      for (let i = 0; i < dataColCount; i++) {
-        pdfColumnStyles[i + 1] = { cellWidth: pdfDataColMm, halign: "right" };
+      for (let i = 0; i < summaryRows.length; i += 1) {
+        pdfColumnStyles[1 + i * colsPerItem] = {
+          cellWidth: pdfInvColMm,
+          halign: "right",
+        };
+        pdfColumnStyles[2 + i * colsPerItem] = {
+          cellWidth: pdfDiColMm,
+          halign: "right",
+        };
       }
 
       autoTable(doc, {
@@ -1667,10 +1673,11 @@ export default function InventarioXItemPage() {
         margin: { left: marginX, right: marginX, top: 10, bottom: 12 },
         styles: {
           fontSize: pdfFontSize,
-          cellPadding: 1.5,
+          cellPadding: { top: 0.7, right: 1.1, bottom: 0.7, left: 1.1 },
           lineColor: [203, 213, 225],
           lineWidth: 0.1,
           valign: "middle",
+          minCellHeight: 5,
         },
         headStyles: {
           fillColor: [219, 234, 254],
@@ -1678,6 +1685,7 @@ export default function InventarioXItemPage() {
           fontStyle: "bold",
           halign: "center",
           valign: "middle",
+          cellPadding: { top: 1, right: 1.1, bottom: 1, left: 1.1 },
         },
         bodyStyles: {
           textColor: [51, 65, 85],
@@ -1696,6 +1704,23 @@ export default function InventarioXItemPage() {
         didParseCell: (data) => {
           const col = data.column.index;
           const isPdfDiColumn = col > 0 && (col - 1) % colsPerItem === 1;
+
+          if (data.section === "body" || data.section === "foot") {
+            data.cell.styles.cellPadding = {
+              top: 0.55,
+              right: 1,
+              bottom: 0.55,
+              left: 1,
+            };
+          }
+
+          if (
+            data.section === "head" &&
+            data.row.index === 0 &&
+            col > 0
+          ) {
+            data.cell.styles.fontSize = Math.max(5, pdfFontSize - 0.25);
+          }
 
           if (
             data.section === "head" &&
