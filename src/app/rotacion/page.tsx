@@ -806,16 +806,34 @@ export function RotacionPageInner() {
 
         const avMin = payload.meta?.availableRange?.min;
         const avMax = payload.meta?.availableRange?.max;
+        const periodoStd = payload.meta?.periodoStd;
         if (generation !== catalogLoadGenerationRef.current) return;
-        if (
-          hadEmptyDateRange &&
-          typeof avMin === "string" &&
-          avMin &&
-          typeof avMax === "string" &&
-          avMax
-        ) {
-          const rolling = getRollingMonthBackRange(avMin, avMax);
-          setDateRange(rolling);
+        if (hadEmptyDateRange) {
+          // Default: periodo del snapshot (matview/periodo_std) o mes hacia
+          // atras desde el ultimo dato. Nunca un solo dia si hay historico.
+          if (
+            periodoStd &&
+            periodoStd.rowCount > 0 &&
+            periodoStd.periodoStart &&
+            periodoStd.periodoEnd
+          ) {
+            setDateRange({
+              start: periodoStd.periodoStart,
+              end: periodoStd.periodoEnd,
+            });
+          } else if (
+            typeof avMin === "string" &&
+            avMin &&
+            typeof avMax === "string" &&
+            avMax
+          ) {
+            setDateRange(getRollingMonthBackRange(avMin, avMax));
+          } else if (
+            payload.meta?.effectiveRange?.start &&
+            payload.meta?.effectiveRange?.end
+          ) {
+            setDateRange(payload.meta.effectiveRange);
+          }
         } else if (
           payload.meta?.effectiveRange &&
           payload.meta.effectiveRange.start &&

@@ -1006,6 +1006,7 @@ const mapRotationCatalogRows = (
 export const getRotationFilterCatalog = async (
   startDateCompact: string,
   endDateCompact: string,
+  periodoStdMeta: RotacionPeriodoStdMeta | null = null,
 ): Promise<RotationFilterCatalog> => {
   const sourceTable = getRotacionSourceTable();
   const now = Date.now();
@@ -1015,11 +1016,43 @@ export const getRotationFilterCatalog = async (
     return cached.value;
   }
 
+  const startIso = compactToIsoDate(startDateCompact);
+  const endIso = compactToIsoDate(endDateCompact);
   const client = await (await getDbPool()).connect();
   try {
+    // Camino rapido: si el rango es el del snapshot periodo_std, leemos
+    // empresas/sedes de esa tabla (ya agregada) en vez de escanear la base.
+    const periodoMeta =
+      periodoStdMeta ?? (await getRotacionPeriodoStdMeta(client));
+    if (
+      startIso &&
+      endIso &&
+      matchesRotacionPeriodoStdRange(periodoMeta, startIso, endIso)
+    ) {
+      const periodoResult = await client.query(
+        `
+        SELECT DISTINCT
+          empresa,
+          sede_id,
+          sede_name
+        FROM rotacion_item_periodo_std
+        ORDER BY empresa ASC, sede_name ASC, sede_id ASC
+        `,
+      );
+      const value = mapRotationCatalogRows(
+        (periodoResult.rows ?? []) as RotationFilterDbRow[],
+      );
+      rotationFilterCatalogCache.set(sourceTable, {
+        rangeKey,
+        value,
+        expiresAt: now + ROTATION_META_CACHE_TTL_MS,
+      });
+      return value;
+    }
+
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
-    // Empresas/sedes con datos en el periodo solicitado (no el max global de BD).
+    // Rango custom: empresas/sedes con datos en el periodo solicitado.
     const catalogSql = `
       SELECT DISTINCT
         ${fields.empresaExpr} AS empresa,
@@ -2558,11 +2591,21 @@ export async function GET(request: Request) {
       parsePositiveNumber(url.searchParams.get("maxSalesValue")),
     );
 
-    const rawEndDate = isIsoDate(requestedEnd) ? requestedEnd! : maxAvailableDate;
-    const rollingDefault = getRollingMonthBackRange(
-      minAvailableDate,
-      maxAvailableDate,
+    // Default = periodo del snapshot (matview/periodo_std): ultimo dato + mes
+    // hacia atras (30/31). Asi la carga inicial entra al camino rapido ~1-3 s.
+    const periodoStdMeta = await withPoolClient((client) =>
+      getRotacionPeriodoStdMeta(client),
     );
+    const rollingDefault =
+      periodoStdMeta && periodoStdMeta.rowCount > 0
+        ? {
+            start: periodoStdMeta.periodoStart,
+            end: periodoStdMeta.periodoEnd,
+          }
+        : getRollingMonthBackRange(minAvailableDate, maxAvailableDate);
+    const rawEndDate = isIsoDate(requestedEnd)
+      ? requestedEnd!
+      : rollingDefault.end;
     const rawStartDate = isIsoDate(requestedStart)
       ? requestedStart!
       : rollingDefault.start;
@@ -2580,7 +2623,11 @@ export async function GET(request: Request) {
       catalogStartCompact &&
       catalogEndCompact &&
       catalogStartCompact <= catalogEndCompact
-        ? await getRotationFilterCatalog(catalogStartCompact, catalogEndCompact)
+        ? await getRotationFilterCatalog(
+            catalogStartCompact,
+            catalogEndCompact,
+            periodoStdMeta,
+          )
         : {
             companies: [] as string[],
             sedes: [] as RotationFilterCatalog["sedes"],
@@ -2741,6 +2788,7 @@ export async function GET(request: Request) {
               sourceTable: getRotacionSourceTable(),
               maxSalesValue,
               abcdConfig: scopedAbcdConfig,
+              periodoStd: periodoStdMeta,
             },
             message: "Selecciona una sede para consultar la rotacion.",
           },
@@ -2774,6 +2822,7 @@ export async function GET(request: Request) {
               sourceTable: getRotacionSourceTable(),
               maxSalesValue,
               abcdConfig: scopedAbcdConfig,
+              periodoStd: periodoStdMeta,
             },
             message: "Catalogo de lineas N1 actualizado.",
           },
@@ -2811,9 +2860,6 @@ export async function GET(request: Request) {
     // varias sedes.
     const precomputedFields = await withPoolClient((client) =>
       resolveRotacionBaseSqlFields(client),
-    );
-    const periodoStdMeta = await withPoolClient((client) =>
-      getRotacionPeriodoStdMeta(client),
     );
     const usePeriodoStd = matchesRotacionPeriodoStdRange(
       periodoStdMeta,

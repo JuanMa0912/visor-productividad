@@ -88,6 +88,13 @@ type RotationApiResponse = {
       bUntilPercent: number;
       cUntilPercent: number;
     };
+    /** Periodo pre-agregado del snapshot (camino rapido). */
+    periodoStd?: {
+      periodoStart: string;
+      periodoEnd: string;
+      refreshedAt: string;
+      rowCount: number;
+    } | null;
   };
   message?: string;
   error?: string;
