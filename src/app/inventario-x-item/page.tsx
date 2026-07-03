@@ -1574,27 +1574,20 @@ export default function InventarioXItemPage() {
         return `${trimmed.slice(0, Math.max(0, max - 1))}…`;
       };
 
-      /** Misma estructura que la matriz en pantalla: ítem + descripción, luego Inventario, Valor inv., Vendido y DI por referencia. */
+      /** PDF: solo Inventario y DI por referencia (sin valor ni vendido). */
+      const colsPerItem = 2;
       const head = [
         [
           { content: "Sede", rowSpan: 2, styles: { valign: "middle" as const } },
           ...summaryRows.map((row) => ({
             content: `${row.item}\n${truncatePdfDesc(row.descripcion)}`,
-            colSpan: 4,
+            colSpan: colsPerItem,
             styles: { halign: "center" as const, valign: "middle" as const },
           })),
         ],
-        summaryRows.flatMap((row) => [
+        summaryRows.flatMap(() => [
           {
             content: "Inventario",
-            styles: { halign: "center" as const, fontStyle: "normal" as const },
-          },
-          {
-            content: "Valor inv.",
-            styles: { halign: "center" as const, fontStyle: "normal" as const },
-          },
-          {
-            content: `Vendido${row.unidad ? ` (${row.unidad})` : ""}`,
             styles: { halign: "center" as const, fontStyle: "normal" as const },
           },
           {
@@ -1616,12 +1609,7 @@ export default function InventarioXItemPage() {
             soldUnits: 0,
             diDays: 0,
           };
-          return [
-            formatUnits(cell.inventoryUnits),
-            formatPrice(cell.inventoryValue),
-            formatUnits(cell.soldUnits),
-            formatDi(cell.diDays),
-          ];
+          return [formatUnits(cell.inventoryUnits), formatDi(cell.diDays)];
         }),
       ]);
 
@@ -1637,8 +1625,6 @@ export default function InventarioXItemPage() {
             };
             return [
               formatUnits(itemTotals.inventoryUnits),
-              formatPrice(itemTotals.inventoryValue),
-              formatUnits(itemTotals.soldUnits),
               formatDi(calculateMatrixItemTotalDiDays(itemTotals)),
             ];
           }),
@@ -1647,7 +1633,7 @@ export default function InventarioXItemPage() {
 
       const marginX = 10;
       const pdfSedeColMm = 42;
-      const dataColCount = summaryRows.length * 4;
+      const dataColCount = summaryRows.length * colsPerItem;
       const usableWidthMm = pageWidth - marginX * 2 - pdfSedeColMm;
       /** Ancho por columna numérica: si no cabe en una página, autotable reparte con salto horizontal. */
       const pdfDataColMm = Math.max(8.5, usableWidthMm / Math.max(1, dataColCount));
@@ -1709,7 +1695,7 @@ export default function InventarioXItemPage() {
         columnStyles: pdfColumnStyles,
         didParseCell: (data) => {
           const col = data.column.index;
-          const isPdfDiColumn = col > 0 && (col - 1) % 4 === 3;
+          const isPdfDiColumn = col > 0 && (col - 1) % colsPerItem === 1;
 
           if (
             data.section === "head" &&
