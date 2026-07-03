@@ -18,6 +18,12 @@
 -- filtros de categoria/sede -- PPT ya excluida --, mismo GROUP BY e indices).
 -- ============================================================================
 
+-- Cloud SQL trae statement_timeout (~5-15 min). El CREATE ... WITH DATA + indices
+-- sobre millones de filas lo supera y aborta (rollback). Lo desactivamos para esta
+-- sesion de mantenimiento.
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
