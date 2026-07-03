@@ -98,12 +98,38 @@ const marginBar = (pct: number) => (
 const formatStepLabel = (step: DrillPathStep | FactNavStep): string => {
   if (step.type === "factura" && "documento" in step && step.documento) {
     const doc = String(step.documento).trim();
-    return `Fact: ${/^\d+$/.test(doc) ? doc.padStart(6, "0") : doc}`;
+    const fact = `Fact: ${/^\d+$/.test(doc) ? doc.padStart(6, "0") : doc}`;
+    if (step.empresa && step.idCo) {
+      return `${fact} · ${sedeLabel(step.empresa, step.idCo)}`;
+    }
+    return fact;
   }
   return step.label;
 };
 
-const colsForDrillLevel = (level: number): ColDef[] => {
+const buildFacturaNavStep = (row: DrillRow): FactNavStep => {
+  if (row.drillStep?.type === "factura") {
+    return row.drillStep;
+  }
+  return {
+    type: "factura",
+    documento: row.documento ?? row.cod,
+    tipdoc: row.tipdoc ?? "",
+    label: row.label,
+    empresa: row.empresa,
+    idCo: row.idCo,
+  };
+};
+
+type ColsForDrillLevelOptions = {
+  showSede?: boolean;
+  showFecha?: boolean;
+};
+
+const colsForDrillLevel = (
+  level: number,
+  options: ColsForDrillLevelOptions = {},
+): ColDef[] => {
   const base: ColDef[] = [
     {
       key: "ventasNetas",
@@ -285,11 +311,31 @@ const colsForDrillLevel = (level: number): ColDef[] => {
     ];
   }
   if (level === 5) {
-    return [
-      { key: "label", label: "# Factura", drill: true, sortValue: (row) => row.label, render: (row) => row.label },
-      ...metricsTail.slice(1),
-      ...base,
-    ];
+    const cols: ColDef[] = [];
+    if (options.showSede) {
+      cols.push({
+        key: "sede",
+        label: "Sede",
+        sortValue: (row) => row.sede ?? "",
+        render: (row) => row.sede ?? "—",
+      });
+    }
+    if (options.showFecha) {
+      cols.push({
+        key: "fecha",
+        label: "Fecha",
+        sortValue: (row) => row.fecha ?? row.cod,
+        render: (row) => row.fecha ?? "—",
+      });
+    }
+    cols.push({
+      key: "label",
+      label: "# Factura",
+      drill: true,
+      sortValue: (row) => row.label,
+      render: (row) => row.label,
+    });
+    return [...cols, ...metricsTail.slice(1), ...base];
   }
   return [
     { key: "cod", label: "Cód.", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
@@ -316,8 +362,6 @@ export const MargenesBoard = ({
   /** null = todas las sedes del catálogo (admin / Todas). */
   allowedSedeKeys?: string[] | null;
 }) => {
-  const detalle = selectedSedes.length <= 3;
-
   const [filterOptions, setFilterOptions] = useState<MargenFiltersPayload | null>(null);
   const [empresas, setEmpresas] = useState<string[]>([]);
   const [sedes, setSedes] = useState<string[]>([]);
@@ -627,10 +671,34 @@ export const MargenesBoard = ({
   const kpi = mode === "sede" ? sedeKpi : payload?.kpi;
 
   const activeLevel = mode === "sede" ? -1 : (payload?.level ?? 0);
-  const columns =
-    mode === "sede"
-      ? colsForDrillLevel(-1)
-      : colsForDrillLevel(activeLevel);
+
+  const viewingInvoiceDetail =
+    (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
+    (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura");
+
+  const showSedeInFacturas = effectiveSedes.length > 1;
+
+  const columns = useMemo(() => {
+    if (mode === "sede") return colsForDrillLevel(-1);
+    if (viewingInvoiceDetail) return colsForDrillLevel(6);
+    const isFacturaList =
+      (mode === "drill" && activeLevel === 5) ||
+      (mode === "fact" && factTab === "nav" && activeLevel === 2) ||
+      (mode === "fact" && factTab === "list");
+    if (isFacturaList) {
+      return colsForDrillLevel(5, {
+        showSede: showSedeInFacturas,
+        showFecha: mode === "fact" && factTab === "list",
+      });
+    }
+    return colsForDrillLevel(activeLevel);
+  }, [
+    mode,
+    activeLevel,
+    factTab,
+    viewingInvoiceDetail,
+    showSedeInFacturas,
+  ]);
 
   const rawRows = useMemo(
     () => (mode === "sede" ? sedeRows : (payload?.rows ?? [])),
@@ -681,11 +749,6 @@ export const MargenesBoard = ({
     }
 
     if (mode === "drill") {
-      if (activeLevel === 5 && !detalle) return;
-      if (activeLevel === 4 && !detalle && row.drillStep?.type === "item") {
-        setDrillPath((current) => [...current, row.drillStep!]);
-        return;
-      }
       if (row.drillStep) {
         setDrillPath((current) => [...current, row.drillStep!]);
       }
@@ -701,34 +764,15 @@ export const MargenesBoard = ({
           { type: "tipo", id: row.cod, label: row.label },
         ]);
       } else if (activeLevel === 2) {
-        setFactPath((current) => [
-          ...current,
-          {
-            type: "factura",
-            documento: row.documento ?? row.cod,
-            tipdoc: row.tipdoc ?? "",
-            label: row.label,
-          },
-        ]);
+        setFactPath((current) => [...current, buildFacturaNavStep(row)]);
       }
       return;
     }
 
     if (row.documento) {
-      setFactPath([
-        {
-          type: "factura",
-          documento: row.documento,
-          tipdoc: row.tipdoc ?? "",
-          label: row.label,
-        },
-      ]);
+      setFactPath([buildFacturaNavStep(row)]);
     }
   };
-
-  const viewingInvoiceDetail =
-    (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
-    (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura");
 
   const showSearch =
     dataCommitted &&
@@ -1028,12 +1072,6 @@ export const MargenesBoard = ({
       {error ? (
         <p className="shrink-0 border-b border-[#2a2f47] bg-[#141720] px-4 py-2 text-xs text-[#f87171]">
           {error}
-        </p>
-      ) : null}
-
-      {!detalle && mode === "drill" ? (
-        <p className="shrink-0 border-b border-[#2a2f47] bg-[#141720] px-4 py-1.5 text-[11px] text-[#fbbf24]">
-          Más de 3 sedes: el detalle de líneas por factura está desactivado (como en el prototipo).
         </p>
       ) : null}
 

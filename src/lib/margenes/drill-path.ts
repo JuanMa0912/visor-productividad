@@ -1,5 +1,8 @@
 import type { MargenDataTable } from "@/lib/margenes/margen-data-source";
-import { isRollTable } from "@/lib/margenes/margen-data-source";
+import {
+  facturaSedeSqlFilters,
+  isRollTable,
+} from "@/lib/margenes/margen-data-source";
 
 export type DrillPathStep =
   | { type: "day"; fecha: string; label: string }
@@ -8,7 +11,14 @@ export type DrillPathStep =
   | { type: "linea1"; id: string; label: string }
   | { type: "linea2"; id: string; label: string }
   | { type: "item"; id: string; label: string }
-  | { type: "factura"; documento: string; tipdoc: string; label: string };
+  | {
+      type: "factura";
+      documento: string;
+      tipdoc: string;
+      label: string;
+      empresa?: string;
+      idCo?: string;
+    };
 
 export const DRILL_LEVEL_NAMES = [
   "Día",
@@ -85,6 +95,7 @@ export const drillPathSqlFilters = (
       `${documentoFc} = $${params.length - 1}`,
       `${tipdocFc} = $${params.length}`,
     );
+    parts.push(...facturaSedeSqlFilters(factura, params, table));
   }
 
   return parts;

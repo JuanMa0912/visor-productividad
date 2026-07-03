@@ -157,3 +157,31 @@ export const sedeDistinctKeySql = (table: MargenDataTable) =>
   isRollTable(table)
     ? `(empresa_norm, id_co_norm)`
     : `(LOWER(TRIM(COALESCE(empresa, ''))), LPAD(TRIM(COALESCE(id_co, '')), 3, '0'))`;
+
+export type FacturaSedeRef = {
+  empresa?: string;
+  idCo?: string;
+};
+
+/** Acota una factura a una sede cuando el número de documento se repite entre sedes. */
+export const facturaSedeSqlFilters = (
+  factura: FacturaSedeRef,
+  params: unknown[],
+  table: MargenDataTable,
+): string[] => {
+  const empresa = factura.empresa?.trim();
+  const idCo = factura.idCo?.trim();
+  if (!empresa || !idCo) return [];
+
+  params.push(empresa, idCo);
+  if (isRollTable(table)) {
+    return [
+      `empresa_norm = $${params.length - 1}`,
+      `id_co_norm = $${params.length}`,
+    ];
+  }
+  return [
+    `LOWER(TRIM(COALESCE(empresa, ''))) = $${params.length - 1}`,
+    `LPAD(TRIM(COALESCE(id_co, '')), 3, '0') = $${params.length}`,
+  ];
+};

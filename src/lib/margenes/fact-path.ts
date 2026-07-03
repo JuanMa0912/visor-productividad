@@ -1,12 +1,22 @@
 import type { DrillPathStep } from "@/lib/margenes/drill-path";
 
 import type { MargenDataTable } from "@/lib/margenes/margen-data-source";
-import { isRollTable } from "@/lib/margenes/margen-data-source";
+import {
+  facturaSedeSqlFilters,
+  isRollTable,
+} from "@/lib/margenes/margen-data-source";
 
 export type FactNavStep =
   | { type: "fecha"; fecha: string; label: string }
   | { type: "tipo"; id: string; label: string }
-  | { type: "factura"; documento: string; tipdoc: string; label: string };
+  | {
+      type: "factura";
+      documento: string;
+      tipdoc: string;
+      label: string;
+      empresa?: string;
+      idCo?: string;
+    };
 
 export const parseFactPath = (raw: string | null): FactNavStep[] => {
   if (!raw?.trim()) return [];
@@ -49,6 +59,7 @@ export const factPathSqlFilters = (
       `${documentoFc} = $${params.length - 1}`,
       `${tipdocFc} = $${params.length}`,
     );
+    parts.push(...facturaSedeSqlFilters(factura, params, table));
   }
   return parts;
 };
@@ -67,6 +78,9 @@ export const factPathToInvoiceKpiDrillPath = (
       documento: factura.documento,
       tipdoc: factura.tipdoc,
       label: factura.label,
+      ...(factura.empresa && factura.idCo
+        ? { empresa: factura.empresa, idCo: factura.idCo }
+        : {}),
     },
   ];
 };

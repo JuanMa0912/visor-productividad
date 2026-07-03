@@ -83,6 +83,10 @@ export type DrillRow = {
   linea?: string;
   documento?: string;
   tipdoc?: string;
+  sede?: string;
+  empresa?: string;
+  idCo?: string;
+  fecha?: string;
   drillable: boolean;
   drillStep?: DrillPathStep;
   isAcum?: boolean;
@@ -163,6 +167,34 @@ const buildFactWhere = (
   const base = buildMargenWhereForTable(filters, params, table);
   const fact = factPathSqlFilters(path, params, table);
   return [base, ...fact].join(" AND ");
+};
+
+const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
+  const documento = String(row.documento);
+  const tipdoc = String(row.tipdoc);
+  const empresa = String(row.empresa);
+  const idCo = String(row.id_co);
+  const metrics = mapMetrics(row);
+  return {
+    key: `${empresa}|${idCo}|${documento}|${tipdoc}`,
+    cod: documento,
+    label: documento,
+    documento,
+    tipdoc,
+    empresa,
+    idCo,
+    sede: sedeLabel(empresa, idCo),
+    drillable: true,
+    drillStep: {
+      type: "factura",
+      documento,
+      tipdoc,
+      label: documento,
+      empresa,
+      idCo,
+    },
+    ...metrics,
+  };
 };
 
 const mapInvoiceLineRows = (
@@ -595,11 +627,12 @@ export const queryDrillRows = async (
       SELECT
         ${documentoExpr(table)} AS documento,
         ${tipdocExpr(table)} AS tipdoc,
+        ${sedeSelectSql(table)},
         ${metricsSqlFor(table)}
       FROM ${table}
       WHERE ${where}
         AND ${documentoNotNull(table)}
-      GROUP BY 1, 2
+      GROUP BY 1, 2, 3, 4
       ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
       LIMIT 1000
       `,
@@ -608,26 +641,7 @@ export const queryDrillRows = async (
     return {
       level,
       levelName: "Factura",
-      rows: result.rows.map((row) => {
-        const documento = String(row.documento);
-        const tipdoc = String(row.tipdoc);
-        const metrics = mapMetrics(row);
-        return {
-          key: `${documento}|${tipdoc}`,
-          cod: documento,
-          label: documento,
-          documento,
-          tipdoc,
-          drillable: true,
-          drillStep: {
-            type: "factura",
-            documento,
-            tipdoc,
-            label: documento,
-          },
-          ...metrics,
-        };
-      }),
+      rows: result.rows.map((row) => mapFacturaBoardRow(row)),
     };
   }
 
@@ -770,11 +784,12 @@ export const queryFactNavRows = async (
       SELECT
         ${documentoExpr(table)} AS documento,
         ${tipdocExpr(table)} AS tipdoc,
+        ${sedeSelectSql(table)},
         ${metricsSqlFor(table)}
       FROM ${table}
       WHERE ${factWhere}
         AND ${documentoNotNull(table)}
-      GROUP BY 1, 2
+      GROUP BY 1, 2, 3, 4
       ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
       LIMIT 1000
       `,
@@ -783,20 +798,7 @@ export const queryFactNavRows = async (
     return {
       level,
       levelName: "Factura",
-      rows: result.rows.map((row) => {
-        const documento = String(row.documento);
-        const tipdoc = String(row.tipdoc);
-        const metrics = mapMetrics(row);
-        return {
-          key: `${documento}|${tipdoc}`,
-          cod: documento,
-          label: documento,
-          documento,
-          tipdoc,
-          drillable: true,
-          ...metrics,
-        };
-      }),
+      rows: result.rows.map((row) => mapFacturaBoardRow(row)),
     };
   }
 
@@ -838,19 +840,11 @@ export const queryFactListRows = async (
     params,
   );
   return result.rows.map((row) => {
-    const documento = String(row.documento);
-    const tipdoc = String(row.tipdoc);
-    const metrics = mapMetrics(row);
+    const mapped = mapFacturaBoardRow(row);
     return {
-      key: `${documento}|${tipdoc}`,
-      cod: documento,
-      label: documento,
-      documento,
-      tipdoc,
+      ...mapped,
+      key: `${mapped.empresa}|${mapped.idCo}|${mapped.documento}|${mapped.tipdoc}|${String(row.fecha_dcto)}`,
       fecha: formatDayLabel(String(row.fecha_dcto)),
-      sede: sedeLabel(String(row.empresa), String(row.id_co)),
-      drillable: true,
-      ...metrics,
     };
   });
 };

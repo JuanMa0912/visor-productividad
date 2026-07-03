@@ -34,6 +34,20 @@ describe("drillPathForInvoiceDetail", () => {
     ]);
     assert.equal(isInvoiceDetailDrillPath(path), true);
   });
+
+  it("conserva sede al ver detalle de factura multi-sede", () => {
+    const path = [
+      {
+        type: "factura" as const,
+        documento: "12345",
+        tipdoc: "01",
+        label: "12345",
+        empresa: "mercamio",
+        idCo: "003",
+      },
+    ];
+    assert.deepEqual(drillPathForInvoiceDetail(path), path);
+  });
 });
 
 describe("factPathToInvoiceKpiDrillPath", () => {
