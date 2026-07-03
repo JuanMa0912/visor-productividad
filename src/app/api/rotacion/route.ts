@@ -1010,43 +1010,38 @@ export const getRotationFilterCatalog = async (
   const sourceTable = getRotacionSourceTable();
   const now = Date.now();
   const rangeKey = `${startDateCompact}|${endDateCompact}`;
-  const snapKey = `snap|${endDateCompact}`;
   const cached = rotationFilterCatalogCache.get(sourceTable);
-  if (cached && cached.expiresAt > now) {
-    if (cached.rangeKey === rangeKey || cached.rangeKey === snapKey) {
-      return cached.value;
-    }
+  if (cached && cached.expiresAt > now && cached.rangeKey === rangeKey) {
+    return cached.value;
   }
 
   const client = await (await getDbPool()).connect();
   try {
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
-    // Catalogo de filtros: solo escaneamos la ULTIMA fecha del rango. Las
-    // empresas/sedes son estables dia a dia, asi que escanear semanas/meses
-    // solo para sacar combinaciones unicas no aporta nada y costaba ~13s.
-    // (Antes habia un fallback try/catch que primero intentaba el rango y
-    // solo si timeoutaba caia al snap; ahora vamos directo al snap.)
-    const snapSql = `
+    // Empresas/sedes con datos en el periodo solicitado (no el max global de BD).
+    const catalogSql = `
       SELECT DISTINCT
         ${fields.empresaExpr} AS empresa,
         ${fields.sedeIdExpr} AS sede_id,
         ${fields.sedeNameExpr} AS sede_name
       FROM ${getRotacionSourceTable()}
-      WHERE ${buildCompactDateEqualsSql(dateColumn)}
+      WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
     `;
 
-    const result = await client.query(snapSql, [endDateCompact]);
-    const cacheKey = snapKey;
+    const result = await client.query(catalogSql, [
+      startDateCompact,
+      endDateCompact,
+    ]);
 
     const value = mapRotationCatalogRows(
       (result.rows ?? []) as RotationFilterDbRow[],
     );
 
     rotationFilterCatalogCache.set(sourceTable, {
-      rangeKey: cacheKey,
+      rangeKey,
       value,
       expiresAt: now + ROTATION_META_CACHE_TTL_MS,
     });
@@ -2579,21 +2574,21 @@ export async function GET(request: Request) {
       maxDate: maxAvailableDate,
     });
     const boundedRange = limitDateRangeWindow(effectiveRange);
-    const filterCatalogMaxDate = bounds?.max_date ?? isoToCompactDate(maxAvailableDate);
-    const catalogRange = computeRotationCatalogCompactRange(
-      bounds?.min_date,
-      filterCatalogMaxDate,
-    );
-    const fullCatalog = catalogRange
-      ? await getRotationFilterCatalog(catalogRange.start, catalogRange.end)
-      : {
-          companies: [] as string[],
-          sedes: [] as RotationFilterCatalog["sedes"],
-          lineasN1: [] as string[],
-          lineasN1Nombres: {} as Record<string, string>,
-          categorias: [] as RotationCategoriaOption[],
-          lineasN1PorCategoria: {} as Record<string, string[]>,
-        };
+    const catalogStartCompact = isoToCompactDate(boundedRange.start);
+    const catalogEndCompact = isoToCompactDate(boundedRange.end);
+    const fullCatalog =
+      catalogStartCompact &&
+      catalogEndCompact &&
+      catalogStartCompact <= catalogEndCompact
+        ? await getRotationFilterCatalog(catalogStartCompact, catalogEndCompact)
+        : {
+            companies: [] as string[],
+            sedes: [] as RotationFilterCatalog["sedes"],
+            lineasN1: [] as string[],
+            lineasN1Nombres: {} as Record<string, string>,
+            categorias: [] as RotationCategoriaOption[],
+            lineasN1PorCategoria: {} as Record<string, string[]>,
+          };
     const sedeAccess = resolveVisibleSedes(session.user, fullCatalog);
 
     if (!sedeAccess.authorized) {

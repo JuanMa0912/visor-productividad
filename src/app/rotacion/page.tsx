@@ -194,7 +194,6 @@ export function RotacionPageInner() {
   const { user: authUser, status: authStatus } = useRequireAuth();
   const { isAdmin, hasSection, hasSubsection } = usePermissions();
   const specialRoles = authUser?.specialRoles ?? null;
-  const userAllowedSedes = authUser?.allowedSedes ?? null;
   const [ready, setReady] = useState(false);
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
@@ -1294,46 +1293,28 @@ export function RotacionPageInner() {
     });
   }, [sedeOptions]);
 
-  /**
-   * Usuario "scoped": tiene un `allowedSedes` concreto en su perfil (no vacio
-   * y no incluye "Todas"). Esos perfiles deben arrancar con sus sedes
-   * pre-cargadas; obligarlos a marcarlas a mano cada vez es regresivo.
-   */
-  const isUserScopedToSpecificSedes = useMemo(() => {
-    if (!Array.isArray(userAllowedSedes)) return false;
-    const normalized = userAllowedSedes
-      .map((value) => (typeof value === "string" ? value.trim() : ""))
-      .filter((value) => value.length > 0)
-      .map((value) => value.toLowerCase());
-    if (normalized.length === 0) return false;
-    if (normalized.includes("todas")) return false;
-    return true;
-  }, [userAllowedSedes]);
+  useEffect(() => {
+    const validCompanies = new Set(companyOptions.map((option) => option.value));
+    setSelectedCompanies((current) => {
+      const next = current.filter((value) => validCompanies.has(value));
+      if (
+        next.length === current.length &&
+        next.every((value, idx) => value === current[idx])
+      ) {
+        return current;
+      }
+      return next;
+    });
+  }, [companyOptions]);
 
   useEffect(() => {
     if (selectedSedes.length > 0) return;
     if (isLoadingLineCatalog) return;
-    if (allSedeOptions.length === 0) return;
-    /** Auto-seleccionar todas las sedes visibles cuando:
-     *  (a) solo hay 1 sede en el catalogo,
-     *  (b) el usuario no es admin (el catalogo ya viene scopeado por el backend), o
-     *  (c) el usuario tiene un `allowedSedes` concreto en su perfil. */
-    const shouldAutoSelectAll =
-      allSedeOptions.length === 1 ||
-      !isAdmin ||
-      isUserScopedToSpecificSedes;
-    if (!shouldAutoSelectAll) return;
-    setSelectedSedes(allSedeOptions.map((option) => option.value));
-    setSelectedCompanies(
-      Array.from(new Set(allSedeOptions.map((option) => option.empresa))),
-    );
-  }, [
-    allSedeOptions,
-    isAdmin,
-    isLoadingLineCatalog,
-    isUserScopedToSpecificSedes,
-    selectedSedes.length,
-  ]);
+    if (allSedeOptions.length !== 1) return;
+    /** Solo autoseleccionar cuando el usuario tiene una unica sede en el catalogo. */
+    setSelectedSedes([allSedeOptions[0]!.value]);
+    setSelectedCompanies([allSedeOptions[0]!.empresa]);
+  }, [allSedeOptions, isLoadingLineCatalog, selectedSedes.length]);
 
   useEffect(() => {
     if (!ready || isLoadingLineCatalog) return;
@@ -1387,7 +1368,6 @@ export function RotacionPageInner() {
       allSedeOptions: allSedeOptionsForPrefetch,
       selectedSedeValues: selectedSedes,
       lastSedeStorageKey,
-      isUserScopedToSpecificSedes,
     });
     if (prefetchSedeValues.length === 0) return;
 
@@ -1454,7 +1434,6 @@ export function RotacionPageInner() {
     filterCatalog.sedes,
     selectedSedes,
     lastSedeStorageKey,
-    isUserScopedToSpecificSedes,
     apiBasePath,
   ]);
 

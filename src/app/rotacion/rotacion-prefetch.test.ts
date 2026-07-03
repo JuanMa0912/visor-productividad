@@ -36,12 +36,11 @@ test("resolveRotacionPrefetchSedeValues prioriza seleccion actual", () => {
     allSedeOptions: [FLORESTA, FLORALIA],
     selectedSedeValues: [FLORALIA.value],
     lastSedeStorageKey: "rotacion.lastSedeSelection",
-    isUserScopedToSpecificSedes: false,
   });
   assert.deepEqual(values, [FLORALIA.value]);
 });
 
-test("resolveRotacionPrefetchSedeValues usa sede de perfil si no hay seleccion", () => {
+test("resolveRotacionPrefetchSedeValues no precarga con varias sedes sin seleccion", () => {
   const values = resolveRotacionPrefetchSedeValues({
     authUser: {
       id: "u1",
@@ -52,12 +51,11 @@ test("resolveRotacionPrefetchSedeValues usa sede de perfil si no hay seleccion",
     allSedeOptions: [FLORESTA, FLORALIA],
     selectedSedeValues: [],
     lastSedeStorageKey: "rotacion.lastSedeSelection",
-    isUserScopedToSpecificSedes: false,
   });
-  assert.deepEqual(values, [FLORESTA.value]);
+  assert.deepEqual(values, []);
 });
 
-test("resolveRotacionPrefetchSedeValues autoselecciona sede unica para usuario no admin", () => {
+test("resolveRotacionPrefetchSedeValues precarga sede unica en catalogo", () => {
   const values = resolveRotacionPrefetchSedeValues({
     authUser: {
       id: "u1",
@@ -68,7 +66,6 @@ test("resolveRotacionPrefetchSedeValues autoselecciona sede unica para usuario n
     allSedeOptions: [FLORESTA],
     selectedSedeValues: [],
     lastSedeStorageKey: "rotacion.lastSedeSelection",
-    isUserScopedToSpecificSedes: false,
   });
   assert.deepEqual(values, [FLORESTA.value]);
 });

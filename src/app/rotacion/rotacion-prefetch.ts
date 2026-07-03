@@ -93,51 +93,29 @@ export const readUserLastSedeSelection = (
 
 /**
  * Sedes cuyas filas conviene precargar antes de que el usuario espere la tabla.
- * Prioridad: seleccion actual → localStorage por usuario → perfil → autoseleccion.
+ * Con mas de una sede en catalogo solo precarga seleccion explicita o ultima
+ * eleccion guardada; nunca todas las sedes visibles.
  */
 export const resolveRotacionPrefetchSedeValues = (input: {
   authUser: Pick<AuthUser, "id" | "role" | "sede" | "allowedSedes"> | null;
   allSedeOptions: RotacionSedeOption[];
   selectedSedeValues: string[];
   lastSedeStorageKey: string;
-  isUserScopedToSpecificSedes: boolean;
 }): string[] => {
   const valid = new Set(input.allSedeOptions.map((option) => option.value));
   const selected = input.selectedSedeValues.filter((value) => valid.has(value));
   if (selected.length > 0) return selected;
 
-  const fromStorage = readUserLastSedeSelection(
-    input.lastSedeStorageKey,
-    input.authUser?.id,
-    valid,
-  );
-  if (fromStorage.length > 0) return fromStorage;
-
-  if (input.authUser?.sede) {
-    const match = input.allSedeOptions.find((option) =>
-      sedeOptionMatchesUserHint(input.authUser!.sede!, option),
+  if (input.allSedeOptions.length > 1) {
+    return readUserLastSedeSelection(
+      input.lastSedeStorageKey,
+      input.authUser?.id,
+      valid,
     );
-    if (match) return [match.value];
   }
 
-  const allowed =
-    input.authUser?.allowedSedes
-      ?.map((value) => value.trim())
-      .filter((value) => value.length > 0 && value.toLowerCase() !== "todas") ??
-    [];
-  if (allowed.length === 1) {
-    const match = input.allSedeOptions.find((option) =>
-      sedeOptionMatchesUserHint(allowed[0]!, option),
-    );
-    if (match) return [match.value];
-  }
-
-  const shouldAutoSelectAll =
-    input.allSedeOptions.length === 1 ||
-    input.authUser?.role !== "admin" ||
-    input.isUserScopedToSpecificSedes;
-  if (shouldAutoSelectAll && input.allSedeOptions.length > 0) {
-    return input.allSedeOptions.map((option) => option.value);
+  if (input.allSedeOptions.length === 1) {
+    return [input.allSedeOptions[0]!.value];
   }
 
   return [];
