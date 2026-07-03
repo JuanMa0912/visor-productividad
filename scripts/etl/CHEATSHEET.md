@@ -25,12 +25,14 @@ SYNC="sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-lo
 | **Una tabla, rango fijo** | `$SYNC --only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24 --no-refresh --verify` |
 | Una tabla, un dia | `$SYNC --only ventas_cajas --date 2026-06-20` |
 | Una tabla, ultimos N dias | `$SYNC --only asistencia_horas --days 7` |
-| **Solo asistencia** (subir/corregir un rango) | `$SYNC --only asistencia_horas --desde 2026-06-01 --hasta 2026-06-30 --no-refresh --verify` |
+| **Solo asistencia** (subir/corregir un rango; auto borra+inserta) | `$SYNC --only asistencia_horas --desde 2026-07-01 --hasta 2026-07-02 --no-refresh --verify` |
 | Varias tablas a la vez | `$SYNC --only ventas_cajas,ventas_fruver --days 3` |
 | Rango fijo, todas las tablas | `$SYNC --desde 2026-06-01 --hasta 2026-06-24` |
 | Primera carga `margen_final` (historico) | `$SYNC --margen-full --no-refresh --verify` |
-| **Limpiar HUERFANAS** (el local perdio filas y GCP quedo con de mas) | `$SYNC --only asistencia_horas --desde 2026-06-01 --hasta 2026-06-30 --replace --no-refresh --verify` |
+| **Limpiar HUERFANAS** en tabla upsert (local perdio filas) | `$SYNC --only ventas_cajas --desde 2026-06-01 --hasta 2026-06-30 --replace --no-refresh --verify` |
 | **Probar sin escribir** (solo cuenta) | agrega `--dry-run` a cualquiera |
+
+> **`asistencia_horas` y `margen_final` van SIEMPRE en modo replace** (borra-fechas-presentes-en-local + reinserta en cada sync): se auto-corrigen las huerfanas, **NO** necesitan `--replace`. El `--replace` manual es para las OTRAS tablas de upsert (`ventas_*`, `ventas_item_diario`, `rotacion_base_item_dia_sede`) cuando el local perdio filas.
 
 Flags utiles: `--dry-run` (no escribe), `--verify` (fecha max por tabla),
 `--no-refresh` (no refresca matview de rotacion), `--replace` (reemplaza las fechas
