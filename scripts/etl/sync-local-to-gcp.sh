@@ -194,7 +194,9 @@ table_selected() {  # 0 si la tabla esta seleccionada (o si no hay filtro)
 # CONFLICT = target del ON CONFLICT; default "(KEY)". Override cuando el indice unico
 #            usa expresiones (p.ej. COALESCE) en vez de columnas planas.
 # EXCLUDE  = columnas que NO se insertan (serial id, FKs); lista separada por comas.
-# MODE     = "upsert" (default) o "replace" (borra-ventana+inserta, tablas sin clave natural).
+# MODE     = "upsert" (default) o "replace" (borra-fechas-presentes-en-local + reinserta).
+#            replace fijo: margen_final (sin clave natural) y asistencia_horas (el biometrico
+#            re-importa con menos filas -> el upsert dejaria huerfanas). El resto: upsert.
 declare -A KEY DATECOL DATETYPE EXCLUDE CONFLICT MODE
 VENTAS_FULL="empresa_bd,centro_operacion,sede,caja,fecha_dcto,id_tipdoc_fc,documento_fc,id_vend_cc,categoria,linea"
 KEY[ventas_cajas]="empresa_bd,centro_operacion,fecha_dcto,id_tipdoc_fc,consecutivo_doc,id_vend_cc"
@@ -214,7 +216,7 @@ for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pe
   DATECOL[$t]="fecha_dcto"; DATETYPE[$t]="text"; EXCLUDE[$t]=""
 done
 DATECOL[rotacion_base_item_dia_sede]="fecha_dia"; DATETYPE[rotacion_base_item_dia_sede]="date"; EXCLUDE[rotacion_base_item_dia_sede]=""
-DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"
+DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"; MODE[asistencia_horas]="replace"  # replace SIEMPRE: el biometrico re-importa/corrige (a veces con MENOS filas) y el upsert dejaria huerfanas en GCP -> borra-fechas-presentes + reinserta cada sync
 DATECOL[ventas_item_diario]="fecha_dcto"; DATETYPE[ventas_item_diario]="text"; EXCLUDE[ventas_item_diario]="id,source_load_id"
 DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"; MODE[margen_final]="replace"
 
