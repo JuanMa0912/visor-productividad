@@ -76,6 +76,7 @@ import {
   dateLabelOptions,
   getCookieValue,
   defaultRollingMonthBackRange,
+  isStalePreviousMonthDefaultRange,
   compareText,
   formatPrice,
   formatUnits,
@@ -214,9 +215,7 @@ export default function InventarioXItemPage() {
   /** Marca si ya seleccionamos automaticamente todas las empresas/sedes al
    * cargar los filtros iniciales (default: todas, el usuario solo elige items). */
   const autoScopeAppliedRef = useRef(false);
-  /** Marca si ya aplicamos el default "mes anterior completo" al cargar
-   * metadatos por primera vez. Evita pisar selecciones manuales del usuario
-   * en recargas. */
+  /** Marca si ya aplicamos el default de mes en curso al cargar metadatos. */
   const monthToDateDefaultAppliedRef = useRef(false);
 
   const { startTour: startInventarioXItemTour } = useProductTour({
@@ -472,26 +471,45 @@ export default function InventarioXItemPage() {
         setAvailableDateEnd(payload.meta?.availableDateEnd ?? "");
         const meta = payload.meta;
 
-        const shouldApplyMonthToDateDefault =
-          !monthToDateDefaultAppliedRef.current &&
-          !selectedDateStartState &&
-          !selectedDateEndState &&
-          !pendingInventarioDeepLinkRef.current?.item &&
-          Boolean(meta?.availableDateEnd);
-        if (shouldApplyMonthToDateDefault) {
-          const rolling = defaultRollingMonthBackRange(
-            meta?.availableDateStart ?? "",
-            meta?.availableDateEnd ?? "",
+        const rolling = defaultRollingMonthBackRange(
+          meta?.availableDateStart ?? "",
+          meta?.availableDateEnd ?? "",
+        );
+        const stalePreviousMonthDefault =
+          Boolean(
+            selectedDateStartState &&
+              selectedDateEndState &&
+              meta?.availableDateEnd &&
+              isStalePreviousMonthDefaultRange(
+                selectedDateStartState,
+                selectedDateEndState,
+              ) &&
+              selectedDateEndState < meta.availableDateEnd,
           );
-          if (rolling) {
-            setSelectedDateStartState(rolling.start);
-            setSelectedDateEndState(rolling.end);
-            monthToDateDefaultAppliedRef.current = true;
-            return;
-          }
+        const shouldApplyMonthToDateDefault =
+          ((!monthToDateDefaultAppliedRef.current &&
+            !selectedDateStartState &&
+            !selectedDateEndState &&
+            !pendingInventarioDeepLinkRef.current?.item &&
+            Boolean(meta?.availableDateEnd)) ||
+            stalePreviousMonthDefault) &&
+          Boolean(rolling);
+        if (shouldApplyMonthToDateDefault && rolling) {
+          setSelectedDateStartState(rolling.start);
+          setSelectedDateEndState(rolling.end);
+          monthToDateDefaultAppliedRef.current = true;
+          return;
         }
 
-        if (meta?.selectedDateStart) {
+        if (
+          meta?.availableDateEnd &&
+          selectedDateStartState &&
+          selectedDateEndState &&
+          selectedDateEndState < meta.availableDateEnd &&
+          selectedDateStartState === `${meta.availableDateEnd.slice(0, 7)}-01`
+        ) {
+          setSelectedDateEndState(meta.availableDateEnd);
+        } else if (meta?.selectedDateStart) {
           setSelectedDateStartState(meta.selectedDateStart);
         } else if (!selectedDateStartState) {
           const start =

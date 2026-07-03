@@ -3,7 +3,35 @@ import { test } from "node:test";
 import {
   NO_SALES_DI_VALUE,
   calculateMatrixItemTotalDiDays,
+  defaultRollingMonthBackRange,
+  isStalePreviousMonthDefaultRange,
 } from "./inventario-utils";
+
+test("defaultRollingMonthBackRange usa mes en curso hasta el ultimo dato", () => {
+  assert.deepEqual(
+    defaultRollingMonthBackRange("2026-01-01", "2026-07-02"),
+    { start: "2026-07-01", end: "2026-07-02" },
+  );
+});
+
+test("defaultRollingMonthBackRange acota al minimo disponible", () => {
+  assert.deepEqual(
+    defaultRollingMonthBackRange("2026-07-15", "2026-07-20"),
+    { start: "2026-07-15", end: "2026-07-20" },
+  );
+});
+
+test("isStalePreviousMonthDefaultRange detecta el default legado de junio", () => {
+  const ref = new Date("2026-07-03T12:00:00");
+  assert.equal(
+    isStalePreviousMonthDefaultRange("2026-06-01", "2026-06-30", ref),
+    true,
+  );
+  assert.equal(
+    isStalePreviousMonthDefaultRange("2026-07-01", "2026-07-02", ref),
+    false,
+  );
+});
 
 test("calculateMatrixItemTotalDiDays usa inventario y vendido agregados", () => {
   const di = calculateMatrixItemTotalDiDays({

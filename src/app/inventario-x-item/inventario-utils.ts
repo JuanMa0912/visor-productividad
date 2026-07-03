@@ -21,19 +21,8 @@ export const getCookieValue = (name: string) => {
 };
 
 /**
- * Rango por defecto: MES CALENDARIO ANTERIOR COMPLETO (dia 1 → ultimo dia),
- * acotado a los datos disponibles. Misma logica que `/rotacion` para mantener
- * consistencia entre ambos modulos. La longitud varia segun los dias del mes:
- *   - Hoy = 2026-06-01 → May 01 .. May 31 (31 dias).
- *   - Hoy = 2026-07-15 → Jun 01 .. Jun 30 (30 dias).
- *   - Hoy = 2026-03-10 → Feb 01 .. Feb 28 (28 dias).
- *
- * Antes calculaba "max menos un mes calendario + 1 dia". Eso terminaba dando
- * SIEMPRE 30 dias por overflow de `Date.setMonth()` en meses cortos (p.ej.
- * May 31 → April 31 no existe → desborda a May 1 → +1 dia → May 2 → solo
- * 30 dias en vez de 31).
- *
- * Devuelve `null` si `max` no es valido (sin datos para calcular el rango).
+ * Rango por defecto: mes en curso del dia 1 hasta el ultimo dato disponible (`max`).
+ * Alineado con margenes y con la expectativa de ver el corte mas reciente del ETL.
  */
 export const defaultRollingMonthBackRange = (
   min: string,
@@ -41,29 +30,9 @@ export const defaultRollingMonthBackRange = (
 ): { start: string; end: string } | null => {
   if (!max || !/^\d{4}-\d{2}-\d{2}$/.test(max)) return null;
 
-  const formatYMD = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  let end = max;
+  let start = `${max.slice(0, 7)}-01`;
 
-  const today = new Date();
-  // `new Date(y, m, 0)` devuelve el ultimo dia del mes m-1 (truco clasico
-  // de la API de Date: el dia 0 de un mes es el ultimo del mes anterior).
-  const lastDayPrevMonth = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    0,
-  );
-  const firstDayPrevMonth = new Date(
-    lastDayPrevMonth.getFullYear(),
-    lastDayPrevMonth.getMonth(),
-    1,
-  );
-
-  let end = formatYMD(lastDayPrevMonth);
-  let start = formatYMD(firstDayPrevMonth);
-
-  // Acotamos a los datos realmente disponibles. Comparar strings funciona
-  // porque YYYY-MM-DD ordena alfabeticamente igual que cronologicamente.
-  if (end > max) end = max;
   if (min && /^\d{4}-\d{2}-\d{2}$/.test(min)) {
     if (start < min) start = min;
     if (end < min) end = min;
@@ -71,6 +40,32 @@ export const defaultRollingMonthBackRange = (
   if (start > end) start = end;
 
   return { start, end };
+};
+
+/** Detecta el default legado (mes calendario anterior completo) para refrescarlo. */
+export const isStalePreviousMonthDefaultRange = (
+  start: string,
+  end: string,
+  referenceDate: Date = new Date(),
+): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+    return false;
+  }
+  const lastDayPrevMonth = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    0,
+  );
+  const firstDayPrevMonth = new Date(
+    lastDayPrevMonth.getFullYear(),
+    lastDayPrevMonth.getMonth(),
+    1,
+  );
+  const formatYMD = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return (
+    start === formatYMD(firstDayPrevMonth) && end === formatYMD(lastDayPrevMonth)
+  );
 };
 
 export const compareText = (left: string, right: string) =>
