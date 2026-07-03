@@ -25,7 +25,13 @@ import { MargenesMultiSelect } from "@/app/margenes/margenes-multi-select";
 type BoardMode = "drill" | "fact" | "sede";
 type FactTab = "nav" | "list";
 
-type FilterOption = { value: string; label: string };
+type FilterOption = {
+  value: string;
+  label: string;
+  code?: string;
+  linea?: string;
+  sublinea?: string;
+};
 
 type MargenFiltersPayload = {
   empresas: FilterOption[];
@@ -436,6 +442,85 @@ export const MargenesBoard = ({
     };
   }, [activeFilterOptions, allowedSedeKeys]);
 
+  const cascadedFilterOptions = useMemo(() => {
+    const sublineaOptions =
+      lineas.length === 0
+        ? scopedFilterOptions.sublineas
+        : scopedFilterOptions.sublineas.filter(
+            (option) => option.linea && lineas.includes(option.linea),
+          );
+
+    let itemOptions = scopedFilterOptions.items;
+    if (sublineas.length > 0) {
+      const selectedSublineas = new Set(sublineas);
+      itemOptions = itemOptions.filter((option) => {
+        if (!option.sublinea || !selectedSublineas.has(option.sublinea)) {
+          return false;
+        }
+        if (lineas.length > 0) {
+          return Boolean(option.linea && lineas.includes(option.linea));
+        }
+        return true;
+      });
+    } else if (lineas.length > 0) {
+      itemOptions = itemOptions.filter(
+        (option) => option.linea && lineas.includes(option.linea),
+      );
+    }
+
+    return {
+      ...scopedFilterOptions,
+      sublineas: sublineaOptions,
+      items: itemOptions,
+    };
+  }, [scopedFilterOptions, lineas, sublineas]);
+
+  const handleLineasChange = useCallback(
+    (next: string[]) => {
+      setLineas(next);
+      if (next.length === 0) return;
+
+      const allowedSublineas = new Set(
+        scopedFilterOptions.sublineas
+          .filter((option) => option.linea && next.includes(option.linea))
+          .map((option) => option.value),
+      );
+      setSublineas((current) => current.filter((value) => allowedSublineas.has(value)));
+
+      const allowedItems = new Set(
+        scopedFilterOptions.items
+          .filter((option) => option.linea && next.includes(option.linea))
+          .map((option) => option.value),
+      );
+      setItems((current) => current.filter((value) => allowedItems.has(value)));
+    },
+    [scopedFilterOptions.items, scopedFilterOptions.sublineas],
+  );
+
+  const handleSublineasChange = useCallback(
+    (next: string[]) => {
+      setSublineas(next);
+      if (next.length === 0) return;
+
+      const selectedSublineas = new Set(next);
+      const allowedItems = new Set(
+        scopedFilterOptions.items
+          .filter((option) => {
+            if (!option.sublinea || !selectedSublineas.has(option.sublinea)) {
+              return false;
+            }
+            if (lineas.length > 0) {
+              return Boolean(option.linea && lineas.includes(option.linea));
+            }
+            return true;
+          })
+          .map((option) => option.value),
+      );
+      setItems((current) => current.filter((value) => allowedItems.has(value)));
+    },
+    [lineas, scopedFilterOptions.items],
+  );
+
   const loadFilters = useCallback(async () => {
     setFiltersLoading(true);
     try {
@@ -712,26 +797,32 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Línea"
           values={lineas}
-          options={scopedFilterOptions.lineas}
-          onChange={setLineas}
+          options={cascadedFilterOptions.lineas}
+          onChange={handleLineasChange}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Sublínea"
           values={sublineas}
-          options={scopedFilterOptions.sublineas}
-          onChange={setSublineas}
+          options={cascadedFilterOptions.sublineas}
+          onChange={handleSublineasChange}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
         />
         <MargenesMultiSelect
           label="Ítem"
           values={items}
-          options={scopedFilterOptions.items}
+          options={cascadedFilterOptions.items.map((option) => ({
+            value: option.value,
+            label: option.label,
+            code: option.code ?? option.value,
+          }))}
           onChange={setItems}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
+          searchPlaceholder="Buscar por nombre o código…"
+          codeBeforeLabel
         />
         <button
           type="button"

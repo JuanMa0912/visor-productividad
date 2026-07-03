@@ -915,8 +915,8 @@ export const queryFilterOptions = async (
     fechas: Array<{ value: string }> | null;
     categorias: Array<{ value: string; label: string }> | null;
     lineas: Array<{ value: string; label: string }> | null;
-    sublineas: Array<{ value: string; label: string }> | null;
-    items: Array<{ value: string; label: string }> | null;
+    sublineas: Array<{ value: string; label: string; linea: string }> | null;
+    items: Array<{ value: string; label: string; code?: string; linea: string; sublinea: string }> | null;
   }>(
     roll
       ? `
@@ -963,16 +963,21 @@ export const queryFilterOptions = async (
       (
         SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
         FROM (
-          SELECT DISTINCT id_linea2 AS value, nombre_linea2 AS label
+          SELECT DISTINCT id_linea2 AS value, nombre_linea2 AS label, id_linea1 AS linea
           FROM filtered
           WHERE id_linea2 <> ''
-          ORDER BY 2
+          ORDER BY 3, 2
         ) t
       ) AS sublineas,
       (
         SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
         FROM (
-          SELECT DISTINCT id_item AS value, item_label AS label
+          SELECT DISTINCT
+            id_item AS value,
+            item_label AS label,
+            id_item AS code,
+            id_linea1 AS linea,
+            id_linea2 AS sublinea
           FROM filtered
           WHERE id_item <> ''
           ORDER BY 2
@@ -1024,16 +1029,21 @@ export const queryFilterOptions = async (
       (
         SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
         FROM (
-          SELECT DISTINCT id_linea2 AS value, nombre_linea2 AS label
+          SELECT DISTINCT id_linea2 AS value, nombre_linea2 AS label, id_linea1 AS linea
           FROM filtered
           WHERE id_linea2 <> ''
-          ORDER BY 2
+          ORDER BY 3, 2
         ) t
       ) AS sublineas,
       (
         SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)
         FROM (
-          SELECT DISTINCT id_item AS value, item_label AS label
+          SELECT DISTINCT
+            id_item AS value,
+            item_label AS label,
+            id_item AS code,
+            id_linea1 AS linea,
+            id_linea2 AS sublinea
           FROM filtered
           WHERE id_item <> ''
           ORDER BY 2
@@ -1088,8 +1098,21 @@ export const queryFilterOptions = async (
       value: String(r.value),
       label: tipoLabel(String(r.value)),
     })),
-    lineas,
-    sublineas,
-    items,
+    lineas: lineas.map((entry) => ({
+      value: String(entry.value),
+      label: String(entry.label),
+    })),
+    sublineas: sublineas.map((entry) => ({
+      value: String(entry.value),
+      label: String(entry.label),
+      linea: String(entry.linea),
+    })),
+    items: items.map((entry) => ({
+      value: String(entry.value),
+      label: String(entry.label),
+      code: String(entry.code ?? entry.value),
+      linea: String(entry.linea),
+      sublinea: String(entry.sublinea),
+    })),
   };
 };

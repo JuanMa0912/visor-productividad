@@ -17,6 +17,8 @@ export const MargenesMultiSelect = ({
   emptyLabel = "Todos",
   onOpen,
   loading,
+  searchPlaceholder = "Buscar…",
+  codeBeforeLabel = false,
 }: {
   label: string;
   values: string[];
@@ -26,6 +28,8 @@ export const MargenesMultiSelect = ({
   emptyLabel?: string;
   onOpen?: () => void;
   loading?: boolean;
+  searchPlaceholder?: string;
+  codeBeforeLabel?: boolean;
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -52,12 +56,23 @@ export const MargenesMultiSelect = ({
     );
   }, [options, search]);
 
+  const formatOptionLabel = (option: MargenSelectOption) => {
+    if (codeBeforeLabel && option.code) {
+      return `${option.code} · ${option.label}`;
+    }
+    return option.label;
+  };
+
   const buttonLabel =
     values.length === 0
       ? emptyLabel
       : values.length === 1
-        ? (options.find((option) => option.value === values[0])?.label ??
-          values[0])
+        ? formatOptionLabel(
+            options.find((option) => option.value === values[0]) ?? {
+              value: values[0],
+              label: values[0],
+            },
+          )
         : `${values.length} seleccionados`;
 
   const toggleValue = (value: string) => {
@@ -102,7 +117,7 @@ export const MargenesMultiSelect = ({
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar…"
+            placeholder={searchPlaceholder}
             className="rounded-t-md border-b border-[#2a2f47] bg-[#232740] px-2.5 py-2 text-xs text-[#dde3f0] outline-none"
           />
           <div className="flex border-b border-[#2a2f47]">
@@ -135,9 +150,14 @@ export const MargenesMultiSelect = ({
                   onChange={() => toggleValue(option.value)}
                   className="accent-[#4f8ef7]"
                 />
+                {option.code && codeBeforeLabel ? (
+                  <span className="shrink-0 rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[10px] text-[#6b7590]">
+                    {option.code}
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1 truncate text-xs">{option.label}</span>
-                {option.code ? (
-                  <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[10px] text-[#6b7590]">
+                {option.code && !codeBeforeLabel ? (
+                  <span className="shrink-0 rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[10px] text-[#6b7590]">
                     {option.code}
                   </span>
                 ) : null}

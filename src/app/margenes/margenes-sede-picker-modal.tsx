@@ -27,6 +27,7 @@ type MargenesSedePickerModalProps = {
   error: string | null;
   onToggleSede: (value: string) => void;
   onToggleEmpresa: (empresa: string, values: string[]) => void;
+  onSelectAll: () => void;
   onClearAll: () => void;
   onConfirm: () => void;
 };
@@ -46,6 +47,7 @@ export function MargenesSedePickerModal({
   error,
   onToggleSede,
   onToggleEmpresa,
+  onSelectAll,
   onClearAll,
   onConfirm,
 }: MargenesSedePickerModalProps) {
@@ -145,7 +147,15 @@ export function MargenesSedePickerModal({
             </p>
           ) : (
             <div className="space-y-4">
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-4">
+                <button
+                  type="button"
+                  onClick={onSelectAll}
+                  disabled={selectedSedes.length === sedes.length}
+                  className="text-xs font-medium text-[#4f8ef7] hover:text-[#3b7de0] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Seleccionar todas
+                </button>
                 <button
                   type="button"
                   onClick={onClearAll}

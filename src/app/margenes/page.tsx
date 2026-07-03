@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Loader2, RefreshCcw } from "lucide-react";
 import { AppTopBar } from "@/components/portal/app-top-bar";
@@ -59,6 +66,7 @@ export default function MargenesPage() {
     return filterMargenSedeCatalogForUser(user);
   }, [user]);
   const [boardSedes, setBoardSedes] = useState<string[]>([]);
+  const initialPendingAutoSelectDoneRef = useRef(false);
 
   const isAdmin = user?.role === "admin";
   const isUserScopedToSpecificSedes = useMemo(() => {
@@ -151,12 +159,14 @@ export default function MargenesPage() {
 
   useEffect(() => {
     if (!boardReady || catalogSedes.length === 0) return;
-    if (dataCommitted || pendingSedes.length > 0) return;
+    if (dataCommitted || initialPendingAutoSelectDoneRef.current) return;
 
     const shouldAutoSelectAll =
       catalogSedes.length === 1 ||
       !isAdmin ||
       isUserScopedToSpecificSedes;
+
+    initialPendingAutoSelectDoneRef.current = true;
     if (!shouldAutoSelectAll) return;
 
     setPendingSedes(catalogSedes.map((option) => option.value));
@@ -166,7 +176,6 @@ export default function MargenesPage() {
     dataCommitted,
     isAdmin,
     isUserScopedToSpecificSedes,
-    pendingSedes.length,
   ]);
 
   const openSedePicker = useCallback(() => {
@@ -197,6 +206,10 @@ export default function MargenesPage() {
   const clearPendingSedes = useCallback(() => {
     setPendingSedes([]);
   }, []);
+
+  const selectAllPendingSedes = useCallback(() => {
+    setPendingSedes(catalogSedes.map((option) => option.value));
+  }, [catalogSedes]);
 
   const confirmSedeSelection = useCallback(() => {
     if (pendingSedes.length === 0) return;
@@ -388,6 +401,7 @@ export default function MargenesPage() {
         error={null}
         onToggleSede={togglePendingSede}
         onToggleEmpresa={togglePendingEmpresa}
+        onSelectAll={selectAllPendingSedes}
         onClearAll={clearPendingSedes}
         onConfirm={confirmSedeSelection}
       />
