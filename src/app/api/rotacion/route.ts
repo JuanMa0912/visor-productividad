@@ -192,9 +192,87 @@ const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
  */
 const ROTACION_CLEAN_MATVIEW_NAME = "rotacion_item_dia_clean";
 const ROTACION_CLEAN_MATVIEW_PROBE_CACHE_TTL_MS = 5 * 60 * 1000;
+const ROTACION_SCHEMA_PROBE_CACHE_TTL_MS = 5 * 60 * 1000;
 let rotacionCleanMatViewProbeCache:
   | { exists: boolean; expiresAt: number }
   | null = null;
+let rotacionPeriodoStdSublineaProbeCache:
+  | { hasSublinea: boolean; expiresAt: number }
+  | null = null;
+let rotacionMatviewSublineaProbeCache:
+  | { hasSublinea: boolean; expiresAt: number }
+  | null = null;
+
+const tableHasColumn = async (
+  client: RotacionBaseQueryClient,
+  tableName: string,
+  columnName: string,
+): Promise<boolean> => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = ANY(current_schemas(false))
+      AND table_name = $1
+      AND column_name = $2
+    LIMIT 1
+    `,
+    [tableName, columnName],
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const probeRotacionPeriodoStdHasSublineaColumns = async (
+  client: RotacionBaseQueryClient,
+): Promise<boolean> => {
+  const now = Date.now();
+  if (
+    rotacionPeriodoStdSublineaProbeCache &&
+    rotacionPeriodoStdSublineaProbeCache.expiresAt > now
+  ) {
+    return rotacionPeriodoStdSublineaProbeCache.hasSublinea;
+  }
+  try {
+    const hasSublinea = await tableHasColumn(
+      client,
+      "rotacion_item_periodo_std",
+      "linea_n2_codigo",
+    );
+    rotacionPeriodoStdSublineaProbeCache = {
+      hasSublinea,
+      expiresAt: now + ROTACION_SCHEMA_PROBE_CACHE_TTL_MS,
+    };
+    return hasSublinea;
+  } catch {
+    return false;
+  }
+};
+
+const probeRotacionMatviewHasSublineaColumns = async (
+  client: RotacionBaseQueryClient,
+): Promise<boolean> => {
+  const now = Date.now();
+  if (
+    rotacionMatviewSublineaProbeCache &&
+    rotacionMatviewSublineaProbeCache.expiresAt > now
+  ) {
+    return rotacionMatviewSublineaProbeCache.hasSublinea;
+  }
+  try {
+    const hasSublinea = await tableHasColumn(
+      client,
+      ROTACION_CLEAN_MATVIEW_NAME,
+      "linea_n2_codigo",
+    );
+    rotacionMatviewSublineaProbeCache = {
+      hasSublinea,
+      expiresAt: now + ROTACION_SCHEMA_PROBE_CACHE_TTL_MS,
+    };
+    return hasSublinea;
+  } catch {
+    return false;
+  }
+};
 
 /** Variante SQL sobre `rotacion_item_dia_clean`. Default `ranked` (window functions). */
 export type RotacionMatviewSqlStrategy = "ranked" | "hashagg";
@@ -1460,6 +1538,12 @@ async function queryRotationRowsViaPeriodoStd({
   explain: boolean;
 }): Promise<RotationRow[] | ExplainPlanResult> {
   const sqlStartTs = performance.now();
+  const hasSublineaColumns = await probeRotacionPeriodoStdHasSublineaColumns(client);
+  const sublineaSelect = hasSublineaColumns
+    ? `linea_n2_codigo,
+      sublinea,`
+    : `NULL::text AS linea_n2_codigo,
+      NULL::text AS sublinea,`;
   const baseSql = `
     SELECT
       empresa,
@@ -1467,8 +1551,7 @@ async function queryRotationRowsViaPeriodoStd({
       sede_name,
       linea,
       linea_n1_codigo,
-      linea_n2_codigo,
-      sublinea,
+      ${sublineaSelect}
       item,
       descripcion,
       unidad,
@@ -1587,7 +1670,14 @@ async function ensureRotacionCleanMatViewProbe(
  */
 const buildRotacionMatviewSql = (
   strategy: RotacionMatviewSqlStrategy,
+  options: { hasSublineaColumns?: boolean } = {},
 ): string => {
+  const hasSublineaColumns = options.hasSublineaColumns ?? true;
+  const sublineaSelect = hasSublineaColumns
+    ? `linea_n2_codigo,
+        sublinea,`
+    : `NULL::text AS linea_n2_codigo,
+        NULL::text AS sublinea,`;
   const baseCte = `
     WITH base AS (
       SELECT
@@ -1600,8 +1690,7 @@ const buildRotacionMatviewSql = (
         unidad,
         linea,
         linea_n1_codigo,
-        linea_n2_codigo,
-        sublinea,
+        ${sublineaSelect}
         bodega,
         categoria,
         nombre_categoria,
@@ -1924,7 +2013,10 @@ async function queryRotationRowsViaMatview({
   explain: boolean;
 }): Promise<RotationRow[] | ExplainPlanResult> {
   const sqlStartTs = performance.now();
-  const baseSql = buildRotacionMatviewSql(matviewSqlStrategy);
+  const hasSublineaColumns = await probeRotacionMatviewHasSublineaColumns(client);
+  const baseSql = buildRotacionMatviewSql(matviewSqlStrategy, {
+    hasSublineaColumns,
+  });
   const params = [
     startDate, // $1: fecha desde (ISO)
     endDate, // $2: fecha hasta (ISO)
@@ -2073,15 +2165,23 @@ async function queryRotationRows({
         matchesRotacionPeriodoStdRange(periodoStdMeta, startDate, endDate) &&
         (await probeRotacionPeriodoStdReady(client))
       ) {
-        return queryRotationRowsViaPeriodoStd({
-          client,
-          maxSalesValue,
-          empresa,
-          sedeId,
-          lineasN1,
-          categoriaKeys,
-          explain,
-        });
+        try {
+          return await queryRotationRowsViaPeriodoStd({
+            client,
+            maxSalesValue,
+            empresa,
+            sedeId,
+            lineasN1,
+            categoriaKeys,
+            explain,
+          });
+        } catch (err) {
+          console.warn(
+            `[rotacion API] periodo-std fallo, fallback matview/raw: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
       }
 
       // Si la vista materializada rotacion_item_dia_clean existe, usamos el
@@ -2091,18 +2191,26 @@ async function queryRotationRows({
       // original sobre la tabla cruda.
       const matViewExists = await ensureRotacionCleanMatViewProbe(client);
       if (matViewExists) {
-        return queryRotationRowsViaMatview({
-          client,
-          startDate,
-          endDate,
-          maxSalesValue,
-          empresa,
-          sedeId,
-          lineasN1,
-          categoriaKeys,
-          matviewSqlStrategy,
-          explain,
-        });
+        try {
+          return await queryRotationRowsViaMatview({
+            client,
+            startDate,
+            endDate,
+            maxSalesValue,
+            empresa,
+            sedeId,
+            lineasN1,
+            categoriaKeys,
+            matviewSqlStrategy,
+            explain,
+          });
+        } catch (err) {
+          console.warn(
+            `[rotacion API] matview fallo, fallback raw: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
       }
 
       const fields =
