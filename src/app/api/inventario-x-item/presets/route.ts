@@ -23,7 +23,7 @@ const ensurePresetsTable = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS inventario_x_item_user_presets (
         user_id uuid PRIMARY KEY REFERENCES app_users (id) ON DELETE CASCADE,
-        presets jsonb NOT NULL DEFAULT '[]'::jsonb,no e
+        presets jsonb NOT NULL DEFAULT '[]'::jsonb,
         updated_at timestamptz NOT NULL DEFAULT now()
       )
     `);
