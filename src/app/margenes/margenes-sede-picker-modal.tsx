@@ -81,12 +81,13 @@ export function MargenesSedePickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0d0f18]/80 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 overflow-y-auto bg-[#0d0f18]/80 px-4 py-6 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="margenes-sede-picker-title"
     >
-      <div className="flex max-h-[min(90vh,720px)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-[#2a2f47] bg-[#141720] shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
+      <div className="mx-auto flex min-h-[min(100%,calc(100vh-3rem))] w-full max-w-4xl items-center justify-center">
+        <div className="flex w-full flex-col rounded-xl border border-[#2a2f47] bg-[#141720] shadow-[0_24px_64px_rgba(0,0,0,0.55)]">
         <div className="border-b border-[#2a2f47] px-5 py-4">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#232740] text-[#4f8ef7]">
@@ -132,7 +133,7 @@ export function MargenesSedePickerModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+        <div className="px-5 py-4">
           {loading ? (
             <div className="flex items-center justify-center py-16 text-[#6b7590]">
               <Loader2 className="h-6 w-6 animate-spin text-[#4f8ef7]" />
@@ -196,7 +197,7 @@ export function MargenesSedePickerModal({
                         {allInGroup ? "Quitar todas" : "Marcar todas"}
                       </button>
                     </div>
-                    <div className="grid gap-1 p-2 sm:grid-cols-2">
+                    <div className="grid gap-1 p-2 sm:grid-cols-2 lg:grid-cols-3">
                       {group.sedes.map((sede) => {
                         const checked = selectedSet.has(sede.value);
                         return (
@@ -249,6 +250,7 @@ export function MargenesSedePickerModal({
           >
             Cargar datos
           </button>
+        </div>
         </div>
       </div>
     </div>
