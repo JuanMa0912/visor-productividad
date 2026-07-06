@@ -34,7 +34,7 @@ seguimiento operativo.
 | Hub Venta UAID | `/venta` | - | acceso agrupado a ventas e inventario |
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV/XLSX/PDF/PNG |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
-| Rotacion | `/rotacion`, `/rotacion-dos` | `/api/rotacion`, `/api/rotacion-dos`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, estados de S.inventario y auditoria |
+| Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, estados de S.inventario y auditoria |
 | Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario y resumenes con margen `SUM/SUM` |
 | Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | matrices, pivotes y presets por usuario |
 | Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, meta/summary/options y XLSX |
@@ -129,7 +129,6 @@ Reglas notables:
 - `src/proxy.ts` solo redirige paginas sin cookie hacia `/login`; no reemplaza la autorizacion por endpoint.
 - `/cronograma` se muestra en UI a usuarios con `special_roles` que incluya `cronograma`.
 - `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
-- `/rotacion-dos` es una vista tecnica/admin sobre `rotacion_v4`.
 - Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
 
 ### Headers y rate limiting

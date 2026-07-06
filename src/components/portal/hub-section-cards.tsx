@@ -140,7 +140,9 @@ export type HubModuleItem = {
   badge: string;
   title: string;
   description: string;
-  href: string;
+  href?: string;
+  disabled?: boolean;
+  footerLabel?: string;
 };
 
 type HubModuleCardProps = {
@@ -162,20 +164,28 @@ export function PortalHubModuleCard({
   const Icon = item.icon;
   const sectionNumber = String(index + 1).padStart(2, "0");
   const totalLabel = String(Math.max(total, 1)).padStart(2, "0");
+  const isDisabled = item.disabled === true;
+  const footerLabel = item.footerLabel ?? "Abrir modulo";
 
-  return (
-    <button
-      type="button"
-      onClick={() => onNavigate(item.href)}
-      className={`group relative flex min-h-[280px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 hover:-translate-y-1 hover:border-foreground/15 hover:shadow-floating ${styles.topBorderClass}`}
-    >
-      <span
-        aria-hidden
-        className={`pointer-events-none absolute inset-0 z-0 rounded-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-100 ${styles.radialWashClass}`}
-      />
+  const cardClassName = `group relative flex min-h-[280px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 ${styles.topBorderClass} ${
+    isDisabled
+      ? "cursor-not-allowed opacity-75 before:bg-slate-300"
+      : "hover:-translate-y-1 hover:border-foreground/15 hover:shadow-floating"
+  }`;
+
+  const content = (
+    <>
+      {!isDisabled ? (
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute inset-0 z-0 rounded-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-100 ${styles.radialWashClass}`}
+        />
+      ) : null}
       <div className="relative z-1 flex items-start justify-between gap-3">
         <span
-          className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-transform duration-500 ease-out will-change-transform group-hover:scale-105 ${styles.iconClasses}`}
+          className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-transform duration-500 ease-out will-change-transform ${
+            isDisabled ? "" : "group-hover:scale-105"
+          } ${styles.iconClasses}`}
         >
           <Icon className="h-5 w-5" />
         </span>
@@ -197,15 +207,46 @@ export function PortalHubModuleCard({
       </span>
       <div className="relative z-1 mt-auto flex items-center justify-between gap-3 pt-8">
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-          Abrir modulo
+          {footerLabel}
         </span>
-        <span
-          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${styles.chevronBtnClasses}`}
-          aria-hidden
-        >
-          <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
-        </span>
+        {!isDisabled ? (
+          <span
+            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${styles.chevronBtnClasses}`}
+            aria-hidden
+          >
+            <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
+          </span>
+        ) : (
+          <span
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400"
+            aria-hidden
+          >
+            <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
+          </span>
+        )}
       </div>
+    </>
+  );
+
+  if (isDisabled) {
+    return (
+      <div
+        aria-disabled="true"
+        className={cardClassName}
+        title="Modulo en mantenimiento y desarrollo"
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(item.href ?? "/")}
+      className={cardClassName}
+    >
+      {content}
     </button>
   );
 }

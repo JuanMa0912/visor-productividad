@@ -8,7 +8,6 @@ import {
   type RotacionBaseSqlFields,
 } from "@/lib/rotacion/base-fields";
 import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
-import { ROTACION_SOURCE_V4 } from "@/lib/rotacion/source-tables";
 import { normalizeRotationCategoriaKey } from "@/lib/rotacion/dimensions";
 import type {
   RotacionDataSource,
@@ -44,7 +43,6 @@ import {
 } from "@/lib/shared/portal-sections";
 import {
   canAccessRotacionBoard,
-  canAccessRotacionV4Board,
   canEditRotacionAbcdConfig,
 } from "@/lib/shared/special-role-features";
 import { mapRawSedeToCanonical } from "@/lib/horarios/planilla-sede";
@@ -2939,17 +2937,6 @@ export async function GET(request: Request) {
       ),
     );
   }
-  if (
-    getRotacionSourceTable() === ROTACION_SOURCE_V4 &&
-    !canAccessRotacionV4Board(session.user.role === "admin")
-  ) {
-    return withSession(
-      NextResponse.json(
-        { error: "Rotacion v4 solo esta disponible para administradores." },
-        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
-      ),
-    );
-  }
 
   try {
     const bounds = await getAvailableBounds();
@@ -3579,17 +3566,6 @@ export async function PUT(request: Request) {
     return withSession(
       NextResponse.json(
         { error: "No tienes permisos para esta seccion." },
-        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
-      ),
-    );
-  }
-  if (
-    getRotacionSourceTable() === ROTACION_SOURCE_V4 &&
-    !canAccessRotacionV4Board(session.user.role === "admin")
-  ) {
-    return withSession(
-      NextResponse.json(
-        { error: "Rotacion v4 solo esta disponible para administradores." },
         { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );

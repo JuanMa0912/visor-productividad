@@ -7,7 +7,6 @@ import {
 } from "./portal-sections";
 import {
   canAccessRotacionBoard,
-  canAccessRotacionV4Board,
 } from "./special-role-features";
 
 test("empty portal permission lists mean all sections and subdashboards", () => {
@@ -28,9 +27,4 @@ test("explicit subdashboard restriction blocks rotacion even with legacy special
 test("legacy rotacion special role still works when subdashboard data is not provided", () => {
   assert.equal(canAccessRotacionBoard(["rotacion"], false), true);
   assert.equal(canAccessRotacionBoard(null, false), false);
-});
-
-test("rotacion v4 is admin-only", () => {
-  assert.equal(canAccessRotacionV4Board(true), true);
-  assert.equal(canAccessRotacionV4Board(false), false);
 });

@@ -71,14 +71,6 @@ export function canAccessRotacionBoard(
 }
 
 /**
- * Puede acceder a Rotacion v4 (tablero de pruebas).
- * Es un tablero tecnico de validacion, no un permiso granular para usuarios.
- */
-export function canAccessRotacionV4Board(isAdmin = false): boolean {
-  return isAdmin;
-}
-
-/**
  * Puede acceder al tablero Comparar horarios (planilla vs asistencia).
  * Los administradores lo tienen siempre; el resto necesita el rol especial `comparar_horarios`.
  */

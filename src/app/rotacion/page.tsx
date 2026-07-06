@@ -41,11 +41,9 @@ import {
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   canAccessRotacionBoard,
-  canAccessRotacionV4Board,
   canEditRotacionAbcdConfig,
   canViewRotacionSinventarioHistorial,
 } from "@/lib/shared/special-role-features";
-import { ROTACION_SOURCE_V4 } from "@/lib/rotacion/source-tables";
 import {
   CERO_ROTACION_ESTADO_LABELS,
   CERO_ROTACION_ESTADO_SORT_ORDER,
@@ -340,13 +338,6 @@ export function RotacionPageInner() {
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !authUser) return;
-    if (
-      sourceTable === ROTACION_SOURCE_V4 &&
-      !canAccessRotacionV4Board(isAdmin)
-    ) {
-      router.replace("/productividad");
-      return;
-    }
     if (!hasSection("producto") || !hasSubsection("rotacion")) {
       router.replace("/secciones");
       return;
@@ -369,7 +360,6 @@ export function RotacionPageInner() {
     hasSubsection,
     isAdmin,
     router,
-    sourceTable,
   ]);
 
   useEffect(() => {

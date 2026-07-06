@@ -42,7 +42,7 @@ test("buildRotacionRowsCacheKey separa usuarios en el mismo browser", () => {
   );
 });
 
-test("buildRotacionRowsCacheKey separa rotacion y rotacion-dos", () => {
+test("buildRotacionRowsCacheKey separa rutas API distintas", () => {
   const filterKey = buildRotacionRowsKey({
     start: "2026-05-03",
     end: "2026-06-02",
@@ -54,6 +54,6 @@ test("buildRotacionRowsCacheKey separa rotacion y rotacion-dos", () => {
 
   assert.notEqual(
     buildRotacionRowsCacheKey("/api/rotacion", "user-a", filterKey),
-    buildRotacionRowsCacheKey("/api/rotacion-dos", "user-a", filterKey),
+    buildRotacionRowsCacheKey("/api/otro-modulo", "user-a", filterKey),
   );
 });

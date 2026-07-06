@@ -201,7 +201,7 @@ porcentajes.
 | `rotacion_item_dia_clean` | matview (migracion) | pre-limpia/agrega diario para `/api/rotacion`; expone `linea_n2_codigo` y `sublinea` (migraciones `20260706`/`20260708`) |
 | `rotacion_item_periodo_std` | refresh nocturno | snapshot agregado rango rolling default (~1-3 s) |
 | `rotacion_item_periodo_std_meta` | refresh nocturno | periodo_start/end y refreshed_at del snapshot |
-| `rotacion_v4` | ETL/servidor | vista tecnica `/rotacion-dos` |
+| `rotacion_v4` | ETL/servidor (legacy, sin UI en portal) |
 | `rotacion_abcd_config` | runtime/API | umbrales ABCD globales |
 | `rotacion_abcd_config_sede` | runtime/API | umbrales ABCD por empresa/sede |
 | `rotacion_cero_item_estado` | migraciones | estado operativo cero/restock |
@@ -219,7 +219,7 @@ Indices versionados:
   `fecha_dia`, empresa, sede, item, linea N1 y categoria.
 - `20260520_rotacion_v4_perf_indexes.sql`: indices para `rotacion_v4`.
 
-APIs relacionadas: `/api/rotacion`, `/api/rotacion-dos`,
+APIs relacionadas: `/api/rotacion`, `/api/rotacion/cero-estados`,
 `/api/rotacion/cero-estados`, `/api/rotacion/cero-estados/audit`,
 `/api/inventario-x-item`, `/api/kardex/*`.
 

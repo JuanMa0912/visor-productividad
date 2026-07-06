@@ -7,6 +7,7 @@ import {
   LineChart,
   Percent,
   RefreshCw,
+  TrendingUp,
 } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
@@ -21,7 +22,6 @@ import {
 } from "@/lib/shared/portal-sections";
 import {
   canAccessRotacionBoard,
-  canAccessRotacionV4Board,
 } from "@/lib/shared/special-role-features";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
@@ -64,14 +64,15 @@ const ROTACION_MODULE: HubModuleItem = {
   href: "/rotacion",
 };
 
-const ROTACION_V4_MODULE: HubModuleItem = {
-  id: "rotacion-dos",
-  icon: RefreshCw,
-  badge: "ROTACION V4",
-  title: "Rotacion v4 (prueba)",
+const INFORME_VARIACION_MODULE: HubModuleItem = {
+  id: "informe-variacion",
+  icon: TrendingUp,
+  badge: "INFORME",
+  title: "Informe de Variacion",
   description:
-    "Misma vista de rotacion leyendo la tabla rotacion_v4 para validar datos nuevos.",
-  href: "/rotacion-dos",
+    "Modulo en mantenimiento y desarrollo. Proximamente podras analizar variaciones comerciales por sede, linea y periodo.",
+  disabled: true,
+  footerLabel: "En mantenimiento",
 };
 
 const hubTour = PORTAL_HUB_TOUR_CONFIG.producto;
@@ -102,16 +103,15 @@ export default function ProductividadHubPage() {
     if (!canSeeRotacion) return BASE_PRODUCTO_MODULES;
     const withRotacion = [...BASE_PRODUCTO_MODULES];
     withRotacion.splice(2, 0, ROTACION_MODULE);
-    if (canAccessRotacionV4Board(isAdmin)) {
-      withRotacion.splice(3, 0, ROTACION_V4_MODULE);
-    }
+    withRotacion.splice(3, 0, INFORME_VARIACION_MODULE);
     return withRotacion;
-  }, [canSeeRotacion, isAdmin]);
+  }, [canSeeRotacion]);
 
   const allowedSubdashboards = user?.allowedSubdashboards ?? null;
   const visibleModules = useMemo(
     () =>
       modules.filter((module) => {
+        if (module.disabled) return true;
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);
         if (!subId) return false;

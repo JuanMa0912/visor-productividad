@@ -99,7 +99,7 @@ Codigo compartido sin UI de pagina.
 | --- | --- |
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
 | Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario` |
-| Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/rotacion-dos`, `/kardex`, `/prediccion-pedidos` |
+| Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/[id]/metricas` |
 | Otros | `/ExcelDian` (PascalCase historico de URL) |
@@ -114,7 +114,7 @@ Codigo compartido sin UI de pagina.
 | `productivity` | productividad por linea con cache de archivo opcional |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por linea/sede |
-| `rotacion`, `rotacion-dos` | rotacion legacy y vista V4 |
+| `rotacion` | rotacion e inventario con baja salida |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |
@@ -208,7 +208,7 @@ Orden completo despues de `schema-auth.sql`:
 | `apply-activity-log-migration.mjs` | apoyo historico para migracion de actividad |
 | `playwright_smoke.py` | smoke E2E con dev server activo |
 | `cleanup-logs.sh` | limpieza de logs/sesiones para systemd |
-| `benchmark-rotacion.mjs`, `debug-rotacion-items.mjs`, `inspect-rotacion-v4.mjs` | diagnostico rotacion |
+| `benchmark-rotacion.mjs`, `debug-rotacion-items.mjs` | diagnostico rotacion |
 
 ## Tests
 
