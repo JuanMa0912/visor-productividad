@@ -7,7 +7,6 @@
  *
  * Historicamente este mapeo esta duplicado en:
  *   - src/app/api/productivity/route.ts (SEDE_NAMES)
- *   - src/app/api/margenes/route.ts     (SEDE_NAMES)
  *   - src/app/api/hourly-analysis/route.ts (SEDE_CONFIGS, ademas con aliases
  *     y nombres como aparecen en asistencia)
  *
