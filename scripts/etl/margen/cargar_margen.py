@@ -6,6 +6,9 @@ ETL de margenes: carga "movimiento unificado" desde las BD POS de origen
 - Reusa la query de consulta_Movimiento_bd.py (CTE de kits + exclusion de Z%).
 - Solo carga id_tipo IN ('3','4') (categorias 3 y 4 = mercado). id_tipo 'V' se
   excluye desde 2026-07-06 (no interesa en el tablero de margenes).
+- Impoconsumo (2026-07-06): para la linea 33 (BEBIDAS ALCOHOLICAS: licores,
+  cerveza, vino) el bruto cargado (vlrtot_bru) YA incluye el impoconsumo
+  (vlrimpcon1) -> entra a ventas y margen. Resto de lineas sin cambio.
 - Idempotente por "reemplazar el dia": por cada empresa y dia del rango hace
   DELETE (fecha_dcto, empresa) + COPY, en una transaccion. Re-correr NO duplica.
 - Carga rapida: COPY postgres->postgres (formato texto, NULL-safe). PG16 mejoro
@@ -96,7 +99,14 @@ SELECT
     m.cantidad,
     m.precio_uni,
     m.dscto_netos,
-    m.vlrtot_bru,
+    -- Impoconsumo: para BEBIDAS ALCOHOLICAS (linea 33 = licores, cerveza, vino) se
+    -- suma vlrimpcon1 al bruto -> el impoconsumo entra a ventas Y margen. El resto
+    -- de lineas queda igual. ven_totales usa el bruto ORIGINAL (m.vlrtot_bru), asi
+    -- que NO se duplica el impoconsumo. (2026-07-06)
+    CASE
+      WHEN TRIM(i.id_linea1) = '33' THEN m.vlrtot_bru + COALESCE(m.vlrimpcon1, 0)
+      ELSE m.vlrtot_bru
+    END AS vlrtot_bru,
     m.vlrimpcon1,
     (m.vlrtot_bru + m.vlrimpcon1) AS ven_totales,
     ROUND( (m.vlrtot_bru + m.vlrimpcon1) / NULLIF(m.cantidad,0), 2 ) AS precio_unitario,
