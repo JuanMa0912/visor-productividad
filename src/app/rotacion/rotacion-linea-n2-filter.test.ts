@@ -83,3 +83,36 @@ test("filterRotationRowsByLineaAndCategoria respeta sublineas N2 parciales", () 
     ["a", "b"],
   );
 });
+
+test("filterRotationRowsByLineaAndCategoria infiere N2 desde sublinea sin codigo", () => {
+  const nombres = {
+    "0507": "GRANOS EMPACADOS SALES",
+    "0503": "GRANOS EMPACADOS PROVEEDORES ARROZ",
+  };
+  const rows = [
+    baseRow({
+      item: "match",
+      lineaN2Codigo: null,
+      sublinea: "GRANOS EMPACADOS SALES",
+    }),
+    baseRow({
+      item: "other",
+      lineaN2Codigo: null,
+      sublinea: "GRANOS EMPACADOS PROVEEDORES ARROZ",
+    }),
+  ];
+  const filtered = filterRotationRowsByLineaAndCategoria(
+    rows,
+    ["05"],
+    ["05"],
+    [],
+    [],
+    ["0503", "0507"],
+    ["0507"],
+    nombres,
+  );
+  assert.deepEqual(
+    filtered.map((row) => row.item),
+    ["match"],
+  );
+});

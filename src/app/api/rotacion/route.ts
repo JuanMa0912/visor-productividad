@@ -1475,6 +1475,16 @@ type ExplainPlanResult = {
   plan: string;
 };
 
+const rotationRowHasLineaN2Metadata = (row: RotationRow): boolean => {
+  const code = String(row.lineaN2Codigo ?? "").trim();
+  if (code && code !== "__sin_n2__") return true;
+  const sub = row.sublinea?.trim();
+  return Boolean(sub && sub.toLowerCase() !== "sin sublinea");
+};
+
+const periodoStdRowsHaveLineaN2Metadata = (rows: RotationRow[]): boolean =>
+  rows.some(rotationRowHasLineaN2Metadata);
+
 const mapRotationDbRows = (rows: RotationDbRow[]): RotationRow[] =>
   rows
     .map((row) => ({
@@ -2166,7 +2176,7 @@ async function queryRotationRows({
         (await probeRotacionPeriodoStdReady(client))
       ) {
         try {
-          return await queryRotationRowsViaPeriodoStd({
+          const periodoResult = await queryRotationRowsViaPeriodoStd({
             client,
             maxSalesValue,
             empresa,
@@ -2175,6 +2185,18 @@ async function queryRotationRows({
             categoriaKeys,
             explain,
           });
+          if (explain || !Array.isArray(periodoResult)) {
+            return periodoResult;
+          }
+          if (
+            periodoResult.length === 0 ||
+            periodoStdRowsHaveLineaN2Metadata(periodoResult)
+          ) {
+            return periodoResult;
+          }
+          console.warn(
+            `[rotacion API] periodo-std sin metadata N2 (${periodoResult.length} filas), fallback matview/raw`,
+          );
         } catch (err) {
           console.warn(
             `[rotacion API] periodo-std fallo, fallback matview/raw: ${
@@ -3023,12 +3045,17 @@ export async function GET(request: Request) {
         for (const code of slice.codes) lineasN2Set.add(code);
         lineasN2NombresAcc = mergeLineaN1NombreRecords(
           lineasN2NombresAcc,
-          slice.nombres,
+          Object.fromEntries(
+            Object.entries(slice.nombres).map(([code, name]) => [
+              normalizeRotationLineaN2Code(code),
+              name,
+            ]),
+          ),
         );
       }
-      filters.lineasN2 = Array.from(lineasN2Set).sort((a, b) =>
-        a.localeCompare(b, "es", { numeric: true }),
-      );
+      filters.lineasN2 = Array.from(lineasN2Set)
+        .map((code) => normalizeRotationLineaN2Code(code))
+        .sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
       filters.lineasN2Nombres = lineasN2NombresAcc;
     }
 

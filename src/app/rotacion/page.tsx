@@ -84,6 +84,7 @@ import {
   compareLineaN2FilterCodes,
   normalizeLineaN1CodeForFilter,
   normalizeLineaN2CodeForFilter,
+  resolveRowLineaN2FilterCode,
   LINEA_N1_SHORT_NAMES,
   DEFAULT_ABCD_CONFIG,
   PAGE_SIZE_OPTIONS,
@@ -1299,6 +1300,7 @@ export function RotacionPageInner() {
 
   const lineasN2DerivedFromRows = useMemo(() => {
     if (!singleSelectedLineaN1) return [];
+    const nombres = lineasN2Catalog.nombres;
     const acc = new Set<string>();
     for (const row of rows) {
       if (
@@ -1306,10 +1308,10 @@ export function RotacionPageInner() {
       ) {
         continue;
       }
-      acc.add(normalizeLineaN2CodeForFilter(row.lineaN2Codigo));
+      acc.add(resolveRowLineaN2FilterCode(row, nombres));
     }
     return Array.from(acc).sort(compareLineaN2FilterCodes);
-  }, [rows, singleSelectedLineaN1]);
+  }, [rows, singleSelectedLineaN1, lineasN2Catalog.nombres]);
 
   const lineasN2ForFilterUi = useMemo(() => {
     if (!singleSelectedLineaN1) return [];
@@ -1321,17 +1323,6 @@ export function RotacionPageInner() {
     if (deduped.length > 0) return deduped;
     return fromRows.length > 0 ? fromRows : lineasN2DerivedFromRows;
   }, [singleSelectedLineaN1, lineasN2Catalog.codes, lineasN2DerivedFromRows]);
-
-  const lineasN2CatalogForFilter = useMemo(() => {
-    if (!singleSelectedLineaN1) return [];
-    const fromRows = lineasN2DerivedFromRows.filter(
-      (code) => code !== "__sin_n2__",
-    );
-    if (fromRows.length === 0) return lineasN2ForFilterUi;
-    const uiSet = new Set(lineasN2ForFilterUi);
-    const overlap = fromRows.filter((code) => uiSet.has(code));
-    return overlap.length > 0 ? overlap : fromRows;
-  }, [singleSelectedLineaN1, lineasN2DerivedFromRows, lineasN2ForFilterUi]);
 
   const lineasN2NombreMap = useMemo(() => {
     const out = mergeRotationLineaN2NombreMaps(
@@ -1435,10 +1426,16 @@ export function RotacionPageInner() {
         const cached = readCatalogCache(catalogByN2CacheRef.current, comboKey);
         if (cached?.filters?.lineasN2) {
           if (generation !== lineasN2LoadGenerationRef.current) return;
-          setLineasN2Catalog({
-            codes: cached.filters.lineasN2 ?? [],
-            nombres: cached.filters.lineasN2Nombres ?? {},
-          });
+          const codes = (cached.filters.lineasN2 ?? []).map(
+            normalizeLineaN2CodeForFilter,
+          );
+          const nombres: Record<string, string> = {};
+          for (const [key, name] of Object.entries(
+            cached.filters.lineasN2Nombres ?? {},
+          )) {
+            nombres[normalizeLineaN2CodeForFilter(key)] = name;
+          }
+          setLineasN2Catalog({ codes, nombres });
           return;
         }
 
@@ -1463,8 +1460,15 @@ export function RotacionPageInner() {
           return;
         }
         const payload = (await response.json()) as RotationApiResponse;
-        const codes = payload.filters?.lineasN2 ?? [];
-        const nombres = payload.filters?.lineasN2Nombres ?? {};
+        const codes = (payload.filters?.lineasN2 ?? []).map(
+          normalizeLineaN2CodeForFilter,
+        );
+        const nombres: Record<string, string> = {};
+        for (const [key, name] of Object.entries(
+          payload.filters?.lineasN2Nombres ?? {},
+        )) {
+          nombres[normalizeLineaN2CodeForFilter(key)] = name;
+        }
         writeCatalogCache(catalogByN2CacheRef.current, comboKey, {
           filters: {
             companies: [],
@@ -1666,7 +1670,7 @@ export function RotacionPageInner() {
         selectedLineaN1Values,
         filterCatalog.categorias ?? [],
         selectedCategoriaKeys,
-        singleSelectedLineaN1 ? lineasN2CatalogForFilter : [],
+        singleSelectedLineaN1 ? lineasN2ForFilterUi : [],
         singleSelectedLineaN1 ? selectedLineaN2Values : [],
         singleSelectedLineaN1 ? lineasN2NombreMap : {},
       ),
@@ -1677,7 +1681,7 @@ export function RotacionPageInner() {
       selectedLineaN1Values,
       selectedCategoriaKeys,
       singleSelectedLineaN1,
-      lineasN2CatalogForFilter,
+      lineasN2ForFilterUi,
       selectedLineaN2Values,
       lineasN2NombreMap,
     ],
@@ -2444,7 +2448,7 @@ export function RotacionPageInner() {
           selectedLineaN2Values:
             selectedLineaN1Values.length === 1 ? selectedLineaN2Values : [],
           lineasN2Catalog:
-            selectedLineaN1Values.length === 1 ? lineasN2CatalogForFilter : [],
+            selectedLineaN1Values.length === 1 ? lineasN2ForFilterUi : [],
           lineasN2Nombres:
             selectedLineaN1Values.length === 1 ? lineasN2NombreMap : {},
           selectedCategoriaKeys,
@@ -2507,7 +2511,7 @@ export function RotacionPageInner() {
       selectedCategoriaKeys,
       selectedLineaN1Values,
       selectedLineaN2Values,
-      lineasN2CatalogForFilter,
+      lineasN2ForFilterUi,
       lineasN2NombreMap,
       tableSortDirection,
       tableSortField,

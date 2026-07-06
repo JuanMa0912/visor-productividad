@@ -23,13 +23,16 @@ export type RotacionRowsIdbCacheValue = {
   abcdConfig?: AbcdConfig;
 };
 
+/** Invalida entradas IDB anteriores cuando cambia el shape de filas (p. ej. metadata N2). */
+const ROTACION_ROWS_CACHE_SCHEMA = 2;
+
 export const buildRotacionRowsCacheKey = (
   apiBasePath: string,
   userId: string | null | undefined,
   rowsFilterKey: string,
 ): string => {
   const userScope = userId?.trim() || "anon";
-  return `${apiBasePath}|${userScope}|${rowsFilterKey}`;
+  return `${apiBasePath}|${userScope}|${rowsFilterKey}|v${ROTACION_ROWS_CACHE_SCHEMA}`;
 };
 
 const isIndexedDbAvailable = (): boolean =>
