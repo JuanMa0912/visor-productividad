@@ -78,6 +78,13 @@ Para llevar ese margen a GCP despues, usa el sync (seccion 1):
 > `margen_final` (aunque venga `--no-refresh`, que solo aplica a la matview de rotacion). Para
 > saltar el roll explicitamente: `--no-roll`. Sin el refresh el tablero mostraria datos viejos.
 
+> **Reglas de negocio del ETL de margen** (detalle en [`margen/README.md`](margen/README.md)):
+> (1) solo carga `id_tipo IN ('3','4')` — la categoria `V` se excluye; (2) la **linea 33**
+> (bebidas alcoholicas: licores, cerveza, vino) carga el impoconsumo dentro de `vlrtot_bru`,
+> asi que **entra a ventas Y margen**. Backfill del historico (una vez, local + GCP):
+> `UPDATE margen_final SET vlrtot_bru = ven_totales WHERE TRIM(id_linea1)='33';` y luego
+> `SELECT refresh_margen_final_roll();` en GCP.
+
 ---
 
 ## 3. Rotacion (base local -> GCP + sublinea)

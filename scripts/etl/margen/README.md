@@ -10,6 +10,33 @@ origen (**192.168.35.217**: mercamio / mtodo / bogota) a **`produXdia.margen_fin
   (`--margen-full` la primera vez o cuando hay backfill; luego el sync diario con ventana).
 - Corre en el server (232) con `python3` del sistema (tiene `psycopg2-binary`; no hay venv).
 
+## Reglas de negocio (que carga y como)
+
+Dos ajustes clave viven en el `SQL_TEMPLATE` de `cargar_margen.py`:
+
+**1. Solo categorias 3 y 4 (mercado).** Filtra `WHERE i.id_tipo IN ('3','4')`. La categoria
+`id_tipo = 'V'` NO se carga (desde 2026-07-06). Para limpiar V historica:
+```sql
+DELETE FROM margen_final WHERE id_tipo = 'V';        -- local (232) Y GCP
+DELETE FROM margen_final_roll WHERE id_tipo = 'V';   -- solo GCP (el roll)
+```
+
+**2. Impoconsumo en BEBIDAS ALCOHOLICAS (linea 33 = licores, cerveza, vino).** Desde
+2026-07-06, el bruto cargado (`vlrtot_bru`) de la linea `33` YA incluye el impoconsumo
+(`vlrimpcon1`) → **entra a ventas Y margen** (el tablero calcula ambos sobre `vlrtot_bru`).
+El resto de lineas queda igual. `ven_totales` sigue usando el bruto ORIGINAL, asi que **no se
+duplica** el impoconsumo.
+- El impoconsumo vive en `cmmovimiento_pdv.vlrimpcon1` del POS (217). La tabla `impuestos` lo
+  marca con `id_ind_impocon = 1` (codigos `A` = IVA 5% + IMPOCONSUMO, `C` = IVA 19% + IMPOCONSUMO).
+- **Backfill del historico** (una vez; idempotente porque en `margen_final` ya esta guardado
+  `ven_totales` = bruto_original + impoconsumo):
+  ```sql
+  -- en local (232) Y en GCP:
+  UPDATE margen_final SET vlrtot_bru = ven_totales WHERE TRIM(id_linea1) = '33';
+  -- luego refrescar el roll en GCP (full):
+  SELECT refresh_margen_final_roll();
+  ```
+
 ## Config
 
 Usa el **mismo `.env.etl`** que el sync (no tiene su propio archivo). Necesita:
