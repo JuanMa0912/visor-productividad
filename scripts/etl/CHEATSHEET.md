@@ -80,22 +80,55 @@ Para llevar ese margen a GCP despues, usa el sync (seccion 1):
 
 ---
 
-## 3. Codigos de salida
+## 3. Rotacion (base local -> GCP + sublinea)
+
+El ETL que llena la base `rotacion_base_item_dia_sede` **NO esta en este repo**:
+vive en `/opt/etl_rotacion/etl_rotacion_v3.py` (232, corre como `etlrotacion` via
+`etl-rotacion.timer` 07:00). El sync (seccion 1) es el que la **sube a GCP**.
+
+**Cargar la base LOCAL de fecha a fecha** (fechas SIN guiones, `YYYYMMDD`):
+```bash
+sudo -u etlrotacion /opt/etl_rotacion/.venv/bin/python /opt/etl_rotacion/etl_rotacion_v3.py \
+  --mode backfill --date-start 20260701 --date-end 20260705 --log-dir /var/log/etl_rotacion
+```
+> `backfill` ~2.5 min por dia por empresa (recarga inventario del mes). `--dry-run` para probar.
+
+**Subir ese rango a GCP** (fechas CON guiones, `YYYY-MM-DD`):
+```bash
+$SYNC --only rotacion_base_item_dia_sede --desde 2026-07-01 --hasta 2026-07-05 --replace --verify
+```
+El sync refresca solo el matview `rotacion_item_dia_clean` (**la "view"**, CONCURRENTLY,
+sin downtime) y el snapshot `rotacion_item_periodo_std` (**el "general"** que lee el tablero
+por defecto). El daily 07:50 es upsert; el reconcile dominical usa `--replace` (limpia huerfanas).
+
+> **Sublinea (linea nivel 2):** ya viaja sola. Son columnas de la base
+> (`id_linea_nivel_2` / `nombre_linea_nivel_2`) que el ETL 07:00 llena y el sync sube. El
+> matview y el general se refrescan en cada sync. **Requisito UNA-SOLA-VEZ en GCP:** aplicar
+> las 3 migraciones `20260705_rotacion_sublinea.sql` (base),
+> `20260706_rotacion_clean_matview_sublinea.sql` (matview) y
+> `20260707_rotacion_periodo_std_sublinea.sql` (snapshot + recrea la funcion
+> `refresh_rotacion_item_periodo_std()`). **Sin la 20260707 el "general" sale con sublinea en
+> NULL** aunque la base la tenga. Detalle en `db/migrations/`.
+
+---
+
+## 4. Codigos de salida
 
 `0` OK · `3` WARNING (sin datos de ayer en tablas canary, exit normal del timer) ·
 `1` ERROR · `2` uso invalido (flag/fecha mal escrita).
 
-## 4. Ver estado de los timers / logs
+## 5. Ver estado de los timers / logs
 
 ```bash
-systemctl list-timers 'visor-etl-*'
-journalctl -u visor-etl-sync.service -n 80 --no-pager        # diario 7:50
-journalctl -u visor-etl-reconcile.service -n 80 --no-pager   # domingos 16:00
+systemctl list-timers 'visor-etl-*' 'etl-rotacion*'
+journalctl -u visor-etl-sync.service -n 80 --no-pager        # diario 7:50 (sube todo a GCP)
+journalctl -u visor-etl-reconcile.service -n 80 --no-pager   # domingos 16:00 (--replace)
 journalctl -u visor-etl-margen.service -n 80 --no-pager      # margenes 7:15
+journalctl -u etl-rotacion.service -n 80 --no-pager          # rotacion base local 7:00
 ```
 (usa `sudo` si `prodapp` no ve el journal).
 
-## 5. Reglas de oro
+## 6. Reglas de oro
 
 - Re-correr es **siempre seguro**: upsert no duplica; replace borra-ventana+reinserta.
 - Sube/replica lo que la **local** ya tiene; no inventa datos faltantes.
