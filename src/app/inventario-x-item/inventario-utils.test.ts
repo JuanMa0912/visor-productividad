@@ -4,19 +4,22 @@ import {
   NO_SALES_DI_VALUE,
   calculateMatrixItemTotalDiDays,
   defaultRollingMonthBackRange,
+  isStaleMonthToDatePartialDefault,
   isStalePreviousMonthDefaultRange,
 } from "./inventario-utils";
 
-test("defaultRollingMonthBackRange usa mes en curso hasta el ultimo dato", () => {
+const julyRef = new Date("2026-07-06T12:00:00");
+
+test("defaultRollingMonthBackRange usa ~30 dias como rotacion", () => {
   assert.deepEqual(
-    defaultRollingMonthBackRange("2026-01-01", "2026-07-02"),
-    { start: "2026-07-01", end: "2026-07-02" },
+    defaultRollingMonthBackRange("2026-01-01", "2026-07-02", julyRef),
+    { start: "2026-06-03", end: "2026-07-02" },
   );
 });
 
 test("defaultRollingMonthBackRange acota al minimo disponible", () => {
   assert.deepEqual(
-    defaultRollingMonthBackRange("2026-07-15", "2026-07-20"),
+    defaultRollingMonthBackRange("2026-07-15", "2026-07-20", julyRef),
     { start: "2026-07-15", end: "2026-07-20" },
   );
 });
@@ -28,7 +31,18 @@ test("isStalePreviousMonthDefaultRange detecta el default legado de junio", () =
     true,
   );
   assert.equal(
-    isStalePreviousMonthDefaultRange("2026-07-01", "2026-07-02", ref),
+    isStalePreviousMonthDefaultRange("2026-06-03", "2026-07-02", ref),
+    false,
+  );
+});
+
+test("isStaleMonthToDatePartialDefault detecta dia 1 del mes en curso", () => {
+  assert.equal(
+    isStaleMonthToDatePartialDefault("2026-07-01", "2026-07-05", "2026-07-05"),
+    true,
+  );
+  assert.equal(
+    isStaleMonthToDatePartialDefault("2026-06-03", "2026-07-02", "2026-07-02"),
     false,
   );
 });

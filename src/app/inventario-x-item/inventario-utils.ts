@@ -1,4 +1,5 @@
 import type { InventarioSummaryRow } from "./types";
+import { getRollingMonthBackRange } from "@/lib/rotacion/rolling-month-range";
 
 export const ALL_FILTER_VALUE = "__all__";
 export const ITEM_DROPDOWN_NO_SEARCH_LIMIT = 120;
@@ -21,25 +22,30 @@ export const getCookieValue = (name: string) => {
 };
 
 /**
- * Rango por defecto: mes en curso del dia 1 hasta el ultimo dato disponible (`max`).
- * Alineado con margenes y con la expectativa de ver el corte mas reciente del ETL.
+ * Rango por defecto: misma regla que rotacion (`getRollingMonthBackRange`).
+ * ~30/31 dias hacia atras desde el ultimo dato, acotado al minimo disponible.
  */
 export const defaultRollingMonthBackRange = (
   min: string,
   max: string,
+  referenceDate: Date = new Date(),
 ): { start: string; end: string } | null => {
   if (!max || !/^\d{4}-\d{2}-\d{2}$/.test(max)) return null;
+  const safeMin =
+    min && /^\d{4}-\d{2}-\d{2}$/.test(min) ? min : max;
+  return getRollingMonthBackRange(safeMin, max, referenceDate);
+};
 
-  let end = max;
-  let start = `${max.slice(0, 7)}-01`;
-
-  if (min && /^\d{4}-\d{2}-\d{2}$/.test(min)) {
-    if (start < min) start = min;
-    if (end < min) end = min;
+/** Detecta el default parcial mes-en-curso (dia 1 del mes del ultimo dato). */
+export const isStaleMonthToDatePartialDefault = (
+  start: string,
+  end: string,
+  availableEnd: string,
+): boolean => {
+  if (!availableEnd || !/^\d{4}-\d{2}-\d{2}$/.test(availableEnd)) {
+    return false;
   }
-  if (start > end) start = end;
-
-  return { start, end };
+  return start === `${availableEnd.slice(0, 7)}-01` && end <= availableEnd;
 };
 
 /** Detecta el default legado (mes calendario anterior completo) para refrescarlo. */
