@@ -2542,6 +2542,88 @@ export const HourlyAnalysis = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleExportCashierListXlsx = async () => {
+    if (
+      personBreakdownView !== "individual" ||
+      cashierMonthComparison ||
+      sortedPeopleBreakdown.length === 0
+    ) {
+      return;
+    }
+
+    const ExcelJS = await loadExcelJs();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Aporte individual");
+    sheet.columns = [
+      { header: "#", key: "rank", width: 8 },
+      { header: "Nombre", key: "personName", width: 36 },
+      { header: "ID", key: "personId", width: 16 },
+      { header: "Cargo", key: "personCargo", width: 22 },
+      { header: "Ventas totales", key: "totalSales", width: 18 },
+      { header: "Horas laboradas", key: "workedHours", width: 16 },
+      { header: "Vta/Hr", key: "vtaHr", width: 12 },
+    ];
+
+    sortedPeopleBreakdown.forEach((person, index) => {
+      const activeSlotsCount =
+        (typeof person.activeSlotsCount === "number"
+          ? person.activeSlotsCount
+          : (person.activeSlots?.length ?? person.hourlySales.length)) || 0;
+      const totalLaborMinutes = getCashierLaborMinutes(
+        person,
+        activeSlotsCount,
+        bucketMinutes,
+      );
+      const workedHours = totalLaborMinutes / 60;
+      const salesPerHour = calcVtaHr(person.totalSales, workedHours);
+      const rawId = person.personId?.toString().trim() ?? "";
+      const numericId = /^\d+$/.test(rawId) ? Number(rawId) : rawId;
+      const workedHoursValue = Number.isFinite(workedHours)
+        ? decimalHoursToMinutes(Math.max(0, workedHours)) / (24 * 60)
+        : null;
+
+      sheet.addRow({
+        rank: index + 1,
+        personName: sanitizeExportText(person.personName),
+        personId: numericId || "-",
+        personCargo: sanitizeExportText(person.personCargo?.trim() || "—"),
+        totalSales: Math.round(person.totalSales),
+        workedHours: workedHoursValue,
+        vtaHr: Number.isFinite(salesPerHour)
+          ? Number(salesPerHour.toFixed(3))
+          : 0,
+      });
+    });
+
+    const header = sheet.getRow(1);
+    header.font = { bold: true };
+    header.alignment = { vertical: "middle", horizontal: "center" };
+    sheet.getColumn("personId").numFmt = "0";
+    sheet.getColumn("totalSales").numFmt = "#,##0";
+    sheet.getColumn("workedHours").numFmt = "[h]:mm";
+    sheet.getColumn("workedHours").alignment = {
+      vertical: "middle",
+      horizontal: "right",
+    };
+    sheet.getColumn("vtaHr").numFmt = "#,##0.000";
+
+    const range = activeHourlyData?.personContributionsRange;
+    const dateKey =
+      isCashierPersonRangeResponse && range?.start && range?.end
+        ? `${range.start}_a_${range.end}`
+        : selectedDate || new Date().toISOString().slice(0, 10);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `aporte-individual-cajeros-${dateKey}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div
       ref={topSectionRef}
@@ -4316,6 +4398,15 @@ export const HourlyAnalysis = ({
                                 )}{" "}
                                 de {sortedPeopleBreakdown.length}
                               </span>
+                              <button
+                                type="button"
+                                onClick={() => void handleExportCashierListXlsx()}
+                                disabled={sortedPeopleBreakdown.length === 0}
+                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200/70 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-widest text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Download className="h-3 w-3" />
+                                Exportar Excel
+                              </button>
                             </div>
                           </div>
                         )}
