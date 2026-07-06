@@ -370,6 +370,9 @@ export const MargenesBoard = ({
   const [lineas, setLineas] = useState<string[]>([]);
   const [sublineas, setSublineas] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>([]);
+  const [itemSearchOptions, setItemSearchOptions] = useState<FilterOption[]>([]);
+  const [itemSearchLoading, setItemSearchLoading] = useState(false);
+  const [itemSearchQuery, setItemSearchQuery] = useState("");
 
   const [mode, setMode] = useState<BoardMode>("drill");
   const [factTab, setFactTab] = useState<FactTab>("nav");
@@ -417,6 +420,30 @@ export const MargenesBoard = ({
       lineas,
       sublineas,
       items,
+    ],
+  );
+
+  const filterCatalogQueryBase = useMemo(
+    () =>
+      buildQuery({
+        from: dateStart,
+        to: dateEnd,
+        sede: effectiveSedes.join(","),
+        empresa: empresas.join(",") || undefined,
+        fecha: fechas.join(",") || undefined,
+        categoria: categorias.join(",") || undefined,
+        linea: lineas.join(",") || undefined,
+        sublinea: sublineas.join(",") || undefined,
+      }),
+    [
+      dateStart,
+      dateEnd,
+      effectiveSedes,
+      empresas,
+      fechas,
+      categorias,
+      lineas,
+      sublineas,
     ],
   );
 
@@ -518,6 +545,78 @@ export const MargenesBoard = ({
       items: itemOptions,
     };
   }, [scopedFilterOptions, lineas, sublineas]);
+
+  const loadItemSearch = useCallback(
+    async (query: string) => {
+      const q = query.trim();
+      setItemSearchQuery(query);
+      if (!q) {
+        setItemSearchOptions([]);
+        setItemSearchLoading(false);
+        return;
+      }
+      setItemSearchLoading(true);
+      try {
+        const params = new URLSearchParams(filterCatalogQueryBase);
+        params.set("itemSearch", q);
+        const response = await fetch(
+          `/api/margenes/data?mode=filter-items&${params.toString()}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) {
+          setItemSearchOptions([]);
+          return;
+        }
+        const data = (await response.json()) as { items?: FilterOption[] };
+        setItemSearchOptions(data.items ?? []);
+      } finally {
+        setItemSearchLoading(false);
+      }
+    },
+    [filterCatalogQueryBase],
+  );
+
+  const itemSelectOptions = useMemo(() => {
+    const catalog = cascadedFilterOptions.items.map((option) => ({
+      value: option.value,
+      label: option.label,
+      code: option.code ?? option.value,
+    }));
+
+    const mergeSelected = (
+      list: Array<{ value: string; label: string; code: string }>,
+    ) => {
+      const merged = new Map(list.map((option) => [option.value, option]));
+      for (const value of items) {
+        if (merged.has(value)) continue;
+        const fromCatalog = catalog.find((option) => option.value === value);
+        if (fromCatalog) merged.set(value, fromCatalog);
+      }
+      return [...merged.values()];
+    };
+
+    if (!itemSearchQuery.trim()) {
+      return mergeSelected(catalog);
+    }
+
+    return mergeSelected(
+      itemSearchOptions.map((option) => ({
+        value: option.value,
+        label: option.label,
+        code: option.code ?? option.value,
+      })),
+    );
+  }, [
+    cascadedFilterOptions.items,
+    itemSearchOptions,
+    itemSearchQuery,
+    items,
+  ]);
+
+  useEffect(() => {
+    setItemSearchOptions([]);
+    setItemSearchQuery("");
+  }, [filterCatalogQueryBase]);
 
   const handleLineasChange = useCallback(
     (next: string[]) => {
@@ -857,14 +956,12 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Ítem"
           values={items}
-          options={cascadedFilterOptions.items.map((option) => ({
-            value: option.value,
-            label: option.label,
-            code: option.code ?? option.value,
-          }))}
+          options={itemSelectOptions}
           onChange={setItems}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
+          searchLoading={itemSearchLoading}
+          onDebouncedSearch={loadItemSearch}
           searchPlaceholder="Buscar por nombre o código…"
           codeBeforeLabel
         />

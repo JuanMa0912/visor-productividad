@@ -1110,3 +1110,99 @@ export const queryFilterOptions = async (
     })),
   };
 };
+
+/** Búsqueda de ítems por código o nombre (sin límite fijo de catálogo inicial). */
+export const queryFilterItemSearch = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  table: MargenDataTable,
+  search: string,
+  limit = 150,
+) => {
+  const trimmed = search.trim();
+  if (!trimmed) {
+    return {
+      items: [] as Array<{
+        value: string;
+        label: string;
+        code: string;
+        linea: string;
+        sublinea: string;
+      }>,
+    };
+  }
+
+  const params: unknown[] = [];
+  const where = buildMargenWhereForTable(
+    {
+      ...filters,
+      items: [],
+    },
+    params,
+    table,
+  );
+  const roll = isRollTable(table);
+  params.push(`%${trimmed}%`);
+  const patternIdx = params.length;
+  params.push(trimmed);
+  const exactIdx = params.length;
+
+  const result = await client.query<{
+    value: string;
+    label: string;
+    code: string;
+    linea: string;
+    sublinea: string;
+  }>(
+    roll
+      ? `
+    SELECT DISTINCT
+      id_item AS value,
+      COALESCE(NULLIF(item_descripcion, ''), id_item) AS label,
+      id_item AS code,
+      id_linea1 AS linea,
+      id_linea2 AS sublinea
+    FROM ${table}
+    WHERE ${where}
+      AND id_item <> ''
+      AND (
+        id_item ILIKE $${patternIdx}
+        OR COALESCE(NULLIF(item_descripcion, ''), id_item) ILIKE $${patternIdx}
+      )
+    ORDER BY
+      CASE WHEN id_item = $${exactIdx} THEN 0 ELSE 1 END,
+      2
+    LIMIT ${limit}
+    `
+      : `
+    SELECT DISTINCT
+      TRIM(COALESCE(id_item::text, '')) AS value,
+      COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS label,
+      TRIM(COALESCE(id_item::text, '')) AS code,
+      TRIM(COALESCE(id_linea1::text, '')) AS linea,
+      TRIM(COALESCE(id_linea2::text, '')) AS sublinea
+    FROM ${table}
+    WHERE ${where}
+      AND TRIM(COALESCE(id_item::text, '')) <> ''
+      AND (
+        TRIM(COALESCE(id_item::text, '')) ILIKE $${patternIdx}
+        OR COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) ILIKE $${patternIdx}
+      )
+    ORDER BY
+      CASE WHEN TRIM(COALESCE(id_item::text, '')) = $${exactIdx} THEN 0 ELSE 1 END,
+      2
+    LIMIT ${limit}
+    `,
+    params,
+  );
+
+  return {
+    items: (result.rows ?? []).map((entry) => ({
+      value: String(entry.value),
+      label: String(entry.label),
+      code: String(entry.code ?? entry.value),
+      linea: String(entry.linea ?? ""),
+      sublinea: String(entry.sublinea ?? ""),
+    })),
+  };
+};

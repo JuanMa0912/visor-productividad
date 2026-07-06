@@ -19,6 +19,8 @@ export const MargenesMultiSelect = ({
   loading,
   searchPlaceholder = "Buscar…",
   codeBeforeLabel = false,
+  onDebouncedSearch,
+  searchLoading,
 }: {
   label: string;
   values: string[];
@@ -30,6 +32,9 @@ export const MargenesMultiSelect = ({
   loading?: boolean;
   searchPlaceholder?: string;
   codeBeforeLabel?: boolean;
+  /** Si se define, las opciones vienen del padre (p. ej. búsqueda en servidor). */
+  onDebouncedSearch?: (query: string) => void;
+  searchLoading?: boolean;
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -45,7 +50,14 @@ export const MargenesMultiSelect = ({
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
+  useEffect(() => {
+    if (!onDebouncedSearch || !open) return;
+    const timer = window.setTimeout(() => onDebouncedSearch(search), 300);
+    return () => window.clearTimeout(timer);
+  }, [search, open, onDebouncedSearch]);
+
   const filtered = useMemo(() => {
+    if (onDebouncedSearch) return options;
     const q = search.trim().toLowerCase();
     if (!q) return options;
     return options.filter(
@@ -54,7 +66,7 @@ export const MargenesMultiSelect = ({
         option.value.toLowerCase().includes(q) ||
         option.code?.toLowerCase().includes(q),
     );
-  }, [options, search]);
+  }, [onDebouncedSearch, options, search]);
 
   const formatOptionLabel = (option: MargenSelectOption) => {
     if (codeBeforeLabel && option.code) {
@@ -139,7 +151,13 @@ export const MargenesMultiSelect = ({
             </button>
           </div>
           <div className="max-h-[220px] overflow-y-auto">
-            {filtered.map((option) => (
+            {searchLoading ? (
+              <p className="px-2.5 py-3 text-center text-xs text-[#6b7590]">
+                Buscando…
+              </p>
+            ) : null}
+            {!searchLoading
+              ? filtered.map((option) => (
               <label
                 key={option.value}
                 className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-white/5"
@@ -162,9 +180,14 @@ export const MargenesMultiSelect = ({
                   </span>
                 ) : null}
               </label>
-            ))}
-            {filtered.length === 0 ? (
-              <p className="px-2.5 py-3 text-center text-xs text-[#6b7590]">Sin opciones</p>
+            ))
+              : null}
+            {!searchLoading && filtered.length === 0 ? (
+              <p className="px-2.5 py-3 text-center text-xs text-[#6b7590]">
+                {onDebouncedSearch && search.trim()
+                  ? "Sin coincidencias. Prueba otro código o nombre."
+                  : "Sin opciones"}
+              </p>
             ) : null}
           </div>
         </div>

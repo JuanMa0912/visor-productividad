@@ -29,6 +29,7 @@ import {
   queryFactListRows,
   queryFactNavRows,
   queryFilterOptions,
+  queryFilterItemSearch,
   queryKpi,
   querySedeCompare,
 } from "@/lib/margenes/drill-queries";
@@ -49,6 +50,7 @@ type DataMode =
   | "sedes"
   | "summary"
   | "filters"
+  | "filter-items"
   | "kpi"
   | "drill"
   | "fact-nav"
@@ -58,6 +60,7 @@ type DataMode =
 const HEAVY_MODES: DataMode[] = [
   "summary",
   "filters",
+  "filter-items",
   "kpi",
   "drill",
   "fact-nav",
@@ -448,6 +451,14 @@ export async function GET(request: Request) {
       payload = await querySummary(client, parsed, dataTable);
     } else if (mode === "filters") {
       payload = await queryFilterOptions(client, parsed, dataTable);
+    } else if (mode === "filter-items") {
+      const itemSearch = url.searchParams.get("itemSearch") ?? "";
+      payload = await queryFilterItemSearch(
+        client,
+        parsed,
+        dataTable,
+        itemSearch,
+      );
     } else if (mode === "kpi") {
       const drillPath = parseDrillPath(url.searchParams.get("drillPath"));
       const mercadoOnly = url.searchParams.get("mercadoOnly") !== "false";
