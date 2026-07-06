@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildLineasN2QueryValues,
+  buildRotationItemLineaN2Key,
   filterRotationRowsByLineaAndCategoria,
   resolveRowLineaN2FilterCode,
   type RotationRow,
@@ -114,5 +115,32 @@ test("filterRotationRowsByLineaAndCategoria infiere N2 desde sublinea sin codigo
   assert.deepEqual(
     filtered.map((row) => row.item),
     ["match"],
+  );
+});
+
+test("filterRotationRowsByLineaAndCategoria usa itemLineaN2ByKey como lineas N1", () => {
+  const itemLineaN2ByKey = {
+    [buildRotationItemLineaN2Key("mercamio", "003", "1001")]: "0507",
+    [buildRotationItemLineaN2Key("mercamio", "003", "1002")]: "0505",
+  };
+  const rows = [
+    baseRow({ item: "1001", lineaN2Codigo: null, sublinea: null }),
+    baseRow({ item: "1002", lineaN2Codigo: null, sublinea: null }),
+    baseRow({ item: "1003", lineaN2Codigo: null, sublinea: null }),
+  ];
+  const filtered = filterRotationRowsByLineaAndCategoria(
+    rows,
+    ["05"],
+    ["05"],
+    [],
+    [],
+    ["0505", "0507"],
+    ["0507"],
+    {},
+    itemLineaN2ByKey,
+  );
+  assert.deepEqual(
+    filtered.map((row) => row.item),
+    ["1001"],
   );
 });

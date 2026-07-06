@@ -225,7 +225,8 @@ export function RotacionPageInner() {
   const [lineasN2Catalog, setLineasN2Catalog] = useState<{
     codes: string[];
     nombres: Record<string, string>;
-  }>({ codes: [], nombres: {} });
+    itemLineaN2ByKey: Record<string, string>;
+  }>({ codes: [], nombres: {}, itemLineaN2ByKey: {} });
   const [isLoadingLineasN2Catalog, setIsLoadingLineasN2Catalog] =
     useState(false);
   const lineasN2LoadGenerationRef = useRef(0);
@@ -1301,6 +1302,7 @@ export function RotacionPageInner() {
   const lineasN2DerivedFromRows = useMemo(() => {
     if (!singleSelectedLineaN1) return [];
     const nombres = lineasN2Catalog.nombres;
+    const itemIndex = lineasN2Catalog.itemLineaN2ByKey;
     const acc = new Set<string>();
     for (const row of rows) {
       if (
@@ -1308,10 +1310,15 @@ export function RotacionPageInner() {
       ) {
         continue;
       }
-      acc.add(resolveRowLineaN2FilterCode(row, nombres));
+      acc.add(resolveRowLineaN2FilterCode(row, nombres, itemIndex));
     }
     return Array.from(acc).sort(compareLineaN2FilterCodes);
-  }, [rows, singleSelectedLineaN1, lineasN2Catalog.nombres]);
+  }, [
+    rows,
+    singleSelectedLineaN1,
+    lineasN2Catalog.nombres,
+    lineasN2Catalog.itemLineaN2ByKey,
+  ]);
 
   const lineasN2ForFilterUi = useMemo(() => {
     if (!singleSelectedLineaN1) return [];
@@ -1336,14 +1343,23 @@ export function RotacionPageInner() {
       ) {
         continue;
       }
-      const code = normalizeLineaN2CodeForFilter(row.lineaN2Codigo);
+      const code = resolveRowLineaN2FilterCode(
+        row,
+        lineasN2Catalog.nombres,
+        lineasN2Catalog.itemLineaN2ByKey,
+      );
       const cand = row.sublinea?.trim();
       if (!cand || cand === "Sin sublinea") continue;
       const prev = out[code];
       if (!prev || cand.length > prev.length) out[code] = cand;
     }
     return out;
-  }, [lineasN2Catalog.nombres, rows, singleSelectedLineaN1]);
+  }, [
+    lineasN2Catalog.nombres,
+    lineasN2Catalog.itemLineaN2ByKey,
+    rows,
+    singleSelectedLineaN1,
+  ]);
 
   const lineaN2Options = useMemo<LineaN2Option[]>(() => {
     if (!singleSelectedLineaN1) return [];
@@ -1402,12 +1418,12 @@ export function RotacionPageInner() {
   useEffect(() => {
     if (!ready || isLoadingLineCatalog) return;
     if (!singleSelectedLineaN1 || targetSedeSelections.length === 0) {
-      setLineasN2Catalog({ codes: [], nombres: {} });
+      setLineasN2Catalog({ codes: [], nombres: {}, itemLineaN2ByKey: {} });
       setIsLoadingLineasN2Catalog(false);
       return;
     }
     if (!dateRange.start || !dateRange.end) {
-      setLineasN2Catalog({ codes: [], nombres: {} });
+      setLineasN2Catalog({ codes: [], nombres: {}, itemLineaN2ByKey: {} });
       setIsLoadingLineasN2Catalog(false);
       return;
     }
@@ -1419,7 +1435,7 @@ export function RotacionPageInner() {
       setIsLoadingLineasN2Catalog(true);
       try {
         const rangeKey = `${dateRange.start}|${dateRange.end}`;
-        const comboKey = `n2|${rangeKey}|${singleSelectedLineaN1}|${targetSedeSelections
+        const comboKey = `n2v2|${rangeKey}|${singleSelectedLineaN1}|${targetSedeSelections
           .map((s) => `${s.empresa}::${s.sedeId}`)
           .sort((a, b) => a.localeCompare(b, "es"))
           .join(",")}`;
@@ -1435,7 +1451,11 @@ export function RotacionPageInner() {
           )) {
             nombres[normalizeLineaN2CodeForFilter(key)] = name;
           }
-          setLineasN2Catalog({ codes, nombres });
+          setLineasN2Catalog({
+            codes,
+            nombres,
+            itemLineaN2ByKey: cached.filters.itemLineaN2ByKey ?? {},
+          });
           return;
         }
 
@@ -1456,7 +1476,7 @@ export function RotacionPageInner() {
         );
         if (generation !== lineasN2LoadGenerationRef.current) return;
         if (!response.ok) {
-          setLineasN2Catalog({ codes: [], nombres: {} });
+          setLineasN2Catalog({ codes: [], nombres: {}, itemLineaN2ByKey: {} });
           return;
         }
         const payload = (await response.json()) as RotationApiResponse;
@@ -1469,6 +1489,12 @@ export function RotacionPageInner() {
         )) {
           nombres[normalizeLineaN2CodeForFilter(key)] = name;
         }
+        const itemLineaN2ByKey: Record<string, string> = {};
+        for (const [key, code] of Object.entries(
+          payload.filters?.itemLineaN2ByKey ?? {},
+        )) {
+          itemLineaN2ByKey[key] = normalizeLineaN2CodeForFilter(code);
+        }
         writeCatalogCache(catalogByN2CacheRef.current, comboKey, {
           filters: {
             companies: [],
@@ -1479,9 +1505,10 @@ export function RotacionPageInner() {
             lineasN1PorCategoria: {},
             lineasN2: codes,
             lineasN2Nombres: nombres,
+            itemLineaN2ByKey,
           },
         });
-        setLineasN2Catalog({ codes, nombres });
+        setLineasN2Catalog({ codes, nombres, itemLineaN2ByKey });
       } finally {
         if (generation === lineasN2LoadGenerationRef.current) {
           setIsLoadingLineasN2Catalog(false);
@@ -1673,6 +1700,7 @@ export function RotacionPageInner() {
         singleSelectedLineaN1 ? lineasN2ForFilterUi : [],
         singleSelectedLineaN1 ? selectedLineaN2Values : [],
         singleSelectedLineaN1 ? lineasN2NombreMap : {},
+        singleSelectedLineaN1 ? lineasN2Catalog.itemLineaN2ByKey : {},
       ),
     [
       rows,
@@ -1684,6 +1712,7 @@ export function RotacionPageInner() {
       lineasN2ForFilterUi,
       selectedLineaN2Values,
       lineasN2NombreMap,
+      lineasN2Catalog.itemLineaN2ByKey,
     ],
   );
 
@@ -2451,6 +2480,10 @@ export function RotacionPageInner() {
             selectedLineaN1Values.length === 1 ? lineasN2ForFilterUi : [],
           lineasN2Nombres:
             selectedLineaN1Values.length === 1 ? lineasN2NombreMap : {},
+          itemLineaN2ByKey:
+            selectedLineaN1Values.length === 1
+              ? lineasN2Catalog.itemLineaN2ByKey
+              : {},
           selectedCategoriaKeys,
           productSearchInput,
           tableSortField,
@@ -2513,6 +2546,7 @@ export function RotacionPageInner() {
       selectedLineaN2Values,
       lineasN2ForFilterUi,
       lineasN2NombreMap,
+      lineasN2Catalog.itemLineaN2ByKey,
       tableSortDirection,
       tableSortField,
       writeRotacionExcel,

@@ -80,6 +80,8 @@ type RotationApiResponse = {
     /** Sublíneas N2 cuando se consulta con lineaN1Scope. */
     lineasN2?: string[];
     lineasN2Nombres?: Record<string, string>;
+    /** Mapa empresa::sedeId::item -> codigo N2 (catalogo con lineaN1Scope). */
+    itemLineaN2ByKey?: Record<string, string>;
     categorias: RotationCategoriaFilterOption[];
     lineasN1PorCategoria: Record<string, string[]>;
   };
@@ -908,12 +910,25 @@ const buildLineasN2QueryValues = (
   return valid;
 };
 
+/** Clave estable para cruzar item con su sublinea N2. */
+const buildRotationItemLineaN2Key = (
+  empresa: string,
+  sedeId: string,
+  item: string,
+): string => `${empresa}::${sedeId}::${item}`;
+
 const resolveRowLineaN2FilterCode = (
   row: RotationRow,
   nombresByCode: Record<string, string> = {},
+  itemLineaN2ByKey: Record<string, string> = {},
 ): string => {
   const direct = normalizeLineaN2CodeForFilter(row.lineaN2Codigo);
   if (direct !== "__sin_n2__") return direct;
+
+  const fromIndex = itemLineaN2ByKey[
+    buildRotationItemLineaN2Key(row.empresa, row.sedeId, row.item)
+  ];
+  if (fromIndex) return normalizeLineaN2CodeForFilter(fromIndex);
 
   const sub = row.sublinea?.trim();
   if (sub && sub.toLowerCase() !== "sin sublinea") {
@@ -969,14 +984,17 @@ const filterRotationRowsByLineaAndCategoria = (
   catalogLineasN2: string[] = [],
   selectedLineasN2: string[] = [],
   lineasN2Nombres: Record<string, string> = {},
+  itemLineaN2ByKey: Record<string, string> = {},
 ): RotationRow[] => {
   const lineasFilter = buildLineasN1QueryValues(
     catalogLineasN1,
     selectedLineasN1,
   );
-  const lineasN2Filter = buildLineasN2ClientFilterValues(
-    catalogLineasN2,
-    selectedLineasN2,
+  const normalizedN2Catalog = catalogLineasN2.map(normalizeLineaN2CodeForFilter);
+  const normalizedN2Selected = selectedLineasN2.map(normalizeLineaN2CodeForFilter);
+  const lineasN2Filter = buildLineasN1QueryValues(
+    normalizedN2Catalog,
+    normalizedN2Selected,
   );
   const catsFilter = buildCategoriaQueryKeys(
     catalogCategorias,
@@ -990,8 +1008,11 @@ const filterRotationRowsByLineaAndCategoria = (
     );
   }
   if (lineasN2Filter) {
+    const lineN2Set = new Set(lineasN2Filter);
     result = result.filter((row) =>
-      rowMatchesLineaN2Filter(row, lineasN2Filter, lineasN2Nombres),
+      lineN2Set.has(
+        resolveRowLineaN2FilterCode(row, lineasN2Nombres, itemLineaN2ByKey),
+      ),
     );
   }
   if (catsFilter) {
@@ -1692,4 +1713,4 @@ const readRotationApiForbiddenMessage = async (
 };
 
 export type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN2Option, LineaN1FamilyKey, AbcdConfig, AbcdCategory, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, AbcdSummaryRow, GroupRowsQuickFilter, GroupZeroEstadoSetFilter };
-export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, mergeRotationLineaN2NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, compareLineaN2FilterCodes, normalizeLineaN1CodeForFilter, normalizeLineaN2CodeForFilter, resolveRowLineaN2FilterCode, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, rotationMarginPct, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, buildLineasN2QueryValues, buildLineasN2ClientFilterValues, rowMatchesLineaN2Filter, filterRotationRowsByLineaAndCategoria, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage, DEFAULT_GROUP_ZERO_ESTADO_SET_FILTER, normalizeGroupZeroEstadoSetFilter };
+export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, mergeRotationLineaN2NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, compareLineaN2FilterCodes, normalizeLineaN1CodeForFilter, normalizeLineaN2CodeForFilter, buildRotationItemLineaN2Key, resolveRowLineaN2FilterCode, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, rotationMarginPct, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, buildLineasN2QueryValues, buildLineasN2ClientFilterValues, rowMatchesLineaN2Filter, filterRotationRowsByLineaAndCategoria, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage, DEFAULT_GROUP_ZERO_ESTADO_SET_FILTER, normalizeGroupZeroEstadoSetFilter };

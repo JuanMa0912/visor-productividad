@@ -159,6 +159,8 @@ export type RotationFilterCatalog = {
   /** Sublíneas N2 del periodo cuando se consulta con `lineaN1Scope`. */
   lineasN2?: string[];
   lineasN2Nombres?: Record<string, string>;
+  /** Mapa empresa::sedeId::item -> codigo N2 (con lineaN1Scope). */
+  itemLineaN2ByKey?: Record<string, string>;
   categorias: RotationCategoriaOption[];
   lineasN1PorCategoria: Record<string, string[]>;
 };
@@ -1382,6 +1384,121 @@ const queryRotationLineasN2 = async ({
     });
   }
   return value;
+};
+
+const buildRotationItemLineaN2Key = (
+  empresa: string,
+  sedeId: string,
+  item: string,
+): string => `${empresa}::${sedeId}::${item}`;
+
+const queryRotationItemLineaN2Index = async ({
+  startDate,
+  endDate,
+  empresa,
+  sedeId,
+  lineaN1Code,
+}: {
+  startDate: string;
+  endDate: string;
+  empresa: string | null;
+  sedeId: string;
+  lineaN1Code: string;
+}): Promise<Record<string, string>> => {
+  const normalizedN1 = normalizeRotationLineaN1Code(lineaN1Code);
+
+  return withPoolClient(async (client) => {
+    const out: Record<string, string> = {};
+    const matViewExists = await ensureRotacionCleanMatViewProbe(client);
+    const hasMatviewN2 =
+      matViewExists &&
+      (await probeRotacionMatviewHasSublineaColumns(client));
+
+    if (hasMatviewN2) {
+      const matviewResult = await client.query(
+        `
+        SELECT DISTINCT ON (empresa, sede_id, item)
+          empresa,
+          sede_id,
+          item,
+          linea_n2_codigo
+        FROM rotacion_item_dia_clean
+        WHERE fecha BETWEEN $1::date AND $2::date
+          AND sede_id = $3
+          AND ($4::text IS NULL OR empresa = $4)
+          AND COALESCE(linea_n1_codigo, '__sin_n1__') = $5
+          AND NULLIF(TRIM(linea_n2_codigo), '') IS NOT NULL
+        ORDER BY
+          empresa,
+          sede_id,
+          item,
+          fecha DESC,
+          carga_ts DESC NULLS LAST
+        `,
+        [startDate, endDate, sedeId, empresa, normalizedN1],
+      );
+      for (const raw of (matviewResult.rows ?? []) as Array<{
+        empresa: string;
+        sede_id: string;
+        item: string;
+        linea_n2_codigo: string | null;
+      }>) {
+        const code = normalizeRotationLineaN2Code(raw.linea_n2_codigo);
+        if (code === "__sin_n2__") continue;
+        out[buildRotationItemLineaN2Key(raw.empresa, raw.sede_id, raw.item)] =
+          code;
+      }
+      if (Object.keys(out).length > 0) return out;
+    }
+
+    const fields = await resolveRotacionBaseSqlFields(client);
+    const dateColumn = fields.dateColumn;
+    const baseResult = await client.query(
+      `
+      SELECT DISTINCT ON (empresa, sede_id, item)
+        empresa,
+        sede_id,
+        item,
+        linea_n2_codigo
+      FROM (
+        SELECT
+          ${fields.empresaExpr} AS empresa,
+          ${fields.sedeIdExpr} AS sede_id,
+          ${fields.itemExpr} AS item,
+          ${fields.n2CodeExpr} AS linea_n2_codigo,
+          ${fields.loadTimestampExpr} AS carga_ts
+        FROM ${getRotacionSourceTable()}
+        WHERE ${buildCompactDateRangeSql(dateColumn)}
+          AND ${fields.itemPresentCondition}
+          AND ${fields.allowedCategoriaExpr}
+          AND ${fields.sedeIdExpr} = $3
+          AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
+          AND COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = $5
+          AND ${fields.n2CodeExpr} IS NOT NULL
+      ) scoped
+      ORDER BY empresa, sede_id, item, carga_ts DESC NULLS LAST
+      `,
+      [
+        isoToCompactDate(startDate),
+        isoToCompactDate(endDate),
+        sedeId,
+        empresa,
+        normalizedN1,
+      ],
+    );
+    for (const raw of (baseResult.rows ?? []) as Array<{
+      empresa: string;
+      sede_id: string;
+      item: string;
+      linea_n2_codigo: string | null;
+    }>) {
+      const code = normalizeRotationLineaN2Code(raw.linea_n2_codigo);
+      if (code === "__sin_n2__") continue;
+      out[buildRotationItemLineaN2Key(raw.empresa, raw.sede_id, raw.item)] =
+        code;
+    }
+    return out;
+  });
 };
 
 const queryRotationCategoriaBundle = async ({
@@ -3096,19 +3213,31 @@ export async function GET(request: Request) {
     if (requestedLineaN1Scope && selectedVisibleSedes.length > 0) {
       const lineasN2Set = new Set<string>();
       let lineasN2NombresAcc: Record<string, string> = {};
+      let itemLineaN2ByKeyAcc: Record<string, string> = {};
       const n2PerSede = await mapWithConcurrency(
         selectedVisibleSedes,
         4,
-        async (sede) =>
-          queryRotationLineasN2({
-            startDate: boundedRange.start,
-            endDate: boundedRange.end,
-            empresa: sede.empresa,
-            sedeId: sede.sedeId,
-            lineaN1Code: requestedLineaN1Scope,
-          }),
+        async (sede) => {
+          const [slice, itemIndex] = await Promise.all([
+            queryRotationLineasN2({
+              startDate: boundedRange.start,
+              endDate: boundedRange.end,
+              empresa: sede.empresa,
+              sedeId: sede.sedeId,
+              lineaN1Code: requestedLineaN1Scope,
+            }),
+            queryRotationItemLineaN2Index({
+              startDate: boundedRange.start,
+              endDate: boundedRange.end,
+              empresa: sede.empresa,
+              sedeId: sede.sedeId,
+              lineaN1Code: requestedLineaN1Scope,
+            }),
+          ]);
+          return { slice, itemIndex };
+        },
       );
-      for (const slice of n2PerSede) {
+      for (const { slice, itemIndex } of n2PerSede) {
         for (const code of slice.codes) lineasN2Set.add(code);
         lineasN2NombresAcc = mergeLineaN1NombreRecords(
           lineasN2NombresAcc,
@@ -3119,11 +3248,13 @@ export async function GET(request: Request) {
             ]),
           ),
         );
+        itemLineaN2ByKeyAcc = { ...itemLineaN2ByKeyAcc, ...itemIndex };
       }
       filters.lineasN2 = Array.from(lineasN2Set)
         .map((code) => normalizeRotationLineaN2Code(code))
         .sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
       filters.lineasN2Nombres = lineasN2NombresAcc;
+      filters.itemLineaN2ByKey = itemLineaN2ByKeyAcc;
     }
 
     if (selectedVisibleSedes.length === 0) {
