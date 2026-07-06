@@ -4,6 +4,8 @@ ETL de margenes: carga "movimiento unificado" desde las BD POS de origen
 (192.168.35.217: mercamio / mtodo / bogota) a produXdia.margen_final (232).
 
 - Reusa la query de consulta_Movimiento_bd.py (CTE de kits + exclusion de Z%).
+- Solo carga id_tipo IN ('3','4') (categorias 3 y 4 = mercado). id_tipo 'V' se
+  excluye desde 2026-07-06 (no interesa en el tablero de margenes).
 - Idempotente por "reemplazar el dia": por cada empresa y dia del rango hace
   DELETE (fecha_dcto, empresa) + COPY, en una transaccion. Re-correr NO duplica.
 - Carga rapida: COPY postgres->postgres (formato texto, NULL-safe). PG16 mejoro
@@ -116,6 +118,7 @@ JOIN lineas AS l1 ON i.id_linea1 = l1.id_linea AND i.id_tipo = l1.id_tipo
 JOIN lineas AS l2 ON i.id_linea2 = l2.id_linea AND i.id_tipo = l2.id_tipo
 JOIN lineas AS l3 ON i.id_linea  = l3.id_linea AND i.id_tipo = l3.id_tipo
 LEFT JOIN costo_kit AS ck ON ck.id_kit = i.id_item
+WHERE i.id_tipo IN ('3', '4')   -- solo categorias 3 y 4 (mercado); excluye V (2026-07-06)
 """
 
 
