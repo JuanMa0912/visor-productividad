@@ -30,6 +30,7 @@ import {
   Maximize2,
   Minimize2,
   PackageSearch,
+  Plus,
   RefreshCcw,
   Search,
   X,
@@ -2669,15 +2670,16 @@ export default function InventarioXItemPage() {
               {(!matrixMetricColumns.valorInv ||
                 !matrixMetricColumns.vendido ||
                 !matrixMetricColumns.di) && (
-                <div className="flex flex-wrap items-center gap-1 rounded-full border border-dashed border-slate-200 bg-slate-50 px-2 py-1">
-                  <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                    Mostrar
+                <div className="inline-flex h-9 flex-wrap items-center gap-1.5 rounded-full border border-blue-300 bg-blue-50 px-2.5 shadow-sm ring-2 ring-blue-100">
+                  <span className="inline-flex items-center gap-1 px-0.5 text-[11px] font-bold uppercase tracking-wide text-blue-800">
+                    <Plus className="h-3.5 w-3.5" aria-hidden />
+                    Mostrar columnas
                   </span>
                   {!matrixMetricColumns.valorInv ? (
                     <button
                       type="button"
                       onClick={() => showMatrixMetricColumn("valorInv")}
-                      className="rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
+                      className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-900 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-100"
                     >
                       Valor Inv.
                     </button>
@@ -2686,7 +2688,7 @@ export default function InventarioXItemPage() {
                     <button
                       type="button"
                       onClick={() => showMatrixMetricColumn("vendido")}
-                      className="rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
+                      className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-900 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-100"
                     >
                       Vendido
                     </button>
@@ -2695,7 +2697,7 @@ export default function InventarioXItemPage() {
                     <button
                       type="button"
                       onClick={() => showMatrixMetricColumn("di")}
-                      className="rounded-full px-2 py-0.5 text-[11px] font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
+                      className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-900 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-100"
                     >
                       DI
                     </button>
