@@ -1315,9 +1315,23 @@ export function RotacionPageInner() {
     if (!singleSelectedLineaN1) return [];
     const fromApi = lineasN2Catalog.codes.map(normalizeLineaN2CodeForFilter);
     const deduped = Array.from(new Set(fromApi)).sort(compareLineaN2FilterCodes);
+    const fromRows = lineasN2DerivedFromRows.filter(
+      (code) => code !== "__sin_n2__",
+    );
     if (deduped.length > 0) return deduped;
-    return lineasN2DerivedFromRows;
+    return fromRows.length > 0 ? fromRows : lineasN2DerivedFromRows;
   }, [singleSelectedLineaN1, lineasN2Catalog.codes, lineasN2DerivedFromRows]);
+
+  const lineasN2CatalogForFilter = useMemo(() => {
+    if (!singleSelectedLineaN1) return [];
+    const fromRows = lineasN2DerivedFromRows.filter(
+      (code) => code !== "__sin_n2__",
+    );
+    if (fromRows.length === 0) return lineasN2ForFilterUi;
+    const uiSet = new Set(lineasN2ForFilterUi);
+    const overlap = fromRows.filter((code) => uiSet.has(code));
+    return overlap.length > 0 ? overlap : fromRows;
+  }, [singleSelectedLineaN1, lineasN2DerivedFromRows, lineasN2ForFilterUi]);
 
   const lineasN2NombreMap = useMemo(() => {
     const out = mergeRotationLineaN2NombreMaps(
@@ -1652,8 +1666,9 @@ export function RotacionPageInner() {
         selectedLineaN1Values,
         filterCatalog.categorias ?? [],
         selectedCategoriaKeys,
-        singleSelectedLineaN1 ? lineasN2ForFilterUi : [],
+        singleSelectedLineaN1 ? lineasN2CatalogForFilter : [],
         singleSelectedLineaN1 ? selectedLineaN2Values : [],
+        singleSelectedLineaN1 ? lineasN2NombreMap : {},
       ),
     [
       rows,
@@ -1662,8 +1677,9 @@ export function RotacionPageInner() {
       selectedLineaN1Values,
       selectedCategoriaKeys,
       singleSelectedLineaN1,
-      lineasN2ForFilterUi,
+      lineasN2CatalogForFilter,
       selectedLineaN2Values,
+      lineasN2NombreMap,
     ],
   );
 
@@ -2428,7 +2444,9 @@ export function RotacionPageInner() {
           selectedLineaN2Values:
             selectedLineaN1Values.length === 1 ? selectedLineaN2Values : [],
           lineasN2Catalog:
-            selectedLineaN1Values.length === 1 ? lineasN2ForFilterUi : [],
+            selectedLineaN1Values.length === 1 ? lineasN2CatalogForFilter : [],
+          lineasN2Nombres:
+            selectedLineaN1Values.length === 1 ? lineasN2NombreMap : {},
           selectedCategoriaKeys,
           productSearchInput,
           tableSortField,
@@ -2489,7 +2507,8 @@ export function RotacionPageInner() {
       selectedCategoriaKeys,
       selectedLineaN1Values,
       selectedLineaN2Values,
-      lineasN2ForFilterUi,
+      lineasN2CatalogForFilter,
+      lineasN2NombreMap,
       tableSortDirection,
       tableSortField,
       writeRotacionExcel,
@@ -3351,21 +3370,52 @@ export function RotacionPageInner() {
                   <div className="rounded-full bg-slate-100 p-4 text-slate-600">
                     <PackageSearch className="h-7 w-7" />
                   </div>
-                  <h2 className="mt-4 text-xl font-bold text-slate-900">
-                    Ningun producto coincide con la busqueda
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                    Prueba otro codigo o fragmento del nombre. La busqueda no
-                    distingue mayusculas ni tildes.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="mt-4 rounded-lg border-slate-300"
-                    onClick={() => setProductSearchInput("")}
-                  >
-                    Limpiar busqueda
-                  </Button>
+                  {catalogFilteredRows.length === 0 &&
+                  !productSearchInput.trim() ? (
+                    <>
+                      <h2 className="mt-4 text-xl font-bold text-slate-900">
+                        Sin productos para los filtros actuales
+                      </h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                        No hay items que coincidan con las lineas N1, sublineas N2
+                        o categorias seleccionadas. Prueba ampliar la seleccion
+                        de sublineas o lineas.
+                      </p>
+                      {singleSelectedLineaN1 &&
+                      selectedLineaN2Values.length < lineaN2Options.length ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="mt-4 rounded-lg border-slate-300"
+                          onClick={() =>
+                            setSelectedLineaN2Values(
+                              lineaN2Options.map((option) => option.value),
+                            )
+                          }
+                        >
+                          Mostrar todas las sublineas N2
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="mt-4 text-xl font-bold text-slate-900">
+                        Ningun producto coincide con la busqueda
+                      </h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                        Prueba otro codigo o fragmento del nombre. La busqueda no
+                        distingue mayusculas ni tildes.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="mt-4 rounded-lg border-slate-300"
+                        onClick={() => setProductSearchInput("")}
+                      >
+                        Limpiar busqueda
+                      </Button>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             ) : (
