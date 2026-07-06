@@ -41,6 +41,8 @@ export type PrepareRotacionExportDataInput = {
   filterCatalogLineasN1: string[] | undefined;
   filterCatalogCategorias: RotationCategoriaFilterOption[] | undefined;
   selectedLineaN1Values: string[];
+  selectedLineaN2Values?: string[];
+  lineasN2Catalog?: string[];
   selectedCategoriaKeys: string[];
   productSearchInput: string;
   tableSortField: RotationSortField | null;
@@ -95,6 +97,8 @@ const processRowsForExport = (
     | "filterCatalogLineasN1"
     | "filterCatalogCategorias"
     | "selectedLineaN1Values"
+    | "selectedLineaN2Values"
+    | "lineasN2Catalog"
     | "selectedCategoriaKeys"
     | "productSearchInput"
     | "tableSortField"
@@ -111,6 +115,8 @@ const processRowsForExport = (
     input.selectedLineaN1Values,
     input.filterCatalogCategorias ?? [],
     input.selectedCategoriaKeys,
+    input.lineasN2Catalog ?? [],
+    input.selectedLineaN2Values ?? [],
   );
   const sorted = sortRotationRows(
     catalogFiltered,

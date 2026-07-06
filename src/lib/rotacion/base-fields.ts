@@ -24,6 +24,8 @@ export type RotacionBaseSqlFields = {
   lineExpr: string;
   lineNullableExpr: string;
   n1CodeExpr: string;
+  n2CodeExpr: string;
+  sublineaExpr: string;
   itemExpr: string;
   itemNullableExpr: string;
   itemPresentCondition: string;
@@ -245,6 +247,14 @@ const normalizeTwoDigitCodeExpr = (expr: string) => `(
   END
 )`;
 
+const normalizeFourDigitCodeExpr = (expr: string) => `(
+  CASE
+    WHEN ${expr} IS NULL THEN NULL::text
+    WHEN ${expr} ~ '^[0-9]+$' THEN LPAD(${expr}, 4, '0')
+    ELSE ${expr}
+  END
+)`;
+
 export const resolveRotacionBaseSqlFields = async (
   client: RotacionBaseQueryClient,
   tableName: string = getRotacionSourceTable(),
@@ -326,6 +336,18 @@ export const resolveRotacionBaseSqlFields = async (
       "linea01",
     ]),
   );
+  const n2CodeExpr = normalizeFourDigitCodeExpr(
+    nullableTextExpr(columns, [
+      "id_linea_nivel_2",
+      "linea_n2_codigo",
+      "linea_n2",
+    ]),
+  );
+  const sublineaExpr = coalesceTextExpr(
+    columns,
+    ["nombre_linea_nivel_2", "sublinea"],
+    "Sin sublinea",
+  );
   const categoriaKeyExpr = `(
     CASE
       WHEN ${categoriaExpr} IS NULL THEN '__sin_cat__'
@@ -349,6 +371,8 @@ export const resolveRotacionBaseSqlFields = async (
       "nombre_linea01",
     ]),
     n1CodeExpr,
+    n2CodeExpr,
+    sublineaExpr,
     itemExpr: coalesceTextExpr(columns, ["id_item", "item"], "sin_item"),
     itemNullableExpr: nullableTextExpr(columns, ["id_item", "item"]),
     itemPresentCondition: `${nullableTextExpr(columns, ["id_item", "item"])} IS NOT NULL`,

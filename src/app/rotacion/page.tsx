@@ -62,7 +62,7 @@ import {
   SortableRotationHeader,
   WhatsAppLogo,
 } from "./rotation-filter-widgets";
-import type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN1FamilyKey, AbcdConfig, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, GroupRowsQuickFilter } from "./rotacion-preamble";
+import type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN2Option, LineaN1FamilyKey, AbcdConfig, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, GroupRowsQuickFilter } from "./rotacion-preamble";
 import {
   getCookieValue,
   ALL_LINEA_N1_FAMILY_KEYS,
@@ -78,9 +78,12 @@ import {
   ROTACION_FLOATING_HEADER_COLUMNS_ZERO,
   NO_SALES_DI_VALUE,
   mergeRotationLineaN1NombreMaps,
+  mergeRotationLineaN2NombreMaps,
   bestLineaDisplayFromRow,
   compareLineaN1FilterCodes,
+  compareLineaN2FilterCodes,
   normalizeLineaN1CodeForFilter,
+  normalizeLineaN2CodeForFilter,
   LINEA_N1_SHORT_NAMES,
   DEFAULT_ABCD_CONFIG,
   PAGE_SIZE_OPTIONS,
@@ -215,6 +218,16 @@ export function RotacionPageInner() {
   const [selectedLineaN1Values, setSelectedLineaN1Values] = useState<string[]>(
     [],
   );
+  const [selectedLineaN2Values, setSelectedLineaN2Values] = useState<string[]>(
+    [],
+  );
+  const [lineasN2Catalog, setLineasN2Catalog] = useState<{
+    codes: string[];
+    nombres: Record<string, string>;
+  }>({ codes: [], nombres: {} });
+  const [isLoadingLineasN2Catalog, setIsLoadingLineasN2Catalog] =
+    useState(false);
+  const lineasN2LoadGenerationRef = useRef(0);
   const [selectedCategoriaKeys, setSelectedCategoriaKeys] = useState<string[]>(
     [],
   );
@@ -309,6 +322,9 @@ export function RotacionPageInner() {
     Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>
   >(new Map());
   const catalogBySedeCacheRef = useRef<
+    Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>
+  >(new Map());
+  const catalogByN2CacheRef = useRef<
     Map<string, { value: RotationCatalogSnapshot; expiresAt: number }>
   >(new Map());
   const selectedCompanySet = useMemo(
@@ -1273,6 +1289,76 @@ export function RotacionPageInner() {
     [selectedLineaN1Values],
   );
 
+  const singleSelectedLineaN1 = useMemo(
+    () =>
+      selectedLineaN1Values.length === 1
+        ? normalizeLineaN1CodeForFilter(selectedLineaN1Values[0])
+        : null,
+    [selectedLineaN1Values],
+  );
+
+  const lineasN2DerivedFromRows = useMemo(() => {
+    if (!singleSelectedLineaN1) return [];
+    const acc = new Set<string>();
+    for (const row of rows) {
+      if (
+        normalizeLineaN1CodeForFilter(row.lineaN1Codigo) !== singleSelectedLineaN1
+      ) {
+        continue;
+      }
+      acc.add(normalizeLineaN2CodeForFilter(row.lineaN2Codigo));
+    }
+    return Array.from(acc).sort(compareLineaN2FilterCodes);
+  }, [rows, singleSelectedLineaN1]);
+
+  const lineasN2ForFilterUi = useMemo(() => {
+    if (!singleSelectedLineaN1) return [];
+    const fromApi = lineasN2Catalog.codes.map(normalizeLineaN2CodeForFilter);
+    const deduped = Array.from(new Set(fromApi)).sort(compareLineaN2FilterCodes);
+    if (deduped.length > 0) return deduped;
+    return lineasN2DerivedFromRows;
+  }, [singleSelectedLineaN1, lineasN2Catalog.codes, lineasN2DerivedFromRows]);
+
+  const lineasN2NombreMap = useMemo(() => {
+    const out = mergeRotationLineaN2NombreMaps(
+      undefined,
+      lineasN2Catalog.nombres,
+    );
+    if (!singleSelectedLineaN1) return out;
+    for (const row of rows) {
+      if (
+        normalizeLineaN1CodeForFilter(row.lineaN1Codigo) !== singleSelectedLineaN1
+      ) {
+        continue;
+      }
+      const code = normalizeLineaN2CodeForFilter(row.lineaN2Codigo);
+      const cand = row.sublinea?.trim();
+      if (!cand || cand === "Sin sublinea") continue;
+      const prev = out[code];
+      if (!prev || cand.length > prev.length) out[code] = cand;
+    }
+    return out;
+  }, [lineasN2Catalog.nombres, rows, singleSelectedLineaN1]);
+
+  const lineaN2Options = useMemo<LineaN2Option[]>(() => {
+    if (!singleSelectedLineaN1) return [];
+    return lineasN2ForFilterUi.map((value) => {
+      if (value === "__sin_n2__") {
+        return { value, label: "Sin N2" };
+      }
+      const nombre = lineasN2NombreMap[value];
+      return {
+        value,
+        label: nombre ? `N2 ${value} - ${nombre}` : `N2 ${value}`,
+      };
+    });
+  }, [lineasN2ForFilterUi, lineasN2NombreMap, singleSelectedLineaN1]);
+
+  const selectedLineaN2Set = useMemo(
+    () => new Set(selectedLineaN2Values),
+    [selectedLineaN2Values],
+  );
+
   const categoriaFilterOptions = useMemo(
     () => filterCatalog.categorias ?? [],
     [filterCatalog.categorias],
@@ -1292,6 +1378,109 @@ export function RotacionPageInner() {
       return prev.filter((value) => optionSet.has(value));
     });
   }, [lineaN1FamilyKeys, lineaN1Options]);
+
+  useEffect(() => {
+    if (!singleSelectedLineaN1) {
+      setSelectedLineaN2Values([]);
+      return;
+    }
+    const optionValues = lineaN2Options.map((option) => option.value);
+    const optionSet = new Set(optionValues);
+    setSelectedLineaN2Values((prev) => {
+      const kept = prev.filter((value) => optionSet.has(value));
+      if (kept.length === 0 && optionValues.length > 0) return optionValues;
+      if (kept.length === 0) return [];
+      return kept;
+    });
+  }, [singleSelectedLineaN1, lineaN2Options]);
+
+  useEffect(() => {
+    if (!ready || isLoadingLineCatalog) return;
+    if (!singleSelectedLineaN1 || targetSedeSelections.length === 0) {
+      setLineasN2Catalog({ codes: [], nombres: {} });
+      setIsLoadingLineasN2Catalog(false);
+      return;
+    }
+    if (!dateRange.start || !dateRange.end) {
+      setLineasN2Catalog({ codes: [], nombres: {} });
+      setIsLoadingLineasN2Catalog(false);
+      return;
+    }
+
+    lineasN2LoadGenerationRef.current += 1;
+    const generation = lineasN2LoadGenerationRef.current;
+
+    const loadLineasN2Catalog = async () => {
+      setIsLoadingLineasN2Catalog(true);
+      try {
+        const rangeKey = `${dateRange.start}|${dateRange.end}`;
+        const comboKey = `n2|${rangeKey}|${singleSelectedLineaN1}|${targetSedeSelections
+          .map((s) => `${s.empresa}::${s.sedeId}`)
+          .sort((a, b) => a.localeCompare(b, "es"))
+          .join(",")}`;
+        const cached = readCatalogCache(catalogByN2CacheRef.current, comboKey);
+        if (cached?.filters?.lineasN2) {
+          if (generation !== lineasN2LoadGenerationRef.current) return;
+          setLineasN2Catalog({
+            codes: cached.filters.lineasN2 ?? [],
+            nombres: cached.filters.lineasN2Nombres ?? {},
+          });
+          return;
+        }
+
+        const params = new URLSearchParams();
+        params.set("start", dateRange.start);
+        params.set("end", dateRange.end);
+        params.set("catalogOnly", "1");
+        params.set("lineaN1Scope", singleSelectedLineaN1);
+        targetSedeSelections.forEach((sedeMeta) => {
+          params.append(
+            "sedeScope",
+            `${sedeMeta.empresa}::${sedeMeta.sedeId}`,
+          );
+        });
+        const response = await fetch(
+          `${apiBasePath}?${params.toString()}`,
+          { cache: "no-store" },
+        );
+        if (generation !== lineasN2LoadGenerationRef.current) return;
+        if (!response.ok) {
+          setLineasN2Catalog({ codes: [], nombres: {} });
+          return;
+        }
+        const payload = (await response.json()) as RotationApiResponse;
+        const codes = payload.filters?.lineasN2 ?? [];
+        const nombres = payload.filters?.lineasN2Nombres ?? {};
+        writeCatalogCache(catalogByN2CacheRef.current, comboKey, {
+          filters: {
+            companies: [],
+            sedes: [],
+            lineasN1: [],
+            lineasN1Nombres: {},
+            categorias: [],
+            lineasN1PorCategoria: {},
+            lineasN2: codes,
+            lineasN2Nombres: nombres,
+          },
+        });
+        setLineasN2Catalog({ codes, nombres });
+      } finally {
+        if (generation === lineasN2LoadGenerationRef.current) {
+          setIsLoadingLineasN2Catalog(false);
+        }
+      }
+    };
+
+    void loadLineasN2Catalog();
+  }, [
+    ready,
+    isLoadingLineCatalog,
+    singleSelectedLineaN1,
+    targetSedeSelections,
+    dateRange.start,
+    dateRange.end,
+    apiBasePath,
+  ]);
 
   useEffect(() => {
     setSelectedCategoriaKeys(buildDefaultCategoriaKeys(categoriaFilterOptions));
@@ -1463,6 +1652,8 @@ export function RotacionPageInner() {
         selectedLineaN1Values,
         filterCatalog.categorias ?? [],
         selectedCategoriaKeys,
+        singleSelectedLineaN1 ? lineasN2ForFilterUi : [],
+        singleSelectedLineaN1 ? selectedLineaN2Values : [],
       ),
     [
       rows,
@@ -1470,6 +1661,9 @@ export function RotacionPageInner() {
       filterCatalog.categorias,
       selectedLineaN1Values,
       selectedCategoriaKeys,
+      singleSelectedLineaN1,
+      lineasN2ForFilterUi,
+      selectedLineaN2Values,
     ],
   );
 
@@ -2231,6 +2425,10 @@ export function RotacionPageInner() {
           filterCatalogLineasN1: filterCatalog.lineasN1,
           filterCatalogCategorias: filterCatalog.categorias,
           selectedLineaN1Values,
+          selectedLineaN2Values:
+            selectedLineaN1Values.length === 1 ? selectedLineaN2Values : [],
+          lineasN2Catalog:
+            selectedLineaN1Values.length === 1 ? lineasN2ForFilterUi : [],
           selectedCategoriaKeys,
           productSearchInput,
           tableSortField,
@@ -2290,6 +2488,8 @@ export function RotacionPageInner() {
       router,
       selectedCategoriaKeys,
       selectedLineaN1Values,
+      selectedLineaN2Values,
+      lineasN2ForFilterUi,
       tableSortDirection,
       tableSortField,
       writeRotacionExcel,
@@ -2836,6 +3036,15 @@ export function RotacionPageInner() {
                       ? "Todas las lineas N1"
                       : `${selectedLineaN1Values.length} de ${lineaN1Options.length} lineas N1`}
                 </Badge>
+                {singleSelectedLineaN1 ? (
+                  <Badge className="border-pink-200 bg-pink-50 text-pink-700">
+                    {lineaN2Options.length === 0
+                      ? "N2 sin datos"
+                      : selectedLineaN2Values.length === lineaN2Options.length
+                        ? "Todas las lineas N2"
+                        : `${selectedLineaN2Values.length} de ${lineaN2Options.length} lineas N2`}
+                  </Badge>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -2916,6 +3125,115 @@ export function RotacionPageInner() {
                   . Rango maximo por consulta: 2 meses.
                 </div>
               )}
+
+              {singleSelectedLineaN1 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-1">
+                      <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-fuchsia-700">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-fuchsia-100 text-[10px] font-bold text-fuchsia-800">
+                          N2
+                        </span>
+                        Sublíneas
+                      </div>
+                      <FilterFieldLabel
+                        icon={Filter}
+                        label="Lineas nivel 2"
+                        accentClassName="text-fuchsia-700"
+                      />
+                      <p className="max-w-xl text-[11px] leading-snug text-slate-500">
+                        Sublíneas de{" "}
+                        <span className="font-medium text-slate-600">
+                          {lineaN1Options.find(
+                            (option) => option.value === singleSelectedLineaN1,
+                          )?.label ?? `N1 ${singleSelectedLineaN1}`}
+                        </span>
+                        . Al cambiar lineas N2, la tabla se actualiza sola en
+                        unos instantes.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setSelectedLineaN2Values(
+                            lineaN2Options.map((option) => option.value),
+                          )
+                        }
+                        disabled={
+                          lineaN2Options.length === 0 || isLoadingLineasN2Catalog
+                        }
+                        className="h-8 rounded-lg border-fuchsia-200 bg-fuchsia-50 px-2.5 text-[11px] font-semibold text-fuchsia-800 hover:bg-fuchsia-100 disabled:opacity-50"
+                      >
+                        Seleccionar todas
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedLineaN2Values([])}
+                        disabled={
+                          lineaN2Options.length === 0 ||
+                          selectedLineaN2Values.length === 0 ||
+                          isLoadingLineasN2Catalog
+                        }
+                        className="h-8 rounded-lg border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        Limpiar seleccion
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mb-2">
+                    <Badge className="border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700">
+                      {isLoadingLineasN2Catalog
+                        ? "Cargando lineas N2..."
+                        : lineaN2Options.length === 0
+                          ? "Sin lineas N2 disponibles"
+                          : `${selectedLineaN2Values.length} de ${lineaN2Options.length} lineas N2 seleccionadas`}
+                    </Badge>
+                  </div>
+                  <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
+                    {lineaN2Options.length === 0 ? (
+                      <p className="text-xs text-slate-500">
+                        {isLoadingLineasN2Catalog
+                          ? "Consultando sublineas para esta linea N1..."
+                          : targetSedeSelections.length === 0
+                            ? "Selecciona al menos una sede para ver las sublineas."
+                            : "No hay lineas N2 en este periodo para la linea N1 elegida."}
+                      </p>
+                    ) : (
+                      lineaN2Options.map((option) => {
+                        const isChecked = selectedLineaN2Set.has(option.value);
+                        return (
+                          <label
+                            key={option.value}
+                            className="flex items-center gap-2 text-sm text-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedLineaN2Values((current) =>
+                                  isChecked
+                                    ? current.filter(
+                                        (value) => value !== option.value,
+                                      )
+                                    : [...current, option.value],
+                                );
+                              }}
+                              disabled={isLoadingLineasN2Catalog}
+                              className="h-4 w-4 rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500 disabled:opacity-50"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </section>

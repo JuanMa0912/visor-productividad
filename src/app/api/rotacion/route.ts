@@ -29,6 +29,15 @@ const normalizeRotationLineaN1Code = (raw: string | null | undefined): string =>
   if (/^\d+$/.test(t)) return t.padStart(2, "0");
   return t;
 };
+
+/** Unifica codigos N2 para filtros (BD a veces devuelve "20" en vez de "0020"). */
+const normalizeRotationLineaN2Code = (raw: string | null | undefined): string => {
+  const t = String(raw ?? "").trim();
+  if (!t) return "__sin_n2__";
+  if (t === "__sin_n2__") return t;
+  if (/^\d+$/.test(t)) return t.padStart(4, "0");
+  return t;
+};
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -63,6 +72,8 @@ type RotationDbRow = {
   sede_name: string;
   linea: string;
   linea_n1_codigo: string | null;
+  linea_n2_codigo: string | null;
+  sublinea: string | null;
   item: string;
   descripcion: string;
   unidad: string | null;
@@ -96,6 +107,8 @@ type RotationRow = {
   sedeName: string;
   linea: string;
   lineaN1Codigo: string | null;
+  lineaN2Codigo: string | null;
+  sublinea: string | null;
   item: string;
   descripcion: string;
   unidad: string | null;
@@ -143,6 +156,9 @@ export type RotationFilterCatalog = {
   lineasN1: string[];
   /** Nombre legible por codigo N1 normalizado (misma clave que en filtros). */
   lineasN1Nombres: Record<string, string>;
+  /** Sublíneas N2 del periodo cuando se consulta con `lineaN1Scope`. */
+  lineasN2?: string[];
+  lineasN2Nombres?: Record<string, string>;
   categorias: RotationCategoriaOption[];
   lineasN1PorCategoria: Record<string, string[]>;
 };
@@ -367,9 +383,19 @@ type RotationLineasN1Slice = {
   nombres: Record<string, string>;
 };
 
+type RotationLineasN2Slice = {
+  codes: string[];
+  nombres: Record<string, string>;
+};
+
 const lineasN1ByRangeCache = new Map<
   string,
   { value: RotationLineasN1Slice; expiresAt: number }
+>();
+
+const lineasN2ByRangeCache = new Map<
+  string,
+  { value: RotationLineasN2Slice; expiresAt: number }
 >();
 
 const categoriaBundleByRangeCache = new Map<
@@ -1159,6 +1185,85 @@ const queryRotationLineasN1 = async ({
   return value;
 };
 
+const queryRotationLineasN2 = async ({
+  startDate,
+  endDate,
+  empresa,
+  sedeId,
+  lineaN1Code,
+}: {
+  startDate: string;
+  endDate: string;
+  empresa: string | null;
+  sedeId: string;
+  lineaN1Code: string;
+}) => {
+  const normalizedN1 = normalizeRotationLineaN1Code(lineaN1Code);
+  const cacheKey = `${getRotacionSourceTable()}|n2|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}|${normalizedN1}`;
+  const now = Date.now();
+  const cached = lineasN2ByRangeCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const value = await withPoolClient(async (client) => {
+    const fields = await resolveRotacionBaseSqlFields(client);
+    const dateColumn = fields.dateColumn;
+    const result = await client.query(
+      `
+      SELECT DISTINCT
+        COALESCE(${fields.n2CodeExpr}, '__sin_n2__') AS linea_n2_raw,
+        ${fields.sublineaExpr} AS sublinea
+      FROM ${getRotacionSourceTable()}
+      WHERE ${buildCompactDateRangeSql(dateColumn)}
+        AND ${fields.itemPresentCondition}
+        AND ${fields.allowedCategoriaExpr}
+        AND ${fields.sedeIdExpr} = $3
+        AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
+        AND COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = $5
+      ORDER BY linea_n2_raw ASC
+      `,
+      [
+        isoToCompactDate(startDate),
+        isoToCompactDate(endDate),
+        sedeId,
+        empresa,
+        normalizedN1,
+      ],
+    );
+
+    const codeSet = new Set<string>();
+    const nombreByCode = new Map<string, string>();
+    for (const raw of (result.rows ?? []) as Array<{
+      linea_n2_raw: string | null;
+      sublinea: string | null;
+    }>) {
+      const code = normalizeRotationLineaN2Code(raw.linea_n2_raw);
+      codeSet.add(code);
+      const sublinea = toOptionalTrimmedString(raw.sublinea);
+      if (!sublinea || sublinea.toLowerCase() === "sin sublinea") continue;
+      const prev = nombreByCode.get(code);
+      if (!prev || sublinea.length > prev.length) nombreByCode.set(code, sublinea);
+    }
+    const codes = Array.from(codeSet).sort((a, b) =>
+      a.localeCompare(b, "es", { numeric: true }),
+    );
+    const nombres = Object.fromEntries(nombreByCode);
+    return { codes, nombres } satisfies RotationLineasN2Slice;
+  });
+
+  if (value.codes.length > 0) {
+    if (lineasN2ByRangeCache.size > 500) {
+      lineasN2ByRangeCache.clear();
+    }
+    lineasN2ByRangeCache.set(cacheKey, {
+      value,
+      expiresAt: now + ROTATION_LINEAS_N1_CACHE_TTL_MS,
+    });
+  }
+  return value;
+};
+
 const queryRotationCategoriaBundle = async ({
   startDate,
   endDate,
@@ -1300,6 +1405,8 @@ const mapRotationDbRows = (rows: RotationDbRow[]): RotationRow[] =>
       sedeName: row.sede_name,
       linea: row.linea,
       lineaN1Codigo: row.linea_n1_codigo,
+      lineaN2Codigo: row.linea_n2_codigo,
+      sublinea: row.sublinea,
       item: row.item,
       descripcion: row.descripcion,
       unidad: row.unidad,
@@ -1360,6 +1467,8 @@ async function queryRotationRowsViaPeriodoStd({
       sede_name,
       linea,
       linea_n1_codigo,
+      linea_n2_codigo,
+      sublinea,
       item,
       descripcion,
       unidad,
@@ -1491,6 +1600,8 @@ const buildRotacionMatviewSql = (
         unidad,
         linea,
         linea_n1_codigo,
+        linea_n2_codigo,
+        sublinea,
         bodega,
         categoria,
         nombre_categoria,
@@ -1578,6 +1689,8 @@ const buildRotacionMatviewSql = (
         MAX(CASE WHEN latest_rank = 1 THEN bodega END) AS bodega,
         MAX(CASE WHEN latest_rank = 1 THEN categoria END) AS categoria,
         MAX(CASE WHEN latest_rank = 1 THEN nombre_categoria END) AS nombre_categoria,
+        MAX(CASE WHEN latest_rank = 1 THEN sublinea END) AS sublinea,
+        MAX(CASE WHEN latest_rank = 1 THEN linea_n2_codigo END) AS linea_n2_codigo,
         MAX(CASE WHEN latest_rank = 1 THEN linea_n1_codigo END) AS linea01,
         MAX(CASE WHEN latest_rank = 1 THEN linea END) AS nombre_linea01,
         COUNT(DISTINCT fecha)::int AS tracked_days,
@@ -1618,6 +1731,8 @@ const buildRotacionMatviewSql = (
         b.bodega,
         b.categoria,
         b.nombre_categoria,
+        b.sublinea,
+        b.linea_n2_codigo,
         b.linea_n1_codigo AS linea01,
         b.linea AS nombre_linea01
       FROM base b
@@ -1677,6 +1792,8 @@ const buildRotacionMatviewSql = (
         MAX(la.bodega) AS bodega,
         MAX(la.categoria) AS categoria,
         MAX(la.nombre_categoria) AS nombre_categoria,
+        MAX(la.sublinea) AS sublinea,
+        MAX(la.linea_n2_codigo) AS linea_n2_codigo,
         MAX(la.linea01) AS linea01,
         MAX(la.nombre_linea01) AS nombre_linea01,
         COUNT(DISTINCT b.fecha)::int AS tracked_days,
@@ -1742,6 +1859,8 @@ const buildRotacionMatviewSql = (
       sede_name,
       linea,
       linea_n1_codigo,
+      linea_n2_codigo,
+      sublinea,
       item,
       descripcion,
       unidad,
@@ -2003,6 +2122,8 @@ async function queryRotationRows({
           ${fields.sedeNameExpr} AS sede_name,
           ${fields.lineExpr} AS linea,
           ${fields.n1CodeExpr} AS linea_n1_codigo,
+          ${fields.n2CodeExpr} AS linea_n2_codigo,
+          ${fields.sublineaExpr} AS sublinea,
           ${fields.itemExpr} AS item,
           ${fields.descriptionExpr} AS descripcion,
           ${fields.unitExpr} AS unidad,
@@ -2196,6 +2317,8 @@ async function queryRotationRows({
           MAX(CASE WHEN r.latest_rank = 1 THEN r.nombre_categoria END) AS nombre_categoria,
           MAX(CASE WHEN r.latest_rank = 1 THEN r.linea01 END) AS linea01,
           MAX(CASE WHEN r.latest_rank = 1 THEN r.nombre_linea01 END) AS nombre_linea01,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.linea_n2_codigo END) AS linea_n2_codigo,
+          MAX(CASE WHEN r.latest_rank = 1 THEN r.sublinea END) AS sublinea,
           COUNT(DISTINCT r.consulta_date)::int AS tracked_days,
           COUNT(
             DISTINCT CASE
@@ -2237,6 +2360,8 @@ async function queryRotationRows({
           sede_name,
           linea,
           linea_n1_codigo,
+          linea_n2_codigo,
+          sublinea,
           item,
           descripcion,
           unidad,
@@ -2278,6 +2403,8 @@ async function queryRotationRows({
           sede_name,
           linea,
           linea_n1_codigo,
+          linea_n2_codigo,
+          sublinea,
           item,
           descripcion,
           unidad,
@@ -2565,6 +2692,7 @@ export async function GET(request: Request) {
       .getAll("categoria")
       .map((value) => value.trim())
       .filter(Boolean);
+    const requestedLineaN1Scope = url.searchParams.get("lineaN1Scope")?.trim() || null;
     const isCatalogOnly = url.searchParams.get("catalogOnly") === "1";
     /**
      * Modo diagnostico: cuando un admin pasa `?explain=1`, en vez de devolver
@@ -2766,6 +2894,34 @@ export async function GET(request: Request) {
       filters.lineasN1PorCategoria[categoriaKey] = Array.from(lineas).sort((a, b) =>
         a.localeCompare(b, "es"),
       );
+    }
+
+    if (requestedLineaN1Scope && selectedVisibleSedes.length > 0) {
+      const lineasN2Set = new Set<string>();
+      let lineasN2NombresAcc: Record<string, string> = {};
+      const n2PerSede = await mapWithConcurrency(
+        selectedVisibleSedes,
+        4,
+        async (sede) =>
+          queryRotationLineasN2({
+            startDate: boundedRange.start,
+            endDate: boundedRange.end,
+            empresa: sede.empresa,
+            sedeId: sede.sedeId,
+            lineaN1Code: requestedLineaN1Scope,
+          }),
+      );
+      for (const slice of n2PerSede) {
+        for (const code of slice.codes) lineasN2Set.add(code);
+        lineasN2NombresAcc = mergeLineaN1NombreRecords(
+          lineasN2NombresAcc,
+          slice.nombres,
+        );
+      }
+      filters.lineasN2 = Array.from(lineasN2Set).sort((a, b) =>
+        a.localeCompare(b, "es", { numeric: true }),
+      );
+      filters.lineasN2Nombres = lineasN2NombresAcc;
     }
 
     if (selectedVisibleSedes.length === 0) {

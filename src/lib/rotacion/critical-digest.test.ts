@@ -19,6 +19,8 @@ const baseRow = (overrides: Partial<RotationRow> = {}): RotationRow => ({
   sedeName: "Floresta",
   linea: "01",
   lineaN1Codigo: "01",
+  lineaN2Codigo: null,
+  sublinea: null,
   item: "1001",
   descripcion: "Item prueba",
   unidad: "UND",
