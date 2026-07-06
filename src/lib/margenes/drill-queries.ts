@@ -1144,8 +1144,6 @@ export const queryFilterItemSearch = async (
   const roll = isRollTable(table);
   params.push(`%${trimmed}%`);
   const patternIdx = params.length;
-  params.push(trimmed);
-  const exactIdx = params.length;
 
   const result = await client.query<{
     value: string;
@@ -1169,9 +1167,7 @@ export const queryFilterItemSearch = async (
         id_item ILIKE $${patternIdx}
         OR COALESCE(NULLIF(item_descripcion, ''), id_item) ILIKE $${patternIdx}
       )
-    ORDER BY
-      CASE WHEN id_item = $${exactIdx} THEN 0 ELSE 1 END,
-      2
+    ORDER BY 2
     LIMIT ${limit}
     `
       : `
@@ -1188,9 +1184,7 @@ export const queryFilterItemSearch = async (
         TRIM(COALESCE(id_item::text, '')) ILIKE $${patternIdx}
         OR COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) ILIKE $${patternIdx}
       )
-    ORDER BY
-      CASE WHEN TRIM(COALESCE(id_item::text, '')) = $${exactIdx} THEN 0 ELSE 1 END,
-      2
+    ORDER BY 2
     LIMIT ${limit}
     `,
     params,

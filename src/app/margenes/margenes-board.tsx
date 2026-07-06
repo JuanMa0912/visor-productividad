@@ -599,12 +599,24 @@ export const MargenesBoard = ({
       return mergeSelected(catalog);
     }
 
+    const q = itemSearchQuery.trim().toLowerCase();
+    const fromServer = itemSearchOptions.map((option) => ({
+      value: option.value,
+      label: option.label,
+      code: option.code ?? option.value,
+    }));
+
+    if (fromServer.length > 0) {
+      return mergeSelected(fromServer);
+    }
+
     return mergeSelected(
-      itemSearchOptions.map((option) => ({
-        value: option.value,
-        label: option.label,
-        code: option.code ?? option.value,
-      })),
+      catalog.filter(
+        (option) =>
+          option.label.toLowerCase().includes(q) ||
+          option.value.toLowerCase().includes(q) ||
+          option.code.toLowerCase().includes(q),
+      ),
     );
   }, [
     cascadedFilterOptions.items,
@@ -615,7 +627,6 @@ export const MargenesBoard = ({
 
   useEffect(() => {
     setItemSearchOptions([]);
-    setItemSearchQuery("");
   }, [filterCatalogQueryBase]);
 
   const handleLineasChange = useCallback(
