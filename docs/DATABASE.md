@@ -84,8 +84,17 @@ Orden completo despues de `schema-auth.sql`:
 30. `20260623_app_user_ui_state.sql`
 31. `20260624_ventas_x_item_summary_covering_index.sql`
 32. `20260704_app_users_portal_profile.sql` (perfiles de portal en `app_users`)
+33. `20260705_rotacion_sublinea.sql` (columnas N2 en `rotacion_base_item_dia_sede`)
+34. `20260706_rotacion_clean_matview_sublinea.sql` (matview con `linea_n2_codigo`/`sublinea`)
+35. `20260707_rotacion_periodo_std_sublinea.sql` (snapshot periodo std con N2)
+36. `20260708_rotacion_clean_matview_n2_stable.sql` (N2 estable en matview + indice filtro)
 
-## 4. Dominios y tablas
+Tras `20260708`, refrescar matview y snapshot:
+
+```bash
+sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
+```
+
 
 ### 4.1 Auth, sesiones y administracion
 
@@ -189,7 +198,7 @@ porcentajes.
 | Tabla | Origen | Uso |
 | --- | --- | --- |
 | `rotacion_base_item_dia_sede` | ETL/servidor | rotacion, inventario x item, kardex |
-| `rotacion_item_dia_clean` | matview (migracion) | pre-limpia/agrega diario para `/api/rotacion` |
+| `rotacion_item_dia_clean` | matview (migracion) | pre-limpia/agrega diario para `/api/rotacion`; expone `linea_n2_codigo` y `sublinea` (migraciones `20260706`/`20260708`) |
 | `rotacion_item_periodo_std` | refresh nocturno | snapshot agregado rango rolling default (~1-3 s) |
 | `rotacion_item_periodo_std_meta` | refresh nocturno | periodo_start/end y refreshed_at del snapshot |
 | `rotacion_v4` | ETL/servidor | vista tecnica `/rotacion-dos` |

@@ -1263,6 +1263,28 @@ const queryRotationLineasN1 = async ({
   return value;
 };
 
+const buildRotationLineasN2Slice = (
+  rawRows: Array<{ linea_n2_raw: string | null; sublinea: string | null }>,
+): RotationLineasN2Slice => {
+  const codeSet = new Set<string>();
+  const nombreByCode = new Map<string, string>();
+  for (const raw of rawRows) {
+    const code = normalizeRotationLineaN2Code(raw.linea_n2_raw);
+    if (code === "__sin_n2__") continue;
+    codeSet.add(code);
+    const sublinea = toOptionalTrimmedString(raw.sublinea);
+    if (!sublinea || sublinea.toLowerCase() === "sin sublinea") continue;
+    const prev = nombreByCode.get(code);
+    if (!prev || sublinea.length > prev.length) {
+      nombreByCode.set(code, sublinea);
+    }
+  }
+  const codes = Array.from(codeSet).sort((a, b) =>
+    a.localeCompare(b, "es", { numeric: true }),
+  );
+  return { codes, nombres: Object.fromEntries(nombreByCode) };
+};
+
 const queryRotationLineasN2 = async ({
   startDate,
   endDate,
@@ -1285,6 +1307,38 @@ const queryRotationLineasN2 = async ({
   }
 
   const value = await withPoolClient(async (client) => {
+    const matViewExists = await ensureRotacionCleanMatViewProbe(client);
+    const hasMatviewN2 =
+      matViewExists &&
+      (await probeRotacionMatviewHasSublineaColumns(client));
+
+    if (hasMatviewN2) {
+      const matviewResult = await client.query(
+        `
+        SELECT DISTINCT
+          COALESCE(NULLIF(TRIM(linea_n2_codigo), ''), '__sin_n2__') AS linea_n2_raw,
+          sublinea
+        FROM rotacion_item_dia_clean
+        WHERE fecha BETWEEN $1::date AND $2::date
+          AND sede_id = $3
+          AND ($4::text IS NULL OR empresa = $4)
+          AND COALESCE(linea_n1_codigo, '__sin_n1__') = $5
+          AND NULLIF(TRIM(linea_n2_codigo), '') IS NOT NULL
+        ORDER BY linea_n2_raw ASC
+        `,
+        [startDate, endDate, sedeId, empresa, normalizedN1],
+      );
+      const matviewSlice = buildRotationLineasN2Slice(
+        (matviewResult.rows ?? []) as Array<{
+          linea_n2_raw: string | null;
+          sublinea: string | null;
+        }>,
+      );
+      if (matviewSlice.codes.length > 0) {
+        return matviewSlice;
+      }
+    }
+
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
     const result = await client.query(
@@ -1310,24 +1364,12 @@ const queryRotationLineasN2 = async ({
       ],
     );
 
-    const codeSet = new Set<string>();
-    const nombreByCode = new Map<string, string>();
-    for (const raw of (result.rows ?? []) as Array<{
-      linea_n2_raw: string | null;
-      sublinea: string | null;
-    }>) {
-      const code = normalizeRotationLineaN2Code(raw.linea_n2_raw);
-      codeSet.add(code);
-      const sublinea = toOptionalTrimmedString(raw.sublinea);
-      if (!sublinea || sublinea.toLowerCase() === "sin sublinea") continue;
-      const prev = nombreByCode.get(code);
-      if (!prev || sublinea.length > prev.length) nombreByCode.set(code, sublinea);
-    }
-    const codes = Array.from(codeSet).sort((a, b) =>
-      a.localeCompare(b, "es", { numeric: true }),
+    return buildRotationLineasN2Slice(
+      (result.rows ?? []) as Array<{
+        linea_n2_raw: string | null;
+        sublinea: string | null;
+      }>,
     );
-    const nombres = Object.fromEntries(nombreByCode);
-    return { codes, nombres } satisfies RotationLineasN2Slice;
   });
 
   if (value.codes.length > 0) {
@@ -1475,6 +1517,8 @@ type ExplainPlanResult = {
   plan: string;
 };
 
+const PERIODO_STD_MIN_N2_METADATA_RATIO = 0.98;
+
 const rotationRowHasLineaN2Metadata = (row: RotationRow): boolean => {
   const code = String(row.lineaN2Codigo ?? "").trim();
   if (code && code !== "__sin_n2__") return true;
@@ -1482,8 +1526,18 @@ const rotationRowHasLineaN2Metadata = (row: RotationRow): boolean => {
   return Boolean(sub && sub.toLowerCase() !== "sin sublinea");
 };
 
-const periodoStdRowsHaveLineaN2Metadata = (rows: RotationRow[]): boolean =>
-  rows.some(rotationRowHasLineaN2Metadata);
+const rotationRowsHaveAdequateLineaN2Metadata = (
+  rows: RotationRow[],
+): boolean => {
+  if (rows.length === 0) return true;
+  const needingN2 = rows.filter((row) => {
+    const n1 = normalizeRotationLineaN1Code(row.lineaN1Codigo);
+    return n1 !== "__sin_n1__";
+  });
+  const sample = needingN2.length > 0 ? needingN2 : rows;
+  const withMeta = sample.filter(rotationRowHasLineaN2Metadata).length;
+  return withMeta / sample.length >= PERIODO_STD_MIN_N2_METADATA_RATIO;
+};
 
 const mapRotationDbRows = (rows: RotationDbRow[]): RotationRow[] =>
   rows
@@ -2190,12 +2244,12 @@ async function queryRotationRows({
           }
           if (
             periodoResult.length === 0 ||
-            periodoStdRowsHaveLineaN2Metadata(periodoResult)
+            rotationRowsHaveAdequateLineaN2Metadata(periodoResult)
           ) {
             return periodoResult;
           }
           console.warn(
-            `[rotacion API] periodo-std sin metadata N2 (${periodoResult.length} filas), fallback matview/raw`,
+            `[rotacion API] periodo-std metadata N2 insuficiente (${periodoResult.length} filas), fallback matview/raw`,
           );
         } catch (err) {
           console.warn(
@@ -2214,7 +2268,7 @@ async function queryRotationRows({
       const matViewExists = await ensureRotacionCleanMatViewProbe(client);
       if (matViewExists) {
         try {
-          return await queryRotationRowsViaMatview({
+          const matviewResult = await queryRotationRowsViaMatview({
             client,
             startDate,
             endDate,
@@ -2226,6 +2280,19 @@ async function queryRotationRows({
             matviewSqlStrategy,
             explain,
           });
+          if (explain || !Array.isArray(matviewResult)) {
+            return matviewResult;
+          }
+          if (
+            matviewResult.length === 0 ||
+            rotationRowsHaveAdequateLineaN2Metadata(matviewResult) ||
+            !(await probeRotacionMatviewHasSublineaColumns(client))
+          ) {
+            return matviewResult;
+          }
+          console.warn(
+            `[rotacion API] matview metadata N2 insuficiente (${matviewResult.length} filas), fallback raw`,
+          );
         } catch (err) {
           console.warn(
             `[rotacion API] matview fallo, fallback raw: ${
