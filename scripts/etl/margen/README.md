@@ -81,6 +81,14 @@ El tablero (`/api/margenes/data`) lee de `margen_final_roll` (rollup factura+ite
 crudo. Vive **solo en GCP** (Cloud SQL); en la local 232 no existe y el tablero de ahi lee
 directo `margen_final`.
 
+> **Legacy eliminado (2026-07-06):** antes existia un camino viejo `margenes_linea_co_dia`
+> (tabla) + su matview `margenes_linea_co_dia_clean`, leido por el endpoint viejo `/api/margenes`
+> (`route.ts`). Estaba **congelado** (datos hasta feb-2026) y ya nadie lo usaba: el tablero vivo
+> usa `/api/margenes/data` + `/api/margenes/meta`. Se **dropearon** esas tablas (local+GCP) y se
+> **borraron** el endpoint viejo + `scripts/refresh-margenes-matview.sh` + sus units
+> `deploy/systemd/visor-refresh-margenes.*`. La migracion `20260612_margenes_clean_matview.sql`
+> queda como historica (tiene guard: solo crea el matview si existe la tabla legacy).
+
 **Refresh automatico:** el `sync-local-to-gcp.sh` (07:50) ya refresca el roll en GCP **por la
 ventana sincronizada** cada vez que sube `margen_final` (ver [`../README-sync.md`](../README-sync.md)).
 En operacion normal **no hay que refrescarlo a mano**.
