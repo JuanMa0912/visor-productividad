@@ -42,7 +42,7 @@ const isMinuteInShift = (
 
 /**
  * Minutos laborados dentro de una franja [slotStart, slotStart + bucketMinutes),
- * usando entrada/salida/descansos. Si no hay marcas validas, devuelve el bucket completo.
+ * usando entrada/salida/descansos. Sin marcas validas devuelve 0.
  */
 export const computeSlotWorkedMinutes = (
   slotStartMinute: number,
@@ -50,11 +50,11 @@ export const computeSlotWorkedMinutes = (
   shift: CashierAttendanceShiftMarks | null | undefined,
 ): number => {
   if (!Number.isFinite(bucketMinutes) || bucketMinutes <= 0) return 0;
-  if (!shift) return bucketMinutes;
+  if (!shift) return 0;
 
   const entry = shift.markInMinute;
   const exit = shift.markOutMinute;
-  if (entry === null || exit === null) return bucketMinutes;
+  if (entry === null || exit === null) return 0;
 
   const slotEnd = slotStartMinute + bucketMinutes;
 
@@ -94,6 +94,5 @@ export const getCashierSlotLaborHours = (
     bucketMinutes,
     shift,
   );
-  if (minutes > 0) return minutes / 60;
-  return bucketMinutes / 60;
+  return minutes / 60;
 };

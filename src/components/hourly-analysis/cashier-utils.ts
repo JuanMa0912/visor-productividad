@@ -5,7 +5,7 @@ import {
 } from "@/lib/hourly/cashier-slot-labor";
 import { formatDateLabel } from "@/lib/shared/utils";
 import type { HourlyPersonContribution } from "@/types";
-import { calcVtaHr, decimalHoursToMinutes, minuteOfDayToHHMM } from "./hourly-formatters";
+import { calcVtaHr, minuteOfDayToHHMM } from "./hourly-formatters";
 
 export const totalPersonContributionSales = (person: HourlyPersonContribution) => {
   if (person.periodTotalSales != null) return person.periodTotalSales;
@@ -16,15 +16,11 @@ export const getContributionLaborMinutes = (
   person: HourlyPersonContribution,
   bucketMinutes: number,
 ) => {
-  const att = person.attendanceWorkedHours;
-  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
-    return Math.round(att * 60);
-  }
-  const slots =
+  const activeSlotsCount =
     (typeof person.activeSlotsCount === "number"
       ? person.activeSlotsCount
       : person.hourlySales.length) || 0;
-  return slots * bucketMinutes;
+  return getCashierLaborMinutes(person, activeSlotsCount, bucketMinutes);
 };
 
 type CashierRankingRow = {
@@ -141,17 +137,29 @@ export const getCashierMonthComparisonRanges = (anchorISO: string) => {
   };
 };
 
-/** Minutos laborales: prioriza `asistencia_horas` si el API cruzó cedula/nombre; si no, franjas con venta. */
+/** Minutos laborales a partir de marcas de asistencia; sin marcas validas, 0. */
 export const getCashierLaborMinutes = (
   person: HourlyPersonContribution,
   activeSlotsCount: number,
   bucketMinutes: number,
 ) => {
-  const att = person.attendanceWorkedHours;
-  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
-    return decimalHoursToMinutes(att);
+  if (person.dailySales?.length) {
+    return person.dailySales.reduce(
+      (sum, day) => sum + getCashierDayLaborMinutes(day, bucketMinutes),
+      0,
+    );
   }
-  return activeSlotsCount * bucketMinutes;
+
+  return getCashierDayLaborMinutes(
+    {
+      date: "",
+      sales: 0,
+      activeSlotsCount,
+      attendanceWorkedHours: person.attendanceWorkedHours,
+      attendanceShift: person.attendanceShift,
+    },
+    bucketMinutes,
+  );
 };
 
 /** Minutos efectivos del turno a partir de marcas (entrada/salida menos descansos). */
@@ -174,21 +182,17 @@ export const computeShiftLaborMinutes = (
 };
 
 /**
- * Minutos de un dia en desglose: si hay marcas usamos entrada-salida-descansos
- * (consistente con el calculo por franja). En su defecto, `total_horas_calculadas`
- * de asistencia o, como ultimo recurso, las franjas con venta.
+ * Minutos de un dia en desglose: solo desde marcas de entrada/salida/descansos.
+ * Si no hay marcas validas, el dia no aporta horas (aunque haya ventas en franjas).
  */
 export const getCashierDayLaborMinutes = (
   day: NonNullable<HourlyPersonContribution["dailySales"]>[number],
   bucketMinutes: number,
 ) => {
+  void bucketMinutes;
   const fromMarks = computeShiftLaborMinutes(day.attendanceShift);
-  if (fromMarks !== null && fromMarks > 0) return fromMarks;
-  const att = day.attendanceWorkedHours;
-  if (typeof att === "number" && Number.isFinite(att) && att > 0) {
-    return decimalHoursToMinutes(att);
-  }
-  return (day.activeSlotsCount ?? 0) * bucketMinutes;
+  if (fromMarks !== null) return fromMarks;
+  return 0;
 };
 
 export const slotVtaHrFromAttendance = (
@@ -239,7 +243,7 @@ export const buildSlotLaborTooltip = (
   shift: CashierAttendanceShiftMarks | null | undefined,
 ): string => {
   if (!shift) {
-    return "Sin marcas de asistencia: se asume franja completa.";
+    return "Sin marcas de asistencia: no se estiman horas para este dia.";
   }
   const minutes = computeSlotWorkedMinutes(slotStartMinute, bucketMinutes, shift);
   const entry = minuteOfDayToHHMM(shift.markInMinute);
@@ -250,9 +254,7 @@ export const buildSlotLaborTooltip = (
   if (entry && exit) partes.push(`Turno ${entry}-${exit}`);
   if (break1 && break2) partes.push(`descanso ${break1}-${break2}`);
   if (minutes <= 0) {
-    partes.push(
-      `Franja fuera del turno: se asume ${bucketMinutes} min como respaldo`,
-    );
+    partes.push("Franja fuera del turno: 0 min trabajados");
   } else {
     partes.push(`${minutes} min trabajados en la franja`);
   }
@@ -274,16 +276,5 @@ export const formatShiftMarksLabel = (
   return `Marcas ${entry}-${exit}`;
 };
 
-export const cashierLaborHoursSourceTitle = (person: HourlyPersonContribution) => {
-  const m = person.attendanceMatchMode;
-  if (m === "cedula") {
-    return "Horas desde asistencia (total_laborado_horas), cruce por cedula.";
-  }
-  if (m === "id_texto") {
-    return "Horas desde asistencia, cruce por identificador (no numerico o corto).";
-  }
-  if (m === "nombre") {
-    return "Horas desde asistencia, cruce por nombre unico en ventas y en asistencia con una sola cedula.";
-  }
-  return "Horas estimadas por franjas con venta; sin match fiable en asistencia.";
-};
+export const cashierLaborHoursSourceTitle = (_person?: HourlyPersonContribution) =>
+  "Horas desde marcas de asistencia (entrada, salida y descansos). Dias sin marcas no suman.";

@@ -4823,13 +4823,9 @@ export const HourlyAnalysis = ({
                                                         <span
                                                           className="text-right font-semibold tabular-nums text-(--cashier-text)"
                                                           title={
-                                                            typeof day.attendanceWorkedHours ===
-                                                              "number" &&
-                                                            day.attendanceWorkedHours > 0
-                                                              ? cashierLaborHoursSourceTitle(
-                                                                  person,
-                                                                )
-                                                              : "Horas estimadas por franjas con venta del dia"
+                                                            dayLaborMinutes > 0
+                                                              ? cashierLaborHoursSourceTitle()
+                                                              : "Sin marcas de asistencia: este dia no suma horas"
                                                           }
                                                         >
                                                           {formatTotalLaborMinutesLabel(
@@ -4839,13 +4835,9 @@ export const HourlyAnalysis = ({
                                                         <span
                                                           className="text-right font-semibold tabular-nums text-(--cashier-text)"
                                                           title={
-                                                            typeof day.attendanceWorkedHours ===
-                                                              "number" &&
-                                                            day.attendanceWorkedHours > 0
-                                                              ? cashierLaborHoursSourceTitle(
-                                                                  person,
-                                                                )
-                                                              : "Horas estimadas por franjas con venta del dia"
+                                                            dayLaborMinutes > 0
+                                                              ? cashierLaborHoursSourceTitle()
+                                                              : "Sin marcas de asistencia: este dia no suma horas"
                                                           }
                                                         >
                                                           {formatProductivity(
