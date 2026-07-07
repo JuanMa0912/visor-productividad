@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCcw, TrendingUp } from "lucide-react";
 import { AppTopBar } from "@/components/portal/app-top-bar";
-import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
-import { canAccessRotacionBoard } from "@/lib/shared/special-role-features";
+import { useRequireAuth } from "@/lib/auth/auth-context";
+import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
 import {
   defaultInformeYearMonth,
   parseYearMonthInput,
@@ -44,19 +44,17 @@ const writeSessionInforme = (key: string, payload: InformeVariacionPayload) => {
 export default function InformeVariacionPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
-  const { isAdmin, hasSection, hasSubsection } = usePermissions();
   const ready = status === "authenticated" && Boolean(user);
 
   const canAccess = useMemo(() => {
     if (!user) return false;
-    if (user.role === "admin") return true;
-    if (!hasSection("producto")) return false;
-    return (
-      hasSubsection("rotacion") ||
-      hasSubsection("margenes") ||
-      canAccessRotacionBoard(user.specialRoles, isAdmin, user.allowedSubdashboards)
+    return canAccessInformeVariacion(
+      user.role,
+      user.allowedDashboards,
+      user.allowedSubdashboards,
+      user.specialRoles,
     );
-  }, [hasSection, hasSubsection, isAdmin, user]);
+  }, [user]);
 
   useEffect(() => {
     if (ready && !canAccess) {
@@ -66,7 +64,7 @@ export default function InformeVariacionPage() {
 
   const [metaLoading, setMetaLoading] = useState(true);
   const [monthInput, setMonthInput] = useState("");
-  const [useMockBases, setUseMockBases] = useState(true);
+  const [useMockBases, setUseMockBases] = useState(false);
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

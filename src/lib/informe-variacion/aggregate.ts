@@ -11,11 +11,17 @@ import {
   type InformeRowIndex,
   aggregateIndicesByKey,
   aggregateIndicesBySede,
+  filterIndexedRowIndices,
   sumRowIndices,
 } from "@/lib/informe-variacion/row-index";
 
 export type { InformeRowIndex };
-export { aggregateIndicesByKey, aggregateIndicesBySede, sumRowIndices };
+export {
+  aggregateIndicesByKey,
+  aggregateIndicesBySede,
+  filterIndexedRowIndices,
+  sumRowIndices,
+};
 
 export type PeriodTriple = [number, number, number];
 

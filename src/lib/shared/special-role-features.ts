@@ -1,4 +1,4 @@
-import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
+import { canAccessPortalSection, canAccessPortalSubsection } from "@/lib/shared/portal-sections";
 
 /**
  * Roles especiales (app_users.special_roles) que habilitan funciones concretas.
@@ -68,6 +68,28 @@ export function canAccessRotacionBoard(
   }
   if (!specialRoles?.length) return false;
   return specialRoles.some((r) => ROTACION_SET.has(r.trim().toLowerCase()));
+}
+
+/**
+ * Puede acceder al informe de variacion MoM/YoY.
+ * Requiere seccion producto y subseccion rotacion o margenes, o rol especial `rotacion`
+ * (compatibilidad legacy sin subsecciones granulares).
+ */
+export function canAccessInformeVariacion(
+  role: string,
+  allowedDashboards: unknown,
+  allowedSubdashboards: unknown,
+  specialRoles?: string[] | null,
+): boolean {
+  if (role === "admin") return true;
+  if (!canAccessPortalSection(allowedDashboards, "producto")) return false;
+  if (
+    canAccessPortalSubsection(allowedSubdashboards, "rotacion") ||
+    canAccessPortalSubsection(allowedSubdashboards, "margenes")
+  ) {
+    return true;
+  }
+  return canAccessRotacionBoard(specialRoles, false);
 }
 
 /**

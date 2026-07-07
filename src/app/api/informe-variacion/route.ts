@@ -10,28 +10,12 @@ import {
   getCachedInformePayload,
   setCachedInformePayload,
 } from "@/lib/informe-variacion/informe-cache";
-import {
-  canAccessPortalSection,
-  canAccessPortalSubsection,
-} from "@/lib/shared/portal-sections";
+import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 const CACHE_CONTROL = "no-store, private";
-
-const canAccessInformeVariacion = (
-  role: string,
-  allowedDashboards: unknown,
-  allowedSubdashboards: unknown,
-): boolean => {
-  if (role === "admin") return true;
-  if (!canAccessPortalSection(allowedDashboards, "producto")) return false;
-  return (
-    canAccessPortalSubsection(allowedSubdashboards, "rotacion") ||
-    canAccessPortalSubsection(allowedSubdashboards, "margenes")
-  );
-};
 
 export async function GET(request: Request) {
   const session = await requireAuthSession();
@@ -56,6 +40,7 @@ export async function GET(request: Request) {
       session.user.role,
       session.user.allowedDashboards,
       session.user.allowedSubdashboards,
+      session.user.specialRoles,
     )
   ) {
     return withSession(

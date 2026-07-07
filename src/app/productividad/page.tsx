@@ -21,6 +21,7 @@ import {
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
 import {
+  canAccessInformeVariacion,
   canAccessRotacionBoard,
 } from "@/lib/shared/special-role-features";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -98,13 +99,31 @@ export default function ProductividadHubPage() {
     [user?.specialRoles, user?.allowedSubdashboards, isAdmin],
   );
 
+  const canSeeInforme = useMemo(
+    () =>
+      user
+        ? canAccessInformeVariacion(
+            user.role,
+            user.allowedDashboards,
+            user.allowedSubdashboards,
+            user.specialRoles,
+          )
+        : false,
+    [user],
+  );
+
   const modules = useMemo(() => {
-    if (!canSeeRotacion) return BASE_PRODUCTO_MODULES;
-    const withRotacion = [...BASE_PRODUCTO_MODULES];
-    withRotacion.splice(2, 0, ROTACION_MODULE);
-    withRotacion.splice(3, 0, INFORME_VARIACION_MODULE);
-    return withRotacion;
-  }, [canSeeRotacion]);
+    const result = [...BASE_PRODUCTO_MODULES];
+    if (canSeeRotacion) {
+      result.splice(2, 0, ROTACION_MODULE);
+    }
+    if (canSeeInforme) {
+      const rotacionIndex = result.findIndex((module) => module.id === "rotacion");
+      const insertAt = rotacionIndex >= 0 ? rotacionIndex + 1 : 2;
+      result.splice(insertAt, 0, INFORME_VARIACION_MODULE);
+    }
+    return result;
+  }, [canSeeInforme, canSeeRotacion]);
 
   const allowedSubdashboards = user?.allowedSubdashboards ?? null;
   const visibleModules = useMemo(
@@ -112,11 +131,12 @@ export default function ProductividadHubPage() {
       modules.filter((module) => {
         if (module.disabled) return true;
         if (isAdmin) return true;
+        if (module.id === "informe-variacion") return canSeeInforme;
         const subId = resolvePortalSubsectionId(module.id);
         if (!subId) return false;
         return canAccessPortalSubsection(allowedSubdashboards, subId);
       }),
-    [allowedSubdashboards, isAdmin, modules],
+    [allowedSubdashboards, canSeeInforme, isAdmin, modules],
   );
 
   useEffect(() => {

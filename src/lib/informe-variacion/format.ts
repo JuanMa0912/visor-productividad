@@ -1,3 +1,4 @@
+import type { PeriodTriple } from "@/lib/informe-variacion/aggregate";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 
 const nfU = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 1 });
@@ -14,6 +15,11 @@ export const formatInformeValue = (
   return `$${nfMoney.format(Math.round(value / 1000))}`;
 };
 
+export const formatInformeValueRaw = (
+  value: number,
+  metric: InformeMetric,
+): number => (metric === "u" ? value : Math.round(value / 1000));
+
 export const formatInformePct = (pct: number | null): string => {
   if (pct === null) return "N/D";
   return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
@@ -25,6 +31,25 @@ export const computeVariationPct = (
 ): number | null => {
   if (previous === 0 || previous === null) return null;
   return (current / previous - 1) * 100;
+};
+
+/** Ordenamiento de columnas en tablas sede / arbol. */
+export const comparePeriodTriple = (values: PeriodTriple, col: string): number => {
+  switch (col) {
+    case "cur":
+    case "part":
+      return values[0];
+    case "yoy":
+      return values[2];
+    case "mom":
+      return values[1];
+    case "yoypct":
+      return values[2] > 0 ? values[0] / values[2] - 1 : values[0] > 0 ? Infinity : -Infinity;
+    case "mompct":
+      return values[1] > 0 ? values[0] / values[1] - 1 : values[0] > 0 ? Infinity : -Infinity;
+    default:
+      return 0;
+  }
 };
 
 export type VariationChipKind = "positive" | "negative" | "neutral" | "new";
@@ -46,6 +71,17 @@ export const resolveVariationChip = (
     label: formatInformePct(pct),
   };
 };
+
+export const variationPctLabel = (
+  current: number,
+  previous: number,
+  yoyOk = true,
+): string => resolveVariationChip(current, previous, yoyOk).label;
+
+export const variationPctNumber = (
+  current: number,
+  previous: number,
+): number | null => computeVariationPct(current, previous);
 
 export const matrixValueCellStyle = (): { background: string; color: string } => ({
   background: "#f8fafc",

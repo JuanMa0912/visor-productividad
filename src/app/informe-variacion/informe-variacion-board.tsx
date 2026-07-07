@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import * as ExcelJS from "exceljs";
+import { Download } from "lucide-react";
 import {
   aggregateBySede,
   filterRowIndices,
@@ -11,7 +13,12 @@ import {
   sumRowIndices,
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
-import { formatInformeValue } from "@/lib/informe-variacion/format";
+import { formatInformeValue, comparePeriodTriple } from "@/lib/informe-variacion/format";
+import {
+  buildSedeSummaryExportRows,
+  sedeSummaryExportFilename,
+  variationPctForExcel,
+} from "@/lib/informe-variacion/export-sede-summary";
 import {
   EMPTY_INFORME_FILTERS,
   INFORME_EMPRESA_ORDER,
@@ -32,24 +39,6 @@ const EMP_DOT_CLASS: Record<string, string> = {
   Comercializadora: "bg-blue-600",
   Mercamio: "bg-amber-600",
   Merkmios: "bg-violet-600",
-};
-
-const cmpVal = (values: PeriodTriple, col: string): number => {
-  switch (col) {
-    case "cur":
-    case "part":
-      return values[0];
-    case "yoy":
-      return values[2];
-    case "mom":
-      return values[1];
-    case "yoypct":
-      return values[2] > 0 ? values[0] / values[2] - 1 : values[0] > 0 ? Infinity : -Infinity;
-    case "mompct":
-      return values[1] > 0 ? values[0] / values[1] - 1 : values[0] > 0 ? Infinity : -Infinity;
-    default:
-      return 0;
-  }
 };
 
 export function InformeVariacionBoard({ payload }: Props) {
@@ -152,6 +141,58 @@ export function InformeVariacionBoard({ payload }: Props) {
     return [...keys].sort((a, b) => (val(b) - val(a)) * matrixSort.dir);
   };
 
+  const exportSedeSummary = useCallback(async () => {
+    const rows = buildSedeSummaryExportRows(prepared, metric, pass);
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Visor Productividad";
+    const sheet = workbook.addWorksheet("Resumen sedes");
+    const valueHeader = metric === "u" ? "Actual (unidades)" : "Actual ($ miles)";
+    const yoyHeader = `${yoyLabel} base`;
+    const momHeader = `${momLabel} base`;
+
+    sheet.columns = [
+      { header: "Empresa", key: "empresa", width: 22 },
+      { header: "Sede", key: "sede", width: 28 },
+      { header: valueHeader, key: "current", width: 16 },
+      { header: yoyHeader, key: "yoyBase", width: 16 },
+      { header: "YoY %", key: "yoyPct", width: 12 },
+      { header: momHeader, key: "momBase", width: 16 },
+      { header: "MoM %", key: "momPct", width: 12 },
+      { header: "Participacion %", key: "participationPct", width: 16 },
+    ];
+
+    sheet.getRow(1).font = { bold: true };
+
+    for (const row of rows) {
+      const yoyOk = row.yoyBase !== null;
+      const yoyPrev = row.yoyBase ?? 0;
+      sheet.addRow({
+        empresa: row.empresa,
+        sede: row.sede,
+        current: row.current,
+        yoyBase: row.yoyBase ?? "",
+        yoyPct:
+          variationPctForExcel(row.current, yoyPrev, yoyOk) ??
+          row.yoyPct,
+        momBase: row.momBase,
+        momPct: variationPctForExcel(row.current, row.momBase) ?? row.momPct,
+        participationPct:
+          row.participationPct === null ? "" : Number(row.participationPct.toFixed(1)),
+      });
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = sedeSummaryExportFilename(payload.periods.current.label, metric);
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [metric, momLabel, pass, prepared, payload.periods.current.label, yoyLabel]);
+
   return (
     <div className="space-y-5">
       {payload.meta.mockBases ? (
@@ -239,7 +280,19 @@ export function InformeVariacionBoard({ payload }: Props) {
         onClear={clearFilters}
       />
 
-      <Section title="Resumen por empresa y sede">
+      <Section
+        title="Resumen por empresa y sede"
+        actions={
+          <button
+            type="button"
+            onClick={() => void exportSedeSummary()}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Exportar Excel
+          </button>
+        }
+      >
         <SedeSummaryTable
           payload={prepared}
           metric={metric}
@@ -290,8 +343,9 @@ export function InformeVariacionBoard({ payload }: Props) {
                 setMatrixDepth(depth);
                 setMatrixOpen(new Set());
                 if (depth === "lin") {
-                  const allCats = new Set(prepared.rows.map((row) => `c${row[1]}`));
-                  setMatrixOpen(allCats);
+                  setMatrixOpen(
+                    new Set(prepared.rowIndex.allCats.map((cat) => `c${cat}`)),
+                  );
                 }
               }}
             />
@@ -304,6 +358,7 @@ export function InformeVariacionBoard({ payload }: Props) {
           pass={pass}
           matrixMode={matrixMode}
           matrixDisplay={matrixDisplay}
+          matrixDepth={matrixDepth}
           matrixOpen={matrixOpen}
           setMatrixOpen={setMatrixOpen}
           matrixSort={matrixSort}
@@ -656,7 +711,9 @@ function SedeSummaryTable({
             } else {
               sorted.sort(
                 (a, b) =>
-                  (cmpVal(perSede[b], sort.col) - cmpVal(perSede[a], sort.col)) * sort.dir,
+                  (comparePeriodTriple(perSede[b], sort.col) -
+                    comparePeriodTriple(perSede[a], sort.col)) *
+                  sort.dir,
               );
             }
 

@@ -8,6 +8,9 @@ export type InformeRowIndex = {
   bySedeCat: Map<string, number[]>;
   bySedeCatLin: Map<string, number[]>;
   bySedeCatLinSub: Map<string, number[]>;
+  indicesByCat: Map<number, number[]>;
+  indicesByCatLin: Map<string, number[]>;
+  indicesByCatLinSub: Map<string, number[]>;
   allCats: number[];
   linsByCat: Map<number, number[]>;
   subsByCatLin: Map<string, number[]>;
@@ -35,6 +38,9 @@ export const buildInformeRowIndex = (
   const bySedeCat = new Map<string, number[]>();
   const bySedeCatLin = new Map<string, number[]>();
   const bySedeCatLinSub = new Map<string, number[]>();
+  const indicesByCat = new Map<number, number[]>();
+  const indicesByCatLin = new Map<string, number[]>();
+  const indicesByCatLinSub = new Map<string, number[]>();
   const catSet = new Set<number>();
   const linsByCat = new Map<number, number[]>();
   const subsByCatLin = new Map<string, number[]>();
@@ -50,6 +56,10 @@ export const buildInformeRowIndex = (
     pushKeyIndex(bySedeCat, `${sede}|${cat}`, rowIndex);
     pushKeyIndex(bySedeCatLin, `${sede}|${cat}|${lin}`, rowIndex);
     pushKeyIndex(bySedeCatLinSub, `${sede}|${cat}|${lin}|${sub}`, rowIndex);
+
+    pushIndex(indicesByCat, cat, rowIndex);
+    pushKeyIndex(indicesByCatLin, `${cat}|${lin}`, rowIndex);
+    pushKeyIndex(indicesByCatLinSub, `${cat}|${lin}|${sub}`, rowIndex);
 
     catSet.add(cat);
     pushIndex(linsByCat, cat, lin);
@@ -69,6 +79,9 @@ export const buildInformeRowIndex = (
     bySedeCat,
     bySedeCatLin,
     bySedeCatLinSub,
+    indicesByCat,
+    indicesByCatLin,
+    indicesByCatLinSub,
     allCats: [...catSet].sort((a, b) => a - b),
     linsByCat: new Map(uniqueSorted(linsByCat).map(([k, v]) => [k, v.sort((a, b) => a - b)])),
     subsByCatLin: new Map(
@@ -142,4 +155,17 @@ export const sumRowIndices = (
     totals[2] += row[offset + 2];
   }
   return totals;
+};
+
+/** Filtra indices de un bucket del indice jerarquico. */
+export const filterIndexedRowIndices = (
+  indices: readonly number[] | undefined,
+  allowed: ReadonlySet<number>,
+): number[] => {
+  if (!indices?.length) return [];
+  const result: number[] = [];
+  for (const index of indices) {
+    if (allowed.has(index)) result.push(index);
+  }
+  return result;
 };

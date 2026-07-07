@@ -4,10 +4,11 @@ import { useMemo } from "react";
 import {
   aggregateIndicesByKey,
   filterRowIndices,
+  filterIndexedRowIndices,
   sumRowIndices,
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
-import { formatInformeValue } from "@/lib/informe-variacion/format";
+import { comparePeriodTriple, formatInformeValue } from "@/lib/informe-variacion/format";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 import { INFORME_EMPRESA_ORDER } from "@/lib/informe-variacion/types";
 import { cn } from "@/lib/shared/utils";
@@ -15,24 +16,6 @@ import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
-
-const cmpVal = (values: PeriodTriple, col: string): number => {
-  switch (col) {
-    case "cur":
-    case "part":
-      return values[0];
-    case "yoy":
-      return values[2];
-    case "mom":
-      return values[1];
-    case "yoypct":
-      return values[2] > 0 ? values[0] / values[2] - 1 : values[0] > 0 ? Infinity : -Infinity;
-    case "mompct":
-      return values[1] > 0 ? values[0] / values[1] - 1 : values[0] > 0 ? Infinity : -Infinity;
-    default:
-      return 0;
-  }
-};
 
 const sortedEntries = (
   map: Map<number, PeriodTriple>,
@@ -49,7 +32,7 @@ const sortedEntries = (
     if (sort.dir < 0) entries.reverse();
     return entries;
   }
-  entries.sort((a, b) => (cmpVal(b[1], sort.col) - cmpVal(a[1], sort.col)) * sort.dir);
+  entries.sort((a, b) => (comparePeriodTriple(b[1], sort.col) - comparePeriodTriple(a[1], sort.col)) * sort.dir);
   return entries;
 };
 
@@ -84,6 +67,8 @@ export function TreeTable({
     () => filterRowIndices(payload.rows, pass),
     [payload.rows, pass],
   );
+
+  const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices]);
 
   const total = useMemo(
     () => sumRowIndices(payload.rows, filteredIndices, metric)[0],
@@ -154,8 +139,9 @@ export function TreeTable({
     };
 
     for (const empresa of INFORME_EMPRESA_ORDER) {
-      const empresaIndices = filteredIndices.filter(
-        (index) => payload.sedeEmpresas[payload.rows[index]![0]] === empresa.label,
+      const empresaIndices = filterIndexedRowIndices(
+        payload.rowIndex.byEmpresa.get(empresa.label),
+        filteredSet,
       );
       if (empresaIndices.length === 0) continue;
 
@@ -188,8 +174,9 @@ export function TreeTable({
         );
         if (!treeOpen.has(sk)) continue;
 
-        const sedeIndices = empresaIndices.filter(
-          (index) => payload.rows[index]![0] === sedeIndex,
+        const sedeIndices = filterIndexedRowIndices(
+          payload.rowIndex.bySede.get(sedeIndex),
+          filteredSet,
         );
         const cAgg = aggregateIndicesByKey(payload.rows, sedeIndices, metric, 1);
         for (const [catIndex, cValues] of sortedEntries(cAgg, payload.cats, sort)) {
@@ -199,7 +186,10 @@ export function TreeTable({
           );
           if (!treeOpen.has(ck)) continue;
 
-          const catIndices = sedeIndices.filter((index) => payload.rows[index]![1] === catIndex);
+          const catIndices = filterIndexedRowIndices(
+            payload.rowIndex.bySedeCat.get(`${sedeIndex}|${catIndex}`),
+            filteredSet,
+          );
           const lAgg = aggregateIndicesByKey(payload.rows, catIndices, metric, 2);
           for (const [linIndex, lValues] of sortedEntries(lAgg, payload.lins, sort)) {
             const lk = `${ck}|l:${linIndex}`;
@@ -208,7 +198,10 @@ export function TreeTable({
             );
             if (!treeOpen.has(lk)) continue;
 
-            const linIndices = catIndices.filter((index) => payload.rows[index]![2] === linIndex);
+            const linIndices = filterIndexedRowIndices(
+              payload.rowIndex.bySedeCatLin.get(`${sedeIndex}|${catIndex}|${linIndex}`),
+              filteredSet,
+            );
             const bAgg = aggregateIndicesByKey(payload.rows, linIndices, metric, 3);
             for (const [subIndex, bValues] of sortedEntries(bAgg, payload.subs, sort)) {
               const bk = `${lk}|b:${subIndex}`;
@@ -217,7 +210,12 @@ export function TreeTable({
               );
               if (!treeOpen.has(bk)) continue;
 
-              const subIndices = linIndices.filter((index) => payload.rows[index]![3] === subIndex);
+              const subIndices = filterIndexedRowIndices(
+                payload.rowIndex.bySedeCatLinSub.get(
+                  `${sedeIndex}|${catIndex}|${linIndex}|${subIndex}`,
+                ),
+                filteredSet,
+              );
               const iAgg = aggregateIndicesByKey(payload.rows, subIndices, metric, 4);
               const entries = sortedEntries(iAgg, payload.items, sort);
               const limit = treeShown[bk] ?? 50;
@@ -267,7 +265,7 @@ export function TreeTable({
 
     return rows;
   }, [
-    filteredIndices,
+    filteredSet,
     metric,
     payload,
     setTreeOpen,

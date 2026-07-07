@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState, Fragment } from "react";
 import {
   filterRowIndices,
   aggregateIndicesBySede,
+  filterIndexedRowIndices,
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
 import {
@@ -26,6 +27,7 @@ type MatrixProps = {
   pass: (row: Prepared["rows"][number]) => boolean;
   matrixMode: "yoy" | "mom";
   matrixDisplay: "pct" | "value";
+  matrixDepth: "cat" | "lin";
   matrixOpen: Set<string>;
   setMatrixOpen: React.Dispatch<React.SetStateAction<Set<string>>>;
   matrixSort: { col: number; dir: number };
@@ -77,6 +79,7 @@ export function MatrixTable({
   pass,
   matrixMode,
   matrixDisplay,
+  matrixDepth,
   matrixOpen,
   setMatrixOpen,
   matrixSort,
@@ -110,6 +113,8 @@ export function MatrixTable({
     () => filterRowIndices(payload.rows, pass),
     [payload.rows, pass],
   );
+
+  const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices]);
 
   const catAgg = useMemo(
     () =>
@@ -237,16 +242,19 @@ export function MatrixTable({
           label={payload.cats[cat]}
           cells={matrixCells(catAgg.get(cat))}
           depth={0}
-          expandable
+          expandable={matrixDepth === "lin"}
           open={matrixOpen.has(ck)}
-          onExpand={() => toggleExpand(ck)}
+          onExpand={matrixDepth === "lin" ? () => toggleExpand(ck) : undefined}
           renderCell={renderMatrixCell}
         />,
       );
 
-      if (!matrixOpen.has(ck)) continue;
+      if (matrixDepth === "cat" || !matrixOpen.has(ck)) continue;
 
-      const catIndices = filteredIndices.filter((index) => payload.rows[index]![1] === cat);
+      const catIndices = filterIndexedRowIndices(
+        payload.rowIndex.indicesByCat.get(cat),
+        filteredSet,
+      );
       const linAgg = aggregateIndicesBySede(
         payload.rows,
         catIndices,
@@ -287,7 +295,10 @@ export function MatrixTable({
 
         if (!matrixOpen.has(lk)) continue;
 
-        const linIndices = catIndices.filter((index) => payload.rows[index]![2] === lin);
+        const linIndices = filterIndexedRowIndices(
+          payload.rowIndex.indicesByCatLin.get(`${cat}|${lin}`),
+          filteredSet,
+        );
         const subAgg = aggregateIndicesBySede(
           payload.rows,
           linIndices,
@@ -328,7 +339,10 @@ export function MatrixTable({
 
           if (!matrixOpen.has(bk)) continue;
 
-          const subIndices = linIndices.filter((index) => payload.rows[index]![3] === sub);
+          const subIndices = filterIndexedRowIndices(
+            payload.rowIndex.indicesByCatLinSub.get(`${cat}|${lin}|${sub}`),
+            filteredSet,
+          );
           const itAgg = aggregateIndicesBySede(
             payload.rows,
             subIndices,
@@ -378,7 +392,8 @@ export function MatrixTable({
   }, [
     activeDetails,
     catAgg,
-    filteredIndices,
+    filteredSet,
+    matrixDepth,
     matrixDisplay,
     matrixMode,
     matrixOpen,
