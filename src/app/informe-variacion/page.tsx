@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCcw, TrendingUp } from "lucide-react";
 import { AppTopBar } from "@/components/portal/app-top-bar";
@@ -70,6 +70,11 @@ export default function InformeVariacionPage() {
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const payloadRef = useRef<InformeVariacionPayload | null>(null);
+
+  useEffect(() => {
+    payloadRef.current = payload;
+  }, [payload]);
 
   const INFORME_FETCH_TIMEOUT_MS = 120_000;
 
@@ -117,7 +122,7 @@ export default function InformeVariacionPage() {
     }
     const requestKey = `${parsed.year}-${parsed.month}:mock=${useMockBases ? 1 : 0}`;
     const cached = readSessionInforme(requestKey);
-    if (cached && !payload) {
+    if (cached && !payloadRef.current) {
       setPayload(cached);
     }
     setLoading(true);
@@ -149,7 +154,7 @@ export default function InformeVariacionPage() {
       setPayload(data);
       writeSessionInforme(requestKey, data);
     } catch (err) {
-      if (!payload) {
+      if (!payloadRef.current) {
         setPayload(null);
       }
       if (err instanceof Error && err.name === "AbortError") {
@@ -165,22 +170,20 @@ export default function InformeVariacionPage() {
       window.clearTimeout(timeoutId);
       setLoading(false);
     }
-  }, [monthInput, payload, router, useMockBases]);
+  }, [monthInput, router, useMockBases]);
 
   useEffect(() => {
     if (!cacheKey) return;
-    const cached = readSessionInforme(cacheKey);
-    if (cached) setPayload(cached);
+    setPayload(readSessionInforme(cacheKey));
   }, [cacheKey]);
 
   useEffect(() => {
-    if (!ready || !canAccess || metaLoading || !monthInput) return;
+    if (!ready || !canAccess || metaLoading || !cacheKey) return;
     void loadInforme();
-  }, [canAccess, loadInforme, metaLoading, monthInput, ready, useMockBases]);
+  }, [cacheKey, canAccess, loadInforme, metaLoading, ready]);
 
   const showInitialLoader = metaLoading || (loading && !payload && !error);
   const showBoard = Boolean(payload) && !metaLoading;
-  const isRefreshing = loading && Boolean(payload);
 
   if (!ready || !canAccess) {
     return (
@@ -254,9 +257,7 @@ export default function InformeVariacionPage() {
             ) : null}
           </div>
         ) : showBoard ? (
-          <div className={isRefreshing ? "opacity-70 transition-opacity" : undefined}>
-            <InformeVariacionBoard payload={payload!} />
-          </div>
+          <InformeVariacionBoard payload={payload!} />
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-600">
             No hay datos para el periodo seleccionado.
