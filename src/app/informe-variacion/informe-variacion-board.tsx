@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import * as ExcelJS from "exceljs";
 import { Download } from "lucide-react";
 import {
   aggregateBySede,
@@ -17,8 +16,8 @@ import { formatInformeValue, comparePeriodTriple } from "@/lib/informe-variacion
 import {
   buildSedeSummaryExportRows,
   sedeSummaryExportFilename,
-  variationPctForExcel,
 } from "@/lib/informe-variacion/export-sede-summary";
+import { downloadInformeSedeSummaryExcel } from "@/lib/informe-variacion/export-sede-summary-excel";
 import {
   EMPTY_INFORME_FILTERS,
   INFORME_EMPRESA_ORDER,
@@ -143,55 +142,16 @@ export function InformeVariacionBoard({ payload }: Props) {
 
   const exportSedeSummary = useCallback(async () => {
     const rows = buildSedeSummaryExportRows(prepared, metric, pass);
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Visor Productividad";
-    const sheet = workbook.addWorksheet("Resumen sedes");
-    const valueHeader = metric === "u" ? "Actual (unidades)" : "Actual ($ miles)";
-    const yoyHeader = `${yoyLabel} base`;
-    const momHeader = `${momLabel} base`;
-
-    sheet.columns = [
-      { header: "Empresa", key: "empresa", width: 22 },
-      { header: "Sede", key: "sede", width: 28 },
-      { header: valueHeader, key: "current", width: 16 },
-      { header: yoyHeader, key: "yoyBase", width: 16 },
-      { header: "YoY %", key: "yoyPct", width: 12 },
-      { header: momHeader, key: "momBase", width: 16 },
-      { header: "MoM %", key: "momPct", width: 12 },
-      { header: "Participacion %", key: "participationPct", width: 16 },
-    ];
-
-    sheet.getRow(1).font = { bold: true };
-
-    for (const row of rows) {
-      const yoyOk = row.yoyBase !== null;
-      const yoyPrev = row.yoyBase ?? 0;
-      sheet.addRow({
-        empresa: row.empresa,
-        sede: row.sede,
-        current: row.current,
-        yoyBase: row.yoyBase ?? "",
-        yoyPct:
-          variationPctForExcel(row.current, yoyPrev, yoyOk) ??
-          row.yoyPct,
-        momBase: row.momBase,
-        momPct: variationPctForExcel(row.current, row.momBase) ?? row.momPct,
-        participationPct:
-          row.participationPct === null ? "" : Number(row.participationPct.toFixed(1)),
-      });
-    }
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    await downloadInformeSedeSummaryExcel({
+      rows,
+      metric,
+      periodLabel: payload.periods.current.label,
+      yoyLabel,
+      momLabel,
+      mockBases: payload.meta.mockBases,
+      filename: sedeSummaryExportFilename(payload.periods.current.label, metric),
     });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = sedeSummaryExportFilename(payload.periods.current.label, metric);
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, [metric, momLabel, pass, prepared, payload.periods.current.label, yoyLabel]);
+  }, [metric, momLabel, pass, prepared, payload.meta.mockBases, payload.periods.current.label, yoyLabel]);
 
   return (
     <div className="space-y-5">

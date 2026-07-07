@@ -1,4 +1,5 @@
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
+import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
 import { applyInformeMockComparisonBases } from "@/lib/informe-variacion/mock-bases";
 import { mockInformeComparisonMultiplier } from "@/lib/informe-variacion/mock-bases";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
@@ -35,8 +36,9 @@ export const buildInformeDemoPayload = (
   year: number,
   month: number,
   allowedSedeKeys: string[] | null,
+  dayRange?: InformeDayRangeSpec | null,
 ): InformeVariacionPayload => {
-  const periods = computeInformePeriods(year, month);
+  const periods = computeInformePeriods(year, month, dayRange);
   const catalog = buildSedeCatalog(allowedSedeKeys);
 
   const sedes = catalog.map((option) => ({
@@ -100,6 +102,16 @@ export const buildInformeDemoPayload = (
       ...base.meta,
       mockBases: true,
       demoData: true,
+      ...(dayRange
+        ? {
+            dayRange: {
+              id: dayRange.id,
+              label: dayRange.label,
+              fromDay: dayRange.fromDay,
+              toDay: dayRange.toDay,
+            },
+          }
+        : {}),
     },
   };
 };

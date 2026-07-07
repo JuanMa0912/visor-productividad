@@ -1,4 +1,6 @@
 import type { InformePeriodRange, InformePeriods } from "@/lib/informe-variacion/types";
+import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
+import { lastDayOfMonth } from "@/lib/informe-variacion/day-ranges";
 
 const MONTH_NAMES = [
   "Enero",
@@ -19,9 +21,6 @@ const pad2 = (value: number) => String(value).padStart(2, "0");
 
 export const toCompactDate = (year: number, month: number, day: number): string =>
   `${year}${pad2(month)}${pad2(day)}`;
-
-const lastDayOfMonth = (year: number, month: number): number =>
-  new Date(year, month, 0).getDate();
 
 export const formatInformePeriodLabel = (
   fromCompact: string,
@@ -49,9 +48,26 @@ export const formatInformeMonthChip = (year: number, month: number): string => {
   return `${monthName} ${pad2(1)}–${pad2(last)}, ${year}`;
 };
 
+const monthRangeBounds = (
+  year: number,
+  month: number,
+  fromDay: number,
+  toDay: number | null,
+): { from: string; to: string } | null => {
+  const last = lastDayOfMonth(year, month);
+  const to = toDay === null ? last : Math.min(toDay, last);
+  const from = Math.min(fromDay, last);
+  if (from > to) return null;
+  return {
+    from: toCompactDate(year, month, from),
+    to: toCompactDate(year, month, to),
+  };
+};
+
 export const computeInformePeriods = (
   year: number,
   month: number,
+  dayRange?: InformeDayRangeSpec | null,
 ): InformePeriods => {
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     throw new Error("Año inválido para el informe.");
@@ -60,20 +76,18 @@ export const computeInformePeriods = (
     throw new Error("Mes inválido para el informe.");
   }
 
-  const curFrom = toCompactDate(year, month, 1);
-  const curTo = toCompactDate(year, month, lastDayOfMonth(year, month));
+  const fromDay = dayRange?.fromDay ?? 1;
+  const toDay = dayRange?.toDay ?? null;
+
+  const curBounds = monthRangeBounds(year, month, fromDay, toDay);
+  if (!curBounds) {
+    throw new Error("Rango de dias invalido para el mes seleccionado.");
+  }
 
   const momMonth = month === 1 ? 12 : month - 1;
   const momYear = month === 1 ? year - 1 : year;
-  const momFrom = toCompactDate(momYear, momMonth, 1);
-  const momTo = toCompactDate(momYear, momMonth, lastDayOfMonth(momYear, momMonth));
-
-  const yoyFrom = toCompactDate(year - 1, month, 1);
-  const yoyTo = toCompactDate(
-    year - 1,
-    month,
-    lastDayOfMonth(year - 1, month),
-  );
+  const momBounds = monthRangeBounds(momYear, momMonth, fromDay, toDay);
+  const yoyBounds = monthRangeBounds(year - 1, month, fromDay, toDay);
 
   const build = (from: string, to: string): InformePeriodRange => ({
     from,
@@ -82,9 +96,17 @@ export const computeInformePeriods = (
   });
 
   return {
-    current: build(curFrom, curTo),
-    mom: build(momFrom, momTo),
-    yoy: build(yoyFrom, yoyTo),
+    current: build(curBounds.from, curBounds.to),
+    mom: build(
+      momBounds?.from ?? toCompactDate(momYear, momMonth, 1),
+      momBounds?.to ??
+        toCompactDate(momYear, momMonth, lastDayOfMonth(momYear, momMonth)),
+    ),
+    yoy: build(
+      yoyBounds?.from ?? toCompactDate(year - 1, month, 1),
+      yoyBounds?.to ??
+        toCompactDate(year - 1, month, lastDayOfMonth(year - 1, month)),
+    ),
   };
 };
 

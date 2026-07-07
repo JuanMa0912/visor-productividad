@@ -11,14 +11,19 @@ import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
 
+export type SedeSummaryExportRowKind = "empresa" | "sede" | "total";
+
 export type SedeSummaryExportRow = {
+  kind: SedeSummaryExportRowKind;
   empresa: string;
   sede: string;
   current: number;
   yoyBase: number | null;
   yoyPct: string;
+  yoyPctValue: number | null;
   momBase: number;
   momPct: string;
+  momPctValue: number | null;
   participationPct: number | null;
 };
 
@@ -51,6 +56,7 @@ export const buildSedeSummaryExportRows = (
     );
 
     rows.push({
+      kind: "empresa",
       empresa: empresa.label,
       sede: "",
       current: formatInformeValueRaw(empresaSum[0], metric),
@@ -62,48 +68,62 @@ export const buildSedeSummaryExportRows = (
         empresaSum[2],
         payload.empYoy[empresa.label],
       ),
+      yoyPctValue: variationPctForExcel(
+        formatInformeValueRaw(empresaSum[0], metric),
+        formatInformeValueRaw(empresaSum[2], metric),
+        payload.empYoy[empresa.label],
+      ),
       momBase: formatInformeValueRaw(empresaSum[1], metric),
       momPct: variationPctLabel(empresaSum[0], empresaSum[1]),
+      momPctValue: variationPctForExcel(
+        formatInformeValueRaw(empresaSum[0], metric),
+        formatInformeValueRaw(empresaSum[1], metric),
+      ),
       participationPct: total[0] > 0 ? (empresaSum[0] / total[0]) * 100 : null,
     });
 
     for (const index of indices) {
       const values = perSede[index];
+      const current = formatInformeValueRaw(values[0], metric);
+      const yoyBase = payload.sedeYoy[index]
+        ? formatInformeValueRaw(values[2], metric)
+        : null;
+      const momBase = formatInformeValueRaw(values[1], metric);
       rows.push({
+        kind: "sede",
         empresa: empresa.label,
         sede: payload.sedes[index]!.s,
-        current: formatInformeValueRaw(values[0], metric),
-        yoyBase: payload.sedeYoy[index]
-          ? formatInformeValueRaw(values[2], metric)
-          : null,
+        current,
+        yoyBase,
         yoyPct: variationPctLabel(values[0], values[2], payload.sedeYoy[index]),
-        momBase: formatInformeValueRaw(values[1], metric),
+        yoyPctValue: variationPctForExcel(current, yoyBase ?? 0, payload.sedeYoy[index]),
+        momBase,
         momPct: variationPctLabel(values[0], values[1]),
+        momPctValue: variationPctForExcel(current, momBase),
         participationPct: total[0] > 0 ? (values[0] / total[0]) * 100 : null,
       });
     }
   }
 
+  const totalYoyBase = perSede.reduce(
+    (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
+    0,
+  );
+  const totalCurrent = formatInformeValueRaw(total[0], metric);
+  const totalMomBase = formatInformeValueRaw(total[1], metric);
+  const totalYoyBaseFmt = formatInformeValueRaw(totalYoyBase, metric);
+
   rows.push({
+    kind: "total",
     empresa: "TOTAL COMPANIAS",
     sede: "",
-    current: formatInformeValueRaw(total[0], metric),
-    yoyBase: formatInformeValueRaw(
-      perSede.reduce(
-        (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
-        0,
-      ),
-      metric,
-    ),
-    yoyPct: variationPctLabel(
-      total[0],
-      perSede.reduce(
-        (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
-        0,
-      ),
-    ),
-    momBase: formatInformeValueRaw(total[1], metric),
+    current: totalCurrent,
+    yoyBase: totalYoyBaseFmt,
+    yoyPct: variationPctLabel(total[0], totalYoyBase),
+    yoyPctValue: variationPctForExcel(totalCurrent, totalYoyBaseFmt),
+    momBase: totalMomBase,
     momPct: variationPctLabel(total[0], total[1]),
+    momPctValue: variationPctForExcel(totalCurrent, totalMomBase),
     participationPct: null,
   });
 

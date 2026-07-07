@@ -18,6 +18,7 @@ import {
   informeEmpresaLabel,
 } from "@/lib/informe-variacion/labels";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
+import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
 import {
   applyInformeMockComparisonBases,
   informePayloadHasComparisonData,
@@ -422,6 +423,7 @@ export const buildInformeVariacionPayload = (
 
 export type LoadInformeVariacionOptions = {
   mockBases?: boolean;
+  dayRange?: InformeDayRangeSpec | null;
 };
 
 export const loadInformeVariacionPayload = async (
@@ -431,7 +433,7 @@ export const loadInformeVariacionPayload = async (
   allowedSedeKeys: string[] | null,
   options: LoadInformeVariacionOptions = {},
 ): Promise<InformeVariacionPayload> => {
-  const periods = computeInformePeriods(year, month);
+  const periods = computeInformePeriods(year, month, options.dayRange);
 
   if (options.mockBases === true) {
     const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys, {
@@ -444,9 +446,29 @@ export const loadInformeVariacionPayload = async (
     if (!payload.meta.comparisonAvailable) {
       payload = applyInformeMockComparisonBases(payload);
     }
-    return payload;
+    return attachDayRangeMeta(payload, options.dayRange);
   }
 
   const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys);
-  return buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
+  const payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
+  return attachDayRangeMeta(payload, options.dayRange);
+};
+
+const attachDayRangeMeta = (
+  payload: InformeVariacionPayload,
+  dayRange?: InformeDayRangeSpec | null,
+): InformeVariacionPayload => {
+  if (!dayRange) return payload;
+  return {
+    ...payload,
+    meta: {
+      ...payload.meta,
+      dayRange: {
+        id: dayRange.id,
+        label: dayRange.label,
+        fromDay: dayRange.fromDay,
+        toDay: dayRange.toDay,
+      },
+    },
+  };
 };

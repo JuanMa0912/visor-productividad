@@ -11,9 +11,15 @@ import {
   parseYearMonthInput,
   yearMonthToInputValue,
 } from "@/lib/informe-variacion/periods";
+import {
+  defaultInformeDayRangeId,
+  getAvailableInformeDayRanges,
+  type InformeDayRangeId,
+} from "@/lib/informe-variacion/day-ranges";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
+import { cn } from "@/lib/shared/utils";
 
 type InformeMeta = {
   maxDate: string | null;
@@ -63,7 +69,9 @@ export default function InformeVariacionPage() {
   }, [canAccess, ready, router]);
 
   const [metaLoading, setMetaLoading] = useState(true);
+  const [maxDate, setMaxDate] = useState<string | null>(null);
   const [monthInput, setMonthInput] = useState("");
+  const [dayRangeId, setDayRangeId] = useState<InformeDayRangeId | "">("");
   const [useMockBases, setUseMockBases] = useState(false);
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -93,6 +101,7 @@ export default function InformeVariacionPage() {
         }
         const data = (await response.json()) as InformeMeta;
         if (cancelled) return;
+        setMaxDate(data.maxDate);
         const { year, month } = defaultInformeYearMonth(data.maxDate);
         setMonthInput(yearMonthToInputValue(year, month));
       } catch {
@@ -110,11 +119,36 @@ export default function InformeVariacionPage() {
     };
   }, [canAccess, ready, router]);
 
+  const parsedMonth = useMemo(() => parseYearMonthInput(monthInput), [monthInput]);
+
+  const availableDayRanges = useMemo(() => {
+    if (!parsedMonth) return [];
+    return getAvailableInformeDayRanges(
+      parsedMonth.year,
+      parsedMonth.month,
+      new Date(),
+      maxDate,
+    );
+  }, [maxDate, parsedMonth]);
+
+  useEffect(() => {
+    if (availableDayRanges.length === 0) {
+      setDayRangeId("");
+      return;
+    }
+    setDayRangeId((current) => {
+      if (current && availableDayRanges.some((range) => range.id === current)) {
+        return current;
+      }
+      return defaultInformeDayRangeId(availableDayRanges) ?? "";
+    });
+  }, [availableDayRanges]);
+
   const cacheKey = useMemo(() => {
     const parsed = parseYearMonthInput(monthInput);
-    if (!parsed) return "";
-    return `${parsed.year}-${parsed.month}:mock=${useMockBases ? 1 : 0}`;
-  }, [monthInput, useMockBases]);
+    if (!parsed || !dayRangeId) return "";
+    return `${parsed.year}-${parsed.month}:range=${dayRangeId}:mock=${useMockBases ? 1 : 0}`;
+  }, [dayRangeId, monthInput, useMockBases]);
 
   const loadInforme = useCallback(async () => {
     const parsed = parseYearMonthInput(monthInput);
@@ -122,7 +156,11 @@ export default function InformeVariacionPage() {
       setError("Selecciona un mes valido.");
       return;
     }
-    const requestKey = `${parsed.year}-${parsed.month}:mock=${useMockBases ? 1 : 0}`;
+    if (!dayRangeId) {
+      setError("No hay rangos de dias disponibles para este mes.");
+      return;
+    }
+    const requestKey = `${parsed.year}-${parsed.month}:range=${dayRangeId}:mock=${useMockBases ? 1 : 0}`;
     const cached = readSessionInforme(requestKey);
     if (cached && !payloadRef.current) {
       setPayload(cached);
@@ -136,6 +174,7 @@ export default function InformeVariacionPage() {
         year: String(parsed.year),
         month: String(parsed.month),
         mock: useMockBases ? "1" : "0",
+        range: dayRangeId,
       });
       const response = await fetch(`/api/informe-variacion?${params.toString()}`, {
         cache: "no-store",
@@ -172,7 +211,7 @@ export default function InformeVariacionPage() {
       window.clearTimeout(timeoutId);
       setLoading(false);
     }
-  }, [monthInput, router, useMockBases]);
+  }, [dayRangeId, monthInput, router, useMockBases]);
 
   useEffect(() => {
     if (!cacheKey) return;
@@ -212,7 +251,7 @@ export default function InformeVariacionPage() {
             </p>
           </div>
         </div>
-        <div className="mb-5 flex flex-wrap items-end justify-end gap-3">
+        <div className="mb-4 flex flex-wrap items-end justify-end gap-3">
           <label className="flex cursor-pointer items-center gap-2 self-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-900">
             <input
               type="checkbox"
@@ -241,6 +280,41 @@ export default function InformeVariacionPage() {
             Actualizar
           </button>
         </div>
+
+        {availableDayRanges.length > 0 ? (
+          <div className="mb-5 rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Rango de dias
+              </span>
+              <span className="text-xs text-slate-400">
+                Solo aparecen periodos ya cerrados en el mes
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {availableDayRanges.map((range) => (
+                <button
+                  key={range.id}
+                  type="button"
+                  onClick={() => setDayRangeId(range.id)}
+                  className={cn(
+                    "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
+                    dayRangeId === range.id
+                      ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
+                  )}
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : parsedMonth ? (
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Este mes aun no tiene rangos de dias disponibles. Elige un mes anterior o espera a que
+            cierre el primer periodo (dia 7).
+          </div>
+        ) : null}
 
         {error ? (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

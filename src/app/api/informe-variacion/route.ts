@@ -6,6 +6,12 @@ import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
 import { buildInformeDemoPayload } from "@/lib/informe-variacion/demo-payload";
 import { resolveInformeMockBasesEnabled } from "@/lib/informe-variacion/mock-bases";
 import {
+  defaultInformeDayRangeId,
+  getAvailableInformeDayRanges,
+  isInformeDayRangeAvailable,
+  parseInformeDayRangeId,
+} from "@/lib/informe-variacion/day-ranges";
+import {
   buildInformeCacheKey,
   getCachedInformePayload,
   setCachedInformePayload,
@@ -85,7 +91,44 @@ export async function GET(request: Request) {
   }
 
   const mockBases = resolveInformeMockBasesEnabled(url.searchParams.get("mock"));
-  const cacheKey = buildInformeCacheKey(year, month, mockBases, scope.allowedKeys);
+  const dayRange = parseInformeDayRangeId(url.searchParams.get("range"));
+  if (url.searchParams.get("range") && !dayRange) {
+    return withSession(
+      NextResponse.json(
+        { error: "Parametro range invalido." },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  if (dayRange && !isInformeDayRangeAvailable(dayRange.id, year, month)) {
+    return withSession(
+      NextResponse.json(
+        { error: "El rango de dias seleccionado aun no esta disponible para este mes." },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  const availableRanges = getAvailableInformeDayRanges(year, month);
+  const effectiveRange =
+    dayRange ??
+    parseInformeDayRangeId(defaultInformeDayRangeId(availableRanges) ?? undefined);
+  if (!effectiveRange) {
+    return withSession(
+      NextResponse.json(
+        { error: "No hay rangos de dias disponibles para el mes seleccionado." },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  const cacheKey = buildInformeCacheKey(
+    year,
+    month,
+    mockBases,
+    scope.allowedKeys,
+    effectiveRange?.id,
+  );
   const cached = getCachedInformePayload(cacheKey);
   if (cached) {
     return withSession(
@@ -110,6 +153,7 @@ export async function GET(request: Request) {
         payload = await Promise.race([
           loadInformeVariacionPayload(client, year, month, scope.allowedKeys, {
             mockBases: true,
+            dayRange: effectiveRange,
           }),
           new Promise<never>((_, reject) => {
             setTimeout(() => reject(new Error("informe-mock-timeout")), 8_000);
@@ -117,10 +161,12 @@ export async function GET(request: Request) {
         ]);
       } catch (error) {
         console.warn("[informe-variacion] modo demo: fallback sintetico", error);
-        payload = buildInformeDemoPayload(year, month, scope.allowedKeys);
+        payload = buildInformeDemoPayload(year, month, scope.allowedKeys, effectiveRange);
       }
     } else {
-      payload = await loadInformeVariacionPayload(client, year, month, scope.allowedKeys);
+      payload = await loadInformeVariacionPayload(client, year, month, scope.allowedKeys, {
+        dayRange: effectiveRange,
+      });
     }
 
     setCachedInformePayload(cacheKey, payload);

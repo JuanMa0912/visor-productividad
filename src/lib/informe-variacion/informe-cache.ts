@@ -8,12 +8,14 @@ export const buildInformeCacheKey = (
   month: number,
   mockBases: boolean,
   allowedSedeKeys: string[] | null,
+  dayRangeId?: string | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
-  return `informe:${year}:${month}:mock=${mockBases ? 1 : 0}:${sedes}`;
+  const range = dayRangeId?.trim() || "1-eom";
+  return `informe:${year}:${month}:range=${range}:mock=${mockBases ? 1 : 0}:${sedes}`;
 };
 
 export const getCachedInformePayload = (

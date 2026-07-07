@@ -50,6 +50,12 @@ export type InformeVariacionPayload = {
     demoData?: boolean;
     /** Hay al menos un valor real en periodos de comparacion. */
     comparisonAvailable?: boolean;
+    dayRange?: {
+      id: string;
+      label: string;
+      fromDay: number;
+      toDay: number | null;
+    };
   };
 };
 
