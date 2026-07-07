@@ -6,6 +6,16 @@ import type {
   InformeVariacionPayload,
 } from "@/lib/informe-variacion/types";
 import { metricOffset } from "@/lib/informe-variacion/format";
+import {
+  buildInformeRowIndex,
+  type InformeRowIndex,
+  aggregateIndicesByKey,
+  aggregateIndicesBySede,
+  sumRowIndices,
+} from "@/lib/informe-variacion/row-index";
+
+export type { InformeRowIndex };
+export { aggregateIndicesByKey, aggregateIndicesBySede, sumRowIndices };
 
 export type PeriodTriple = [number, number, number];
 
@@ -124,13 +134,33 @@ export const hasActiveInformeFilters = (filters: InformeGlobalFilters) =>
       filters.q,
   );
 
-export const prepareInformeData = (payload: InformeVariacionPayload) => ({
-  ...payload,
-  sedeEmpresas: buildSedeEmpresaMap(payload.sedes),
-  sedeYoy: buildSedeYoyFlags(payload.sedes),
-  itemsLow: buildItemsLower(payload.items),
-  empYoy: payload.sedes.reduce<Record<string, boolean>>((acc, sede) => {
+export const filterRowIndices = (
+  rows: InformeCompactRow[],
+  pass: (row: InformeCompactRow) => boolean,
+): number[] => {
+  const indices: number[] = [];
+  for (let index = 0; index < rows.length; index += 1) {
+    if (pass(rows[index]!)) indices.push(index);
+  }
+  return indices;
+};
+
+export const prepareInformeData = (payload: InformeVariacionPayload) => {
+  const sedeEmpresas = buildSedeEmpresaMap(payload.sedes);
+  const sedeYoy = buildSedeYoyFlags(payload.sedes);
+  const itemsLow = buildItemsLower(payload.items);
+  const empYoy = payload.sedes.reduce<Record<string, boolean>>((acc, sede) => {
     acc[sede.e] = acc[sede.e] || sede.yoyOk;
     return acc;
-  }, {}),
-});
+  }, {});
+  const rowIndex = buildInformeRowIndex(payload.rows, sedeEmpresas);
+
+  return {
+    ...payload,
+    sedeEmpresas,
+    sedeYoy,
+    itemsLow,
+    empYoy,
+    rowIndex,
+  };
+};

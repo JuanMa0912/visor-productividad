@@ -3,10 +3,12 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   aggregateBySede,
+  filterRowIndices,
   hasActiveInformeFilters,
   passInformeRowFilter,
   prepareInformeData,
   sumFilteredRows,
+  sumRowIndices,
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
 import { formatInformeValue } from "@/lib/informe-variacion/format";
@@ -84,15 +86,12 @@ export function InformeVariacionBoard({ payload }: Props) {
     [metric, pass, prepared.rows],
   );
 
-  const kpiYoyComparable = useMemo(
-    () =>
-      sumFilteredRows(
-        prepared.rows.filter((row) => prepared.sedeYoy[row[0]]),
-        metric,
-        pass,
-      ),
-    [metric, pass, prepared.rows, prepared.sedeYoy],
-  );
+  const kpiYoyComparable = useMemo(() => {
+    const indices = filterRowIndices(prepared.rows, pass).filter(
+      (index) => prepared.sedeYoy[prepared.rows[index]![0]],
+    );
+    return sumRowIndices(prepared.rows, indices, metric);
+  }, [metric, pass, prepared.rows, prepared.sedeYoy]);
 
   const growthSedes = useMemo(() => {
     const perSede = aggregateBySede(
@@ -157,9 +156,11 @@ export function InformeVariacionBoard({ payload }: Props) {
     <div className="space-y-5">
       {payload.meta.mockBases ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <b>Modo demo activo:</b> las bases de mayo y junio del ano anterior se
-          sintetizaron a partir del periodo actual para probar variaciones. No usar en
-          reportes oficiales.
+          <b>Modo demo activo:</b>{" "}
+          {payload.meta.demoData
+            ? "datos sinteticos de ejemplo (sin consulta a margen_final)."
+            : "las bases de mayo y junio del ano anterior se sintetizaron a partir del periodo actual."}{" "}
+          No usar en reportes oficiales.
         </div>
       ) : payload.meta.comparisonAvailable === false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -431,39 +432,51 @@ function InformeFilters({
     .map((sede, index) => ({ index, sede }))
     .filter(({ sede }) => !filters.emp || sede.e === filters.emp);
 
-  const distinct = (index: number, cond: (row: (typeof payload.rows)[0]) => boolean) => {
-    const set = new Set<number>();
-    for (const row of payload.rows) {
-      if (cond(row)) set.add(row[index]);
-    }
-    return [...set];
-  };
-
-  const catOptions = distinct(1, () => true).sort((a, b) =>
-    payload.cats[a].localeCompare(payload.cats[b], "es"),
+  const catOptions = useMemo(
+    () =>
+      payload.rowIndex.allCats
+        .slice()
+        .sort((a, b) => payload.cats[a]!.localeCompare(payload.cats[b]!, "es")),
+    [payload.cats, payload.rowIndex.allCats],
   );
-  const linOptions = distinct(
-    2,
-    (row) => filters.cat === "" || row[1] === Number(filters.cat),
-  ).sort((a, b) => payload.lins[a].localeCompare(payload.lins[b], "es"));
-  const subOptions = distinct(
-    3,
-    (row) =>
-      (filters.cat === "" || row[1] === Number(filters.cat)) &&
-      (filters.lin === "" || row[2] === Number(filters.lin)),
-  ).sort((a, b) => payload.subs[a].localeCompare(payload.subs[b], "es"));
-  const itemOptions = distinct(
-    4,
-    (row) =>
-      (filters.emp === "" || payload.sedeEmpresas[row[0]] === filters.emp) &&
-      (filters.sede === "" || row[0] === Number(filters.sede)) &&
-      (filters.cat === "" || row[1] === Number(filters.cat)) &&
-      (filters.lin === "" || row[2] === Number(filters.lin)) &&
-      (filters.sub === "" || row[3] === Number(filters.sub)) &&
-      (!filters.q || payload.itemsLow[row[4]].includes(filters.q)),
-  )
-    .sort((a, b) => payload.items[a].localeCompare(payload.items[b], "es"))
-    .slice(0, 6000);
+
+  const linOptions = useMemo(() => {
+    if (filters.cat === "") return [];
+    return (payload.rowIndex.linsByCat.get(Number(filters.cat)) ?? []).slice().sort((a, b) =>
+      payload.lins[a]!.localeCompare(payload.lins[b]!, "es"),
+    );
+  }, [filters.cat, payload.lins, payload.rowIndex.linsByCat]);
+
+  const subOptions = useMemo(() => {
+    if (filters.cat === "" || filters.lin === "") return [];
+    const key = `${filters.cat}|${filters.lin}`;
+    return (payload.rowIndex.subsByCatLin.get(key) ?? []).slice().sort((a, b) =>
+      payload.subs[a]!.localeCompare(payload.subs[b]!, "es"),
+    );
+  }, [filters.cat, filters.lin, payload.rowIndex.subsByCatLin, payload.subs]);
+
+  const itemOptions = useMemo(() => {
+    if (filters.cat === "" || filters.lin === "" || filters.sub === "") return [];
+    const key = `${filters.cat}|${filters.lin}|${filters.sub}`;
+    let items = payload.rowIndex.itemsByCatLinSub.get(key) ?? [];
+    if (filters.emp || filters.sede || filters.q) {
+      const allowed = new Set<number>();
+      for (const row of payload.rows) {
+        if (filters.emp && payload.sedeEmpresas[row[0]] !== filters.emp) continue;
+        if (filters.sede !== "" && row[0] !== Number(filters.sede)) continue;
+        if (row[1] !== Number(filters.cat)) continue;
+        if (row[2] !== Number(filters.lin)) continue;
+        if (row[3] !== Number(filters.sub)) continue;
+        if (filters.q && !payload.itemsLow[row[4]]?.includes(filters.q)) continue;
+        allowed.add(row[4]);
+      }
+      items = items.filter((item) => allowed.has(item));
+    }
+    return items
+      .slice()
+      .sort((a, b) => payload.items[a]!.localeCompare(payload.items[b]!, "es"))
+      .slice(0, 6000);
+  }, [filters, payload]);
 
   const activeLabel =
     filters.item !== ""

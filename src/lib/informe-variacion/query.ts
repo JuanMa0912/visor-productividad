@@ -47,24 +47,109 @@ export type InformeDbAggRow = {
   v_yoy: string | number;
 };
 
+type InformePeriodSliceRow = {
+  empresa: string;
+  id_co: string;
+  id_tipo: string;
+  id_linea1: string;
+  nombre_linea1: string;
+  id_linea2: string;
+  nombre_linea2: string;
+  id_item: string;
+  item_descripcion: string;
+  id_unidad: string;
+  u_val: string | number;
+  v_val: string | number;
+};
+
 const toNum = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
 
-const buildInformeSql = (table: MargenDataTable, sedeFilterSql: string) => {
-  const empresaExpr = isRollTable(table)
-    ? "empresa_norm"
-    : "LOWER(TRIM(COALESCE(empresa, '')))";
-  const coExpr = isRollTable(table)
-    ? "id_co_norm"
-    : "LPAD(TRIM(COALESCE(id_co::text, '')), 3, '0')";
-  const valueExpr = isRollTable(table) ? "ventas_netas" : "vlrtot_bru";
-  const unidadExpr = isRollTable(table) ? "''" : "TRIM(COALESCE(id_unidad::text, ''))";
-  const unidadGroup = isRollTable(table) ? "" : ", TRIM(COALESCE(id_unidad::text, ''))";
+const rowMergeKey = (row: InformePeriodSliceRow) =>
+  [
+    row.empresa,
+    row.id_co,
+    row.id_tipo,
+    row.id_linea1,
+    row.id_linea2,
+    row.id_item,
+    row.id_unidad ?? "",
+  ].join("\u0001");
+
+const buildSedeFilter = (
+  table: MargenDataTable,
+  allowedSedeKeys: string[] | null,
+  params: Array<string | string[]>,
+): string => {
+  if (!allowedSedeKeys || allowedSedeKeys.length === 0) return "";
+
+  const pairs = allowedSedeKeys
+    .map((key) => {
+      const [empresa, idCo] = key.split("|");
+      if (!empresa || !idCo) return null;
+      return { empresa: empresa.toLowerCase(), idCo: idCo.padStart(3, "0") };
+    })
+    .filter((pair): pair is { empresa: string; idCo: string } => pair !== null);
+
+  if (pairs.length === 0) return "";
+
+  params.push(
+    pairs.map((pair) => pair.empresa),
+    pairs.map((pair) => pair.idCo),
+  );
+  const empresaParam = params.length - 1;
+  const coParam = params.length;
+
+  if (isRollTable(table)) {
+    return `AND (empresa_norm, id_co_norm) IN (
+      SELECT * FROM UNNEST($${empresaParam}::text[], $${coParam}::text[]) AS t(empresa_norm, id_co_norm)
+    )`;
+  }
+
+  return `AND (LOWER(TRIM(COALESCE(empresa, ''))), LPAD(TRIM(COALESCE(id_co::text, '')), 3, '0'))
+    IN (SELECT * FROM UNNEST($${empresaParam}::text[], $${coParam}::text[]) AS t(empresa, id_co))`;
+};
+
+/** Una pasada por mes: aprovecha indice fecha+sede en roll/raw. */
+const buildInformeSinglePeriodSql = (
+  table: MargenDataTable,
+  sedeFilterSql: string,
+) => {
+  if (isRollTable(table)) {
+    return `
+      SELECT
+        empresa_norm AS empresa,
+        id_co_norm AS id_co,
+        id_tipo,
+        id_linea1,
+        MAX(nombre_linea1) AS nombre_linea1,
+        id_linea2,
+        MAX(nombre_linea2) AS nombre_linea2,
+        id_item,
+        MAX(item_descripcion) AS item_descripcion,
+        '' AS id_unidad,
+        SUM(COALESCE(cantidad, 0)) AS u_val,
+        SUM(COALESCE(ventas_netas, 0)) AS v_val
+      FROM ${table}
+      WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
+        ${sedeFilterSql}
+      GROUP BY
+        empresa_norm,
+        id_co_norm,
+        id_tipo,
+        id_linea1,
+        id_linea2,
+        id_item
+      HAVING
+        SUM(COALESCE(cantidad, 0)) <> 0
+        OR SUM(COALESCE(ventas_netas, 0)) <> 0
+    `;
+  }
 
   return `
     SELECT
-      ${empresaExpr} AS empresa,
-      ${coExpr} AS id_co,
+      LOWER(TRIM(COALESCE(empresa, ''))) AS empresa,
+      LPAD(TRIM(COALESCE(id_co::text, '')), 3, '0') AS id_co,
       TRIM(COALESCE(id_tipo::text, '')) AS id_tipo,
       TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
       TRIM(COALESCE(MAX(nombre_linea1), '')) AS nombre_linea1,
@@ -72,80 +157,154 @@ const buildInformeSql = (table: MargenDataTable, sedeFilterSql: string) => {
       TRIM(COALESCE(MAX(nombre_linea2), '')) AS nombre_linea2,
       TRIM(COALESCE(id_item::text, '')) AS id_item,
       TRIM(COALESCE(MAX(item_descripcion), '')) AS item_descripcion,
-      ${unidadExpr} AS id_unidad,
-      SUM(CASE WHEN fecha_dcto BETWEEN $1 AND $2 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_cur,
-      SUM(CASE WHEN fecha_dcto BETWEEN $3 AND $4 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_mom,
-      SUM(CASE WHEN fecha_dcto BETWEEN $5 AND $6 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_yoy,
-      SUM(CASE WHEN fecha_dcto BETWEEN $1 AND $2 THEN COALESCE(${valueExpr}, 0) ELSE 0 END) AS v_cur,
-      SUM(CASE WHEN fecha_dcto BETWEEN $3 AND $4 THEN COALESCE(${valueExpr}, 0) ELSE 0 END) AS v_mom,
-      SUM(CASE WHEN fecha_dcto BETWEEN $5 AND $6 THEN COALESCE(${valueExpr}, 0) ELSE 0 END) AS v_yoy
+      TRIM(COALESCE(MAX(id_unidad::text), '')) AS id_unidad,
+      SUM(COALESCE(cantidad, 0)) AS u_val,
+      SUM(COALESCE(vlrtot_bru, 0)) AS v_val
     FROM ${table}
-    WHERE fecha_dcto BETWEEN $5 AND $2
-      AND fecha_dcto ~ '^[0-9]{8}$'
+    WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
       ${sedeFilterSql}
     GROUP BY
-      ${empresaExpr},
-      ${coExpr},
+      LOWER(TRIM(COALESCE(empresa, ''))),
+      LPAD(TRIM(COALESCE(id_co::text, '')), 3, '0'),
       TRIM(COALESCE(id_tipo::text, '')),
       TRIM(COALESCE(id_linea1::text, '')),
       TRIM(COALESCE(id_linea2::text, '')),
-      TRIM(COALESCE(id_item::text, ''))
-      ${unidadGroup}
+      TRIM(COALESCE(id_item::text, '')),
+      TRIM(COALESCE(id_unidad::text, ''))
     HAVING
-      SUM(CASE WHEN fecha_dcto BETWEEN $1 AND $2 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
-      OR SUM(CASE WHEN fecha_dcto BETWEEN $3 AND $4 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
-      OR SUM(CASE WHEN fecha_dcto BETWEEN $5 AND $6 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
-      OR SUM(CASE WHEN fecha_dcto BETWEEN $1 AND $2 THEN COALESCE(${valueExpr}, 0) ELSE 0 END) <> 0
-      OR SUM(CASE WHEN fecha_dcto BETWEEN $3 AND $4 THEN COALESCE(${valueExpr}, 0) ELSE 0 END) <> 0
-      OR SUM(CASE WHEN fecha_dcto BETWEEN $5 AND $6 THEN COALESCE(${valueExpr}, 0) ELSE 0 END) <> 0
+      SUM(COALESCE(cantidad, 0)) <> 0
+      OR SUM(COALESCE(vlrtot_bru, 0)) <> 0
   `;
+};
+
+const queryInformePeriodSlice = async (
+  client: PoolClient,
+  table: MargenDataTable,
+  from: string,
+  to: string,
+  sedeFilterSql: string,
+  baseParams: string[],
+): Promise<InformePeriodSliceRow[]> => {
+  const params = [from, to, ...baseParams];
+  const sql = buildInformeSinglePeriodSql(table, sedeFilterSql);
+  const result = await client.query<InformePeriodSliceRow>(sql, params);
+  return result.rows ?? [];
+};
+
+const mergeInformePeriodSlices = (
+  current: InformePeriodSliceRow[],
+  mom: InformePeriodSliceRow[],
+  yoy: InformePeriodSliceRow[],
+): InformeDbAggRow[] => {
+  const map = new Map<string, InformeDbAggRow>();
+
+  const ensure = (row: InformePeriodSliceRow): InformeDbAggRow => {
+    const key = rowMergeKey(row);
+    const existing = map.get(key);
+    if (existing) return existing;
+    const created: InformeDbAggRow = {
+      empresa: row.empresa,
+      id_co: row.id_co,
+      id_tipo: row.id_tipo,
+      id_linea1: row.id_linea1,
+      nombre_linea1: row.nombre_linea1,
+      id_linea2: row.id_linea2,
+      nombre_linea2: row.nombre_linea2,
+      id_item: row.id_item,
+      item_descripcion: row.item_descripcion,
+      id_unidad: row.id_unidad,
+      u_cur: 0,
+      u_mom: 0,
+      u_yoy: 0,
+      v_cur: 0,
+      v_mom: 0,
+      v_yoy: 0,
+    };
+    map.set(key, created);
+    return created;
+  };
+
+  for (const row of current) {
+    const acc = ensure(row);
+    acc.u_cur = toNum(row.u_val);
+    acc.v_cur = toNum(row.v_val);
+  }
+  for (const row of mom) {
+    const acc = ensure(row);
+    acc.u_mom = toNum(row.u_val);
+    acc.v_mom = toNum(row.v_val);
+  }
+  for (const row of yoy) {
+    const acc = ensure(row);
+    acc.u_yoy = toNum(row.u_val);
+    acc.v_yoy = toNum(row.v_val);
+  }
+
+  return [...map.values()].filter(
+    (row) =>
+      toNum(row.u_cur) !== 0 ||
+      toNum(row.u_mom) !== 0 ||
+      toNum(row.u_yoy) !== 0 ||
+      toNum(row.v_cur) !== 0 ||
+      toNum(row.v_mom) !== 0 ||
+      toNum(row.v_yoy) !== 0,
+  );
+};
+
+export type QueryInformeVariacionOptions = {
+  currentPeriodOnly?: boolean;
 };
 
 export const queryInformeVariacionRows = async (
   client: PoolClient,
   periods: InformePeriods,
   allowedSedeKeys: string[] | null,
+  options: QueryInformeVariacionOptions = {},
 ): Promise<InformeDbAggRow[]> => {
   const table = await resolveMargenDataSource(client);
-  const params: Array<string | string[]> = [
-    periods.current.from,
-    periods.current.to,
-    periods.mom.from,
-    periods.mom.to,
-    periods.yoy.from,
-    periods.yoy.to,
-  ];
+  const sedeParams: Array<string | string[]> = [];
+  const sedeFilterSql = buildSedeFilter(table, allowedSedeKeys, sedeParams);
 
-  let sedeFilterSql = "";
-  if (allowedSedeKeys && allowedSedeKeys.length > 0) {
-    const pairs = allowedSedeKeys
-      .map((key) => {
-        const [empresa, idCo] = key.split("|");
-        if (!empresa || !idCo) return null;
-        return { empresa: empresa.toLowerCase(), idCo: idCo.padStart(3, "0") };
-      })
-      .filter((pair): pair is { empresa: string; idCo: string } => pair !== null);
-    if (pairs.length > 0) {
-      params.push(
-        pairs.map((pair) => pair.empresa),
-        pairs.map((pair) => pair.idCo),
-      );
-      const empresaParam = params.length - 1;
-      const coParam = params.length;
-      if (isRollTable(table)) {
-        sedeFilterSql = `AND (empresa_norm, id_co_norm) IN (
-          SELECT * FROM UNNEST($${empresaParam}::text[], $${coParam}::text[]) AS t(empresa_norm, id_co_norm)
-        )`;
-      } else {
-        sedeFilterSql = `AND (LOWER(TRIM(COALESCE(empresa, ''))), LPAD(TRIM(COALESCE(id_co::text, '')), 3, '0'))
-          IN (SELECT * FROM UNNEST($${empresaParam}::text[], $${coParam}::text[]) AS t(empresa, id_co))`;
-      }
-    }
+  if (options.currentPeriodOnly) {
+    const current = await queryInformePeriodSlice(
+      client,
+      table,
+      periods.current.from,
+      periods.current.to,
+      sedeFilterSql,
+      sedeParams,
+    );
+    return mergeInformePeriodSlices(current, [], []);
   }
 
-  const sql = buildInformeSql(table, sedeFilterSql);
-  const result = await client.query<InformeDbAggRow>(sql, params);
-  return result.rows ?? [];
+  const [current, mom, yoy] = await Promise.all([
+    queryInformePeriodSlice(
+      client,
+      table,
+      periods.current.from,
+      periods.current.to,
+      sedeFilterSql,
+      sedeParams,
+    ),
+    queryInformePeriodSlice(
+      client,
+      table,
+      periods.mom.from,
+      periods.mom.to,
+      sedeFilterSql,
+      sedeParams,
+    ),
+    queryInformePeriodSlice(
+      client,
+      table,
+      periods.yoy.from,
+      periods.yoy.to,
+      sedeFilterSql,
+      sedeParams,
+    ),
+  ]);
+
+  return mergeInformePeriodSlices(current, mom, yoy);
 };
 
 const indexLabel = (
@@ -273,17 +432,21 @@ export const loadInformeVariacionPayload = async (
   options: LoadInformeVariacionOptions = {},
 ): Promise<InformeVariacionPayload> => {
   const periods = computeInformePeriods(year, month);
-  const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys);
-  let payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
 
-  const shouldMock =
-    options.mockBases === true &&
-    payload.rows.length > 0 &&
-    !payload.meta.comparisonAvailable;
-
-  if (shouldMock) {
-    payload = applyInformeMockComparisonBases(payload);
+  if (options.mockBases === true) {
+    const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys, {
+      currentPeriodOnly: true,
+    });
+    if (dbRows.length === 0) {
+      throw new Error("informe-sin-filas-mes-actual");
+    }
+    let payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
+    if (!payload.meta.comparisonAvailable) {
+      payload = applyInformeMockComparisonBases(payload);
+    }
+    return payload;
   }
 
-  return payload;
+  const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys);
+  return buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
 };

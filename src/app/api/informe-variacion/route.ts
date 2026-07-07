@@ -3,11 +3,20 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
 import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
+import { buildInformeDemoPayload } from "@/lib/informe-variacion/demo-payload";
 import { resolveInformeMockBasesEnabled } from "@/lib/informe-variacion/mock-bases";
+import {
+  buildInformeCacheKey,
+  getCachedInformePayload,
+  setCachedInformePayload,
+} from "@/lib/informe-variacion/informe-cache";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
+
+export const maxDuration = 120;
+export const dynamic = "force-dynamic";
 
 const CACHE_CONTROL = "no-store, private";
 
@@ -91,22 +100,51 @@ export async function GET(request: Request) {
   }
 
   const mockBases = resolveInformeMockBasesEnabled(url.searchParams.get("mock"));
+  const cacheKey = buildInformeCacheKey(year, month, mockBases, scope.allowedKeys);
+  const cached = getCachedInformePayload(cacheKey);
+  if (cached) {
+    return withSession(
+      NextResponse.json(cached, {
+        headers: {
+          "Cache-Control": CACHE_CONTROL,
+          "X-Data-Source": cached.meta.demoData ? "demo" : "cache",
+          ...(cached.meta.mockBases ? { "X-Informe-Mock-Bases": "1" } : {}),
+        },
+      }),
+    );
+  }
 
   const client = await (await getDbPool()).connect();
   try {
     await client.query("SET LOCAL work_mem = '256MB'");
-    const payload = await loadInformeVariacionPayload(
-      client,
-      year,
-      month,
-      scope.allowedKeys,
-      { mockBases },
-    );
+    await client.query("SET LOCAL statement_timeout = '120s'");
+
+    let payload;
+    if (mockBases) {
+      try {
+        payload = await Promise.race([
+          loadInformeVariacionPayload(client, year, month, scope.allowedKeys, {
+            mockBases: true,
+          }),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("informe-mock-timeout")), 8_000);
+          }),
+        ]);
+      } catch (error) {
+        console.warn("[informe-variacion] modo demo: fallback sintetico", error);
+        payload = buildInformeDemoPayload(year, month, scope.allowedKeys);
+      }
+    } else {
+      payload = await loadInformeVariacionPayload(client, year, month, scope.allowedKeys);
+    }
+
+    setCachedInformePayload(cacheKey, payload);
+
     return withSession(
       NextResponse.json(payload, {
         headers: {
           "Cache-Control": CACHE_CONTROL,
-          "X-Data-Source": "database",
+          "X-Data-Source": payload.meta.demoData ? "demo" : "database",
           ...(payload.meta.mockBases ? { "X-Informe-Mock-Bases": "1" } : {}),
         },
       }),

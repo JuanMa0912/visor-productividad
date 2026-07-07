@@ -12,10 +12,33 @@ import {
   yearMonthToInputValue,
 } from "@/lib/informe-variacion/periods";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
+import { readInformeApiResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
 
 type MargenMeta = {
   maxDate: string | null;
+};
+
+const INFORME_SESSION_CACHE_PREFIX = "vp-informe-variacion:";
+
+const readSessionInforme = (key: string): InformeVariacionPayload | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(`${INFORME_SESSION_CACHE_PREFIX}${key}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as InformeVariacionPayload;
+  } catch {
+    return null;
+  }
+};
+
+const writeSessionInforme = (key: string, payload: InformeVariacionPayload) => {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(`${INFORME_SESSION_CACHE_PREFIX}${key}`, JSON.stringify(payload));
+  } catch {
+    // quota o payload demasiado grande
+  }
 };
 
 export default function InformeVariacionPage() {
@@ -48,6 +71,8 @@ export default function InformeVariacionPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const INFORME_FETCH_TIMEOUT_MS = 120_000;
+
   useEffect(() => {
     if (!ready || !canAccess) return;
     let cancelled = false;
@@ -78,14 +103,27 @@ export default function InformeVariacionPage() {
     };
   }, [canAccess, ready, router]);
 
+  const cacheKey = useMemo(() => {
+    const parsed = parseYearMonthInput(monthInput);
+    if (!parsed) return "";
+    return `${parsed.year}-${parsed.month}:mock=${useMockBases ? 1 : 0}`;
+  }, [monthInput, useMockBases]);
+
   const loadInforme = useCallback(async () => {
     const parsed = parseYearMonthInput(monthInput);
     if (!parsed) {
       setError("Selecciona un mes valido.");
       return;
     }
+    const requestKey = `${parsed.year}-${parsed.month}:mock=${useMockBases ? 1 : 0}`;
+    const cached = readSessionInforme(requestKey);
+    if (cached && !payload) {
+      setPayload(cached);
+    }
     setLoading(true);
     setError(null);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), INFORME_FETCH_TIMEOUT_MS);
     try {
       const params = new URLSearchParams({
         year: String(parsed.year),
@@ -94,6 +132,7 @@ export default function InformeVariacionPage() {
       });
       const response = await fetch(`/api/informe-variacion?${params.toString()}`, {
         cache: "no-store",
+        signal: controller.signal,
       });
       if (response.status === 401) {
         router.replace("/login");
@@ -103,27 +142,45 @@ export default function InformeVariacionPage() {
         router.replace("/secciones");
         return;
       }
-      const data = (await response.json()) as InformeVariacionPayload & {
-        error?: string;
-      };
+      const data = await readInformeApiResponse(response);
       if (!response.ok) {
         throw new Error(data.error ?? "No fue posible cargar el informe.");
       }
       setPayload(data);
+      writeSessionInforme(requestKey, data);
     } catch (err) {
-      setPayload(null);
-      setError(
-        err instanceof Error ? err.message : "Error desconocido cargando el informe.",
-      );
+      if (!payload) {
+        setPayload(null);
+      }
+      if (err instanceof Error && err.name === "AbortError") {
+        setError(
+          "La consulta tardo demasiado. Prueba con Simular MoM/YoY activo o un mes con menos datos.",
+        );
+      } else {
+        setError(
+          err instanceof Error ? err.message : "Error desconocido cargando el informe.",
+        );
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       setLoading(false);
     }
-  }, [monthInput, router, useMockBases]);
+  }, [monthInput, payload, router, useMockBases]);
+
+  useEffect(() => {
+    if (!cacheKey) return;
+    const cached = readSessionInforme(cacheKey);
+    if (cached) setPayload(cached);
+  }, [cacheKey]);
 
   useEffect(() => {
     if (!ready || !canAccess || metaLoading || !monthInput) return;
     void loadInforme();
   }, [canAccess, loadInforme, metaLoading, monthInput, ready, useMockBases]);
+
+  const showInitialLoader = metaLoading || (loading && !payload && !error);
+  const showBoard = Boolean(payload) && !metaLoading;
+  const isRefreshing = loading && Boolean(payload);
 
   if (!ready || !canAccess) {
     return (
@@ -186,13 +243,35 @@ export default function InformeVariacionPage() {
           </div>
         ) : null}
 
-        {loading || metaLoading || !payload ? (
+        {showInitialLoader ? (
           <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80">
             <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
             <p className="mt-3 text-sm text-slate-600">Construyendo informe...</p>
+            {useMockBases ? (
+              <p className="mt-1 text-xs text-slate-400">
+                Modo demo: solo se consulta el mes seleccionado.
+              </p>
+            ) : null}
+          </div>
+        ) : showBoard ? (
+          <div className={isRefreshing ? "opacity-70 transition-opacity" : undefined}>
+            <InformeVariacionBoard payload={payload!} />
           </div>
         ) : (
-          <InformeVariacionBoard payload={payload} />
+          <div className="rounded-2xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-600">
+            No hay datos para el periodo seleccionado.
+            {error ? null : (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => void loadInforme()}
+                  className="text-sm font-semibold text-blue-600"
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>

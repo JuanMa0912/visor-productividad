@@ -1,0 +1,145 @@
+import type { InformeCompactRow, InformeMetric } from "@/lib/informe-variacion/types";
+import type { PeriodTriple } from "@/lib/informe-variacion/aggregate";
+import { metricOffset } from "@/lib/informe-variacion/format";
+
+export type InformeRowIndex = {
+  bySede: Map<number, number[]>;
+  byEmpresa: Map<string, number[]>;
+  bySedeCat: Map<string, number[]>;
+  bySedeCatLin: Map<string, number[]>;
+  bySedeCatLinSub: Map<string, number[]>;
+  allCats: number[];
+  linsByCat: Map<number, number[]>;
+  subsByCatLin: Map<string, number[]>;
+  itemsByCatLinSub: Map<string, number[]>;
+};
+
+const pushIndex = (map: Map<number, number[]>, key: number, rowIndex: number) => {
+  const bucket = map.get(key);
+  if (bucket) bucket.push(rowIndex);
+  else map.set(key, [rowIndex]);
+};
+
+const pushKeyIndex = (map: Map<string, number[]>, key: string, rowIndex: number) => {
+  const bucket = map.get(key);
+  if (bucket) bucket.push(rowIndex);
+  else map.set(key, [rowIndex]);
+};
+
+export const buildInformeRowIndex = (
+  rows: InformeCompactRow[],
+  sedeEmpresas: string[],
+): InformeRowIndex => {
+  const bySede = new Map<number, number[]>();
+  const byEmpresa = new Map<string, number[]>();
+  const bySedeCat = new Map<string, number[]>();
+  const bySedeCatLin = new Map<string, number[]>();
+  const bySedeCatLinSub = new Map<string, number[]>();
+  const catSet = new Set<number>();
+  const linsByCat = new Map<number, number[]>();
+  const subsByCatLin = new Map<string, number[]>();
+  const itemsByCatLinSub = new Map<string, number[]>();
+
+  rows.forEach((row, rowIndex) => {
+    const [sede, cat, lin, sub, item] = row;
+    pushIndex(bySede, sede, rowIndex);
+
+    const empresa = sedeEmpresas[sede];
+    if (empresa) pushKeyIndex(byEmpresa, empresa, rowIndex);
+
+    pushKeyIndex(bySedeCat, `${sede}|${cat}`, rowIndex);
+    pushKeyIndex(bySedeCatLin, `${sede}|${cat}|${lin}`, rowIndex);
+    pushKeyIndex(bySedeCatLinSub, `${sede}|${cat}|${lin}|${sub}`, rowIndex);
+
+    catSet.add(cat);
+    pushIndex(linsByCat, cat, lin);
+    pushKeyIndex(subsByCatLin, `${cat}|${lin}`, sub);
+    pushKeyIndex(itemsByCatLinSub, `${cat}|${lin}|${sub}`, item);
+  });
+
+  const uniqueSorted = (map: Map<number, number[]>) =>
+    [...map.entries()].map(([key, values]) => [key, [...new Set(values)]] as const);
+
+  const uniqueSortedKey = (map: Map<string, number[]>) =>
+    [...map.entries()].map(([key, values]) => [key, [...new Set(values)]] as const);
+
+  return {
+    bySede,
+    byEmpresa,
+    bySedeCat,
+    bySedeCatLin,
+    bySedeCatLinSub,
+    allCats: [...catSet].sort((a, b) => a - b),
+    linsByCat: new Map(uniqueSorted(linsByCat).map(([k, v]) => [k, v.sort((a, b) => a - b)])),
+    subsByCatLin: new Map(
+      uniqueSortedKey(subsByCatLin).map(([k, v]) => [k, v.sort((a, b) => a - b)]),
+    ),
+    itemsByCatLinSub: new Map(
+      uniqueSortedKey(itemsByCatLinSub).map(([k, v]) => [k, v.sort((a, b) => a - b)]),
+    ),
+  };
+};
+
+export const aggregateIndicesBySede = (
+  rows: InformeCompactRow[],
+  indices: readonly number[],
+  metric: InformeMetric,
+  sedeCount: number,
+  keyIndex: number,
+): Map<number, PeriodTriple[]> => {
+  const offset = metricOffset(metric);
+  const map = new Map<number, PeriodTriple[]>();
+  for (const rowIndex of indices) {
+    const row = rows[rowIndex];
+    if (!row) continue;
+    const key = row[keyIndex];
+    let perSede = map.get(key);
+    if (!perSede) {
+      perSede = Array.from({ length: sedeCount }, () => [0, 0, 0] as PeriodTriple);
+      map.set(key, perSede);
+    }
+    const bucket = perSede[row[0]];
+    bucket[0] += row[offset];
+    bucket[1] += row[offset + 1];
+    bucket[2] += row[offset + 2];
+  }
+  return map;
+};
+
+export const aggregateIndicesByKey = (
+  rows: InformeCompactRow[],
+  indices: readonly number[],
+  metric: InformeMetric,
+  keyIndex: number,
+): Map<number, PeriodTriple> => {
+  const offset = metricOffset(metric);
+  const map = new Map<number, PeriodTriple>();
+  for (const rowIndex of indices) {
+    const row = rows[rowIndex];
+    if (!row) continue;
+    const key = row[keyIndex];
+    const current = map.get(key) ?? [0, 0, 0];
+    current[0] += row[offset];
+    current[1] += row[offset + 1];
+    current[2] += row[offset + 2];
+    map.set(key, current);
+  }
+  return map;
+};
+
+export const sumRowIndices = (
+  rows: InformeCompactRow[],
+  indices: readonly number[],
+  metric: InformeMetric,
+): PeriodTriple => {
+  const offset = metricOffset(metric);
+  const totals: PeriodTriple = [0, 0, 0];
+  for (const rowIndex of indices) {
+    const row = rows[rowIndex];
+    if (!row) continue;
+    totals[0] += row[offset];
+    totals[1] += row[offset + 1];
+    totals[2] += row[offset + 2];
+  }
+  return totals;
+};
