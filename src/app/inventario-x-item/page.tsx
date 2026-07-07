@@ -219,6 +219,7 @@ export default function InventarioXItemPage() {
   const autoScopeAppliedRef = useRef(false);
   /** Marca si ya aplicamos el default de mes en curso al cargar metadatos. */
   const monthToDateDefaultAppliedRef = useRef(false);
+  const pendingMatrixLoadKeyRef = useRef("");
 
   const { startTour: startInventarioXItemTour } = useProductTour({
     localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.inventarioXItem,
@@ -1116,12 +1117,12 @@ export default function InventarioXItemPage() {
   ]);
 
   const loadMatrixData = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, matrixKeyToApply?: string) => {
+      const requestKey = matrixKeyToApply ?? "";
+      pendingMatrixLoadKeyRef.current = requestKey;
       setLoadingMatrix(true);
       setError(null);
       setMessage(null);
-      // Cronometro: marcamos inicio para loggear la duracion en consola al terminar.
-      // No se muestra en la UI; solo queda en el log del navegador.
       const matrixLoadStartTs = performance.now();
 
       try {
@@ -1155,6 +1156,8 @@ export default function InventarioXItemPage() {
           "No fue posible construir la matriz de existencias.",
         );
 
+        if (signal?.aborted) return;
+
         setMatrixRows(payload.matrixRows ?? []);
         setAvailableDate(payload.meta?.availableDate ?? "");
         setAvailableDateStart(payload.meta?.availableDateStart ?? "");
@@ -1166,6 +1169,12 @@ export default function InventarioXItemPage() {
           setSelectedDateEndState(payload.meta.selectedDateEnd);
         }
         setMessage(payload.message ?? null);
+        if (
+          requestKey.length > 0 &&
+          pendingMatrixLoadKeyRef.current === requestKey
+        ) {
+          setAppliedMatrixKey(requestKey);
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setMatrixRows([]);
@@ -1176,8 +1185,6 @@ export default function InventarioXItemPage() {
         );
       } finally {
         setLoadingMatrix(false);
-        // Logueamos la duracion del fetch solo cuando la carga NO fue abortada.
-        // En aborts no tiene sentido reportar el tiempo (la respuesta nunca llego).
         if (!signal?.aborted) {
           const elapsedMs = performance.now() - matrixLoadStartTs;
           console.info(
@@ -1507,20 +1514,18 @@ export default function InventarioXItemPage() {
   /** Carga la matriz cuando los filtros obligatorios estan listos (sin boton manual). */
   useEffect(() => {
     if (!canBuildMatrix) return;
-    if (
-      appliedMatrixKey.length > 0 &&
-      appliedMatrixKey === currentMatrixKey
-    ) {
-      return;
-    }
+    if (appliedMatrixKey === currentMatrixKey) return;
 
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setShowValidation(true);
-      setAppliedMatrixKey(currentMatrixKey);
-      void loadMatrixData();
+      void loadMatrixData(controller.signal, currentMatrixKey);
     }, 550);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [canBuildMatrix, currentMatrixKey, appliedMatrixKey, loadMatrixData]);
 
   const handleReload = useCallback(() => {
@@ -1529,10 +1534,11 @@ export default function InventarioXItemPage() {
       void loadCatalogData();
     }
     if (canBuildMatrix && hasAppliedCurrentFilters) {
-      void loadMatrixData();
+      void loadMatrixData(undefined, currentMatrixKey);
     }
   }, [
     canBuildMatrix,
+    currentMatrixKey,
     hasAppliedCurrentFilters,
     hasScopeSelection,
     loadCatalogData,

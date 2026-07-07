@@ -175,19 +175,22 @@ try {
           AND ${fields.itemExpr} = ANY($3::text[])
           AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
       ),
-      ranked AS (
-        SELECT *,
-          MAX(consulta_date) OVER (PARTITION BY empresa, sede_id, item) AS latest_consulta_date
+      latest AS (
+        SELECT empresa, sede_id, item, MAX(consulta_date) AS latest_consulta_date
         FROM scoped
+        GROUP BY empresa, sede_id, item
       ),
       aggregated AS (
-        SELECT empresa, sede_id, sede_name, linea, linea_n1_codigo, item, descripcion, unidad,
-          SUM(total_units)::numeric AS total_units,
-          COUNT(DISTINCT consulta_date)::int AS tracked_days,
-          SUM(CASE WHEN consulta_date = latest_consulta_date THEN inventory_units ELSE 0 END)::numeric AS inventory_units,
-          SUM(CASE WHEN consulta_date = latest_consulta_date THEN inventory_value ELSE 0 END)::numeric AS inventory_value
-        FROM ranked
-        GROUP BY empresa, sede_id, sede_name, linea, linea_n1_codigo, item, descripcion, unidad
+        SELECT s.empresa, s.sede_id, s.sede_name, s.linea, s.linea_n1_codigo, s.item,
+          s.descripcion, s.unidad,
+          SUM(s.total_units)::numeric AS total_units,
+          COUNT(DISTINCT s.consulta_date)::int AS tracked_days,
+          SUM(CASE WHEN s.consulta_date = l.latest_consulta_date THEN s.inventory_units ELSE 0 END)::numeric AS inventory_units,
+          SUM(CASE WHEN s.consulta_date = l.latest_consulta_date THEN s.inventory_value ELSE 0 END)::numeric AS inventory_value
+        FROM scoped s
+        INNER JOIN latest l
+          ON s.empresa = l.empresa AND s.sede_id = l.sede_id AND s.item = l.item
+        GROUP BY s.empresa, s.sede_id, s.sede_name, s.linea, s.linea_n1_codigo, s.item, s.descripcion, s.unidad
       )
       SELECT * FROM aggregated
       WHERE inventory_units > 0 OR inventory_value > 0

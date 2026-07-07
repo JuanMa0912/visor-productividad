@@ -115,6 +115,17 @@ type InventoryLineFilter = {
 
 const CACHE_CONTROL = "no-store";
 const META_CACHE_TTL_MS = 5 * 60 * 1000;
+const ROTACION_CLEAN_MATVIEW_NAME = "rotacion_item_dia_clean";
+const MATVIEW_PROBE_TTL_MS = 5 * 60 * 1000;
+
+const MATVIEW_DIMENSION_COLUMNS = {
+  lineExpr: "linea",
+  n1CodeExpr: "linea_n1_codigo",
+  empresaExpr: "empresa",
+  sedeIdExpr: "sede_id",
+  itemPresentCondition: "NULLIF(TRIM(item), '') IS NOT NULL",
+  hiddenSedeFilter: null as string | null,
+};
 
 const HIDDEN_SEDE_KEYS = new Set([
   "adm",
@@ -153,6 +164,60 @@ let dateRangeCache:
 let filterCatalogCache:
   | { dateKey: string; value: InventoryFilterCatalog; expiresAt: number }
   | null = null;
+let rotacionCleanMatviewProbeCache:
+  | { exists: boolean; expiresAt: number }
+  | null = null;
+
+type MatrixDimensionColumns = {
+  lineExpr: string;
+  n1CodeExpr: string;
+  empresaExpr: string;
+  sedeIdExpr: string;
+  itemPresentCondition: string;
+  hiddenSedeFilter: string | null;
+};
+
+const matrixDimensionColumnsFromFields = (
+  fields: RotacionBaseSqlFields,
+): MatrixDimensionColumns => ({
+  lineExpr: fields.lineExpr,
+  n1CodeExpr: fields.n1CodeExpr,
+  empresaExpr: fields.empresaExpr,
+  sedeIdExpr: fields.sedeIdExpr,
+  itemPresentCondition: fields.itemPresentCondition,
+  hiddenSedeFilter: buildHiddenSedeWhereClause(fields.sedeNameExpr),
+});
+
+async function probeRotacionCleanMatview(
+  client: import("pg").PoolClient,
+): Promise<boolean> {
+  const now = Date.now();
+  if (
+    rotacionCleanMatviewProbeCache &&
+    rotacionCleanMatviewProbeCache.expiresAt > now
+  ) {
+    return rotacionCleanMatviewProbeCache.exists;
+  }
+  try {
+    const result = await client.query(
+      "SELECT 1 FROM pg_matviews WHERE matviewname = $1 LIMIT 1",
+      [ROTACION_CLEAN_MATVIEW_NAME],
+    );
+    const exists = (result.rows?.length ?? 0) > 0;
+    rotacionCleanMatviewProbeCache = {
+      exists,
+      expiresAt: now + MATVIEW_PROBE_TTL_MS,
+    };
+    return exists;
+  } catch (err) {
+    console.warn(
+      `[inventario-x-item] probe matview fallo (asumiendo no existe): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return false;
+  }
+}
 
 const normalizeKey = (value: string) =>
   value
@@ -609,7 +674,7 @@ const queryInventorySummaryRows = async ({
 };
 
 const appendMatrixDimensionFilters = ({
-  fields,
+  columns,
   params,
   whereClauses,
   empresas,
@@ -617,7 +682,7 @@ const appendMatrixDimensionFilters = ({
   lines,
   subcategory,
 }: {
-  fields: RotacionBaseSqlFields;
+  columns: MatrixDimensionColumns;
   params: Array<string | string[] | null>;
   whereClauses: string[];
   empresas: string[];
@@ -631,19 +696,21 @@ const appendMatrixDimensionFilters = ({
   const sedeParam = params.length;
 
   whereClauses.push(
-    fields.itemPresentCondition,
-    `($${empresaParam}::text[] IS NULL OR ${fields.empresaExpr} = ANY($${empresaParam}::text[]))`,
-    `($${sedeParam}::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($${sedeParam}::text[]))`,
-    buildHiddenSedeWhereClause(fields.sedeNameExpr),
+    columns.itemPresentCondition,
+    `($${empresaParam}::text[] IS NULL OR ${columns.empresaExpr} = ANY($${empresaParam}::text[]))`,
+    `($${sedeParam}::text[] IS NULL OR ${columns.sedeIdExpr} = ANY($${sedeParam}::text[]))`,
   );
+  if (columns.hiddenSedeFilter) {
+    whereClauses.push(columns.hiddenSedeFilter);
+  }
 
   if (subcategory === "perecederos") {
     whereClauses.push(
-      `COALESCE(${fields.n1CodeExpr}, 'sin_codigo') IN ('01', '02', '03', '04', '12')`,
+      `COALESCE(${columns.n1CodeExpr}, 'sin_codigo') IN ('01', '02', '03', '04', '12')`,
     );
   } else if (subcategory === "manufacturas") {
     whereClauses.push(
-      `COALESCE(${fields.n1CodeExpr}, 'sin_codigo') NOT IN ('01', '02', '03', '04', '12')`,
+      `COALESCE(${columns.n1CodeExpr}, 'sin_codigo') NOT IN ('01', '02', '03', '04', '12')`,
     );
   }
 
@@ -656,20 +723,97 @@ const appendMatrixDimensionFilters = ({
         params.push(line.lineaN1Codigo);
         const lineCodeParam = params.length;
         return `(
-          LOWER(${fields.lineExpr}) = $${lineNameParam}
-          AND COALESCE(${fields.n1CodeExpr}, 'sin_codigo') = $${lineCodeParam}
+          LOWER(${columns.lineExpr}) = $${lineNameParam}
+          AND COALESCE(${columns.n1CodeExpr}, 'sin_codigo') = $${lineCodeParam}
         )`;
       }
 
       return `(
-        LOWER(${fields.lineExpr}) = $${lineNameParam}
-        AND ${fields.n1CodeExpr} IS NULL
+        LOWER(${columns.lineExpr}) = $${lineNameParam}
+        AND ${columns.n1CodeExpr} IS NULL
       )`;
     });
 
     whereClauses.push(`(${lineConditions.join(" OR ")})`);
   }
 };
+
+/** Agrega inventario (ultimo dia del rango) + ventas del periodo sin window functions. */
+const buildInventoryMatrixAggregatedQuery = (scopedSelectSql: string) => `
+  WITH scoped AS (
+    ${scopedSelectSql}
+  ),
+  latest AS (
+    SELECT
+      empresa,
+      sede_id,
+      item,
+      MAX(consulta_date) AS latest_consulta_date
+    FROM scoped
+    GROUP BY empresa, sede_id, item
+  ),
+  aggregated AS (
+    SELECT
+      s.empresa,
+      s.sede_id,
+      MAX(s.sede_name) AS sede_name,
+      MAX(s.linea) AS linea,
+      MAX(s.linea_n1_codigo) AS linea_n1_codigo,
+      s.item,
+      MAX(s.descripcion) AS descripcion,
+      MAX(s.unidad) AS unidad,
+      SUM(s.total_units)::numeric AS total_units,
+      COUNT(DISTINCT s.consulta_date)::int AS tracked_days,
+      SUM(
+        CASE
+          WHEN s.consulta_date = l.latest_consulta_date THEN s.inventory_units
+          ELSE 0
+        END
+      )::numeric AS inventory_units,
+      SUM(
+        CASE
+          WHEN s.consulta_date = l.latest_consulta_date THEN s.inventory_value
+          ELSE 0
+        END
+      )::numeric AS inventory_value
+    FROM scoped s
+    INNER JOIN latest l
+      ON s.empresa = l.empresa
+     AND s.sede_id = l.sede_id
+     AND s.item = l.item
+    GROUP BY
+      s.empresa,
+      s.sede_id,
+      s.item
+  )
+  SELECT
+    empresa,
+    sede_id,
+    sede_name,
+    linea,
+    linea_n1_codigo,
+    item,
+    descripcion,
+    unidad,
+    inventory_units,
+    inventory_value,
+    total_units,
+    tracked_days,
+    CASE
+      WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 0::numeric
+      WHEN total_units <= 0 OR tracked_days <= 0 THEN 999999::numeric
+      ELSE (inventory_units * tracked_days::numeric) / NULLIF(total_units, 0)
+    END AS rotation_days
+  FROM aggregated
+  WHERE
+    inventory_units > 0
+    OR inventory_value > 0
+  ORDER BY
+    empresa ASC,
+    sede_name ASC,
+    inventory_units DESC,
+    item ASC
+`;
 
 /**
  * Top 10 items por valor de inventario en la fecha fin del rango (1 dia).
@@ -683,6 +827,7 @@ const resolveDefaultMatrixItems = async ({
   lines,
   subcategory,
   precomputedFields,
+  useMatview = false,
 }: {
   client: import("pg").PoolClient;
   dateEndCompact: string;
@@ -691,14 +836,53 @@ const resolveDefaultMatrixItems = async ({
   lines: InventoryLineFilter[];
   subcategory: InventarioSubcategoryKey | null;
   precomputedFields: RotacionBaseSqlFields;
+  useMatview?: boolean;
 }): Promise<string[]> => {
+  const params: Array<string | string[] | null> = [dateEndCompact];
+  const whereClauses: string[] = [];
+
+  if (useMatview) {
+    whereClauses.push(
+      `fecha = TO_DATE($1::text, 'YYYYMMDD')`,
+    );
+    appendMatrixDimensionFilters({
+      columns: MATVIEW_DIMENSION_COLUMNS,
+      params,
+      whereClauses,
+      empresas,
+      sedes,
+      lines,
+      subcategory,
+    });
+
+    const result = await client.query(
+      `
+      SELECT item
+      FROM rotacion_item_dia_clean
+      WHERE ${whereClauses.join("\n        AND ")}
+      GROUP BY item
+      HAVING
+        SUM(inventory_units_dia) > 0
+        OR SUM(inventory_value_dia) > 0
+      ORDER BY
+        SUM(inventory_value_dia) DESC NULLS LAST,
+        item ASC
+      LIMIT 10
+      `,
+      params,
+    );
+
+    return ((result.rows ?? []) as Array<{ item: string | null }>)
+      .map((row) => row.item ?? "")
+      .filter(Boolean);
+  }
+
   const fields = precomputedFields;
   const dateColumn = fields.dateColumn;
-  const params: Array<string | string[] | null> = [dateEndCompact];
-  const whereClauses = [buildEndDateEqualsSql(dateColumn)];
+  whereClauses.push(buildEndDateEqualsSql(dateColumn));
 
   appendMatrixDimensionFilters({
-    fields,
+    columns: matrixDimensionColumnsFromFields(fields),
     params,
     whereClauses,
     empresas,
@@ -750,7 +934,7 @@ const queryInventoryMatrixRows = async ({
   try {
     const fields =
       precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
-    const dateColumn = fields.dateColumn;
+    const useMatview = await probeRotacionCleanMatview(client);
 
     let matrixItems = items;
     if (matrixItems.length === 0) {
@@ -762,6 +946,7 @@ const queryInventoryMatrixRows = async ({
         lines,
         subcategory,
         precomputedFields: fields,
+        useMatview,
       });
     }
     if (matrixItems.length === 0) {
@@ -772,10 +957,21 @@ const queryInventoryMatrixRows = async ({
       dateRangeCompact.start,
       dateRangeCompact.end,
     ];
-    const whereClauses = [buildCompactDateRangeSql(dateColumn)];
+    const whereClauses: string[] = [];
+    const dimensionColumns = useMatview
+      ? MATVIEW_DIMENSION_COLUMNS
+      : matrixDimensionColumnsFromFields(fields);
+
+    if (useMatview) {
+      whereClauses.push(
+        `fecha BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')`,
+      );
+    } else {
+      whereClauses.push(buildCompactDateRangeSql(fields.dateColumn));
+    }
 
     appendMatrixDimensionFilters({
-      fields,
+      columns: dimensionColumns,
       params,
       whereClauses,
       empresas,
@@ -785,107 +981,56 @@ const queryInventoryMatrixRows = async ({
     });
 
     params.push(matrixItems);
-    whereClauses.push(`${fields.itemExpr} = ANY($${params.length}::text[])`);
+    const itemParam = params.length;
+    whereClauses.push(
+      useMatview
+        ? `item = ANY($${itemParam}::text[])`
+        : `${fields.itemExpr} = ANY($${itemParam}::text[])`,
+    );
 
     const matrixStartedAt = performance.now();
+    const scopedSelectSql = useMatview
+      ? `
+    SELECT
+      empresa,
+      sede_id,
+      sede_name,
+      linea,
+      linea_n1_codigo,
+      item,
+      descripcion,
+      unidad,
+      fecha AS consulta_date,
+      inventory_units_dia AS inventory_units,
+      inventory_value_dia AS inventory_value,
+      unidades_vendidas_dia AS total_units
+    FROM rotacion_item_dia_clean
+    WHERE ${whereClauses.join("\n      AND ")}`
+      : `
+    SELECT
+      ${fields.empresaExpr} AS empresa,
+      ${fields.sedeIdExpr} AS sede_id,
+      ${fields.sedeNameExpr} AS sede_name,
+      ${fields.lineExpr} AS linea,
+      ${fields.n1CodeExpr} AS linea_n1_codigo,
+      ${fields.itemExpr} AS item,
+      ${fields.descriptionExpr} AS descripcion,
+      ${fields.unitExpr} AS unidad,
+      ${fields.closingUnitsExpr} AS inventory_units,
+      ${fields.inventoryValueExpr} AS inventory_value,
+      ${fields.unitsSoldExpr} AS total_units,
+      ${buildConsultaDateSql(fields.dateColumn)} AS consulta_date
+    FROM rotacion_base_item_dia_sede
+    WHERE ${whereClauses.join("\n      AND ")}`;
 
     const result = await client.query(
-      `
-      WITH scoped AS (
-        SELECT
-          ${fields.empresaExpr} AS empresa,
-          ${fields.sedeIdExpr} AS sede_id,
-          ${fields.sedeNameExpr} AS sede_name,
-          ${fields.lineExpr} AS linea,
-          ${fields.n1CodeExpr} AS linea_n1_codigo,
-          ${fields.itemExpr} AS item,
-          ${fields.descriptionExpr} AS descripcion,
-          ${fields.unitExpr} AS unidad,
-          ${fields.closingUnitsExpr} AS inventory_units,
-          ${fields.inventoryValueExpr} AS inventory_value,
-          ${fields.unitsSoldExpr} AS total_units,
-          ${buildConsultaDateSql(dateColumn)} AS consulta_date,
-          ${fields.loadTimestampExpr} AS carga_ts
-        FROM rotacion_base_item_dia_sede
-        WHERE ${whereClauses.join("\n          AND ")}
-      ),
-      ranked AS (
-        SELECT
-          *,
-          MAX(consulta_date) OVER (
-            PARTITION BY empresa, sede_id, item
-          ) AS latest_consulta_date
-        FROM scoped
-      ),
-      aggregated AS (
-        SELECT
-          empresa,
-          sede_id,
-          sede_name,
-          linea,
-          linea_n1_codigo,
-          item,
-          descripcion,
-          unidad,
-          SUM(total_units)::numeric AS total_units,
-          COUNT(DISTINCT consulta_date)::int AS tracked_days,
-          SUM(
-            CASE
-              WHEN consulta_date = latest_consulta_date THEN inventory_units
-              ELSE 0
-            END
-          )::numeric AS inventory_units,
-          SUM(
-            CASE
-              WHEN consulta_date = latest_consulta_date THEN inventory_value
-              ELSE 0
-            END
-          )::numeric AS inventory_value
-        FROM ranked
-        GROUP BY
-          empresa,
-          sede_id,
-          sede_name,
-          linea,
-          linea_n1_codigo,
-          item,
-          descripcion,
-          unidad
-      )
-      SELECT
-        empresa,
-        sede_id,
-        sede_name,
-        linea,
-        linea_n1_codigo,
-        item,
-        descripcion,
-        unidad,
-        inventory_units,
-        inventory_value,
-        total_units,
-        tracked_days,
-        CASE
-          WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 0::numeric
-          WHEN total_units <= 0 OR tracked_days <= 0 THEN 999999::numeric
-          ELSE (inventory_units * tracked_days::numeric) / NULLIF(total_units, 0)
-        END AS rotation_days
-      FROM aggregated
-      WHERE
-        inventory_units > 0
-        OR inventory_value > 0
-      ORDER BY
-        empresa ASC,
-        sede_name ASC,
-        inventory_units DESC,
-        item ASC
-      `,
+      buildInventoryMatrixAggregatedQuery(scopedSelectSql),
       params,
     );
 
     const matrixDurationMs = Math.round(performance.now() - matrixStartedAt);
     console.info(
-      `[inventario-x-item] matrix query ${matrixDurationMs}ms items=${matrixItems.length}`,
+      `[inventario-x-item] matrix query ${matrixDurationMs}ms items=${matrixItems.length} source=${useMatview ? "matview" : "base"}`,
     );
 
     return ((result.rows ?? []) as InventoryMatrixDbRow[])
