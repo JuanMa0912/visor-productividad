@@ -47,6 +47,11 @@ export const resolveVariationChip = (
   };
 };
 
+export const matrixValueCellStyle = (): { background: string; color: string } => ({
+  background: "#f8fafc",
+  color: "#1e293b",
+});
+
 export const heatmapCellStyle = (
   pct: number | null,
   notAvailable = false,

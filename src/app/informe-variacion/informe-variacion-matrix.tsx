@@ -10,6 +10,7 @@ import {
   formatInformePct,
   formatInformeValue,
   heatmapCellStyle,
+  matrixValueCellStyle,
   metricOffset,
 } from "@/lib/informe-variacion/format";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
@@ -23,6 +24,7 @@ type MatrixProps = {
   metric: InformeMetric;
   pass: (row: Prepared["rows"][number]) => boolean;
   matrixMode: "yoy" | "mom";
+  matrixDisplay: "pct" | "value";
   matrixOpen: Set<string>;
   setMatrixOpen: React.Dispatch<React.SetStateAction<Set<string>>>;
   matrixSort: { col: number; dir: number };
@@ -73,6 +75,7 @@ export function MatrixTable({
   metric,
   pass,
   matrixMode,
+  matrixDisplay,
   matrixOpen,
   setMatrixOpen,
   matrixSort,
@@ -86,11 +89,13 @@ export function MatrixTable({
     payload.sedes.map((_, index) => {
       const values = perSede?.[index];
       if (!values) return null;
-      if (matrixMode === "yoy" && !payload.sedeYoy[index]) {
-        return { cur: 0, base: 0, nd: true as const };
-      }
+      const yoyUnavailable = matrixMode === "yoy" && !payload.sedeYoy[index];
       const base = matrixMode === "mom" ? values[1] : values[2];
-      return { cur: values[0], base, nd: false as const };
+      return {
+        cur: values[0],
+        base: yoyUnavailable ? 0 : base,
+        nd: yoyUnavailable,
+      };
     });
 
   const renderHeatCell = (cell: { cur: number; base: number; nd: boolean } | null) => {
@@ -135,6 +140,34 @@ export function MatrixTable({
     );
   };
 
+  const renderValueCell = (cell: { cur: number; base: number; nd: boolean } | null) => {
+    if (!cell || cell.cur === 0) {
+      return (
+        <td className="px-1 py-1 text-center text-xs" style={matrixValueCellStyle()}>
+          —
+        </td>
+      );
+    }
+    const title =
+      matrixMode === "mom"
+        ? `Actual: ${formatInformeValue(cell.cur, metric)} | MoM base: ${formatInformeValue(cell.base, metric)}`
+        : cell.nd
+          ? `Actual: ${formatInformeValue(cell.cur, metric)}`
+          : `Actual: ${formatInformeValue(cell.cur, metric)} | YoY base: ${formatInformeValue(cell.base, metric)}`;
+    return (
+      <td
+        className="px-1 py-1 text-center text-xs font-semibold tabular-nums"
+        style={matrixValueCellStyle()}
+        title={title}
+      >
+        {formatInformeValue(cell.cur, metric)}
+      </td>
+    );
+  };
+
+  const renderMatrixCell =
+    matrixDisplay === "value" ? renderValueCell : renderHeatCell;
+
   const catAgg = useMemo(
     () => levelAggregateBySede(payload.rows, metric, payload.sedes.length, 1, pass),
     [metric, pass, payload.rows, payload.sedes.length],
@@ -159,7 +192,7 @@ export function MatrixTable({
     <tr key="total" className="bg-slate-100 font-semibold">
       <td className="px-2 py-1">TOTAL (segun filtros)</td>
       {matrixCells(totPer).map((cell, index) => (
-        <Fragment key={index}>{renderHeatCell(cell)}</Fragment>
+        <Fragment key={index}>{renderMatrixCell(cell)}</Fragment>
       ))}
     </tr>,
   );
@@ -183,7 +216,7 @@ export function MatrixTable({
             return next;
           })
         }
-        renderCell={renderHeatCell}
+        renderCell={renderMatrixCell}
       />,
     );
 
@@ -221,7 +254,7 @@ export function MatrixTable({
           onMouseLeave={() =>
             setHoverDetail((current) => (current === linDetailKey ? null : current))
           }
-          renderCell={renderHeatCell}
+          renderCell={renderMatrixCell}
         />,
       );
       if (hoverDetail === linDetailKey && !pinnedDetails.has(linDetailKey)) {
@@ -270,7 +303,7 @@ export function MatrixTable({
             onMouseLeave={() =>
               setHoverDetail((current) => (current === subDetailKey ? null : current))
             }
-            renderCell={renderHeatCell}
+            renderCell={renderMatrixCell}
           />,
         );
         if (hoverDetail === subDetailKey && !pinnedDetails.has(subDetailKey)) {
@@ -319,7 +352,7 @@ export function MatrixTable({
                   return next;
                 })
               }
-              renderCell={renderHeatCell}
+              renderCell={renderMatrixCell}
             />,
           );
           if (pinnedDetails.has(itemDetailKey)) {

@@ -18,6 +18,10 @@ import {
   informeEmpresaLabel,
 } from "@/lib/informe-variacion/labels";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
+import {
+  applyInformeMockComparisonBases,
+  informePayloadHasComparisonData,
+} from "@/lib/informe-variacion/mock-bases";
 import type { InformePeriods } from "@/lib/informe-variacion/types";
 import type {
   InformeCompactRow,
@@ -252,8 +256,13 @@ export const buildInformeVariacionPayload = (
     meta: {
       rowCount: rows.length,
       generatedAt: new Date().toISOString(),
+      comparisonAvailable: informePayloadHasComparisonData(rows),
     },
   };
+};
+
+export type LoadInformeVariacionOptions = {
+  mockBases?: boolean;
 };
 
 export const loadInformeVariacionPayload = async (
@@ -261,8 +270,20 @@ export const loadInformeVariacionPayload = async (
   year: number,
   month: number,
   allowedSedeKeys: string[] | null,
+  options: LoadInformeVariacionOptions = {},
 ): Promise<InformeVariacionPayload> => {
   const periods = computeInformePeriods(year, month);
   const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys);
-  return buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
+  let payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
+
+  const shouldMock =
+    options.mockBases === true &&
+    payload.rows.length > 0 &&
+    !payload.meta.comparisonAvailable;
+
+  if (shouldMock) {
+    payload = applyInformeMockComparisonBases(payload);
+  }
+
+  return payload;
 };

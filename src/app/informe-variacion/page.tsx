@@ -43,6 +43,7 @@ export default function InformeVariacionPage() {
 
   const [metaLoading, setMetaLoading] = useState(true);
   const [monthInput, setMonthInput] = useState("");
+  const [useMockBases, setUseMockBases] = useState(true);
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export default function InformeVariacionPage() {
       const params = new URLSearchParams({
         year: String(parsed.year),
         month: String(parsed.month),
+        mock: useMockBases ? "1" : "0",
       });
       const response = await fetch(`/api/informe-variacion?${params.toString()}`, {
         cache: "no-store",
@@ -116,12 +118,12 @@ export default function InformeVariacionPage() {
     } finally {
       setLoading(false);
     }
-  }, [monthInput, router]);
+  }, [monthInput, router, useMockBases]);
 
   useEffect(() => {
     if (!ready || !canAccess || metaLoading || !monthInput) return;
     void loadInforme();
-  }, [canAccess, loadInforme, metaLoading, monthInput, ready]);
+  }, [canAccess, loadInforme, metaLoading, monthInput, ready, useMockBases]);
 
   if (!ready || !canAccess) {
     return (
@@ -149,6 +151,15 @@ export default function InformeVariacionPage() {
           </div>
         </div>
         <div className="mb-5 flex flex-wrap items-end justify-end gap-3">
+          <label className="flex cursor-pointer items-center gap-2 self-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-900">
+            <input
+              type="checkbox"
+              checked={useMockBases}
+              onChange={(event) => setUseMockBases(event.target.checked)}
+              className="rounded border-amber-300"
+            />
+            Simular MoM / YoY (demo)
+          </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
             Periodo actual
             <input

@@ -55,6 +55,7 @@ export function InformeVariacionBoard({ payload }: Props) {
   const [metric, setMetric] = useState<InformeMetric>("v");
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
   const [matrixMode, setMatrixMode] = useState<"yoy" | "mom">("yoy");
+  const [matrixDisplay, setMatrixDisplay] = useState<"pct" | "value">("pct");
   const [matrixDepth, setMatrixDepth] = useState<"cat" | "lin">("cat");
   const [matrixOpen, setMatrixOpen] = useState<Set<string>>(() => new Set());
   const [treeOpen, setTreeOpen] = useState<Set<string>>(() => new Set());
@@ -144,6 +145,7 @@ export function InformeVariacionBoard({ payload }: Props) {
       const per = agg.get(key);
       const values = per?.[matrixSort.col];
       if (!values) return matrixSort.dir > 0 ? -Infinity : Infinity;
+      if (matrixDisplay === "value") return values[0];
       if (matrixMode === "yoy" && !prepared.sedeYoy[matrixSort.col]) return 0;
       const base = matrixMode === "mom" ? values[1] : values[2];
       return base > 0 ? values[0] / base - 1 : values[0] > 0 ? Infinity : -Infinity;
@@ -153,6 +155,18 @@ export function InformeVariacionBoard({ payload }: Props) {
 
   return (
     <div className="space-y-5">
+      {payload.meta.mockBases ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <b>Modo demo activo:</b> las bases de mayo y junio del ano anterior se
+          sintetizaron a partir del periodo actual para probar variaciones. No usar en
+          reportes oficiales.
+        </div>
+      ) : payload.meta.comparisonAvailable === false ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          No hay datos reales de comparacion (MoM / YoY) en margen para este mes. Activa
+          <b> Simular MoM / YoY (demo)</b> arriba para ver porcentajes y heatmaps.
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600">
           Periodo actual: <b className="text-slate-900">{payload.periods.current.label}</b>
@@ -247,13 +261,23 @@ export function InformeVariacionBoard({ payload }: Props) {
         actions={
           <>
             <ToggleGroup
-              value={matrixMode}
+              value={matrixDisplay}
               options={[
-                { id: "yoy", label: "YoY %" },
-                { id: "mom", label: "MoM %" },
+                { id: "pct", label: "%" },
+                { id: "value", label: metric === "u" ? "Unidades" : "$" },
               ]}
-              onChange={(value) => setMatrixMode(value as "yoy" | "mom")}
+              onChange={(value) => setMatrixDisplay(value as "pct" | "value")}
             />
+            <span className={cn(matrixDisplay === "value" && "opacity-50")}>
+              <ToggleGroup
+                value={matrixMode}
+                options={[
+                  { id: "yoy", label: "YoY %" },
+                  { id: "mom", label: "MoM %" },
+                ]}
+                onChange={(value) => setMatrixMode(value as "yoy" | "mom")}
+              />
+            </span>
             <ToggleGroup
               value={matrixDepth}
               options={[
@@ -278,6 +302,7 @@ export function InformeVariacionBoard({ payload }: Props) {
           metric={metric}
           pass={pass}
           matrixMode={matrixMode}
+          matrixDisplay={matrixDisplay}
           matrixOpen={matrixOpen}
           setMatrixOpen={setMatrixOpen}
           matrixSort={matrixSort}

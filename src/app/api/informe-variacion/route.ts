@@ -3,6 +3,7 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
 import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
+import { resolveInformeMockBasesEnabled } from "@/lib/informe-variacion/mock-bases";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -89,6 +90,8 @@ export async function GET(request: Request) {
     );
   }
 
+  const mockBases = resolveInformeMockBasesEnabled(url.searchParams.get("mock"));
+
   const client = await (await getDbPool()).connect();
   try {
     await client.query("SET LOCAL work_mem = '256MB'");
@@ -97,10 +100,15 @@ export async function GET(request: Request) {
       year,
       month,
       scope.allowedKeys,
+      { mockBases },
     );
     return withSession(
       NextResponse.json(payload, {
-        headers: { "Cache-Control": CACHE_CONTROL, "X-Data-Source": "database" },
+        headers: {
+          "Cache-Control": CACHE_CONTROL,
+          "X-Data-Source": "database",
+          ...(payload.meta.mockBases ? { "X-Informe-Mock-Bases": "1" } : {}),
+        },
       }),
     );
   } catch (error) {
