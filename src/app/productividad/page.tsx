@@ -70,9 +70,8 @@ const INFORME_VARIACION_MODULE: HubModuleItem = {
   badge: "INFORME",
   title: "Informe de Variacion",
   description:
-    "Modulo en mantenimiento y desarrollo. Proximamente podras analizar variaciones comerciales por sede, linea y periodo.",
-  disabled: true,
-  footerLabel: "En mantenimiento",
+    "Analiza variaciones comerciales MoM y YoY por sede, linea, sublinea e item desde margen unificado.",
+  href: "/informe-variacion",
 };
 
 const hubTour = PORTAL_HUB_TOUR_CONFIG.producto;
