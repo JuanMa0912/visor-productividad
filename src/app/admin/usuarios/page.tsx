@@ -221,6 +221,7 @@ const SUBSECTION_LABELS: Record<string, string> = {
   "mix-y-linea": "Mix y linea",
   margenes: "Margenes",
   rotacion: "Rotacion",
+  "informe-variacion": "Informe de variacion",
   "consulta-operativa": "Consulta operativa",
   "planilla-vs-asistencia": "Planilla vs asistencia",
   "registro-de-horarios": "Registro de horarios",

@@ -15,7 +15,7 @@ import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
 
-type MargenMeta = {
+type InformeMeta = {
   maxDate: string | null;
 };
 
@@ -82,12 +82,16 @@ export default function InformeVariacionPage() {
     const loadMeta = async () => {
       setMetaLoading(true);
       try {
-        const response = await fetch("/api/margenes/meta", { cache: "no-store" });
+        const response = await fetch("/api/informe-variacion/meta", { cache: "no-store" });
         if (response.status === 401) {
           router.replace("/login");
           return;
         }
-        const data = (await response.json()) as MargenMeta;
+        if (response.status === 403) {
+          router.replace("/secciones");
+          return;
+        }
+        const data = (await response.json()) as InformeMeta;
         if (cancelled) return;
         const { year, month } = defaultInformeYearMonth(data.maxDate);
         setMonthInput(yearMonthToInputValue(year, month));

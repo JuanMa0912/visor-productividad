@@ -28,6 +28,20 @@ describe("canAccessInformeVariacion", () => {
     );
   });
 
+  it("permite subseccion informe-variacion", () => {
+    assert.equal(
+      canAccessInformeVariacion("user", ["producto"], ["informe-variacion"]),
+      true,
+    );
+  });
+
+  it("permite solo informe sin margenes ni rotacion en lista explicita", () => {
+    assert.equal(
+      canAccessInformeVariacion("user", ["producto"], ["mix-y-linea", "informe-variacion"]),
+      true,
+    );
+  });
+
   it("niega sin producto ni rol especial", () => {
     assert.equal(canAccessInformeVariacion("user", ["rrhh"], ["margenes"]), false);
     assert.equal(

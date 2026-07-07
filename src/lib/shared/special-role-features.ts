@@ -84,6 +84,7 @@ export function canAccessInformeVariacion(
   if (role === "admin") return true;
   if (!canAccessPortalSection(allowedDashboards, "producto")) return false;
   if (
+    canAccessPortalSubsection(allowedSubdashboards, "informe-variacion") ||
     canAccessPortalSubsection(allowedSubdashboards, "rotacion") ||
     canAccessPortalSubsection(allowedSubdashboards, "margenes")
   ) {

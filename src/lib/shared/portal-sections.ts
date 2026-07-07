@@ -6,6 +6,7 @@ export type PortalSubsectionId =
   | "mix-y-linea"
   | "margenes"
   | "rotacion"
+  | "informe-variacion"
   | "consulta-operativa"
   | "planilla-vs-asistencia"
   | "registro-de-horarios";
@@ -54,7 +55,7 @@ export const PORTAL_SUBSECTIONS_BY_SECTION: Record<
   PortalSubsectionId[]
 > = {
   venta: ["ventas-x-item", "inventario-x-item", "analisis-de-inventario"],
-  producto: ["mix-y-linea", "margenes", "rotacion"],
+  producto: ["mix-y-linea", "margenes", "rotacion", "informe-variacion"],
   operacion: [
     "consulta-operativa",
     "planilla-vs-asistencia",
@@ -93,7 +94,7 @@ const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
   "margenes-operativos": "margenes",
   margenes: "margenes",
   rotacion: "rotacion",
-  "informe-variacion": "rotacion",
+  "informe-variacion": "informe-variacion",
   "consulta-operativa": "consulta-operativa",
   "jornada-extendida": "consulta-operativa",
   "planilla-vs-asistencia": "planilla-vs-asistencia",

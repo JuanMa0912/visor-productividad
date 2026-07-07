@@ -114,7 +114,7 @@ Codigo compartido sin UI de pagina.
 | `productivity` | productividad por linea con cache de archivo opcional |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por linea/sede |
-| `informe-variacion` | informe MoM/YoY agregado desde `margen_final` |
+| `informe-variacion` | informe MoM/YoY agregado desde `margen_final` (`GET`, `GET /meta`) |
 | `rotacion` | rotacion e inventario con baja salida |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |
