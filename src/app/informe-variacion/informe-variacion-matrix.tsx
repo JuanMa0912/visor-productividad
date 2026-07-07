@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, Fragment } from "react";
+import { useCallback, useMemo, useRef, useState, Fragment } from "react";
 import {
   filterRowIndices,
   aggregateIndicesBySede,
@@ -83,8 +83,28 @@ export function MatrixTable({
   setMatrixSort,
   matrixSortKeys,
 }: MatrixProps) {
-  const [pinnedDetails, setPinnedDetails] = useState<Set<string>>(() => new Set());
-  const [hoverDetail, setHoverDetail] = useState<string | null>(null);
+  const [activeDetails, setActiveDetails] = useState<Set<string>>(() => new Set());
+
+  const toggleDetail = useCallback((detailKey: string) => {
+    setActiveDetails((current) => {
+      const next = new Set(current);
+      if (next.has(detailKey)) next.delete(detailKey);
+      else next.add(detailKey);
+      return next;
+    });
+  }, []);
+
+  const toggleExpand = useCallback(
+    (expandKey: string) => {
+      setMatrixOpen((current) => {
+        const next = new Set(current);
+        if (next.has(expandKey)) next.delete(expandKey);
+        else next.add(expandKey);
+        return next;
+      });
+    },
+    [setMatrixOpen],
+  );
 
   const filteredIndices = useMemo(
     () => filterRowIndices(payload.rows, pass),
@@ -219,14 +239,7 @@ export function MatrixTable({
           depth={0}
           expandable
           open={matrixOpen.has(ck)}
-          onToggle={() =>
-            setMatrixOpen((current) => {
-              const next = new Set(current);
-              if (next.has(ck)) next.delete(ck);
-              else next.add(ck);
-              return next;
-            })
-          }
+          onExpand={() => toggleExpand(ck)}
           renderCell={renderMatrixCell}
         />,
       );
@@ -254,22 +267,13 @@ export function MatrixTable({
             depth={1}
             expandable
             open={matrixOpen.has(lk)}
-            onToggle={() =>
-              setMatrixOpen((current) => {
-                const next = new Set(current);
-                if (next.has(lk)) next.delete(lk);
-                else next.add(lk);
-                return next;
-              })
-            }
-            onMouseEnter={() => setHoverDetail(linDetailKey)}
-            onMouseLeave={() =>
-              setHoverDetail((current) => (current === linDetailKey ? null : current))
-            }
+            detailActive={activeDetails.has(linDetailKey)}
+            onDetailClick={() => toggleDetail(linDetailKey)}
+            onExpand={() => toggleExpand(lk)}
             renderCell={renderMatrixCell}
           />,
         );
-        if (hoverDetail === linDetailKey && !pinnedDetails.has(linDetailKey)) {
+        if (activeDetails.has(linDetailKey)) {
           rows.push(
             <DetailRows
               key={`${linDetailKey}-detail`}
@@ -304,22 +308,13 @@ export function MatrixTable({
               depth={2}
               expandable
               open={matrixOpen.has(bk)}
-              onToggle={() =>
-                setMatrixOpen((current) => {
-                  const next = new Set(current);
-                  if (next.has(bk)) next.delete(bk);
-                  else next.add(bk);
-                  return next;
-                })
-              }
-              onMouseEnter={() => setHoverDetail(subDetailKey)}
-              onMouseLeave={() =>
-                setHoverDetail((current) => (current === subDetailKey ? null : current))
-              }
+              detailActive={activeDetails.has(subDetailKey)}
+              onDetailClick={() => toggleDetail(subDetailKey)}
+              onExpand={() => toggleExpand(bk)}
               renderCell={renderMatrixCell}
             />,
           );
-          if (hoverDetail === subDetailKey && !pinnedDetails.has(subDetailKey)) {
+          if (activeDetails.has(subDetailKey)) {
             rows.push(
               <DetailRows
                 key={`${subDetailKey}-detail`}
@@ -358,18 +353,12 @@ export function MatrixTable({
                 cells={matrixCells(itemPer)}
                 depth={3}
                 expandable={false}
-                onClick={() =>
-                  setPinnedDetails((current) => {
-                    const next = new Set(current);
-                    if (next.has(itemDetailKey)) next.delete(itemDetailKey);
-                    else next.add(itemDetailKey);
-                    return next;
-                  })
-                }
+                detailActive={activeDetails.has(itemDetailKey)}
+                onDetailClick={() => toggleDetail(itemDetailKey)}
                 renderCell={renderMatrixCell}
               />,
             );
-            if (pinnedDetails.has(itemDetailKey)) {
+            if (activeDetails.has(itemDetailKey)) {
               rows.push(
                 <DetailRows
                   key={`${itemDetailKey}-detail`}
@@ -387,18 +376,17 @@ export function MatrixTable({
 
     return rows;
   }, [
+    activeDetails,
     catAgg,
     filteredIndices,
-    hoverDetail,
     matrixDisplay,
     matrixMode,
     matrixOpen,
     matrixSortKeys,
     metric,
     payload,
-    pinnedDetails,
-    setMatrixOpen,
-    setPinnedDetails,
+    toggleDetail,
+    toggleExpand,
     totPer,
   ]);
 
@@ -406,7 +394,10 @@ export function MatrixTable({
     matrixSort.col === col ? (matrixSort.dir > 0 ? " ▼" : " ▲") : "";
 
   return (
-    <div className="overflow-x-auto" onMouseLeave={() => setHoverDetail(null)}>
+    <div className="overflow-x-auto">
+      <p className="mb-2 text-xs text-slate-500">
+        Clic: ver Actual / YoY / MoM · Doble clic: expandir nivel
+      </p>
       <table className="min-w-full border-collapse text-sm">
         <thead>
           <tr className="text-xs uppercase text-slate-500">
@@ -452,10 +443,9 @@ function MatrixRow({
   depth,
   expandable,
   open,
-  onToggle,
-  onMouseEnter,
-  onMouseLeave,
-  onClick,
+  detailActive,
+  onDetailClick,
+  onExpand,
   renderCell,
 }: {
   label: React.ReactNode;
@@ -463,24 +453,51 @@ function MatrixRow({
   depth: number;
   expandable: boolean;
   open?: boolean;
-  onToggle?: () => void;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
-  onClick?: () => void;
+  detailActive?: boolean;
+  onDetailClick?: () => void;
+  onExpand?: () => void;
   renderCell: (cell: { cur: number; base: number; nd: boolean } | null) => React.ReactNode;
 }) {
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleClick = () => {
+    if (!onDetailClick) return;
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = setTimeout(() => {
+      onDetailClick();
+      clickTimerRef.current = null;
+    }, 220);
+  };
+
+  const handleDoubleClick = () => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    onExpand?.();
+  };
+
+  const interactive = Boolean(onDetailClick || onExpand);
+
   return (
     <tr
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onClick={onClick}
-      className={onClick ? "cursor-pointer" : undefined}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
+      className={cn(
+        interactive && "cursor-pointer select-none",
+        detailActive && "bg-slate-50",
+      )}
+      title={
+        onDetailClick && onExpand
+          ? "Clic: ver periodos · Doble clic: expandir"
+          : onExpand
+            ? "Doble clic: expandir"
+            : onDetailClick
+              ? "Clic: ver periodos"
+              : undefined
+      }
     >
-      <td
-        className="max-w-xs truncate px-2 py-1"
-        style={{ paddingLeft: 8 + depth * 18 }}
-        onClick={expandable ? onToggle : undefined}
-      >
+      <td className="max-w-xs truncate px-2 py-1" style={{ paddingLeft: 8 + depth * 18 }}>
         {expandable ? (
           <span className={cn("mr-1 inline-block text-slate-400", open && "rotate-90")}>▶</span>
         ) : (
