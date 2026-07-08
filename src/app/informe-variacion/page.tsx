@@ -406,6 +406,24 @@ export default function InformeVariacionPage() {
       setPrefetchDone(0);
       setError(null);
       setRangeSwitchPending(false);
+      if (!options.force) {
+        // Conserva chips del mismo mes si ya hay cache; al cambiar mes limpia.
+        setReadyRanges((current) => {
+          const kept = new Set<InformeDayRangeId>();
+          for (const range of ranges) {
+            if (
+              current.has(range.id) ||
+              memoryCacheRef.current.has(
+                buildRangeCacheKey(year, month, range.id),
+              ) ||
+              readSessionInforme(buildRangeCacheKey(year, month, range.id))
+            ) {
+              kept.add(range.id);
+            }
+          }
+          return kept;
+        });
+      }
 
       const cachedPrimary = options.force
         ? null
@@ -530,11 +548,11 @@ export default function InformeVariacionPage() {
   // Carga / precarga al entrar o cambiar de mes.
   useEffect(() => {
     if (!ready || !canAccess || metaLoading || !monthKey) return;
+    setReadyRanges(new Set());
+    setPrefetchDone(0);
+    setPrefetchTotal(0);
     if (availableDayRanges.length === 0) {
       setPayload(null);
-      setPrefetchDone(0);
-      setPrefetchTotal(0);
-      setReadyRanges(new Set());
       return;
     }
     void loadMonthBundle();
@@ -604,17 +622,17 @@ export default function InformeVariacionPage() {
               </span>
               <span className="text-xs text-slate-400">
                 {preloadReady
-                  ? "Filtros instantaneos (datos en memoria)"
+                  ? "Todos los rangos listos · cambio instantaneo"
                   : prefetchTotal > 0
-                    ? `Precargando ${Math.min(prefetchDone, prefetchTotal)}/${prefetchTotal} · los listos ya son instantaneos`
+                    ? `Cargando rangos ${Math.min(readyRanges.size, prefetchTotal)}/${prefetchTotal} · aparecen al quedar listos`
                     : "Solo aparecen periodos ya cerrados en el mes"}
-                {rangeSwitchPending ? " · cargando rango…" : ""}
+                {rangeSwitchPending ? " · sincronizando…" : ""}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {availableDayRanges.map((range) => {
-                const cached = readyRanges.has(range.id);
-                return (
+              {availableDayRanges
+                .filter((range) => readyRanges.has(range.id))
+                .map((range) => (
                   <button
                     key={range.id}
                     type="button"
@@ -624,23 +642,18 @@ export default function InformeVariacionPage() {
                       dayRangeId === range.id
                         ? "border-blue-600 bg-blue-600 text-white shadow-sm"
                         : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
-                      cached &&
-                        dayRangeId !== range.id &&
-                        "ring-1 ring-emerald-200",
                     )}
-                    title={
-                      cached
-                        ? "Listo en memoria · cambio instantaneo"
-                        : "Aun no precargado · se pedira al vuelo sin bloquear la vista"
-                    }
+                    title="Listo en memoria · cambio instantaneo"
                   >
                     {range.label}
-                    {!cached && dayRangeId === range.id && rangeSwitchPending
-                      ? "…"
-                      : ""}
                   </button>
-                );
-              })}
+                ))}
+              {!preloadReady && readyRanges.size < prefetchTotal ? (
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-200 px-3 py-1.5 text-xs text-slate-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Preparando mas rangos…
+                </span>
+              ) : null}
             </div>
           </div>
         ) : parsedMonth ? (

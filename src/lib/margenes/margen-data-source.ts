@@ -3,15 +3,20 @@ import type { MargenQueryFilters } from "@/lib/margenes/margen-final-query";
 import { parseSedeKey } from "@/lib/margenes/margen-final-query";
 import { KPI_MERCADO_TIPO } from "@/lib/margenes/metrics";
 
-export type MargenDataTable = "margen_final" | "margen_final_roll";
+export type MargenDataTable =
+  | "margen_final"
+  | "margen_final_roll"
+  | "margen_item_dia_roll";
 
 export const MARGEN_ROLL_TABLE: MargenDataTable = "margen_final_roll";
+export const MARGEN_ITEM_DIA_ROLL_TABLE: MargenDataTable = "margen_item_dia_roll";
 export const MARGEN_RAW_TABLE: MargenDataTable = "margen_final";
 
 let rollTableAvailable: boolean | null = null;
+let itemDiaRollAvailable: boolean | null = null;
 
 export const isRollTable = (table: MargenDataTable): boolean =>
-  table === MARGEN_ROLL_TABLE;
+  table === MARGEN_ROLL_TABLE || table === MARGEN_ITEM_DIA_ROLL_TABLE;
 
 export const resolveMargenDataSource = async (
   client: PoolClient,
@@ -40,8 +45,38 @@ export const resolveMargenDataSource = async (
   return rollTableAvailable ? MARGEN_ROLL_TABLE : MARGEN_RAW_TABLE;
 };
 
+/** Preferido por /informe-variacion: item/dia sin factura (mas pequeño que margen_final_roll). */
+export const resolveInformeMargenDataSource = async (
+  client: PoolClient,
+): Promise<MargenDataTable> => {
+  if (process.env.MARGEN_FORCE_RAW === "1") return MARGEN_RAW_TABLE;
+
+  if (itemDiaRollAvailable === null) {
+    const result = await client.query<{ ok: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'margen_item_dia_roll'
+      ) AS ok
+    `);
+    if (!result.rows[0]?.ok) {
+      itemDiaRollAvailable = false;
+    } else {
+      const populated = await client.query<{ ok: boolean }>(`
+        SELECT EXISTS (SELECT 1 FROM margen_item_dia_roll LIMIT 1) AS ok
+      `);
+      itemDiaRollAvailable = Boolean(populated.rows[0]?.ok);
+    }
+  }
+
+  if (itemDiaRollAvailable) return MARGEN_ITEM_DIA_ROLL_TABLE;
+  return resolveMargenDataSource(client);
+};
+
 export const resetMargenDataSourceCache = () => {
   rollTableAvailable = null;
+  itemDiaRollAvailable = null;
 };
 
 export const mercadoTipoSql = (table: MargenDataTable): string =>

@@ -88,8 +88,9 @@ Orden completo despues de `schema-auth.sql`:
 34. `20260706_rotacion_clean_matview_sublinea.sql` (matview con `linea_n2_codigo`/`sublinea`)
 35. `20260707_rotacion_periodo_std_sublinea.sql` (snapshot periodo std con N2)
 36. `20260708_rotacion_clean_matview_n2_stable.sql` (N2 estable en matview + indice filtro)
+37. `20260708_margen_item_dia_roll.sql` (rollup dia+item sin factura para `/informe-variacion`; se refresca al final de `margen:refresh-roll`)
 
-Tras `20260708`, refrescar matview y snapshot:
+Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
 ```bash
 sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
@@ -166,11 +167,14 @@ Notas:
 | `margenes_linea_co_dia` | legacy: agregados por linea/sede/dia (feb 2026 en prod) |
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD |
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta consultas pesadas del tablero |
+| `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
 
-API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`).
+API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`),
+`/api/informe-variacion` (prefiere `margen_item_dia_roll` si existe y tiene filas).
 
-Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`.
+Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`,
+`db/migrations/20260708_margen_item_dia_roll.sql`.
 
 Tras cada carga ETL de `margen_final`, refrescar el rollup (en GCP como usuario `visor`):
 
@@ -178,8 +182,11 @@ Tras cada carga ETL de `margen_final`, refrescar el rollup (en GCP como usuario 
 cd /opt/visor-productividad
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260702_margen_final_roll.sql   # solo la primera vez
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260703_margen_final_roll_refresh_chunks.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260708_margen_item_dia_roll.sql  # solo la primera vez
 sudo -u visor npm run margen:refresh-roll
 ```
+
+`margen:refresh-roll` tambien pobla `margen_item_dia_roll` si la tabla existe.
 
 Equivalente SQL (misma conexion remota que `DB_HOST` en `.env.local`):
 

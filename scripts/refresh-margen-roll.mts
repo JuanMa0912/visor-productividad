@@ -122,6 +122,37 @@ const main = async () => {
     console.log(
       `Listo: ${totalRows.toLocaleString("es-CO")} filas rollup en ${formatMs(performance.now() - t0)}.`,
     );
+
+    const itemDiaExists = await client.query<{ ok: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'margen_item_dia_roll'
+      ) AS ok
+    `);
+    if (itemDiaExists.rows[0]?.ok) {
+      console.log("Refrescando margen_item_dia_roll (informe-variacion)...");
+      const itemStarted = performance.now();
+      const itemResult = await client.query<{
+        inserted_rows: string;
+        elapsed_ms: string;
+      }>(
+        INCREMENTAL
+          ? `SELECT * FROM refresh_margen_item_dia_roll($1, $2)`
+          : `SELECT * FROM refresh_margen_item_dia_roll(NULL, NULL)`,
+        INCREMENTAL ? [FROM, TO] : [],
+      );
+      const itemRows = Number(itemResult.rows[0]?.inserted_rows ?? 0);
+      console.log(
+        `  margen_item_dia_roll: ${itemRows.toLocaleString("es-CO")} filas (${formatMs(performance.now() - itemStarted)})`,
+      );
+      resetMargenDataSourceCache();
+    } else {
+      console.log(
+        "Aviso: margen_item_dia_roll no existe. Aplica db/migrations/20260708_margen_item_dia_roll.sql para acelerar /informe-variacion.",
+      );
+    }
   } finally {
     client.release();
     await pool.end();

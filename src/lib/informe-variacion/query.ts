@@ -6,7 +6,7 @@ import {
 import { sedeKey } from "@/lib/margenes/margen-final-query";
 import {
   isRollTable,
-  resolveMargenDataSource,
+  resolveInformeMargenDataSource,
   type MargenDataTable,
 } from "@/lib/margenes/margen-data-source";
 import {
@@ -186,7 +186,7 @@ export const queryInformeVariacionRows = async (
   periods: InformePeriods,
   allowedSedeKeys: string[] | null,
 ): Promise<InformeDbAggRow[]> => {
-  const table = await resolveMargenDataSource(client);
+  const table = await resolveInformeMargenDataSource(client);
   const sedeParams: Array<string | string[]> = [];
   const sedeFilterSql = buildSedeFilter(table, allowedSedeKeys, sedeParams);
   const sql = buildInformeThreePeriodSql(table, sedeFilterSql);
