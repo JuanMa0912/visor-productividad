@@ -26,6 +26,13 @@ type InformeMeta = {
 };
 
 const INFORME_SESSION_CACHE_PREFIX = "vp-informe-variacion:";
+const INFORME_FETCH_TIMEOUT_MS = 120_000;
+
+const buildRangeCacheKey = (
+  year: number,
+  month: number,
+  rangeId: InformeDayRangeId,
+) => `${year}-${month}:range=${rangeId}`;
 
 const readSessionInforme = (key: string): InformeVariacionPayload | null => {
   if (typeof window === "undefined") return null;
@@ -41,9 +48,27 @@ const readSessionInforme = (key: string): InformeVariacionPayload | null => {
 const writeSessionInforme = (key: string, payload: InformeVariacionPayload) => {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(`${INFORME_SESSION_CACHE_PREFIX}${key}`, JSON.stringify(payload));
+    sessionStorage.setItem(
+      `${INFORME_SESSION_CACHE_PREFIX}${key}`,
+      JSON.stringify(payload),
+    );
   } catch {
     // quota o payload demasiado grande
+  }
+};
+
+const clearSessionInformeMonth = (year: number, month: number) => {
+  if (typeof window === "undefined") return;
+  const prefix = `${INFORME_SESSION_CACHE_PREFIX}${year}-${month}:range=`;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(prefix)) keysToRemove.push(key);
+    }
+    for (const key of keysToRemove) sessionStorage.removeItem(key);
+  } catch {
+    // ignore
   }
 };
 
@@ -72,17 +97,26 @@ export default function InformeVariacionPage() {
   const [maxDate, setMaxDate] = useState<string | null>(null);
   const [monthInput, setMonthInput] = useState("");
   const [dayRangeId, setDayRangeId] = useState<InformeDayRangeId | "">("");
-  const [useMockBases, setUseMockBases] = useState(false);
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const payloadRef = useRef<InformeVariacionPayload | null>(null);
+  const [prefetchDone, setPrefetchDone] = useState(0);
+  const [prefetchTotal, setPrefetchTotal] = useState(0);
+  const [readyRanges, setReadyRanges] = useState<Set<InformeDayRangeId>>(
+    () => new Set(),
+  );
+
+  const memoryCacheRef = useRef<Map<string, InformeVariacionPayload>>(new Map());
+  const inflightRef = useRef<Map<string, Promise<InformeVariacionPayload>>>(
+    new Map(),
+  );
+  const monthAbortRef = useRef<AbortController | null>(null);
+  const activeMonthKeyRef = useRef("");
+  const dayRangeIdRef = useRef<InformeDayRangeId | "">("");
 
   useEffect(() => {
-    payloadRef.current = payload;
-  }, [payload]);
-
-  const INFORME_FETCH_TIMEOUT_MS = 120_000;
+    dayRangeIdRef.current = dayRangeId;
+  }, [dayRangeId]);
 
   useEffect(() => {
     if (!ready || !canAccess) return;
@@ -90,7 +124,9 @@ export default function InformeVariacionPage() {
     const loadMeta = async () => {
       setMetaLoading(true);
       try {
-        const response = await fetch("/api/informe-variacion/meta", { cache: "no-store" });
+        const response = await fetch("/api/informe-variacion/meta", {
+          cache: "no-store",
+        });
         if (response.status === 401) {
           router.replace("/login");
           return;
@@ -144,85 +180,335 @@ export default function InformeVariacionPage() {
     });
   }, [availableDayRanges]);
 
-  const cacheKey = useMemo(() => {
-    const parsed = parseYearMonthInput(monthInput);
-    if (!parsed || !dayRangeId) return "";
-    return `${parsed.year}-${parsed.month}:range=${dayRangeId}:mock=${useMockBases ? 1 : 0}`;
-  }, [dayRangeId, monthInput, useMockBases]);
+  const monthKey = useMemo(() => {
+    if (!parsedMonth) return "";
+    return `${parsedMonth.year}-${parsedMonth.month}`;
+  }, [parsedMonth]);
 
-  const loadInforme = useCallback(async () => {
-    const parsed = parseYearMonthInput(monthInput);
-    if (!parsed) {
-      setError("Selecciona un mes valido.");
+  const markRangeReady = useCallback((rangeId: InformeDayRangeId) => {
+    setReadyRanges((current) => {
+      if (current.has(rangeId)) return current;
+      const next = new Set(current);
+      next.add(rangeId);
+      return next;
+    });
+  }, []);
+
+  const storePayload = useCallback(
+    (
+      year: number,
+      month: number,
+      rangeId: InformeDayRangeId,
+      data: InformeVariacionPayload,
+    ) => {
+      const key = buildRangeCacheKey(year, month, rangeId);
+      memoryCacheRef.current.set(key, data);
+      writeSessionInforme(key, data);
+      markRangeReady(rangeId);
+    },
+    [markRangeReady],
+  );
+
+  const readCachedPayload = useCallback(
+    (
+      year: number,
+      month: number,
+      rangeId: InformeDayRangeId,
+    ): InformeVariacionPayload | null => {
+      const key = buildRangeCacheKey(year, month, rangeId);
+      const memoryHit = memoryCacheRef.current.get(key);
+      if (memoryHit) {
+        markRangeReady(rangeId);
+        return memoryHit;
+      }
+      const sessionHit = readSessionInforme(key);
+      if (sessionHit) {
+        memoryCacheRef.current.set(key, sessionHit);
+        markRangeReady(rangeId);
+        return sessionHit;
+      }
+      return null;
+    },
+    [markRangeReady],
+  );
+
+  const fetchRangePayload = useCallback(
+    async (
+      year: number,
+      month: number,
+      rangeId: InformeDayRangeId,
+      signal: AbortSignal,
+      options: { force?: boolean } = {},
+    ): Promise<InformeVariacionPayload> => {
+      const key = buildRangeCacheKey(year, month, rangeId);
+      if (!options.force) {
+        const cached = readCachedPayload(year, month, rangeId);
+        if (cached) return cached;
+        const inflight = inflightRef.current.get(key);
+        if (inflight) return inflight;
+      }
+
+      const request = (async () => {
+        const timeoutController = new AbortController();
+        const onAbort = () => timeoutController.abort();
+        signal.addEventListener("abort", onAbort);
+        const timeoutId = window.setTimeout(
+          () => timeoutController.abort(),
+          INFORME_FETCH_TIMEOUT_MS,
+        );
+        try {
+          const params = new URLSearchParams({
+            year: String(year),
+            month: String(month),
+            range: rangeId,
+          });
+          const response = await fetch(
+            `/api/informe-variacion?${params.toString()}`,
+            {
+              cache: "no-store",
+              signal: timeoutController.signal,
+            },
+          );
+          if (response.status === 401) {
+            router.replace("/login");
+            throw new Error("No autorizado.");
+          }
+          if (response.status === 403) {
+            router.replace("/secciones");
+            throw new Error("Sin permisos.");
+          }
+          const data = await readInformeApiResponse(response);
+          if (!response.ok) {
+            throw new Error(data.error ?? "No fue posible cargar el informe.");
+          }
+          storePayload(year, month, rangeId, data);
+          return data;
+        } finally {
+          window.clearTimeout(timeoutId);
+          signal.removeEventListener("abort", onAbort);
+          inflightRef.current.delete(key);
+        }
+      })();
+
+      inflightRef.current.set(key, request);
+      return request;
+    },
+    [readCachedPayload, router, storePayload],
+  );
+
+  const loadMonthBundle = useCallback(
+    async (options: { force?: boolean } = {}) => {
+      if (!parsedMonth) {
+        setError("Selecciona un mes valido.");
+        return;
+      }
+
+      const ranges = availableDayRanges;
+      if (ranges.length === 0) {
+        setError("No hay rangos de dias disponibles para este mes.");
+        setPayload(null);
+        return;
+      }
+
+      const { year, month } = parsedMonth;
+      const monthToken = `${year}-${month}`;
+      activeMonthKeyRef.current = monthToken;
+
+      monthAbortRef.current?.abort();
+      const controller = new AbortController();
+      monthAbortRef.current = controller;
+
+      if (options.force) {
+        for (const key of [...memoryCacheRef.current.keys()]) {
+          if (key.startsWith(`${year}-${month}:range=`)) {
+            memoryCacheRef.current.delete(key);
+          }
+        }
+        for (const key of [...inflightRef.current.keys()]) {
+          if (key.startsWith(`${year}-${month}:range=`)) {
+            inflightRef.current.delete(key);
+          }
+        }
+        clearSessionInformeMonth(year, month);
+        setReadyRanges(new Set());
+      }
+
+      const primaryFromState = dayRangeIdRef.current;
+      const primaryId =
+        primaryFromState && ranges.some((range) => range.id === primaryFromState)
+          ? primaryFromState
+          : (defaultInformeDayRangeId(ranges) as InformeDayRangeId);
+      const others = ranges
+        .map((range) => range.id)
+        .filter((id) => id !== primaryId);
+
+      setPrefetchTotal(ranges.length);
+      setPrefetchDone(0);
+      setError(null);
+
+      const cachedPrimary = options.force
+        ? null
+        : readCachedPayload(year, month, primaryId);
+      if (cachedPrimary) {
+        setPayload(cachedPrimary);
+        setPrefetchDone(1);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const primary =
+          cachedPrimary ??
+          (await fetchRangePayload(
+            year,
+            month,
+            primaryId,
+            controller.signal,
+            options,
+          ));
+        if (
+          controller.signal.aborted ||
+          activeMonthKeyRef.current !== monthToken
+        ) {
+          return;
+        }
+
+        // Solo pisa el board si el usuario sigue en este rango (o aun no eligio otro).
+        if (
+          dayRangeIdRef.current === primaryId ||
+          dayRangeIdRef.current === "" ||
+          !dayRangeIdRef.current
+        ) {
+          setPayload(primary);
+        }
+        setPrefetchDone(1);
+        setLoading(false);
+
+        if (others.length === 0) return;
+
+        const results = await Promise.allSettled(
+          others.map((rangeId) =>
+            fetchRangePayload(year, month, rangeId, controller.signal, options),
+          ),
+        );
+        if (
+          controller.signal.aborted ||
+          activeMonthKeyRef.current !== monthToken
+        ) {
+          return;
+        }
+
+        let extraOk = 0;
+        for (const result of results) {
+          if (result.status === "fulfilled") extraOk += 1;
+        }
+        setPrefetchDone(1 + extraOk);
+
+        // Si el usuario cambio de rango mientras precargabamos, aplicar cache.
+        const selected = dayRangeIdRef.current;
+        if (selected) {
+          const selectedPayload = readCachedPayload(year, month, selected);
+          if (selectedPayload) setPayload(selectedPayload);
+        }
+      } catch (err) {
+        if (
+          controller.signal.aborted ||
+          activeMonthKeyRef.current !== monthToken
+        ) {
+          return;
+        }
+        if (!readCachedPayload(year, month, primaryId)) {
+          setPayload(null);
+        }
+        if (err instanceof Error && err.name === "AbortError") {
+          setError(
+            "La consulta tardo demasiado. Prueba un mes o rango con menos datos.",
+          );
+        } else {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Error desconocido cargando el informe.",
+          );
+        }
+      } finally {
+        if (
+          !controller.signal.aborted &&
+          activeMonthKeyRef.current === monthToken
+        ) {
+          setLoading(false);
+        }
+      }
+    },
+    [availableDayRanges, fetchRangePayload, parsedMonth, readCachedPayload],
+  );
+
+  // Carga / precarga al entrar o cambiar de mes.
+  useEffect(() => {
+    if (!ready || !canAccess || metaLoading || !monthKey) return;
+    if (availableDayRanges.length === 0) {
+      setPayload(null);
+      setPrefetchDone(0);
+      setPrefetchTotal(0);
+      setReadyRanges(new Set());
       return;
     }
-    if (!dayRangeId) {
-      setError("No hay rangos de dias disponibles para este mes.");
+    void loadMonthBundle();
+    return () => {
+      monthAbortRef.current?.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bundle solo por mes
+  }, [canAccess, metaLoading, monthKey, ready]);
+
+  // Cambio de rango: desde cache (instantaneo) o fetch puntual si falto en precarga.
+  useEffect(() => {
+    if (!parsedMonth || !dayRangeId || metaLoading) return;
+    const { year, month } = parsedMonth;
+    if (`${year}-${month}` !== activeMonthKeyRef.current && activeMonthKeyRef.current) {
+      // El bundle del mes nuevo aun no arranco; saldra en loadMonthBundle.
+      const cached = readCachedPayload(year, month, dayRangeId);
+      if (cached) setPayload(cached);
       return;
     }
-    const requestKey = `${parsed.year}-${parsed.month}:range=${dayRangeId}:mock=${useMockBases ? 1 : 0}`;
-    const cached = readSessionInforme(requestKey);
-    if (cached && !payloadRef.current) {
+
+    const cached = readCachedPayload(year, month, dayRangeId);
+    if (cached) {
       setPayload(cached);
+      setError(null);
+      return;
     }
+
+    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), INFORME_FETCH_TIMEOUT_MS);
-    try {
-      const params = new URLSearchParams({
-        year: String(parsed.year),
-        month: String(parsed.month),
-        mock: useMockBases ? "1" : "0",
-        range: dayRangeId,
-      });
-      const response = await fetch(`/api/informe-variacion?${params.toString()}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (response.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (response.status === 403) {
-        router.replace("/secciones");
-        return;
-      }
-      const data = await readInformeApiResponse(response);
-      if (!response.ok) {
-        throw new Error(data.error ?? "No fue posible cargar el informe.");
-      }
-      setPayload(data);
-      writeSessionInforme(requestKey, data);
-    } catch (err) {
-      if (!payloadRef.current) {
-        setPayload(null);
-      }
-      if (err instanceof Error && err.name === "AbortError") {
+    void fetchRangePayload(year, month, dayRangeId, controller.signal)
+      .then((data) => {
+        if (cancelled) return;
+        setPayload(data);
+      })
+      .catch((err) => {
+        if (cancelled || controller.signal.aborted) return;
+        if (err instanceof Error && err.name === "AbortError") return;
         setError(
-          "La consulta tardo demasiado. Prueba con Simular MoM/YoY activo o un mes con menos datos.",
+          err instanceof Error
+            ? err.message
+            : "Error desconocido cargando el informe.",
         );
-      } else {
-        setError(
-          err instanceof Error ? err.message : "Error desconocido cargando el informe.",
-        );
-      }
-    } finally {
-      window.clearTimeout(timeoutId);
-      setLoading(false);
-    }
-  }, [dayRangeId, monthInput, router, useMockBases]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-  useEffect(() => {
-    if (!cacheKey) return;
-    setPayload(readSessionInforme(cacheKey));
-  }, [cacheKey]);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [dayRangeId, fetchRangePayload, metaLoading, parsedMonth, readCachedPayload]);
 
-  useEffect(() => {
-    if (!ready || !canAccess || metaLoading || !cacheKey) return;
-    void loadInforme();
-  }, [cacheKey, canAccess, loadInforme, metaLoading, ready]);
-
+  const preloadReady =
+    prefetchTotal > 0 && prefetchDone >= prefetchTotal && !loading;
   const showInitialLoader = metaLoading || (loading && !payload && !error);
   const showBoard = Boolean(payload) && !metaLoading;
 
@@ -252,15 +538,6 @@ export default function InformeVariacionPage() {
           </div>
         </div>
         <div className="mb-4 flex flex-wrap items-end justify-end gap-3">
-          <label className="flex cursor-pointer items-center gap-2 self-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-900">
-            <input
-              type="checkbox"
-              checked={useMockBases}
-              onChange={(event) => setUseMockBases(event.target.checked)}
-              className="rounded border-amber-300"
-            />
-            Simular MoM / YoY (demo)
-          </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
             Periodo actual
             <input
@@ -272,7 +549,7 @@ export default function InformeVariacionPage() {
           </label>
           <button
             type="button"
-            onClick={() => void loadInforme()}
+            onClick={() => void loadMonthBundle({ force: true })}
             disabled={loading}
             className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
@@ -288,31 +565,46 @@ export default function InformeVariacionPage() {
                 Rango de dias
               </span>
               <span className="text-xs text-slate-400">
-                Solo aparecen periodos ya cerrados en el mes
+                {preloadReady
+                  ? "Mes precargado · cambio de rango instantaneo"
+                  : prefetchTotal > 0
+                    ? `Precargando rangos ${Math.min(prefetchDone, prefetchTotal)}/${prefetchTotal}`
+                    : "Solo aparecen periodos ya cerrados en el mes"}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {availableDayRanges.map((range) => (
-                <button
-                  key={range.id}
-                  type="button"
-                  onClick={() => setDayRangeId(range.id)}
-                  className={cn(
-                    "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
-                    dayRangeId === range.id
-                      ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
-                  )}
-                >
-                  {range.label}
-                </button>
-              ))}
+              {availableDayRanges.map((range) => {
+                const cached = readyRanges.has(range.id);
+                return (
+                  <button
+                    key={range.id}
+                    type="button"
+                    onClick={() => setDayRangeId(range.id)}
+                    className={cn(
+                      "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
+                      dayRangeId === range.id
+                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
+                      cached &&
+                        dayRangeId !== range.id &&
+                        "ring-1 ring-emerald-200",
+                    )}
+                    title={
+                      cached
+                        ? "Listo en cache local"
+                        : "Se cargara al seleccionarlo o al terminar la precarga"
+                    }
+                  >
+                    {range.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : parsedMonth ? (
           <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Este mes aun no tiene rangos de dias disponibles. Elige un mes anterior o espera a que
-            cierre el primer periodo (dia 7).
+            Este mes aun no tiene rangos de dias disponibles. Elige un mes anterior o espera a
+            que cierre el primer periodo (dia 7).
           </div>
         ) : null}
 
@@ -326,9 +618,9 @@ export default function InformeVariacionPage() {
           <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80">
             <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
             <p className="mt-3 text-sm text-slate-600">Construyendo informe...</p>
-            {useMockBases ? (
+            {prefetchTotal > 1 ? (
               <p className="mt-1 text-xs text-slate-400">
-                Modo demo: solo se consulta el mes seleccionado.
+                Luego se precargaran el resto de rangos del mes
               </p>
             ) : null}
           </div>
@@ -341,7 +633,7 @@ export default function InformeVariacionPage() {
               <div className="mt-2">
                 <button
                   type="button"
-                  onClick={() => void loadInforme()}
+                  onClick={() => void loadMonthBundle({ force: true })}
                   className="text-sm font-semibold text-blue-600"
                 >
                   Reintentar

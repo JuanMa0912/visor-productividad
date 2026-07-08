@@ -27,7 +27,8 @@ type MatrixProps = {
   pass: (row: Prepared["rows"][number]) => boolean;
   matrixMode: "yoy" | "mom";
   matrixDisplay: "pct" | "value";
-  matrixDepth: "cat" | "lin";
+  /** Conservado por el board para preabrir categorias al elegir "+ Linea". */
+  matrixDepth?: "cat" | "lin";
   matrixOpen: Set<string>;
   setMatrixOpen: React.Dispatch<React.SetStateAction<Set<string>>>;
   matrixSort: { col: number; dir: number };
@@ -79,7 +80,6 @@ export function MatrixTable({
   pass,
   matrixMode,
   matrixDisplay,
-  matrixDepth,
   matrixOpen,
   setMatrixOpen,
   matrixSort,
@@ -236,20 +236,35 @@ export function MatrixTable({
     const catKeys = matrixSortKeys([...catAgg.keys()], catAgg, payload.cats);
     for (const cat of catKeys) {
       const ck = `c${cat}`;
+      const catDetailKey = `cat:${ck}`;
+      const catPer = catAgg.get(cat) ?? [];
       rows.push(
         <MatrixRow
           key={ck}
           label={payload.cats[cat]}
-          cells={matrixCells(catAgg.get(cat))}
+          cells={matrixCells(catPer)}
           depth={0}
-          expandable={matrixDepth === "lin"}
+          expandable
           open={matrixOpen.has(ck)}
-          onExpand={matrixDepth === "lin" ? () => toggleExpand(ck) : undefined}
+          detailActive={activeDetails.has(catDetailKey)}
+          onDetailClick={() => toggleDetail(catDetailKey)}
+          onExpand={() => toggleExpand(ck)}
           renderCell={renderMatrixCell}
         />,
       );
+      if (activeDetails.has(catDetailKey)) {
+        rows.push(
+          <DetailRows
+            key={`${catDetailKey}-detail`}
+            detailKey={catDetailKey}
+            per={catPer}
+            depth={0}
+            metric={metric}
+          />,
+        );
+      }
 
-      if (matrixDepth === "cat" || !matrixOpen.has(ck)) continue;
+      if (!matrixOpen.has(ck)) continue;
 
       const catIndices = filterIndexedRowIndices(
         payload.rowIndex.indicesByCat.get(cat),
@@ -393,7 +408,6 @@ export function MatrixTable({
     activeDetails,
     catAgg,
     filteredSet,
-    matrixDepth,
     matrixDisplay,
     matrixMode,
     matrixOpen,
@@ -504,11 +518,11 @@ function MatrixRow({
       )}
       title={
         onDetailClick && onExpand
-          ? "Clic: ver periodos · Doble clic: expandir"
+          ? "Clic: ver Actual / YoY / MoM · Doble clic: expandir"
           : onExpand
             ? "Doble clic: expandir"
             : onDetailClick
-              ? "Clic: ver periodos"
+              ? "Clic: ver Actual / YoY / MoM"
               : undefined
       }
     >

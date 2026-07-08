@@ -6,7 +6,6 @@ const INFORME_CACHE_TTL_MS = 10 * 60 * 1000;
 export const buildInformeCacheKey = (
   year: number,
   month: number,
-  mockBases: boolean,
   allowedSedeKeys: string[] | null,
   dayRangeId?: string | null,
 ): string => {
@@ -15,7 +14,7 @@ export const buildInformeCacheKey = (
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
   const range = dayRangeId?.trim() || "1-eom";
-  return `informe:${year}:${month}:range=${range}:mock=${mockBases ? 1 : 0}:${sedes}`;
+  return `informe:${year}:${month}:range=${range}:${sedes}`;
 };
 
 export const getCachedInformePayload = (

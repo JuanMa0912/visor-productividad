@@ -16,7 +16,7 @@ export const readInformeApiResponse = async (
     const normalized = text.replace(/\s+/g, " ").trim().slice(0, 160);
     if (/upstream/i.test(text)) {
       throw new Error(
-        "El servidor corto la consulta por tiempo (upstream timeout). Deja activo Simular MoM/YoY o prueba otro mes.",
+        "El servidor corto la consulta por tiempo (upstream timeout). Prueba un mes o rango con menos datos.",
       );
     }
     if (response.status >= 500) {

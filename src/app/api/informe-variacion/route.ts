@@ -3,8 +3,6 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
 import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
-import { buildInformeDemoPayload } from "@/lib/informe-variacion/demo-payload";
-import { resolveInformeMockBasesEnabled } from "@/lib/informe-variacion/mock-bases";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
@@ -90,7 +88,6 @@ export async function GET(request: Request) {
     );
   }
 
-  const mockBases = resolveInformeMockBasesEnabled(url.searchParams.get("mock"));
   const dayRange = parseInformeDayRangeId(url.searchParams.get("range"));
   if (url.searchParams.get("range") && !dayRange) {
     return withSession(
@@ -125,7 +122,6 @@ export async function GET(request: Request) {
   const cacheKey = buildInformeCacheKey(
     year,
     month,
-    mockBases,
     scope.allowedKeys,
     effectiveRange?.id,
   );
@@ -135,8 +131,7 @@ export async function GET(request: Request) {
       NextResponse.json(cached, {
         headers: {
           "Cache-Control": CACHE_CONTROL,
-          "X-Data-Source": cached.meta.demoData ? "demo" : "cache",
-          ...(cached.meta.mockBases ? { "X-Informe-Mock-Bases": "1" } : {}),
+          "X-Data-Source": "cache",
         },
       }),
     );
@@ -147,27 +142,13 @@ export async function GET(request: Request) {
     await client.query("SET LOCAL work_mem = '256MB'");
     await client.query("SET LOCAL statement_timeout = '120s'");
 
-    let payload;
-    if (mockBases) {
-      try {
-        payload = await Promise.race([
-          loadInformeVariacionPayload(client, year, month, scope.allowedKeys, {
-            mockBases: true,
-            dayRange: effectiveRange,
-          }),
-          new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error("informe-mock-timeout")), 8_000);
-          }),
-        ]);
-      } catch (error) {
-        console.warn("[informe-variacion] modo demo: fallback sintetico", error);
-        payload = buildInformeDemoPayload(year, month, scope.allowedKeys, effectiveRange);
-      }
-    } else {
-      payload = await loadInformeVariacionPayload(client, year, month, scope.allowedKeys, {
-        dayRange: effectiveRange,
-      });
-    }
+    const payload = await loadInformeVariacionPayload(
+      client,
+      year,
+      month,
+      scope.allowedKeys,
+      { dayRange: effectiveRange },
+    );
 
     setCachedInformePayload(cacheKey, payload);
 
@@ -175,8 +156,7 @@ export async function GET(request: Request) {
       NextResponse.json(payload, {
         headers: {
           "Cache-Control": CACHE_CONTROL,
-          "X-Data-Source": payload.meta.demoData ? "demo" : "database",
-          ...(payload.meta.mockBases ? { "X-Informe-Mock-Bases": "1" } : {}),
+          "X-Data-Source": "database",
         },
       }),
     );

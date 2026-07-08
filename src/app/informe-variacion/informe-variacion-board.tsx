@@ -148,25 +148,16 @@ export function InformeVariacionBoard({ payload }: Props) {
       periodLabel: payload.periods.current.label,
       yoyLabel,
       momLabel,
-      mockBases: payload.meta.mockBases,
       filename: sedeSummaryExportFilename(payload.periods.current.label, metric),
     });
-  }, [metric, momLabel, pass, prepared, payload.meta.mockBases, payload.periods.current.label, yoyLabel]);
+  }, [metric, momLabel, pass, prepared, payload.periods.current.label, yoyLabel]);
 
   return (
     <div className="space-y-5">
-      {payload.meta.mockBases ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <b>Modo demo activo:</b>{" "}
-          {payload.meta.demoData
-            ? "datos sinteticos de ejemplo (sin consulta a margen_final)."
-            : "las bases de mayo y junio del ano anterior se sintetizaron a partir del periodo actual."}{" "}
-          No usar en reportes oficiales.
-        </div>
-      ) : payload.meta.comparisonAvailable === false ? (
+      {payload.meta.comparisonAvailable === false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          No hay datos reales de comparacion (MoM / YoY) en margen para este mes. Activa
-          <b> Simular MoM / YoY (demo)</b> arriba para ver porcentajes y heatmaps.
+          No hay datos reales de comparacion (MoM / YoY) en margen para este mes. Los
+          porcentajes y heatmaps quedaran vacios hasta que existan bases en la base de datos.
         </div>
       ) : null}
       <div className="flex flex-wrap gap-2">

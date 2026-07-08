@@ -44,10 +44,6 @@ export type InformeVariacionPayload = {
   meta: {
     rowCount: number;
     generatedAt: string;
-    /** Bases MoM/YoY sintetizadas para pruebas (no usar en reportes oficiales). */
-    mockBases?: boolean;
-    /** Payload generado sin consultar margen_final (solo pruebas de UI). */
-    demoData?: boolean;
     /** Hay al menos un valor real en periodos de comparacion. */
     comparisonAvailable?: boolean;
     dayRange?: {

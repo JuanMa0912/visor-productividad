@@ -19,10 +19,7 @@ import {
 } from "@/lib/informe-variacion/labels";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
-import {
-  applyInformeMockComparisonBases,
-  informePayloadHasComparisonData,
-} from "@/lib/informe-variacion/mock-bases";
+import { informePayloadHasComparisonData } from "@/lib/informe-variacion/comparison";
 import type { InformePeriods } from "@/lib/informe-variacion/types";
 import type {
   InformeCompactRow,
@@ -252,31 +249,14 @@ const mergeInformePeriodSlices = (
   );
 };
 
-export type QueryInformeVariacionOptions = {
-  currentPeriodOnly?: boolean;
-};
-
 export const queryInformeVariacionRows = async (
   client: PoolClient,
   periods: InformePeriods,
   allowedSedeKeys: string[] | null,
-  options: QueryInformeVariacionOptions = {},
 ): Promise<InformeDbAggRow[]> => {
   const table = await resolveMargenDataSource(client);
   const sedeParams: Array<string | string[]> = [];
   const sedeFilterSql = buildSedeFilter(table, allowedSedeKeys, sedeParams);
-
-  if (options.currentPeriodOnly) {
-    const current = await queryInformePeriodSlice(
-      client,
-      table,
-      periods.current.from,
-      periods.current.to,
-      sedeFilterSql,
-      sedeParams,
-    );
-    return mergeInformePeriodSlices(current, [], []);
-  }
 
   const [current, mom, yoy] = await Promise.all([
     queryInformePeriodSlice(
@@ -422,7 +402,6 @@ export const buildInformeVariacionPayload = (
 };
 
 export type LoadInformeVariacionOptions = {
-  mockBases?: boolean;
   dayRange?: InformeDayRangeSpec | null;
 };
 
@@ -434,21 +413,6 @@ export const loadInformeVariacionPayload = async (
   options: LoadInformeVariacionOptions = {},
 ): Promise<InformeVariacionPayload> => {
   const periods = computeInformePeriods(year, month, options.dayRange);
-
-  if (options.mockBases === true) {
-    const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys, {
-      currentPeriodOnly: true,
-    });
-    if (dbRows.length === 0) {
-      throw new Error("informe-sin-filas-mes-actual");
-    }
-    let payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
-    if (!payload.meta.comparisonAvailable) {
-      payload = applyInformeMockComparisonBases(payload);
-    }
-    return attachDayRangeMeta(payload, options.dayRange);
-  }
-
   const dbRows = await queryInformeVariacionRows(client, periods, allowedSedeKeys);
   const payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
   return attachDayRangeMeta(payload, options.dayRange);

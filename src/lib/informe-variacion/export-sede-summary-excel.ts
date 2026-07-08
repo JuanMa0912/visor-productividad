@@ -83,7 +83,6 @@ export type InformeSedeSummaryExcelOptions = {
   periodLabel: string;
   yoyLabel: string;
   momLabel: string;
-  mockBases?: boolean;
 };
 
 export const writeInformeSedeSummaryWorkbook = async ({
@@ -92,7 +91,6 @@ export const writeInformeSedeSummaryWorkbook = async ({
   periodLabel,
   yoyLabel,
   momLabel,
-  mockBases,
 }: InformeSedeSummaryExcelOptions): Promise<ArrayBuffer> => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Visor Productividad";
@@ -126,9 +124,7 @@ export const writeInformeSedeSummaryWorkbook = async ({
 
   sheet.mergeCells("A2:H2");
   const subtitleCell = sheet.getCell("A2");
-  subtitleCell.value = `Periodo: ${periodLabel}  ·  Metrica: ${metric === "u" ? "Unidades" : "Valor ($ miles)"}${
-    mockBases ? "  ·  MODO DEMO (bases sinteticas)" : ""
-  }`;
+  subtitleCell.value = `Periodo: ${periodLabel}  ·  Metrica: ${metric === "u" ? "Unidades" : "Valor ($ miles)"}`;
   subtitleCell.font = { size: 10, color: { argb: "FF1E293B" } };
   subtitleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
   subtitleCell.alignment = { vertical: "middle" };
