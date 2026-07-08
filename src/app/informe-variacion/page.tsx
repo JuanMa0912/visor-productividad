@@ -340,7 +340,16 @@ export default function InformeVariacionPage() {
           : (defaultInformeDayRangeId(ranges) as InformeDayRangeId);
       const others = ranges
         .map((range) => range.id)
-        .filter((id) => id !== primaryId);
+        .filter((id) => id !== primaryId)
+        // Acumulados primero (los mas usados): 1-7, 1-14, ...
+        .sort((a, b) => {
+          const ra = ranges.find((range) => range.id === a)!;
+          const rb = ranges.find((range) => range.id === b)!;
+          const ac = ra.fromDay === 1 ? 0 : 1;
+          const bc = rb.fromDay === 1 ? 0 : 1;
+          if (ac !== bc) return ac - bc;
+          return (ra.toDay ?? 99) - (rb.toDay ?? 99);
+        });
 
       setPrefetchTotal(ranges.length);
       setPrefetchDone(0);
@@ -387,23 +396,45 @@ export default function InformeVariacionPage() {
 
         if (others.length === 0) return;
 
-        const results = await Promise.allSettled(
-          others.map((rangeId) =>
-            fetchRangePayload(year, month, rangeId, controller.signal, options),
-          ),
-        );
+        // Precarga en segundo plano, de a 1, para no saturar la BD / pool.
+        let extraOk = 0;
+        for (const rangeId of others) {
+          if (
+            controller.signal.aborted ||
+            activeMonthKeyRef.current !== monthToken
+          ) {
+            return;
+          }
+          try {
+            await fetchRangePayload(
+              year,
+              month,
+              rangeId,
+              controller.signal,
+              options,
+            );
+            extraOk += 1;
+            setPrefetchDone(1 + extraOk);
+          } catch (prefetchErr) {
+            if (
+              controller.signal.aborted ||
+              (prefetchErr instanceof Error && prefetchErr.name === "AbortError")
+            ) {
+              return;
+            }
+            console.warn(
+              `[informe-variacion] fallo precargando rango ${rangeId}`,
+              prefetchErr,
+            );
+          }
+        }
+
         if (
           controller.signal.aborted ||
           activeMonthKeyRef.current !== monthToken
         ) {
           return;
         }
-
-        let extraOk = 0;
-        for (const result of results) {
-          if (result.status === "fulfilled") extraOk += 1;
-        }
-        setPrefetchDone(1 + extraOk);
 
         // Si el usuario cambio de rango mientras precargabamos, aplicar cache.
         const selected = dayRangeIdRef.current;

@@ -45,35 +45,13 @@ export type InformeDbAggRow = {
   v_yoy: string | number;
 };
 
-type InformePeriodSliceRow = {
-  empresa: string;
-  id_co: string;
-  id_tipo: string;
-  id_linea1: string;
-  nombre_linea1: string;
-  id_linea2: string;
-  nombre_linea2: string;
-  id_item: string;
-  item_descripcion: string;
-  id_unidad: string;
-  u_val: string | number;
-  v_val: string | number;
-};
-
 const toNum = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
 
-const rowMergeKey = (row: InformePeriodSliceRow) =>
-  [
-    row.empresa,
-    row.id_co,
-    row.id_tipo,
-    row.id_linea1,
-    row.id_linea2,
-    row.id_item,
-    row.id_unidad ?? "",
-  ].join("\u0001");
-
+/**
+ * Filtro de sedes. Los 6 primeros placeholders son fechas
+ * ($1..$6 = cur/mom/yoy from-to); los de sede empiezan en $7.
+ */
 const buildSedeFilter = (
   table: MargenDataTable,
   allowedSedeKeys: string[] | null,
@@ -95,8 +73,9 @@ const buildSedeFilter = (
     pairs.map((pair) => pair.empresa),
     pairs.map((pair) => pair.idCo),
   );
-  const empresaParam = params.length - 1;
-  const coParam = params.length;
+  // $1..$6 fechas; sedeParams van despues → $7 / $8
+  const empresaParam = 6 + params.length - 1;
+  const coParam = 6 + params.length;
 
   if (isRollTable(table)) {
     return `AND (empresa_norm, id_co_norm) IN (
@@ -108,8 +87,11 @@ const buildSedeFilter = (
     IN (SELECT * FROM UNNEST($${empresaParam}::text[], $${coParam}::text[]) AS t(empresa, id_co))`;
 };
 
-/** Una pasada por mes: aprovecha indice fecha+sede en roll/raw. */
-const buildInformeSinglePeriodSql = (
+/**
+ * Una sola pasada: MoM + YoY + actual en CASE, filtrando solo las 3 ventanas.
+ * Evita 3 round-trips serializados en el mismo client de `pg`.
+ */
+const buildInformeThreePeriodSql = (
   table: MargenDataTable,
   sedeFilterSql: string,
 ) => {
@@ -126,10 +108,18 @@ const buildInformeSinglePeriodSql = (
         id_item,
         MAX(item_descripcion) AS item_descripcion,
         '' AS id_unidad,
-        SUM(COALESCE(cantidad, 0)) AS u_val,
-        SUM(COALESCE(ventas_netas, 0)) AS v_val
+        SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_cur,
+        SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_mom,
+        SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_yoy,
+        SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(ventas_netas, 0) ELSE 0 END) AS v_cur,
+        SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(ventas_netas, 0) ELSE 0 END) AS v_mom,
+        SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(ventas_netas, 0) ELSE 0 END) AS v_yoy
       FROM ${table}
-      WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
+      WHERE (
+          (fecha_dcto >= $1 AND fecha_dcto <= $2)
+          OR (fecha_dcto >= $3 AND fecha_dcto <= $4)
+          OR (fecha_dcto >= $5 AND fecha_dcto <= $6)
+        )
         ${sedeFilterSql}
       GROUP BY
         empresa_norm,
@@ -139,8 +129,12 @@ const buildInformeSinglePeriodSql = (
         id_linea2,
         id_item
       HAVING
-        SUM(COALESCE(cantidad, 0)) <> 0
-        OR SUM(COALESCE(ventas_netas, 0)) <> 0
+        SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(ventas_netas, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(ventas_netas, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(ventas_netas, 0) ELSE 0 END) <> 0
     `;
   }
 
@@ -156,10 +150,18 @@ const buildInformeSinglePeriodSql = (
       TRIM(COALESCE(id_item::text, '')) AS id_item,
       TRIM(COALESCE(MAX(item_descripcion), '')) AS item_descripcion,
       TRIM(COALESCE(MAX(id_unidad::text), '')) AS id_unidad,
-      SUM(COALESCE(cantidad, 0)) AS u_val,
-      SUM(COALESCE(vlrtot_bru, 0)) AS v_val
+      SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_cur,
+      SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_mom,
+      SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_yoy,
+      SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) AS v_cur,
+      SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) AS v_mom,
+      SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) AS v_yoy
     FROM ${table}
-    WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
+    WHERE (
+        (fecha_dcto >= $1 AND fecha_dcto <= $2)
+        OR (fecha_dcto >= $3 AND fecha_dcto <= $4)
+        OR (fecha_dcto >= $5 AND fecha_dcto <= $6)
+      )
       ${sedeFilterSql}
     GROUP BY
       LOWER(TRIM(COALESCE(empresa, ''))),
@@ -170,83 +172,13 @@ const buildInformeSinglePeriodSql = (
       TRIM(COALESCE(id_item::text, '')),
       TRIM(COALESCE(id_unidad::text, ''))
     HAVING
-      SUM(COALESCE(cantidad, 0)) <> 0
-      OR SUM(COALESCE(vlrtot_bru, 0)) <> 0
+      SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(cantidad, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) <> 0
   `;
-};
-
-const queryInformePeriodSlice = async (
-  client: PoolClient,
-  table: MargenDataTable,
-  from: string,
-  to: string,
-  sedeFilterSql: string,
-  baseParams: string[],
-): Promise<InformePeriodSliceRow[]> => {
-  const params = [from, to, ...baseParams];
-  const sql = buildInformeSinglePeriodSql(table, sedeFilterSql);
-  const result = await client.query<InformePeriodSliceRow>(sql, params);
-  return result.rows ?? [];
-};
-
-const mergeInformePeriodSlices = (
-  current: InformePeriodSliceRow[],
-  mom: InformePeriodSliceRow[],
-  yoy: InformePeriodSliceRow[],
-): InformeDbAggRow[] => {
-  const map = new Map<string, InformeDbAggRow>();
-
-  const ensure = (row: InformePeriodSliceRow): InformeDbAggRow => {
-    const key = rowMergeKey(row);
-    const existing = map.get(key);
-    if (existing) return existing;
-    const created: InformeDbAggRow = {
-      empresa: row.empresa,
-      id_co: row.id_co,
-      id_tipo: row.id_tipo,
-      id_linea1: row.id_linea1,
-      nombre_linea1: row.nombre_linea1,
-      id_linea2: row.id_linea2,
-      nombre_linea2: row.nombre_linea2,
-      id_item: row.id_item,
-      item_descripcion: row.item_descripcion,
-      id_unidad: row.id_unidad,
-      u_cur: 0,
-      u_mom: 0,
-      u_yoy: 0,
-      v_cur: 0,
-      v_mom: 0,
-      v_yoy: 0,
-    };
-    map.set(key, created);
-    return created;
-  };
-
-  for (const row of current) {
-    const acc = ensure(row);
-    acc.u_cur = toNum(row.u_val);
-    acc.v_cur = toNum(row.v_val);
-  }
-  for (const row of mom) {
-    const acc = ensure(row);
-    acc.u_mom = toNum(row.u_val);
-    acc.v_mom = toNum(row.v_val);
-  }
-  for (const row of yoy) {
-    const acc = ensure(row);
-    acc.u_yoy = toNum(row.u_val);
-    acc.v_yoy = toNum(row.v_val);
-  }
-
-  return [...map.values()].filter(
-    (row) =>
-      toNum(row.u_cur) !== 0 ||
-      toNum(row.u_mom) !== 0 ||
-      toNum(row.u_yoy) !== 0 ||
-      toNum(row.v_cur) !== 0 ||
-      toNum(row.v_mom) !== 0 ||
-      toNum(row.v_yoy) !== 0,
-  );
 };
 
 export const queryInformeVariacionRows = async (
@@ -257,35 +189,26 @@ export const queryInformeVariacionRows = async (
   const table = await resolveMargenDataSource(client);
   const sedeParams: Array<string | string[]> = [];
   const sedeFilterSql = buildSedeFilter(table, allowedSedeKeys, sedeParams);
-
-  const [current, mom, yoy] = await Promise.all([
-    queryInformePeriodSlice(
-      client,
-      table,
-      periods.current.from,
-      periods.current.to,
-      sedeFilterSql,
-      sedeParams,
-    ),
-    queryInformePeriodSlice(
-      client,
-      table,
-      periods.mom.from,
-      periods.mom.to,
-      sedeFilterSql,
-      sedeParams,
-    ),
-    queryInformePeriodSlice(
-      client,
-      table,
-      periods.yoy.from,
-      periods.yoy.to,
-      sedeFilterSql,
-      sedeParams,
-    ),
-  ]);
-
-  return mergeInformePeriodSlices(current, mom, yoy);
+  const sql = buildInformeThreePeriodSql(table, sedeFilterSql);
+  const params = [
+    periods.current.from,
+    periods.current.to,
+    periods.mom.from,
+    periods.mom.to,
+    periods.yoy.from,
+    periods.yoy.to,
+    ...sedeParams,
+  ];
+  const result = await client.query<InformeDbAggRow>(sql, params);
+  return (result.rows ?? []).filter(
+    (row) =>
+      toNum(row.u_cur) !== 0 ||
+      toNum(row.u_mom) !== 0 ||
+      toNum(row.u_yoy) !== 0 ||
+      toNum(row.v_cur) !== 0 ||
+      toNum(row.v_mom) !== 0 ||
+      toNum(row.v_yoy) !== 0,
+  );
 };
 
 const indexLabel = (

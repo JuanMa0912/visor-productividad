@@ -140,8 +140,10 @@ export async function GET(request: Request) {
   const client = await (await getDbPool()).connect();
   try {
     await client.query("SET LOCAL work_mem = '256MB'");
-    await client.query("SET LOCAL statement_timeout = '120s'");
+    await client.query("SET LOCAL statement_timeout = '90s'");
+    await client.query("SET LOCAL jit = off");
 
+    const startedAt = Date.now();
     const payload = await loadInformeVariacionPayload(
       client,
       year,
@@ -149,6 +151,12 @@ export async function GET(request: Request) {
       scope.allowedKeys,
       { dayRange: effectiveRange },
     );
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs > 5_000) {
+      console.info(
+        `[informe-variacion] query lenta ${elapsedMs}ms year=${year} month=${month} range=${effectiveRange.id} rows=${payload.meta.rowCount}`,
+      );
+    }
 
     setCachedInformePayload(cacheKey, payload);
 
@@ -157,6 +165,7 @@ export async function GET(request: Request) {
         headers: {
           "Cache-Control": CACHE_CONTROL,
           "X-Data-Source": "database",
+          "X-Informe-Elapsed-Ms": String(elapsedMs),
         },
       }),
     );

@@ -1,7 +1,7 @@
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 
-const INFORME_CACHE_TTL_MS = 10 * 60 * 1000;
+const INFORME_CACHE_TTL_MS = 30 * 60 * 1000;
 
 export const buildInformeCacheKey = (
   year: number,
