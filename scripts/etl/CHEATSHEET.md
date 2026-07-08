@@ -132,8 +132,16 @@ journalctl -u visor-etl-sync.service -n 80 --no-pager        # diario 7:50 (sube
 journalctl -u visor-etl-reconcile.service -n 80 --no-pager   # domingos 16:00 (--replace)
 journalctl -u visor-etl-margen.service -n 80 --no-pager      # margenes 7:15
 journalctl -u etl-rotacion.service -n 80 --no-pager          # rotacion base local 7:00
+journalctl -u visor-etl-asistencia-gcp.service -n 80 --no-pager  # asistencia mes->GCP 18:30
 ```
 (usa `sudo` si `prodapp` no ve el journal).
+
+> **`visor-etl-asistencia-gcp` (18:30 diario):** sube `asistencia_horas` del **mes-a-la-fecha**
+> a GCP (replace). Rango = primer dia del mes de AYER → AYER (ej. dia 8 → `2026-08-01..2026-08-07`;
+> el dia 1 re-sube el mes anterior completo, para no dejar sin subir el ultimo dia al cambiar de
+> mes). La carga a la LOCAL la hace una tarea de **Windows** (manana + 18:00); este timer solo
+> replica local→GCP. Correr a mano: `sudo systemctl start visor-etl-asistencia-gcp.service`.
+> Instalar/actualizar el timer: ver `deploy/systemd/` + `git pull` + `daemon-reload`.
 
 ## 6. Reglas de oro
 

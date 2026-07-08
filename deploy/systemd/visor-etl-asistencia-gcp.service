@@ -1,0 +1,22 @@
+[Unit]
+Description=Visor - sube asistencia_horas del mes-a-la-fecha a GCP (replace)
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/CHEATSHEET.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=prodapp
+Group=prodapp
+WorkingDirectory=/home/prodapp/visor-productividad
+# Invocar via bash: los .sh en git van sin +x (100644); systemd exige ejecutable
+# directo y falla con 203/EXEC "Permission denied" tras git pull.
+ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/sync-asistencia-mes-gcp.sh
+# Exit 3 = WARNING del sync (sin datos en tablas canary); no es fallo real.
+SuccessExitStatus=3
+StandardOutput=journal
+StandardError=journal
+# Endurecimientos. NO usar ProtectHome: el deploy y el .env.etl viven en /home/prodapp.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true

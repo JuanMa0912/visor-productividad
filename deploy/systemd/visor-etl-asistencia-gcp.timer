@@ -1,0 +1,14 @@
+[Unit]
+Description=Visor - timer diario asistencia_horas -> GCP (todos los dias 18:30)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Todos los dias a las 18:30 (hora del sistema). La tarea de Windows cierra las
+# horas en la local ~18:00; 18:30 le da margen para que termine antes de subir.
+OnCalendar=*-*-* 18:30:00
+# Si la maquina estaba apagada a esa hora, ejecutar al arrancar.
+Persistent=true
+Unit=visor-etl-asistencia-gcp.service
+
+[Install]
+WantedBy=timers.target
