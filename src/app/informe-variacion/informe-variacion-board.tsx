@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { startTransition, useCallback, useDeferredValue, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import {
   aggregateBySede,
@@ -44,6 +44,7 @@ export function InformeVariacionBoard({ payload }: Props) {
   const prepared = useMemo(() => prepareInformeData(payload), [payload]);
   const [metric, setMetric] = useState<InformeMetric>("v");
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
+  const deferredFilters = useDeferredValue(filters);
   const [matrixMode, setMatrixMode] = useState<"yoy" | "mom">("yoy");
   const [matrixDisplay, setMatrixDisplay] = useState<"pct" | "value">("pct");
   const [matrixDepth, setMatrixDepth] = useState<"cat" | "lin">("cat");
@@ -54,18 +55,21 @@ export function InformeVariacionBoard({ payload }: Props) {
   const [treeSort, setTreeSort] = useState({ col: "name", dir: 1 });
   const [matrixSort, setMatrixSort] = useState({ col: -1, dir: 1 });
 
+  const filtersPending =
+    deferredFilters !== filters && hasActiveInformeFilters(filters);
+
   const pass = useCallback(
     (row: (typeof prepared.rows)[number]) =>
       passInformeRowFilter(
         row,
-        filters,
+        deferredFilters,
         prepared.sedeEmpresas,
         prepared.itemsLow,
       ),
-    [filters, prepared],
+    [deferredFilters, prepared],
   );
 
-  const filteredTag = hasActiveInformeFilters(filters) ? (
+  const filteredTag = hasActiveInformeFilters(deferredFilters) ? (
     <span className="text-blue-600"> (filtrado)</span>
   ) : null;
 
@@ -98,13 +102,17 @@ export function InformeVariacionBoard({ payload }: Props) {
   }, [metric, pass, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
 
   const updateFilter = (patch: Partial<InformeGlobalFilters>) => {
-    setFilters((current) => ({ ...current, ...patch }));
-    setMatrixSort({ col: -1, dir: 1 });
+    startTransition(() => {
+      setFilters((current) => ({ ...current, ...patch }));
+      setMatrixSort({ col: -1, dir: 1 });
+    });
   };
 
   const clearFilters = () => {
-    setFilters(EMPTY_INFORME_FILTERS);
-    setMatrixSort({ col: -1, dir: 1 });
+    startTransition(() => {
+      setFilters(EMPTY_INFORME_FILTERS);
+      setMatrixSort({ col: -1, dir: 1 });
+    });
   };
 
   const periodShort = (compactFrom: string) => {
@@ -231,6 +239,12 @@ export function InformeVariacionBoard({ payload }: Props) {
         onClear={clearFilters}
       />
 
+      <div
+        className={cn(
+          "space-y-5 transition-opacity",
+          filtersPending && "opacity-70",
+        )}
+      >
       <Section
         title="Resumen por empresa y sede"
         actions={
@@ -348,6 +362,7 @@ export function InformeVariacionBoard({ payload }: Props) {
         Fuente: margen_final (movimiento unificado). Valor = ventas netas (vlrtot_bru) en miles de
         $. {payload.meta.rowCount.toLocaleString("es-CO")} combinaciones sede/item cargadas.
       </footer>
+      </div>
     </div>
   );
 }

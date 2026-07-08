@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCcw, TrendingUp } from "lucide-react";
 import { AppTopBar } from "@/components/portal/app-top-bar";
@@ -99,6 +99,7 @@ export default function InformeVariacionPage() {
   const [dayRangeId, setDayRangeId] = useState<InformeDayRangeId | "">("");
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [rangeSwitchPending, setRangeSwitchPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prefetchDone, setPrefetchDone] = useState(0);
   const [prefetchTotal, setPrefetchTotal] = useState(0);
@@ -111,6 +112,7 @@ export default function InformeVariacionPage() {
     new Map(),
   );
   const monthAbortRef = useRef<AbortController | null>(null);
+  const rangeAbortRef = useRef<AbortController | null>(null);
   const activeMonthKeyRef = useRef("");
   const dayRangeIdRef = useRef<InformeDayRangeId | "">("");
 
@@ -296,6 +298,55 @@ export default function InformeVariacionPage() {
     [readCachedPayload, router, storePayload],
   );
 
+  /** Como rotacion: clic = cambia vista al instante desde cache; red solo de fondo. */
+  const selectDayRange = useCallback(
+    (rangeId: InformeDayRangeId) => {
+      if (!parsedMonth) return;
+      if (rangeId === dayRangeIdRef.current) return;
+
+      const { year, month } = parsedMonth;
+      dayRangeIdRef.current = rangeId;
+      setDayRangeId(rangeId);
+      setError(null);
+
+      const cached = readCachedPayload(year, month, rangeId);
+      if (cached) {
+        setRangeSwitchPending(false);
+        startTransition(() => {
+          setPayload(cached);
+        });
+        return;
+      }
+
+      // Sin cache: mantener vista actual y pedir el rango en background.
+      setRangeSwitchPending(true);
+      rangeAbortRef.current?.abort();
+      const controller = new AbortController();
+      rangeAbortRef.current = controller;
+      void fetchRangePayload(year, month, rangeId, controller.signal)
+        .then((data) => {
+          if (controller.signal.aborted) return;
+          if (dayRangeIdRef.current !== rangeId) return;
+          startTransition(() => {
+            setPayload(data);
+          });
+          setRangeSwitchPending(false);
+        })
+        .catch((err) => {
+          if (controller.signal.aborted) return;
+          if (err instanceof Error && err.name === "AbortError") return;
+          if (dayRangeIdRef.current !== rangeId) return;
+          setRangeSwitchPending(false);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Error desconocido cargando el informe.",
+          );
+        });
+    },
+    [fetchRangePayload, parsedMonth, readCachedPayload],
+  );
+
   const loadMonthBundle = useCallback(
     async (options: { force?: boolean } = {}) => {
       if (!parsedMonth) {
@@ -315,6 +366,7 @@ export default function InformeVariacionPage() {
       activeMonthKeyRef.current = monthToken;
 
       monthAbortRef.current?.abort();
+      rangeAbortRef.current?.abort();
       const controller = new AbortController();
       monthAbortRef.current = controller;
 
@@ -341,7 +393,6 @@ export default function InformeVariacionPage() {
       const others = ranges
         .map((range) => range.id)
         .filter((id) => id !== primaryId)
-        // Acumulados primero (los mas usados): 1-7, 1-14, ...
         .sort((a, b) => {
           const ra = ranges.find((range) => range.id === a)!;
           const rb = ranges.find((range) => range.id === b)!;
@@ -354,6 +405,7 @@ export default function InformeVariacionPage() {
       setPrefetchTotal(ranges.length);
       setPrefetchDone(0);
       setError(null);
+      setRangeSwitchPending(false);
 
       const cachedPrimary = options.force
         ? null
@@ -383,7 +435,6 @@ export default function InformeVariacionPage() {
           return;
         }
 
-        // Solo pisa el board si el usuario sigue en este rango (o aun no eligio otro).
         if (
           dayRangeIdRef.current === primaryId ||
           dayRangeIdRef.current === "" ||
@@ -396,7 +447,6 @@ export default function InformeVariacionPage() {
 
         if (others.length === 0) return;
 
-        // Precarga en segundo plano, de a 1, para no saturar la BD / pool.
         let extraOk = 0;
         for (const rangeId of others) {
           if (
@@ -436,11 +486,13 @@ export default function InformeVariacionPage() {
           return;
         }
 
-        // Si el usuario cambio de rango mientras precargabamos, aplicar cache.
         const selected = dayRangeIdRef.current;
         if (selected) {
           const selectedPayload = readCachedPayload(year, month, selected);
-          if (selectedPayload) setPayload(selectedPayload);
+          if (selectedPayload) {
+            startTransition(() => setPayload(selectedPayload));
+            setRangeSwitchPending(false);
+          }
         }
       } catch (err) {
         if (
@@ -488,55 +540,10 @@ export default function InformeVariacionPage() {
     void loadMonthBundle();
     return () => {
       monthAbortRef.current?.abort();
+      rangeAbortRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- bundle solo por mes
   }, [canAccess, metaLoading, monthKey, ready]);
-
-  // Cambio de rango: desde cache (instantaneo) o fetch puntual si falto en precarga.
-  useEffect(() => {
-    if (!parsedMonth || !dayRangeId || metaLoading) return;
-    const { year, month } = parsedMonth;
-    if (`${year}-${month}` !== activeMonthKeyRef.current && activeMonthKeyRef.current) {
-      // El bundle del mes nuevo aun no arranco; saldra en loadMonthBundle.
-      const cached = readCachedPayload(year, month, dayRangeId);
-      if (cached) setPayload(cached);
-      return;
-    }
-
-    const cached = readCachedPayload(year, month, dayRangeId);
-    if (cached) {
-      setPayload(cached);
-      setError(null);
-      return;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    void fetchRangePayload(year, month, dayRangeId, controller.signal)
-      .then((data) => {
-        if (cancelled) return;
-        setPayload(data);
-      })
-      .catch((err) => {
-        if (cancelled || controller.signal.aborted) return;
-        if (err instanceof Error && err.name === "AbortError") return;
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Error desconocido cargando el informe.",
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [dayRangeId, fetchRangePayload, metaLoading, parsedMonth, readCachedPayload]);
 
   const preloadReady =
     prefetchTotal > 0 && prefetchDone >= prefetchTotal && !loading;
@@ -597,10 +604,11 @@ export default function InformeVariacionPage() {
               </span>
               <span className="text-xs text-slate-400">
                 {preloadReady
-                  ? "Mes precargado · cambio de rango instantaneo"
+                  ? "Filtros instantaneos (datos en memoria)"
                   : prefetchTotal > 0
-                    ? `Precargando rangos ${Math.min(prefetchDone, prefetchTotal)}/${prefetchTotal}`
+                    ? `Precargando ${Math.min(prefetchDone, prefetchTotal)}/${prefetchTotal} · los listos ya son instantaneos`
                     : "Solo aparecen periodos ya cerrados en el mes"}
+                {rangeSwitchPending ? " · cargando rango…" : ""}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -610,7 +618,7 @@ export default function InformeVariacionPage() {
                   <button
                     key={range.id}
                     type="button"
-                    onClick={() => setDayRangeId(range.id)}
+                    onClick={() => selectDayRange(range.id)}
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
                       dayRangeId === range.id
@@ -622,11 +630,14 @@ export default function InformeVariacionPage() {
                     )}
                     title={
                       cached
-                        ? "Listo en cache local"
-                        : "Se cargara al seleccionarlo o al terminar la precarga"
+                        ? "Listo en memoria · cambio instantaneo"
+                        : "Aun no precargado · se pedira al vuelo sin bloquear la vista"
                     }
                   >
                     {range.label}
+                    {!cached && dayRangeId === range.id && rangeSwitchPending
+                      ? "…"
+                      : ""}
                   </button>
                 );
               })}
@@ -656,7 +667,10 @@ export default function InformeVariacionPage() {
             ) : null}
           </div>
         ) : showBoard ? (
-          <InformeVariacionBoard payload={payload!} />
+          <InformeVariacionBoard
+            key={monthKey || "informe"}
+            payload={payload!}
+          />
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-600">
             No hay datos para el periodo seleccionado.
