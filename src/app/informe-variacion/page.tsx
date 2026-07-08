@@ -17,7 +17,7 @@ import {
   type InformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
-import { readInformeApiResponse } from "@/lib/informe-variacion/read-api-response";
+import { readInformeApiResponse, readInformeBundleApiResponse, isInformeMonthBundleResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
 import { cn } from "@/lib/shared/utils";
 
@@ -27,6 +27,9 @@ type InformeMeta = {
 
 const INFORME_SESSION_CACHE_PREFIX = "vp-informe-variacion:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
+
+const buildMonthBundleCacheKey = (year: number, month: number) =>
+  `${year}-${month}:bundle`;
 
 const buildRangeCacheKey = (
   year: number,
@@ -109,6 +112,9 @@ export default function InformeVariacionPage() {
 
   const memoryCacheRef = useRef<Map<string, InformeVariacionPayload>>(new Map());
   const inflightRef = useRef<Map<string, Promise<InformeVariacionPayload>>>(
+    new Map(),
+  );
+  const bundleInflightRef = useRef<Map<string, Promise<"ok" | "fallback">>>(
     new Map(),
   );
   const monthAbortRef = useRef<AbortController | null>(null);
@@ -211,6 +217,19 @@ export default function InformeVariacionPage() {
     [markRangeReady],
   );
 
+  const storeMonthBundle = useCallback(
+    (
+      year: number,
+      month: number,
+      payloads: Record<string, InformeVariacionPayload>,
+    ) => {
+      for (const [rangeId, data] of Object.entries(payloads)) {
+        storePayload(year, month, rangeId as InformeDayRangeId, data);
+      }
+    },
+    [storePayload],
+  );
+
   const readCachedPayload = useCallback(
     (
       year: number,
@@ -298,6 +317,79 @@ export default function InformeVariacionPage() {
     [readCachedPayload, router, storePayload],
   );
 
+  const fetchMonthBundle = useCallback(
+    async (
+      year: number,
+      month: number,
+      signal: AbortSignal,
+      options: { force?: boolean } = {},
+    ): Promise<"ok" | "fallback"> => {
+      const bundleKey = buildMonthBundleCacheKey(year, month);
+      if (!options.force) {
+        const ranges = getAvailableInformeDayRanges(year, month);
+        const allCached =
+          ranges.length > 0 &&
+          ranges.every((range) =>
+            Boolean(readCachedPayload(year, month, range.id)),
+          );
+        if (allCached) return "ok";
+
+        const inflight = bundleInflightRef.current.get(bundleKey);
+        if (inflight) {
+          await inflight;
+          return "ok";
+        }
+      }
+
+      const request = (async (): Promise<"ok" | "fallback"> => {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(
+          () => controller.abort(),
+          INFORME_FETCH_TIMEOUT_MS,
+        );
+        const onAbort = () => controller.abort();
+        signal.addEventListener("abort", onAbort);
+
+        try {
+          const params = new URLSearchParams({
+            year: String(year),
+            month: String(month),
+            bundle: "month",
+          });
+          const response = await fetch(
+            `/api/informe-variacion?${params.toString()}`,
+            { cache: "no-store", signal: controller.signal },
+          );
+          if (response.status === 401) {
+            router.replace("/login");
+            throw new Error("Sesion expirada.");
+          }
+          if (response.status === 403) {
+            router.replace("/secciones");
+            throw new Error("Sin permisos.");
+          }
+          const data = await readInformeBundleApiResponse(response);
+          if (!response.ok) {
+            throw new Error(data.error ?? "No fue posible cargar el informe.");
+          }
+          if (!isInformeMonthBundleResponse(data)) {
+            return "fallback" as const;
+          }
+          storeMonthBundle(year, month, data.payloads);
+          return "ok" as const;
+        } finally {
+          window.clearTimeout(timeoutId);
+          signal.removeEventListener("abort", onAbort);
+          bundleInflightRef.current.delete(bundleKey);
+        }
+      })();
+
+      bundleInflightRef.current.set(bundleKey, request);
+      return request;
+    },
+    [readCachedPayload, router, storeMonthBundle],
+  );
+
   /** Como rotacion: clic = cambia vista al instante desde cache; red solo de fondo. */
   const selectDayRange = useCallback(
     (rangeId: InformeDayRangeId) => {
@@ -372,7 +464,7 @@ export default function InformeVariacionPage() {
 
       if (options.force) {
         for (const key of [...memoryCacheRef.current.keys()]) {
-          if (key.startsWith(`${year}-${month}:range=`)) {
+          if (key.startsWith(`${year}-${month}:`)) {
             memoryCacheRef.current.delete(key);
           }
         }
@@ -381,6 +473,7 @@ export default function InformeVariacionPage() {
             inflightRef.current.delete(key);
           }
         }
+        bundleInflightRef.current.delete(buildMonthBundleCacheKey(year, month));
         clearSessionInformeMonth(year, month);
         setReadyRanges(new Set());
       }
@@ -425,18 +518,59 @@ export default function InformeVariacionPage() {
         });
       }
 
-      const cachedPrimary = options.force
+      const selectedId =
+        dayRangeIdRef.current &&
+        ranges.some((range) => range.id === dayRangeIdRef.current)
+          ? dayRangeIdRef.current
+          : primaryId;
+      const cachedSelected = options.force
         ? null
-        : readCachedPayload(year, month, primaryId);
-      if (cachedPrimary) {
-        setPayload(cachedPrimary);
-        setPrefetchDone(1);
-        setLoading(false);
+        : readCachedPayload(year, month, selectedId);
+      if (cachedSelected) {
+        setPayload(cachedSelected);
       } else {
         setLoading(true);
       }
 
       try {
+        const bundleResult = await fetchMonthBundle(
+          year,
+          month,
+          controller.signal,
+          options,
+        );
+        if (
+          controller.signal.aborted ||
+          activeMonthKeyRef.current !== monthToken
+        ) {
+          return;
+        }
+
+        if (bundleResult === "ok") {
+          const selected =
+            dayRangeIdRef.current &&
+            ranges.some((range) => range.id === dayRangeIdRef.current)
+              ? dayRangeIdRef.current
+              : primaryId;
+          const selectedPayload = readCachedPayload(year, month, selected);
+          if (selectedPayload) {
+            setPayload(selectedPayload);
+          }
+          setPrefetchDone(ranges.length);
+          setLoading(false);
+          setRangeSwitchPending(false);
+          return;
+        }
+
+        const cachedPrimary = options.force
+          ? null
+          : readCachedPayload(year, month, primaryId);
+        if (cachedPrimary) {
+          setPayload(cachedPrimary);
+          setPrefetchDone(1);
+          setLoading(false);
+        }
+
         const primary =
           cachedPrimary ??
           (await fetchRangePayload(
@@ -542,7 +676,7 @@ export default function InformeVariacionPage() {
         }
       }
     },
-    [availableDayRanges, fetchRangePayload, parsedMonth, readCachedPayload],
+    [availableDayRanges, fetchMonthBundle, fetchRangePayload, parsedMonth, readCachedPayload],
   );
 
   // Carga / precarga al entrar o cambiar de mes.

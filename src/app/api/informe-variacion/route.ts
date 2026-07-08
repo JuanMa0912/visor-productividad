@@ -3,6 +3,7 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
 import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
+import { loadInformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
@@ -10,8 +11,11 @@ import {
   parseInformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import {
+  buildInformeBundleCacheKey,
   buildInformeCacheKey,
+  getCachedInformeMonthBundle,
   getCachedInformePayload,
+  setCachedInformeMonthBundle,
   setCachedInformePayload,
 } from "@/lib/informe-variacion/informe-cache";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
@@ -88,6 +92,97 @@ export async function GET(request: Request) {
     );
   }
 
+  const availableRanges = getAvailableInformeDayRanges(year, month);
+  const wantsBundle = url.searchParams.get("bundle") === "month";
+
+  if (wantsBundle) {
+    if (availableRanges.length === 0) {
+      return withSession(
+        NextResponse.json(
+          { error: "No hay rangos de dias disponibles para el mes seleccionado." },
+          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+
+    const bundleKey = buildInformeBundleCacheKey(year, month, scope.allowedKeys);
+    const cachedBundle = getCachedInformeMonthBundle(bundleKey);
+    if (cachedBundle) {
+      return withSession(
+        NextResponse.json(cachedBundle, {
+          headers: {
+            "Cache-Control": CACHE_CONTROL,
+            "X-Data-Source": "cache",
+          },
+        }),
+      );
+    }
+
+    const client = await (await getDbPool()).connect();
+    try {
+      await client.query("SET LOCAL work_mem = '256MB'");
+      await client.query("SET LOCAL statement_timeout = '120s'");
+      await client.query("SET LOCAL jit = off");
+
+      const startedAt = Date.now();
+      const bundle = await loadInformeVariacionMonthBundle(
+        client,
+        year,
+        month,
+        scope.allowedKeys,
+        availableRanges,
+      );
+      const elapsedMs = Date.now() - startedAt;
+
+      if (!bundle) {
+        return withSession(
+          NextResponse.json(
+            { bundle: false as const },
+            {
+              headers: {
+                "Cache-Control": CACHE_CONTROL,
+                "X-Informe-Bundle-Fallback": "1",
+              },
+            },
+          ),
+        );
+      }
+
+      if (elapsedMs > 5_000) {
+        console.info(
+          `[informe-variacion] bundle lento ${elapsedMs}ms year=${year} month=${month} ranges=${bundle.rangeIds.length}`,
+        );
+      }
+
+      setCachedInformeMonthBundle(bundleKey, bundle, scope.allowedKeys);
+
+      return withSession(
+        NextResponse.json(bundle, {
+          headers: {
+            "Cache-Control": CACHE_CONTROL,
+            "X-Data-Source": "database",
+            "X-Informe-Elapsed-Ms": String(elapsedMs),
+          },
+        }),
+      );
+    } catch (error) {
+      console.error("Error en /api/informe-variacion (bundle):", error);
+      return withSession(
+        NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "No fue posible generar el informe de variacion.",
+          },
+          { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    } finally {
+      client.release();
+    }
+  }
+
   const dayRange = parseInformeDayRangeId(url.searchParams.get("range"));
   if (url.searchParams.get("range") && !dayRange) {
     return withSession(
@@ -106,7 +201,6 @@ export async function GET(request: Request) {
     );
   }
 
-  const availableRanges = getAvailableInformeDayRanges(year, month);
   const effectiveRange =
     dayRange ??
     parseInformeDayRangeId(defaultInformeDayRangeId(availableRanges) ?? undefined);

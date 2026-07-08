@@ -1,4 +1,5 @@
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
+import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 
 const INFORME_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -29,4 +30,37 @@ export const setCachedInformePayload = (
   payload: InformeVariacionPayload,
 ): void => {
   setCachedQuery(key, payload, INFORME_CACHE_TTL_MS);
+};
+
+export const buildInformeBundleCacheKey = (
+  year: number,
+  month: number,
+  allowedSedeKeys: string[] | null,
+): string => {
+  const sedes =
+    allowedSedeKeys && allowedSedeKeys.length > 0
+      ? [...allowedSedeKeys].sort().join(",")
+      : "*";
+  return `informe-bundle:${year}:${month}:${sedes}`;
+};
+
+export const getCachedInformeMonthBundle = (
+  key: string,
+): InformeVariacionMonthBundle | null => {
+  const hit = getCachedQuery(key);
+  return hit ? (hit as InformeVariacionMonthBundle) : null;
+};
+
+export const setCachedInformeMonthBundle = (
+  key: string,
+  bundle: InformeVariacionMonthBundle,
+  allowedSedeKeys: string[] | null,
+): void => {
+  setCachedQuery(key, bundle, INFORME_CACHE_TTL_MS);
+  for (const [rangeId, payload] of Object.entries(bundle.payloads)) {
+    setCachedInformePayload(
+      buildInformeCacheKey(bundle.year, bundle.month, allowedSedeKeys, rangeId),
+      payload,
+    );
+  }
 };
