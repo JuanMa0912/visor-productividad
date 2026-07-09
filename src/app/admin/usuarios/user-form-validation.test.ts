@@ -23,13 +23,19 @@ const baseState = (): UserFormState => ({
 });
 
 describe("getWizardSteps", () => {
-  it("incluye permisos solo para personalizado", () => {
+  it("incluye permisos para personalizado y asadero", () => {
     assert.deepEqual(getWizardSteps("gerente"), [
       "account",
       "profile",
       "summary",
     ]);
     assert.deepEqual(getWizardSteps("personalizado"), [
+      "account",
+      "profile",
+      "permissions",
+      "summary",
+    ]);
+    assert.deepEqual(getWizardSteps("asadero"), [
       "account",
       "profile",
       "permissions",

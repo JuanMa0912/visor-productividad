@@ -39,6 +39,8 @@ import {
   portalProfileRequiresAssignedSedes,
   portalProfileSuggestsAllSedes,
   portalProfileUsesManualPermissions,
+  portalProfileAllowsDashboardOverrides,
+  getAsaderoDashboardOptions,
 } from "@/lib/shared/portal-profiles";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
@@ -106,14 +108,21 @@ const applyPortalProfileToForm = (
   prev: UserFormState,
   portalProfile: PortalProfileId,
 ): UserFormState => {
+  const usesManual = portalProfileUsesManualPermissions(portalProfile);
+  const usesDashboardOverrides =
+    portalProfileAllowsDashboardOverrides(portalProfile);
   const materialized = materializePortalProfilePermissions(
     portalProfile,
-    portalProfileUsesManualPermissions(portalProfile)
+    usesManual || usesDashboardOverrides
       ? {
           allowedDashboards: prev.allowedDashboards,
           allowedSubdashboards: prev.allowedSubdashboards,
-          allowedLines: prev.allowedLines,
-          specialRoles: prev.specialRoles,
+          ...(usesManual
+            ? {
+                allowedLines: prev.allowedLines,
+                specialRoles: prev.specialRoles,
+              }
+            : {}),
         }
       : {},
   );
@@ -607,12 +616,17 @@ export default function AdminUsuariosPage() {
     );
     const materialized = materializePortalProfilePermissions(
       portalProfile,
-      portalProfileUsesManualPermissions(portalProfile)
+      portalProfileUsesManualPermissions(portalProfile) ||
+        portalProfileAllowsDashboardOverrides(portalProfile)
         ? {
             allowedDashboards: user.allowedDashboards ?? [],
             allowedSubdashboards: user.allowedSubdashboards ?? [],
-            allowedLines: user.allowedLines ?? [],
-            specialRoles: user.specialRoles ?? [],
+            ...(portalProfileUsesManualPermissions(portalProfile)
+              ? {
+                  allowedLines: user.allowedLines ?? [],
+                  specialRoles: user.specialRoles ?? [],
+                }
+              : {}),
           }
         : {},
     );
@@ -813,6 +827,10 @@ export default function AdminUsuariosPage() {
   const canEditManualPermissions = portalProfileUsesManualPermissions(
     formState.portalProfile,
   );
+  const canEditDashboardPermissions = portalProfileAllowsDashboardOverrides(
+    formState.portalProfile,
+  );
+  const dashboardPermissionsOnly = formState.portalProfile === "asadero";
   const selectedProfileSummary =
     PORTAL_PROFILE_OPTIONS.find(
       (option) => option.id === formState.portalProfile,
@@ -1397,6 +1415,8 @@ export default function AdminUsuariosPage() {
         saving={saving}
         isAdminProfile={isAdminProfile}
         canEditManualPermissions={canEditManualPermissions}
+        canEditDashboardPermissions={canEditDashboardPermissions}
+        dashboardPermissionsOnly={dashboardPermissionsOnly}
         selectedProfileSummary={selectedProfileSummary}
         sedeOptions={USER_SEDE_OPTIONS}
         sectionOptions={SECTION_OPTIONS}

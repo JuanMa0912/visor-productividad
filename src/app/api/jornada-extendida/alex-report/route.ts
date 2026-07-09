@@ -5,6 +5,8 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
+import { isDepartamentoAllowedForLines } from "@/lib/shared/departamento-line";
+import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 
 type AlexRow = {
   sede: string;
@@ -247,6 +249,7 @@ export async function GET(request: Request) {
   }
 
   const isAdmin = session.user.role === "admin";
+  const lineScope = resolveSessionLineCategoryScope(session.user);
   const hasAlexRole =
     isAdmin ||
     (Array.isArray(session.user.specialRoles) &&
@@ -479,6 +482,15 @@ export async function GET(request: Request) {
       if (!sedeMapped || !counters.has(sedeMapped)) continue;
       if (selectedSede && sedeMapped !== selectedSede) continue;
       const departmentLabel = typed.departamento?.trim() ?? "";
+      if (
+        departmentLabel &&
+        !isDepartamentoAllowedForLines(
+          departmentLabel,
+          lineScope.allowedLineIds,
+        )
+      ) {
+        continue;
+      }
       const normalizedDepartment = normalizeDepartmentValue(departmentLabel);
       if (departmentLabel) {
         departmentOptions.add(departmentLabel);

@@ -9,6 +9,8 @@ import {
   canonicalizeSedeKey,
   resolveAllowedSedeKeys,
 } from "@/lib/horarios/visible-sedes";
+import { isDepartamentoAllowedForLines } from "@/lib/shared/departamento-line";
+import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
   TIPO_CONTRATO_ORDER,
   TIPOS_HORARIO_BUCKETS,
@@ -264,6 +266,7 @@ export async function GET(request: Request) {
   // Autorizacion fina por sede: un usuario amarrado solo puede ver sus sedes.
   // null = sin restriccion (admin / "Todas"); Set vacio = sin sedes asignadas.
   const allowedSedeKeys = resolveAllowedSedeKeys(session.user);
+  const lineScope = resolveSessionLineCategoryScope(session.user);
   if (allowedSedeKeys !== null && allowedSedeKeys.size === 0) {
     return withSession(
       NextResponse.json(
@@ -466,6 +469,11 @@ export async function GET(request: Request) {
       if (selectedSede && sede !== selectedSede) continue;
       const departamento = (typed.departamento ?? "").trim();
       if (!departamento) continue;
+      if (
+        !isDepartamentoAllowedForLines(departamento, lineScope.allowedLineIds)
+      ) {
+        continue;
+      }
       departamentos.add(departamento);
       const tipoContrato = classifyContrato(typed.cargo, departamento);
 

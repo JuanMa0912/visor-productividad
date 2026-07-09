@@ -40,6 +40,17 @@ test("materializePortalProfilePermissions aplica preset Asadero", () => {
   assert.equal(permissions.allowedSubdashboards?.includes("informe-variacion"), true);
 });
 
+test("materializePortalProfilePermissions asadero respeta subconjunto de tableros", () => {
+  const permissions = materializePortalProfilePermissions("asadero", {
+    allowedDashboards: ["producto"],
+    allowedSubdashboards: ["margenes", "rotacion"],
+  });
+  assert.equal(permissions.portalProfile, "asadero");
+  assert.deepEqual(permissions.allowedDashboards, ["producto"]);
+  assert.deepEqual(permissions.allowedSubdashboards, ["margenes", "rotacion"]);
+  assert.deepEqual(permissions.allowedLines, ["asadero"]);
+});
+
 test("inferPortalProfileFromStoredPermissions detecta subadmin", () => {
   const profile = inferPortalProfileFromStoredPermissions({
     role: "user",

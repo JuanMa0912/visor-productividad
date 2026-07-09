@@ -1679,7 +1679,8 @@ const fetchHourlyData = async (
               marks_count?: number | null;
             };
             const lineId = resolveLineId(typedRow.departamento);
-            if (allowedSet.size > 0 && lineId && !allowedSet.has(normalizeLineId(lineId))) {
+            if (!lineId) continue;
+            if (allowedSet.size > 0 && !allowedSet.has(normalizeLineId(lineId))) {
               continue;
             }
             if (lineFilter && lineId !== lineFilter) continue;

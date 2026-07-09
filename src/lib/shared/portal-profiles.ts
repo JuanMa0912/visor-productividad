@@ -52,7 +52,7 @@ export const PORTAL_PROFILE_OPTIONS: Array<{
     id: "asadero",
     label: "Asadero",
     summary:
-      "Márgenes, rotación, variación y operación (horas) solo con datos de la categoría Asaderos. Todas o varias sedes.",
+      "Márgenes, rotación, variación y operación (horas) solo con datos de Asaderos. Puedes quitar tableros; la línea sigue fija en asadero.",
   },
   {
     id: "rrhh",
@@ -81,6 +81,13 @@ const ASADERO_SUBSECTIONS: PortalSubsectionId[] = [
   "informe-variacion",
   ...OPERACION_SUBSECTIONS,
 ];
+
+const ASADERO_SECTIONS: PortalSectionId[] = ["producto", "operacion"];
+
+export const getAsaderoDashboardOptions = () => ({
+  sections: [...ASADERO_SECTIONS],
+  subsections: [...ASADERO_SUBSECTIONS],
+});
 
 const COMMERCIAL_SPECIAL_ROLES = [
   "alex",
@@ -155,7 +162,7 @@ const PROFILE_PRESETS: Record<
   asadero: {
     portalProfile: "asadero",
     role: "user",
-    allowedDashboards: ["producto", "operacion"],
+    allowedDashboards: ASADERO_SECTIONS,
     allowedSubdashboards: ASADERO_SUBSECTIONS,
     allowedLines: [ASADERO_LINE_ID],
     specialRoles: [...COMMERCIAL_SPECIAL_ROLES],
@@ -198,6 +205,60 @@ export const portalProfileUsesManualPermissions = (
   profileId: PortalProfileId,
 ): boolean => profileId === "personalizado";
 
+/** Perfiles que permiten ajustar secciones/subtableros sin pasar a personalizado. */
+export const portalProfileAllowsDashboardOverrides = (
+  profileId: PortalProfileId,
+): boolean => profileId === "personalizado" || profileId === "asadero";
+
+const isSubset = <T extends string>(
+  actual: T[] | null,
+  allowed: T[] | null,
+): boolean => {
+  if (!allowed || allowed.length === 0) return true;
+  if (!actual || actual.length === 0) return true;
+  const allowedSet = new Set(allowed);
+  return actual.every((value) => allowedSet.has(value));
+};
+
+const constrainAsaderoDashboardOverrides = (
+  preset: PortalProfileMaterializedPermissions,
+  overrides: PortalProfilePermissionOverrides,
+): Pick<
+  PortalProfileMaterializedPermissions,
+  "allowedDashboards" | "allowedSubdashboards"
+> => {
+  const maxSections = preset.allowedDashboards ?? [];
+  const maxSubsections = preset.allowedSubdashboards ?? [];
+
+  let dashboards = normalizeAllowedPortalSections(
+    emptyToNull(overrides.allowedDashboards),
+  );
+  let subdashboards = normalizeAllowedPortalSubsections(
+    emptyToNull(overrides.allowedSubdashboards),
+  );
+
+  if (dashboards?.length) {
+    dashboards = dashboards.filter((section) => maxSections.includes(section));
+  }
+  if (!dashboards?.length) {
+    dashboards = [...maxSections];
+  }
+
+  if (subdashboards?.length) {
+    subdashboards = subdashboards.filter((subsection) =>
+      maxSubsections.includes(subsection),
+    );
+  }
+  if (!subdashboards?.length) {
+    subdashboards = [...maxSubsections];
+  }
+
+  return {
+    allowedDashboards: dashboards,
+    allowedSubdashboards: subdashboards,
+  };
+};
+
 export const portalProfileRequiresAssignedSedes = (
   profileId: PortalProfileId,
 ): boolean => profileId === "gerente";
@@ -237,6 +298,14 @@ export const materializePortalProfilePermissions = (
       ),
       allowedLines: emptyToNull(overrides.allowedLines),
       specialRoles: emptyToNull(overrides.specialRoles),
+    };
+  }
+
+  if (profileId === "asadero") {
+    const preset = PROFILE_PRESETS.asadero;
+    return {
+      ...preset,
+      ...constrainAsaderoDashboardOverrides(preset, overrides),
     };
   }
 
@@ -291,15 +360,26 @@ export const inferPortalProfileFromStoredPermissions = (user: {
   for (const profileId of PORTAL_PROFILE_IDS) {
     if (profileId === "personalizado" || profileId === "admin") continue;
     const preset = PROFILE_PRESETS[profileId];
+    const dashboardsMatch =
+      profileId === "asadero"
+        ? isSubset(
+            normalizeAllowedPortalSections(user.allowedDashboards),
+            preset.allowedDashboards,
+          ) &&
+          isSubset(
+            normalizeAllowedPortalSubsections(user.allowedSubdashboards),
+            preset.allowedSubdashboards,
+          )
+        : arraysEqual(
+            normalizeAllowedPortalSections(user.allowedDashboards),
+            preset.allowedDashboards,
+          ) &&
+          arraysEqual(
+            normalizeAllowedPortalSubsections(user.allowedSubdashboards),
+            preset.allowedSubdashboards,
+          );
     if (
-      arraysEqual(
-        normalizeAllowedPortalSections(user.allowedDashboards),
-        preset.allowedDashboards,
-      ) &&
-      arraysEqual(
-        normalizeAllowedPortalSubsections(user.allowedSubdashboards),
-        preset.allowedSubdashboards,
-      ) &&
+      dashboardsMatch &&
       arraysEqual(user.allowedLines ?? null, preset.allowedLines) &&
       arraysEqual(user.specialRoles ?? null, preset.specialRoles)
     ) {
@@ -349,14 +429,20 @@ export const resolveAdminUserPermissionsFromBody = (
   }
 
   const profileId = profileResult.value;
+  const usesManual = portalProfileUsesManualPermissions(profileId);
+  const usesDashboardOverrides = portalProfileAllowsDashboardOverrides(profileId);
   const materialized = materializePortalProfilePermissions(
     profileId,
-    portalProfileUsesManualPermissions(profileId)
+    usesManual || usesDashboardOverrides
       ? {
           allowedDashboards: body.allowedDashboards,
           allowedSubdashboards: body.allowedSubdashboards,
-          allowedLines: body.allowedLines,
-          specialRoles: body.specialRoles,
+          ...(usesManual
+            ? {
+                allowedLines: body.allowedLines,
+                specialRoles: body.specialRoles,
+              }
+            : {}),
         }
       : {},
   );

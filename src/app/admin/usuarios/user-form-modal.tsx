@@ -37,6 +37,7 @@ import { PasswordStrengthMeter } from "@/components/portal/password-strength-met
 import type { PortalProfileId } from "@/lib/auth/types";
 import {
   getPortalProfileLabel,
+  getAsaderoDashboardOptions,
   PORTAL_PROFILE_OPTIONS,
   portalProfileRequiresAssignedSedes,
 } from "@/lib/shared/portal-profiles";
@@ -70,6 +71,8 @@ type UserFormModalProps = {
   saving: boolean;
   isAdminProfile: boolean;
   canEditManualPermissions: boolean;
+  canEditDashboardPermissions: boolean;
+  dashboardPermissionsOnly: boolean;
   selectedProfileSummary: string;
   sedeOptions: string[];
   sectionOptions: Option[];
@@ -191,6 +194,8 @@ export function UserFormModal({
   saving,
   isAdminProfile,
   canEditManualPermissions,
+  canEditDashboardPermissions,
+  dashboardPermissionsOnly,
   selectedProfileSummary,
   sedeOptions,
   sectionOptions,
@@ -330,7 +335,38 @@ export function UserFormModal({
         `${formState.specialRoles.length || "Ninguno"} roles especiales`,
         `${formState.allowedLines.length || "Todas"} líneas`,
       ].join(" · ")
-    : selectedProfileSummary;
+    : canEditDashboardPermissions
+      ? [
+          `${formState.allowedDashboards.length || "Todas"} secciones`,
+          `${formState.allowedSubdashboards.length || "Todos"} subtableros`,
+          "Línea fija: Asadero",
+        ].join(" · ")
+      : selectedProfileSummary;
+
+  const asaderoDashboardOptions = useMemo(
+    () => getAsaderoDashboardOptions(),
+    [],
+  );
+  const visibleSectionOptions = useMemo(
+    () =>
+      dashboardPermissionsOnly
+        ? sectionOptions.filter((option) =>
+            asaderoDashboardOptions.sections.includes(
+              option.id as (typeof asaderoDashboardOptions.sections)[number],
+            ),
+          )
+        : sectionOptions,
+    [asaderoDashboardOptions.sections, dashboardPermissionsOnly, sectionOptions],
+  );
+  const visiblePortalSections = useMemo(
+    () =>
+      dashboardPermissionsOnly
+        ? PORTAL_SECTIONS.filter((section) =>
+            asaderoDashboardOptions.sections.includes(section.id),
+          )
+        : PORTAL_SECTIONS,
+    [asaderoDashboardOptions.sections, dashboardPermissionsOnly],
+  );
 
   const renderStepContent = () => {
     if (currentStep === "account") {
@@ -508,7 +544,7 @@ export function UserFormModal({
                 ))}
               </SelectContent>
             </Select>
-            {!canEditManualPermissions && selectedProfileSummary ? (
+            {!canEditDashboardPermissions && selectedProfileSummary ? (
               <div className="mt-3 flex gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3.5 py-3">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
                 <p className="text-xs leading-relaxed text-indigo-900/85">
@@ -580,10 +616,16 @@ export function UserFormModal({
     if (currentStep === "permissions") {
       return (
         <Stepper>
+          {dashboardPermissionsOnly ? (
+            <p className="mb-3 rounded-lg border border-amber-100 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+              Perfil <span className="font-semibold">Asadero</span>: puedes quitar
+              tableros, pero la línea y la categoría siguen fijas en asadero.
+            </p>
+          ) : null}
           <StepperStep
             index={1}
             title="Secciones permitidas"
-            description="Vacío = todas"
+            description={dashboardPermissionsOnly ? "Solo tableros del perfil Asadero" : "Vacío = todas"}
             summary={
               formState.allowedDashboards.length === 0
                 ? "Todas las secciones"
@@ -599,7 +641,7 @@ export function UserFormModal({
             accentClassName="bg-indigo-600 text-white"
           >
             <CheckboxGrid
-              options={sectionOptions}
+              options={visibleSectionOptions}
               selected={formState.allowedDashboards}
               onToggle={(id, checked) =>
                 setFormState((prev) => ({
@@ -631,18 +673,22 @@ export function UserFormModal({
             accentClassName="bg-indigo-600 text-white"
           >
             <div className="space-y-3">
-              {PORTAL_SECTIONS.map((section) => (
+              {visiblePortalSections.map((section) => (
                 <div key={section.id}>
                   <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
                     {section.label}
                   </p>
                   <CheckboxGrid
-                    options={PORTAL_SUBSECTIONS_BY_SECTION[section.id].map(
-                      (subId) => ({
+                    options={PORTAL_SUBSECTIONS_BY_SECTION[section.id]
+                      .filter((subId) =>
+                        dashboardPermissionsOnly
+                          ? asaderoDashboardOptions.subsections.includes(subId)
+                          : true,
+                      )
+                      .map((subId) => ({
                         id: subId,
                         label: subsectionLabels[subId] ?? subId,
-                      }),
-                    )}
+                      }))}
                     selected={formState.allowedSubdashboards}
                     onToggle={(id, checked) =>
                       setFormState((prev) => ({
@@ -661,6 +707,8 @@ export function UserFormModal({
             </div>
           </StepperStep>
 
+          {canEditManualPermissions ? (
+            <>
           <StepperStep
             index={3}
             title="Roles especiales"
@@ -723,6 +771,8 @@ export function UserFormModal({
               maxHeightClass="max-h-40"
             />
           </StepperStep>
+            </>
+          ) : null}
         </Stepper>
       );
     }
@@ -750,7 +800,7 @@ export function UserFormModal({
                   : "—"
             }
           />
-          {canEditManualPermissions ? (
+          {canEditDashboardPermissions ? (
             <SummaryRow label="Permisos" value={permissionsSummary} />
           ) : (
             <SummaryRow label="Acceso" value={selectedProfileSummary} />

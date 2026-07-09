@@ -42,7 +42,10 @@ export const serializeUserFormState = (state: UserFormState): string =>
 export const getWizardSteps = (
   portalProfile: PortalProfileId,
 ): UserFormWizardStep[] => {
-  if (portalProfile === "personalizado") {
+  if (
+    portalProfile === "personalizado" ||
+    portalProfile === "asadero"
+  ) {
     return ["account", "profile", "permissions", "summary"];
   }
   return ["account", "profile", "summary"];
