@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  payloadMatchesInformeSelection,
 } from "@/lib/informe-variacion/day-ranges";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 
@@ -55,5 +56,31 @@ describe("computeInformePeriods con rango parcial", () => {
     assert.equal(periods.mom.to, "20260514");
     assert.equal(periods.yoy.from, "20250601");
     assert.equal(periods.yoy.to, "20250614");
+  });
+});
+
+describe("payloadMatchesInformeSelection", () => {
+  it("detecta mes y rango distintos al payload mostrado", () => {
+    const periods = computeInformePeriods(2026, 6, {
+      id: "1-14",
+      label: "1 al 14",
+      fromDay: 1,
+      toDay: 14,
+    });
+    const payload = { periods };
+    const ranges = getAvailableInformeDayRanges(2026, 6, new Date(2026, 6, 20));
+
+    assert.equal(
+      payloadMatchesInformeSelection(payload, 2026, 6, "1-14", ranges),
+      true,
+    );
+    assert.equal(
+      payloadMatchesInformeSelection(payload, 2026, 5, "1-14", ranges),
+      false,
+    );
+    assert.equal(
+      payloadMatchesInformeSelection(payload, 2026, 6, "15-21", ranges),
+      false,
+    );
   });
 });

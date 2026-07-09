@@ -14,6 +14,7 @@ import {
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  payloadMatchesInformeSelection,
   type InformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
@@ -707,6 +708,21 @@ export default function InformeVariacionPage() {
   const periodControlsDisabled = metaLoading || monthLoadLocked;
   const showInitialLoader = metaLoading || (loading && !payload && !error);
   const showBoard = Boolean(payload) && !metaLoading;
+  const payloadMatchesSelection = useMemo(() => {
+    if (!payload || !parsedMonth) return false;
+    return payloadMatchesInformeSelection(
+      payload,
+      parsedMonth.year,
+      parsedMonth.month,
+      dayRangeId,
+      availableDayRanges,
+    );
+  }, [availableDayRanges, dayRangeId, parsedMonth, payload]);
+  const boardDataPending =
+    rangeSwitchPending ||
+    (Boolean(payload) &&
+      !payloadMatchesSelection &&
+      (monthLoadLocked || loading));
 
   if (!ready || !canAccess) {
     return (
@@ -832,6 +848,7 @@ export default function InformeVariacionPage() {
           <InformeVariacionBoard
             key={monthKey || "informe"}
             payload={payload!}
+            dataPending={boardDataPending}
           />
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-600">

@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useDeferredValue, useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import {
   aggregateBySede,
   filterRowIndices,
@@ -32,6 +32,7 @@ import { TreeTable } from "@/app/informe-variacion/informe-variacion-tree";
 
 type Props = {
   payload: InformeVariacionPayload;
+  dataPending?: boolean;
 };
 
 const EMP_DOT_CLASS: Record<string, string> = {
@@ -40,7 +41,7 @@ const EMP_DOT_CLASS: Record<string, string> = {
   Merkmios: "bg-violet-600",
 };
 
-export function InformeVariacionBoard({ payload }: Props) {
+export function InformeVariacionBoard({ payload, dataPending = false }: Props) {
   const prepared = useMemo(() => prepareInformeData(payload), [payload]);
   const [metric, setMetric] = useState<InformeMetric>("v");
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
@@ -162,7 +163,13 @@ export function InformeVariacionBoard({ payload }: Props) {
   }, [metric, momLabel, pass, prepared, payload.periods.current.label, yoyLabel]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" aria-busy={dataPending}>
+      {dataPending ? (
+        <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/90 px-3 py-2 text-xs text-blue-800">
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          Actualizando cifras del periodo seleccionado…
+        </div>
+      ) : null}
       {payload.meta.comparisonAvailable === false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           No hay datos reales de comparacion (MoM / YoY) en margen para este mes. Los
@@ -171,13 +178,34 @@ export function InformeVariacionBoard({ payload }: Props) {
       ) : null}
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600">
-          Periodo actual: <b className="text-slate-900">{payload.periods.current.label}</b>
+          Periodo actual:{" "}
+          <b className="text-slate-900">
+            {dataPending ? (
+              <span className="inline-block h-3.5 w-32 animate-pulse rounded bg-slate-200 align-middle" />
+            ) : (
+              payload.periods.current.label
+            )}
+          </b>
         </span>
         <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600">
-          MoM vs: <b className="text-slate-900">{payload.periods.mom.label}</b>
+          MoM vs:{" "}
+          <b className="text-slate-900">
+            {dataPending ? (
+              <span className="inline-block h-3.5 w-28 animate-pulse rounded bg-slate-200 align-middle" />
+            ) : (
+              payload.periods.mom.label
+            )}
+          </b>
         </span>
         <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600">
-          YoY vs: <b className="text-slate-900">{payload.periods.yoy.label}</b>
+          YoY vs:{" "}
+          <b className="text-slate-900">
+            {dataPending ? (
+              <span className="inline-block h-3.5 w-28 animate-pulse rounded bg-slate-200 align-middle" />
+            ) : (
+              payload.periods.yoy.label
+            )}
+          </b>
         </span>
       </div>
 
@@ -211,11 +239,13 @@ export function InformeVariacionBoard({ payload }: Props) {
           title={`${metric === "u" ? "Unidades" : "Ventas miles $"} ${curLabel}`}
           value={formatInformeValue(kpiTotals[0], metric)}
           tag={filteredTag}
+          loading={dataPending}
         />
         <KpiCard
           title={`${yoyLabel} (base YoY)`}
           value={formatInformeValue(kpiYoyComparable[2], metric)}
           tag={filteredTag}
+          loading={dataPending}
           footer={
             <>
               <VariationChip current={kpiYoyComparable[0]} previous={kpiYoyComparable[2]} /> YoY
@@ -226,6 +256,7 @@ export function InformeVariacionBoard({ payload }: Props) {
           title={`${momLabel} (base MoM)`}
           value={formatInformeValue(kpiTotals[1], metric)}
           tag={filteredTag}
+          loading={dataPending}
           footer={
             <>
               <VariationChip current={kpiTotals[0]} previous={kpiTotals[1]} /> MoM
@@ -236,6 +267,7 @@ export function InformeVariacionBoard({ payload }: Props) {
           title={`Sedes con crecimiento YoY`}
           value={String(growthSedes)}
           tag={filteredTag}
+          loading={dataPending}
           footer={<span className="text-slate-500">de las sedes con base {yoyLabel.toLowerCase()}</span>}
         />
       </div>
@@ -249,17 +281,25 @@ export function InformeVariacionBoard({ payload }: Props) {
 
       <div
         className={cn(
-          "space-y-5 transition-opacity",
-          filtersPending && "opacity-70",
+          "relative space-y-5 transition-opacity",
+          (filtersPending || dataPending) && "opacity-60",
+          dataPending && "pointer-events-none",
         )}
       >
+      {dataPending ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-10 rounded-xl bg-white/30"
+          aria-hidden
+        />
+      ) : null}
       <Section
         title="Resumen por empresa y sede"
         actions={
           <button
             type="button"
             onClick={() => void exportSedeSummary()}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            disabled={dataPending}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-3.5 w-3.5" />
             Exportar Excel
@@ -368,7 +408,12 @@ export function InformeVariacionBoard({ payload }: Props) {
 
       <footer className="text-xs text-slate-500">
         Fuente: margen_final (movimiento unificado). Valor = ventas netas (vlrtot_bru) en miles de
-        $. {payload.meta.rowCount.toLocaleString("es-CO")} combinaciones sede/item cargadas.
+        $.{" "}
+        {dataPending ? (
+          <span className="inline-block h-3 w-16 animate-pulse rounded bg-slate-200 align-middle" />
+        ) : (
+          <>{payload.meta.rowCount.toLocaleString("es-CO")} combinaciones sede/item cargadas.</>
+        )}
       </footer>
       </div>
     </div>
@@ -380,11 +425,13 @@ function KpiCard({
   value,
   tag,
   footer,
+  loading = false,
 }: {
   title: string;
   value: string;
   tag?: React.ReactNode;
   footer?: React.ReactNode;
+  loading?: boolean;
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -392,8 +439,28 @@ function KpiCard({
         {title}
         {tag}
       </div>
-      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
-      {footer ? <div className="mt-2 text-sm">{footer}</div> : null}
+      <div className="mt-2 text-2xl font-bold text-slate-900">
+        {loading ? (
+          <span
+            className="inline-block h-8 w-36 max-w-full animate-pulse rounded-lg bg-slate-200/90"
+            aria-hidden
+          />
+        ) : (
+          value
+        )}
+      </div>
+      {loading ? (
+        footer ? (
+          <div className="mt-2">
+            <span
+              className="inline-block h-5 w-24 animate-pulse rounded bg-slate-200/80"
+              aria-hidden
+            />
+          </div>
+        ) : null
+      ) : footer ? (
+        <div className="mt-2 text-sm">{footer}</div>
+      ) : null}
     </div>
   );
 }

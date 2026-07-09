@@ -99,3 +99,29 @@ export const isInformeDayRangeAvailable = (
   getAvailableInformeDayRanges(year, month, asOf, maxCompactDate).some(
     (range) => range.id === rangeId,
   );
+
+const compactDate = (year: number, month: number, day: number) =>
+  `${year}${String(month).padStart(2, "0")}${String(day).padStart(2, "0")}`;
+
+/** El payload mostrado corresponde al mes y rango de dias seleccionados en la UI. */
+export const payloadMatchesInformeSelection = (
+  payload: { periods: { current: { from: string; to: string } } },
+  year: number,
+  month: number,
+  dayRangeId: InformeDayRangeId | "",
+  availableRanges: readonly InformeDayRangeSpec[],
+): boolean => {
+  const { from, to } = payload.periods.current;
+  const payloadYear = Number(from.slice(0, 4));
+  const payloadMonth = Number(from.slice(4, 6));
+  if (payloadYear !== year || payloadMonth !== month) return false;
+  if (!dayRangeId) return true;
+
+  const range = availableRanges.find((entry) => entry.id === dayRangeId);
+  if (!range) return true;
+
+  const monthLast = lastDayOfMonth(year, month);
+  const expectedFrom = compactDate(year, month, range.fromDay);
+  const expectedTo = compactDate(year, month, range.toDay ?? monthLast);
+  return from === expectedFrom && to === expectedTo;
+};
