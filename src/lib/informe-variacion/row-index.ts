@@ -1,6 +1,9 @@
 import type { InformeCompactRow, InformeMetric } from "@/lib/informe-variacion/types";
 import type { PeriodTriple } from "@/lib/informe-variacion/aggregate";
-import { metricOffset } from "@/lib/informe-variacion/format";
+import {
+  readInformeRowPeriodTriple,
+  type InformeMetricContext,
+} from "@/lib/informe-variacion/informe-metric-values";
 
 export type InformeRowIndex = {
   bySede: Map<number, number[]>;
@@ -99,8 +102,8 @@ export const aggregateIndicesBySede = (
   metric: InformeMetric,
   sedeCount: number,
   keyIndex: number,
+  metricCtx: InformeMetricContext,
 ): Map<number, PeriodTriple[]> => {
-  const offset = metricOffset(metric);
   const map = new Map<number, PeriodTriple[]>();
   for (const rowIndex of indices) {
     const row = rows[rowIndex];
@@ -112,9 +115,10 @@ export const aggregateIndicesBySede = (
       map.set(key, perSede);
     }
     const bucket = perSede[row[0]];
-    bucket[0] += row[offset];
-    bucket[1] += row[offset + 1];
-    bucket[2] += row[offset + 2];
+    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    bucket[0] += triple[0];
+    bucket[1] += triple[1];
+    bucket[2] += triple[2];
   }
   return map;
 };
@@ -124,17 +128,18 @@ export const aggregateIndicesByKey = (
   indices: readonly number[],
   metric: InformeMetric,
   keyIndex: number,
+  metricCtx: InformeMetricContext,
 ): Map<number, PeriodTriple> => {
-  const offset = metricOffset(metric);
   const map = new Map<number, PeriodTriple>();
   for (const rowIndex of indices) {
     const row = rows[rowIndex];
     if (!row) continue;
     const key = row[keyIndex];
     const current = map.get(key) ?? [0, 0, 0];
-    current[0] += row[offset];
-    current[1] += row[offset + 1];
-    current[2] += row[offset + 2];
+    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    current[0] += triple[0];
+    current[1] += triple[1];
+    current[2] += triple[2];
     map.set(key, current);
   }
   return map;
@@ -144,15 +149,16 @@ export const sumRowIndices = (
   rows: InformeCompactRow[],
   indices: readonly number[],
   metric: InformeMetric,
+  metricCtx: InformeMetricContext,
 ): PeriodTriple => {
-  const offset = metricOffset(metric);
   const totals: PeriodTriple = [0, 0, 0];
   for (const rowIndex of indices) {
     const row = rows[rowIndex];
     if (!row) continue;
-    totals[0] += row[offset];
-    totals[1] += row[offset + 1];
-    totals[2] += row[offset + 2];
+    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    totals[0] += triple[0];
+    totals[1] += triple[1];
+    totals[2] += triple[2];
   }
   return totals;
 };

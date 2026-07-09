@@ -20,6 +20,7 @@ import {
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
 import { informePayloadHasComparisonData } from "@/lib/informe-variacion/comparison";
+import { sortInformeSedeCatalog } from "@/lib/informe-variacion/sede-order";
 import type { InformePeriods } from "@/lib/informe-variacion/types";
 import type {
   InformeCompactRow,
@@ -228,9 +229,11 @@ const buildSedeCatalog = (
   allowedSedeKeys: string[] | null,
 ): MargenSedeCatalogOption[] => {
   const catalog = listMargenSedeCatalogOptions();
-  if (!allowedSedeKeys) return catalog;
-  const allowed = new Set(allowedSedeKeys);
-  return catalog.filter((option) => allowed.has(option.value));
+  const filtered =
+    !allowedSedeKeys || allowedSedeKeys.length === 0
+      ? catalog
+      : catalog.filter((option) => allowedSedeKeys.includes(option.value));
+  return sortInformeSedeCatalog(filtered);
 };
 
 export const buildInformeVariacionPayload = (

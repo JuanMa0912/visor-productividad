@@ -74,16 +74,16 @@ export function InformeVariacionBoard({ payload }: Props) {
   ) : null;
 
   const kpiTotals = useMemo(
-    () => sumFilteredRows(prepared.rows, metric, pass),
-    [metric, pass, prepared.rows],
+    () => sumFilteredRows(prepared.rows, metric, pass, prepared.metricCtx),
+    [metric, pass, prepared.metricCtx, prepared.rows],
   );
 
   const kpiYoyComparable = useMemo(() => {
     const indices = filterRowIndices(prepared.rows, pass).filter(
       (index) => prepared.sedeYoy[prepared.rows[index]![0]],
     );
-    return sumRowIndices(prepared.rows, indices, metric);
-  }, [metric, pass, prepared.rows, prepared.sedeYoy]);
+    return sumRowIndices(prepared.rows, indices, metric, prepared.metricCtx);
+  }, [metric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy]);
 
   const growthSedes = useMemo(() => {
     const perSede = aggregateBySede(
@@ -91,6 +91,7 @@ export function InformeVariacionBoard({ payload }: Props) {
       metric,
       prepared.sedes.length,
       pass,
+      prepared.metricCtx,
     );
     let count = 0;
     perSede.forEach((values, index) => {
@@ -99,7 +100,7 @@ export function InformeVariacionBoard({ payload }: Props) {
       }
     });
     return count;
-  }, [metric, pass, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
+  }, [metric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
 
   const updateFilter = (patch: Partial<InformeGlobalFilters>) => {
     startTransition(() => {
@@ -197,6 +198,13 @@ export function InformeVariacionBoard({ payload }: Props) {
           </button>
         ))}
       </div>
+      {metric === "u" ? (
+        <p className="mb-4 text-xs text-slate-500">
+          Asaderos (línea 01 Pollo Asado): cantidades en{" "}
+          <span className="font-medium text-slate-700">pollos und</span> (8 presas = 1
+          pollo; 2 medios 1/2 = 1 pollo).
+        </p>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
@@ -630,7 +638,13 @@ function SedeSummaryTable({
   sort: { col: string; dir: number };
   onSort: (col: string) => void;
 }) {
-  const perSede = aggregateBySede(payload.rows, metric, payload.sedes.length, pass);
+  const perSede = aggregateBySede(
+    payload.rows,
+    metric,
+    payload.sedes.length,
+    pass,
+    payload.metricCtx,
+  );
   const total = perSede.reduce<PeriodTriple>(
     (acc, values) => [acc[0] + values[0], acc[1] + values[1], acc[2] + values[2]],
     [0, 0, 0],

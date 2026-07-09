@@ -102,6 +102,7 @@ export default function InformeVariacionPage() {
   const [dayRangeId, setDayRangeId] = useState<InformeDayRangeId | "">("");
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [monthLoadLocked, setMonthLoadLocked] = useState(false);
   const [rangeSwitchPending, setRangeSwitchPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prefetchDone, setPrefetchDone] = useState(0);
@@ -443,6 +444,7 @@ export default function InformeVariacionPage() {
     async (options: { force?: boolean } = {}) => {
       if (!parsedMonth) {
         setError("Selecciona un mes valido.");
+        setMonthLoadLocked(false);
         return;
       }
 
@@ -450,12 +452,14 @@ export default function InformeVariacionPage() {
       if (ranges.length === 0) {
         setError("No hay rangos de dias disponibles para este mes.");
         setPayload(null);
+        setMonthLoadLocked(false);
         return;
       }
 
       const { year, month } = parsedMonth;
       const monthToken = `${year}-${month}`;
       activeMonthKeyRef.current = monthToken;
+      setMonthLoadLocked(true);
 
       monthAbortRef.current?.abort();
       rangeAbortRef.current?.abort();
@@ -673,6 +677,7 @@ export default function InformeVariacionPage() {
           activeMonthKeyRef.current === monthToken
         ) {
           setLoading(false);
+          setMonthLoadLocked(false);
         }
       }
     },
@@ -699,6 +704,7 @@ export default function InformeVariacionPage() {
 
   const preloadReady =
     prefetchTotal > 0 && prefetchDone >= prefetchTotal && !loading;
+  const periodControlsDisabled = metaLoading || monthLoadLocked;
   const showInitialLoader = metaLoading || (loading && !payload && !error);
   const showBoard = Boolean(payload) && !metaLoading;
 
@@ -733,17 +739,24 @@ export default function InformeVariacionPage() {
             <input
               type="month"
               value={monthInput}
-              onChange={(event) => setMonthInput(event.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+              disabled={periodControlsDisabled}
+              onChange={(event) => {
+                if (periodControlsDisabled) return;
+                setMonthInput(event.target.value);
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+              aria-busy={monthLoadLocked}
             />
           </label>
           <button
             type="button"
             onClick={() => void loadMonthBundle({ force: true })}
-            disabled={loading}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            disabled={periodControlsDisabled}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCcw
+              className={`h-4 w-4 ${monthLoadLocked ? "animate-spin" : ""}`}
+            />
             Actualizar
           </button>
         </div>
@@ -755,11 +768,13 @@ export default function InformeVariacionPage() {
                 Rango de dias
               </span>
               <span className="text-xs text-slate-400">
-                {preloadReady
-                  ? "Todos los rangos listos · cambio instantaneo"
-                  : prefetchTotal > 0
-                    ? `Cargando rangos ${Math.min(readyRanges.size, prefetchTotal)}/${prefetchTotal} · aparecen al quedar listos`
-                    : "Solo aparecen periodos ya cerrados en el mes"}
+                {periodControlsDisabled
+                  ? "Cargando periodo seleccionado…"
+                  : preloadReady
+                    ? "Todos los rangos listos · cambio instantaneo"
+                    : prefetchTotal > 0
+                      ? `Cargando rangos ${Math.min(readyRanges.size, prefetchTotal)}/${prefetchTotal} · aparecen al quedar listos`
+                      : "Solo aparecen periodos ya cerrados en el mes"}
                 {rangeSwitchPending ? " · sincronizando…" : ""}
               </span>
             </div>

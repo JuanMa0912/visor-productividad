@@ -5,7 +5,11 @@ import type {
   InformeSedeMeta,
   InformeVariacionPayload,
 } from "@/lib/informe-variacion/types";
-import { metricOffset } from "@/lib/informe-variacion/format";
+import {
+  readInformeRowPeriodTriple,
+  informeMetricContextFromPayload,
+  type InformeMetricContext,
+} from "@/lib/informe-variacion/informe-metric-values";
 import {
   buildInformeRowIndex,
   type InformeRowIndex,
@@ -29,14 +33,15 @@ export const sumFilteredRows = (
   rows: InformeCompactRow[],
   metric: InformeMetric,
   pass: (row: InformeCompactRow) => boolean,
+  metricCtx: InformeMetricContext,
 ): PeriodTriple => {
-  const offset = metricOffset(metric);
   const totals: PeriodTriple = [0, 0, 0];
   for (const row of rows) {
     if (!pass(row)) continue;
-    totals[0] += row[offset];
-    totals[1] += row[offset + 1];
-    totals[2] += row[offset + 2];
+    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    totals[0] += triple[0];
+    totals[1] += triple[1];
+    totals[2] += triple[2];
   }
   return totals;
 };
@@ -68,15 +73,16 @@ export const aggregateBySede = (
   metric: InformeMetric,
   sedeCount: number,
   pass: (row: InformeCompactRow) => boolean,
+  metricCtx: InformeMetricContext,
 ): PeriodTriple[] => {
-  const offset = metricOffset(metric);
   const perSede = Array.from({ length: sedeCount }, () => [0, 0, 0] as PeriodTriple);
   for (const row of rows) {
     if (!pass(row)) continue;
     const bucket = perSede[row[0]];
-    bucket[0] += row[offset];
-    bucket[1] += row[offset + 1];
-    bucket[2] += row[offset + 2];
+    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    bucket[0] += triple[0];
+    bucket[1] += triple[1];
+    bucket[2] += triple[2];
   }
   return perSede;
 };
@@ -87,8 +93,8 @@ export const levelAggregateBySede = (
   sedeCount: number,
   keyIndex: number,
   pass: (row: InformeCompactRow) => boolean,
+  metricCtx: InformeMetricContext,
 ): Map<number, PeriodTriple[]> => {
-  const offset = metricOffset(metric);
   const map = new Map<number, PeriodTriple[]>();
   for (const row of rows) {
     if (!pass(row)) continue;
@@ -99,9 +105,10 @@ export const levelAggregateBySede = (
       map.set(key, perSede);
     }
     const bucket = perSede[row[0]];
-    bucket[0] += row[offset];
-    bucket[1] += row[offset + 1];
-    bucket[2] += row[offset + 2];
+    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    bucket[0] += triple[0];
+    bucket[1] += triple[1];
+    bucket[2] += triple[2];
   }
   return map;
 };
@@ -111,16 +118,17 @@ export const aggregateByKey = (
   metric: InformeMetric,
   keyIndex: number,
   pass: (row: InformeCompactRow) => boolean,
+  metricCtx: InformeMetricContext,
 ): Map<number, PeriodTriple> => {
-  const offset = metricOffset(metric);
   const map = new Map<number, PeriodTriple>();
   for (const row of rows) {
     if (!pass(row)) continue;
     const key = row[keyIndex];
     const current = map.get(key) ?? [0, 0, 0];
-    current[0] += row[offset];
-    current[1] += row[offset + 1];
-    current[2] += row[offset + 2];
+    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    current[0] += triple[0];
+    current[1] += triple[1];
+    current[2] += triple[2];
     map.set(key, current);
   }
   return map;
@@ -155,6 +163,7 @@ export const prepareInformeData = (payload: InformeVariacionPayload) => {
   const sedeEmpresas = buildSedeEmpresaMap(payload.sedes);
   const sedeYoy = buildSedeYoyFlags(payload.sedes);
   const itemsLow = buildItemsLower(payload.items);
+  const metricCtx = informeMetricContextFromPayload(payload);
   const empYoy = payload.sedes.reduce<Record<string, boolean>>((acc, sede) => {
     acc[sede.e] = acc[sede.e] || sede.yoyOk;
     return acc;
@@ -168,5 +177,6 @@ export const prepareInformeData = (payload: InformeVariacionPayload) => {
     itemsLow,
     empYoy,
     rowIndex,
+    metricCtx,
   };
 };

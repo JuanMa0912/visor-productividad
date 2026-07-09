@@ -33,11 +33,20 @@ describe("filterIndexedRowIndices", () => {
   });
 });
 
+const emptyMetricCtx = { cats: [], lins: [], items: [], ums: [] };
+
 describe("aggregateIndicesBySede", () => {
   it("suma por sede dentro de un bucket de categoria", () => {
     const index = buildInformeRowIndex(sampleRows, ["EmpA", "EmpB"]);
     const catIndices = index.indicesByCat.get(1) ?? [];
-    const agg = aggregateIndicesBySede(sampleRows, catIndices, "v", 2, 1);
+    const agg = aggregateIndicesBySede(
+      sampleRows,
+      catIndices,
+      "v",
+      2,
+      1,
+      emptyMetricCtx,
+    );
     const catTotals = agg.get(1)?.[0];
     assert.equal(catTotals?.[0], 150);
     assert.equal(catTotals?.[1], 135);
@@ -47,7 +56,7 @@ describe("aggregateIndicesBySede", () => {
 
 describe("aggregateIndicesByKey", () => {
   it("suma por linea dentro de sede", () => {
-    const agg = aggregateIndicesByKey(sampleRows, [0, 1], "u", 2);
+    const agg = aggregateIndicesByKey(sampleRows, [0, 1], "u", 2, emptyMetricCtx);
     assert.equal(agg.get(10)?.[0], 7);
     assert.equal(agg.get(10)?.[1], 6);
   });
@@ -55,7 +64,7 @@ describe("aggregateIndicesByKey", () => {
 
 describe("sumRowIndices", () => {
   it("totaliza periodos de filas seleccionadas", () => {
-    const totals = sumRowIndices(sampleRows, [0, 2], "v");
+    const totals = sumRowIndices(sampleRows, [0, 2], "v", emptyMetricCtx);
     assert.deepEqual(totals, [120, 108, 95]);
   });
 });

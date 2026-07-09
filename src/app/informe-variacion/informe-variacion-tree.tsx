@@ -71,8 +71,8 @@ export function TreeTable({
   const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices]);
 
   const total = useMemo(
-    () => sumRowIndices(payload.rows, filteredIndices, metric)[0],
-    [filteredIndices, metric, payload.rows],
+    () => sumRowIndices(payload.rows, filteredIndices, metric, payload.metricCtx)[0],
+    [filteredIndices, metric, payload.metricCtx, payload.rows],
   );
 
   const treeBody = useMemo(() => {
@@ -146,7 +146,7 @@ export function TreeTable({
       if (empresaIndices.length === 0) continue;
 
       const ek = `e:${empresa.label}`;
-      const summed = sumRowIndices(payload.rows, empresaIndices, metric);
+      const summed = sumRowIndices(payload.rows, empresaIndices, metric, payload.metricCtx);
       rows.push(
         treeRow(
           0,
@@ -159,7 +159,7 @@ export function TreeTable({
       );
       if (!treeOpen.has(ek)) continue;
 
-      const sAgg = aggregateIndicesByKey(payload.rows, empresaIndices, metric, 0);
+      const sAgg = aggregateIndicesByKey(payload.rows, empresaIndices, metric, 0, payload.metricCtx);
       for (const [sedeIndex, sValues] of sortedEntries(sAgg, undefined, sort)) {
         const sk = `${ek}|s:${sedeIndex}`;
         rows.push(
@@ -178,7 +178,7 @@ export function TreeTable({
           payload.rowIndex.bySede.get(sedeIndex),
           filteredSet,
         );
-        const cAgg = aggregateIndicesByKey(payload.rows, sedeIndices, metric, 1);
+        const cAgg = aggregateIndicesByKey(payload.rows, sedeIndices, metric, 1, payload.metricCtx);
         for (const [catIndex, cValues] of sortedEntries(cAgg, payload.cats, sort)) {
           const ck = `${sk}|c:${catIndex}`;
           rows.push(
@@ -190,7 +190,7 @@ export function TreeTable({
             payload.rowIndex.bySedeCat.get(`${sedeIndex}|${catIndex}`),
             filteredSet,
           );
-          const lAgg = aggregateIndicesByKey(payload.rows, catIndices, metric, 2);
+          const lAgg = aggregateIndicesByKey(payload.rows, catIndices, metric, 2, payload.metricCtx);
           for (const [linIndex, lValues] of sortedEntries(lAgg, payload.lins, sort)) {
             const lk = `${ck}|l:${linIndex}`;
             rows.push(
@@ -202,7 +202,7 @@ export function TreeTable({
               payload.rowIndex.bySedeCatLin.get(`${sedeIndex}|${catIndex}|${linIndex}`),
               filteredSet,
             );
-            const bAgg = aggregateIndicesByKey(payload.rows, linIndices, metric, 3);
+            const bAgg = aggregateIndicesByKey(payload.rows, linIndices, metric, 3, payload.metricCtx);
             for (const [subIndex, bValues] of sortedEntries(bAgg, payload.subs, sort)) {
               const bk = `${lk}|b:${subIndex}`;
               rows.push(
@@ -216,7 +216,7 @@ export function TreeTable({
                 ),
                 filteredSet,
               );
-              const iAgg = aggregateIndicesByKey(payload.rows, subIndices, metric, 4);
+              const iAgg = aggregateIndicesByKey(payload.rows, subIndices, metric, 4, payload.metricCtx);
               const entries = sortedEntries(iAgg, payload.items, sort);
               const limit = treeShown[bk] ?? 50;
               for (const [itemIndex, iValues] of entries.slice(0, limit)) {

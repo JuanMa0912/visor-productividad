@@ -32,7 +32,13 @@ export const buildSedeSummaryExportRows = (
   metric: InformeMetric,
   pass: (row: InformeVariacionPayload["rows"][number]) => boolean,
 ): SedeSummaryExportRow[] => {
-  const perSede = aggregateBySede(payload.rows, metric, payload.sedes.length, pass);
+  const perSede = aggregateBySede(
+    payload.rows,
+    metric,
+    payload.sedes.length,
+    pass,
+    payload.metricCtx,
+  );
   const total = perSede.reduce<PeriodTriple>(
     (acc, values) => [acc[0] + values[0], acc[1] + values[1], acc[2] + values[2]],
     [0, 0, 0],

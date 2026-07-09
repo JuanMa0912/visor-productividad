@@ -13,8 +13,8 @@ import {
   formatInformeValue,
   heatmapCellStyle,
   matrixValueCellStyle,
-  metricOffset,
 } from "@/lib/informe-variacion/format";
+import { readInformeRowPeriodTriple } from "@/lib/informe-variacion/informe-metric-values";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 import { cn } from "@/lib/shared/utils";
 import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
@@ -61,7 +61,7 @@ function DetailRows({
       {defs.map(([label, index]) => (
         <tr key={`${detailKey}-${label}`} className="bg-slate-100 text-xs text-slate-600">
           <td className="px-2 py-1" style={{ paddingLeft: 8 + depth * 18 + 16 }}>
-            ↳ {label} ({metric === "u" ? "und" : "$ miles"})
+            ↳ {label} ({metric === "u" ? "pollos und" : "$ miles"})
           </td>
           {per.map((values, sedeIndex) => (
             <td key={sedeIndex} className="px-1 py-1 text-center">
@@ -124,22 +124,23 @@ export function MatrixTable({
         metric,
         payload.sedes.length,
         1,
+        payload.metricCtx,
       ),
-    [filteredIndices, metric, payload.rows, payload.sedes.length],
+    [filteredIndices, metric, payload.metricCtx, payload.rows, payload.sedes.length],
   );
 
   const totPer = useMemo(() => {
-    const offset = metricOffset(metric);
     const buckets = Array.from({ length: payload.sedes.length }, () => [0, 0, 0] as PeriodTriple);
     for (const rowIndex of filteredIndices) {
       const row = payload.rows[rowIndex]!;
+      const triple = readInformeRowPeriodTriple(row, metric, payload.metricCtx);
       const bucket = buckets[row[0]];
-      bucket[0] += row[offset];
-      bucket[1] += row[offset + 1];
-      bucket[2] += row[offset + 2];
+      bucket[0] += triple[0];
+      bucket[1] += triple[1];
+      bucket[2] += triple[2];
     }
     return buckets;
-  }, [filteredIndices, metric, payload.rows, payload.sedes.length]);
+  }, [filteredIndices, metric, payload.metricCtx, payload.rows, payload.sedes.length]);
 
   const matrixBody = useMemo(() => {
     const matrixCells = (perSede?: PeriodTriple[]) =>
@@ -276,6 +277,7 @@ export function MatrixTable({
         metric,
         payload.sedes.length,
         2,
+        payload.metricCtx,
       );
       const linKeys = matrixSortKeys([...linAgg.keys()], linAgg, payload.lins);
       for (const lin of linKeys) {
@@ -320,6 +322,7 @@ export function MatrixTable({
           metric,
           payload.sedes.length,
           3,
+          payload.metricCtx,
         );
         const subKeys = matrixSortKeys([...subAgg.keys()], subAgg, payload.subs);
         for (const sub of subKeys) {
@@ -364,6 +367,7 @@ export function MatrixTable({
             metric,
             payload.sedes.length,
             4,
+            payload.metricCtx,
           );
           const itKeys = [...itAgg.keys()]
             .sort((a, b) => {
