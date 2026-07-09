@@ -38,6 +38,8 @@ test("materializePortalProfilePermissions aplica preset Asadero", () => {
   assert.equal(permissions.allowedSubdashboards?.includes("margenes"), true);
   assert.equal(permissions.allowedSubdashboards?.includes("rotacion"), true);
   assert.equal(permissions.allowedSubdashboards?.includes("informe-variacion"), true);
+  assert.equal(permissions.specialRoles?.includes("alex"), false);
+  assert.equal(permissions.specialRoles?.includes("comparar_horarios"), true);
 });
 
 test("materializePortalProfilePermissions asadero respeta subconjunto de tableros", () => {

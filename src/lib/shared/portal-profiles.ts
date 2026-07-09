@@ -98,6 +98,10 @@ const COMMERCIAL_SPECIAL_ROLES = [
   "historial_sinventario",
 ] as const;
 
+const ASADERO_SPECIAL_ROLES = COMMERCIAL_SPECIAL_ROLES.filter(
+  (role) => role !== "alex",
+);
+
 const RRHH_SPECIAL_ROLES = [
   "alex",
   "comparar_horarios",
@@ -165,7 +169,7 @@ const PROFILE_PRESETS: Record<
     allowedDashboards: ASADERO_SECTIONS,
     allowedSubdashboards: ASADERO_SUBSECTIONS,
     allowedLines: [ASADERO_LINE_ID],
-    specialRoles: [...COMMERCIAL_SPECIAL_ROLES],
+    specialRoles: [...ASADERO_SPECIAL_ROLES],
   },
   rrhh: {
     portalProfile: "rrhh",
