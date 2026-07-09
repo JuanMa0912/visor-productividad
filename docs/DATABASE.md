@@ -89,6 +89,7 @@ Orden completo despues de `schema-auth.sql`:
 35. `20260707_rotacion_periodo_std_sublinea.sql` (snapshot periodo std con N2)
 36. `20260708_rotacion_clean_matview_n2_stable.sql` (N2 estable en matview + indice filtro)
 37. `20260708_margen_item_dia_roll.sql` (rollup dia+item sin factura para `/informe-variacion`; se refresca al final de `margen:refresh-roll`)
+38. `20260709_app_users_portal_profile_asadero.sql` (añade perfil `asadero` al CHECK de `portal_profile`)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
@@ -118,7 +119,7 @@ Columnas relevantes de `app_users`:
 | `allowed_dashboards` | secciones UAID |
 | `allowed_subdashboards` | permisos granulares |
 | `special_roles` | capacidades especiales |
-| `portal_profile` | perfil de negocio (`admin`, `subadmin`, `gerente`, `director_comercial`, `rrhh`, `personalizado`) |
+| `portal_profile` | perfil de negocio (`admin`, `subadmin`, `gerente`, `director_comercial`, `asadero`, `rrhh`, `personalizado`) |
 | `is_active` | bloqueo de acceso |
 | `password_changed_at` | ultimo cambio de contraseña (rotacion cada 30 dias) |
 | `last_login_at`, `last_login_ip` | trazabilidad |
