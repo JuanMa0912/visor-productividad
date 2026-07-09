@@ -1,6 +1,7 @@
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
+import { scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
 
 const INFORME_CACHE_TTL_MS = 30 * 60 * 1000;
 
@@ -9,13 +10,14 @@ export const buildInformeCacheKey = (
   month: number,
   allowedSedeKeys: string[] | null,
   dayRangeId?: string | null,
+  forcedMargenTipos?: string[] | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
   const range = dayRangeId?.trim() || "1-eom";
-  return `informe:${year}:${month}:range=${range}:${sedes}`;
+  return `informe:${year}:${month}:range=${range}:${sedes}${scopeTiposCacheSuffix(forcedMargenTipos)}`;
 };
 
 export const getCachedInformePayload = (
@@ -36,12 +38,13 @@ export const buildInformeBundleCacheKey = (
   year: number,
   month: number,
   allowedSedeKeys: string[] | null,
+  forcedMargenTipos?: string[] | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
-  return `informe-bundle:${year}:${month}:${sedes}`;
+  return `informe-bundle:${year}:${month}:${sedes}${scopeTiposCacheSuffix(forcedMargenTipos)}`;
 };
 
 export const getCachedInformeMonthBundle = (

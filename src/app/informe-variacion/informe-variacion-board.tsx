@@ -33,6 +33,7 @@ import { TreeTable } from "@/app/informe-variacion/informe-variacion-tree";
 type Props = {
   payload: InformeVariacionPayload;
   dataPending?: boolean;
+  categoryScopeLocked?: boolean;
 };
 
 const EMP_DOT_CLASS: Record<string, string> = {
@@ -41,7 +42,11 @@ const EMP_DOT_CLASS: Record<string, string> = {
   Merkmios: "bg-violet-600",
 };
 
-export function InformeVariacionBoard({ payload, dataPending = false }: Props) {
+export function InformeVariacionBoard({
+  payload,
+  dataPending = false,
+  categoryScopeLocked = false,
+}: Props) {
   const prepared = useMemo(() => prepareInformeData(payload), [payload]);
   const [metric, setMetric] = useState<InformeMetric>("v");
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
@@ -170,6 +175,11 @@ export function InformeVariacionBoard({ payload, dataPending = false }: Props) {
           Actualizando cifras del periodo seleccionado…
         </div>
       ) : null}
+      {categoryScopeLocked ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Vista restringida a la categoría <span className="font-semibold">Asaderos</span>.
+        </div>
+      ) : null}
       {payload.meta.comparisonAvailable === false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           No hay datos reales de comparacion (MoM / YoY) en margen para este mes. Los
@@ -277,6 +287,7 @@ export function InformeVariacionBoard({ payload, dataPending = false }: Props) {
         filters={filters}
         onChange={updateFilter}
         onClear={clearFilters}
+        categoryScopeLocked={categoryScopeLocked}
       />
 
       <div
@@ -518,11 +529,13 @@ function InformeFilters({
   filters,
   onChange,
   onClear,
+  categoryScopeLocked = false,
 }: {
   payload: ReturnType<typeof prepareInformeData>;
   filters: InformeGlobalFilters;
   onChange: (patch: Partial<InformeGlobalFilters>) => void;
   onClear: () => void;
+  categoryScopeLocked?: boolean;
 }) {
   const sedeOptions = payload.sedes
     .map((sede, index) => ({ index, sede }))
@@ -617,6 +630,7 @@ function InformeFilters({
           onChange={(value) => onChange({ cat: value, lin: "", sub: "", item: "" })}
           placeholder="Todas las categorias"
           options={catOptions.map((value) => ({ value: String(value), label: payload.cats[value] }))}
+          disabled={categoryScopeLocked}
         />
         <FilterSelect
           value={filters.lin}
@@ -664,17 +678,20 @@ function FilterSelect({
   onChange,
   placeholder,
   options,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
 }) {
   return (
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+      disabled={disabled}
+      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
     >
       <option value="">{placeholder}</option>
       {options.map((option) => (

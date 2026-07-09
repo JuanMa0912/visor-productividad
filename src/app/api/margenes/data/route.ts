@@ -41,6 +41,10 @@ import {
   assertMargenSedesAllowed,
   filterMargenSedeCatalogForUser,
 } from "@/lib/margenes/margen-sede-scope";
+import {
+  applyMargenCategoriaScope,
+  resolveSessionLineCategoryScope,
+} from "@/lib/shared/line-category-scope";
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 
 const CACHE_CONTROL = "no-store, private";
@@ -396,6 +400,9 @@ export async function GET(request: Request) {
       { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
     );
   }
+
+  const lineScope = resolveSessionLineCategoryScope(session.user);
+  parsed.categorias = applyMargenCategoriaScope(parsed.categorias, lineScope);
 
   const pool = await getDbPool();
   const client = await pool.connect();

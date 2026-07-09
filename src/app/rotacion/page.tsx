@@ -44,6 +44,7 @@ import {
   canEditRotacionAbcdConfig,
   canViewRotacionSinventarioHistorial,
 } from "@/lib/shared/special-role-features";
+import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
   CERO_ROTACION_ESTADO_LABELS,
   CERO_ROTACION_ESTADO_SORT_ORDER,
@@ -196,6 +197,10 @@ export function RotacionPageInner() {
   const { user: authUser, status: authStatus } = useRequireAuth();
   const { isAdmin, hasSection, hasSubsection } = usePermissions();
   const specialRoles = authUser?.specialRoles ?? null;
+  const lineCategoryScope = useMemo(
+    () => (authUser ? resolveSessionLineCategoryScope(authUser) : null),
+    [authUser],
+  );
   const [ready, setReady] = useState(false);
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
@@ -2672,6 +2677,12 @@ export function RotacionPageInner() {
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
                   {pageDescription}
                 </p>
+                {lineCategoryScope?.locked ? (
+                  <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    Vista restringida a la categoría{" "}
+                    <span className="font-semibold">Asaderos</span>.
+                  </p>
+                ) : null}
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
                 <div className="flex w-full flex-wrap justify-end gap-2">

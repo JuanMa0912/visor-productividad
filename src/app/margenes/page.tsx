@@ -16,6 +16,7 @@ import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { compactDateToIso } from "@/lib/margenes/margen-final-query";
 import { defaultMargenDateRange } from "@/lib/margenes/date-range";
 import { filterMargenSedeCatalogForUser } from "@/lib/margenes/margen-sede-scope";
+import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import { formatDayLabel } from "@/lib/margenes/drill-queries";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
@@ -88,6 +89,11 @@ export default function MargenesPage() {
     }
     return catalogSedes.map((option) => option.value);
   }, [user, isAdmin, catalogSedes]);
+
+  const lineCategoryScope = useMemo(
+    () => (user ? resolveSessionLineCategoryScope(user) : null),
+    [user],
+  );
 
   const { startTour: startMargenesTour } = useProductTour({
     localStorageKey: TUTORIAL_LOCAL_STORAGE_KEYS.margenes,
@@ -381,6 +387,8 @@ export default function MargenesPage() {
                 dataCommitted={dataCommitted}
                 onSedeDrill={handleSedeDrill}
                 allowedSedeKeys={allowedSedeKeys}
+                lockedCategorias={lineCategoryScope?.forcedMargenTipos ?? null}
+                categoryScopeLocked={lineCategoryScope?.locked ?? false}
               />
             )}
           </main>

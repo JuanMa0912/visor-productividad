@@ -19,6 +19,7 @@ import {
   setCachedInformePayload,
 } from "@/lib/informe-variacion/informe-cache";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
+import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
     sede: session.user.sede,
     allowedSedes: session.user.allowedSedes,
   });
+  const lineScope = resolveSessionLineCategoryScope(session.user);
   if (!scope.authorized) {
     return withSession(
       NextResponse.json(
@@ -105,7 +107,12 @@ export async function GET(request: Request) {
       );
     }
 
-    const bundleKey = buildInformeBundleCacheKey(year, month, scope.allowedKeys);
+    const bundleKey = buildInformeBundleCacheKey(
+      year,
+      month,
+      scope.allowedKeys,
+      lineScope.forcedMargenTipos,
+    );
     const cachedBundle = getCachedInformeMonthBundle(bundleKey);
     if (cachedBundle) {
       return withSession(
@@ -131,6 +138,7 @@ export async function GET(request: Request) {
         month,
         scope.allowedKeys,
         availableRanges,
+        lineScope.forcedMargenTipos,
       );
       const elapsedMs = Date.now() - startedAt;
 
@@ -218,6 +226,7 @@ export async function GET(request: Request) {
     month,
     scope.allowedKeys,
     effectiveRange?.id,
+    lineScope.forcedMargenTipos,
   );
   const cached = getCachedInformePayload(cacheKey);
   if (cached) {
@@ -243,7 +252,10 @@ export async function GET(request: Request) {
       year,
       month,
       scope.allowedKeys,
-      { dayRange: effectiveRange },
+      {
+        dayRange: effectiveRange,
+        forcedMargenTipos: lineScope.forcedMargenTipos,
+      },
     );
     const elapsedMs = Date.now() - startedAt;
     if (elapsedMs > 5_000) {

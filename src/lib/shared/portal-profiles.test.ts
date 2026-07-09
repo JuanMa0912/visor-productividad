@@ -30,6 +30,16 @@ test("materializePortalProfilePermissions admin usa role admin", () => {
   assert.equal(permissions.specialRoles, null);
 });
 
+test("materializePortalProfilePermissions aplica preset Asadero", () => {
+  const permissions = materializePortalProfilePermissions("asadero");
+  assert.equal(permissions.role, "user");
+  assert.deepEqual(permissions.allowedDashboards, ["producto", "operacion"]);
+  assert.deepEqual(permissions.allowedLines, ["asadero"]);
+  assert.equal(permissions.allowedSubdashboards?.includes("margenes"), true);
+  assert.equal(permissions.allowedSubdashboards?.includes("rotacion"), true);
+  assert.equal(permissions.allowedSubdashboards?.includes("informe-variacion"), true);
+});
+
 test("inferPortalProfileFromStoredPermissions detecta subadmin", () => {
   const profile = inferPortalProfileFromStoredPermissions({
     role: "user",

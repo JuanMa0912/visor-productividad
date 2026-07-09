@@ -42,6 +42,10 @@ import {
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
 import {
+  applyRotacionCategoriaKeysScope,
+  resolveSessionLineCategoryScope,
+} from "@/lib/shared/line-category-scope";
+import {
   canAccessRotacionBoard,
   canEditRotacionAbcdConfig,
 } from "@/lib/shared/special-role-features";
@@ -3066,6 +3070,7 @@ export async function GET(request: Request) {
             lineasN1PorCategoria: {} as Record<string, string[]>,
           };
     const sedeAccess = resolveVisibleSedes(session.user, fullCatalog);
+    const lineScope = resolveSessionLineCategoryScope(session.user);
 
     if (!sedeAccess.authorized) {
       return withSession(
@@ -3197,6 +3202,18 @@ export async function GET(request: Request) {
       );
     }
 
+    if (lineScope.forcedRotacionCategoriaKeys?.length) {
+      const forced = new Set(lineScope.forcedRotacionCategoriaKeys);
+      filters.categorias = filters.categorias.filter((categoria) =>
+        forced.has(categoria.categoriaKey),
+      );
+      filters.lineasN1PorCategoria = Object.fromEntries(
+        Object.entries(filters.lineasN1PorCategoria).filter(([categoriaKey]) =>
+          forced.has(categoriaKey),
+        ),
+      );
+    }
+
     if (requestedLineaN1Scope && selectedVisibleSedes.length > 0) {
       const lineasN2Set = new Set<string>();
       let lineasN2NombresAcc: Record<string, string> = {};
@@ -3324,10 +3341,12 @@ export async function GET(request: Request) {
       filters.categorias.every((c) =>
         validatedCategoriaKeys.includes(c.categoriaKey),
       );
-    const categoriaKeysForQuery =
+    const categoriaKeysForQuery = applyRotacionCategoriaKeysScope(
       validatedCategoriaKeys.length === 0 || isFullCategoriaSelection
         ? null
-        : validatedCategoriaKeys;
+        : validatedCategoriaKeys,
+      lineScope,
+    );
 
     // Resolvemos los campos del esquema UNA sola vez por request y los pasamos
     // a todas las queries por sede. Antes cada `queryRotationRows` ejecutaba su

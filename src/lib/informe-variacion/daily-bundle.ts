@@ -7,6 +7,7 @@ import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
 import { lastDayOfMonth } from "@/lib/informe-variacion/day-ranges";
 import { computeInformePeriods, toCompactDate } from "@/lib/informe-variacion/periods";
 import {
+  buildInformeMargenTipoFilter,
   buildInformeVariacionPayload,
   type InformeDbAggRow,
 } from "@/lib/informe-variacion/query";
@@ -109,6 +110,7 @@ export const queryInformeDailyRows = async (
   year: number,
   month: number,
   allowedSedeKeys: string[] | null,
+  forcedMargenTipos: string[] | null = null,
 ): Promise<InformeDailyDbRow[]> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
@@ -123,6 +125,11 @@ export const queryInformeDailyRows = async (
 
   const sedeParams: Array<string | string[]> = [];
   const sedeFilterSql = buildSedeFilterDaily(allowedSedeKeys, sedeParams);
+  const tipoFilterSql = buildInformeMargenTipoFilter(
+    MARGEN_ITEM_DIA_ROLL_TABLE,
+    forcedMargenTipos,
+    sedeParams,
+  );
 
   const sql = `
     SELECT
@@ -144,7 +151,7 @@ export const queryInformeDailyRows = async (
         OR (fecha_dcto >= $3 AND fecha_dcto <= $4)
         OR (fecha_dcto >= $5 AND fecha_dcto <= $6)
       )
-      ${sedeFilterSql}
+      ${sedeFilterSql}${tipoFilterSql}
     GROUP BY
       fecha_dcto,
       empresa_norm,
@@ -269,6 +276,7 @@ export const loadInformeVariacionMonthBundle = async (
   month: number,
   allowedSedeKeys: string[] | null,
   availableRanges: InformeDayRangeSpec[],
+  forcedMargenTipos: string[] | null = null,
 ): Promise<InformeVariacionMonthBundle | null> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
@@ -280,6 +288,7 @@ export const loadInformeVariacionMonthBundle = async (
     year,
     month,
     allowedSedeKeys,
+    forcedMargenTipos,
   );
 
   const payloads: Record<string, InformeVariacionPayload> = {};

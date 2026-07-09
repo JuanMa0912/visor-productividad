@@ -13,6 +13,7 @@ export type PortalProfileId =
   | "subadmin"
   | "gerente"
   | "director_comercial"
+  | "asadero"
   | "rrhh"
   | "personalizado";
 

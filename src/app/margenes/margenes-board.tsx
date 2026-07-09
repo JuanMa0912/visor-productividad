@@ -353,6 +353,8 @@ export const MargenesBoard = ({
   dataCommitted,
   onSedeDrill,
   allowedSedeKeys = null,
+  lockedCategorias = null,
+  categoryScopeLocked = false,
 }: {
   dateStart: string;
   dateEnd: string;
@@ -361,6 +363,8 @@ export const MargenesBoard = ({
   onSedeDrill?: (sede: string) => void;
   /** null = todas las sedes del catálogo (admin / Todas). */
   allowedSedeKeys?: string[] | null;
+  lockedCategorias?: string[] | null;
+  categoryScopeLocked?: boolean;
 }) => {
   const [filterOptions, setFilterOptions] = useState<MargenFiltersPayload | null>(null);
   const [empresas, setEmpresas] = useState<string[]>([]);
@@ -396,6 +400,11 @@ export const MargenesBoard = ({
     () => (sedes.length > 0 ? sedes : selectedSedes),
     [sedes, selectedSedes],
   );
+
+  useEffect(() => {
+    if (!lockedCategorias?.length) return;
+    setCategorias(lockedCategorias);
+  }, [lockedCategorias]);
 
   const queryBase = useMemo(
     () =>
@@ -909,6 +918,11 @@ export const MargenesBoard = ({
 
   return (
     <>
+      {categoryScopeLocked ? (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
+          Vista restringida a la categoría <span className="font-semibold">Asaderos</span>.
+        </div>
+      ) : null}
       <div className="flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2">
         <MargenesMultiSelect
           label="Empresa"
@@ -947,6 +961,7 @@ export const MargenesBoard = ({
           onChange={setCategorias}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
+          disabled={categoryScopeLocked}
         />
         <MargenesMultiSelect
           label="Línea"

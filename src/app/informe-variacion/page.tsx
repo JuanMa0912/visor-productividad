@@ -20,6 +20,7 @@ import {
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse, readInformeBundleApiResponse, isInformeMonthBundleResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
+import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import { cn } from "@/lib/shared/utils";
 
 type InformeMeta = {
@@ -723,6 +724,10 @@ export default function InformeVariacionPage() {
     (Boolean(payload) &&
       !payloadMatchesSelection &&
       (monthLoadLocked || loading));
+  const lineCategoryScope = useMemo(
+    () => (user ? resolveSessionLineCategoryScope(user) : null),
+    [user],
+  );
 
   if (!ready || !canAccess) {
     return (
@@ -849,6 +854,7 @@ export default function InformeVariacionPage() {
             key={monthKey || "informe"}
             payload={payload!}
             dataPending={boardDataPending}
+            categoryScopeLocked={lineCategoryScope?.locked ?? false}
           />
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-600">

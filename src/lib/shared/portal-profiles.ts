@@ -5,6 +5,7 @@ import {
   normalizeAllowedPortalSubsections,
   PORTAL_SUBSECTIONS_BY_SECTION,
 } from "@/lib/shared/portal-sections";
+import { ASADERO_LINE_ID } from "@/lib/shared/line-category-scope";
 
 export type { PortalProfileId };
 
@@ -13,6 +14,7 @@ export const PORTAL_PROFILE_IDS: PortalProfileId[] = [
   "subadmin",
   "gerente",
   "director_comercial",
+  "asadero",
   "rrhh",
   "personalizado",
 ];
@@ -47,6 +49,12 @@ export const PORTAL_PROFILE_OPTIONS: Array<{
       "Igual que Subadmin en permisos. Todas las sedes y líneas.",
   },
   {
+    id: "asadero",
+    label: "Asadero",
+    summary:
+      "Márgenes, rotación, variación y operación (horas) solo con datos de la categoría Asaderos. Todas o varias sedes.",
+  },
+  {
     id: "rrhh",
     label: "RRHH",
     summary:
@@ -64,6 +72,14 @@ const OPERACION_SECTIONS: PortalSectionId[] = ["operacion"];
 
 const OPERACION_SUBSECTIONS: PortalSubsectionId[] = [
   ...PORTAL_SUBSECTIONS_BY_SECTION.operacion,
+];
+
+const ASADERO_SUBSECTIONS: PortalSubsectionId[] = [
+  "mix-y-linea",
+  "margenes",
+  "rotacion",
+  "informe-variacion",
+  ...OPERACION_SUBSECTIONS,
 ];
 
 const COMMERCIAL_SPECIAL_ROLES = [
@@ -136,6 +152,14 @@ const PROFILE_PRESETS: Record<
     role: "user",
     ...COMMERCIAL_PRESET,
   },
+  asadero: {
+    portalProfile: "asadero",
+    role: "user",
+    allowedDashboards: ["producto", "operacion"],
+    allowedSubdashboards: ASADERO_SUBSECTIONS,
+    allowedLines: [ASADERO_LINE_ID],
+    specialRoles: [...COMMERCIAL_SPECIAL_ROLES],
+  },
   rrhh: {
     portalProfile: "rrhh",
     role: "user",
@@ -183,6 +207,7 @@ export const portalProfileSuggestsAllSedes = (
 ): boolean =>
   profileId === "subadmin" ||
   profileId === "director_comercial" ||
+  profileId === "asadero" ||
   profileId === "rrhh";
 
 const emptyToNull = <T>(value: T[] | null | undefined): T[] | null => {
