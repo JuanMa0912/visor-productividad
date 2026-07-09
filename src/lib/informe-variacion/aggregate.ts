@@ -10,6 +10,7 @@ import {
   informeMetricContextFromPayload,
   type InformeMetricContext,
 } from "@/lib/informe-variacion/informe-metric-values";
+import { reorderInformeVariacionSedes } from "@/lib/informe-variacion/sede-order";
 import {
   buildInformeRowIndex,
   type InformeRowIndex,
@@ -160,18 +161,19 @@ export const filterRowIndices = (
 };
 
 export const prepareInformeData = (payload: InformeVariacionPayload) => {
-  const sedeEmpresas = buildSedeEmpresaMap(payload.sedes);
-  const sedeYoy = buildSedeYoyFlags(payload.sedes);
-  const itemsLow = buildItemsLower(payload.items);
-  const metricCtx = informeMetricContextFromPayload(payload);
-  const empYoy = payload.sedes.reduce<Record<string, boolean>>((acc, sede) => {
+  const ordered = reorderInformeVariacionSedes(payload);
+  const sedeEmpresas = buildSedeEmpresaMap(ordered.sedes);
+  const sedeYoy = buildSedeYoyFlags(ordered.sedes);
+  const itemsLow = buildItemsLower(ordered.items);
+  const metricCtx = informeMetricContextFromPayload(ordered);
+  const empYoy = ordered.sedes.reduce<Record<string, boolean>>((acc, sede) => {
     acc[sede.e] = acc[sede.e] || sede.yoyOk;
     return acc;
   }, {});
-  const rowIndex = buildInformeRowIndex(payload.rows, sedeEmpresas);
+  const rowIndex = buildInformeRowIndex(ordered.rows, sedeEmpresas);
 
   return {
-    ...payload,
+    ...ordered,
     sedeEmpresas,
     sedeYoy,
     itemsLow,
