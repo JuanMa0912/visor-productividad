@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, Fragment } from "react";
+import { useCallback, useMemo, useRef, useState, Fragment, startTransition } from "react";
 import {
   filterRowIndices,
-  aggregateIndicesBySede,
-  filterIndexedRowIndices,
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
+import { buildMatrixAggCache } from "@/lib/informe-variacion/matrix-agg-cache";
 import {
   computeVariationPct,
   formatInformePct,
@@ -116,11 +115,13 @@ export function MatrixTable({
 
   const toggleExpand = useCallback(
     (expandKey: string) => {
-      setMatrixOpen((current) => {
-        const next = new Set(current);
-        if (next.has(expandKey)) next.delete(expandKey);
-        else next.add(expandKey);
-        return next;
+      startTransition(() => {
+        setMatrixOpen((current) => {
+          const next = new Set(current);
+          if (next.has(expandKey)) next.delete(expandKey);
+          else next.add(expandKey);
+          return next;
+        });
       });
     },
     [setMatrixOpen],
@@ -133,17 +134,26 @@ export function MatrixTable({
 
   const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices]);
 
-  const catAgg = useMemo(
+  const aggCache = useMemo(
     () =>
-      aggregateIndicesBySede(
+      buildMatrixAggCache(
         payload.rows,
+        payload.rowIndex,
+        filteredSet,
         filteredIndices,
         metric,
         payload.sedes.length,
-        1,
         payload.metricCtx,
       ),
-    [filteredIndices, metric, payload.metricCtx, payload.rows, payload.sedes.length],
+    [
+      filteredIndices,
+      filteredSet,
+      metric,
+      payload.metricCtx,
+      payload.rowIndex,
+      payload.rows,
+      payload.sedes.length,
+    ],
   );
 
   const totPer = useMemo(() => {
@@ -251,11 +261,11 @@ export function MatrixTable({
       </tr>,
     );
 
-    const catKeys = matrixSortKeys([...catAgg.keys()], catAgg, payload.cats);
+    const catKeys = matrixSortKeys([...aggCache.byCat.keys()], aggCache.byCat, payload.cats);
     for (const cat of catKeys) {
       const ck = `c${cat}`;
       const catDetailKey = `cat:${ck}`;
-      const catPer = catAgg.get(cat) ?? [];
+      const catPer = aggCache.byCat.get(cat) ?? [];
       rows.push(
         <MatrixRow
           key={ck}
@@ -284,18 +294,11 @@ export function MatrixTable({
 
       if (!matrixOpen.has(ck)) continue;
 
-      const catIndices = filterIndexedRowIndices(
-        payload.rowIndex.indicesByCat.get(cat),
-        filteredSet,
-      );
-      const linAgg = aggregateIndicesBySede(
-        payload.rows,
-        catIndices,
-        metric,
-        payload.sedes.length,
-        2,
-        payload.metricCtx,
-      );
+      const linAgg = new Map<number, PeriodTriple[]>();
+      for (const lin of payload.rowIndex.linsByCat.get(cat) ?? []) {
+        const perLin = aggCache.byLin.get(`${cat}|${lin}`)?.get(lin);
+        if (perLin) linAgg.set(lin, perLin);
+      }
       const linKeys = matrixSortKeys([...linAgg.keys()], linAgg, payload.lins);
       for (const lin of linKeys) {
         const lk = `${ck}|l${lin}`;
@@ -335,18 +338,11 @@ export function MatrixTable({
 
         if (!matrixOpen.has(lk)) continue;
 
-        const linIndices = filterIndexedRowIndices(
-          payload.rowIndex.indicesByCatLin.get(`${cat}|${lin}`),
-          filteredSet,
-        );
-        const subAgg = aggregateIndicesBySede(
-          payload.rows,
-          linIndices,
-          metric,
-          payload.sedes.length,
-          3,
-          payload.metricCtx,
-        );
+        const subAgg = new Map<number, PeriodTriple[]>();
+        for (const sub of payload.rowIndex.subsByCatLin.get(`${cat}|${lin}`) ?? []) {
+          const perSub = aggCache.bySub.get(`${cat}|${lin}|${sub}`)?.get(sub);
+          if (perSub) subAgg.set(sub, perSub);
+        }
         const subKeys = matrixSortKeys([...subAgg.keys()], subAgg, payload.subs);
         for (const sub of subKeys) {
           const bk = `${lk}|b${sub}`;
@@ -390,25 +386,9 @@ export function MatrixTable({
 
           if (!matrixOpen.has(bk)) continue;
 
-          const subIndices = filterIndexedRowIndices(
-            payload.rowIndex.indicesByCatLinSub.get(`${cat}|${lin}|${sub}`),
-            filteredSet,
-          );
-          const itAgg = aggregateIndicesBySede(
-            payload.rows,
-            subIndices,
-            metric,
-            payload.sedes.length,
-            4,
-            payload.metricCtx,
-          );
-          const itKeys = [...itAgg.keys()]
-            .sort((a, b) => {
-              const sa = (itAgg.get(a) ?? []).reduce((sum, values) => sum + (values?.[0] ?? 0), 0);
-              const sb = (itAgg.get(b) ?? []).reduce((sum, values) => sum + (values?.[0] ?? 0), 0);
-              return sb - sa;
-            })
-            .slice(0, 30);
+          const catLinSub = `${cat}|${lin}|${sub}`;
+          const itAgg = aggCache.byItem.get(catLinSub) ?? new Map<number, PeriodTriple[]>();
+          const itKeys = aggCache.topItems.get(catLinSub) ?? [];
           for (const item of itKeys) {
             const itemDetailKey = `item:${bk}|i${item}`;
             const itemPer = itAgg.get(item) ?? [];
@@ -443,8 +423,7 @@ export function MatrixTable({
     return rows;
   }, [
     activeDetails,
-    catAgg,
-    filteredSet,
+    aggCache,
     matrixDisplay,
     matrixMode,
     matrixOpen,
