@@ -9,6 +9,7 @@ import {
 export type InformeMetricContext = {
   cats: string[];
   lins: string[];
+  subs: string[];
   items: string[];
   ums: string[];
 };
@@ -27,27 +28,30 @@ export const readInformeRowPeriodTriple = (
 
   const catLabel = ctx.cats[row[1]] ?? "";
   const linLabel = ctx.lins[row[2]] ?? "";
-  if (!shouldConvertAsaderoToPollosUnd(catLabel, linLabel)) {
+  const subLabel = ctx.subs[row[3]] ?? "";
+  if (!shouldConvertAsaderoToPollosUnd(catLabel, linLabel, subLabel)) {
     return [cur, mom, yoy];
   }
 
   const itemLabel = ctx.items[row[4]] ?? "";
   const unitId = ctx.ums[row[4]] ?? "";
   return [
-    convertAsaderoQtyToPollosUnd(cur, itemLabel, unitId, linLabel),
-    convertAsaderoQtyToPollosUnd(mom, itemLabel, unitId, linLabel),
-    convertAsaderoQtyToPollosUnd(yoy, itemLabel, unitId, linLabel),
+    convertAsaderoQtyToPollosUnd(cur, itemLabel, unitId, linLabel, subLabel),
+    convertAsaderoQtyToPollosUnd(mom, itemLabel, unitId, linLabel, subLabel),
+    convertAsaderoQtyToPollosUnd(yoy, itemLabel, unitId, linLabel, subLabel),
   ];
 };
 
 export const informeMetricContextFromPayload = (payload: {
   cats: string[];
   lins: string[];
+  subs: string[];
   items: string[];
   ums: string[];
 }): InformeMetricContext => ({
   cats: payload.cats,
   lins: payload.lins,
+  subs: payload.subs,
   items: payload.items,
   ums: payload.ums,
 });
