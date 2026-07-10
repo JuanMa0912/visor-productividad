@@ -99,8 +99,12 @@ export async function GET(request: Request) {
   const metaClient = await (await getDbPool()).connect();
   let maxCompactDate: string | null = null;
   try {
-    const meta = await loadInformeVariacionMeta(metaClient, scope.allowedKeys);
-    maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
+    try {
+      const meta = await loadInformeVariacionMeta(metaClient, scope.allowedKeys);
+      maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
+    } catch (metaError) {
+      console.error("[informe-variacion] error cargando maxDate:", metaError);
+    }
   } finally {
     metaClient.release();
   }

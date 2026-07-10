@@ -76,12 +76,11 @@ export const loadInformeVariacionMeta = async (
     `
       SELECT
         (
-          SELECT TO_CHAR(fecha_dcto, 'YYYYMMDD')
+          SELECT MAX(fecha_dcto)
           FROM ${table}
           WHERE fecha_dcto IS NOT NULL
+            AND fecha_dcto ~ '^[0-9]{8}$'
             ${sedeFilterSql}
-          ORDER BY fecha_dcto DESC
-          LIMIT 1
         ) AS max_date,
         EXISTS (
           SELECT 1
