@@ -88,3 +88,18 @@ export const buildMatrixAggCache = (
 
   return { byCat, byLin, bySub, byItem, topItems };
 };
+
+export type DualMatrixAggCache = Record<InformeMetric, MatrixAggCache>;
+
+/** Precalcula agregaciones para unidades y valor; alternar metrica no recomputa. */
+export const buildDualMatrixAggCache = (
+  rows: InformeCompactRow[],
+  rowIndex: InformeRowIndex,
+  filteredSet: ReadonlySet<number>,
+  filteredIndices: readonly number[],
+  sedeCount: number,
+  metricCtx: InformeMetricContext,
+): DualMatrixAggCache => ({
+  u: buildMatrixAggCache(rows, rowIndex, filteredSet, filteredIndices, "u", sedeCount, metricCtx),
+  v: buildMatrixAggCache(rows, rowIndex, filteredSet, filteredIndices, "v", sedeCount, metricCtx),
+});

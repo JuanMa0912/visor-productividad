@@ -81,6 +81,10 @@ export function InformeVariacionBoard({
     [deferredFilters, prepared],
   );
 
+  const handleMatrixMetricChange = useCallback((value: InformeMetric) => {
+    startTransition(() => setMatrixMetric(value));
+  }, []);
+
   const filteredTag = hasActiveInformeFilters(deferredFilters) ? (
     <span className="text-blue-600"> (filtrado)</span>
   ) : null;
@@ -392,7 +396,7 @@ export function InformeVariacionBoard({
         title="Matriz comparativa entre sedes"
         actions={
           <>
-            <MetricToggle value={matrixMetric} onChange={setMatrixMetric} />
+            <MetricToggle value={matrixMetric} onChange={handleMatrixMetricChange} />
             <ToggleGroup
               value={matrixDisplay}
               options={[

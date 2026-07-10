@@ -5,7 +5,7 @@ import {
   filterRowIndices,
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
-import { buildMatrixAggCache } from "@/lib/informe-variacion/matrix-agg-cache";
+import { buildDualMatrixAggCache } from "@/lib/informe-variacion/matrix-agg-cache";
 import {
   computeVariationPct,
   formatInformePct,
@@ -134,21 +134,19 @@ export function MatrixTable({
 
   const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices]);
 
-  const aggCache = useMemo(
+  const dualAggCache = useMemo(
     () =>
-      buildMatrixAggCache(
+      buildDualMatrixAggCache(
         payload.rows,
         payload.rowIndex,
         filteredSet,
         filteredIndices,
-        metric,
         payload.sedes.length,
         payload.metricCtx,
       ),
     [
       filteredIndices,
       filteredSet,
-      metric,
       payload.metricCtx,
       payload.rowIndex,
       payload.rows,
@@ -156,18 +154,28 @@ export function MatrixTable({
     ],
   );
 
-  const totPer = useMemo(() => {
-    const buckets = Array.from({ length: payload.sedes.length }, () => [0, 0, 0] as PeriodTriple);
-    for (const rowIndex of filteredIndices) {
-      const row = payload.rows[rowIndex]!;
-      const triple = readInformeRowPeriodTriple(row, metric, payload.metricCtx);
-      const bucket = buckets[row[0]];
-      bucket[0] += triple[0];
-      bucket[1] += triple[1];
-      bucket[2] += triple[2];
-    }
-    return buckets;
-  }, [filteredIndices, metric, payload.metricCtx, payload.rows, payload.sedes.length]);
+  const aggCache = dualAggCache[metric];
+
+  const totPerByMetric = useMemo(() => {
+    const build = (activeMetric: InformeMetric) => {
+      const buckets = Array.from(
+        { length: payload.sedes.length },
+        () => [0, 0, 0] as PeriodTriple,
+      );
+      for (const rowIndex of filteredIndices) {
+        const row = payload.rows[rowIndex]!;
+        const triple = readInformeRowPeriodTriple(row, activeMetric, payload.metricCtx);
+        const bucket = buckets[row[0]];
+        bucket[0] += triple[0];
+        bucket[1] += triple[1];
+        bucket[2] += triple[2];
+      }
+      return buckets;
+    };
+    return { u: build("u"), v: build("v") } satisfies Record<InformeMetric, PeriodTriple[]>;
+  }, [filteredIndices, payload.metricCtx, payload.rows, payload.sedes.length]);
+
+  const totPer = totPerByMetric[metric];
 
   const matrixBody = useMemo(() => {
     const matrixCells = (perSede?: PeriodTriple[]) =>
