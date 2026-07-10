@@ -5,10 +5,15 @@ import {
 } from "@/lib/margenes/margen-data-source";
 import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
 import { lastDayOfMonth } from "@/lib/informe-variacion/day-ranges";
-import { computeInformePeriods, toCompactDate } from "@/lib/informe-variacion/periods";
+import {
+  computeInformeDailyFetchBounds,
+  computeInformePeriods,
+  toCompactDate,
+} from "@/lib/informe-variacion/periods";
 import {
   buildInformeMargenTipoFilter,
   buildInformeVariacionPayload,
+  loadInformeVariacionPayload,
   type InformeDbAggRow,
 } from "@/lib/informe-variacion/query";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
@@ -111,17 +116,23 @@ export const queryInformeDailyRows = async (
   month: number,
   allowedSedeKeys: string[] | null,
   forcedMargenTipos: string[] | null = null,
+  availableRanges: InformeDayRangeSpec[] = [],
 ): Promise<InformeDailyDbRow[]> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
     return [];
   }
 
-  const cur = monthFullBounds(year, month);
   const momMonth = month === 1 ? 12 : month - 1;
   const momYear = month === 1 ? year - 1 : year;
-  const mom = monthFullBounds(momYear, momMonth);
-  const yoy = monthFullBounds(year - 1, month);
+  const { cur, mom, yoy } =
+    availableRanges.length > 0
+      ? computeInformeDailyFetchBounds(year, month, availableRanges)
+      : {
+          cur: monthFullBounds(year, month),
+          mom: monthFullBounds(momYear, momMonth),
+          yoy: monthFullBounds(year - 1, month),
+        };
 
   const sedeParams: Array<string | string[]> = [];
   const sedeFilterSql = buildSedeFilterDaily(allowedSedeKeys, sedeParams);
@@ -294,6 +305,37 @@ export const loadInformeVariacionMonthBundle = async (
     return null;
   }
 
+  if (availableRanges.length === 0) {
+    return null;
+  }
+
+  if (availableRanges.length === 1) {
+    const range = availableRanges[0]!;
+    const sqlStarted = Date.now();
+    const payload = await loadInformeVariacionPayload(
+      client,
+      year,
+      month,
+      allowedSedeKeys,
+      { dayRange: range, forcedMargenTipos },
+    );
+    const sqlMs = Date.now() - sqlStarted;
+    return {
+      bundle: {
+        bundle: true,
+        year,
+        month,
+        payloads: { [range.id]: payload },
+        rangeIds: [range.id],
+      },
+      stats: {
+        sqlMs,
+        buildMs: 0,
+        dailyRowCount: 0,
+      },
+    };
+  }
+
   const sqlStarted = Date.now();
   const dailyRows = await queryInformeDailyRows(
     client,
@@ -301,6 +343,7 @@ export const loadInformeVariacionMonthBundle = async (
     month,
     allowedSedeKeys,
     forcedMargenTipos,
+    availableRanges,
   );
   const sqlMs = Date.now() - sqlStarted;
 

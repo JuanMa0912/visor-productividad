@@ -578,7 +578,6 @@ export default function InformeVariacionPage() {
       try {
         updatePrefetchProgress();
 
-        // TTFB: pintar el rango visible en cuanto llegue; bundle en paralelo.
         const primaryTask = cachedSelected
           ? Promise.resolve(cachedSelected)
           : fetchRangePayload(
@@ -607,6 +606,34 @@ export default function InformeVariacionPage() {
             .catch((err) => {
               if (err instanceof Error && err.name === "AbortError") return;
             });
+        }
+
+        // Un solo rango: evita bundle duplicado (~5s vs ~15s en el benchmark).
+        if (ranges.length <= 1) {
+          try {
+            await primaryTask;
+          } catch (primaryErr) {
+            if (
+              primaryErr instanceof Error &&
+              primaryErr.name === "AbortError"
+            ) {
+              return;
+            }
+            if (!readCachedPayload(year, month, selectedId)) {
+              throw primaryErr;
+            }
+          }
+          if (
+            controller.signal.aborted ||
+            activeMonthKeyRef.current !== monthToken
+          ) {
+            return;
+          }
+          applySelectedPayload();
+          setPrefetchDone(ranges.length);
+          setLoading(false);
+          setRangeSwitchPending(false);
+          return;
         }
 
         const bundleResult = await fetchMonthBundle(

@@ -8,12 +8,12 @@ import {
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 
 describe("getAvailableInformeDayRanges", () => {
-  it("en dia 15 del mes muestra los primeros 3 rangos", () => {
+  it("en dia 15 del mes muestra los primeros 3 rangos y el acumulado parcial", () => {
     const asOf = new Date(2026, 6, 15);
     const available = getAvailableInformeDayRanges(2026, 7, asOf);
     assert.deepEqual(
       available.map((range) => range.id),
-      ["1-7", "1-14", "8-14"],
+      ["1-7", "1-14", "8-14", "1-15"],
     );
   });
 
@@ -32,13 +32,29 @@ describe("getAvailableInformeDayRanges", () => {
       ["1-7", "1-14", "8-14"],
     );
   });
+
+  it("con datos hasta el dia 9 agrega rango acumulado 1 al 9", () => {
+    const asOf = new Date(2026, 6, 10);
+    const available = getAvailableInformeDayRanges(2026, 7, asOf, "20260709");
+    assert.deepEqual(
+      available.map((range) => range.id),
+      ["1-7", "1-9"],
+    );
+    assert.equal(defaultInformeDayRangeId(available), "1-9");
+  });
+
+  it("normaliza maxDate ISO desde PostgreSQL", () => {
+    const asOf = new Date(2026, 6, 10);
+    const available = getAvailableInformeDayRanges(2026, 7, asOf, "2026-07-09");
+    assert.equal(defaultInformeDayRangeId(available), "1-9");
+  });
 });
 
 describe("defaultInformeDayRangeId", () => {
   it("elige el acumulado mas amplio disponible", () => {
     const asOf = new Date(2026, 6, 15);
     const available = getAvailableInformeDayRanges(2026, 7, asOf);
-    assert.equal(defaultInformeDayRangeId(available), "1-14");
+    assert.equal(defaultInformeDayRangeId(available), "1-15");
   });
 });
 

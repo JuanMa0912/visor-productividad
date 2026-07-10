@@ -64,6 +64,50 @@ const monthRangeBounds = (
   };
 };
 
+/** Ventanas compactas cur/mom/yoy acotadas a los dias que cubren los rangos del mes. */
+export const computeInformeDailyFetchBounds = (
+  year: number,
+  month: number,
+  ranges: InformeDayRangeSpec[],
+): {
+  cur: { from: string; to: string };
+  mom: { from: string; to: string };
+  yoy: { from: string; to: string };
+} => {
+  const monthLast = lastDayOfMonth(year, month);
+  const momMonth = month === 1 ? 12 : month - 1;
+  const momYear = month === 1 ? year - 1 : year;
+  const momLast = lastDayOfMonth(momYear, momMonth);
+  const yoyLast = lastDayOfMonth(year - 1, month);
+
+  const minFromDay =
+    ranges.length > 0 ? Math.min(...ranges.map((range) => range.fromDay)) : 1;
+  const maxToDay =
+    ranges.length > 0
+      ? Math.max(...ranges.map((range) => range.toDay ?? monthLast))
+      : monthLast;
+
+  const cur =
+    monthRangeBounds(year, month, minFromDay, maxToDay) ??
+    monthRangeBounds(year, month, 1, monthLast)!;
+  const mom =
+    monthRangeBounds(
+      momYear,
+      momMonth,
+      minFromDay,
+      Math.min(maxToDay, momLast),
+    ) ?? monthRangeBounds(momYear, momMonth, 1, momLast)!;
+  const yoy =
+    monthRangeBounds(
+      year - 1,
+      month,
+      minFromDay,
+      Math.min(maxToDay, yoyLast),
+    ) ?? monthRangeBounds(year - 1, month, 1, yoyLast)!;
+
+  return { cur, mom, yoy };
+};
+
 export const computeInformePeriods = (
   year: number,
   month: number,
@@ -110,13 +154,16 @@ export const computeInformePeriods = (
   };
 };
 
+import { normalizeInformeCompactDate } from "@/lib/informe-variacion/day-ranges";
+
 export const defaultInformeYearMonth = (
   maxCompact: string | null | undefined,
 ): { year: number; month: number } => {
-  if (maxCompact && /^\d{8}$/.test(maxCompact)) {
+  const compact = normalizeInformeCompactDate(maxCompact);
+  if (compact) {
     return {
-      year: Number(maxCompact.slice(0, 4)),
-      month: Number(maxCompact.slice(4, 6)),
+      year: Number(compact.slice(0, 4)),
+      month: Number(compact.slice(4, 6)),
     };
   }
   const now = new Date();

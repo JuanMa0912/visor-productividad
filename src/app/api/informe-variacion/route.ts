@@ -4,10 +4,12 @@ import { getDbPool } from "@/lib/db";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
 import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
 import { loadInformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
+import { loadInformeVariacionMeta } from "@/lib/informe-variacion/meta";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
   isInformeDayRangeAvailable,
+  normalizeInformeCompactDate,
   parseInformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import {
@@ -94,7 +96,21 @@ export async function GET(request: Request) {
     );
   }
 
-  const availableRanges = getAvailableInformeDayRanges(year, month);
+  const metaClient = await (await getDbPool()).connect();
+  let maxCompactDate: string | null = null;
+  try {
+    const meta = await loadInformeVariacionMeta(metaClient, scope.allowedKeys);
+    maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
+  } finally {
+    metaClient.release();
+  }
+
+  const availableRanges = getAvailableInformeDayRanges(
+    year,
+    month,
+    new Date(),
+    maxCompactDate,
+  );
   const wantsBundle = url.searchParams.get("bundle") === "month";
 
   if (wantsBundle) {
@@ -205,7 +221,7 @@ export async function GET(request: Request) {
       ),
     );
   }
-  if (dayRange && !isInformeDayRangeAvailable(dayRange.id, year, month)) {
+  if (dayRange && !isInformeDayRangeAvailable(dayRange.id, year, month, new Date(), maxCompactDate)) {
     return withSession(
       NextResponse.json(
         { error: "El rango de dias seleccionado aun no esta disponible para este mes." },

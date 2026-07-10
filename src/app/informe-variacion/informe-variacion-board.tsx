@@ -18,6 +18,9 @@ import {
   sedeSummaryExportFilename,
 } from "@/lib/informe-variacion/export-sede-summary";
 import { downloadInformeSedeSummaryExcel } from "@/lib/informe-variacion/export-sede-summary-excel";
+import { matrixExportFilename } from "@/lib/informe-variacion/export-matrix";
+import { downloadInformeMatrixExcel } from "@/lib/informe-variacion/export-matrix-excel";
+import { downloadInformeMatrixPdf } from "@/lib/informe-variacion/export-matrix-pdf";
 import {
   EMPTY_INFORME_FILTERS,
   INFORME_EMPRESA_ORDER,
@@ -48,7 +51,10 @@ export function InformeVariacionBoard({
   categoryScopeLocked = false,
 }: Props) {
   const prepared = useMemo(() => prepareInformeData(payload), [payload]);
-  const [metric, setMetric] = useState<InformeMetric>("v");
+  const [kpiMetric, setKpiMetric] = useState<InformeMetric>("v");
+  const [sedeMetric, setSedeMetric] = useState<InformeMetric>("v");
+  const [matrixMetric, setMatrixMetric] = useState<InformeMetric>("v");
+  const [treeMetric, setTreeMetric] = useState<InformeMetric>("v");
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
   const deferredFilters = useDeferredValue(filters);
   const [matrixMode, setMatrixMode] = useState<"yoy" | "mom">("yoy");
@@ -80,21 +86,21 @@ export function InformeVariacionBoard({
   ) : null;
 
   const kpiTotals = useMemo(
-    () => sumFilteredRows(prepared.rows, metric, pass, prepared.metricCtx),
-    [metric, pass, prepared.metricCtx, prepared.rows],
+    () => sumFilteredRows(prepared.rows, kpiMetric, pass, prepared.metricCtx),
+    [kpiMetric, pass, prepared.metricCtx, prepared.rows],
   );
 
   const kpiYoyComparable = useMemo(() => {
     const indices = filterRowIndices(prepared.rows, pass).filter(
       (index) => prepared.sedeYoy[prepared.rows[index]![0]],
     );
-    return sumRowIndices(prepared.rows, indices, metric, prepared.metricCtx);
-  }, [metric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy]);
+    return sumRowIndices(prepared.rows, indices, kpiMetric, prepared.metricCtx);
+  }, [kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy]);
 
   const growthSedes = useMemo(() => {
     const perSede = aggregateBySede(
       prepared.rows,
-      metric,
+      kpiMetric,
       prepared.sedes.length,
       pass,
       prepared.metricCtx,
@@ -106,7 +112,7 @@ export function InformeVariacionBoard({
       }
     });
     return count;
-  }, [metric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
+  }, [kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
 
   const updateFilter = (patch: Partial<InformeGlobalFilters>) => {
     startTransition(() => {
@@ -156,16 +162,65 @@ export function InformeVariacionBoard({
   };
 
   const exportSedeSummary = useCallback(async () => {
-    const rows = buildSedeSummaryExportRows(prepared, metric, pass);
+    const rows = buildSedeSummaryExportRows(prepared, sedeMetric, pass);
     await downloadInformeSedeSummaryExcel({
       rows,
-      metric,
+      metric: sedeMetric,
       periodLabel: payload.periods.current.label,
       yoyLabel,
       momLabel,
-      filename: sedeSummaryExportFilename(payload.periods.current.label, metric),
+      filename: sedeSummaryExportFilename(payload.periods.current.label, sedeMetric),
     });
-  }, [metric, momLabel, pass, prepared, payload.periods.current.label, yoyLabel]);
+  }, [momLabel, pass, prepared, payload.periods.current.label, sedeMetric, yoyLabel]);
+
+  const matrixExportOptions = useMemo(
+    () => ({
+      payload: prepared,
+      metric: matrixMetric,
+      pass,
+      matrixMode,
+      matrixDisplay,
+      matrixOpen,
+      matrixSort,
+      periodLabel: payload.periods.current.label,
+    }),
+    [
+      matrixDisplay,
+      matrixMetric,
+      matrixMode,
+      matrixOpen,
+      matrixSort,
+      pass,
+      prepared,
+      payload.periods.current.label,
+    ],
+  );
+
+  const exportMatrixExcel = useCallback(async () => {
+    await downloadInformeMatrixExcel({
+      ...matrixExportOptions,
+      filename: matrixExportFilename(
+        payload.periods.current.label,
+        matrixMetric,
+        matrixMode,
+        matrixDisplay,
+        "xlsx",
+      ),
+    });
+  }, [matrixDisplay, matrixExportOptions, matrixMetric, matrixMode, payload.periods.current.label]);
+
+  const exportMatrixPdf = useCallback(() => {
+    downloadInformeMatrixPdf({
+      ...matrixExportOptions,
+      filename: matrixExportFilename(
+        payload.periods.current.label,
+        matrixMetric,
+        matrixMode,
+        matrixDisplay,
+        "pdf",
+      ),
+    });
+  }, [matrixDisplay, matrixExportOptions, matrixMetric, matrixMode, payload.periods.current.label]);
 
   return (
     <div className="space-y-5" aria-busy={dataPending}>
@@ -219,68 +274,59 @@ export function InformeVariacionBoard({
         </span>
       </div>
 
-      <div className="flex border-b-2 border-slate-200">
-        {(["u", "v"] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setMetric(tab)}
-            className={cn(
-              "-mb-0.5 border-b-2 px-6 py-2 text-sm font-semibold",
-              metric === tab
-                ? "border-blue-600 text-slate-900"
-                : "border-transparent text-slate-500 hover:text-slate-800",
-            )}
-          >
-            {tab === "u" ? "Unidades" : "Valor $ (miles)"}
-          </button>
-        ))}
-      </div>
-      {metric === "u" ? (
-        <p className="mb-4 text-xs text-slate-500">
-          Asaderos (línea 01 Pollo Asado): cantidades en{" "}
-          <span className="font-medium text-slate-700">pollos und</span> (8 presas = 1
-          pollo; 2 medios 1/2 = 1 pollo).
-        </p>
-      ) : null}
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          title={`${metric === "u" ? "Unidades" : "Ventas miles $"} ${curLabel}`}
-          value={formatInformeValue(kpiTotals[0], metric)}
-          tag={filteredTag}
-          loading={dataPending}
-        />
-        <KpiCard
-          title={`${yoyLabel} (base YoY)`}
-          value={formatInformeValue(kpiYoyComparable[2], metric)}
-          tag={filteredTag}
-          loading={dataPending}
-          footer={
-            <>
-              <VariationChip current={kpiYoyComparable[0]} previous={kpiYoyComparable[2]} /> YoY
-            </>
-          }
-        />
-        <KpiCard
-          title={`${momLabel} (base MoM)`}
-          value={formatInformeValue(kpiTotals[1], metric)}
-          tag={filteredTag}
-          loading={dataPending}
-          footer={
-            <>
-              <VariationChip current={kpiTotals[0]} previous={kpiTotals[1]} /> MoM
-            </>
-          }
-        />
-        <KpiCard
-          title={`Sedes con crecimiento YoY`}
-          value={String(growthSedes)}
-          tag={filteredTag}
-          loading={dataPending}
-          footer={<span className="text-slate-500">de las sedes con base {yoyLabel.toLowerCase()}</span>}
-        />
-      </div>
+      <Section
+        title="Indicadores del periodo"
+        actions={<MetricToggle value={kpiMetric} onChange={setKpiMetric} />}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            title={`${kpiMetric === "u" ? "Unidades" : "Ventas miles $"} ${curLabel}`}
+            value={formatInformeValue(kpiTotals[0], kpiMetric)}
+            tag={filteredTag}
+            loading={dataPending}
+          />
+          <KpiCard
+            title={`${yoyLabel} (base YoY)`}
+            value={formatInformeValue(kpiYoyComparable[2], kpiMetric)}
+            tag={filteredTag}
+            loading={dataPending}
+            footer={
+              <>
+                <VariationChip current={kpiYoyComparable[0]} previous={kpiYoyComparable[2]} /> YoY
+              </>
+            }
+          />
+          <KpiCard
+            title={`${momLabel} (base MoM)`}
+            value={formatInformeValue(kpiTotals[1], kpiMetric)}
+            tag={filteredTag}
+            loading={dataPending}
+            footer={
+              <>
+                <VariationChip current={kpiTotals[0]} previous={kpiTotals[1]} /> MoM
+              </>
+            }
+          />
+          <KpiCard
+            title={`Sedes con crecimiento YoY`}
+            value={String(growthSedes)}
+            tag={filteredTag}
+            loading={dataPending}
+            footer={
+              <span className="text-slate-500">
+                de las sedes con base {yoyLabel.toLowerCase()}
+              </span>
+            }
+          />
+        </div>
+        {kpiMetric === "u" ? (
+          <p className="mt-3 text-xs text-slate-500">
+            Asaderos (línea 01 Pollo Asado): cantidades en{" "}
+            <span className="font-medium text-slate-700">pollos und</span> (8 presas = 1 pollo; 2
+            medios 1/2 = 1 pollo).
+          </p>
+        ) : null}
+      </Section>
 
       <InformeFilters
         payload={prepared}
@@ -306,20 +352,23 @@ export function InformeVariacionBoard({
       <Section
         title="Resumen por empresa y sede"
         actions={
-          <button
-            type="button"
-            onClick={() => void exportSedeSummary()}
-            disabled={dataPending}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Exportar Excel
-          </button>
+          <>
+            <MetricToggle value={sedeMetric} onChange={setSedeMetric} />
+            <button
+              type="button"
+              onClick={() => void exportSedeSummary()}
+              disabled={dataPending}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Exportar Excel
+            </button>
+          </>
         }
       >
         <SedeSummaryTable
           payload={prepared}
-          metric={metric}
+          metric={sedeMetric}
           pass={pass}
           curLabel={curLabel}
           momLabel={momLabel}
@@ -338,11 +387,12 @@ export function InformeVariacionBoard({
         title="Matriz comparativa entre sedes"
         actions={
           <>
+            <MetricToggle value={matrixMetric} onChange={setMatrixMetric} />
             <ToggleGroup
               value={matrixDisplay}
               options={[
                 { id: "pct", label: "%" },
-                { id: "value", label: metric === "u" ? "Unidades" : "$" },
+                { id: "value", label: matrixMetric === "u" ? "Unidades" : "$" },
               ]}
               onChange={(value) => setMatrixDisplay(value as "pct" | "value")}
             />
@@ -373,12 +423,30 @@ export function InformeVariacionBoard({
                 }
               }}
             />
+            <button
+              type="button"
+              onClick={() => void exportMatrixExcel()}
+              disabled={dataPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Excel
+            </button>
+            <button
+              type="button"
+              onClick={() => exportMatrixPdf()}
+              disabled={dataPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              PDF
+            </button>
           </>
         }
       >
         <MatrixTable
           payload={prepared}
-          metric={metric}
+          metric={matrixMetric}
           pass={pass}
           matrixMode={matrixMode}
           matrixDisplay={matrixDisplay}
@@ -391,10 +459,13 @@ export function InformeVariacionBoard({
         />
       </Section>
 
-      <Section title="Explorador jerarquico">
+      <Section
+        title="Explorador jerarquico"
+        actions={<MetricToggle value={treeMetric} onChange={setTreeMetric} />}
+      >
         <TreeTable
           payload={prepared}
-          metric={metric}
+          metric={treeMetric}
           pass={pass}
           treeOpen={treeOpen}
           setTreeOpen={setTreeOpen}
@@ -521,6 +592,25 @@ function ToggleGroup({
         </button>
       ))}
     </span>
+  );
+}
+
+function MetricToggle({
+  value,
+  onChange,
+}: {
+  value: InformeMetric;
+  onChange: (value: InformeMetric) => void;
+}) {
+  return (
+    <ToggleGroup
+      value={value}
+      options={[
+        { id: "u", label: "Unidades" },
+        { id: "v", label: "Valor $" },
+      ]}
+      onChange={(next) => onChange(next as InformeMetric)}
+    />
   );
 }
 

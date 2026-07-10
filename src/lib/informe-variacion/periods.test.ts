@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   computeInformePeriods,
+  computeInformeDailyFetchBounds,
   formatInformePeriodLabel,
   parseYearMonthInput,
 } from "@/lib/informe-variacion/periods";
@@ -26,6 +27,29 @@ describe("computeInformePeriods", () => {
     assert.equal(periods.mom.from, "20251201");
     assert.equal(periods.mom.to, "20251231");
     assert.equal(periods.yoy.from, "20250101");
+  });
+});
+
+describe("computeInformeDailyFetchBounds", () => {
+  it("acota a dias 1-7 cuando solo hay un rango parcial", () => {
+    const bounds = computeInformeDailyFetchBounds(2026, 7, [
+      { id: "1-7", label: "1 al 7", fromDay: 1, toDay: 7 },
+    ]);
+    assert.equal(bounds.cur.from, "20260701");
+    assert.equal(bounds.cur.to, "20260707");
+    assert.equal(bounds.mom.from, "20260601");
+    assert.equal(bounds.mom.to, "20260607");
+    assert.equal(bounds.yoy.from, "20250701");
+    assert.equal(bounds.yoy.to, "20250707");
+  });
+
+  it("usa mes completo cuando hay rango 1 al fin", () => {
+    const bounds = computeInformeDailyFetchBounds(2026, 6, [
+      { id: "1-7", label: "1 al 7", fromDay: 1, toDay: 7 },
+      { id: "1-eom", label: "1 al fin", fromDay: 1, toDay: null },
+    ]);
+    assert.equal(bounds.cur.from, "20260601");
+    assert.equal(bounds.cur.to, "20260630");
   });
 });
 

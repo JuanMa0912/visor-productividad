@@ -8,6 +8,7 @@
 import pg from "pg";
 import { loadEnvFiles, resolvePgClientConfig } from "./db-client-config.mjs";
 import { getAvailableInformeDayRanges } from "../src/lib/informe-variacion/day-ranges.ts";
+import { computeInformeDailyFetchBounds } from "../src/lib/informe-variacion/periods.ts";
 import { loadInformeVariacionMonthBundle } from "../src/lib/informe-variacion/daily-bundle.ts";
 import { loadInformeVariacionPayload } from "../src/lib/informe-variacion/query.ts";
 import { defaultInformeDayRangeId } from "../src/lib/informe-variacion/day-ranges.ts";
@@ -48,6 +49,12 @@ try {
   console.log(`Rangos disponibles: ${ranges.length}`);
   if (primaryId) {
     console.log(`Rango principal: ${primaryId}`);
+  }
+  if (ranges.length > 0) {
+    const bounds = computeInformeDailyFetchBounds(year, month, ranges);
+    console.log(
+      `Ventana SQL bundle: cur ${bounds.cur.from}-${bounds.cur.to} · mom ${bounds.mom.from}-${bounds.mom.to} · yoy ${bounds.yoy.from}-${bounds.yoy.to}`,
+    );
   }
 
   if (primaryId) {

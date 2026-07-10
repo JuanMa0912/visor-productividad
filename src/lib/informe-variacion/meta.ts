@@ -76,7 +76,7 @@ export const loadInformeVariacionMeta = async (
     `
       SELECT
         (
-          SELECT fecha_dcto::text
+          SELECT TO_CHAR(fecha_dcto, 'YYYYMMDD')
           FROM ${table}
           WHERE fecha_dcto IS NOT NULL
             ${sedeFilterSql}
