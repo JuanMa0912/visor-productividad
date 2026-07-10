@@ -92,4 +92,54 @@ describe("pollos und en sublinea", () => {
     const subAgg = aggregateIndicesByKey(polloRows, [0, 1], "u", 3, ctx);
     assert.equal(subAgg.get(0)?.[0], 101);
   });
+
+  it("en linea suma pollos und y porciones excluidas en crudo", () => {
+    const rows: InformeCompactRow[] = [
+      [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 718, 0, 0, 0, 0, 0],
+    ];
+    const lineCtx = {
+      cats: ["3 Asaderos"],
+      lins: ["01 POLLO ASADO"],
+      subs: ["01 POLLO"],
+      items: ["063018 MUSLO APANADO (NVO)", "063027 PORCION DE PAPAS AMARILLAS (NVO)"],
+      ums: ["", ""],
+    };
+    const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, lineCtx);
+    const lineAgg = aggregateIndicesByKey(rows, [0, 1], "u", 2, lineCtx);
+    assert.equal(subAgg.get(0)?.[0], 100);
+    assert.equal(lineAgg.get(0)?.[0], 818);
+  });
+});
+
+describe("huevos und en sublinea", () => {
+  const LINE = "12 HUEVOS";
+  const SUB = "02 HUEVOS ROSADOS";
+  const ctx = {
+    cats: ["4 Mercado"],
+    lins: [LINE],
+    subs: [SUB],
+    items: [
+      "028992 HUEVO MERCAMIO ROSADO AA*30und",
+      "013070 HUEVO MERCAMIO ROSADO A*und GRANEL",
+    ],
+    ums: ["", ""],
+  };
+
+  it("mantiene empaques crudos a nivel item", () => {
+    const rows: InformeCompactRow[] = [
+      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0],
+    ];
+    const itemAgg = aggregateIndicesByKey(rows, [0], "u", 4, ctx);
+    assert.equal(itemAgg.get(0)?.[0], 100);
+  });
+
+  it("convierte a huevos individuales en total de sublinea", () => {
+    const rows: InformeCompactRow[] = [
+      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 10, 0, 0, 0, 0, 0],
+    ];
+    const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, ctx);
+    assert.equal(subAgg.get(0)?.[0], 3_010);
+  });
 });

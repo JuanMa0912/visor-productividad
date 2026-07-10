@@ -323,8 +323,9 @@ export function InformeVariacionBoard({
           <p className="mt-3 text-xs text-slate-500">
             Asaderos (línea 01 Pollo Asado): el total de la sublínea{" "}
             <span className="font-medium text-slate-700">01 POLLO</span> se expresa en{" "}
-            <span className="font-medium text-slate-700">pollos und</span> (8 presas = 1 pollo; 2
-            medios 1/2 = 1 pollo). Los ítems muestran unidades de venta de la BD.
+            <span className="font-medium text-slate-700">pollos und</span>; el total de línea
+            incluye además las porciones en unidades de venta. Los ítems muestran unidades de la
+            BD.
           </p>
         ) : null}
       </Section>

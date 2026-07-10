@@ -20,6 +20,17 @@ export const formatInformeValueRaw = (
   metric: InformeMetric,
 ): number => (metric === "u" ? value : Math.round(value / 1000));
 
+/** Etiqueta de unidad en filas de detalle Actual / YoY / MoM de la matriz. */
+export const informeMetricDetailLabel = (
+  metric: InformeMetric,
+  options?: { pollosUnd?: boolean; huevosUnd?: boolean },
+): string => {
+  if (metric === "v") return "$ miles";
+  if (options?.pollosUnd) return "pollos und";
+  if (options?.huevosUnd) return "huevos und";
+  return "unidades";
+};
+
 export const formatInformePct = (pct: number | null): string => {
   if (pct === null) return "N/D";
   return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
