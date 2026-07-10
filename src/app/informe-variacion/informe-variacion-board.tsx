@@ -1,7 +1,7 @@
 "use client";
 
-import { startTransition, useCallback, useDeferredValue, useMemo, useState } from "react";
-import { Download, Loader2 } from "lucide-react";
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import {
   aggregateBySede,
   aggregateMarginBySede,
@@ -457,24 +457,11 @@ function InformeVariacionBoardReady({
                 }
               }}
             />
-            <button
-              type="button"
-              onClick={() => void exportMatrixExcel()}
+            <MatrixExportMenu
               disabled={dataPending}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Excel
-            </button>
-            <button
-              type="button"
-              onClick={() => exportMatrixPdf()}
-              disabled={dataPending}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download className="h-3.5 w-3.5" />
-              PDF
-            </button>
+              onExcel={() => void exportMatrixExcel()}
+              onPdf={() => exportMatrixPdf()}
+            />
           </>
         }
       >
@@ -532,6 +519,87 @@ function InformeVariacionBoardReady({
         )}
       </footer>
       </div>
+    </div>
+  );
+}
+
+function MatrixExportMenu({
+  disabled,
+  onExcel,
+  onPdf,
+}: {
+  disabled?: boolean;
+  onExcel: () => void;
+  onPdf: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof MouseEvent && menuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
+  return (
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Download className="h-3.5 w-3.5" />
+        Exportar
+        <ChevronDown
+          className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-1 min-w-[9.5rem] overflow-hidden rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onExcel();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-slate-400" />
+            Excel
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onPdf();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Download className="h-3.5 w-3.5 text-slate-400" />
+            PDF
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
