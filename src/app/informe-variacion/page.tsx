@@ -529,6 +529,23 @@ export default function InformeVariacionPage() {
         ranges.some((range) => range.id === dayRangeIdRef.current)
           ? dayRangeIdRef.current
           : primaryId;
+      const allCached =
+        !options.force &&
+        ranges.every((range) =>
+          Boolean(readCachedPayload(year, month, range.id)),
+        );
+      if (allCached) {
+        const selectedPayload = readCachedPayload(year, month, selectedId);
+        if (selectedPayload) {
+          setPayload(selectedPayload);
+        }
+        setPrefetchDone(ranges.length);
+        setLoading(false);
+        setRangeSwitchPending(false);
+        setMonthLoadLocked(false);
+        return;
+      }
+
       const cachedSelected = options.force
         ? null
         : readCachedPayload(year, month, selectedId);
@@ -538,7 +555,60 @@ export default function InformeVariacionPage() {
         setLoading(true);
       }
 
+      const updatePrefetchProgress = () => {
+        const ready = ranges.filter((range) =>
+          Boolean(readCachedPayload(year, month, range.id)),
+        ).length;
+        setPrefetchDone(ready);
+      };
+
+      const applySelectedPayload = () => {
+        const current =
+          dayRangeIdRef.current &&
+          ranges.some((range) => range.id === dayRangeIdRef.current)
+            ? dayRangeIdRef.current
+            : selectedId;
+        const data = readCachedPayload(year, month, current);
+        if (data) {
+          startTransition(() => setPayload(data));
+          setRangeSwitchPending(false);
+        }
+      };
+
       try {
+        updatePrefetchProgress();
+
+        // TTFB: pintar el rango visible en cuanto llegue; bundle en paralelo.
+        const primaryTask = cachedSelected
+          ? Promise.resolve(cachedSelected)
+          : fetchRangePayload(
+              year,
+              month,
+              selectedId,
+              controller.signal,
+              options,
+            );
+
+        if (cachedSelected) {
+          setLoading(false);
+        } else {
+          void primaryTask
+            .then((data) => {
+              if (
+                controller.signal.aborted ||
+                activeMonthKeyRef.current !== monthToken
+              ) {
+                return;
+              }
+              setPayload(data);
+              setLoading(false);
+              updatePrefetchProgress();
+            })
+            .catch((err) => {
+              if (err instanceof Error && err.name === "AbortError") return;
+            });
+        }
+
         const bundleResult = await fetchMonthBundle(
           year,
           month,
@@ -553,39 +623,27 @@ export default function InformeVariacionPage() {
         }
 
         if (bundleResult === "ok") {
-          const selected =
-            dayRangeIdRef.current &&
-            ranges.some((range) => range.id === dayRangeIdRef.current)
-              ? dayRangeIdRef.current
-              : primaryId;
-          const selectedPayload = readCachedPayload(year, month, selected);
-          if (selectedPayload) {
-            setPayload(selectedPayload);
-          }
+          applySelectedPayload();
           setPrefetchDone(ranges.length);
           setLoading(false);
           setRangeSwitchPending(false);
           return;
         }
 
-        const cachedPrimary = options.force
-          ? null
-          : readCachedPayload(year, month, primaryId);
-        if (cachedPrimary) {
-          setPayload(cachedPrimary);
-          setPrefetchDone(1);
-          setLoading(false);
+        try {
+          await primaryTask;
+        } catch (primaryErr) {
+          if (
+            primaryErr instanceof Error &&
+            primaryErr.name === "AbortError"
+          ) {
+            return;
+          }
+          if (!readCachedPayload(year, month, selectedId)) {
+            throw primaryErr;
+          }
         }
 
-        const primary =
-          cachedPrimary ??
-          (await fetchRangePayload(
-            year,
-            month,
-            primaryId,
-            controller.signal,
-            options,
-          ));
         if (
           controller.signal.aborted ||
           activeMonthKeyRef.current !== monthToken
@@ -593,20 +651,14 @@ export default function InformeVariacionPage() {
           return;
         }
 
-        if (
-          dayRangeIdRef.current === primaryId ||
-          dayRangeIdRef.current === "" ||
-          !dayRangeIdRef.current
-        ) {
-          setPayload(primary);
-        }
-        setPrefetchDone(1);
+        applySelectedPayload();
         setLoading(false);
+        updatePrefetchProgress();
 
-        if (others.length === 0) return;
-
-        let extraOk = 0;
-        for (const rangeId of others) {
+        const missingOthers = others.filter(
+          (rangeId) => !readCachedPayload(year, month, rangeId),
+        );
+        for (const rangeId of missingOthers) {
           if (
             controller.signal.aborted ||
             activeMonthKeyRef.current !== monthToken
@@ -621,8 +673,7 @@ export default function InformeVariacionPage() {
               controller.signal,
               options,
             );
-            extraOk += 1;
-            setPrefetchDone(1 + extraOk);
+            updatePrefetchProgress();
           } catch (prefetchErr) {
             if (
               controller.signal.aborted ||
@@ -644,14 +695,7 @@ export default function InformeVariacionPage() {
           return;
         }
 
-        const selected = dayRangeIdRef.current;
-        if (selected) {
-          const selectedPayload = readCachedPayload(year, month, selected);
-          if (selectedPayload) {
-            startTransition(() => setPayload(selectedPayload));
-            setRangeSwitchPending(false);
-          }
-        }
+        applySelectedPayload();
       } catch (err) {
         if (
           controller.signal.aborted ||

@@ -23,6 +23,7 @@
     "benchmark:ventas-x-item": "node scripts/benchmark-ventas-x-item.mjs",
     "benchmark:inventario-x-item": "tsx scripts/benchmark-inventario-x-item.mjs",
     "benchmark:margenes": "tsx scripts/benchmark-margenes.mts",
+    "benchmark:informe-variacion": "tsx scripts/benchmark-informe-variacion.mts",
     "margen:refresh-roll": "tsx scripts/refresh-margen-roll.mts",
     "rotacion:email": "tsx scripts/rotacion-daily-email.mts",
     "smtp:probe": "tsx scripts/smtp-probe.mts"

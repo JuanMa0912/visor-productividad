@@ -270,6 +270,17 @@ export type InformeVariacionMonthBundle = {
   rangeIds: string[];
 };
 
+export type InformeMonthBundleLoadStats = {
+  sqlMs: number;
+  buildMs: number;
+  dailyRowCount: number;
+};
+
+export type InformeMonthBundleLoadResult = {
+  bundle: InformeVariacionMonthBundle;
+  stats: InformeMonthBundleLoadStats;
+};
+
 export const loadInformeVariacionMonthBundle = async (
   client: PoolClient,
   year: number,
@@ -277,12 +288,13 @@ export const loadInformeVariacionMonthBundle = async (
   allowedSedeKeys: string[] | null,
   availableRanges: InformeDayRangeSpec[],
   forcedMargenTipos: string[] | null = null,
-): Promise<InformeVariacionMonthBundle | null> => {
+): Promise<InformeMonthBundleLoadResult | null> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
     return null;
   }
 
+  const sqlStarted = Date.now();
   const dailyRows = await queryInformeDailyRows(
     client,
     year,
@@ -290,7 +302,9 @@ export const loadInformeVariacionMonthBundle = async (
     allowedSedeKeys,
     forcedMargenTipos,
   );
+  const sqlMs = Date.now() - sqlStarted;
 
+  const buildStarted = Date.now();
   const payloads: Record<string, InformeVariacionPayload> = {};
   for (const range of availableRanges) {
     const dbRows = aggregateDailyRowsForRange(dailyRows, year, month, range);
@@ -313,12 +327,20 @@ export const loadInformeVariacionMonthBundle = async (
       },
     };
   }
+  const buildMs = Date.now() - buildStarted;
 
   return {
-    bundle: true,
-    year,
-    month,
-    payloads,
-    rangeIds: availableRanges.map((range) => range.id),
+    bundle: {
+      bundle: true,
+      year,
+      month,
+      payloads,
+      rangeIds: availableRanges.map((range) => range.id),
+    },
+    stats: {
+      sqlMs,
+      buildMs,
+      dailyRowCount: dailyRows.length,
+    },
   };
 };

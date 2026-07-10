@@ -132,7 +132,7 @@ export async function GET(request: Request) {
       await client.query("SET LOCAL jit = off");
 
       const startedAt = Date.now();
-      const bundle = await loadInformeVariacionMonthBundle(
+      const loaded = await loadInformeVariacionMonthBundle(
         client,
         year,
         month,
@@ -142,7 +142,7 @@ export async function GET(request: Request) {
       );
       const elapsedMs = Date.now() - startedAt;
 
-      if (!bundle) {
+      if (!loaded) {
         return withSession(
           NextResponse.json(
             { bundle: false as const },
@@ -156,9 +156,11 @@ export async function GET(request: Request) {
         );
       }
 
+      const { bundle, stats } = loaded;
+
       if (elapsedMs > 5_000) {
         console.info(
-          `[informe-variacion] bundle lento ${elapsedMs}ms year=${year} month=${month} ranges=${bundle.rangeIds.length}`,
+          `[informe-variacion] bundle lento ${elapsedMs}ms year=${year} month=${month} ranges=${bundle.rangeIds.length} sql=${stats.sqlMs}ms build=${stats.buildMs}ms dailyRows=${stats.dailyRowCount}`,
         );
       }
 
@@ -170,6 +172,9 @@ export async function GET(request: Request) {
             "Cache-Control": CACHE_CONTROL,
             "X-Data-Source": "database",
             "X-Informe-Elapsed-Ms": String(elapsedMs),
+            "X-Informe-Sql-Ms": String(stats.sqlMs),
+            "X-Informe-Build-Ms": String(stats.buildMs),
+            "X-Informe-Daily-Rows": String(stats.dailyRowCount),
           },
         }),
       );
@@ -272,6 +277,7 @@ export async function GET(request: Request) {
           "Cache-Control": CACHE_CONTROL,
           "X-Data-Source": "database",
           "X-Informe-Elapsed-Ms": String(elapsedMs),
+          "X-Informe-Row-Count": String(payload.meta.rowCount),
         },
       }),
     );

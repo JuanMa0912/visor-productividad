@@ -1,7 +1,7 @@
 import type { PoolClient } from "pg";
 import {
   isRollTable,
-  resolveMargenDataSource,
+  resolveInformeMargenDataSource,
   type MargenDataTable,
 } from "@/lib/margenes/margen-data-source";
 
@@ -68,7 +68,7 @@ export const loadInformeVariacionMeta = async (
     };
   }
 
-  const table = await resolveMargenDataSource(client);
+  const table = await resolveInformeMargenDataSource(client);
   const params: Array<string | string[]> = [];
   const sedeFilterSql = buildMetaSedeFilter(table, allowedSedeKeys, params);
 
