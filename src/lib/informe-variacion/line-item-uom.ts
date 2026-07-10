@@ -28,55 +28,81 @@ const parsePackNumber = (raw: string): number => {
 export const isExplicitCountItem = (text: string): boolean =>
   /\*(\d{1,4})\s*UND\b/.test(text) || /\*UND\b/.test(text);
 
-/** ¿La descripción o id_unidad mencionan ml/kg/lt/gr/cl/cc/kilo? */
-export const itemHasMeasurableUomMarker = (
-  itemLabel: string,
-  unitId = "",
-): boolean => {
-  const text = normalizeUomText(`${itemLabel} ${unitId}`);
-  if (isExplicitCountItem(text)) return false;
-  if (resolveItemUom(itemLabel, unitId).kind !== "count") return true;
-  return false;
+const toKg = {
+  mg: (n: number) => n / 1_000_000,
+  g: (n: number) => n / 1000,
+  gr: (n: number) => n / 1000,
+  kg: (n: number) => n,
 };
 
-const starPackFactor = (
+const toLiters = {
+  ml: (n: number) => n / 1000,
+  cc: (n: number) => n / 1000,
+  cl: (n: number) => n / 100,
+  lt: (n: number) => n,
+  l: (n: number) => n,
+};
+
+type PackRule = {
+  pattern: RegExp;
+  kind: Exclude<ItemUomKind, "count">;
+  toBase: (n: number) => number;
+};
+
+const STAR_PACK_RULES: PackRule[] = [
+  { pattern: /\*(\d+(?:\.\d+)?)\s*MG\b/, kind: "mass_kg", toBase: toKg.mg },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?\b/, kind: "mass_kg", toBase: toKg.gr },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*G\b/, kind: "mass_kg", toBase: toKg.g },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*KG\b/, kind: "mass_kg", toBase: toKg.kg },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*ML\b/, kind: "volume_l", toBase: toLiters.ml },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*CC\b/, kind: "volume_l", toBase: toLiters.cc },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*CL\b/, kind: "volume_l", toBase: toLiters.cl },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)\b/, kind: "volume_l", toBase: toLiters.lt },
+  { pattern: /\*(\d+(?:\.\d+)?)\s*L\b/, kind: "volume_l", toBase: toLiters.l },
+];
+
+const LOOSE_PACK_RULES: PackRule[] = [
+  { pattern: /\b(\d+(?:\.\d+)?)\s*MG\b/, kind: "mass_kg", toBase: toKg.mg },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?\b/, kind: "mass_kg", toBase: toKg.gr },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*G\b/, kind: "mass_kg", toBase: toKg.g },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*KG\b/, kind: "mass_kg", toBase: toKg.kg },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*ML\b/, kind: "volume_l", toBase: toLiters.ml },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*CC\b/, kind: "volume_l", toBase: toLiters.cc },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*CL\b/, kind: "volume_l", toBase: toLiters.cl },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)\b/, kind: "volume_l", toBase: toLiters.lt },
+  { pattern: /\b(\d+(?:\.\d+)?)\s*L\b/, kind: "volume_l", toBase: toLiters.l },
+];
+
+const UM_NUMERIC_RULES: PackRule[] = [
+  { pattern: /^(\d+(?:\.\d+)?)\s*MG$/, kind: "mass_kg", toBase: toKg.mg },
+  { pattern: /^(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?$/, kind: "mass_kg", toBase: toKg.gr },
+  { pattern: /^(\d+(?:\.\d+)?)\s*G$/, kind: "mass_kg", toBase: toKg.g },
+  { pattern: /^(\d+(?:\.\d+)?)\s*KG$/, kind: "mass_kg", toBase: toKg.kg },
+  { pattern: /^(\d+(?:\.\d+)?)\s*ML$/, kind: "volume_l", toBase: toLiters.ml },
+  { pattern: /^(\d+(?:\.\d+)?)\s*CC$/, kind: "volume_l", toBase: toLiters.cc },
+  { pattern: /^(\d+(?:\.\d+)?)\s*CL$/, kind: "volume_l", toBase: toLiters.cl },
+  { pattern: /^(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)$/, kind: "volume_l", toBase: toLiters.lt },
+];
+
+const matchPackRules = (
   text: string,
-  pattern: RegExp,
-  toBase: (n: number) => number,
-): number | null => {
-  const match = pattern.exec(text);
-  if (!match) return null;
-  const n = parsePackNumber(match[1]!);
-  return n > 0 ? toBase(n) : null;
-};
-
-const loosePackFactor = (
-  text: string,
-  pattern: RegExp,
-  toBase: (n: number) => number,
-): number | null => {
-  const match = pattern.exec(text);
-  if (!match) return null;
-  const n = parsePackNumber(match[1]!);
-  return n > 0 ? toBase(n) : null;
-};
-
-const umNumericFactor = (
   um: string,
-  pattern: RegExp,
-  toBase: (n: number) => number,
-): number | null => {
-  const match = pattern.exec(um);
-  if (!match) return null;
-  const n = parsePackNumber(match[1]!);
-  return n > 0 ? toBase(n) : null;
+  rules: PackRule[],
+  source: "text" | "um",
+): ResolvedItemUom | null => {
+  const haystack = source === "text" ? text : um;
+  for (const rule of rules) {
+    const match = rule.pattern.exec(haystack);
+    if (!match) continue;
+    const factor = rule.toBase(parsePackNumber(match[1]!));
+    if (factor > 0) return { kind: rule.kind, factor };
+  }
+  return null;
 };
 
 /**
- * Clasifica la unidad de un ítem revisando descripción e id_unidad.
- * Soporta: *KILO, *900ml, *500gr, *250g, *750cc, *25cl, *1lt, id_unidad KILO/ML/LT…
- * Empaque (*900ml): cantidad BD = número de empaques → se multiplica.
- * Venta a peso/volumen (*KILO, id_unidad KILO): cantidad BD ya está en kilos/litros.
+ * Clasifica un ítem: gramos/mg → factor en kilos; ml/cc/cl → factor en litros.
+ * Empaque (*250g, *900ml): cantidad BD = empaques. *KILO / id KILO: cantidad ya en kg.
  */
 export const resolveItemUom = (
   itemLabel: string,
@@ -89,7 +115,6 @@ export const resolveItemUom = (
     return { kind: "count", factor: 1 };
   }
 
-  // --- Venta directa a kilo / litro (cantidad ya en unidad base) ---
   if (/\*(KILO|KG)\b/.test(text) || /\bA\s+KILO\b/.test(text) || /\bPOR\s+KILO\b/.test(text)) {
     return { kind: "mass_kg", factor: 1 };
   }
@@ -98,40 +123,12 @@ export const resolveItemUom = (
     return { kind: "volume_l", factor: 1 };
   }
 
-  // --- Empaques con asterisco ---
-  const starRules: Array<[RegExp, ItemUomKind, (n: number) => number]> = [
-    [/\*(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?\b/, "mass_kg", (n) => n / 1000],
-    [/\*(\d+(?:\.\d+)?)\s*G\b/, "mass_kg", (n) => n / 1000],
-    [/\*(\d+(?:\.\d+)?)\s*KG\b/, "mass_kg", (n) => n],
-    [/\*(\d+(?:\.\d+)?)\s*ML\b/, "volume_l", (n) => n / 1000],
-    [/\*(\d+(?:\.\d+)?)\s*CC\b/, "volume_l", (n) => n / 1000],
-    [/\*(\d+(?:\.\d+)?)\s*CL\b/, "volume_l", (n) => n / 100],
-    [/\*(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)\b/, "volume_l", (n) => n],
-    [/\*(\d+(?:\.\d+)?)\s*L\b/, "volume_l", (n) => n],
-  ];
+  const starMatch = matchPackRules(text, um, STAR_PACK_RULES, "text");
+  if (starMatch) return starMatch;
 
-  for (const [pattern, kind, toBase] of starRules) {
-    const factor = starPackFactor(text, pattern, toBase);
-    if (factor !== null) return { kind, factor };
-  }
+  const umNumeric = matchPackRules(text, um, UM_NUMERIC_RULES, "um");
+  if (umNumeric) return umNumeric;
 
-  // --- id_unidad con cifra (900 ML, 500 GR) ---
-  const umRules: Array<[RegExp, ItemUomKind, (n: number) => number]> = [
-    [/^(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?$/, "mass_kg", (n) => n / 1000],
-    [/^(\d+(?:\.\d+)?)\s*G$/, "mass_kg", (n) => n / 1000],
-    [/^(\d+(?:\.\d+)?)\s*KG$/, "mass_kg", (n) => n],
-    [/^(\d+(?:\.\d+)?)\s*ML$/, "volume_l", (n) => n / 1000],
-    [/^(\d+(?:\.\d+)?)\s*CC$/, "volume_l", (n) => n / 1000],
-    [/^(\d+(?:\.\d+)?)\s*CL$/, "volume_l", (n) => n / 100],
-    [/^(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)$/, "volume_l", (n) => n],
-  ];
-
-  for (const [pattern, kind, toBase] of umRules) {
-    const factor = umNumericFactor(um, pattern, toBase);
-    if (factor !== null) return { kind, factor };
-  }
-
-  // --- id_unidad genérico ---
   if (/\b(KILO|KILOS|KG|KGM)\b/.test(um)) {
     return { kind: "mass_kg", factor: 1 };
   }
@@ -140,26 +137,12 @@ export const resolveItemUom = (
     return { kind: "volume_l", factor: 1 };
   }
 
-  if (/\b(GR|GRM|GRAMO|GRAMOS)\b/.test(um)) {
+  if (/\b(MG|MILIGRAMO|MILIGRAMOS|GR|GRM|GRAMO|GRAMOS)\b/.test(um)) {
     return { kind: "mass_kg", factor: 1 };
   }
 
-  // --- Marcas sueltas en descripción (sin asterisco) ---
-  const looseRules: Array<[RegExp, ItemUomKind, (n: number) => number]> = [
-    [/\b(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?\b/, "mass_kg", (n) => n / 1000],
-    [/\b(\d+(?:\.\d+)?)\s*G\b/, "mass_kg", (n) => n / 1000],
-    [/\b(\d+(?:\.\d+)?)\s*KG\b/, "mass_kg", (n) => n],
-    [/\b(\d+(?:\.\d+)?)\s*ML\b/, "volume_l", (n) => n / 1000],
-    [/\b(\d+(?:\.\d+)?)\s*CC\b/, "volume_l", (n) => n / 1000],
-    [/\b(\d+(?:\.\d+)?)\s*CL\b/, "volume_l", (n) => n / 100],
-    [/\b(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)\b/, "volume_l", (n) => n],
-    [/\b(\d+(?:\.\d+)?)\s*L\b/, "volume_l", (n) => n],
-  ];
-
-  for (const [pattern, kind, toBase] of looseRules) {
-    const factor = loosePackFactor(text, pattern, toBase);
-    if (factor !== null) return { kind, factor };
-  }
+  const looseMatch = matchPackRules(text, um, LOOSE_PACK_RULES, "text");
+  if (looseMatch) return looseMatch;
 
   if (COUNT_UNIT_IDS.test(um)) {
     if (/\bKILO\b/.test(text)) return { kind: "mass_kg", factor: 1 };
@@ -181,10 +164,8 @@ export const displayLabelForItemUomKind = (
 };
 
 /**
- * Analiza todos los ítems de un grupo (sublínea o línea):
- * - Si alguno es *und → no convierte.
- * - Si todos los medibles comparten kilos o litros → devuelve esa etiqueta.
- * - Ítems sin marca de peso/volumen se ignoran al clasificar el grupo.
+ * Revisa todos los ítems de una sublínea/línea.
+ * Gramos/mg/kg → kilos; ml/cc/cl/lt → litros. *und bloquea la conversión.
  */
 export const resolveGroupDisplayUom = (
   itemIndices: readonly number[],
@@ -192,8 +173,8 @@ export const resolveGroupDisplayUom = (
 ): string | null => {
   if (itemIndices.length === 0) return null;
 
-  let dominantKind: Exclude<ItemUomKind, "count"> | null = null;
-  let measurableItems = 0;
+  let massItems = 0;
+  let volumeItems = 0;
 
   for (const index of itemIndices) {
     const itemLabel = ctx.items[index] ?? "";
@@ -203,22 +184,16 @@ export const resolveGroupDisplayUom = (
     if (isExplicitCountItem(text)) return null;
 
     const resolved = resolveItemUom(itemLabel, unitId);
+    if (resolved.kind === "count") continue;
 
-    if (resolved.kind === "count") {
-      if (itemHasMeasurableUomMarker(itemLabel, unitId)) return null;
-      continue;
-    }
-
-    measurableItems += 1;
-    if (dominantKind === null) {
-      dominantKind = resolved.kind;
-    } else if (dominantKind !== resolved.kind) {
-      return null;
-    }
+    if (resolved.kind === "mass_kg") massItems += 1;
+    if (resolved.kind === "volume_l") volumeItems += 1;
   }
 
-  if (measurableItems === 0 || !dominantKind) return null;
-  return displayLabelForItemUomKind(dominantKind);
+  if (massItems > 0 && volumeItems > 0) return null;
+  if (massItems > 0) return "kilos";
+  if (volumeItems > 0) return "litros";
+  return null;
 };
 
 export const convertQtyToGroupUom = (
@@ -240,19 +215,32 @@ export const convertQtyToGroupUom = (
 export type InformeLineUomIndex = {
   lineDisplayUom: ReadonlyMap<number, string>;
   sublineDisplayUom: ReadonlyMap<string, string>;
+  sublineItems: ReadonlyMap<string, readonly number[]>;
+  lineItems: ReadonlyMap<number, readonly number[]>;
 };
 
-/** Precalcula unidad de display por sublínea y línea revisando todos sus ítems. */
+const mergeItemIndices = (
+  map: Map<string, Set<number>>,
+  key: string,
+  itemIndices: readonly number[],
+) => {
+  let bucket = map.get(key);
+  if (!bucket) {
+    bucket = new Set<number>();
+    map.set(key, bucket);
+  }
+  for (const index of itemIndices) bucket.add(index);
+};
+
+/** Agrupa ítems por sublínea/línea y calcula kilos o litros para cada grupo. */
 export const buildInformeLineUomIndex = (
   rowIndex: InformeRowIndex,
-  ctx: { items: string[]; ums: string[]; subs?: string[]; lins?: string[] },
+  ctx: { items: string[]; ums: string[] },
 ): InformeLineUomIndex => {
-  void ctx.subs;
-  void ctx.lins;
-
   const lineDisplayUom = new Map<number, string>();
   const sublineDisplayUom = new Map<string, string>();
-  const lineItems = new Map<number, Set<number>>();
+  const sublineItemsMap = new Map<string, Set<number>>();
+  const lineItemsMap = new Map<number, Set<number>>();
 
   for (const [catLinSub, itemIndices] of rowIndex.itemsByCatLinSub) {
     const parts = catLinSub.split("|");
@@ -261,21 +249,73 @@ export const buildInformeLineUomIndex = (
     const sub = Number(parts[2]);
     if (!Number.isFinite(lin) || !Number.isFinite(sub)) continue;
 
-    const subLabel = resolveGroupDisplayUom(itemIndices, ctx);
-    if (subLabel) sublineDisplayUom.set(`${lin}|${sub}`, subLabel);
+    const subKey = `${lin}|${sub}`;
+    mergeItemIndices(sublineItemsMap, subKey, itemIndices);
 
-    let bucket = lineItems.get(lin);
-    if (!bucket) {
-      bucket = new Set<number>();
-      lineItems.set(lin, bucket);
+    let lineBucket = lineItemsMap.get(lin);
+    if (!lineBucket) {
+      lineBucket = new Set<number>();
+      lineItemsMap.set(lin, lineBucket);
     }
-    for (const itemIndex of itemIndices) bucket.add(itemIndex);
+    for (const itemIndex of itemIndices) lineBucket.add(itemIndex);
   }
 
-  for (const [lin, itemIndices] of lineItems) {
-    const label = resolveGroupDisplayUom([...itemIndices], ctx);
+  for (const [subKey, itemSet] of sublineItemsMap) {
+    const itemIndices = [...itemSet];
+    const label = resolveGroupDisplayUom(itemIndices, ctx);
+    if (label) sublineDisplayUom.set(subKey, label);
+  }
+
+  for (const [lin, itemSet] of lineItemsMap) {
+    const itemIndices = [...itemSet];
+    const label = resolveGroupDisplayUom(itemIndices, ctx);
     if (label) lineDisplayUom.set(lin, label);
   }
 
-  return { lineDisplayUom, sublineDisplayUom };
+  return {
+    lineDisplayUom,
+    sublineDisplayUom,
+    sublineItems: new Map(
+      [...sublineItemsMap.entries()].map(([key, set]) => [key, [...set] as readonly number[]]),
+    ),
+    lineItems: new Map(
+      [...lineItemsMap.entries()].map(([key, set]) => [key, [...set] as readonly number[]]),
+    ),
+  };
+};
+
+export const resolveSublineDisplayUom = (
+  ctx: {
+    items: string[];
+    ums: string[];
+    sublineDisplayUom: ReadonlyMap<string, string>;
+    sublineItems: ReadonlyMap<string, readonly number[]>;
+  },
+  lin: number,
+  sub: number,
+): string | null => {
+  const key = `${lin}|${sub}`;
+  const cached = ctx.sublineDisplayUom.get(key);
+  if (cached) return cached;
+
+  const itemIndices = ctx.sublineItems.get(key);
+  if (!itemIndices?.length) return null;
+  return resolveGroupDisplayUom(itemIndices, ctx);
+};
+
+export const resolveLineDisplayUom = (
+  ctx: {
+    items: string[];
+    ums: string[];
+    lineDisplayUom: ReadonlyMap<number, string>;
+    lineItems: ReadonlyMap<number, readonly number[]>;
+  },
+  lin: number,
+): string | null => {
+  const cached = ctx.lineDisplayUom.get(lin);
+  if (cached) return cached;
+
+  const itemIndices = ctx.lineItems.get(lin);
+  if (!itemIndices?.length) return null;
+  return resolveGroupDisplayUom(itemIndices, ctx);
 };

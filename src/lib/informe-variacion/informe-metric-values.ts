@@ -11,7 +11,7 @@ import {
   shouldConvertHuevosLineTotals,
   shouldConvertHuevosToUndIndividuales,
 } from "@/lib/informe-variacion/huevos-individual-und";
-import { convertQtyToGroupUom } from "@/lib/informe-variacion/line-item-uom";
+import { convertQtyToGroupUom, resolveLineDisplayUom, resolveSublineDisplayUom } from "@/lib/informe-variacion/line-item-uom";
 
 export type InformeMetricContext = {
   cats: string[];
@@ -21,6 +21,8 @@ export type InformeMetricContext = {
   ums: string[];
   lineDisplayUom: ReadonlyMap<number, string>;
   sublineDisplayUom: ReadonlyMap<string, string>;
+  sublineItems: ReadonlyMap<string, readonly number[]>;
+  lineItems: ReadonlyMap<number, readonly number[]>;
 };
 
 const rowUnitTriple = (row: InformeCompactRow): PeriodTriple => [row[5], row[6], row[7]];
@@ -180,7 +182,7 @@ export const readInformeRowPeriodTripleForLevel = (
     if (shouldConvertHuevosToUndIndividuales(linLabel, subLabel)) {
       return readInformeRowHuevosUndTriple(row, ctx);
     }
-    const subUom = ctx.sublineDisplayUom.get(`${row[2]}|${row[3]}`);
+    const subUom = resolveSublineDisplayUom(ctx, row[2], row[3]);
     if (subUom) {
       return readInformeRowGroupUomTriple(row, ctx, subUom);
     }
@@ -197,7 +199,7 @@ export const readInformeRowPeriodTripleForLevel = (
     if (shouldConvertHuevosLineTotals(linLabel)) {
       return readInformeRowLineHuevosUndTriple(row, ctx);
     }
-    const linUom = ctx.lineDisplayUom.get(row[2]);
+    const linUom = resolveLineDisplayUom(ctx, row[2]);
     if (linUom) {
       return readInformeRowGroupUomTriple(row, ctx, linUom);
     }
@@ -218,6 +220,8 @@ export const informeMetricContextFromPayload = (
   uomIndex?: {
     lineDisplayUom: ReadonlyMap<number, string>;
     sublineDisplayUom: ReadonlyMap<string, string>;
+    sublineItems: ReadonlyMap<string, readonly number[]>;
+    lineItems: ReadonlyMap<number, readonly number[]>;
   },
 ): InformeMetricContext => ({
   cats: payload.cats,
@@ -227,4 +231,6 @@ export const informeMetricContextFromPayload = (
   ums: payload.ums,
   lineDisplayUom: uomIndex?.lineDisplayUom ?? new Map(),
   sublineDisplayUom: uomIndex?.sublineDisplayUom ?? new Map(),
+  sublineItems: uomIndex?.sublineItems ?? new Map(),
+  lineItems: uomIndex?.lineItems ?? new Map(),
 });

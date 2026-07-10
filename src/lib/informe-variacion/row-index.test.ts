@@ -41,6 +41,8 @@ const emptyMetricCtx = {
   ums: [],
   lineDisplayUom: new Map<number, string>(),
   sublineDisplayUom: new Map<string, string>(),
+  sublineItems: new Map<string, readonly number[]>(),
+  lineItems: new Map<number, readonly number[]>(),
 };
 
 describe("aggregateIndicesBySede", () => {
@@ -90,6 +92,8 @@ describe("pollos und en sublinea", () => {
     ums: ["", ""],
     lineDisplayUom: new Map<number, string>(),
     sublineDisplayUom: new Map<string, string>(),
+    sublineItems: new Map<string, readonly number[]>(),
+    lineItems: new Map<number, readonly number[]>(),
   };
 
   it("mantiene unidades crudas a nivel item", () => {
@@ -116,6 +120,8 @@ describe("pollos und en sublinea", () => {
       ums: ["", ""],
       lineDisplayUom: new Map<number, string>(),
       sublineDisplayUom: new Map<string, string>(),
+      sublineItems: new Map<string, readonly number[]>(),
+      lineItems: new Map<number, readonly number[]>(),
     };
     const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, lineCtx);
     const lineAgg = aggregateIndicesByKey(rows, [0, 1], "u", 2, lineCtx);
@@ -138,6 +144,8 @@ describe("huevos und en sublinea", () => {
     ums: ["", ""],
     lineDisplayUom: new Map<number, string>(),
     sublineDisplayUom: new Map<string, string>(),
+    sublineItems: new Map<string, readonly number[]>(),
+    lineItems: new Map<number, readonly number[]>(),
   };
 
   it("mantiene empaques crudos a nivel item", () => {
@@ -178,6 +186,8 @@ describe("kilos y litros en linea/sublinea", () => {
       ["0|0", "kilos"],
       ["1|0", "litros"],
     ]),
+    sublineItems: new Map<string, readonly number[]>(),
+    lineItems: new Map<number, readonly number[]>(),
   };
 
   it("mantiene empaques crudos a nivel item", () => {

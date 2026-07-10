@@ -71,6 +71,10 @@ describe("resolveItemUom", () => {
       kind: "mass_kg",
       factor: 1,
     });
+    assert.deepEqual(resolveItemUom("070001 SAL*500MG"), {
+      kind: "mass_kg",
+      factor: 0.0005,
+    });
   });
 });
 

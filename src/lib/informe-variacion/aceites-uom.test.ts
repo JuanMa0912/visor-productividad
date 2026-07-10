@@ -60,6 +60,8 @@ describe("aceites liquidos captura de pantalla", () => {
       ums: ACEITE_ITEMS.map(() => "UND"),
       lineDisplayUom: new Map<number, string>(),
       sublineDisplayUom: new Map<string, string>([["0|0", "litros"]]),
+      sublineItems: new Map<string, readonly number[]>(),
+      lineItems: new Map<number, readonly number[]>(),
     };
     const rows: InformeCompactRow[] = ACEITE_QTYS.map((qty, itemIndex) => [
       0, 0, 0, 0, itemIndex, qty, 0, 0, 0, 0, 0,

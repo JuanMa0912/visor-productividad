@@ -325,9 +325,8 @@ export function InformeVariacionBoard({
             <span className="font-medium text-slate-700">01 POLLO</span> se expresa en{" "}
             <span className="font-medium text-slate-700">pollos und</span>; el total de línea
             incluye además las porciones en unidades de venta. En Mercado, cada sublínea
-            revisa todos sus ítems (ml, lt, cc, cl, kg, gr, kilo…) y, si comparten la
-            misma medida, el total de sublínea y línea se expresa en{" "}
-            <span className="font-medium text-slate-700">kilos</span> o{" "}
+            revisa todos sus ítems: gramos, mg y kg se totalizan en{" "}
+            <span className="font-medium text-slate-700">kilos</span>; ml, cc y cl en{" "}
             <span className="font-medium text-slate-700">litros</span>. Huevos: sublínea
             en huevos individuales. Los ítems siempre muestran unidades de la BD.
           </p>
