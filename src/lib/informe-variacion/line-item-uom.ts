@@ -14,7 +14,7 @@ const DISPLAY_LABEL: Record<Exclude<ItemUomKind, "count">, string> = {
 };
 
 const COUNT_UNIT_IDS =
-  /^(UND|UNID|UNIDAD|UN|U|EA|PZA|PIEZA|PQT|PQTE|EMPAQ|PR|PRESA)?$/i;
+  /^(UND|UNID|UNIDAD|UN|U|EA|PZA|PIEZA|PQT|PQTE|EMPAQ|PR|PRESA|BOT|BOTELLA|BOLSA|CAJA|PACK|PAR)?$/i;
 
 const normalizeUomText = (value: string): string =>
   value.toUpperCase().replace(/,/g, ".");
@@ -24,10 +24,59 @@ const parsePackNumber = (raw: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+/** Empaque contado explícito (*12und, *und). */
+export const isExplicitCountItem = (text: string): boolean =>
+  /\*(\d{1,4})\s*UND\b/.test(text) || /\*UND\b/.test(text);
+
+/** ¿La descripción o id_unidad mencionan ml/kg/lt/gr/cl/cc/kilo? */
+export const itemHasMeasurableUomMarker = (
+  itemLabel: string,
+  unitId = "",
+): boolean => {
+  const text = normalizeUomText(`${itemLabel} ${unitId}`);
+  if (isExplicitCountItem(text)) return false;
+  if (resolveItemUom(itemLabel, unitId).kind !== "count") return true;
+  return false;
+};
+
+const starPackFactor = (
+  text: string,
+  pattern: RegExp,
+  toBase: (n: number) => number,
+): number | null => {
+  const match = pattern.exec(text);
+  if (!match) return null;
+  const n = parsePackNumber(match[1]!);
+  return n > 0 ? toBase(n) : null;
+};
+
+const loosePackFactor = (
+  text: string,
+  pattern: RegExp,
+  toBase: (n: number) => number,
+): number | null => {
+  const match = pattern.exec(text);
+  if (!match) return null;
+  const n = parsePackNumber(match[1]!);
+  return n > 0 ? toBase(n) : null;
+};
+
+const umNumericFactor = (
+  um: string,
+  pattern: RegExp,
+  toBase: (n: number) => number,
+): number | null => {
+  const match = pattern.exec(um);
+  if (!match) return null;
+  const n = parsePackNumber(match[1]!);
+  return n > 0 ? toBase(n) : null;
+};
+
 /**
- * Clasifica la unidad de un ítem a partir de descripción (*KILO, *900ml) e id_unidad.
- * Los empaques con tamaño (*900ml) asumen cantidad = número de empaques.
- * Los ítems *KILO / *LITRO asumen cantidad ya en esa unidad base.
+ * Clasifica la unidad de un ítem revisando descripción e id_unidad.
+ * Soporta: *KILO, *900ml, *500gr, *250g, *750cc, *25cl, *1lt, id_unidad KILO/ML/LT…
+ * Empaque (*900ml): cantidad BD = número de empaques → se multiplica.
+ * Venta a peso/volumen (*KILO, id_unidad KILO): cantidad BD ya está en kilos/litros.
  */
 export const resolveItemUom = (
   itemLabel: string,
@@ -36,11 +85,12 @@ export const resolveItemUom = (
   const text = normalizeUomText(`${itemLabel} ${unitId}`);
   const um = (unitId ?? "").trim().toUpperCase();
 
-  if (/\*(\d{1,4})\s*UND\b/.test(text) || /\*UND\b/.test(text)) {
+  if (isExplicitCountItem(text)) {
     return { kind: "count", factor: 1 };
   }
 
-  if (/\*(KILO|KG)\b/.test(text)) {
+  // --- Venta directa a kilo / litro (cantidad ya en unidad base) ---
+  if (/\*(KILO|KG)\b/.test(text) || /\bA\s+KILO\b/.test(text) || /\bPOR\s+KILO\b/.test(text)) {
     return { kind: "mass_kg", factor: 1 };
   }
 
@@ -48,32 +98,67 @@ export const resolveItemUom = (
     return { kind: "volume_l", factor: 1 };
   }
 
-  const grPack = /\*(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?\b/.exec(text);
-  if (grPack) {
-    return { kind: "mass_kg", factor: parsePackNumber(grPack[1]!) / 1000 };
+  // --- Empaques con asterisco ---
+  const starRules: Array<[RegExp, ItemUomKind, (n: number) => number]> = [
+    [/\*(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?\b/, "mass_kg", (n) => n / 1000],
+    [/\*(\d+(?:\.\d+)?)\s*G\b/, "mass_kg", (n) => n / 1000],
+    [/\*(\d+(?:\.\d+)?)\s*KG\b/, "mass_kg", (n) => n],
+    [/\*(\d+(?:\.\d+)?)\s*ML\b/, "volume_l", (n) => n / 1000],
+    [/\*(\d+(?:\.\d+)?)\s*CC\b/, "volume_l", (n) => n / 1000],
+    [/\*(\d+(?:\.\d+)?)\s*CL\b/, "volume_l", (n) => n / 100],
+    [/\*(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)\b/, "volume_l", (n) => n],
+    [/\*(\d+(?:\.\d+)?)\s*L\b/, "volume_l", (n) => n],
+  ];
+
+  for (const [pattern, kind, toBase] of starRules) {
+    const factor = starPackFactor(text, pattern, toBase);
+    if (factor !== null) return { kind, factor };
   }
 
-  const kgPack = /\*(\d+(?:\.\d+)?)\s*KG\b/.exec(text);
-  if (kgPack) {
-    return { kind: "mass_kg", factor: parsePackNumber(kgPack[1]!) };
+  // --- id_unidad con cifra (900 ML, 500 GR) ---
+  const umRules: Array<[RegExp, ItemUomKind, (n: number) => number]> = [
+    [/^(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?$/, "mass_kg", (n) => n / 1000],
+    [/^(\d+(?:\.\d+)?)\s*G$/, "mass_kg", (n) => n / 1000],
+    [/^(\d+(?:\.\d+)?)\s*KG$/, "mass_kg", (n) => n],
+    [/^(\d+(?:\.\d+)?)\s*ML$/, "volume_l", (n) => n / 1000],
+    [/^(\d+(?:\.\d+)?)\s*CC$/, "volume_l", (n) => n / 1000],
+    [/^(\d+(?:\.\d+)?)\s*CL$/, "volume_l", (n) => n / 100],
+    [/^(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)$/, "volume_l", (n) => n],
+  ];
+
+  for (const [pattern, kind, toBase] of umRules) {
+    const factor = umNumericFactor(um, pattern, toBase);
+    if (factor !== null) return { kind, factor };
   }
 
-  const mlPack = /\*(\d+(?:\.\d+)?)\s*ML\b/.exec(text);
-  if (mlPack) {
-    return { kind: "volume_l", factor: parsePackNumber(mlPack[1]!) / 1000 };
-  }
-
-  const ltPack = /\*(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)\b/.exec(text);
-  if (ltPack) {
-    return { kind: "volume_l", factor: parsePackNumber(ltPack[1]!) };
-  }
-
-  if (/\b(KILO|KG)\b/.test(um)) {
+  // --- id_unidad genérico ---
+  if (/\b(KILO|KILOS|KG|KGM)\b/.test(um)) {
     return { kind: "mass_kg", factor: 1 };
   }
 
-  if (/\b(LITRO|LITROS|LT)\b/.test(um)) {
+  if (/\b(LITRO|LITROS|LT|LTR|LTS|ML|MILILITRO|MILILITROS|CC|CL)\b/.test(um)) {
     return { kind: "volume_l", factor: 1 };
+  }
+
+  if (/\b(GR|GRM|GRAMO|GRAMOS)\b/.test(um)) {
+    return { kind: "mass_kg", factor: 1 };
+  }
+
+  // --- Marcas sueltas en descripción (sin asterisco) ---
+  const looseRules: Array<[RegExp, ItemUomKind, (n: number) => number]> = [
+    [/\b(\d+(?:\.\d+)?)\s*GR(?:AMOS?)?\b/, "mass_kg", (n) => n / 1000],
+    [/\b(\d+(?:\.\d+)?)\s*G\b/, "mass_kg", (n) => n / 1000],
+    [/\b(\d+(?:\.\d+)?)\s*KG\b/, "mass_kg", (n) => n],
+    [/\b(\d+(?:\.\d+)?)\s*ML\b/, "volume_l", (n) => n / 1000],
+    [/\b(\d+(?:\.\d+)?)\s*CC\b/, "volume_l", (n) => n / 1000],
+    [/\b(\d+(?:\.\d+)?)\s*CL\b/, "volume_l", (n) => n / 100],
+    [/\b(\d+(?:\.\d+)?)\s*(?:LT|LITROS?)\b/, "volume_l", (n) => n],
+    [/\b(\d+(?:\.\d+)?)\s*L\b/, "volume_l", (n) => n],
+  ];
+
+  for (const [pattern, kind, toBase] of looseRules) {
+    const factor = loosePackFactor(text, pattern, toBase);
+    if (factor !== null) return { kind, factor };
   }
 
   if (COUNT_UNIT_IDS.test(um)) {
@@ -81,6 +166,9 @@ export const resolveItemUom = (
     if (/\b(LITRO|LITROS)\b/.test(text)) return { kind: "volume_l", factor: 1 };
     return { kind: "count", factor: 1 };
   }
+
+  if (/\bKILO\b/.test(text)) return { kind: "mass_kg", factor: 1 };
+  if (/\b(LITRO|LITROS)\b/.test(text)) return { kind: "volume_l", factor: 1 };
 
   return { kind: "count", factor: 1 };
 };
@@ -92,22 +180,45 @@ export const displayLabelForItemUomKind = (
   return DISPLAY_LABEL[kind];
 };
 
-/** Si todos los ítems comparten kilos o litros, devuelve la etiqueta de display. */
+/**
+ * Analiza todos los ítems de un grupo (sublínea o línea):
+ * - Si alguno es *und → no convierte.
+ * - Si todos los medibles comparten kilos o litros → devuelve esa etiqueta.
+ * - Ítems sin marca de peso/volumen se ignoran al clasificar el grupo.
+ */
 export const resolveGroupDisplayUom = (
   itemIndices: readonly number[],
   ctx: { items: string[]; ums: string[] },
 ): string | null => {
   if (itemIndices.length === 0) return null;
 
-  let kind: ItemUomKind | null = null;
+  let dominantKind: Exclude<ItemUomKind, "count"> | null = null;
+  let measurableItems = 0;
+
   for (const index of itemIndices) {
-    const resolved = resolveItemUom(ctx.items[index] ?? "", ctx.ums[index] ?? "");
-    if (resolved.kind === "count") return null;
-    if (kind === null) kind = resolved.kind;
-    else if (kind !== resolved.kind) return null;
+    const itemLabel = ctx.items[index] ?? "";
+    const unitId = ctx.ums[index] ?? "";
+    const text = normalizeUomText(itemLabel);
+
+    if (isExplicitCountItem(text)) return null;
+
+    const resolved = resolveItemUom(itemLabel, unitId);
+
+    if (resolved.kind === "count") {
+      if (itemHasMeasurableUomMarker(itemLabel, unitId)) return null;
+      continue;
+    }
+
+    measurableItems += 1;
+    if (dominantKind === null) {
+      dominantKind = resolved.kind;
+    } else if (dominantKind !== resolved.kind) {
+      return null;
+    }
   }
 
-  return kind ? displayLabelForItemUomKind(kind) : null;
+  if (measurableItems === 0 || !dominantKind) return null;
+  return displayLabelForItemUomKind(dominantKind);
 };
 
 export const convertQtyToGroupUom = (
@@ -131,10 +242,14 @@ export type InformeLineUomIndex = {
   sublineDisplayUom: ReadonlyMap<string, string>;
 };
 
+/** Precalcula unidad de display por sublínea y línea revisando todos sus ítems. */
 export const buildInformeLineUomIndex = (
   rowIndex: InformeRowIndex,
-  ctx: { items: string[]; ums: string[] },
+  ctx: { items: string[]; ums: string[]; subs?: string[]; lins?: string[] },
 ): InformeLineUomIndex => {
+  void ctx.subs;
+  void ctx.lins;
+
   const lineDisplayUom = new Map<number, string>();
   const sublineDisplayUom = new Map<string, string>();
   const lineItems = new Map<number, Set<number>>();
