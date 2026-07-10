@@ -324,8 +324,11 @@ export function InformeVariacionBoard({
             Asaderos (línea 01 Pollo Asado): el total de la sublínea{" "}
             <span className="font-medium text-slate-700">01 POLLO</span> se expresa en{" "}
             <span className="font-medium text-slate-700">pollos und</span>; el total de línea
-            incluye además las porciones en unidades de venta. Los ítems muestran unidades de la
-            BD.
+            incluye además las porciones en unidades de venta. Mercado: líneas donde todos los ítems
+            son a kilo o litro muestran totales convertidos en{" "}
+            <span className="font-medium text-slate-700">kilos</span> o{" "}
+            <span className="font-medium text-slate-700">litros</span> (p. ej. FRUVER, ACEITES).
+            Huevos: sublínea en huevos individuales. Los ítems siempre muestran unidades de la BD.
           </p>
         ) : null}
       </Section>

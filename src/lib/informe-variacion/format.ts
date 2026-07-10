@@ -23,11 +23,16 @@ export const formatInformeValueRaw = (
 /** Etiqueta de unidad en filas de detalle Actual / YoY / MoM de la matriz. */
 export const informeMetricDetailLabel = (
   metric: InformeMetric,
-  options?: { pollosUnd?: boolean; huevosUnd?: boolean },
+  options?: {
+    pollosUnd?: boolean;
+    huevosUnd?: boolean;
+    unitLabel?: string;
+  },
 ): string => {
   if (metric === "v") return "$ miles";
   if (options?.pollosUnd) return "pollos und";
   if (options?.huevosUnd) return "huevos und";
+  if (options?.unitLabel) return options.unitLabel;
   return "unidades";
 };
 

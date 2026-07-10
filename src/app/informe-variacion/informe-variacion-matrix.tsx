@@ -16,7 +16,10 @@ import {
   matrixValueCellStyle,
 } from "@/lib/informe-variacion/format";
 import { shouldConvertAsaderoToPollosUnd } from "@/lib/informe-variacion/asadero-pollos-und";
-import { shouldConvertHuevosToUndIndividuales } from "@/lib/informe-variacion/huevos-individual-und";
+import {
+  shouldConvertHuevosLineTotals,
+  shouldConvertHuevosToUndIndividuales,
+} from "@/lib/informe-variacion/huevos-individual-und";
 import { readInformeRowPeriodTriple } from "@/lib/informe-variacion/informe-metric-values";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 import { cn } from "@/lib/shared/utils";
@@ -50,6 +53,7 @@ function DetailRows({
   metric,
   pollosUnd = false,
   huevosUnd = false,
+  unitLabel,
 }: {
   detailKey: string;
   per: PeriodTriple[];
@@ -57,8 +61,13 @@ function DetailRows({
   metric: InformeMetric;
   pollosUnd?: boolean;
   huevosUnd?: boolean;
+  unitLabel?: string;
 }) {
-  const unitLabel = informeMetricDetailLabel(metric, { pollosUnd, huevosUnd });
+  const unitLabelText = informeMetricDetailLabel(metric, {
+    pollosUnd,
+    huevosUnd,
+    unitLabel,
+  });
   const defs: Array<[string, 0 | 1 | 2]> = [
     ["Actual", 0],
     ["YoY base", 2],
@@ -69,7 +78,7 @@ function DetailRows({
       {defs.map(([label, index]) => (
         <tr key={`${detailKey}-${label}`} className="bg-slate-100 text-xs text-slate-600">
           <td className="px-2 py-1" style={{ paddingLeft: 8 + depth * 18 + 16 }}>
-            ↳ {label} ({unitLabel})
+            ↳ {label} ({unitLabelText})
           </td>
           {per.map((values, sedeIndex) => (
             <td key={sedeIndex} className="px-1 py-1 text-center">
@@ -314,6 +323,12 @@ export function MatrixTable({
               per={linPer}
               depth={1}
               metric={metric}
+              unitLabel={
+                payload.metricCtx.lineDisplayUom.get(lin) ??
+                (shouldConvertHuevosLineTotals(payload.lins[lin] ?? "")
+                  ? "huevos und"
+                  : undefined)
+              }
             />,
           );
         }
@@ -368,6 +383,7 @@ export function MatrixTable({
                   payload.lins[lin] ?? "",
                   payload.subs[sub] ?? "",
                 )}
+                unitLabel={payload.metricCtx.sublineDisplayUom.get(`${lin}|${sub}`)}
               />,
             );
           }

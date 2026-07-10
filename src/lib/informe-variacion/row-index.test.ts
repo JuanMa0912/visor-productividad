@@ -33,7 +33,15 @@ describe("filterIndexedRowIndices", () => {
   });
 });
 
-const emptyMetricCtx = { cats: [], lins: [], subs: [], items: [], ums: [] };
+const emptyMetricCtx = {
+  cats: [],
+  lins: [],
+  subs: [],
+  items: [],
+  ums: [],
+  lineDisplayUom: new Map<number, string>(),
+  sublineDisplayUom: new Map<string, string>(),
+};
 
 describe("aggregateIndicesBySede", () => {
   it("suma por sede dentro de un bucket de categoria", () => {
@@ -80,6 +88,8 @@ describe("pollos und en sublinea", () => {
     subs: ["01 POLLO"],
     items: ["063018 MUSLO APANADO (NVO)", "063021 POLLO APANADO MEDIO (NVO)"],
     ums: ["", ""],
+    lineDisplayUom: new Map<number, string>(),
+    sublineDisplayUom: new Map<string, string>(),
   };
 
   it("mantiene unidades crudas a nivel item", () => {
@@ -104,6 +114,8 @@ describe("pollos und en sublinea", () => {
       subs: ["01 POLLO"],
       items: ["063018 MUSLO APANADO (NVO)", "063027 PORCION DE PAPAS AMARILLAS (NVO)"],
       ums: ["", ""],
+      lineDisplayUom: new Map<number, string>(),
+      sublineDisplayUom: new Map<string, string>(),
     };
     const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, lineCtx);
     const lineAgg = aggregateIndicesByKey(rows, [0, 1], "u", 2, lineCtx);
@@ -124,6 +136,8 @@ describe("huevos und en sublinea", () => {
       "013070 HUEVO MERCAMIO ROSADO A*und GRANEL",
     ],
     ums: ["", ""],
+    lineDisplayUom: new Map<number, string>(),
+    sublineDisplayUom: new Map<string, string>(),
   };
 
   it("mantiene empaques crudos a nivel item", () => {
@@ -141,5 +155,52 @@ describe("huevos und en sublinea", () => {
     ];
     const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, ctx);
     assert.equal(subAgg.get(0)?.[0], 3_010);
+  });
+});
+
+describe("kilos y litros en linea/sublinea", () => {
+  const ctx = {
+    cats: ["4 Mercado"],
+    lins: ["01 FRUVER", "08 ACEITES"],
+    subs: ["01 FRUVER", "01 ACEITES"],
+    items: [
+      "010001 MANZANA ROJA*KILO",
+      "010002 PERA*KILO",
+      "080001 ACEITE MERCAMIO*900ml SOYA",
+      "080002 ACEITE MERCAMIO*3000ml SOYA",
+    ],
+    ums: ["", "", "", ""],
+    lineDisplayUom: new Map<number, string>([
+      [0, "kilos"],
+      [1, "litros"],
+    ]),
+    sublineDisplayUom: new Map<string, string>([
+      ["0|0", "kilos"],
+      ["1|0", "litros"],
+    ]),
+  };
+
+  it("mantiene empaques crudos a nivel item", () => {
+    const rows: InformeCompactRow[] = [[0, 0, 1, 0, 2, 10, 0, 0, 0, 0, 0]];
+    const itemAgg = aggregateIndicesByKey(rows, [0], "u", 4, ctx);
+    assert.equal(itemAgg.get(2)?.[0], 10);
+  });
+
+  it("convierte a kilos en total de sublinea fruver", () => {
+    const rows: InformeCompactRow[] = [
+      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 50, 0, 0, 0, 0, 0],
+    ];
+    const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, ctx);
+    assert.equal(subAgg.get(0)?.[0], 150);
+  });
+
+  it("convierte a litros en total de linea aceites", () => {
+    const rows: InformeCompactRow[] = [
+      [0, 0, 1, 0, 2, 10, 0, 0, 0, 0, 0],
+      [0, 0, 1, 0, 3, 2, 0, 0, 0, 0, 0],
+    ];
+    const lineAgg = aggregateIndicesByKey(rows, [0, 1], "u", 2, ctx);
+    assert.equal(lineAgg.get(1)?.[0], 15);
   });
 });

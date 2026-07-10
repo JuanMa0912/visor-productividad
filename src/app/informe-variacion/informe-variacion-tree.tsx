@@ -9,6 +9,8 @@ import {
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
 import { comparePeriodTriple, formatInformeValue } from "@/lib/informe-variacion/format";
+import { shouldConvertAsaderoToPollosUnd } from "@/lib/informe-variacion/asadero-pollos-und";
+import { shouldConvertHuevosToUndIndividuales } from "@/lib/informe-variacion/huevos-individual-und";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 import { INFORME_EMPRESA_ORDER } from "@/lib/informe-variacion/types";
 import { cn } from "@/lib/shared/utils";
@@ -16,6 +18,41 @@ import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
+
+const treeUnitSuffix = (label: string | undefined) =>
+  label ? <span className="ml-2 text-xs text-slate-400">({label})</span> : null;
+
+const resolveTreeUnitLabel = (
+  payload: Prepared,
+  metric: InformeMetric,
+  level: "line" | "subline",
+  catIndex: number,
+  linIndex: number,
+  subIndex?: number,
+): string | undefined => {
+  if (metric !== "u") return undefined;
+  if (level === "subline" && subIndex !== undefined) {
+    if (
+      shouldConvertAsaderoToPollosUnd(
+        payload.cats[catIndex] ?? "",
+        payload.lins[linIndex] ?? "",
+        payload.subs[subIndex] ?? "",
+      )
+    ) {
+      return "pollos und";
+    }
+    if (
+      shouldConvertHuevosToUndIndividuales(
+        payload.lins[linIndex] ?? "",
+        payload.subs[subIndex] ?? "",
+      )
+    ) {
+      return "huevos und";
+    }
+    return payload.metricCtx.sublineDisplayUom.get(`${linIndex}|${subIndex}`);
+  }
+  return payload.metricCtx.lineDisplayUom.get(linIndex);
+};
 
 const sortedEntries = (
   map: Map<number, PeriodTriple>,
@@ -194,7 +231,19 @@ export function TreeTable({
           for (const [linIndex, lValues] of sortedEntries(lAgg, payload.lins, sort)) {
             const lk = `${ck}|l:${linIndex}`;
             rows.push(
-              treeRow(3, payload.lins[linIndex], lValues, payload.sedeYoy[sedeIndex], lk, true),
+              treeRow(
+                3,
+                <>
+                  {payload.lins[linIndex]}
+                  {treeUnitSuffix(
+                    resolveTreeUnitLabel(payload, metric, "line", catIndex, linIndex),
+                  )}
+                </>,
+                lValues,
+                payload.sedeYoy[sedeIndex],
+                lk,
+                true,
+              ),
             );
             if (!treeOpen.has(lk)) continue;
 
@@ -206,7 +255,26 @@ export function TreeTable({
             for (const [subIndex, bValues] of sortedEntries(bAgg, payload.subs, sort)) {
               const bk = `${lk}|b:${subIndex}`;
               rows.push(
-                treeRow(4, payload.subs[subIndex], bValues, payload.sedeYoy[sedeIndex], bk, true),
+                treeRow(
+                  4,
+                  <>
+                    {payload.subs[subIndex]}
+                    {treeUnitSuffix(
+                      resolveTreeUnitLabel(
+                        payload,
+                        metric,
+                        "subline",
+                        catIndex,
+                        linIndex,
+                        subIndex,
+                      ),
+                    )}
+                  </>,
+                  bValues,
+                  payload.sedeYoy[sedeIndex],
+                  bk,
+                  true,
+                ),
               );
               if (!treeOpen.has(bk)) continue;
 

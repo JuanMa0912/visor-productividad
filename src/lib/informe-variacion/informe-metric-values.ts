@@ -11,6 +11,7 @@ import {
   shouldConvertHuevosLineTotals,
   shouldConvertHuevosToUndIndividuales,
 } from "@/lib/informe-variacion/huevos-individual-und";
+import { convertQtyToGroupUom } from "@/lib/informe-variacion/line-item-uom";
 
 export type InformeMetricContext = {
   cats: string[];
@@ -18,6 +19,8 @@ export type InformeMetricContext = {
   subs: string[];
   items: string[];
   ums: string[];
+  lineDisplayUom: ReadonlyMap<number, string>;
+  sublineDisplayUom: ReadonlyMap<string, string>;
 };
 
 const rowUnitTriple = (row: InformeCompactRow): PeriodTriple => [row[5], row[6], row[7]];
@@ -142,6 +145,21 @@ export const readInformeRowLineHuevosUndTriple = (
   return convertHuevosRowTriple(row, ctx);
 };
 
+const readInformeRowGroupUomTriple = (
+  row: InformeCompactRow,
+  ctx: InformeMetricContext,
+  displayLabel: string,
+): PeriodTriple => {
+  const [cur, mom, yoy] = rowUnitTriple(row);
+  const itemLabel = ctx.items[row[4]] ?? "";
+  const unitId = ctx.ums[row[4]] ?? "";
+  return [
+    convertQtyToGroupUom(cur, itemLabel, unitId, displayLabel),
+    convertQtyToGroupUom(mom, itemLabel, unitId, displayLabel),
+    convertQtyToGroupUom(yoy, itemLabel, unitId, displayLabel),
+  ];
+};
+
 export const readInformeRowPeriodTripleForLevel = (
   row: InformeCompactRow,
   metric: InformeMetric,
@@ -162,6 +180,10 @@ export const readInformeRowPeriodTripleForLevel = (
     if (shouldConvertHuevosToUndIndividuales(linLabel, subLabel)) {
       return readInformeRowHuevosUndTriple(row, ctx);
     }
+    const subUom = ctx.sublineDisplayUom.get(`${row[2]}|${row[3]}`);
+    if (subUom) {
+      return readInformeRowGroupUomTriple(row, ctx, subUom);
+    }
     return readInformeRowPeriodTriple(row, metric, ctx);
   }
 
@@ -175,22 +197,34 @@ export const readInformeRowPeriodTripleForLevel = (
     if (shouldConvertHuevosLineTotals(linLabel)) {
       return readInformeRowLineHuevosUndTriple(row, ctx);
     }
+    const linUom = ctx.lineDisplayUom.get(row[2]);
+    if (linUom) {
+      return readInformeRowGroupUomTriple(row, ctx, linUom);
+    }
     return readInformeRowPeriodTriple(row, metric, ctx);
   }
 
   return readInformeRowPeriodTriple(row, metric, ctx);
 };
 
-export const informeMetricContextFromPayload = (payload: {
-  cats: string[];
-  lins: string[];
-  subs: string[];
-  items: string[];
-  ums: string[];
-}): InformeMetricContext => ({
+export const informeMetricContextFromPayload = (
+  payload: {
+    cats: string[];
+    lins: string[];
+    subs: string[];
+    items: string[];
+    ums: string[];
+  },
+  uomIndex?: {
+    lineDisplayUom: ReadonlyMap<number, string>;
+    sublineDisplayUom: ReadonlyMap<string, string>;
+  },
+): InformeMetricContext => ({
   cats: payload.cats,
   lins: payload.lins,
   subs: payload.subs,
   items: payload.items,
   ums: payload.ums,
+  lineDisplayUom: uomIndex?.lineDisplayUom ?? new Map(),
+  sublineDisplayUom: uomIndex?.sublineDisplayUom ?? new Map(),
 });
