@@ -7,11 +7,15 @@ import {
   filterRowIndices,
   hasActiveInformeFilters,
   passInformeRowFilter,
-  prepareInformeData,
   sumFilteredRows,
   sumRowIndices,
   type PeriodTriple,
+  type prepareInformeData,
 } from "@/lib/informe-variacion/aggregate";
+import {
+  InformeBoardPreparing,
+  usePreparedInformeData,
+} from "@/lib/informe-variacion/use-prepared-informe-data";
 import { formatInformeValue, comparePeriodTriple } from "@/lib/informe-variacion/format";
 import {
   buildSedeSummaryExportRows,
@@ -33,6 +37,8 @@ import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
 import { MatrixTable } from "@/app/informe-variacion/informe-variacion-matrix";
 import { TreeTable } from "@/app/informe-variacion/informe-variacion-tree";
 
+type Prepared = ReturnType<typeof prepareInformeData>;
+
 type Props = {
   payload: InformeVariacionPayload;
   dataPending?: boolean;
@@ -45,12 +51,20 @@ const EMP_DOT_CLASS: Record<string, string> = {
   Merkmios: "bg-violet-600",
 };
 
-export function InformeVariacionBoard({
+export function InformeVariacionBoard(props: Props) {
+  const prepared = usePreparedInformeData(props.payload);
+  if (!prepared) {
+    return <InformeBoardPreparing />;
+  }
+  return <InformeVariacionBoardReady {...props} prepared={prepared} />;
+}
+
+function InformeVariacionBoardReady({
   payload,
+  prepared,
   dataPending = false,
   categoryScopeLocked = false,
-}: Props) {
-  const prepared = useMemo(() => prepareInformeData(payload), [payload]);
+}: Props & { prepared: Prepared }) {
   const [kpiMetric, setKpiMetric] = useState<InformeMetric>("v");
   const [sedeMetric, setSedeMetric] = useState<InformeMetric>("v");
   const [matrixMetric, setMatrixMetric] = useState<InformeMetric>("v");
@@ -630,7 +644,7 @@ function InformeFilters({
   onClear,
   categoryScopeLocked = false,
 }: {
-  payload: ReturnType<typeof prepareInformeData>;
+  payload: Prepared;
   filters: InformeGlobalFilters;
   onChange: (patch: Partial<InformeGlobalFilters>) => void;
   onClear: () => void;
@@ -812,7 +826,7 @@ function SedeSummaryTable({
   sort,
   onSort,
 }: {
-  payload: ReturnType<typeof prepareInformeData>;
+  payload: Prepared;
   metric: InformeMetric;
   pass: (row: (typeof payload.rows)[number]) => boolean;
   curLabel: string;

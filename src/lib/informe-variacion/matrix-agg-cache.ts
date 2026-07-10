@@ -12,9 +12,19 @@ export type MatrixAggCache = {
   byCat: Map<number, PeriodTriple[]>;
   byLin: Map<string, Map<number, PeriodTriple[]>>;
   bySub: Map<string, Map<number, PeriodTriple[]>>;
-  byItem: Map<string, Map<number, PeriodTriple[]>>;
-  topItems: Map<string, number[]>;
 };
+
+export type SublineItemAgg = {
+  byItem: Map<number, PeriodTriple[]>;
+  topItems: number[];
+};
+
+export type PartialDualMatrixAggCache = {
+  u: MatrixAggCache | null;
+  v: MatrixAggCache | null;
+};
+
+export type DualMatrixAggCache = Record<InformeMetric, MatrixAggCache>;
 
 const topItemKeys = (
   agg: Map<number, PeriodTriple[]>,
@@ -28,7 +38,7 @@ const topItemKeys = (
     })
     .slice(0, limit);
 
-/** Precalcula agregaciones por sede para expandir la matriz sin recomputar al abrir niveles. */
+/** Cat/lin/sub sin items; suficiente para abrir la matriz sin bloquear el hilo principal. */
 export const buildMatrixAggCache = (
   rows: InformeCompactRow[],
   rowIndex: InformeRowIndex,
@@ -58,40 +68,33 @@ export const buildMatrixAggCache = (
   }
 
   const bySub = new Map<string, Map<number, PeriodTriple[]>>();
-  const byItem = new Map<string, Map<number, PeriodTriple[]>>();
-  const topItems = new Map<string, number[]>();
-
   for (const [catLinSub, indices] of rowIndex.indicesByCatLinSub) {
     const filtered = filterIndexedRowIndices(indices, filteredSet);
     if (filtered.length === 0) continue;
-    const itemAgg = aggregateIndicesBySede(
-      rows,
-      filtered,
-      metric,
-      sedeCount,
-      4,
-      metricCtx,
+    bySub.set(
+      catLinSub,
+      aggregateIndicesBySede(rows, filtered, metric, sedeCount, 3, metricCtx),
     );
-    byItem.set(catLinSub, itemAgg);
-    topItems.set(catLinSub, topItemKeys(itemAgg));
-
-    const subAgg = aggregateIndicesBySede(
-      rows,
-      filtered,
-      metric,
-      sedeCount,
-      3,
-      metricCtx,
-    );
-    bySub.set(catLinSub, subAgg);
   }
 
-  return { byCat, byLin, bySub, byItem, topItems };
+  return { byCat, byLin, bySub };
 };
 
-export type DualMatrixAggCache = Record<InformeMetric, MatrixAggCache>;
+/** Agrega items de una sublinea bajo demanda al expandir. */
+export const buildSublineItemAgg = (
+  rows: InformeCompactRow[],
+  indices: readonly number[],
+  metric: InformeMetric,
+  sedeCount: number,
+  metricCtx: InformeMetricContext,
+): SublineItemAgg => {
+  if (indices.length === 0) {
+    return { byItem: new Map(), topItems: [] };
+  }
+  const byItem = aggregateIndicesBySede(rows, indices, metric, sedeCount, 4, metricCtx);
+  return { byItem, topItems: topItemKeys(byItem) };
+};
 
-/** Precalcula agregaciones para unidades y valor; alternar metrica no recomputa. */
 export const buildDualMatrixAggCache = (
   rows: InformeCompactRow[],
   rowIndex: InformeRowIndex,
@@ -103,3 +106,6 @@ export const buildDualMatrixAggCache = (
   u: buildMatrixAggCache(rows, rowIndex, filteredSet, filteredIndices, "u", sedeCount, metricCtx),
   v: buildMatrixAggCache(rows, rowIndex, filteredSet, filteredIndices, "v", sedeCount, metricCtx),
 });
+
+export const otherInformeMetric = (metric: InformeMetric): InformeMetric =>
+  metric === "u" ? "v" : "u";

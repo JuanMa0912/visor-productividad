@@ -1,11 +1,9 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, Fragment, startTransition } from "react";
-import {
-  filterRowIndices,
-  type PeriodTriple,
-} from "@/lib/informe-variacion/aggregate";
-import { buildDualMatrixAggCache } from "@/lib/informe-variacion/matrix-agg-cache";
+import { Loader2 } from "lucide-react";
+import { type PeriodTriple } from "@/lib/informe-variacion/aggregate";
+import { useMatrixAggCache } from "@/lib/informe-variacion/use-matrix-agg-cache";
 import {
   computeVariationPct,
   formatInformePct,
@@ -19,7 +17,6 @@ import {
   shouldConvertHuevosLineTotals,
   shouldConvertHuevosToUndIndividuales,
 } from "@/lib/informe-variacion/huevos-individual-und";
-import { readInformeRowPeriodTriple } from "@/lib/informe-variacion/informe-metric-values";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 import { cn } from "@/lib/shared/utils";
 import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
@@ -127,57 +124,16 @@ export function MatrixTable({
     [setMatrixOpen],
   );
 
-  const filteredIndices = useMemo(
-    () => filterRowIndices(payload.rows, pass),
-    [payload.rows, pass],
-  );
-
-  const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices]);
-
-  const dualAggCache = useMemo(
-    () =>
-      buildDualMatrixAggCache(
-        payload.rows,
-        payload.rowIndex,
-        filteredSet,
-        filteredIndices,
-        payload.sedes.length,
-        payload.metricCtx,
-      ),
-    [
-      filteredIndices,
-      filteredSet,
-      payload.metricCtx,
-      payload.rowIndex,
-      payload.rows,
-      payload.sedes.length,
-    ],
-  );
-
-  const aggCache = dualAggCache[metric];
-
-  const totPerByMetric = useMemo(() => {
-    const build = (activeMetric: InformeMetric) => {
-      const buckets = Array.from(
-        { length: payload.sedes.length },
-        () => [0, 0, 0] as PeriodTriple,
-      );
-      for (const rowIndex of filteredIndices) {
-        const row = payload.rows[rowIndex]!;
-        const triple = readInformeRowPeriodTriple(row, activeMetric, payload.metricCtx);
-        const bucket = buckets[row[0]];
-        bucket[0] += triple[0];
-        bucket[1] += triple[1];
-        bucket[2] += triple[2];
-      }
-      return buckets;
-    };
-    return { u: build("u"), v: build("v") } satisfies Record<InformeMetric, PeriodTriple[]>;
-  }, [filteredIndices, payload.metricCtx, payload.rows, payload.sedes.length]);
-
-  const totPer = totPerByMetric[metric];
+  const {
+    aggCache,
+    cacheReady,
+    ensureSublineItems,
+    itemCacheTick,
+    totPer,
+  } = useMatrixAggCache(payload, pass, metric);
 
   const matrixBody = useMemo(() => {
+    if (!aggCache) return [];
     const matrixCells = (perSede?: PeriodTriple[]) =>
       payload.sedes.map((_, index) => {
         const values = perSede?.[index];
@@ -395,8 +351,7 @@ export function MatrixTable({
           if (!matrixOpen.has(bk)) continue;
 
           const catLinSub = `${cat}|${lin}|${sub}`;
-          const itAgg = aggCache.byItem.get(catLinSub) ?? new Map<number, PeriodTriple[]>();
-          const itKeys = aggCache.topItems.get(catLinSub) ?? [];
+          const { byItem: itAgg, topItems: itKeys } = ensureSublineItems(catLinSub, metric);
           for (const item of itKeys) {
             const itemDetailKey = `item:${bk}|i${item}`;
             const itemPer = itAgg.get(item) ?? [];
@@ -432,6 +387,8 @@ export function MatrixTable({
   }, [
     activeDetails,
     aggCache,
+    ensureSublineItems,
+    itemCacheTick,
     matrixDisplay,
     matrixMode,
     matrixOpen,
@@ -484,7 +441,21 @@ export function MatrixTable({
             ))}
           </tr>
         </thead>
-        <tbody>{matrixBody}</tbody>
+        <tbody>
+          {!cacheReady ? (
+            <tr>
+              <td
+                colSpan={payload.sedes.length + 1}
+                className="px-4 py-10 text-center text-sm text-slate-500"
+              >
+                <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+                Preparando matriz…
+              </td>
+            </tr>
+          ) : (
+            matrixBody
+          )}
+        </tbody>
       </table>
     </div>
   );
