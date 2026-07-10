@@ -901,30 +901,53 @@ function SedeSummaryTable({
   const arrow = (col: string) =>
     sort.col === col ? (sort.dir > 0 ? " ▼" : " ▲") : "";
 
+  const thClass = (align: "left" | "right") =>
+    cn(
+      "cursor-pointer border-b-2 border-slate-200 px-2 py-2 whitespace-nowrap",
+      align === "left" ? "text-left" : "text-right",
+    );
+
+  const tdClass = (align: "left" | "right", extra?: string) =>
+    cn(
+      "px-2 py-2 whitespace-nowrap",
+      align === "left" ? "text-left" : "text-right tabular-nums",
+      extra,
+    );
+
+  const headerColumns: Array<{ id: string; label: string; align: "left" | "right" }> = [
+    { id: "name", label: "Empresa / Sede", align: "left" },
+    { id: "cur", label: curLabel, align: "right" },
+    { id: "curMarg", label: "Marg %", align: "right" },
+    { id: "yoy", label: yoyLabel, align: "right" },
+    { id: "yoyMarg", label: "Marg %", align: "right" },
+    { id: "yoypct", label: "YoY %", align: "right" },
+    { id: "mom", label: momLabel, align: "right" },
+    { id: "momMarg", label: "Marg %", align: "right" },
+    { id: "mompct", label: "MoM %", align: "right" },
+    { id: "part", label: "Participacion", align: "right" },
+  ];
+
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1100px] border-collapse text-sm">
+      <table className="w-full min-w-[1080px] table-fixed border-collapse text-sm">
+        <colgroup>
+          <col style={{ width: "19%" }} />
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "11%" }} />
+        </colgroup>
         <thead>
           <tr className="text-xs uppercase tracking-wide text-slate-500">
-            {[
-              ["name", "Empresa / Sede"],
-              ["cur", curLabel],
-              ["curMarg", "Marg %"],
-              ["yoy", yoyLabel],
-              ["yoyMarg", "Marg %"],
-              ["yoypct", "YoY %"],
-              ["mom", momLabel],
-              ["momMarg", "Marg %"],
-              ["mompct", "MoM %"],
-              ["part", "Participacion"],
-            ].map(([col, label]) => (
-              <th
-                key={col}
-                className="cursor-pointer border-b-2 border-slate-200 px-2 py-2 text-left first:text-left last:text-left"
-                onClick={() => onSort(col)}
-              >
+            {headerColumns.map(({ id, label, align }) => (
+              <th key={id} className={thClass(align)} onClick={() => onSort(id)}>
                 {label}
-                {arrow(col)}
+                {arrow(id)}
               </th>
             ))}
           </tr>
@@ -962,7 +985,7 @@ function SedeSummaryTable({
             return (
               <FragmentBlock key={empresa.label}>
                 <tr className="bg-slate-100 font-semibold">
-                  <td className="px-2 py-2">
+                  <td className={tdClass("left")}>
                     <span
                       className={cn(
                         "mr-2 inline-block h-2.5 w-2.5 rounded-full",
@@ -971,35 +994,39 @@ function SedeSummaryTable({
                     />
                     {empresa.label}
                   </td>
-                  <td className="px-2 py-2 text-right">{formatInformeValue(empresaSum[0], metric)}</td>
-                  <td className="px-2 py-2 text-right text-slate-600">
+                  <td className={tdClass("right")}>{formatInformeValue(empresaSum[0], metric)}</td>
+                  <td className={tdClass("right", "text-slate-600")}>
                     {marginPct(empresaVentas, empresaMargin, 0)}
                   </td>
-                  <td className="px-2 py-2 text-right">
+                  <td className={tdClass("right")}>
                     {payload.empYoy[empresa.label]
                       ? formatInformeValue(empresaSum[2], metric)
                       : "N/D"}
                   </td>
-                  <td className="px-2 py-2 text-right text-slate-600">
+                  <td className={tdClass("right", "text-slate-600")}>
                     {payload.empYoy[empresa.label]
                       ? marginPct(empresaVentas, empresaMargin, 2)
                       : "—"}
                   </td>
-                  <td className="px-2 py-2 text-right">
-                    <VariationChip
-                      current={empresaSum[0]}
-                      previous={empresaSum[2]}
-                      yoyOk={payload.empYoy[empresa.label]}
-                    />
+                  <td className={tdClass("right")}>
+                    <div className="flex justify-end">
+                      <VariationChip
+                        current={empresaSum[0]}
+                        previous={empresaSum[2]}
+                        yoyOk={payload.empYoy[empresa.label]}
+                      />
+                    </div>
                   </td>
-                  <td className="px-2 py-2 text-right">{formatInformeValue(empresaSum[1], metric)}</td>
-                  <td className="px-2 py-2 text-right text-slate-600">
+                  <td className={tdClass("right")}>{formatInformeValue(empresaSum[1], metric)}</td>
+                  <td className={tdClass("right", "text-slate-600")}>
                     {marginPct(empresaVentas, empresaMargin, 1)}
                   </td>
-                  <td className="px-2 py-2 text-right">
-                    <VariationChip current={empresaSum[0]} previous={empresaSum[1]} />
+                  <td className={tdClass("right")}>
+                    <div className="flex justify-end">
+                      <VariationChip current={empresaSum[0]} previous={empresaSum[1]} />
+                    </div>
                   </td>
-                  <td className="px-2 py-2">
+                  <td className={tdClass("right")}>
                     {total[0] > 0 ? `${((empresaSum[0] / total[0]) * 100).toFixed(1)}%` : "0%"}
                   </td>
                 </tr>
@@ -1008,40 +1035,44 @@ function SedeSummaryTable({
                   const part = total[0] > 0 ? (values[0] / total[0]) * 100 : 0;
                   return (
                     <tr key={index} className="border-b border-slate-100">
-                      <td className="px-2 py-2 pl-8">{payload.sedes[index].s}</td>
-                      <td className="px-2 py-2 text-right font-semibold">
+                      <td className={cn(tdClass("left"), "pl-8")}>{payload.sedes[index].s}</td>
+                      <td className={tdClass("right", "font-semibold")}>
                         {formatInformeValue(values[0], metric)}
                       </td>
-                      <td className="px-2 py-2 text-right text-slate-600">
+                      <td className={tdClass("right", "text-slate-600")}>
                         {marginPct(perSedeVentas[index], perSedeMargin[index], 0)}
                       </td>
-                      <td className="px-2 py-2 text-right">
+                      <td className={tdClass("right")}>
                         {payload.sedeYoy[index]
                           ? formatInformeValue(values[2], metric)
                           : "N/D"}
                       </td>
-                      <td className="px-2 py-2 text-right text-slate-600">
+                      <td className={tdClass("right", "text-slate-600")}>
                         {payload.sedeYoy[index]
                           ? marginPct(perSedeVentas[index], perSedeMargin[index], 2)
                           : "—"}
                       </td>
-                      <td className="px-2 py-2 text-right">
-                        <VariationChip
-                          current={values[0]}
-                          previous={values[2]}
-                          yoyOk={payload.sedeYoy[index]}
-                        />
+                      <td className={tdClass("right")}>
+                        <div className="flex justify-end">
+                          <VariationChip
+                            current={values[0]}
+                            previous={values[2]}
+                            yoyOk={payload.sedeYoy[index]}
+                          />
+                        </div>
                       </td>
-                      <td className="px-2 py-2 text-right">
+                      <td className={tdClass("right")}>
                         {formatInformeValue(values[1], metric)}
                       </td>
-                      <td className="px-2 py-2 text-right text-slate-600">
+                      <td className={tdClass("right", "text-slate-600")}>
                         {marginPct(perSedeVentas[index], perSedeMargin[index], 1)}
                       </td>
-                      <td className="px-2 py-2 text-right">
-                        <VariationChip current={values[0]} previous={values[1]} />
+                      <td className={tdClass("right")}>
+                        <div className="flex justify-end">
+                          <VariationChip current={values[0]} previous={values[1]} />
+                        </div>
                       </td>
-                      <td className="px-2 py-2 text-slate-500">{part.toFixed(1)}%</td>
+                      <td className={tdClass("right", "text-slate-500")}>{part.toFixed(1)}%</td>
                     </tr>
                   );
                 })}
@@ -1049,37 +1080,41 @@ function SedeSummaryTable({
             );
           })}
           <tr className="bg-slate-200 font-bold">
-            <td className="px-2 py-2">TOTAL COMPANIAS</td>
-            <td className="px-2 py-2 text-right">{formatInformeValue(total[0], metric)}</td>
-            <td className="px-2 py-2 text-right text-slate-700">
+            <td className={tdClass("left")}>TOTAL COMPANIAS</td>
+            <td className={tdClass("right")}>{formatInformeValue(total[0], metric)}</td>
+            <td className={tdClass("right", "text-slate-700")}>
               {marginPct(totalVentas, totalMargin, 0)}
             </td>
-            <td className="px-2 py-2 text-right">
+            <td className={tdClass("right")}>
               {formatInformeValue(
                 perSede.reduce((sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0), 0),
                 metric,
               )}
             </td>
-            <td className="px-2 py-2 text-right text-slate-700">
+            <td className={tdClass("right", "text-slate-700")}>
               {formatMargenPct(totalYoyVentas, totalYoyMargin)}
             </td>
-            <td className="px-2 py-2 text-right">
-              <VariationChip
-                current={total[0]}
-                previous={perSede.reduce(
-                  (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
-                  0,
-                )}
-              />
+            <td className={tdClass("right")}>
+              <div className="flex justify-end">
+                <VariationChip
+                  current={total[0]}
+                  previous={perSede.reduce(
+                    (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
+                    0,
+                  )}
+                />
+              </div>
             </td>
-            <td className="px-2 py-2 text-right">{formatInformeValue(total[1], metric)}</td>
-            <td className="px-2 py-2 text-right text-slate-700">
+            <td className={tdClass("right")}>{formatInformeValue(total[1], metric)}</td>
+            <td className={tdClass("right", "text-slate-700")}>
               {marginPct(totalVentas, totalMargin, 1)}
             </td>
-            <td className="px-2 py-2 text-right">
-              <VariationChip current={total[0]} previous={total[1]} />
+            <td className={tdClass("right")}>
+              <div className="flex justify-end">
+                <VariationChip current={total[0]} previous={total[1]} />
+              </div>
             </td>
-            <td />
+            <td className={tdClass("right")} />
           </tr>
         </tbody>
       </table>
