@@ -1466,8 +1466,13 @@ const fetchHourlyData = async (
             }
 
             const lineId = resolveLineId(typedRow.departamento);
-            if (!lineId) continue;
-            if (allowedSet.size > 0 && !allowedSet.has(normalizeLineId(lineId))) {
+            // Solo los usuarios restringidos por linea (allowedSet no vacio, p.ej.
+            // asadero) ocultan los departamentos sin linea mapeada. Admin y usuarios
+            // con todas las lineas siguen viendo BODEGA y demas areas de soporte.
+            if (
+              allowedSet.size > 0 &&
+              (!lineId || !allowedSet.has(normalizeLineId(lineId)))
+            ) {
               continue;
             }
 
@@ -1489,7 +1494,9 @@ const fetchHourlyData = async (
                 presenceByHourByLine.set(slotStartMinute, new Map());
               }
               const linePresenceMap = presenceByHourByLine.get(slotStartMinute)!;
-              linePresenceMap.set(lineId, (linePresenceMap.get(lineId) ?? 0) + 1);
+              if (lineId) {
+                linePresenceMap.set(lineId, (linePresenceMap.get(lineId) ?? 0) + 1);
+              }
             }
           }
         }
@@ -1679,8 +1686,13 @@ const fetchHourlyData = async (
               marks_count?: number | null;
             };
             const lineId = resolveLineId(typedRow.departamento);
-            if (!lineId) continue;
-            if (allowedSet.size > 0 && !allowedSet.has(normalizeLineId(lineId))) {
+            // Solo los usuarios restringidos por linea (allowedSet no vacio, p.ej.
+            // asadero) ocultan los departamentos sin linea mapeada. Admin y usuarios
+            // con todas las lineas siguen viendo BODEGA y demas areas de soporte.
+            if (
+              allowedSet.size > 0 &&
+              (!lineId || !allowedSet.has(normalizeLineId(lineId)))
+            ) {
               continue;
             }
             if (lineFilter && lineId !== lineFilter) continue;
