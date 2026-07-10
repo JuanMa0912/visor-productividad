@@ -14,17 +14,28 @@ export type InformeMetricContext = {
   ums: string[];
 };
 
+/** Valores tal como vienen de la BD (sin convertir pollos). */
 export const readInformeRowPeriodTriple = (
   row: InformeCompactRow,
   metric: InformeMetric,
   ctx: InformeMetricContext,
 ): PeriodTriple => {
+  void ctx;
   const offset = metricOffset(metric);
-  const cur = row[offset];
-  const mom = row[offset + 1];
-  const yoy = row[offset + 2];
+  return [row[offset], row[offset + 1], row[offset + 2]];
+};
 
-  if (metric !== "u") return [cur, mom, yoy];
+/**
+ * Unidades en pollos und para totales de sublinea 01 POLLO.
+ * Fuera de esa sublinea devuelve las unidades crudas.
+ */
+export const readInformeRowPollosUndTriple = (
+  row: InformeCompactRow,
+  ctx: InformeMetricContext,
+): PeriodTriple => {
+  const cur = row[5];
+  const mom = row[6];
+  const yoy = row[7];
 
   const catLabel = ctx.cats[row[1]] ?? "";
   const linLabel = ctx.lins[row[2]] ?? "";
@@ -40,6 +51,18 @@ export const readInformeRowPeriodTriple = (
     convertAsaderoQtyToPollosUnd(mom, itemLabel, unitId, linLabel, subLabel),
     convertAsaderoQtyToPollosUnd(yoy, itemLabel, unitId, linLabel, subLabel),
   ];
+};
+
+export const readInformeRowPeriodTripleForLevel = (
+  row: InformeCompactRow,
+  metric: InformeMetric,
+  ctx: InformeMetricContext,
+  keyIndex: number,
+): PeriodTriple => {
+  if (metric === "u" && keyIndex === 3) {
+    return readInformeRowPollosUndTriple(row, ctx);
+  }
+  return readInformeRowPeriodTriple(row, metric, ctx);
 };
 
 export const informeMetricContextFromPayload = (payload: {

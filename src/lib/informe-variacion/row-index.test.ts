@@ -33,7 +33,7 @@ describe("filterIndexedRowIndices", () => {
   });
 });
 
-const emptyMetricCtx = { cats: [], lins: [], items: [], ums: [] };
+const emptyMetricCtx = { cats: [], lins: [], subs: [], items: [], ums: [] };
 
 describe("aggregateIndicesBySede", () => {
   it("suma por sede dentro de un bucket de categoria", () => {
@@ -66,5 +66,30 @@ describe("sumRowIndices", () => {
   it("totaliza periodos de filas seleccionadas", () => {
     const totals = sumRowIndices(sampleRows, [0, 2], "v", emptyMetricCtx);
     assert.deepEqual(totals, [120, 108, 95]);
+  });
+});
+
+describe("pollos und en sublinea", () => {
+  const polloRows: InformeCompactRow[] = [
+    [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0],
+  ];
+  const ctx = {
+    cats: ["3 Asaderos"],
+    lins: ["01 POLLO ASADO"],
+    subs: ["01 POLLO"],
+    items: ["063018 MUSLO APANADO (NVO)", "063021 POLLO APANADO MEDIO (NVO)"],
+    ums: ["", ""],
+  };
+
+  it("mantiene unidades crudas a nivel item", () => {
+    const itemAgg = aggregateIndicesByKey(polloRows, [0, 1], "u", 4, ctx);
+    assert.equal(itemAgg.get(0)?.[0], 800);
+    assert.equal(itemAgg.get(1)?.[0], 2);
+  });
+
+  it("convierte a pollos und solo en total de sublinea", () => {
+    const subAgg = aggregateIndicesByKey(polloRows, [0, 1], "u", 3, ctx);
+    assert.equal(subAgg.get(0)?.[0], 101);
   });
 });

@@ -2,6 +2,7 @@ import type { InformeCompactRow, InformeMetric } from "@/lib/informe-variacion/t
 import type { PeriodTriple } from "@/lib/informe-variacion/aggregate";
 import {
   readInformeRowPeriodTriple,
+  readInformeRowPeriodTripleForLevel,
   type InformeMetricContext,
 } from "@/lib/informe-variacion/informe-metric-values";
 
@@ -115,7 +116,12 @@ export const aggregateIndicesBySede = (
       map.set(key, perSede);
     }
     const bucket = perSede[row[0]];
-    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      metricCtx,
+      keyIndex,
+    );
     bucket[0] += triple[0];
     bucket[1] += triple[1];
     bucket[2] += triple[2];
@@ -136,7 +142,12 @@ export const aggregateIndicesByKey = (
     if (!row) continue;
     const key = row[keyIndex];
     const current = map.get(key) ?? [0, 0, 0];
-    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      metricCtx,
+      keyIndex,
+    );
     current[0] += triple[0];
     current[1] += triple[1];
     current[2] += triple[2];
