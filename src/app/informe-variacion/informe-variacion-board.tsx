@@ -12,10 +12,7 @@ import {
   type PeriodTriple,
   type prepareInformeData,
 } from "@/lib/informe-variacion/aggregate";
-import {
-  InformeBoardPreparing,
-  usePreparedInformeData,
-} from "@/lib/informe-variacion/use-prepared-informe-data";
+import { usePreparedInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
 import { formatInformeValue, comparePeriodTriple } from "@/lib/informe-variacion/format";
 import {
   buildSedeSummaryExportRows,
@@ -57,6 +54,18 @@ export function InformeVariacionBoard(props: Props) {
     return <InformeBoardPreparing />;
   }
   return <InformeVariacionBoardReady {...props} prepared={prepared} />;
+}
+
+function InformeBoardPreparing() {
+  return (
+    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80">
+      <Loader2 className="h-7 w-7 animate-spin text-slate-500" />
+      <p className="mt-3 text-sm text-slate-600">Indexando datos del informe…</p>
+      <p className="mt-1 text-xs text-slate-400">
+        Los indicadores apareceran en cuanto termine el primer calculo
+      </p>
+    </div>
+  );
 }
 
 function InformeVariacionBoardReady({
