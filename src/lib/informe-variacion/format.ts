@@ -41,6 +41,16 @@ export const formatInformePct = (pct: number | null): string => {
   return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
 };
 
+export const formatMargenPct = (ventas: number, margenPesos: number): string => {
+  if (ventas <= 0) return "—";
+  return `${((margenPesos / ventas) * 100).toFixed(1)}%`;
+};
+
+export const margenPctValue = (ventas: number, margenPesos: number): number | null => {
+  if (ventas <= 0) return null;
+  return (margenPesos / ventas) * 100;
+};
+
 export const computeVariationPct = (
   current: number,
   previous: number,

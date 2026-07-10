@@ -17,8 +17,11 @@ export type InformeSedeMeta = {
   key: string;
 };
 
-/** Fila compacta: [sede, cat, lin, sub, item, u_cur, u_mom, u_yoy, v_cur, v_mom, v_yoy] */
+/** Fila compacta: [sede, cat, lin, sub, item, u_*, v_*, m_*] con m = margen pesos cur/mom/yoy */
 export type InformeCompactRow = [
+  number,
+  number,
+  number,
   number,
   number,
   number,

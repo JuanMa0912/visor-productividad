@@ -90,6 +90,7 @@ Orden completo despues de `schema-auth.sql`:
 36. `20260708_rotacion_clean_matview_n2_stable.sql` (N2 estable en matview + indice filtro)
 37. `20260708_margen_item_dia_roll.sql` (rollup dia+item sin factura para `/informe-variacion`; se refresca al final de `margen:refresh-roll`)
 38. `20260709_app_users_portal_profile_asadero.sql` (añade perfil `asadero` al CHECK de `portal_profile`)
+39. `20260710_margen_item_dia_roll_margin.sql` (añade `costo_total`/`margen_pesos` al rollup dia+item para margen % en informe variacion)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 

@@ -44,6 +44,9 @@ export type InformeDbAggRow = {
   v_cur: string | number;
   v_mom: string | number;
   v_yoy: string | number;
+  m_cur: string | number;
+  m_mom: string | number;
+  m_yoy: string | number;
 };
 
 const toNum = (value: string | number | null | undefined) =>
@@ -130,7 +133,10 @@ const buildInformeThreePeriodSql = (
         SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_yoy,
         SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(ventas_netas, 0) ELSE 0 END) AS v_cur,
         SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(ventas_netas, 0) ELSE 0 END) AS v_mom,
-        SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(ventas_netas, 0) ELSE 0 END) AS v_yoy
+        SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(ventas_netas, 0) ELSE 0 END) AS v_yoy,
+        SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(margen_pesos, 0) ELSE 0 END) AS m_cur,
+        SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(margen_pesos, 0) ELSE 0 END) AS m_mom,
+        SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(margen_pesos, 0) ELSE 0 END) AS m_yoy
       FROM ${table}
       WHERE (
           (fecha_dcto >= $1 AND fecha_dcto <= $2)
@@ -172,7 +178,10 @@ const buildInformeThreePeriodSql = (
       SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(cantidad, 0) ELSE 0 END) AS u_yoy,
       SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) AS v_cur,
       SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) AS v_mom,
-      SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) AS v_yoy
+      SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) AS v_yoy,
+      SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0) ELSE 0 END) AS m_cur,
+      SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0) ELSE 0 END) AS m_mom,
+      SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0) ELSE 0 END) AS m_yoy
     FROM ${table}
     WHERE (
         (fecha_dcto >= $1 AND fecha_dcto <= $2)
@@ -306,6 +315,9 @@ export const buildInformeVariacionPayload = (
     const vCur = toNum(row.v_cur);
     const vMom = toNum(row.v_mom);
     const vYoy = toNum(row.v_yoy);
+    const mCur = toNum(row.m_cur);
+    const mMom = toNum(row.m_mom);
+    const mYoy = toNum(row.m_yoy);
 
     yoyTotals[sedeIdx] += vYoy;
 
@@ -321,6 +333,9 @@ export const buildInformeVariacionPayload = (
       vCur,
       vMom,
       vYoy,
+      mCur,
+      mMom,
+      mYoy,
     ]);
   }
 

@@ -4,6 +4,8 @@ import { startTransition, useCallback, useDeferredValue, useMemo, useState } fro
 import { Download, Loader2 } from "lucide-react";
 import {
   aggregateBySede,
+  aggregateMarginBySede,
+  aggregateVentasBySede,
   filterRowIndices,
   hasActiveInformeFilters,
   passInformeRowFilter,
@@ -13,7 +15,7 @@ import {
   type prepareInformeData,
 } from "@/lib/informe-variacion/aggregate";
 import { usePreparedInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
-import { formatInformeValue, comparePeriodTriple } from "@/lib/informe-variacion/format";
+import { formatInformeValue, comparePeriodTriple, formatMargenPct } from "@/lib/informe-variacion/format";
 import {
   buildSedeSummaryExportRows,
   sedeSummaryExportFilename,
@@ -851,9 +853,49 @@ function SedeSummaryTable({
     pass,
     payload.metricCtx,
   );
+  const perSedeVentas = aggregateVentasBySede(
+    payload.rows,
+    payload.sedes.length,
+    pass,
+  );
+  const perSedeMargin = aggregateMarginBySede(
+    payload.rows,
+    payload.sedes.length,
+    pass,
+  );
+  const marginPct = (ventas: PeriodTriple, margin: PeriodTriple, index: 0 | 1 | 2) =>
+    formatMargenPct(ventas[index], margin[index]);
+
+  const sumTriple = (indices: number[], source: PeriodTriple[]) =>
+    indices.reduce<PeriodTriple>(
+      (acc, index) => [
+        acc[0] + source[index][0],
+        acc[1] + source[index][1],
+        acc[2] + source[index][2],
+      ],
+      [0, 0, 0],
+    );
+
   const total = perSede.reduce<PeriodTriple>(
     (acc, values) => [acc[0] + values[0], acc[1] + values[1], acc[2] + values[2]],
     [0, 0, 0],
+  );
+
+  const totalVentas = perSedeVentas.reduce<PeriodTriple>(
+    (acc, values) => [acc[0] + values[0], acc[1] + values[1], acc[2] + values[2]],
+    [0, 0, 0],
+  );
+  const totalMargin = perSedeMargin.reduce<PeriodTriple>(
+    (acc, values) => [acc[0] + values[0], acc[1] + values[1], acc[2] + values[2]],
+    [0, 0, 0],
+  );
+  const totalYoyVentas = perSedeVentas.reduce(
+    (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
+    0,
+  );
+  const totalYoyMargin = perSedeMargin.reduce(
+    (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
+    0,
   );
 
   const arrow = (col: string) =>
@@ -861,15 +903,18 @@ function SedeSummaryTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] border-collapse text-sm">
+      <table className="w-full min-w-[1100px] border-collapse text-sm">
         <thead>
           <tr className="text-xs uppercase tracking-wide text-slate-500">
             {[
               ["name", "Empresa / Sede"],
               ["cur", curLabel],
+              ["curMarg", "Marg %"],
               ["yoy", yoyLabel],
+              ["yoyMarg", "Marg %"],
               ["yoypct", "YoY %"],
               ["mom", momLabel],
+              ["momMarg", "Marg %"],
               ["mompct", "MoM %"],
               ["part", "Participacion"],
             ].map(([col, label]) => (
@@ -911,6 +956,8 @@ function SedeSummaryTable({
               ],
               [0, 0, 0],
             );
+            const empresaVentas = sumTriple(sorted, perSedeVentas);
+            const empresaMargin = sumTriple(sorted, perSedeMargin);
 
             return (
               <FragmentBlock key={empresa.label}>
@@ -925,10 +972,18 @@ function SedeSummaryTable({
                     {empresa.label}
                   </td>
                   <td className="px-2 py-2 text-right">{formatInformeValue(empresaSum[0], metric)}</td>
+                  <td className="px-2 py-2 text-right text-slate-600">
+                    {marginPct(empresaVentas, empresaMargin, 0)}
+                  </td>
                   <td className="px-2 py-2 text-right">
                     {payload.empYoy[empresa.label]
                       ? formatInformeValue(empresaSum[2], metric)
                       : "N/D"}
+                  </td>
+                  <td className="px-2 py-2 text-right text-slate-600">
+                    {payload.empYoy[empresa.label]
+                      ? marginPct(empresaVentas, empresaMargin, 2)
+                      : "—"}
                   </td>
                   <td className="px-2 py-2 text-right">
                     <VariationChip
@@ -938,6 +993,9 @@ function SedeSummaryTable({
                     />
                   </td>
                   <td className="px-2 py-2 text-right">{formatInformeValue(empresaSum[1], metric)}</td>
+                  <td className="px-2 py-2 text-right text-slate-600">
+                    {marginPct(empresaVentas, empresaMargin, 1)}
+                  </td>
                   <td className="px-2 py-2 text-right">
                     <VariationChip current={empresaSum[0]} previous={empresaSum[1]} />
                   </td>
@@ -954,10 +1012,18 @@ function SedeSummaryTable({
                       <td className="px-2 py-2 text-right font-semibold">
                         {formatInformeValue(values[0], metric)}
                       </td>
+                      <td className="px-2 py-2 text-right text-slate-600">
+                        {marginPct(perSedeVentas[index], perSedeMargin[index], 0)}
+                      </td>
                       <td className="px-2 py-2 text-right">
                         {payload.sedeYoy[index]
                           ? formatInformeValue(values[2], metric)
                           : "N/D"}
+                      </td>
+                      <td className="px-2 py-2 text-right text-slate-600">
+                        {payload.sedeYoy[index]
+                          ? marginPct(perSedeVentas[index], perSedeMargin[index], 2)
+                          : "—"}
                       </td>
                       <td className="px-2 py-2 text-right">
                         <VariationChip
@@ -968,6 +1034,9 @@ function SedeSummaryTable({
                       </td>
                       <td className="px-2 py-2 text-right">
                         {formatInformeValue(values[1], metric)}
+                      </td>
+                      <td className="px-2 py-2 text-right text-slate-600">
+                        {marginPct(perSedeVentas[index], perSedeMargin[index], 1)}
                       </td>
                       <td className="px-2 py-2 text-right">
                         <VariationChip current={values[0]} previous={values[1]} />
@@ -982,11 +1051,17 @@ function SedeSummaryTable({
           <tr className="bg-slate-200 font-bold">
             <td className="px-2 py-2">TOTAL COMPANIAS</td>
             <td className="px-2 py-2 text-right">{formatInformeValue(total[0], metric)}</td>
+            <td className="px-2 py-2 text-right text-slate-700">
+              {marginPct(totalVentas, totalMargin, 0)}
+            </td>
             <td className="px-2 py-2 text-right">
               {formatInformeValue(
                 perSede.reduce((sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0), 0),
                 metric,
               )}
+            </td>
+            <td className="px-2 py-2 text-right text-slate-700">
+              {formatMargenPct(totalYoyVentas, totalYoyMargin)}
             </td>
             <td className="px-2 py-2 text-right">
               <VariationChip
@@ -998,6 +1073,9 @@ function SedeSummaryTable({
               />
             </td>
             <td className="px-2 py-2 text-right">{formatInformeValue(total[1], metric)}</td>
+            <td className="px-2 py-2 text-right text-slate-700">
+              {marginPct(totalVentas, totalMargin, 1)}
+            </td>
             <td className="px-2 py-2 text-right">
               <VariationChip current={total[0]} previous={total[1]} />
             </td>

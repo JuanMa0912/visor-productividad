@@ -90,6 +90,9 @@ export const reorderInformeVariacionSedes = (
       row[8],
       row[9],
       row[10],
+      row[11] ?? 0,
+      row[12] ?? 0,
+      row[13] ?? 0,
     ] as InformeCompactRow;
   });
 

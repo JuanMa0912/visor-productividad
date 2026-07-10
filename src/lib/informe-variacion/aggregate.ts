@@ -89,6 +89,38 @@ export const aggregateBySede = (
   return perSede;
 };
 
+export const aggregateVentasBySede = (
+  rows: InformeCompactRow[],
+  sedeCount: number,
+  pass: (row: InformeCompactRow) => boolean,
+): PeriodTriple[] => {
+  const perSede = Array.from({ length: sedeCount }, () => [0, 0, 0] as PeriodTriple);
+  for (const row of rows) {
+    if (!pass(row)) continue;
+    const bucket = perSede[row[0]]!;
+    bucket[0] += row[8];
+    bucket[1] += row[9];
+    bucket[2] += row[10];
+  }
+  return perSede;
+};
+
+export const aggregateMarginBySede = (
+  rows: InformeCompactRow[],
+  sedeCount: number,
+  pass: (row: InformeCompactRow) => boolean,
+): PeriodTriple[] => {
+  const perSede = Array.from({ length: sedeCount }, () => [0, 0, 0] as PeriodTriple);
+  for (const row of rows) {
+    if (!pass(row)) continue;
+    const bucket = perSede[row[0]]!;
+    bucket[0] += row[11] ?? 0;
+    bucket[1] += row[12] ?? 0;
+    bucket[2] += row[13] ?? 0;
+  }
+  return perSede;
+};
+
 export const levelAggregateBySede = (
   rows: InformeCompactRow[],
   metric: InformeMetric,

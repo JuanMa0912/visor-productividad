@@ -103,18 +103,23 @@ export const writeInformeSedeSummaryWorkbook = async ({
   const valueHeader = metric === "u" ? "Actual (unidades)" : "Actual ($ miles)";
   const valueFmt = metric === "u" ? UNITS_FMT : MILES_FMT;
 
+const MARG_FMT = '0.0"%";"—"';
+
   sheet.columns = [
     { key: "empresa", width: 24 },
     { key: "sede", width: 30 },
     { key: "current", width: 16 },
+    { key: "currentMargPct", width: 10 },
     { key: "yoyBase", width: 16 },
+    { key: "yoyMargPct", width: 10 },
     { key: "yoyPct", width: 12 },
     { key: "momBase", width: 16 },
+    { key: "momMargPct", width: 10 },
     { key: "momPct", width: 12 },
     { key: "participationPct", width: 14 },
   ];
 
-  sheet.mergeCells("A1:H1");
+  sheet.mergeCells("A1:K1");
   const titleCell = sheet.getCell("A1");
   titleCell.value = "Informe de variacion MoM · YoY";
   titleCell.font = { bold: true, size: 14, color: { argb: HEADER_FONT } };
@@ -122,7 +127,7 @@ export const writeInformeSedeSummaryWorkbook = async ({
   titleCell.alignment = { vertical: "middle" };
   sheet.getRow(1).height = 28;
 
-  sheet.mergeCells("A2:H2");
+  sheet.mergeCells("A2:K2");
   const subtitleCell = sheet.getCell("A2");
   subtitleCell.value = `Periodo: ${periodLabel}  ·  Metrica: ${metric === "u" ? "Unidades" : "Valor ($ miles)"}`;
   subtitleCell.font = { size: 10, color: { argb: "FF1E293B" } };
@@ -130,7 +135,7 @@ export const writeInformeSedeSummaryWorkbook = async ({
   subtitleCell.alignment = { vertical: "middle" };
   sheet.getRow(2).height = 20;
 
-  sheet.mergeCells("A3:H3");
+  sheet.mergeCells("A3:K3");
   const metaCell = sheet.getCell("A3");
   metaCell.value = `Generado: ${new Date().toLocaleString("es-CO")}`;
   metaCell.font = { size: 9, italic: true, color: { argb: NEUTRAL_FONT } };
@@ -142,9 +147,12 @@ export const writeInformeSedeSummaryWorkbook = async ({
     "Empresa",
     "Sede",
     valueHeader,
+    "Marg %",
     `${yoyLabel} base`,
+    "Marg %",
     "YoY %",
     `${momLabel} base`,
+    "Marg %",
     "MoM %",
     "Participacion %",
   ].forEach((label, index) => {
@@ -168,8 +176,11 @@ export const writeInformeSedeSummaryWorkbook = async ({
       empresa: row.kind === "sede" ? "" : row.empresa,
       sede: row.kind === "sede" ? `    ${row.sede}` : row.sede,
       current: row.current,
+      currentMargPct: row.currentMargPct ?? "",
       yoyBase: row.yoyBase ?? "",
+      yoyMargPct: row.yoyMargPct ?? "",
       momBase: row.momBase,
+      momMargPct: row.momMargPct ?? "",
       participationPct: row.participationPct ?? "",
     });
 
@@ -204,13 +215,29 @@ export const writeInformeSedeSummaryWorkbook = async ({
     if (kind === "empresa") sedeStripe = 0;
 
     excelRow.getCell(3).numFmt = valueFmt;
-    if (row.yoyBase !== null) excelRow.getCell(4).numFmt = valueFmt;
-    excelRow.getCell(6).numFmt = valueFmt;
+    if (row.yoyBase !== null) excelRow.getCell(5).numFmt = valueFmt;
+    excelRow.getCell(8).numFmt = valueFmt;
 
-    writePctCell(excelRow.getCell(5), row.yoyPct, row.yoyPctValue);
-    writePctCell(excelRow.getCell(7), row.momPct, row.momPctValue);
+    const writeMargCell = (cell: ExcelJS.Cell, value: number | null) => {
+      if (value === null) {
+        cell.value = "—";
+        cell.font = { color: { argb: NEUTRAL_FONT } };
+        cell.alignment = { horizontal: "right" };
+        return;
+      }
+      cell.value = value;
+      cell.numFmt = MARG_FMT;
+      cell.alignment = { horizontal: "right" };
+    };
 
-    const partCell = excelRow.getCell(8);
+    writeMargCell(excelRow.getCell(4), row.currentMargPct);
+    writeMargCell(excelRow.getCell(6), row.yoyMargPct);
+    writeMargCell(excelRow.getCell(9), row.momMargPct);
+
+    writePctCell(excelRow.getCell(7), row.yoyPct, row.yoyPctValue);
+    writePctCell(excelRow.getCell(10), row.momPct, row.momPctValue);
+
+    const partCell = excelRow.getCell(11);
     if (row.participationPct === null) {
       partCell.value = "";
     } else {
@@ -228,7 +255,7 @@ export const writeInformeSedeSummaryWorkbook = async ({
 
   sheet.autoFilter = {
     from: { row: 4, column: 1 },
-    to: { row: 4 + rows.length, column: 8 },
+    to: { row: 4 + rows.length, column: 11 },
   };
 
   return workbook.xlsx.writeBuffer();

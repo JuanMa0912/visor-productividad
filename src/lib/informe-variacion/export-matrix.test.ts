@@ -19,7 +19,7 @@ const samplePayload = (): InformeVariacionPayload => ({
     { key: "m|002", e: "Mercamio", s: "2 CALLE 5TA", yoyOk: true },
   ],
   rows: [
-    [0, 0, 0, 0, 0, 100, 80, 90, 200, 160, 180],
+    [0, 0, 0, 0, 0, 100, 80, 90, 200, 160, 180, 40, 32, 36],
     [1, 0, 0, 0, 1, 50, 40, 45, 120, 100, 110],
   ],
   cats: ["Asaderos"],
