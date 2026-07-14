@@ -43,7 +43,9 @@ import {
 } from "@/lib/shared/portal-sections";
 import {
   applyRotacionCategoriaKeysScope,
+  resolveRotacionCategoriaPresenceSql,
   resolveSessionLineCategoryScope,
+  rotacionCategoriaScopeCacheSuffix,
 } from "@/lib/shared/line-category-scope";
 import {
   canAccessRotacionBoard,
@@ -330,6 +332,7 @@ const buildRotationRowsSliceCacheKey = (input: {
   lineasN1: string[] | null;
   categoriaKeys: string[] | null;
   maxSalesValue: number | null;
+  forcedRotacionCategoriaKeys?: string[] | null;
 }) => {
   const lineas = [...(input.lineasN1 ?? [])].sort((a, b) =>
     a.localeCompare(b, "es"),
@@ -351,6 +354,7 @@ const buildRotationRowsSliceCacheKey = (input: {
     lineas.join(","),
     cats.join(","),
     maxSales,
+    rotacionCategoriaScopeCacheSuffix(input.forcedRotacionCategoriaKeys),
   ].join("|");
 };
 
@@ -1198,13 +1202,15 @@ const queryRotationLineasN1 = async ({
   endDate,
   empresa,
   sedeId,
+  forcedRotacionCategoriaKeys = null,
 }: {
   startDate: string;
   endDate: string;
   empresa: string | null;
   sedeId: string;
+  forcedRotacionCategoriaKeys?: string[] | null;
 }) => {
-  const cacheKey = `${getRotacionSourceTable()}|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
+  const cacheKey = `${getRotacionSourceTable()}|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}${rotacionCategoriaScopeCacheSuffix(forcedRotacionCategoriaKeys)}`;
   const now = Date.now();
   const cached = lineasN1ByRangeCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
@@ -1214,6 +1220,10 @@ const queryRotationLineasN1 = async ({
   const value = await withPoolClient(async (client) => {
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
+    const categoriaPresenceSql = resolveRotacionCategoriaPresenceSql(
+      fields,
+      forcedRotacionCategoriaKeys,
+    );
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -1223,7 +1233,7 @@ const queryRotationLineasN1 = async ({
       FROM ${getRotacionSourceTable()}
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
-        AND ${fields.allowedCategoriaExpr}
+        AND ${categoriaPresenceSql}
         AND ${fields.sedeIdExpr} = $3
         AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
       ORDER BY linea_n1_raw ASC
@@ -1295,15 +1305,17 @@ const queryRotationLineasN2 = async ({
   empresa,
   sedeId,
   lineaN1Code,
+  forcedRotacionCategoriaKeys = null,
 }: {
   startDate: string;
   endDate: string;
   empresa: string | null;
   sedeId: string;
   lineaN1Code: string;
+  forcedRotacionCategoriaKeys?: string[] | null;
 }) => {
   const normalizedN1 = normalizeRotationLineaN1Code(lineaN1Code);
-  const cacheKey = `${getRotacionSourceTable()}|n2|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}|${normalizedN1}`;
+  const cacheKey = `${getRotacionSourceTable()}|n2|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}|${normalizedN1}${rotacionCategoriaScopeCacheSuffix(forcedRotacionCategoriaKeys)}`;
   const now = Date.now();
   const cached = lineasN2ByRangeCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
@@ -1311,7 +1323,9 @@ const queryRotationLineasN2 = async ({
   }
 
   const value = await withPoolClient(async (client) => {
-    const matViewExists = await ensureRotacionCleanMatViewProbe(client);
+    const forceRawCategories = Boolean(forcedRotacionCategoriaKeys?.length);
+    const matViewExists =
+      !forceRawCategories && (await ensureRotacionCleanMatViewProbe(client));
     const hasMatviewN2 =
       matViewExists &&
       (await probeRotacionMatviewHasSublineaColumns(client));
@@ -1345,6 +1359,10 @@ const queryRotationLineasN2 = async ({
 
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
+    const categoriaPresenceSql = resolveRotacionCategoriaPresenceSql(
+      fields,
+      forcedRotacionCategoriaKeys,
+    );
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -1353,7 +1371,7 @@ const queryRotationLineasN2 = async ({
       FROM ${getRotacionSourceTable()}
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
-        AND ${fields.allowedCategoriaExpr}
+        AND ${categoriaPresenceSql}
         AND ${fields.sedeIdExpr} = $3
         AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
         AND COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = $5
@@ -1400,18 +1418,22 @@ const queryRotationItemLineaN2Index = async ({
   empresa,
   sedeId,
   lineaN1Code,
+  forcedRotacionCategoriaKeys = null,
 }: {
   startDate: string;
   endDate: string;
   empresa: string | null;
   sedeId: string;
   lineaN1Code: string;
+  forcedRotacionCategoriaKeys?: string[] | null;
 }): Promise<Record<string, string>> => {
   const normalizedN1 = normalizeRotationLineaN1Code(lineaN1Code);
 
   return withPoolClient(async (client) => {
     const out: Record<string, string> = {};
-    const matViewExists = await ensureRotacionCleanMatViewProbe(client);
+    const forceRawCategories = Boolean(forcedRotacionCategoriaKeys?.length);
+    const matViewExists =
+      !forceRawCategories && (await ensureRotacionCleanMatViewProbe(client));
     const hasMatviewN2 =
       matViewExists &&
       (await probeRotacionMatviewHasSublineaColumns(client));
@@ -1455,6 +1477,10 @@ const queryRotationItemLineaN2Index = async ({
 
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
+    const categoriaPresenceSql = resolveRotacionCategoriaPresenceSql(
+      fields,
+      forcedRotacionCategoriaKeys,
+    );
     const baseResult = await client.query(
       `
       SELECT DISTINCT ON (empresa, sede_id, item)
@@ -1472,7 +1498,7 @@ const queryRotationItemLineaN2Index = async ({
         FROM ${getRotacionSourceTable()}
         WHERE ${buildCompactDateRangeSql(dateColumn)}
           AND ${fields.itemPresentCondition}
-          AND ${fields.allowedCategoriaExpr}
+          AND ${categoriaPresenceSql}
           AND ${fields.sedeIdExpr} = $3
           AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
           AND COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = $5
@@ -1508,13 +1534,15 @@ const queryRotationCategoriaBundle = async ({
   endDate,
   empresa,
   sedeId,
+  forcedRotacionCategoriaKeys = null,
 }: {
   startDate: string;
   endDate: string;
   empresa: string | null;
   sedeId: string;
+  forcedRotacionCategoriaKeys?: string[] | null;
 }): Promise<RotationCategoriaBundle> => {
-  const cacheKey = `catbundle|${getRotacionSourceTable()}|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}`;
+  const cacheKey = `catbundle|${getRotacionSourceTable()}|${startDate}|${endDate}|${empresa ?? "*"}|${sedeId}${rotacionCategoriaScopeCacheSuffix(forcedRotacionCategoriaKeys)}`;
   const now = Date.now();
   const cached = categoriaBundleByRangeCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
@@ -1524,6 +1552,10 @@ const queryRotationCategoriaBundle = async ({
   const value = await withPoolClient(async (client) => {
     const fields = await resolveRotacionBaseSqlFields(client);
     const dateColumn = fields.dateColumn;
+    const categoriaPresenceSql = resolveRotacionCategoriaPresenceSql(
+      fields,
+      forcedRotacionCategoriaKeys,
+    );
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -1533,7 +1565,7 @@ const queryRotationCategoriaBundle = async ({
       FROM ${getRotacionSourceTable()}
       WHERE ${buildCompactDateRangeSql(dateColumn)}
         AND ${fields.itemPresentCondition}
-        AND ${fields.allowedCategoriaExpr}
+        AND ${categoriaPresenceSql}
         AND ${fields.sedeIdExpr} = $3
         AND ($4::text IS NULL OR ${fields.empresaExpr} = $4)
       `,
@@ -2289,6 +2321,7 @@ async function queryRotationRows(args: {
   precomputedFields?: RotacionBaseSqlFields;
   matviewSqlStrategy?: RotacionMatviewSqlStrategy;
   periodoStdMeta?: RotacionPeriodoStdMeta | null;
+  forcedRotacionCategoriaKeys?: string[] | null;
   explain: true;
 }): Promise<ExplainPlanResult>;
 async function queryRotationRows(args: {
@@ -2302,6 +2335,7 @@ async function queryRotationRows(args: {
   precomputedFields?: RotacionBaseSqlFields;
   matviewSqlStrategy?: RotacionMatviewSqlStrategy;
   periodoStdMeta?: RotacionPeriodoStdMeta | null;
+  forcedRotacionCategoriaKeys?: string[] | null;
   explain?: false;
 }): Promise<RotationRow[]>;
 async function queryRotationRows({
@@ -2315,6 +2349,7 @@ async function queryRotationRows({
   precomputedFields,
   matviewSqlStrategy = ROTACION_MATVIEW_SQL_DEFAULT,
   periodoStdMeta = null,
+  forcedRotacionCategoriaKeys = null,
   explain = false,
 }: {
   startDate: string;
@@ -2335,6 +2370,11 @@ async function queryRotationRows({
   /** Metadata del snapshot nocturno; si el rango coincide, usa camino rapido. */
   periodoStdMeta?: RotacionPeriodoStdMeta | null;
   /**
+   * Perfil bloqueado (asaderos): la matview/periodo_std excluyen categoria 3;
+   * forzar tabla cruda + predicado de categorias forzadas.
+   */
+  forcedRotacionCategoriaKeys?: string[] | null;
+  /**
    * Si es `true`, envuelve el query en `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)`
    * y devuelve el plan como string en vez de las filas. Util para diagnostico
    * desde `?explain=1` (admin only). NO modifica el query original ni lo afecta
@@ -2342,9 +2382,11 @@ async function queryRotationRows({
    */
   explain?: boolean;
 }): Promise<RotationRow[] | ExplainPlanResult> {
+  const forceRawCategories = Boolean(forcedRotacionCategoriaKeys?.length);
   const fetchRows = async (): Promise<RotationRow[] | ExplainPlanResult> =>
     withPoolClient(async (client) => {
       if (
+        !forceRawCategories &&
         matchesRotacionPeriodoStdRange(periodoStdMeta, startDate, endDate) &&
         (await probeRotacionPeriodoStdReady(client))
       ) {
@@ -2383,8 +2425,9 @@ async function queryRotationRows({
       // camino simplificado que evita CTEs intermedias y aprovecha que las
       // metricas diarias ya estan pre-sumadas y los strings limpios. Si no
       // existe (porque la migracion aun no se aplico), fallback al query
-      // original sobre la tabla cruda.
-      const matViewExists = await ensureRotacionCleanMatViewProbe(client);
+      // original sobre la tabla cruda. Cat. asaderos (3) no vive en la matview.
+      const matViewExists =
+        !forceRawCategories && (await ensureRotacionCleanMatViewProbe(client));
       if (matViewExists) {
         try {
           const matviewResult = await queryRotationRowsViaMatview({
@@ -2424,6 +2467,10 @@ async function queryRotationRows({
       const fields =
         precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
       const dateColumn = fields.dateColumn;
+      const categoriaPresenceSql = resolveRotacionCategoriaPresenceSql(
+        fields,
+        forcedRotacionCategoriaKeys,
+      );
       const sqlStartTs = performance.now();
       const baseSql = `
       -- IMPORTANTE: NO usar 'WITH scoped AS MATERIALIZED'. Se intento para
@@ -2468,7 +2515,7 @@ async function queryRotationRows({
         FROM ${getRotacionSourceTable()}
         WHERE ${buildCompactDateRangeSql(dateColumn)}
           AND ${fields.itemPresentCondition}
-          AND ${fields.allowedCategoriaExpr}
+          AND ${categoriaPresenceSql}
           AND ($5::text IS NULL OR ${fields.empresaExpr} = $5)
           AND ($6::text IS NULL OR ${fields.sedeIdExpr} = $6)
           AND ($7::text[] IS NULL OR COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = ANY($7::text[]))
@@ -3160,12 +3207,14 @@ export async function GET(request: Request) {
             endDate: boundedRange.end,
             empresa: sede.empresa,
             sedeId: sede.sedeId,
+            forcedRotacionCategoriaKeys: lineScope.forcedRotacionCategoriaKeys,
           }),
           queryRotationCategoriaBundle({
             startDate: boundedRange.start,
             endDate: boundedRange.end,
             empresa: sede.empresa,
             sedeId: sede.sedeId,
+            forcedRotacionCategoriaKeys: lineScope.forcedRotacionCategoriaKeys,
           }),
         ]);
         return { lineasSede, bundle };
@@ -3212,6 +3261,22 @@ export async function GET(request: Request) {
           forced.has(categoriaKey),
         ),
       );
+      // El catalogo N1 global puede haberse cacheado sin scope; alinear lineas
+      // visibles con las categorias forzadas (p. ej. Asaderos = 3).
+      const scopedLineas = new Set<string>();
+      for (const lineas of Object.values(filters.lineasN1PorCategoria)) {
+        for (const linea of lineas) scopedLineas.add(linea);
+      }
+      if (scopedLineas.size > 0) {
+        filters.lineasN1 = Array.from(scopedLineas).sort((a, b) =>
+          a.localeCompare(b, "es"),
+        );
+        filters.lineasN1Nombres = Object.fromEntries(
+          Object.entries(filters.lineasN1Nombres).filter(([code]) =>
+            scopedLineas.has(code),
+          ),
+        );
+      }
     }
 
     if (requestedLineaN1Scope && selectedVisibleSedes.length > 0) {
@@ -3229,6 +3294,7 @@ export async function GET(request: Request) {
               empresa: sede.empresa,
               sedeId: sede.sedeId,
               lineaN1Code: requestedLineaN1Scope,
+              forcedRotacionCategoriaKeys: lineScope.forcedRotacionCategoriaKeys,
             }),
             queryRotationItemLineaN2Index({
               startDate: boundedRange.start,
@@ -3236,6 +3302,7 @@ export async function GET(request: Request) {
               empresa: sede.empresa,
               sedeId: sede.sedeId,
               lineaN1Code: requestedLineaN1Scope,
+              forcedRotacionCategoriaKeys: lineScope.forcedRotacionCategoriaKeys,
             }),
           ]);
           return { slice, itemIndex };
@@ -3332,6 +3399,7 @@ export async function GET(request: Request) {
     const catalogCategoriaKeySet = new Set(
       filters.categorias.map((c) => c.categoriaKey),
     );
+    const catalogLineaN1Set = new Set(filters.lineasN1);
     const validatedCategoriaKeys = requestedCategoriaKeys.filter((k) =>
       catalogCategoriaKeySet.has(k),
     );
@@ -3347,6 +3415,19 @@ export async function GET(request: Request) {
         : validatedCategoriaKeys,
       lineScope,
     );
+    // Si el cliente aun manda lineas de mercado (cache viejo) con perfil
+    // asaderos, intersectar con el catalogo scoped evita query vacia.
+    const validatedLineasN1 = requestedLineasN1.filter((code) =>
+      catalogLineaN1Set.has(normalizeRotationLineaN1Code(code)),
+    );
+    const lineasN1ForQuery =
+      validatedLineasN1.length > 0
+        ? validatedLineasN1
+        : catalogLineaN1Set.size > 0 && requestedLineasN1.length > 0
+          ? Array.from(catalogLineaN1Set)
+          : requestedLineasN1.length > 0
+            ? requestedLineasN1
+            : null;
 
     // Resolvemos los campos del esquema UNA sola vez por request y los pasamos
     // a todas las queries por sede. Antes cada `queryRotationRows` ejecutaba su
@@ -3356,11 +3437,16 @@ export async function GET(request: Request) {
     const precomputedFields = await withPoolClient((client) =>
       resolveRotacionBaseSqlFields(client),
     );
-    const usePeriodoStd = matchesRotacionPeriodoStdRange(
-      periodoStdMeta,
-      boundedRange.start,
-      boundedRange.end,
+    const forceRawCategories = Boolean(
+      lineScope.forcedRotacionCategoriaKeys?.length,
     );
+    const usePeriodoStd =
+      !forceRawCategories &&
+      matchesRotacionPeriodoStdRange(
+        periodoStdMeta,
+        boundedRange.start,
+        boundedRange.end,
+      );
 
     if (isExplain) {
       // Solo corremos EXPLAIN para la PRIMERA sede para no recargar la BD.
@@ -3374,11 +3460,12 @@ export async function GET(request: Request) {
         maxSalesValue,
         empresa: targetSede.empresa,
         sedeId: targetSede.sedeId,
-        lineasN1: requestedLineasN1.length > 0 ? requestedLineasN1 : null,
+        lineasN1: lineasN1ForQuery,
         categoriaKeys: categoriaKeysForQuery,
         precomputedFields,
         matviewSqlStrategy,
         periodoStdMeta,
+        forcedRotacionCategoriaKeys: lineScope.forcedRotacionCategoriaKeys,
         explain: true,
       });
       const totalExplainMs = performance.now() - explainStartTs;
@@ -3392,7 +3479,11 @@ export async function GET(request: Request) {
               sedeName: targetSede.sedeName,
             },
             range: boundedRange,
-            dataSource: usePeriodoStd ? "periodo-std" : "matview-or-raw",
+            dataSource: forceRawCategories
+              ? "raw"
+              : usePeriodoStd
+                ? "periodo-std"
+                : "matview-or-raw",
             matviewSql: matviewSqlStrategy,
             periodoStd: periodoStdMeta,
             durationMs: Math.round(explainResult.durationMs),
@@ -3416,17 +3507,20 @@ export async function GET(request: Request) {
       `[rotacion API] iniciando fetch de filas para ${selectedVisibleSedes.length} sede(s)`,
     );
     // Pre-probe para reportar en el header que camino SQL se usa.
-    const dataSource: RotacionDataSource = await withPoolClient(async (client) => {
-      if (
-        usePeriodoStd &&
-        (await probeRotacionPeriodoStdReady(client))
-      ) {
-        return "periodo-std";
-      }
-      return (await ensureRotacionCleanMatViewProbe(client)) ? "matview" : "raw";
-    });
-    const lineasN1ForQuery =
-      requestedLineasN1.length > 0 ? requestedLineasN1 : null;
+    // Perfil asaderos (cat 3): matview/periodo_std no incluyen esa categoria.
+    const dataSource: RotacionDataSource = forceRawCategories
+      ? "raw"
+      : await withPoolClient(async (client) => {
+          if (
+            usePeriodoStd &&
+            (await probeRotacionPeriodoStdReady(client))
+          ) {
+            return "periodo-std";
+          }
+          return (await ensureRotacionCleanMatViewProbe(client))
+            ? "matview"
+            : "raw";
+        });
     let rowCacheHits = 0;
     const rowsBySede = await mapWithConcurrency(
       selectedVisibleSedes,
@@ -3442,6 +3536,7 @@ export async function GET(request: Request) {
           lineasN1: lineasN1ForQuery,
           categoriaKeys: categoriaKeysForQuery,
           maxSalesValue,
+          forcedRotacionCategoriaKeys: lineScope.forcedRotacionCategoriaKeys,
         });
         const cachedRows = getRotationRowsSliceFromCache(sliceCacheKey);
         if (cachedRows) {
@@ -3462,6 +3557,7 @@ export async function GET(request: Request) {
           precomputedFields,
           matviewSqlStrategy,
           periodoStdMeta,
+          forcedRotacionCategoriaKeys: lineScope.forcedRotacionCategoriaKeys,
         });
         setRotationRowsSliceCache(sliceCacheKey, fetchedRows, dataSource);
         return fetchedRows;

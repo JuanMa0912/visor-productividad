@@ -103,3 +103,34 @@ export const scopeTiposCacheSuffix = (
   if (!forcedMargenTipos?.length) return "";
   return `:tipos=${[...forcedMargenTipos].sort().join(",")}`;
 };
+
+/**
+ * Predicado SQL de categorias en rotacion.
+ * Por defecto excluye Asaderos (3) y V; con perfil bloqueado (asaderos)
+ * solo permite las categorias forzadas.
+ */
+export const resolveRotacionCategoriaPresenceSql = (
+  fields: {
+    categoriaKeyExpr: string;
+    allowedCategoriaExpr: string;
+  },
+  forcedCategoriaKeys: string[] | null | undefined,
+): string => {
+  if (!forcedCategoriaKeys?.length) {
+    return fields.allowedCategoriaExpr;
+  }
+  const safeKeys = forcedCategoriaKeys
+    .map((key) => key.trim())
+    .filter((key) => /^[0-9A-Za-z_]+$/.test(key));
+  if (safeKeys.length === 0) return "FALSE";
+  return `${fields.categoriaKeyExpr} = ANY(ARRAY[${safeKeys
+    .map((key) => `'${key}'`)
+    .join(", ")}]::text[])`;
+};
+
+export const rotacionCategoriaScopeCacheSuffix = (
+  forcedCategoriaKeys: string[] | null | undefined,
+): string => {
+  if (!forcedCategoriaKeys?.length) return "";
+  return `:cat=${[...forcedCategoriaKeys].sort().join(",")}`;
+};

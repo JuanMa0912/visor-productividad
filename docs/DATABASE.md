@@ -213,8 +213,8 @@ porcentajes.
 | Tabla | Origen | Uso |
 | --- | --- | --- |
 | `rotacion_base_item_dia_sede` | ETL/servidor | rotacion, inventario x item, kardex |
-| `rotacion_item_dia_clean` | matview (migracion) | pre-limpia/agrega diario para `/api/rotacion`; expone `linea_n2_codigo` y `sublinea` (migraciones `20260706`/`20260708`) |
-| `rotacion_item_periodo_std` | refresh nocturno | snapshot agregado rango rolling default (~1-3 s) |
+| `rotacion_item_dia_clean` | matview (migracion) | pre-limpia/agrega diario para `/api/rotacion`; expone `linea_n2_codigo` y `sublinea` (migraciones `20260706`/`20260708`). Excluye categoria Asaderos (`3`) y `V` |
+| `rotacion_item_periodo_std` | refresh nocturno | snapshot agregado rango rolling default (~1-3 s); hereda exclusion de cat. `3`/`V` de la matview |
 | `rotacion_item_periodo_std_meta` | refresh nocturno | periodo_start/end y refreshed_at del snapshot |
 | `rotacion_v4` | ETL/servidor (legacy, sin UI en portal) |
 | `rotacion_abcd_config` | runtime/API | umbrales ABCD globales |
@@ -237,6 +237,11 @@ Indices versionados:
 APIs relacionadas: `/api/rotacion`, `/api/rotacion/cero-estados`,
 `/api/rotacion/cero-estados`, `/api/rotacion/cero-estados/audit`,
 `/api/inventario-x-item`, `/api/kardex/*`.
+
+Perfil `asadero` (`allowed_lines` solo `asadero`): fuerza categoria de rotacion
+`3` y consulta la tabla cruda `rotacion_base_item_dia_sede` (no matview ni
+`periodo_std`, que excluyen cat. `3`). Ver
+`src/lib/shared/line-category-scope.ts`.
 
 ### 4.5 Ventas por item
 

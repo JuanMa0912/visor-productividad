@@ -367,6 +367,16 @@ export function RotacionPageInner() {
     router,
   ]);
 
+  // Asaderos: no acotar a Manufactura/Perecederos; las N1 de cat. 3 pueden
+  // caer fuera de esa clasificacion comercial del mercado.
+  useEffect(() => {
+    if (!lineCategoryScope?.locked) return;
+    setLineaN1FamilyKeys([...ALL_LINEA_N1_FAMILY_KEYS]);
+    previousLineaN1FamilyKeysRef.current = [...ALL_LINEA_N1_FAMILY_KEYS]
+      .sort()
+      .join("|");
+  }, [lineCategoryScope?.locked]);
+
   useEffect(() => {
     try {
       if (selectedSedes.length > 0) {
