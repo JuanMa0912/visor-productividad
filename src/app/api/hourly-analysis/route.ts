@@ -1074,14 +1074,24 @@ const fetchHourlyData = async (
     let personContributionsScope: HourlyAnalysisData["personContributionsScope"];
     let personContributionsRange: HourlyAnalysisData["personContributionsRange"];
 
-    if (
-      !overtimeOnly &&
-      includePeopleBreakdown &&
-      lineFilter === "cajas" &&
-      selectedLineTables.some((line) => line.id === "cajas")
-    ) {
+    // Aporte individual: historicamente solo cajas; ahora cualquier linea seleccionada
+    // (p.ej. perfil asadero → ventas_asadero). Si no hay lineFilter pero el usuario
+    // solo puede ver una linea, usamos esa.
+    const peopleLineId =
+      lineFilter ??
+      (allowedSet.size === 1
+        ? [...allowedSet][0]
+        : selectedLineTables.length === 1
+          ? selectedLineTables[0]!.id
+          : null);
+    const peopleLine = peopleLineId
+      ? selectedLineTables.find((line) => line.id === peopleLineId)
+      : undefined;
+    const peopleSalesTable = peopleLine?.table ?? null;
+
+    if (!overtimeOnly && includePeopleBreakdown && peopleSalesTable) {
       try {
-        const salesColumns = await getTableColumns(client, "ventas_cajas");
+        const salesColumns = await getTableColumns(client, peopleSalesTable);
         const salesColumnLookup = new Map(
           salesColumns.map((column) => [normalizeColumnName(column), column]),
         );
@@ -1166,7 +1176,7 @@ const fetchHourlyData = async (
               fecha_dcto,
               hora_final_hora,
               COALESCE(SUM(total_bruto), 0) AS total_sales
-            FROM ventas_cajas
+            FROM ${peopleSalesTable}
             WHERE fecha_dcto >= $1 AND fecha_dcto <= $2
               ${rangePeopleBranchFilter}
             GROUP BY 1, 2, 3, 4, 5
@@ -1284,7 +1294,7 @@ const fetchHourlyData = async (
               ${personNameSelectExpr} AS person_name,
               hora_final_hora,
               COALESCE(SUM(total_bruto), 0) AS total_sales
-            FROM ventas_cajas
+            FROM ${peopleSalesTable}
             WHERE fecha_dcto = $1
               ${salesBranchFilter}
             GROUP BY 1, 2, 3, hora_final_hora
@@ -1762,7 +1772,7 @@ const fetchHourlyData = async (
           if (
             !overtimeOnly &&
             includePeopleBreakdown &&
-            lineFilter === "cajas" &&
+            peopleSalesTable &&
             personContributions.length > 0 &&
             selectedSedeConfigs.length > 0
           ) {
