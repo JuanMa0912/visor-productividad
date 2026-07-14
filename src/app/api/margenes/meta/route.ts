@@ -129,7 +129,12 @@ export async function GET() {
     `);
 
     const row = bounds.rows[0];
-    const rowCount = Number(row?.row_estimate ?? 0);
+    const rawEstimate = Number(row?.row_estimate ?? 0);
+    // reltuples a veces llega mal tipado / overflow; evita mostrar negativos.
+    const rowCount =
+      Number.isFinite(rawEstimate) && rawEstimate > 0
+        ? Math.trunc(rawEstimate)
+        : 0;
     const hasRows = Boolean(row?.has_rows);
     const minDate = row?.min_date ?? null;
     const maxDate = row?.max_date ?? null;

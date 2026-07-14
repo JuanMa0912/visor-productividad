@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMargenOrderBy } from "@/lib/margenes/metrics";
+import {
+  buildMargenOrderBy,
+  shouldApplyMercadoTipoDefault,
+} from "@/lib/margenes/metrics";
 
 test("buildMargenOrderBy aplica ASC al fallback de codigo", () => {
   assert.equal(
@@ -25,4 +28,13 @@ test("buildMargenOrderBy usa whitelist de metricas", () => {
     buildMargenOrderBy("margenPct", "asc", "1"),
     "ORDER BY margen_pct ASC NULLS LAST",
   );
+});
+
+test("shouldApplyMercadoTipoDefault solo sin categorias", () => {
+  assert.equal(shouldApplyMercadoTipoDefault([]), true);
+  assert.equal(shouldApplyMercadoTipoDefault(null), true);
+  assert.equal(shouldApplyMercadoTipoDefault(undefined), true);
+  assert.equal(shouldApplyMercadoTipoDefault(["3"]), false);
+  assert.equal(shouldApplyMercadoTipoDefault(["4"]), false);
+  assert.equal(shouldApplyMercadoTipoDefault(["3", "4"]), false);
 });

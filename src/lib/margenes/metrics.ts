@@ -89,6 +89,15 @@ export const KPI_MERCADO_TIPO = "4";
 
 export const MERCADO_TIPO_SQL = `TRIM(COALESCE(id_tipo::text, '')) = '${KPI_MERCADO_TIPO}'`;
 
+/**
+ * Mercado (4) es el default cuando no hay categoría seleccionada.
+ * Si el cliente (o el scope asadero) ya fija `categorias`, no forzar Mercado
+ * o se contradice `id_tipo = ANY(['3']) AND id_tipo = '4'`.
+ */
+export const shouldApplyMercadoTipoDefault = (
+  categorias: readonly string[] | null | undefined,
+): boolean => !categorias || categorias.length === 0;
+
 /** Métricas sobre margen_final_roll (columnas ya agregadas por factura+ítem). */
 export const ROLL_METRICS_SQL = `
   COALESCE(SUM(ventas_netas), 0) AS ventas_netas,

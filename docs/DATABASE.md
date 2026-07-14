@@ -173,7 +173,12 @@ Notas:
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
 
 API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`),
-`/api/informe-variacion` (prefiere `margen_item_dia_roll` si existe y tiene filas).
+`/api/margenes/data` (tablero drill), `/api/informe-variacion` (prefiere
+`margen_item_dia_roll` si existe y tiene filas).
+
+En `/margenes`, sin categoría seleccionada el tablero default es Mercado
+(`id_tipo = 4`). Con categoría explícita (perfil asadero → `3`) no se aplica ese
+default; ver `shouldApplyMercadoTipoDefault` en `src/lib/margenes/metrics.ts`.
 
 Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`,
 `db/migrations/20260708_margen_item_dia_roll.sql`.

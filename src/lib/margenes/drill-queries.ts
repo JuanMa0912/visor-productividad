@@ -26,8 +26,10 @@ import {
 } from "@/lib/margenes/fact-path";
 import {
   buildMargenOrderBy,
+  KPI_MERCADO_TIPO,
   metricsSqlFor,
   marginPct,
+  shouldApplyMercadoTipoDefault,
   toNum,
   unitCost,
   unitSaleWithTax,
@@ -288,6 +290,13 @@ const sortDayRows = (rows: DrillRow[], filters: MargenQueryFilters) => {
   });
 };
 
+const withMercadoDefaultCategoria = (
+  filters: MargenQueryFilters,
+): MargenQueryFilters => {
+  if (!shouldApplyMercadoTipoDefault(filters.categorias)) return filters;
+  return { ...filters, categorias: [KPI_MERCADO_TIPO] };
+};
+
 const queryDrillLevel0 = async (
   client: PoolClient,
   filters: MargenQueryFilters,
@@ -300,8 +309,10 @@ const queryDrillLevel0 = async (
   rows: DrillRow[];
 }> => {
   const params: unknown[] = [];
-  const where = buildWhere(filters, [], params, table, false);
-  const dayWhere = `${where} AND ${mercadoTipoSql(table)}`;
+  // Sin categoría → Mercado (4). Con categoría explícita (p. ej. asaderos = 3)
+  // no AND-ear Mercado: antes dejaba el tablero en cero.
+  const levelFilters = withMercadoDefaultCategoria(filters);
+  const dayWhere = buildWhere(levelFilters, [], params, table, false);
   const sedeKey = sedeDistinctKeySql(table);
 
   const result = await client.query(
@@ -431,7 +442,15 @@ export const queryKpi = async (
   table: MargenDataTable,
   options?: { mercadoOnly?: boolean },
 ): Promise<MargenKpi> => {
-  if (path.length === 0 && (options?.mercadoOnly ?? true)) {
+  // Nivel 0: queryDrillLevel0 aplica Mercado (4) solo si no hay categorias.
+  // mercadoOnly === false con categorias vacias evita el default (query abierta).
+  if (
+    path.length === 0 &&
+    !(
+      options?.mercadoOnly === false &&
+      shouldApplyMercadoTipoDefault(filters.categorias)
+    )
+  ) {
     const board = await queryDrillLevel0(client, filters, table, {
       includeKpi: true,
     });
@@ -439,7 +458,9 @@ export const queryKpi = async (
   }
 
   const params: unknown[] = [];
-  const mercadoOnly = options?.mercadoOnly ?? path.length <= 1;
+  const mercadoOnly =
+    shouldApplyMercadoTipoDefault(filters.categorias) &&
+    (options?.mercadoOnly ?? path.length <= 1);
   const where = buildWhere(filters, path, params, table, mercadoOnly);
   const sedeKey = sedeDistinctKeySql(table);
   const result = await client.query(
