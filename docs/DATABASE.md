@@ -178,17 +178,23 @@ API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`),
 Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`,
 `db/migrations/20260708_margen_item_dia_roll.sql`.
 
-Tras cada carga ETL de `margen_final`, refrescar el rollup (en GCP como usuario `visor`):
+**Refresh automatico:** el sync diario `visor-etl-sync.timer` (07:50) ya refresca
+`margen_final_roll` y `margen_item_dia_roll` en GCP para la ventana sincronizada cuando
+sube `margen_final` (`scripts/etl/sync-local-to-gcp.sh`). En operacion normal no hace
+falta un timer aparte para `/informe-variacion`.
+
+Tras migracion nueva o backfill puntual (en GCP como usuario `visor`):
 
 ```bash
 cd /opt/visor-productividad
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260702_margen_final_roll.sql   # solo la primera vez
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260703_margen_final_roll_refresh_chunks.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260708_margen_item_dia_roll.sql  # solo la primera vez
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260710_margen_item_dia_roll_margin.sql  # margen % en informe
 sudo -u visor npm run margen:refresh-roll
 ```
 
-`margen:refresh-roll` tambien pobla `margen_item_dia_roll` si la tabla existe.
+`margen:refresh-roll` pobla ambos rollups (`margen_final_roll` + `margen_item_dia_roll`).
 
 Equivalente SQL (misma conexion remota que `DB_HOST` en `.env.local`):
 

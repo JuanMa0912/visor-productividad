@@ -89,9 +89,12 @@ directo `margen_final`.
 > `deploy/systemd/visor-refresh-margenes.*`. La migracion `20260612_margenes_clean_matview.sql`
 > queda como historica (tiene guard: solo crea el matview si existe la tabla legacy).
 
-**Refresh automatico:** el `sync-local-to-gcp.sh` (07:50) ya refresca el roll en GCP **por la
-ventana sincronizada** cada vez que sube `margen_final` (ver [`../README-sync.md`](../README-sync.md)).
-En operacion normal **no hay que refrescarlo a mano**.
+**Refresh automatico:** el `sync-local-to-gcp.sh` (07:50) ya refresca en GCP **por la
+ventana sincronizada**, cada vez que sube `margen_final`:
+- `margen_final_roll` → tablero `/margenes`
+- `margen_item_dia_roll` → `/informe-variacion`
+
+Ver [`../README-sync.md`](../README-sync.md). En operacion normal **no hay que refrescarlo a mano**.
 
 **Refresh manual (fallback / backfill puntual)** en la VM app-server de GCP como `visor`:
 

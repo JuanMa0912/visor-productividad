@@ -15,10 +15,11 @@ Sube el dia a dia de las tablas de **hechos** desde el Postgres **local**
   rango de fechas en GCP + COPY** (igual que el ETL local). Primera carga historica:
   `--margen-full` (borra toda `margen_final` en GCP y sube el snapshot local).
 - Al terminar refresca en GCP (inline, sin scripts externos): la **matview de rotacion**
-  (`REFRESH MATERIALIZED VIEW`, siempre completa) y, si se sincronizo `margen_final`, el
-  **rollup `margen_final_roll`** por la ventana sincronizada (`refresh_margen_final_roll(desde,
-  hasta)` — el tablero de margenes lee de esa tabla). La matview de rotacion se salta con
-  `--no-refresh`; el rollup con `--no-roll`.
+  (`REFRESH MATERIALIZED VIEW`, siempre completa) y, si se sincronizo `margen_final`, los
+  rollups de margen por la ventana sincronizada:
+  - `margen_final_roll` (`refresh_margen_final_roll`) — tablero `/margenes`
+  - `margen_item_dia_roll` (`refresh_margen_item_dia_roll`) — `/informe-variacion`
+  La matview de rotacion se salta con `--no-refresh`; los rollups de margen con `--no-roll`.
 
 Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GCP).
 

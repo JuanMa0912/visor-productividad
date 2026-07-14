@@ -73,10 +73,10 @@ Para llevar ese margen a GCP despues, usa el sync (seccion 1):
 `$SYNC --only margen_final --desde 2026-06-01 --hasta 2026-06-23 --no-refresh --verify`
 (requiere que `margen_final` exista en GCP).
 
-> El tablero de margenes en GCP lee de la tabla `margen_final_roll` (rollup), NO del crudo.
-> El sync ahora **refresca ese roll automaticamente para la ventana sincronizada** cuando toca
-> `margen_final` (aunque venga `--no-refresh`, que solo aplica a la matview de rotacion). Para
-> saltar el roll explicitamente: `--no-roll`. Sin el refresh el tablero mostraria datos viejos.
+> El tablero de margenes en GCP lee de `margen_final_roll` y `/informe-variacion` de
+> `margen_item_dia_roll`. El sync refresca **ambos** rolls para la ventana sincronizada cuando
+> toca `margen_final` (aunque venga `--no-refresh`, que solo aplica a la matview de rotacion).
+> Para saltarlos: `--no-roll`. Sin el refresh la UI mostraria datos viejos.
 
 > **Reglas de negocio del ETL de margen** (detalle en [`margen/README.md`](margen/README.md)):
 > (1) solo carga `id_tipo IN ('3','4')` — la categoria `V` se excluye; (2) la **linea 33**

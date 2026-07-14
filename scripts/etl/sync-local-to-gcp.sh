@@ -384,13 +384,14 @@ refresh_matviews() {
   log "Refresh de matviews OK."
 }
 
-# Refresca el rollup margen_final_roll en GCP para la ventana sincronizada.
-# El tablero de margenes (/api/margenes/data) lee de esta tabla, NO del crudo margen_final;
-# si margen_final cambia pero el roll no se refresca, el tablero muestra datos viejos aunque
-# el crudo ya este al dia. La funcion soporta rango (p_from,p_to): reemplaza SOLO esa ventana
-# (DELETE+INSERT) dejando el resto del historico intacto; sin args reconstruye todo.
+# Refresca rollups de margen en GCP para la ventana sincronizada.
+# - margen_final_roll: tablero /margenes (factura+item)
+# - margen_item_dia_roll: /informe-variacion (dia+item, sin factura)
+# Si margen_final cambia y estos rolls no se refrescan, la UI muestra datos viejos aunque
+# el crudo ya este al dia. Las funciones soportan rango (p_from,p_to): reemplazan SOLO esa
+# ventana; sin args reconstruyen todo.
 refresh_margen_roll() {
-  local fn
+  local fn item_fn
   table_selected margen_final || return 0   # solo tiene sentido si se sincronizo margen_final
   fn="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_proc WHERE proname='refresh_margen_final_roll' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
   if [[ -z "$fn" ]]; then log "Funcion refresh_margen_final_roll no existe en GCP; omito rollup."; return 0; fi
@@ -406,6 +407,24 @@ refresh_margen_roll() {
   fi
   "${GCP_PSQL[@]}" -c "ANALYZE margen_final_roll;" >/dev/null 2>&1 || true
   log "Refresh de margen_final_roll OK."
+
+  # Informe de variacion: depende de margen_item_dia_roll (alimentado desde margen_final_roll).
+  item_fn="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_proc WHERE proname='refresh_margen_item_dia_roll' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -z "$item_fn" ]]; then
+    log "Funcion refresh_margen_item_dia_roll no existe en GCP; omito rollup de informe-variacion."
+    return 0
+  fi
+  if [[ "$MARGEN_FULL" -eq 1 ]]; then
+    log "Refrescando margen_item_dia_roll COMPLETO (informe-variacion)..."
+    "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_margen_item_dia_roll();" >/dev/null 2>&1 \
+      || { log "WARN: refresh de margen_item_dia_roll fallo; /informe-variacion puede quedar atrasado."; return 0; }
+  else
+    log "Refrescando margen_item_dia_roll [$DESDEC..$HASTAC] (informe-variacion)..."
+    "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_margen_item_dia_roll('$DESDEC', '$HASTAC');" >/dev/null 2>&1 \
+      || { log "WARN: refresh de margen_item_dia_roll fallo; /informe-variacion puede quedar atrasado."; return 0; }
+  fi
+  "${GCP_PSQL[@]}" -c "ANALYZE margen_item_dia_roll;" >/dev/null 2>&1 || true
+  log "Refresh de margen_item_dia_roll OK."
 }
 
 # Expresion de "fecha maxima" (como texto YYYYMMDD) por tabla, para el verify.
