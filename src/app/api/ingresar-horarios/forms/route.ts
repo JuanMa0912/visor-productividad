@@ -13,6 +13,7 @@ import {
 } from "@/lib/horarios/planilla-persist";
 import {
   isPlanillaSedeAllowedForUser,
+  migratePlanillaSedeSeccion,
   toCanonicalPlanillaSede,
 } from "@/lib/horarios/planilla-sede";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
@@ -142,9 +143,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const { seccion, fechaInicial, fechaFinal, mes, rows } = validated;
+  const migrated = migratePlanillaSedeSeccion(validated.sede, validated.seccion);
+  const { fechaInicial, fechaFinal, mes, rows } = validated;
+  const seccion = migrated.seccion;
 
-  const canonicalSede = toCanonicalPlanillaSede(validated.sede);
+  const canonicalSede = toCanonicalPlanillaSede(migrated.sede);
   if (!canonicalSede) {
     return withSession(
       NextResponse.json(

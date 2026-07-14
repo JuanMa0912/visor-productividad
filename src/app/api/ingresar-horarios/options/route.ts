@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
-import type { Sede } from "@/lib/shared/constants";
-import { mapRawSedeToCanonical } from "@/lib/horarios/planilla-sede";
+import {
+  mapRawSedeToCanonical,
+  mapRawSedeToPlantaSeccion,
+  PLANILLA_SEDE_OPTIONS,
+  PLANTA_ATTENDANCE_SEDE_NAMES,
+  resolveVisiblePlanillaSedes,
+} from "@/lib/horarios/planilla-sede";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
@@ -82,42 +87,7 @@ const COLUMNS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const normalizeSedeKey = normalizeKeySpaced;
 
-const BASE_SEDES: Sede[] = [
-  { id: "Calle 5ta", name: "Calle 5ta" },
-  { id: "La 39", name: "La 39" },
-  { id: "Plaza Norte", name: "Plaza Norte" },
-  { id: "Ciudad Jardin", name: "Ciudad Jardin" },
-  { id: "Centro Sur", name: "Centro Sur" },
-  { id: "Palmira", name: "Palmira" },
-  { id: "Floresta", name: "Floresta" },
-  { id: "Floralia", name: "Floralia" },
-  { id: "Guaduales", name: "Guaduales" },
-  { id: "Bogota", name: "Bogota" },
-  { id: "Chia", name: "Chia" },
-  { id: "ADM", name: "ADM" },
-  { id: "CEDI-CAVASA", name: "CEDI-CAVASA" },
-  { id: "Panificadora", name: "Panificadora" },
-  { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
-  { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
-];
-
-const canonicalizeSedeKey = (value: string) => {
-  const normalized = normalizeSedeKey(value);
-  const compact = normalized.replace(/\s+/g, "");
-  if (normalized === "cedicavasa" || compact === "cedicavasa") {
-    return normalizeSedeKey("CEDI-CAVASA");
-  }
-  if (
-    normalized.includes("planta desposte pollo") ||
-    normalized.includes("planta desprese pollo")
-  ) {
-    return normalizeSedeKey("Planta Desprese Pollo");
-  }
-  if (normalized.includes("planta desposte mixto")) {
-    return normalizeSedeKey("Planta Desposte Mixto");
-  }
-  return normalized;
-};
+const BASE_SEDES = PLANILLA_SEDE_OPTIONS;
 
 const SEDE_CONFIGS = [
   { name: "Calle 5ta", attendanceNames: ["la 5a", "calle 5ta"], aliases: ["calle 5ta", "la 5a", "la 5"] },
@@ -133,65 +103,12 @@ const SEDE_CONFIGS = [
   { name: "Chia", attendanceNames: ["chia", "merkmios chia", "plaza mayor chia", "plaza mayor de chia"], aliases: ["chia", "chi", "ch a", "merkmios chia", "plaza mayor chia", "plaza mayor de chia"] },
   { name: "ADM", attendanceNames: ["adm"], aliases: ["adm"] },
   { name: "CEDI-CAVASA", attendanceNames: ["cedi cavasa", "cedi-cavasa", "cedicavasa"], aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
-  { name: "Panificadora", attendanceNames: ["panificadora"], aliases: ["panificadora"] },
-  { name: "Planta Desposte Mixto", attendanceNames: ["planta desposte mixto", "planta de desposte mixto"], aliases: ["planta desposte mixto", "planta de desposte mixto", "planta desposte", "desposte mixto"] },
-  { name: "Planta Desprese Pollo", attendanceNames: ["planta desposte pollo", "planta desprese pollo", "planta de desposte pollo", "planta de desprese pollo"], aliases: ["planta desposte pollo", "planta desprese pollo", "planta de desposte pollo", "planta de desprese pollo", "desposte pollo", "desprese pollo"] },
+  {
+    name: "Planta",
+    attendanceNames: [...PLANTA_ATTENDANCE_SEDE_NAMES],
+    aliases: [...PLANTA_ATTENDANCE_SEDE_NAMES],
+  },
 ] as const;
-
-const resolveVisibleSedes = (sessionUser: {
-  role: "admin" | "user";
-  sede: string | null;
-  allowedSedes?: string[] | null;
-}) => {
-  if (sessionUser.role === "admin") {
-    return {
-      authorized: true,
-      visibleSedes: BASE_SEDES,
-      defaultSede: null as string | null,
-    };
-  }
-  const rawAllowed = Array.isArray(sessionUser.allowedSedes)
-    ? sessionUser.allowedSedes
-    : [];
-  const normalizedAllowed = new Set(
-    rawAllowed
-      .map((sede) => canonicalizeSedeKey(sede))
-      .filter(Boolean),
-  );
-  if (normalizedAllowed.has(normalizeSedeKey("Todas"))) {
-    return {
-      authorized: true,
-      visibleSedes: BASE_SEDES,
-      defaultSede: null as string | null,
-    };
-  }
-  const allowedMatches = BASE_SEDES.filter((sede) =>
-    normalizedAllowed.has(canonicalizeSedeKey(sede.name)),
-  );
-  if (allowedMatches.length > 0) {
-    return {
-      authorized: true,
-      visibleSedes: allowedMatches,
-      defaultSede: allowedMatches.length === 1 ? allowedMatches[0].name : null,
-    };
-  }
-  const legacyKey = sessionUser.sede ? canonicalizeSedeKey(sessionUser.sede) : null;
-  const legacyMatch = legacyKey
-    ? BASE_SEDES.find((sede) => canonicalizeSedeKey(sede.name) === legacyKey)
-    : null;
-  if (legacyMatch) {
-    return {
-      authorized: true,
-      visibleSedes: [legacyMatch],
-      defaultSede: legacyMatch.name,
-    };
-  }
-  return {
-    authorized: false,
-    visibleSedes: [] as Sede[],
-    defaultSede: null as string | null,
-  };
-};
 
 const normalizeColumnName = (value: string) => value.trim().toLowerCase();
 const quoteIdentifier = (value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -274,7 +191,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const { authorized, visibleSedes, defaultSede } = resolveVisibleSedes(
+  const { authorized, visibleSedes, defaultSede } = resolveVisiblePlanillaSedes(
     session.user,
   );
   if (!authorized) {
@@ -306,7 +223,9 @@ export async function GET(request: Request) {
       debugLog("[ingresar-horarios/options] Cached columns:", columns.length);
     }
     const normalizedToOriginal = new Map<string, string>();
-    columns.forEach((col) => normalizedToOriginal.set(normalizeColumnName(col), col));
+    columns.forEach((col) =>
+      normalizedToOriginal.set(normalizeColumnName(col), col),
+    );
 
     const nameCandidates = [
       "nombre_empleado",
@@ -407,14 +326,23 @@ export async function GET(request: Request) {
     `;
     const employeesResult = await client.query(employeesQuery, params);
     const employees = (employeesResult.rows ?? [])
-      .map((row) => ({
-        name: (row as { employee_name?: string }).employee_name?.trim() ?? "",
-        sede: mapRawSedeToCanonical((row as { raw_sede?: string }).raw_sede?.trim() ?? ""),
-      }))
+      .map((row) => {
+        const rawSede =
+          (row as { raw_sede?: string }).raw_sede?.trim() ?? "";
+        return {
+          name: (row as { employee_name?: string }).employee_name?.trim() ?? "",
+          sede: mapRawSedeToCanonical(rawSede),
+          seccion: mapRawSedeToPlantaSeccion(rawSede) ?? undefined,
+        };
+      })
       .filter((row) => row.name.length > 0);
 
     const extraEmployees = [
-      { name: "RODRIGO ESCOBAR", sede: "Panificadora" },
+      {
+        name: "RODRIGO ESCOBAR",
+        sede: "Planta",
+        seccion: "Panificadora" as const,
+      },
     ];
     const employeeNameSet = new Set(
       employees.map((employee) => normalizeText(employee.name)),

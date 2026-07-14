@@ -22,9 +22,7 @@ export const VISIBLE_SEDES: Sede[] = [
   { id: "Chia", name: "Chia" },
   { id: "ADM", name: "ADM" },
   { id: "CEDI-CAVASA", name: "CEDI-CAVASA" },
-  { id: "Panificadora", name: "Panificadora" },
-  { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
-  { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
+  { id: "Planta", name: "Planta" },
 ];
 
 const normalizeSedeKey = normalizeKeySpaced;
@@ -44,6 +42,17 @@ export const canonicalizeSedeKey = (value: string) => {
   }
   if (normalized === "cedicavasa" || compact === "cedicavasa") {
     return normalizeSedeKey("CEDI-CAVASA");
+  }
+  if (
+    normalized === "planta" ||
+    normalized.includes("panificadora") ||
+    normalized.includes("planta desposte") ||
+    normalized.includes("planta desprese") ||
+    normalized.includes("desposte mixto") ||
+    normalized.includes("desprese pollo") ||
+    normalized.includes("desposte pollo")
+  ) {
+    return normalizeSedeKey("Planta");
   }
   return normalized;
 };

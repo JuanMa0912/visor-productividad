@@ -123,16 +123,29 @@ export const matchesSede = (
   return isSamePlanillaSede(employeeSede ?? "", selectedSede);
 };
 
-/** Nombres unicos de empleados asociados a la sede seleccionada (orden alfabético). */
+const matchesSeccion = (
+  employeeSeccion: string | undefined,
+  selectedSeccion: string | undefined,
+) => {
+  if (!selectedSeccion?.trim()) return true;
+  if (!employeeSeccion?.trim()) return true;
+  return (
+    normalizeText(employeeSeccion) === normalizeText(selectedSeccion)
+  );
+};
+
+/** Nombres unicos de empleados asociados a la sede (y seccion planta) seleccionada. */
 export const listEmployeeNamesForSede = (
-  employees: Array<{ name: string; sede?: string }>,
+  employees: Array<{ name: string; sede?: string; seccion?: string }>,
   selectedSede: string,
+  selectedSeccion?: string,
 ): string[] => {
   if (!selectedSede.trim()) return [];
   const seen = new Set<string>();
   const names: string[] = [];
   for (const employee of employees) {
     if (!matchesSede(employee.sede, selectedSede)) continue;
+    if (!matchesSeccion(employee.seccion, selectedSeccion)) continue;
     const name = employee.name.trim();
     if (!name) continue;
     const key = normalizePersonNameKey(name);

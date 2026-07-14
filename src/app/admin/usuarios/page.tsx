@@ -43,6 +43,7 @@ import {
   getAsaderoDashboardOptions,
 } from "@/lib/shared/portal-profiles";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
+import { toCanonicalPlanillaSede } from "@/lib/horarios/planilla-sede";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import {
@@ -54,14 +55,17 @@ const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [
   "ADM",
   "CEDI-CAVASA",
-  "Panificadora",
-  "Planta Desposte Mixto",
-  "Planta Desprese Pollo",
+  "Planta",
 ];
 const USER_SEDE_OPTIONS = Array.from(
   new Set([ALL_SEDES_VALUE, ...BRANCH_LOCATIONS, ...EXTRA_SEDES]),
 );
 const USER_SEDE_OPTION_SET = new Set(USER_SEDE_OPTIONS);
+
+const canonicalizeUserSedeOption = (sede: string): string => {
+  if (sede === ALL_SEDES_VALUE) return ALL_SEDES_VALUE;
+  return toCanonicalPlanillaSede(sede) ?? sede;
+};
 
 type UserRow = {
   id: string;
@@ -288,9 +292,11 @@ const formatAllowedSedes = (
   fallbackSede: string | null,
 ) => {
   if (allowedSedes && allowedSedes.length > 0) {
-    return allowedSedes.join(", ");
+    return Array.from(
+      new Set(allowedSedes.map((sede) => canonicalizeUserSedeOption(sede))),
+    ).join(", ");
   }
-  return fallbackSede ?? "-";
+  return fallbackSede ? canonicalizeUserSedeOption(fallbackSede) : "-";
 };
 
 const getCookieValue = (name: string) => {
@@ -611,8 +617,12 @@ export default function AdminUsuariosPage() {
     const portalProfile = resolveUserPortalProfile(user);
     const allowedSedesRaw =
       user.allowedSedes ?? (user.sede ? [user.sede] : []);
-    const allowedSedes = allowedSedesRaw.filter((sede) =>
-      USER_SEDE_OPTION_SET.has(sede),
+    const allowedSedes = Array.from(
+      new Set(
+        allowedSedesRaw
+          .map((sede) => canonicalizeUserSedeOption(sede))
+          .filter((sede) => USER_SEDE_OPTION_SET.has(sede)),
+      ),
     );
     const materialized = materializePortalProfilePermissions(
       portalProfile,
@@ -1093,7 +1103,7 @@ export default function AdminUsuariosPage() {
                   </div>
                 )}
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[860px] text-sm">
+                  <table className="w-full min-w-[920px] text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                         <th className="px-4 py-3">Usuario</th>
@@ -1179,15 +1189,29 @@ export default function AdminUsuariosPage() {
                                     user.allowedSubdashboards,
                                   )}
                             </td>
-                            <td className="max-w-[120px] px-3 py-3 text-xs text-slate-600">
-                              {user.role === "admin"
-                                ? "—"
-                                : user.specialRoles &&
-                                    user.specialRoles.length > 0
-                                  ? user.specialRoles.join(", ")
-                                  : "—"}
+                            <td className="max-w-[200px] overflow-hidden px-3 py-3 align-top text-xs text-slate-600">
+                              {user.role === "admin" ? (
+                                "—"
+                              ) : user.specialRoles &&
+                                user.specialRoles.length > 0 ? (
+                                <div
+                                  className="flex flex-wrap gap-1"
+                                  title={user.specialRoles.join(", ")}
+                                >
+                                  {user.specialRoles.map((role) => (
+                                    <span
+                                      key={role}
+                                      className="max-w-full break-all rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium leading-snug text-slate-700"
+                                    >
+                                      {role}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                "—"
+                              )}
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="whitespace-nowrap px-3 py-3 align-top">
                               {presenceByUserId === null ? (
                                 <span
                                   title="Cargando estado..."
@@ -1209,7 +1233,7 @@ export default function AdminUsuariosPage() {
                                       className={`inline-flex items-center gap-1.5 text-xs font-semibold ${badge.textClass}`}
                                     >
                                       <span
-                                        className={`h-2 w-2 rounded-full ${badge.dotClass} ${
+                                        className={`h-2 w-2 shrink-0 rounded-full ${badge.dotClass} ${
                                           badge.state === "active"
                                             ? "animate-pulse"
                                             : ""

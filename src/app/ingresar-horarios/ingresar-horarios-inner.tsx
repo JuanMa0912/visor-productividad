@@ -44,6 +44,11 @@ import {
   canUseLunesScheduleSync,
   canCreateLunesSchedulePresets,
 } from "@/lib/shared/special-role-features";
+import {
+  isPlanillaPlantaSede,
+  migratePlanillaSedeSeccion,
+  PLANTA_SECCION_OPTIONS,
+} from "@/lib/horarios/planilla-sede";
 import { toJpeg } from "html-to-image";
 import { Stepper, StepperStep } from "@/components/ui/stepper";
 import { PlanillaPreview } from "./planilla-preview";
@@ -68,7 +73,6 @@ import {
   cloneDaySchedule,
   parseLunesIndependence,
   serializeLunesIndependence,
-  normalizeText,
   listEmployeeNamesForSede,
   buildRowsFromEmployeeNames,
   rowScheduleHasContent,
@@ -85,10 +89,16 @@ import {
 import { RowScheduleRow } from "./row-schedule-row";
 
 
+type EmployeeOption = {
+  name: string;
+  sede?: string;
+  seccion?: string;
+};
+
 type HorariosOptionsResponse = {
   sedes?: Array<{ id: string; name: string }>;
   defaultSede?: string | null;
-  employees?: Array<{ name: string; sede?: string }>;
+  employees?: EmployeeOption[];
   error?: string;
 };
 
@@ -108,9 +118,9 @@ export function IngresarHorariosInner() {
   const [sedesOptions, setSedesOptions] = useState<
     Array<{ id: string; name: string }>
   >([]);
-  const [employeeOptions, setEmployeeOptions] = useState<
-    Array<{ name: string; sede?: string }>
-  >([]);
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>(
+    [],
+  );
   const [exportingJpg, setExportingJpg] = useState(false);
   const [savingForm, setSavingForm] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -379,8 +389,9 @@ export function IngresarHorariosInner() {
         setSedesOptions(nextSedes);
         setEmployeeOptions(optionsPayload.employees ?? []);
         if (draft && !skipDraftForPlanilla) {
-          setSede(draft.sede);
-          setSeccion(draft.seccion);
+          const migrated = migratePlanillaSedeSeccion(draft.sede, draft.seccion);
+          setSede(migrated.sede);
+          setSeccion(migrated.seccion);
           setFechaInicial(draft.fechaInicial);
           setFechaFinal(draft.fechaFinal);
           setRows(draft.rows);
@@ -396,11 +407,16 @@ export function IngresarHorariosInner() {
             "";
           if (defaultSede) {
             setSede(defaultSede);
+            const defaultSeccion = isPlanillaPlantaSede(defaultSede)
+              ? PLANTA_SECCION_OPTIONS[0]
+              : "Cajas";
+            setSeccion(defaultSeccion);
             setRows(
               buildRowsFromEmployeeNames(
                 listEmployeeNamesForSede(
                   optionsPayload.employees ?? [],
                   defaultSede,
+                  isPlanillaPlantaSede(defaultSede) ? defaultSeccion : undefined,
                 ),
               ),
             );
@@ -430,17 +446,17 @@ export function IngresarHorariosInner() {
   ]);
 
   useEffect(() => {
-    const normalizedSede = normalizeText(sede);
-    if (
-      normalizedSede.includes("panificadora") ||
-      normalizedSede.includes("planta desposte mixto") ||
-      normalizedSede.includes("planta desposte pollo") ||
-      normalizedSede.includes("planta desprese pollo")
-    ) {
-      setSeccion("Planta");
+    if (isPlanillaPlantaSede(sede)) {
+      setSeccion((prev) =>
+        PLANTA_SECCION_OPTIONS.some((option) => option === prev)
+          ? prev
+          : PLANTA_SECCION_OPTIONS[0],
+      );
       return;
     }
-    setSeccion("Cajas");
+    if (sede) {
+      setSeccion("Cajas");
+    }
   }, [sede]);
 
   useEffect(() => {
@@ -559,9 +575,10 @@ export function IngresarHorariosInner() {
         // En duplicar: NO seteamos editingPlanillaId, asi Guardar crea una
         // planilla nueva (POST) sin sobreescribir la original. Limpiamos las
         // fechas para forzar a elegir el nuevo rango.
+        const migrated = migratePlanillaSedeSeccion(f.sede, f.seccion);
         setEditingPlanillaId(isDuplicate ? null : sourceId);
-        setSede(f.sede);
-        setSeccion(f.seccion);
+        setSede(migrated.sede);
+        setSeccion(migrated.seccion);
         setFechaInicial(isDuplicate ? "" : (f.fechaInicial ?? ""));
         setFechaFinal(isDuplicate ? "" : (f.fechaFinal ?? ""));
         setRows(mergeLoadedPlanillaRows(f.rows ?? []));
@@ -753,15 +770,28 @@ export function IngresarHorariosInner() {
   );
 
   const filteredEmployeeNames = useMemo(
-    () => listEmployeeNamesForSede(employeeOptions, sede),
-    [employeeOptions, sede],
+    () =>
+      listEmployeeNamesForSede(
+        employeeOptions,
+        sede,
+        isPlanillaPlantaSede(sede) ? seccion : undefined,
+      ),
+    [employeeOptions, sede, seccion],
   );
 
   const applySedeEmployeeRows = useCallback(
-    (selectedSede: string, employees: Array<{ name: string; sede?: string }>) => {
+    (
+      selectedSede: string,
+      employees: EmployeeOption[],
+      selectedSeccion?: string,
+    ) => {
       setRows(
         buildRowsFromEmployeeNames(
-          listEmployeeNamesForSede(employees, selectedSede),
+          listEmployeeNamesForSede(
+            employees,
+            selectedSede,
+            isPlanillaPlantaSede(selectedSede) ? selectedSeccion : undefined,
+          ),
         ),
       );
       setLunesPresetChoiceByRow({});
@@ -801,16 +831,42 @@ export function IngresarHorariosInner() {
       ) {
         return;
       }
+      const nextSeccion = isPlanillaPlantaSede(newSede)
+        ? PLANTA_SECCION_OPTIONS[0]
+        : "Cajas";
       setSede(newSede);
+      setSeccion(nextSeccion);
       try {
         const employees = await fetchEmployeeOptions();
         setEmployeeOptions(employees);
-        applySedeEmployeeRows(newSede, employees);
+        applySedeEmployeeRows(newSede, employees, nextSeccion);
       } catch {
-        applySedeEmployeeRows(newSede, employeeOptions);
+        applySedeEmployeeRows(newSede, employeeOptions, nextSeccion);
       }
     },
     [applySedeEmployeeRows, employeeOptions, fetchEmployeeOptions, rows, sede],
+  );
+
+  const handleSeccionChange = useCallback(
+    (newSeccion: string) => {
+      if (newSeccion === seccion) return;
+      const hasTableContent = rows.some(rowScheduleHasContent);
+      if (
+        isPlanillaPlantaSede(sede) &&
+        hasTableContent &&
+        typeof window !== "undefined" &&
+        !window.confirm(
+          "Al cambiar de seccion se reemplazaran los empleados y horarios de la tabla. ¿Continuar?",
+        )
+      ) {
+        return;
+      }
+      setSeccion(newSeccion);
+      if (isPlanillaPlantaSede(sede)) {
+        applySedeEmployeeRows(sede, employeeOptions, newSeccion);
+      }
+    },
+    [applySedeEmployeeRows, employeeOptions, rows, seccion, sede],
   );
 
   useEffect(() => {
@@ -851,7 +907,7 @@ export function IngresarHorariosInner() {
     try {
       const employees = await fetchEmployeeOptions();
       setEmployeeOptions(employees);
-      applySedeEmployeeRows(sede, employees);
+      applySedeEmployeeRows(sede, employees, seccion);
       setDraftMessage(
         "Lista de empleados actualizada (ultimo mes de asistencia).",
       );
@@ -870,6 +926,7 @@ export function IngresarHorariosInner() {
     refreshingEmployees,
     rows,
     sede,
+    seccion,
   ]);
 
   const employeeNamesPerRow = useMemo(
@@ -1399,14 +1456,28 @@ export function IngresarHorariosInner() {
                 >
                   Seccion
                 </label>
-                <input
-                  id="ih-seccion"
-                  type="text"
-                  value={seccion}
-                  onChange={(e) => setSeccion(e.target.value)}
-                  disabled
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                />
+                {isPlanillaPlantaSede(sede) ? (
+                  <select
+                    id="ih-seccion"
+                    value={seccion}
+                    onChange={(e) => handleSeccionChange(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                  >
+                    {PLANTA_SECCION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="ih-seccion"
+                    type="text"
+                    value={seccion}
+                    disabled
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50"
+                  />
+                )}
               </div>
               <div className="block">
                 <label

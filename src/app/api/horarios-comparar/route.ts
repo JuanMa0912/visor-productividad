@@ -97,9 +97,33 @@ const SEDE_CONFIGS = [
   { name: "Chia", attendanceNames: ["chia", "merkmios chia"], aliases: ["chia", "chi", "ch a", "merkmios chia"] },
   { name: "ADM", attendanceNames: ["adm"], aliases: ["adm"] },
   { name: "CEDI-CAVASA", attendanceNames: ["cedi cavasa", "cedi-cavasa", "cedicavasa"], aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
-  { name: "Panificadora", attendanceNames: ["panificadora"], aliases: ["panificadora"] },
-  { name: "Planta Desposte Mixto", attendanceNames: ["planta desposte mixto", "planta de desposte mixto"], aliases: ["planta desposte mixto", "planta de desposte mixto", "planta desposte", "desposte mixto"] },
-  { name: "Planta Desprese Pollo", attendanceNames: ["planta desposte pollo", "planta desprese pollo", "planta de desposte pollo", "planta de desprese pollo"], aliases: ["planta desposte pollo", "planta desprese pollo", "planta de desposte pollo", "planta de desprese pollo", "desposte pollo", "desprese pollo"] },
+  {
+    name: "Planta",
+    attendanceNames: [
+      "panificadora",
+      "planta desposte mixto",
+      "planta de desposte mixto",
+      "planta desposte pollo",
+      "planta desprese pollo",
+      "planta de desposte pollo",
+      "planta de desprese pollo",
+      "planta",
+    ],
+    aliases: [
+      "planta",
+      "panificadora",
+      "planta desposte mixto",
+      "planta de desposte mixto",
+      "planta desposte",
+      "desposte mixto",
+      "planta desposte pollo",
+      "planta desprese pollo",
+      "planta de desposte pollo",
+      "planta de desprese pollo",
+      "desposte pollo",
+      "desprese pollo",
+    ],
+  },
 ] as const;
 
 const canonicalizeSedeKey = (value: string) => {
@@ -109,13 +133,15 @@ const canonicalizeSedeKey = (value: string) => {
     return normalizeSedeKey("CEDI-CAVASA");
   }
   if (
-    normalized.includes("planta desposte pollo") ||
-    normalized.includes("planta desprese pollo")
+    normalized === "planta" ||
+    normalized.includes("panificadora") ||
+    normalized.includes("planta desposte") ||
+    normalized.includes("planta desprese") ||
+    normalized.includes("desposte mixto") ||
+    normalized.includes("desprese pollo") ||
+    normalized.includes("desposte pollo")
   ) {
-    return normalizeSedeKey("Planta Desprese Pollo");
-  }
-  if (normalized.includes("planta desposte mixto")) {
-    return normalizeSedeKey("Planta Desposte Mixto");
+    return normalizeSedeKey("Planta");
   }
   return normalized;
 };
