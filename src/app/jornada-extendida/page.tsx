@@ -16,7 +16,7 @@ import { HourlyAnalysis } from "@/components/HourlyAnalysis";
 import { TiposHorarioPanel } from "@/components/jornada-extendida/tipos-horario-panel";
 import { DEFAULT_SEDES } from "@/lib/shared/constants";
 import type { Sede } from "@/lib/shared/constants";
-import { normalizeKeySpaced } from "@/lib/shared/normalize";
+import { canonicalizeSedeKey } from "@/lib/horarios/visible-sedes";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { PortalTourHelpButton } from "@/components/portal/portal-tour-help-button";
 import { useRequireAuth } from "@/lib/auth/auth-context";
@@ -91,24 +91,6 @@ type AlexExportField = {
   toggleLabel: string;
   width: number;
   comparisonHeader: string;
-};
-
-const normalizeSedeKey = normalizeKeySpaced;
-
-const canonicalizeSedeKey = (value: string) => {
-  const normalized = normalizeSedeKey(value);
-  const compact = normalized.replace(/\s+/g, "");
-  if (
-    normalized === "calle 5a" ||
-    normalized === "la 5a" ||
-    normalized === "calle 5" ||
-    compact === "calle5a" ||
-    compact === "la5a" ||
-    compact === "calle5"
-  ) {
-    return normalizeSedeKey("Calle 5ta");
-  }
-  return normalized;
 };
 
 const OVERTIME_EXTRA_SEDES: Sede[] = [

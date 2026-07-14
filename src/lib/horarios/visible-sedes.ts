@@ -4,6 +4,10 @@
 //
 // Reglas: admin ve todas; allowedSedes con "Todas" = todas; allowedSedes con
 // nombres = esas sedes; si no hay match, fallback al campo legacy `sede`.
+//
+// Nota: las 3 plantas (Panificadora / Desposte Mixto / Desprese Pollo) son
+// sedes SEPARADAS aqui (asistencia y jornada-extendida). En planillas de
+// horario la jerarquia es distinta (sede Planta + seccion); ver planilla-sede.ts.
 
 import type { Sede } from "@/lib/shared/constants";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
@@ -22,7 +26,9 @@ export const VISIBLE_SEDES: Sede[] = [
   { id: "Chia", name: "Chia" },
   { id: "ADM", name: "ADM" },
   { id: "CEDI-CAVASA", name: "CEDI-CAVASA" },
-  { id: "Planta", name: "Planta" },
+  { id: "Panificadora", name: "Panificadora" },
+  { id: "Planta Desposte Mixto", name: "Planta Desposte Mixto" },
+  { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
 ];
 
 const normalizeSedeKey = normalizeKeySpaced;
@@ -44,15 +50,21 @@ export const canonicalizeSedeKey = (value: string) => {
     return normalizeSedeKey("CEDI-CAVASA");
   }
   if (
-    normalized === "planta" ||
-    normalized.includes("panificadora") ||
-    normalized.includes("planta desposte") ||
-    normalized.includes("planta desprese") ||
-    normalized.includes("desposte mixto") ||
-    normalized.includes("desprese pollo") ||
-    normalized.includes("desposte pollo")
+    normalized.includes("planta desposte pollo") ||
+    normalized.includes("planta desprese pollo") ||
+    normalized.includes("desposte pollo") ||
+    normalized.includes("desprese pollo")
   ) {
-    return normalizeSedeKey("Planta");
+    return normalizeSedeKey("Planta Desprese Pollo");
+  }
+  if (
+    normalized.includes("planta desposte mixto") ||
+    normalized.includes("desposte mixto")
+  ) {
+    return normalizeSedeKey("Planta Desposte Mixto");
+  }
+  if (normalized.includes("panificadora")) {
+    return normalizeSedeKey("Panificadora");
   }
   return normalized;
 };
@@ -84,6 +96,15 @@ export const resolveVisibleSedes = (
   );
   if (normalizedAllowed.has(canonicalizeSedeKey("Todas"))) {
     return { authorized: true, visibleSedes: VISIBLE_SEDES, defaultSede: null };
+  }
+
+  // Si el usuario tiene "Planta" (scope de planillas), expandir a las 3 plantas
+  // reales de asistencia/jornada.
+  if (normalizedAllowed.has(normalizeSedeKey("Planta"))) {
+    normalizedAllowed.delete(normalizeSedeKey("Planta"));
+    normalizedAllowed.add(normalizeSedeKey("Panificadora"));
+    normalizedAllowed.add(normalizeSedeKey("Planta Desposte Mixto"));
+    normalizedAllowed.add(normalizeSedeKey("Planta Desprese Pollo"));
   }
 
   const allowedMatches = VISIBLE_SEDES.filter((sede) =>

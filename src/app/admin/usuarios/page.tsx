@@ -43,7 +43,7 @@ import {
   getAsaderoDashboardOptions,
 } from "@/lib/shared/portal-profiles";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
-import { toCanonicalPlanillaSede } from "@/lib/horarios/planilla-sede";
+import { canonicalizeSedeKey } from "@/lib/horarios/visible-sedes";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import {
@@ -55,6 +55,9 @@ const ALL_SEDES_VALUE = "Todas";
 const EXTRA_SEDES = [
   "ADM",
   "CEDI-CAVASA",
+  "Panificadora",
+  "Planta Desposte Mixto",
+  "Planta Desprese Pollo",
   "Planta",
 ];
 const USER_SEDE_OPTIONS = Array.from(
@@ -64,7 +67,13 @@ const USER_SEDE_OPTION_SET = new Set(USER_SEDE_OPTIONS);
 
 const canonicalizeUserSedeOption = (sede: string): string => {
   if (sede === ALL_SEDES_VALUE) return ALL_SEDES_VALUE;
-  return toCanonicalPlanillaSede(sede) ?? sede;
+  // Mantener las 3 plantas separadas (jornada-extendida). Solo normaliza alias.
+  const key = canonicalizeSedeKey(sede);
+  const match = USER_SEDE_OPTIONS.find(
+    (option) =>
+      option !== ALL_SEDES_VALUE && canonicalizeSedeKey(option) === key,
+  );
+  return match ?? sede;
 };
 
 type UserRow = {

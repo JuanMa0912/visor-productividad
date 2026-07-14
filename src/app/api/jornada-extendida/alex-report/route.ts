@@ -47,9 +47,23 @@ const SEDE_CONFIGS: SedeConfig[] = [
   { name: "Chia", aliases: ["chia", "chi", "ch a", "merkmios chia"] },
   { name: "ADM", aliases: ["adm"] },
   { name: "CEDI-CAVASA", aliases: ["cedi cavasa", "cedi-cavasa", "cedicavasa"] },
+  { name: "Panificadora", aliases: ["panificadora"] },
   {
-    name: "Planta",
-    aliases: ["planta desposte mixto", "planta desposte", "panificadora", "planta desprese pollo", "desprese pollo"],
+    name: "Planta Desposte Mixto",
+    aliases: [
+      "planta desposte mixto",
+      "planta desposte",
+      "desposte mixto",
+    ],
+  },
+  {
+    name: "Planta Desprese Pollo",
+    aliases: [
+      "planta desposte pollo",
+      "planta desprese pollo",
+      "desprese pollo",
+      "desposte pollo",
+    ],
   },
 ];
 
@@ -67,7 +81,9 @@ const REPORT_SEDES = [
   "Chia",
   "ADM",
   "CEDI-CAVASA",
-  "Planta",
+  "Panificadora",
+  "Planta Desposte Mixto",
+  "Planta Desprese Pollo",
 ];
 
 const isDateKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -125,6 +141,24 @@ const canonicalizeSedeMatchKey = (value: string) => {
   }
   if (normalized === "cedicavasa" || compact === "cedicavasa") {
     return normalizeSedeName("CEDI-CAVASA");
+  }
+  // Orden: desprese/pollo antes que desposte generico para no colapsar.
+  if (
+    normalized.includes("planta desposte pollo") ||
+    normalized.includes("planta desprese pollo") ||
+    normalized.includes("desposte pollo") ||
+    normalized.includes("desprese pollo")
+  ) {
+    return normalizeSedeName("Planta Desprese Pollo");
+  }
+  if (
+    normalized.includes("planta desposte mixto") ||
+    normalized.includes("desposte mixto")
+  ) {
+    return normalizeSedeName("Planta Desposte Mixto");
+  }
+  if (normalized.includes("panificadora")) {
+    return normalizeSedeName("Panificadora");
   }
   return normalized;
 };
