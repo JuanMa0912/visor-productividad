@@ -84,23 +84,29 @@ export async function GET() {
 
     return withSession(
       NextResponse.json({
-        forms: (result.rows ?? []).map((row) => ({
-          id: Number((row as { id: number | string }).id),
-          sede: (row as { sede?: string }).sede ?? "",
-          seccion: (row as { seccion?: string }).seccion ?? "",
-          fechaInicial: (row as { fecha_inicial?: string }).fecha_inicial ?? "",
-          fechaFinal: (row as { fecha_final?: string }).fecha_final ?? "",
-          mes: (row as { mes?: string | null }).mes ?? "",
-          createdByUsername:
-            (row as { created_by_username?: string }).created_by_username ?? "",
-          createdAt: (row as { created_at?: string }).created_at ?? "",
-          employeeCount: Number(
-            (row as { employee_count?: number | string }).employee_count ?? 0,
-          ),
-          detailCount: Number(
-            (row as { detail_count?: number | string }).detail_count ?? 0,
-          ),
-        })),
+        forms: (result.rows ?? []).map((row) => {
+          const migrated = migratePlanillaSedeSeccion(
+            (row as { sede?: string }).sede ?? "",
+            (row as { seccion?: string }).seccion ?? "",
+          );
+          return {
+            id: Number((row as { id: number | string }).id),
+            sede: migrated.sede,
+            seccion: migrated.seccion,
+            fechaInicial: (row as { fecha_inicial?: string }).fecha_inicial ?? "",
+            fechaFinal: (row as { fecha_final?: string }).fecha_final ?? "",
+            mes: (row as { mes?: string | null }).mes ?? "",
+            createdByUsername:
+              (row as { created_by_username?: string }).created_by_username ?? "",
+            createdAt: (row as { created_at?: string }).created_at ?? "",
+            employeeCount: Number(
+              (row as { employee_count?: number | string }).employee_count ?? 0,
+            ),
+            detailCount: Number(
+              (row as { detail_count?: number | string }).detail_count ?? 0,
+            ),
+          };
+        }),
       }),
     );
   } finally {

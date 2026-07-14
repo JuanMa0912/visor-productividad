@@ -207,6 +207,9 @@ export default function HorariosGuardadosPage() {
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterDayKey, setFilterDayKey] = useState<"" | DayKey>("");
   const [filterSede, setFilterSede] = useState("");
+  /** Filtro de plantillas: "todas" = sin filtro por seccion. */
+  const [filterPlantillaSeccion, setFilterPlantillaSeccion] =
+    useState<string>("todas");
 
   const selectedForm = selectedFormId !== null ? formDetailsById[selectedFormId] ?? null : null;
   const selectedEmployeeRecords = useMemo(
@@ -454,6 +457,35 @@ export default function HorariosGuardadosPage() {
     }
   }, [handleViewEmployee, people, selectedEmployeeName]);
 
+  const availablePlantillaSecciones = useMemo(() => {
+    const set = new Set<string>();
+    for (const form of forms) {
+      const seccion = (form.seccion ?? "").trim();
+      if (seccion) set.add(seccion);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }, [forms]);
+
+  const filteredForms = useMemo(() => {
+    if (!filterPlantillaSeccion || filterPlantillaSeccion === "todas") {
+      return forms;
+    }
+    return forms.filter(
+      (form) => (form.seccion ?? "").trim() === filterPlantillaSeccion,
+    );
+  }, [filterPlantillaSeccion, forms]);
+
+  useEffect(() => {
+    if (filteredForms.length === 0) return;
+    if (
+      selectedFormId !== null &&
+      filteredForms.some((form) => form.id === selectedFormId)
+    ) {
+      return;
+    }
+    void handleViewForm(filteredForms[0].id);
+  }, [filteredForms, handleViewForm, selectedFormId]);
+
   const filteredPeople = useMemo(() => {
     const search = normalizeText(employeeSearch);
     if (!search) return people;
@@ -671,7 +703,7 @@ export default function HorariosGuardadosPage() {
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                   <CalendarDays className="h-3.5 w-3.5" aria-hidden />
                   {viewMode === "plantillas"
-                    ? `${forms.length} ${forms.length === 1 ? "plantilla" : "plantillas"}`
+                    ? `${filteredForms.length}${filterPlantillaSeccion !== "todas" ? `/${forms.length}` : ""} ${filteredForms.length === 1 ? "plantilla" : "plantillas"}`
                     : `${people.length} ${people.length === 1 ? "persona" : "personas"}`}
                 </span>
               </div>
@@ -764,12 +796,36 @@ export default function HorariosGuardadosPage() {
                     Selecciona una para ver su contenido.
                   </p>
                 </div>
-                {forms.length > 0 ? (
+                {filteredForms.length > 0 ? (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
                     <Files className="h-3 w-3" aria-hidden />
-                    {forms.length}
+                    {filteredForms.length}
+                    {filterPlantillaSeccion !== "todas" ? `/${forms.length}` : ""}
                   </span>
                 ) : null}
+              </div>
+              <div className="mt-3">
+                <label
+                  htmlFor="hg-filter-seccion"
+                  className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"
+                >
+                  Seccion
+                </label>
+                <select
+                  id="hg-filter-seccion"
+                  value={filterPlantillaSeccion}
+                  onChange={(event) =>
+                    setFilterPlantillaSeccion(event.target.value || "todas")
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                >
+                  <option value="todas">Todas</option>
+                  {availablePlantillaSecciones.map((seccion) => (
+                    <option key={seccion} value={seccion}>
+                      {seccion}
+                    </option>
+                  ))}
+                </select>
               </div>
               {formsError ? (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
@@ -786,9 +842,19 @@ export default function HorariosGuardadosPage() {
                     Crea una nueva desde &quot;Registrar planilla&quot;.
                   </p>
                 </div>
+              ) : filteredForms.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
+                  <Files className="mx-auto h-6 w-6 text-slate-400" aria-hidden />
+                  <p className="mt-2 text-sm font-semibold text-slate-700">
+                    Sin plantillas para esta seccion
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Elige otra seccion o &quot;Todas&quot;.
+                  </p>
+                </div>
               ) : (
                 <ul className="mt-4 space-y-2" role="list">
-                  {forms.map((form) => {
+                  {filteredForms.map((form) => {
                     const isActive = selectedFormId === form.id;
                     const isLoading = loadingFormId === form.id;
                     return (
@@ -818,10 +884,10 @@ export default function HorariosGuardadosPage() {
                                 </span>
                               </div>
                               <p className="mt-1.5 truncate text-sm font-semibold text-slate-900">
-                                {form.sede}
+                                {form.seccion || "Sin seccion"}
                               </p>
                               <p className="truncate text-xs text-slate-500">
-                                {form.seccion}
+                                {form.sede || "Sin sede"}
                               </p>
                             </div>
                             {isActive ? (
@@ -878,7 +944,6 @@ export default function HorariosGuardadosPage() {
                 </ul>
               )}
             </section>
-
             <section className="min-w-0 rounded-3xl border border-slate-200/70 bg-white p-4 shadow-[0_18px_40px_-35px_rgba(15,23,42,0.4)] print:rounded-none print:border-0 print:p-0 print:shadow-none">
               {selectedForm === null ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
