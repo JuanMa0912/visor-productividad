@@ -389,14 +389,36 @@ export const HourlyAnalysis = ({
 
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [hourlyData, allowedLineSet, hasLineRestriction]);
-  const requestedLine = defaultLine?.trim() || selectedLine;
-  const effectiveSelectedLine =
-    !defaultLine &&
-    hasLineRestriction &&
-    requestedLine &&
-    !allowedLineSet.has(requestedLine.toLowerCase())
-      ? ""
-      : requestedLine;
+
+  /** Semilla inicial / defaultLine no debe bloquear el select; si es invalida, primera permitida. */
+  const resolveLineWithinScope = useCallback(
+    (candidate: string) => {
+      const trimmed = candidate.trim();
+      if (!hasLineRestriction) return trimmed;
+      if (!trimmed) return "";
+      if (allowedLineSet.has(trimmed.toLowerCase())) return trimmed;
+      const firstAllowed = lineOptions[0]?.id ?? [...allowedLineSet][0] ?? "";
+      return firstAllowed;
+    },
+    [allowedLineSet, hasLineRestriction, lineOptions],
+  );
+
+  const effectiveSelectedLine = resolveLineWithinScope(selectedLine);
+
+  useEffect(() => {
+    setSelectedLine((current) => {
+      if (!hasLineRestriction) return current;
+      if (!current.trim()) return current;
+      if (allowedLineSet.has(current.trim().toLowerCase())) return current;
+      return resolveLineWithinScope(defaultLine ?? "");
+    });
+  }, [
+    allowedLineSet,
+    defaultLine,
+    hasLineRestriction,
+    resolveLineWithinScope,
+  ]);
+
   const hourlyRequestKey = useMemo(() => {
     if (!hourlyRequestDate) return "";
     return JSON.stringify({

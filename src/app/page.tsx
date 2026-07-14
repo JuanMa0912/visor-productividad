@@ -160,14 +160,23 @@ const useAnimations = (
   }, [isLoading, filteredLinesCount, viewMode]);
 };
 
-const aggregateLines = (dailyData: DailyProductivity[]): LineMetrics[] => {
+const aggregateLines = (
+  dailyData: DailyProductivity[],
+  options?: { allowedLineIds?: string[] },
+): LineMetrics[] => {
   const lineMap = new Map<
     string,
     { id: string; name: string; sales: number; hours: number; cost: number }
   >();
 
+  const allowedIds =
+    options?.allowedLineIds && options.allowedLineIds.length > 0
+      ? new Set(options.allowedLineIds.map((id) => id.toLowerCase()))
+      : null;
+
   dailyData.forEach((day) => {
     day.lines.forEach((line) => {
+      if (allowedIds && !allowedIds.has(line.id.toLowerCase())) return;
       const hasLaborData = hasLaborDataForLine(line.id);
       const hours = hasLaborData ? line.hours : 0;
       const hourlyRate = hasLaborData ? line.hourlyRate : 0;
@@ -190,7 +199,11 @@ const aggregateLines = (dailyData: DailyProductivity[]): LineMetrics[] => {
     });
   });
 
-  DEFAULT_LINES.forEach((line) => {
+  const padLines = allowedIds
+    ? DEFAULT_LINES.filter((line) => allowedIds.has(line.id))
+    : DEFAULT_LINES;
+
+  padLines.forEach((line) => {
     if (!lineMap.has(line.id)) {
       lineMap.set(line.id, {
         id: line.id,
@@ -587,7 +600,13 @@ export default function Home() {
     );
   }, [dailyDataSet, dateRange, selectedSedeIdSet]);
 
-  const lines = useMemo(() => aggregateLines(rangeDailyData), [rangeDailyData]);
+  const scopedLineIds =
+    !isAdmin && allowedLineIds.length > 0 ? allowedLineIds : undefined;
+
+  const lines = useMemo(
+    () => aggregateLines(rangeDailyData, { allowedLineIds: scopedLineIds }),
+    [rangeDailyData, scopedLineIds],
+  );
   const hasRangeData = rangeDailyData.length > 0;
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
@@ -667,8 +686,12 @@ export default function Home() {
           item.date <= comparisonDateRange.end,
       );
 
-      const exportLines = aggregateLines(rangeData);
-      const previousLines = aggregateLines(previousRangeData);
+      const exportLines = aggregateLines(rangeData, {
+        allowedLineIds: scopedLineIds,
+      });
+      const previousLines = aggregateLines(previousRangeData, {
+        allowedLineIds: scopedLineIds,
+      });
       const previousLineMap = new Map(
         previousLines.map((line) => [line.id, line]),
       );
@@ -943,6 +966,7 @@ export default function Home() {
       lineFilter,
       lineFilterLabel,
       orderedSedes,
+      scopedLineIds,
       searchQuery,
       selectedSedeIds,
       sortBy,
@@ -2702,12 +2726,12 @@ export default function Home() {
                     </div>
                   )}
                   <HourlyAnalysis
-                    key={`cashier-${dateRange.start}-${dateRange.end}-${selectedSede}-${cashierMonthCompare ? "mc" : "p"}`}
+                    key={`cashier-${dateRange.start}-${dateRange.end}-${selectedSede}-${cashierMonthCompare ? "mc" : "p"}-${scopedLineIds?.[0] ?? "all"}`}
                     availableDates={availableDates}
                     availableSedes={orderedSedes}
                     defaultDate={dateRange.end}
                     defaultSede={selectedSede || undefined}
-                    defaultLine="cajas"
+                    defaultLine={scopedLineIds?.[0] ?? "cajas"}
                     allowedLineIds={!isAdmin ? allowedLineIds : undefined}
                     sections={["map"]}
                     showTopDateFilter={false}
