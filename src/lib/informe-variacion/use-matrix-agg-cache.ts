@@ -25,9 +25,12 @@ type Prepared = ReturnType<typeof prepareInformeData>;
 
 const EMPTY_ITEM_AGG: SublineItemAgg = { byItem: new Map(), topItems: [] };
 
+/** Prefetch de la otra metrica: debe correr aunque el tab este ocupado. */
+const OTHER_METRIC_IDLE_TIMEOUT_MS = 8_000;
+
 const scheduleIdle = (fn: () => void): (() => void) => {
   if (typeof requestIdleCallback !== "undefined") {
-    const id = requestIdleCallback(fn, { timeout: 150 });
+    const id = requestIdleCallback(fn, { timeout: OTHER_METRIC_IDLE_TIMEOUT_MS });
     return () => cancelIdleCallback(id);
   }
   const id = setTimeout(fn, 0);
@@ -50,8 +53,14 @@ export const useMatrixAggCache = (
     u: null,
     v: null,
   });
+  const dualCacheRef = useRef(dualCache);
+  dualCacheRef.current = dualCache;
+
   const itemCacheRef = useRef(new Map<string, SublineItemAgg>());
   const [itemCacheTick, setItemCacheTick] = useState(0);
+
+  const metricRef = useRef(metric);
+  metricRef.current = metric;
 
   const buildArgs = useMemo(
     () => ({
@@ -72,17 +81,8 @@ export const useMatrixAggCache = (
     ],
   );
 
-  useEffect(() => {
-    itemCacheRef.current.clear();
-    setItemCacheTick(0);
-  }, [buildArgs]);
-
-  useEffect(() => {
-    setDualCache({ u: null, v: null });
-    let cancelled = false;
-    let cancelIdle: (() => void) | undefined;
-
-    const buildOne = (activeMetric: InformeMetric): MatrixAggCache =>
+  const buildOne = useCallback(
+    (activeMetric: InformeMetric): MatrixAggCache =>
       buildMatrixAggCache(
         buildArgs.rows,
         buildArgs.rowIndex,
@@ -91,17 +91,35 @@ export const useMatrixAggCache = (
         activeMetric,
         buildArgs.sedeCount,
         buildArgs.metricCtx,
-      );
+      ),
+    [buildArgs],
+  );
+
+  useEffect(() => {
+    itemCacheRef.current.clear();
+    setItemCacheTick(0);
+  }, [buildArgs]);
+
+  // Rebuild solo cuando cambian datos/filtros. NO al cambiar Unidades↔Valor:
+  // antes se vaciaban ambas metricas y el hilo principal se bloqueaba ~10s.
+  useEffect(() => {
+    setDualCache({ u: null, v: null });
+    let cancelled = false;
+    let cancelSecondary: (() => void) | undefined;
 
     const timeoutId = setTimeout(() => {
       if (cancelled) return;
-      const first = buildOne(metric);
-      setDualCache((current) => ({ ...current, [metric]: first }));
+      const active = metricRef.current;
+      const first = buildOne(active);
+      if (cancelled) return;
+      setDualCache((current) => ({ ...current, [active]: first }));
 
-      cancelIdle = scheduleIdle(() => {
+      cancelSecondary = scheduleIdle(() => {
         if (cancelled) return;
-        const other = otherInformeMetric(metric);
+        const other = otherInformeMetric(active);
+        if (dualCacheRef.current[other]) return;
         const second = buildOne(other);
+        if (cancelled) return;
         setDualCache((current) =>
           current[other] ? current : { ...current, [other]: second },
         );
@@ -111,9 +129,29 @@ export const useMatrixAggCache = (
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
-      cancelIdle?.();
+      cancelSecondary?.();
     };
-  }, [buildArgs, metric]);
+  }, [buildArgs, buildOne]);
+
+  // Si el usuario cambia de metrica antes del prefetch, construye solo la faltante.
+  useEffect(() => {
+    if (dualCacheRef.current[metric]) return;
+
+    let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      if (cancelled || dualCacheRef.current[metric]) return;
+      const built = buildOne(metric);
+      if (cancelled) return;
+      setDualCache((current) =>
+        current[metric] ? current : { ...current, [metric]: built },
+      );
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [metric, buildOne]);
 
   const cacheReady = dualCache[metric] !== null;
   const aggCache = dualCache[metric];

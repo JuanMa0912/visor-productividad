@@ -107,7 +107,9 @@ function InformeVariacionBoardReady({
   );
 
   const handleMatrixMetricChange = useCallback((value: InformeMetric) => {
-    startTransition(() => setMatrixMetric(value));
+    // Sync: el click debe pintar el toggle al instante. La matriz usa caché dual
+    // (u/v); si la otra metrica ya esta caliente, el cambio es barato.
+    setMatrixMetric(value);
   }, []);
 
   const filteredTag = hasActiveInformeFilters(deferredFilters) ? (
