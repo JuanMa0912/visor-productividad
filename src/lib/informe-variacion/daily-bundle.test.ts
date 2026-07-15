@@ -10,6 +10,7 @@ const row = (
   fecha: string,
   cantidad: number,
   ventas: number,
+  margen = 0,
 ): InformeDailyDbRow => ({
   fecha_dcto: fecha,
   empresa: "empresa1",
@@ -23,18 +24,19 @@ const row = (
   item_descripcion: "Item",
   cantidad,
   ventas_netas: ventas,
+  margen_pesos: margen,
 });
 
 describe("aggregateDailyRowsForRange", () => {
-  it("suma solo dias del rango en cada periodo", () => {
+  it("suma solo dias del rango en cada periodo (u/v/m)", () => {
     const dailyRows: InformeDailyDbRow[] = [
-      row("20260601", 1, 10),
-      row("20260614", 2, 20),
-      row("20260621", 4, 40),
-      row("20260501", 3, 30),
-      row("20260514", 5, 50),
-      row("20250601", 6, 60),
-      row("20250614", 7, 70),
+      row("20260601", 1, 10, 4),
+      row("20260614", 2, 20, 6),
+      row("20260621", 4, 40, 8),
+      row("20260501", 3, 30, 5),
+      row("20260514", 5, 50, 7),
+      row("20250601", 6, 60, 1),
+      row("20250614", 7, 70, 2),
     ];
 
     const range = parseInformeDayRangeId("1-14");
@@ -43,18 +45,21 @@ describe("aggregateDailyRowsForRange", () => {
     assert.equal(agg.length, 1);
     assert.equal(Number(agg[0].u_cur), 3);
     assert.equal(Number(agg[0].v_cur), 30);
+    assert.equal(Number(agg[0].m_cur), 10);
     assert.equal(Number(agg[0].u_mom), 8);
     assert.equal(Number(agg[0].v_mom), 80);
+    assert.equal(Number(agg[0].m_mom), 12);
     assert.equal(Number(agg[0].u_yoy), 13);
     assert.equal(Number(agg[0].v_yoy), 130);
+    assert.equal(Number(agg[0].m_yoy), 3);
   });
 
   it("excluye dias fuera del rango parcial", () => {
     const dailyRows: InformeDailyDbRow[] = [
-      row("20260607", 1, 10),
-      row("20260608", 2, 20),
-      row("20260614", 3, 30),
-      row("20260615", 9, 90),
+      row("20260607", 1, 10, 1),
+      row("20260608", 2, 20, 2),
+      row("20260614", 3, 30, 3),
+      row("20260615", 9, 90, 9),
     ];
 
     const range = parseInformeDayRangeId("8-14");
@@ -63,5 +68,6 @@ describe("aggregateDailyRowsForRange", () => {
     assert.equal(agg.length, 1);
     assert.equal(Number(agg[0].u_cur), 5);
     assert.equal(Number(agg[0].v_cur), 50);
+    assert.equal(Number(agg[0].m_cur), 5);
   });
 });

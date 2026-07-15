@@ -31,6 +31,7 @@ export type InformeDailyDbRow = {
   item_descripcion: string;
   cantidad: string | number;
   ventas_netas: string | number;
+  margen_pesos: string | number;
 };
 
 const toNum = (value: string | number | null | undefined) =>
@@ -155,7 +156,8 @@ export const queryInformeDailyRows = async (
       id_item,
       MAX(item_descripcion) AS item_descripcion,
       SUM(COALESCE(cantidad, 0)) AS cantidad,
-      SUM(COALESCE(ventas_netas, 0)) AS ventas_netas
+      SUM(COALESCE(ventas_netas, 0)) AS ventas_netas,
+      SUM(COALESCE(margen_pesos, 0)) AS margen_pesos
     FROM ${MARGEN_ITEM_DIA_ROLL_TABLE}
     WHERE (
         (fecha_dcto >= $1 AND fecha_dcto <= $2)
@@ -174,6 +176,7 @@ export const queryInformeDailyRows = async (
     HAVING
       SUM(COALESCE(cantidad, 0)) <> 0
       OR SUM(COALESCE(ventas_netas, 0)) <> 0
+      OR SUM(COALESCE(margen_pesos, 0)) <> 0
   `;
 
   const result = await client.query<InformeDailyDbRow>(sql, [
@@ -244,21 +247,28 @@ export const aggregateDailyRowsForRange = (
         v_cur: 0,
         v_mom: 0,
         v_yoy: 0,
+        m_cur: 0,
+        m_mom: 0,
+        m_yoy: 0,
       };
       map.set(key, acc);
     }
 
     const qty = toNum(row.cantidad);
     const val = toNum(row.ventas_netas);
+    const margen = toNum(row.margen_pesos);
     if (period === "cur") {
       acc.u_cur = toNum(acc.u_cur) + qty;
       acc.v_cur = toNum(acc.v_cur) + val;
+      acc.m_cur = toNum(acc.m_cur) + margen;
     } else if (period === "mom") {
       acc.u_mom = toNum(acc.u_mom) + qty;
       acc.v_mom = toNum(acc.v_mom) + val;
+      acc.m_mom = toNum(acc.m_mom) + margen;
     } else {
       acc.u_yoy = toNum(acc.u_yoy) + qty;
       acc.v_yoy = toNum(acc.v_yoy) + val;
+      acc.m_yoy = toNum(acc.m_yoy) + margen;
     }
   }
 
@@ -269,7 +279,10 @@ export const aggregateDailyRowsForRange = (
       toNum(row.u_yoy) !== 0 ||
       toNum(row.v_cur) !== 0 ||
       toNum(row.v_mom) !== 0 ||
-      toNum(row.v_yoy) !== 0,
+      toNum(row.v_yoy) !== 0 ||
+      toNum(row.m_cur) !== 0 ||
+      toNum(row.m_mom) !== 0 ||
+      toNum(row.m_yoy) !== 0,
   );
 };
 

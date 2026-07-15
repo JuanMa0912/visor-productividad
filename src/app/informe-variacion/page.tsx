@@ -596,30 +596,24 @@ export default function InformeVariacionPage() {
               options,
             );
 
-        if (cachedSelected) {
-          setLoading(false);
-        } else {
-          void primaryTask
-            .then((data) => {
-              if (
-                controller.signal.aborted ||
-                activeMonthKeyRef.current !== monthToken
-              ) {
-                return;
-              }
-              setPayload(data);
-              setLoading(false);
-              updatePrefetchProgress();
-            })
-            .catch((err) => {
-              if (err instanceof Error && err.name === "AbortError") return;
-            });
-        }
-
-        // Un solo rango: evita bundle duplicado (~5s vs ~15s en el benchmark).
+        // Un solo rango: no pedir bundle (misma SQL agregada).
         if (ranges.length <= 1) {
+          if (cachedSelected) {
+            setLoading(false);
+          } else {
+            setLoading(true);
+          }
           try {
-            await primaryTask;
+            const data = await primaryTask;
+            if (
+              controller.signal.aborted ||
+              activeMonthKeyRef.current !== monthToken
+            ) {
+              return;
+            }
+            if (!cachedSelected) {
+              setPayload(data);
+            }
           } catch (primaryErr) {
             if (
               primaryErr instanceof Error &&
@@ -644,6 +638,47 @@ export default function InformeVariacionPage() {
           return;
         }
 
+        // Varios rangos: rango visible primero (pinta UI), luego bundle.
+        // Antes corrían en paralelo y saturaban Cloud SQL (~5s + ~15s a la vez).
+        if (!cachedSelected) {
+          setLoading(true);
+          try {
+            const data = await primaryTask;
+            if (
+              controller.signal.aborted ||
+              activeMonthKeyRef.current !== monthToken
+            ) {
+              return;
+            }
+            setPayload(data);
+            setLoading(false);
+            setMonthLoadLocked(false);
+            updatePrefetchProgress();
+          } catch (primaryErr) {
+            if (
+              primaryErr instanceof Error &&
+              primaryErr.name === "AbortError"
+            ) {
+              return;
+            }
+            if (!readCachedPayload(year, month, selectedId)) {
+              throw primaryErr;
+            }
+            setLoading(false);
+            setMonthLoadLocked(false);
+          }
+        } else {
+          setLoading(false);
+          setMonthLoadLocked(false);
+        }
+
+        if (
+          controller.signal.aborted ||
+          activeMonthKeyRef.current !== monthToken
+        ) {
+          return;
+        }
+
         const bundleResult = await fetchMonthBundle(
           year,
           month,
@@ -665,27 +700,7 @@ export default function InformeVariacionPage() {
           return;
         }
 
-        try {
-          await primaryTask;
-        } catch (primaryErr) {
-          if (
-            primaryErr instanceof Error &&
-            primaryErr.name === "AbortError"
-          ) {
-            return;
-          }
-          if (!readCachedPayload(year, month, selectedId)) {
-            throw primaryErr;
-          }
-        }
-
-        if (
-          controller.signal.aborted ||
-          activeMonthKeyRef.current !== monthToken
-        ) {
-          return;
-        }
-
+        // Sin item_dia_roll: precargar el resto de rangos en serie.
         applySelectedPayload();
         setLoading(false);
         updatePrefetchProgress();

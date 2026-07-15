@@ -61,6 +61,7 @@ export const setCachedInformeMonthBundle = (
   key: string,
   bundle: InformeVariacionMonthBundle,
   allowedSedeKeys: string[] | null,
+  forcedMargenTipos?: string[] | null,
 ): void => {
   const hasRows = Object.values(bundle.payloads).some(
     (payload) => (payload.rows?.length ?? 0) > 0,
@@ -69,7 +70,13 @@ export const setCachedInformeMonthBundle = (
   setCachedQuery(key, bundle, INFORME_CACHE_TTL_MS);
   for (const [rangeId, payload] of Object.entries(bundle.payloads)) {
     setCachedInformePayload(
-      buildInformeCacheKey(bundle.year, bundle.month, allowedSedeKeys, rangeId),
+      buildInformeCacheKey(
+        bundle.year,
+        bundle.month,
+        allowedSedeKeys,
+        rangeId,
+        forcedMargenTipos,
+      ),
       payload,
     );
   }

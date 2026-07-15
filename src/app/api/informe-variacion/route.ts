@@ -184,7 +184,12 @@ export async function GET(request: Request) {
         );
       }
 
-      setCachedInformeMonthBundle(bundleKey, bundle, scope.allowedKeys);
+      setCachedInformeMonthBundle(
+        bundleKey,
+        bundle,
+        scope.allowedKeys,
+        lineScope.forcedMargenTipos,
+      );
 
       return withSession(
         NextResponse.json(bundle, {
