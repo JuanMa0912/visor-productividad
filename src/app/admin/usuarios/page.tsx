@@ -1063,7 +1063,7 @@ export default function AdminUsuariosPage() {
                 </div>
               </div>
 
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+              <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
                 <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
                   <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-5">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1495,7 +1495,7 @@ export default function AdminUsuariosPage() {
                   </div>
                 </div>
 
-                <aside className="flex flex-col rounded-xl border border-slate-100 bg-white shadow-sm">
+                <aside className="flex flex-col self-start rounded-xl border border-slate-100 bg-white shadow-sm">
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 p-4 sm:p-5">
                     <div>
                       <h2 className="text-base font-bold text-slate-900">
@@ -1516,7 +1516,7 @@ export default function AdminUsuariosPage() {
                       </button>
                     )}
                   </div>
-                  <div className="relative flex-1 p-4 sm:p-5">
+                  <div className="relative p-4 sm:p-5">
                     <div className="absolute bottom-6 left-[1.35rem] top-8 w-px bg-slate-200" />
                     <ul className="relative space-y-0">
                       {logs.map((log, logIndex) => {
