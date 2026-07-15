@@ -1063,8 +1063,8 @@ export default function AdminUsuariosPage() {
                 </div>
               </div>
 
-              <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
-                <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+              <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+                <div className="self-start overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
                   <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-5">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-base font-bold text-slate-900">
@@ -1495,8 +1495,8 @@ export default function AdminUsuariosPage() {
                   </div>
                 </div>
 
-                <aside className="flex flex-col self-start rounded-xl border border-slate-100 bg-white shadow-sm">
-                  <div className="flex items-start justify-between gap-2 border-b border-slate-100 p-4 sm:p-5">
+                <aside className="flex h-full min-h-0 flex-col rounded-xl border border-slate-100 bg-white shadow-sm">
+                  <div className="flex shrink-0 items-start justify-between gap-2 border-b border-slate-100 p-4 sm:p-5">
                     <div>
                       <h2 className="text-base font-bold text-slate-900">
                         Accesos recientes
@@ -1516,8 +1516,8 @@ export default function AdminUsuariosPage() {
                       </button>
                     )}
                   </div>
-                  <div className="relative p-4 sm:p-5">
-                    <div className="absolute bottom-6 left-[1.35rem] top-8 w-px bg-slate-200" />
+                  <div className="relative min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                    <div className="pointer-events-none absolute bottom-6 left-[1.35rem] top-8 w-px bg-slate-200" />
                     <ul className="relative space-y-0">
                       {logs.map((log, logIndex) => {
                         const lp =
@@ -1525,7 +1525,7 @@ export default function AdminUsuariosPage() {
                         return (
                           <li
                             key={log.id}
-                            className="relative pl-10 pb-6 last:pb-0"
+                            className="relative pb-5 pl-10 last:pb-0"
                           >
                             <div
                               className={`absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold ${lp.bg} ${lp.text} ring-4 ring-white`}
@@ -1533,7 +1533,7 @@ export default function AdminUsuariosPage() {
                               {userInitials(log.username)}
                             </div>
                             <div
-                              className={`rounded-lg border p-3 ${
+                              className={`rounded-lg border p-2.5 ${
                                 logIndex === 0
                                   ? "border-indigo-200 bg-indigo-50/60"
                                   : "border-slate-100 bg-slate-50/80"
@@ -1542,7 +1542,7 @@ export default function AdminUsuariosPage() {
                               <div className="flex items-start justify-between gap-2">
                                 <Link
                                   href={`/admin/usuarios/${log.user_id}/metricas`}
-                                  className="font-semibold text-slate-900 transition hover:text-indigo-700 hover:underline"
+                                  className="truncate font-semibold text-slate-900 transition hover:text-indigo-700 hover:underline"
                                 >
                                   {log.username}
                                 </Link>
@@ -1553,11 +1553,11 @@ export default function AdminUsuariosPage() {
                               <p className="mt-1 text-xs text-slate-500">
                                 {formatRelativeTime(log.logged_at)}
                               </p>
-                              <p className="mt-1 text-[11px] text-slate-400">
+                              <p className="mt-0.5 text-[11px] text-slate-400">
                                 {log.ip ?? "Origen auditado desconocido"}
                               </p>
                               <p
-                                className="mt-0.5 text-[11px] text-slate-500"
+                                className="mt-0.5 truncate text-[11px] text-slate-500"
                                 title={log.user_agent ?? undefined}
                               >
                                 {formatUserAgentLabel(log.user_agent)}
@@ -1573,7 +1573,7 @@ export default function AdminUsuariosPage() {
                       </p>
                     )}
                   </div>
-                  <div className="border-t border-slate-100 p-4 space-y-2">
+                  <div className="mt-auto shrink-0 space-y-2 border-t border-slate-100 p-4">
                     <Link
                       href="/admin/usuarios/accesos"
                       className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
