@@ -51,6 +51,13 @@ export const resolveInformeMargenDataSource = async (
 ): Promise<MargenDataTable> => {
   if (process.env.MARGEN_FORCE_RAW === "1") return MARGEN_RAW_TABLE;
 
+  // No cachear "vacio" de forma permanente: un TRUNCATE/refresh puede dejar
+  // EXISTS=false un momento y el proceso seguiria leyendo el fallback mal,
+  // o al reves quedarse en la tabla vacia. Solo cacheamos "tabla no existe".
+  if (itemDiaRollAvailable === false) {
+    return resolveMargenDataSource(client);
+  }
+
   if (itemDiaRollAvailable === null) {
     const result = await client.query<{ ok: boolean }>(`
       SELECT EXISTS (
@@ -62,15 +69,15 @@ export const resolveInformeMargenDataSource = async (
     `);
     if (!result.rows[0]?.ok) {
       itemDiaRollAvailable = false;
-    } else {
-      const populated = await client.query<{ ok: boolean }>(`
-        SELECT EXISTS (SELECT 1 FROM margen_item_dia_roll LIMIT 1) AS ok
-      `);
-      itemDiaRollAvailable = Boolean(populated.rows[0]?.ok);
+      return resolveMargenDataSource(client);
     }
+    itemDiaRollAvailable = true;
   }
 
-  if (itemDiaRollAvailable) return MARGEN_ITEM_DIA_ROLL_TABLE;
+  const populated = await client.query<{ ok: boolean }>(`
+    SELECT EXISTS (SELECT 1 FROM margen_item_dia_roll LIMIT 1) AS ok
+  `);
+  if (populated.rows[0]?.ok) return MARGEN_ITEM_DIA_ROLL_TABLE;
   return resolveMargenDataSource(client);
 };
 

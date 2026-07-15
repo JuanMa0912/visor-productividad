@@ -8,18 +8,20 @@
 #
 # Uso:
 #   sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-variacion-roll.sh
+#   sudo -u visor /bin/bash .../refresh-variacion-roll.sh --full
 #   sudo -u visor /bin/bash .../refresh-variacion-roll.sh --from 20260601 --to 20260714
 #
-# Pensado para correr via systemd timer:
-#   /etc/systemd/system/visor-refresh-variacion.service
-#   /etc/systemd/system/visor-refresh-variacion.timer
+# Por defecto (timer diario): ventana incremental ~60 dias (sin vaciar historico).
+# --full: rebuild completo (staging+swap tras migracion 20260715).
 
 set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-/opt/visor-productividad/.env.local}"
 LOG_FILE="${LOG_FILE:-/var/log/visor-refresh-variacion.log}"
+LOCK_FILE="${LOCK_FILE:-/tmp/visor-refresh-variacion.lock}"
 FROM=""
 TO=""
+FULL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,12 +33,21 @@ while [[ $# -gt 0 ]]; do
       TO="${2:-}"
       shift 2
       ;;
+    --full)
+      FULL=1
+      shift
+      ;;
     *)
       echo "Argumento desconocido: $1" >&2
       exit 2
       ;;
   esac
 done
+
+if [[ "$FULL" -eq 1 && ( -n "$FROM" || -n "$TO" ) ]]; then
+  echo "ERROR: --full no se combina con --from/--to." >&2
+  exit 2
+fi
 
 if [[ -n "$FROM" || -n "$TO" ]]; then
   if [[ ! "$FROM" =~ ^[0-9]{8}$ || ! "$TO" =~ ^[0-9]{8}$ ]]; then
@@ -53,6 +64,13 @@ log() {
     echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
   fi
 }
+
+# Evita dos rebuilds a la vez (timer + start manual, o sync + timer).
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  log "Otro refresh-variacion ya esta en curso; salgo sin hacer nada."
+  exit 0
+fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   log "ERROR: no encuentro $ENV_FILE"
@@ -114,9 +132,15 @@ start_ts=$(date +%s)
 if [[ -n "$FROM" ]]; then
   log "Iniciando refresh_margen_item_dia_roll('${FROM}', '${TO}')"
   result_line=$(run_psql_maintenance "SELECT inserted_rows, elapsed_ms FROM refresh_margen_item_dia_roll('${FROM}', '${TO}');" | head -n 1)
-else
-  log "Iniciando refresh_margen_item_dia_roll() completo"
+elif [[ "$FULL" -eq 1 ]]; then
+  log "Iniciando refresh_margen_item_dia_roll() completo (--full)"
   result_line=$(run_psql_maintenance "SELECT inserted_rows, elapsed_ms FROM refresh_margen_item_dia_roll();" | head -n 1)
+else
+  # Ventana corta: mes anterior + mes actual (cubre MoM; YoY historico ya esta en la tabla).
+  TO="$(date -u +%Y%m%d)"
+  FROM="$(date -u -d '60 days ago' +%Y%m%d 2>/dev/null || date -u -v-60d +%Y%m%d)"
+  log "Iniciando refresh_margen_item_dia_roll('${FROM}', '${TO}') (incremental diario)"
+  result_line=$(run_psql_maintenance "SELECT inserted_rows, elapsed_ms FROM refresh_margen_item_dia_roll('${FROM}', '${TO}');" | head -n 1)
 fi
 
 run_psql_maintenance "ANALYZE margen_item_dia_roll;" > /dev/null

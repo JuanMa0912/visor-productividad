@@ -389,6 +389,7 @@ sudo -u visor git pull origin main
 # Migraciones una vez (si aun no):
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260708_margen_item_dia_roll.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260710_margen_item_dia_roll_margin.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260715_margen_item_dia_roll_atomic_refresh.sql
 
 sudo cp /opt/visor-productividad/deploy/systemd/visor-refresh-variacion.service /etc/systemd/system/
 sudo cp /opt/visor-productividad/deploy/systemd/visor-refresh-variacion.timer /etc/systemd/system/
@@ -400,9 +401,11 @@ systemctl list-timers visor-refresh-variacion.timer --no-pager
 Refresh manual / primer catch-up:
 
 ```bash
+# Incremental (~60 dias, default del timer):
 sudo systemctl start visor-refresh-variacion.service
+# Rebuild total (staging; no deja la UI sin datos):
+sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-variacion-roll.sh --full
 sudo journalctl -u visor-refresh-variacion -n 40 --no-pager
-# o: sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-variacion-roll.sh
 ```
 
 ### Deploy código rotación + cache IDB

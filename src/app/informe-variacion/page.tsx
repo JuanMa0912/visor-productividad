@@ -42,9 +42,15 @@ const buildRangeCacheKey = (
 const readSessionInforme = (key: string): InformeVariacionPayload | null => {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(`${INFORME_SESSION_CACHE_PREFIX}${key}`);
+    const storageKey = `${INFORME_SESSION_CACHE_PREFIX}${key}`;
+    const raw = sessionStorage.getItem(storageKey);
     if (!raw) return null;
-    return JSON.parse(raw) as InformeVariacionPayload;
+    const parsed = JSON.parse(raw) as InformeVariacionPayload;
+    if (!parsed.rows?.length) {
+      sessionStorage.removeItem(storageKey);
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -212,6 +218,8 @@ export default function InformeVariacionPage() {
       rangeId: InformeDayRangeId,
       data: InformeVariacionPayload,
     ) => {
+      // No persistir vacios (p.ej. durante TRUNCATE del refresh diario).
+      if (!data.rows?.length) return;
       const key = buildRangeCacheKey(year, month, rangeId);
       memoryCacheRef.current.set(key, data);
       writeSessionInforme(key, data);

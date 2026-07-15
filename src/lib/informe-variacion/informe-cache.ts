@@ -31,6 +31,9 @@ export const setCachedInformePayload = (
   key: string,
   payload: InformeVariacionPayload,
 ): void => {
+  // No cachear vacios: un refresh que vacie la tabla no debe congelar el
+  // informe 30 min con "sin datos".
+  if (!payload.rows?.length) return;
   setCachedQuery(key, payload, INFORME_CACHE_TTL_MS);
 };
 
@@ -59,6 +62,10 @@ export const setCachedInformeMonthBundle = (
   bundle: InformeVariacionMonthBundle,
   allowedSedeKeys: string[] | null,
 ): void => {
+  const hasRows = Object.values(bundle.payloads).some(
+    (payload) => (payload.rows?.length ?? 0) > 0,
+  );
+  if (!hasRows) return;
   setCachedQuery(key, bundle, INFORME_CACHE_TTL_MS);
   for (const [rangeId, payload] of Object.entries(bundle.payloads)) {
     setCachedInformePayload(

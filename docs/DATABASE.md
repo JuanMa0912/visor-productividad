@@ -91,6 +91,7 @@ Orden completo despues de `schema-auth.sql`:
 37. `20260708_margen_item_dia_roll.sql` (rollup dia+item sin factura para `/informe-variacion`; se refresca al final de `margen:refresh-roll`)
 38. `20260709_app_users_portal_profile_asadero.sql` (añade perfil `asadero` al CHECK de `portal_profile`)
 39. `20260710_margen_item_dia_roll_margin.sql` (añade `costo_total`/`margen_pesos` al rollup dia+item para margen % en informe variacion)
+40. `20260715_margen_item_dia_roll_atomic_refresh.sql` (rebuild completo via staging+rename; evita vaciar la tabla durante el refresh)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
@@ -189,8 +190,8 @@ Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_
    `scripts/etl/sync-local-to-gcp.sh` refresca la ventana sincronizada de
    `margen_final_roll` y `margen_item_dia_roll`.
 2. Timer dedicado `visor-refresh-variacion.timer` (08:30 en app-server):
-   `scripts/refresh-variacion-roll.sh` reconstruye `margen_item_dia_roll` completo
-   (red de seguridad, mismo patron que `visor-refresh-rotacion`).
+   `scripts/refresh-variacion-roll.sh` refresca ventana ~60 dias (incremental).
+   Rebuild total: `--full` (staging+rename tras `20260715_..._atomic_refresh.sql`).
 
 Tras migracion nueva o backfill puntual (en GCP como usuario `visor`):
 
@@ -200,6 +201,7 @@ sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260702_marge
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260703_margen_final_roll_refresh_chunks.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260708_margen_item_dia_roll.sql  # solo la primera vez
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260710_margen_item_dia_roll_margin.sql  # margen % en informe
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260715_margen_item_dia_roll_atomic_refresh.sql
 sudo -u visor npm run margen:refresh-roll
 ```
 
