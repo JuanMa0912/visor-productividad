@@ -538,7 +538,7 @@ sudo journalctl -u visor --since "10 minutes ago" | grep -i "\[security\]"
 - Migrar credenciales de `.env.local` a GCP Secret Manager (requiere aprobación del admin para costos, aunque sería $0 en free tier).
 - 2FA / MFA en login (scope grande).
 - Restringir SSH al VM a IPs específicas (firewall GCP).
-- Limpiar registro DNS AAAA (IPv6) apuntando a Hostinger.
+- ~~Limpiar registro DNS AAAA (IPv6) apuntando a Hostinger.~~ Hecho (2026-07-15): solo queda A → GCP `34.36.168.194`.
 
 ---
 

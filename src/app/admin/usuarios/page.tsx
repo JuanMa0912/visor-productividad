@@ -268,45 +268,143 @@ const SPECIAL_ROLE_OPTIONS = [
   },
 ];
 
-const formatAllowedLines = (allowedLines: string[] | null) => {
-  if (!allowedLines || allowedLines.length === 0) return "Todas";
-  return allowedLines
-    .map((lineId) => lineLabelById.get(lineId) ?? lineId)
-    .join(", ");
+type PermissionCellSummary = {
+  label: string;
+  title: string;
+  muted: boolean;
 };
-const formatAllowedDashboards = (allowedDashboards: string[] | null) => {
-  if (allowedDashboards === null) return "Todas";
-  if (allowedDashboards.length === 0) return "Sin secciones";
-  return allowedDashboards
-    .map((boardId) => {
+
+const isBroadPermissionLabel = (label: string) =>
+  label === "—" ||
+  label === "-" ||
+  label === "Todas" ||
+  label === "Todos" ||
+  label.startsWith("Sin ");
+
+const summarizeLabeledList = (
+  labels: string[],
+  opts: { allLabel: string; emptyLabel: string; maxVisible?: number },
+): PermissionCellSummary => {
+  const maxVisible = opts.maxVisible ?? 1;
+  if (labels.length === 0) {
+    return {
+      label: opts.emptyLabel,
+      title: opts.emptyLabel,
+      muted: true,
+    };
+  }
+  if (labels.includes(ALL_SEDES_VALUE) || labels.includes(opts.allLabel)) {
+    return {
+      label: opts.allLabel,
+      title: opts.allLabel,
+      muted: true,
+    };
+  }
+  const title = labels.join(", ");
+  if (labels.length <= maxVisible) {
+    return { label: title, title, muted: false };
+  }
+  const head = labels.slice(0, maxVisible).join(", ");
+  return {
+    label: `${head} +${labels.length - maxVisible}`,
+    title,
+    muted: false,
+  };
+};
+
+const summarizeAllowedLines = (
+  allowedLines: string[] | null,
+): PermissionCellSummary => {
+  if (!allowedLines || allowedLines.length === 0) {
+    return { label: "Todas", title: "Todas", muted: true };
+  }
+  return summarizeLabeledList(
+    allowedLines.map((lineId) => lineLabelById.get(lineId) ?? lineId),
+    { allLabel: "Todas", emptyLabel: "Todas" },
+  );
+};
+
+const summarizeAllowedDashboards = (
+  allowedDashboards: string[] | null,
+): PermissionCellSummary => {
+  if (allowedDashboards === null) {
+    return { label: "Todas", title: "Todas", muted: true };
+  }
+  if (allowedDashboards.length === 0) {
+    return { label: "Sin secciones", title: "Sin secciones", muted: true };
+  }
+  return summarizeLabeledList(
+    allowedDashboards.map((boardId) => {
       const normalizedBoardId = resolvePortalSectionId(boardId);
       return normalizedBoardId
         ? (PORTAL_SECTION_LABEL_BY_ID.get(normalizedBoardId) ?? boardId)
         : boardId;
-    })
-    .join(", ");
+    }),
+    { allLabel: "Todas", emptyLabel: "Sin secciones" },
+  );
 };
-const formatAllowedSubdashboards = (allowedSubdashboards: string[] | null) => {
-  if (allowedSubdashboards === null) return "Todos";
-  if (allowedSubdashboards.length === 0) return "Sin subtableros";
-  return allowedSubdashboards
-    .map((subId) => {
+
+const summarizeAllowedSubdashboards = (
+  allowedSubdashboards: string[] | null,
+): PermissionCellSummary => {
+  if (allowedSubdashboards === null) {
+    return { label: "Todos", title: "Todos", muted: true };
+  }
+  if (allowedSubdashboards.length === 0) {
+    return { label: "Sin subtableros", title: "Sin subtableros", muted: true };
+  }
+  return summarizeLabeledList(
+    allowedSubdashboards.map((subId) => {
       const normalizedSubId = resolvePortalSubsectionId(subId);
-      return normalizedSubId ? (SUBSECTION_LABELS[normalizedSubId] ?? subId) : subId;
-    })
-    .join(", ");
+      return normalizedSubId
+        ? (SUBSECTION_LABELS[normalizedSubId] ?? subId)
+        : subId;
+    }),
+    { allLabel: "Todos", emptyLabel: "Sin subtableros" },
+  );
 };
-const formatAllowedSedes = (
+
+const summarizeAllowedSedes = (
   allowedSedes: string[] | null,
   fallbackSede: string | null,
-) => {
+): PermissionCellSummary => {
   if (allowedSedes && allowedSedes.length > 0) {
-    return Array.from(
-      new Set(allowedSedes.map((sede) => canonicalizeUserSedeOption(sede))),
-    ).join(", ");
+    return summarizeLabeledList(
+      Array.from(
+        new Set(allowedSedes.map((sede) => canonicalizeUserSedeOption(sede))),
+      ),
+      { allLabel: ALL_SEDES_VALUE, emptyLabel: "—", maxVisible: 1 },
+    );
   }
-  return fallbackSede ? canonicalizeUserSedeOption(fallbackSede) : "-";
+  if (fallbackSede) {
+    const label = canonicalizeUserSedeOption(fallbackSede);
+    return {
+      label,
+      title: label,
+      muted: isBroadPermissionLabel(label),
+    };
+  }
+  return { label: "—", title: "—", muted: true };
 };
+
+const PermissionSummaryCell = ({
+  summary,
+  className,
+}: {
+  summary: PermissionCellSummary;
+  className?: string;
+}) => (
+  <td className={className}>
+    <span
+      title={summary.title}
+      className={`block max-w-full truncate text-xs ${
+        summary.muted ? "text-slate-400" : "font-medium text-slate-700"
+      }`}
+    >
+      {summary.label}
+    </span>
+  </td>
+);
 
 const getCookieValue = (name: string) => {
   if (typeof document === "undefined") return null;
@@ -1112,33 +1210,85 @@ export default function AdminUsuariosPage() {
                   </div>
                 )}
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[920px] text-sm">
+                  <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
                     <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        <th className="px-4 py-3">Usuario</th>
-                        <th className="px-3 py-3">Perfil</th>
-                        <th className="px-3 py-3">Sede</th>
-                        <th className="px-3 py-3">Líneas</th>
-                        <th className="px-3 py-3">Secciones</th>
-                        <th className="px-3 py-3">Subtableros</th>
-                        <th className="px-3 py-3">Especial</th>
-                        <th className="px-3 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Acciones</th>
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        <th className="sticky left-0 z-20 border-b border-slate-100 bg-slate-50 px-4 py-3 shadow-[1px_0_0_0_rgba(226,232,240,1)]">
+                          Usuario
+                        </th>
+                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          Perfil
+                        </th>
+                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          Sede
+                        </th>
+                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          Líneas
+                        </th>
+                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          Secciones
+                        </th>
+                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          Subtableros
+                        </th>
+                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          Especial
+                        </th>
+                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          Estado
+                        </th>
+                        <th className="sticky right-0 z-20 border-b border-slate-100 bg-slate-50 px-4 py-3 text-right shadow-[-1px_0_0_0_rgba(226,232,240,1)]">
+                          Acciones
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {paginatedTableUsers.map((user, index) => {
                         const palette =
                           AVATAR_STYLES[index % AVATAR_STYLES.length]!;
+                        const emptySummary = {
+                          label: "—",
+                          title: "—",
+                          muted: true,
+                        } satisfies PermissionCellSummary;
+                        const sedesSummary =
+                          user.role === "admin"
+                            ? emptySummary
+                            : summarizeAllowedSedes(
+                                user.allowedSedes,
+                                user.sede ??
+                                  inferSedeFromUsername(user.username),
+                              );
+                        const linesSummary =
+                          user.role === "admin"
+                            ? emptySummary
+                            : summarizeAllowedLines(user.allowedLines);
+                        const dashboardsSummary =
+                          user.role === "admin"
+                            ? emptySummary
+                            : summarizeAllowedDashboards(
+                                user.allowedDashboards,
+                              );
+                        const subdashboardsSummary =
+                          user.role === "admin"
+                            ? emptySummary
+                            : summarizeAllowedSubdashboards(
+                                user.allowedSubdashboards,
+                              );
+                        const specialRoles =
+                          user.role === "admin"
+                            ? []
+                            : (user.specialRoles ?? []);
+                        const specialTitle = specialRoles.join(", ");
                         return (
                           <tr
                             key={user.id}
-                            className="border-b border-slate-100 transition-colors hover:bg-slate-50/90"
+                            className="group transition-colors hover:bg-slate-50/90"
                           >
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-3">
+                            <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5 shadow-[1px_0_0_0_rgba(226,232,240,1)] group-hover:bg-slate-50">
+                              <div className="flex min-w-42 items-center gap-3">
                                 <div
-                                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${palette.bg} ${palette.text}`}
+                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${palette.bg} ${palette.text}`}
                                 >
                                   {userInitials(user.username)}
                                 </div>
@@ -1146,13 +1296,13 @@ export default function AdminUsuariosPage() {
                                   <div className="truncate font-semibold text-slate-900">
                                     {user.username}
                                   </div>
-                                  <div className="truncate text-xs text-slate-500">
+                                  <div className="truncate text-[11px] text-slate-400">
                                     {user.username}@portal
                                   </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
                               <span
                                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
                                   user.role === "admin"
@@ -1167,60 +1317,49 @@ export default function AdminUsuariosPage() {
                                       : "bg-slate-400"
                                   }`}
                                 />
-                                {getPortalProfileLabel(resolveUserPortalProfile(user))}
+                                {getPortalProfileLabel(
+                                  resolveUserPortalProfile(user),
+                                )}
                               </span>
                             </td>
-                            <td className="max-w-[140px] px-3 py-3 text-xs text-slate-600">
-                              {user.role === "admin"
-                                ? "—"
-                                : formatAllowedSedes(
-                                    user.allowedSedes,
-                                    user.sede ??
-                                      inferSedeFromUsername(user.username),
-                                  )}
-                            </td>
-                            <td className="max-w-[120px] px-3 py-3 text-xs text-slate-600">
-                              {user.role === "admin"
-                                ? "—"
-                                : formatAllowedLines(user.allowedLines)}
-                            </td>
-                            <td className="max-w-[160px] px-3 py-3 text-xs text-slate-600">
-                              {user.role === "admin"
-                                ? "—"
-                                : formatAllowedDashboards(
-                                    user.allowedDashboards,
-                                  )}
-                            </td>
-                            <td className="max-w-[220px] px-3 py-3 text-xs text-slate-600">
-                              {user.role === "admin"
-                                ? "—"
-                                : formatAllowedSubdashboards(
-                                    user.allowedSubdashboards,
-                                  )}
-                            </td>
-                            <td className="max-w-[200px] overflow-hidden px-3 py-3 align-top text-xs text-slate-600">
+                            <PermissionSummaryCell
+                              summary={sedesSummary}
+                              className="max-w-36 border-b border-slate-100 px-3 py-2.5"
+                            />
+                            <PermissionSummaryCell
+                              summary={linesSummary}
+                              className="max-w-28 border-b border-slate-100 px-3 py-2.5"
+                            />
+                            <PermissionSummaryCell
+                              summary={dashboardsSummary}
+                              className="max-w-32 border-b border-slate-100 px-3 py-2.5"
+                            />
+                            <PermissionSummaryCell
+                              summary={subdashboardsSummary}
+                              className="max-w-40 border-b border-slate-100 px-3 py-2.5"
+                            />
+                            <td className="max-w-36 border-b border-slate-100 px-3 py-2.5">
                               {user.role === "admin" ? (
-                                "—"
-                              ) : user.specialRoles &&
-                                user.specialRoles.length > 0 ? (
-                                <div
-                                  className="flex flex-wrap gap-1"
-                                  title={user.specialRoles.join(", ")}
-                                >
-                                  {user.specialRoles.map((role) => (
-                                    <span
-                                      key={role}
-                                      className="max-w-full break-all rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium leading-snug text-slate-700"
-                                    >
-                                      {role}
-                                    </span>
-                                  ))}
-                                </div>
+                                <span className="text-xs text-slate-400">—</span>
+                              ) : specialRoles.length === 0 ? (
+                                <span className="text-xs text-slate-400">—</span>
                               ) : (
-                                "—"
+                                <div
+                                  className="flex max-w-full items-center gap-1 overflow-hidden"
+                                  title={specialTitle}
+                                >
+                                  <span className="truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                                    {specialRoles[0]}
+                                  </span>
+                                  {specialRoles.length > 1 ? (
+                                    <span className="shrink-0 rounded-md bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                                      +{specialRoles.length - 1}
+                                    </span>
+                                  ) : null}
+                                </div>
                               )}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-3 align-top">
+                            <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
                               {presenceByUserId === null ? (
                                 <span
                                   title="Cargando estado..."
@@ -1254,7 +1393,7 @@ export default function AdminUsuariosPage() {
                                 })()
                               )}
                             </td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="sticky right-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5 text-right shadow-[-1px_0_0_0_rgba(226,232,240,1)] group-hover:bg-slate-50">
                               <div className="inline-flex gap-1">
                                 <Link
                                   href={`/admin/usuarios/${user.id}/metricas`}
