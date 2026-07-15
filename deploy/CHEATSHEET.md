@@ -290,6 +290,8 @@ En **hit**, Network no muestra request `rotacion` de ~15 MB; solo catálogo
 - Migración: `db/migrations/20260616_rotacion_clean_matview.sql`
 - Refresh diario: `visor-refresh-rotacion.timer` (06:15 UTC)
 - Script manual: `scripts/refresh-rotacion-matview.sh`
+- Variacion (`margen_item_dia_roll`): `visor-refresh-variacion.timer` (08:30) +
+  `scripts/refresh-variacion-roll.sh` (ademas del refresh inline del sync 07:50)
 
 **Aplicar migración (una vez; ~3–8 min, pico de CPU en Cloud SQL):**
 
@@ -359,7 +361,7 @@ sudo -u visor bash -c '
 La API usa `periodo-std` solo si `start`/`end` del request coinciden con
 `periodo_start`/`periodo_end` de esa meta (rango rolling default de la UI).
 
-### Timer de refresh diario (06:15 UTC)
+### Timer de refresh diario rotacion (06:15 UTC)
 
 ```bash
 sudo cp /opt/visor-productividad/deploy/systemd/visor-refresh-rotacion.service /etc/systemd/system/
@@ -374,6 +376,33 @@ Refresh manual:
 ```bash
 sudo systemctl start visor-refresh-rotacion.service
 sudo journalctl -u visor-refresh-rotacion -n 30 --no-pager
+```
+
+### Timer de refresh diario variacion (`margen_item_dia_roll`, 08:30)
+
+Complementa el refresh inline del sync 07:50. Misma VM app-server que rotacion.
+
+```bash
+cd /opt/visor-productividad
+sudo -u visor git pull origin main
+
+# Migraciones una vez (si aun no):
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260708_margen_item_dia_roll.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260710_margen_item_dia_roll_margin.sql
+
+sudo cp /opt/visor-productividad/deploy/systemd/visor-refresh-variacion.service /etc/systemd/system/
+sudo cp /opt/visor-productividad/deploy/systemd/visor-refresh-variacion.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now visor-refresh-variacion.timer
+systemctl list-timers visor-refresh-variacion.timer --no-pager
+```
+
+Refresh manual / primer catch-up:
+
+```bash
+sudo systemctl start visor-refresh-variacion.service
+sudo journalctl -u visor-refresh-variacion -n 40 --no-pager
+# o: sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-variacion-roll.sh
 ```
 
 ### Deploy código rotación + cache IDB

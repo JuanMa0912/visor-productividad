@@ -183,10 +183,14 @@ default; ver `shouldApplyMercadoTipoDefault` en `src/lib/margenes/metrics.ts`.
 Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`,
 `db/migrations/20260708_margen_item_dia_roll.sql`.
 
-**Refresh automatico:** el sync diario `visor-etl-sync.timer` (07:50) ya refresca
-`margen_final_roll` y `margen_item_dia_roll` en GCP para la ventana sincronizada cuando
-sube `margen_final` (`scripts/etl/sync-local-to-gcp.sh`). En operacion normal no hace
-falta un timer aparte para `/informe-variacion`.
+**Refresh automatico (dos caminos):**
+
+1. Sync diario `visor-etl-sync.timer` (07:50): al subir `margen_final`,
+   `scripts/etl/sync-local-to-gcp.sh` refresca la ventana sincronizada de
+   `margen_final_roll` y `margen_item_dia_roll`.
+2. Timer dedicado `visor-refresh-variacion.timer` (08:30 en app-server):
+   `scripts/refresh-variacion-roll.sh` reconstruye `margen_item_dia_roll` completo
+   (red de seguridad, mismo patron que `visor-refresh-rotacion`).
 
 Tras migracion nueva o backfill puntual (en GCP como usuario `visor`):
 

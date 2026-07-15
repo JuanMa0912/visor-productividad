@@ -1,0 +1,21 @@
+[Unit]
+Description=Visor - refresh diario de margen_item_dia_roll (informe variacion)
+Documentation=file:///opt/visor-productividad/scripts/refresh-variacion-roll.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=visor
+Group=visor
+WorkingDirectory=/opt/visor-productividad
+# Invocar via bash: los .sh en git van sin +x (100644); systemd exige ejecutable
+# directo y falla con 203/EXEC "Permission denied" tras git pull.
+ExecStart=/bin/bash /opt/visor-productividad/scripts/refresh-variacion-roll.sh
+StandardOutput=journal
+StandardError=journal
+# Endurecimientos basicos
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true

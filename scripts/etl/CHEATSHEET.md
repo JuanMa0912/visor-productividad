@@ -77,6 +77,8 @@ Para llevar ese margen a GCP despues, usa el sync (seccion 1):
 > `margen_item_dia_roll`. El sync refresca **ambos** rolls para la ventana sincronizada cuando
 > toca `margen_final` (aunque venga `--no-refresh`, que solo aplica a la matview de rotacion).
 > Para saltarlos: `--no-roll`. Sin el refresh la UI mostraria datos viejos.
+> Ademas, en app-server: `visor-refresh-variacion.timer` (08:30) hace rebuild completo
+> (ver `deploy/CHEATSHEET.md`).
 
 > **Reglas de negocio del ETL de margen** (detalle en [`margen/README.md`](margen/README.md)):
 > (1) solo carga `id_tipo IN ('3','4')` — la categoria `V` se excluye; (2) la **linea 33**

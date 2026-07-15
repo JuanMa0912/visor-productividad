@@ -20,6 +20,9 @@ Sube el dia a dia de las tablas de **hechos** desde el Postgres **local**
   - `margen_final_roll` (`refresh_margen_final_roll`) — tablero `/margenes`
   - `margen_item_dia_roll` (`refresh_margen_item_dia_roll`) — `/informe-variacion`
   La matview de rotacion se salta con `--no-refresh`; los rollups de margen con `--no-roll`.
+  Complemento en **app-server**: `visor-refresh-variacion.timer` (08:30) reconstruye
+  `margen_item_dia_roll` completo (`scripts/refresh-variacion-roll.sh`) por si el sync
+  no toco `margen_final` o el paso inline fallo.
 
 Corre en el server **192.168.35.232** (ve el local como `localhost` y alcanza GCP).
 

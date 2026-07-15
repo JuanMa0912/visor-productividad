@@ -1,0 +1,18 @@
+[Unit]
+Description=Visor - timer diario de refresh de margen_item_dia_roll (informe variacion)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Todos los dias a las 08:30 (hora del sistema). Despues del sync ETL ~07:50
+# (visor-etl-sync.timer), que ya intenta refrescar la ventana sincronizada.
+# Este job reconstruye el roll completo como red de seguridad (misma idea que
+# visor-refresh-rotacion).
+OnCalendar=*-*-* 08:30:00
+# Si la VM estaba apagada en ese momento, ejecutar al arrancar
+Persistent=true
+# Dispersa la ejecucion para evitar picos
+RandomizedDelaySec=300
+Unit=visor-refresh-variacion.service
+
+[Install]
+WantedBy=timers.target
