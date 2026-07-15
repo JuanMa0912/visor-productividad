@@ -46,9 +46,7 @@ import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { canonicalizeSedeKey } from "@/lib/horarios/visible-sedes";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { AppTopBar } from "@/components/portal/app-top-bar";
-import {
-  UserFormModal,
-} from "@/app/admin/usuarios/user-form-modal";
+import { UserFormModal } from "@/app/admin/usuarios/user-form-modal";
 import type { UserFormState } from "@/app/admin/usuarios/user-form-validation";
 
 const ALL_SEDES_VALUE = "Todas";
@@ -420,11 +418,7 @@ const PRESENCE_TICK_MS = 30_000;
 const PRESENCE_ACTIVE_MAX_MS = 10 * 60_000;
 const PRESENCE_AWAY_MAX_MS = 30 * 60_000;
 
-type PresenceState =
-  | "active"
-  | "away"
-  | "offline"
-  | "disabled";
+type PresenceState = "active" | "away" | "offline" | "disabled";
 
 type PresenceBadge = {
   state: PresenceState;
@@ -524,14 +518,15 @@ export default function AdminUsuariosPage() {
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "user">("all");
-  const [presenceFilter, setPresenceFilter] = useState<
-    "all" | PresenceState
-  >("all");
+  const [presenceFilter, setPresenceFilter] = useState<"all" | PresenceState>(
+    "all",
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [usersPage, setUsersPage] = useState(1);
-  const [presenceByUserId, setPresenceByUserId] = useState<
-    Record<string, string> | null
-  >(null);
+  const [presenceByUserId, setPresenceByUserId] = useState<Record<
+    string,
+    string
+  > | null>(null);
   const [presenceNow, setPresenceNow] = useState<number>(() => Date.now());
 
   const getCsrfToken = () => getCookieValue("vp_csrf");
@@ -578,9 +573,8 @@ export default function AdminUsuariosPage() {
   const newUsersThisMonth = useMemo(() => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    return users.filter(
-      (u) => new Date(u.created_at).getTime() >= start,
-    ).length;
+    return users.filter((u) => new Date(u.created_at).getTime() >= start)
+      .length;
   }, [users]);
 
   const filteredTableUsers = useMemo(() => {
@@ -595,11 +589,8 @@ export default function AdminUsuariosPage() {
     if (presenceFilter !== "all" && presenceByUserId !== null) {
       list = list.filter(
         (u) =>
-          getPresenceBadge(
-            u,
-            presenceByUserId[u.id] ?? null,
-            presenceNow,
-          ).state === presenceFilter,
+          getPresenceBadge(u, presenceByUserId[u.id] ?? null, presenceNow)
+            .state === presenceFilter,
       );
     }
     return list;
@@ -722,8 +713,7 @@ export default function AdminUsuariosPage() {
 
   const openEdit = (user: UserRow) => {
     const portalProfile = resolveUserPortalProfile(user);
-    const allowedSedesRaw =
-      user.allowedSedes ?? (user.sede ? [user.sede] : []);
+    const allowedSedesRaw = user.allowedSedes ?? (user.sede ? [user.sede] : []);
     const allowedSedes = Array.from(
       new Set(
         allowedSedesRaw
@@ -958,653 +948,681 @@ export default function AdminUsuariosPage() {
       <AppTopBar showBack={false} />
       <div className="px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto flex w-full max-w-[min(100%,112rem)] flex-col gap-6">
-        <header className="flex flex-col gap-6 rounded-xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex gap-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
-              <Sparkles className="h-5 w-5" strokeWidth={2} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Administración <span className="text-slate-400">●</span>{" "}
-                {APP_VERSION_LABEL}
-              </p>
-              <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                Usuarios de la aplicación
-              </h1>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-                Gestiona roles, accesos por sección y actividad reciente del
-                portal.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <Link
-              href="/secciones"
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              <LayoutGrid className="h-4 w-4 text-slate-500" />
-              Ir a secciones
-            </Link>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700"
-            >
-              <UserPlus className="h-4 w-4" />
-              Nuevo usuario
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
-            >
-              <LogOut className="h-4 w-4" />
-              Cerrar sesión
-            </button>
-          </div>
-        </header>
-
-        {loading ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
-            Cargando usuarios...
-          </div>
-        ) : (
-          <>
-            <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-              <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">
-                <div className="p-5 sm:p-6">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                      <Users className="h-5 w-5" />
-                    </div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
-                      +{newUsersThisMonth} este mes
-                    </span>
-                  </div>
-                  <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Total usuarios
-                  </p>
-                  <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
-                    {stats.total}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Cuentas registradas
-                  </p>
-                </div>
-                <div className="p-5 sm:p-6">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                      <UserCheck className="h-5 w-5" />
-                    </div>
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50/80 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      LIVE
-                    </span>
-                  </div>
-                  <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Usuarios activos
-                  </p>
-                  <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
-                    {stats.active}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Con acceso habilitado
-                  </p>
-                </div>
-                <div className="p-5 sm:p-6">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                      <ShieldCheck className="h-5 w-5" />
-                    </div>
-                    <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      Nivel raíz
-                    </span>
-                  </div>
-                  <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Administradores
-                  </p>
-                  <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
-                    {String(stats.admins).padStart(2, "0")}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Roles con permisos totales
-                  </p>
-                </div>
+          <header className="flex flex-col gap-6 rounded-xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+                <Sparkles className="h-5 w-5" strokeWidth={2} />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Administración <span className="text-slate-400">●</span>{" "}
+                  {APP_VERSION_LABEL}
+                </p>
+                <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                  Usuarios de la aplicación
+                </h1>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+                  Gestiona roles, accesos por sección y actividad reciente del
+                  portal.
+                </p>
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <Link
+                href="/secciones"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                <LayoutGrid className="h-4 w-4 text-slate-500" />
+                Ir a secciones
+              </Link>
+              <button
+                type="button"
+                onClick={openCreate}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700"
+              >
+                <UserPlus className="h-4 w-4" />
+                Nuevo usuario
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+              >
+                <LogOut className="h-4 w-4" />
+                Cerrar sesión
+              </button>
+            </div>
+          </header>
 
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+          {loading ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
+              Cargando usuarios...
+            </div>
+          ) : (
+            <>
               <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-                <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-bold text-slate-900">
-                      Usuarios
-                    </h2>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                      {filteredTableUsers.length} registrados
-                    </span>
-                  </div>
-                  <div className="flex flex-1 flex-wrap items-center gap-2 sm:max-w-xl sm:justify-end">
-                    <div className="relative min-w-[200px] flex-1">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="search"
-                        placeholder="Buscar usuario..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-                      />
+                <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">
+                  <div className="p-5 sm:p-6">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                        <Users className="h-5 w-5" />
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                        +{newUsersThisMonth} este mes
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setFiltersOpen((o) => !o)}
-                      className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
-                        filtersOpen ||
-                        roleFilter !== "all" ||
-                        presenceFilter !== "all"
-                          ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      <Filter className="h-4 w-4" />
-                      Filtros
-                      {(roleFilter !== "all" || presenceFilter !== "all") && (
-                        <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
-                          {(roleFilter !== "all" ? 1 : 0) +
-                            (presenceFilter !== "all" ? 1 : 0)}
-                        </span>
-                      )}
-                    </button>
+                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Total usuarios
+                    </p>
+                    <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
+                      {stats.total}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Cuentas registradas
+                    </p>
+                  </div>
+                  <div className="p-5 sm:p-6">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                        <UserCheck className="h-5 w-5" />
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50/80 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        LIVE
+                      </span>
+                    </div>
+                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Usuarios activos
+                    </p>
+                    <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
+                      {stats.active}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Con acceso habilitado
+                    </p>
+                  </div>
+                  <div className="p-5 sm:p-6">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                        <ShieldCheck className="h-5 w-5" />
+                      </div>
+                      <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                        Nivel raíz
+                      </span>
+                    </div>
+                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Administradores
+                    </p>
+                    <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
+                      {String(stats.admins).padStart(2, "0")}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Roles con permisos totales
+                    </p>
                   </div>
                 </div>
-                {filtersOpen && (
-                  <div className="space-y-2 border-b border-slate-100 bg-slate-50/50 px-4 py-3 sm:px-5">
+              </div>
+
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+                <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+                  <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="mr-1 text-xs font-medium text-slate-500">
-                        Rol:
+                      <h2 className="text-base font-bold text-slate-900">
+                        Usuarios
+                      </h2>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                        {filteredTableUsers.length} registrados
                       </span>
-                      {(
-                        [
-                          ["all", "Todos"],
-                          ["admin", "Admin"],
-                          ["user", "User"],
-                        ] as const
-                      ).map(([value, label]) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setRoleFilter(value)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                            roleFilter === value
-                              ? "bg-indigo-600 text-white shadow-sm"
-                              : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="mr-1 text-xs font-medium text-slate-500">
-                        Estado:
-                      </span>
-                      {(
-                        [
-                          ["all", "Todos", null, null],
-                          ["active", "Activos", "bg-emerald-500", "text-emerald-700"],
-                          ["away", "Ausentes", "bg-amber-400", "text-amber-700"],
-                          ["offline", "Desconectados", "bg-slate-400", "text-slate-600"],
-                          ["disabled", "Desactivados", "bg-rose-500", "text-rose-700"],
-                        ] as const
-                      ).map(([value, label, dotClass, textClass]) => {
-                        const isSelected = presenceFilter === value;
-                        const count =
-                          value === "all"
-                            ? null
-                            : presenceByUserId === null
-                              ? null
-                              : users.filter(
-                                  (u) =>
-                                    getPresenceBadge(
-                                      u,
-                                      presenceByUserId[u.id] ?? null,
-                                      presenceNow,
-                                    ).state === value,
-                                ).length;
-                        return (
+                    <div className="flex flex-1 flex-wrap items-center gap-2 sm:max-w-xl sm:justify-end">
+                      <div className="relative min-w-[200px] flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="search"
+                          placeholder="Buscar usuario..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFiltersOpen((o) => !o)}
+                        className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+                          filtersOpen ||
+                          roleFilter !== "all" ||
+                          presenceFilter !== "all"
+                            ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Filter className="h-4 w-4" />
+                        Filtros
+                        {(roleFilter !== "all" || presenceFilter !== "all") && (
+                          <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
+                            {(roleFilter !== "all" ? 1 : 0) +
+                              (presenceFilter !== "all" ? 1 : 0)}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  {filtersOpen && (
+                    <div className="space-y-2 border-b border-slate-100 bg-slate-50/50 px-4 py-3 sm:px-5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="mr-1 text-xs font-medium text-slate-500">
+                          Rol:
+                        </span>
+                        {(
+                          [
+                            ["all", "Todos"],
+                            ["admin", "Admin"],
+                            ["user", "User"],
+                          ] as const
+                        ).map(([value, label]) => (
                           <button
                             key={value}
                             type="button"
-                            onClick={() => setPresenceFilter(value)}
-                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
-                              isSelected
+                            onClick={() => setRoleFilter(value)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                              roleFilter === value
                                 ? "bg-indigo-600 text-white shadow-sm"
-                                : `bg-white ring-1 ring-slate-200 hover:bg-slate-50 ${
-                                    textClass ?? "text-slate-600"
-                                  }`
+                                : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
                             }`}
                           >
-                            {dotClass && (
-                              <span
-                                className={`h-1.5 w-1.5 rounded-full ${
-                                  isSelected ? "bg-white" : dotClass
-                                }`}
-                              />
-                            )}
                             {label}
-                            {count !== null && (
-                              <span
-                                className={`ml-0.5 rounded-full px-1.5 text-[10px] font-bold ${
-                                  isSelected
-                                    ? "bg-white/25 text-white"
-                                    : "bg-slate-100 text-slate-600"
-                                }`}
-                              >
-                                {count}
-                              </span>
-                            )}
                           </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
-                    <thead>
-                      <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        <th className="sticky left-0 z-20 border-b border-slate-100 bg-slate-50 px-4 py-3 shadow-[1px_0_0_0_rgba(226,232,240,1)]">
-                          Usuario
-                        </th>
-                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
-                          Perfil
-                        </th>
-                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
-                          Sede
-                        </th>
-                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
-                          Líneas
-                        </th>
-                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
-                          Secciones
-                        </th>
-                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
-                          Subtableros
-                        </th>
-                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
-                          Especial
-                        </th>
-                        <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
-                          Estado
-                        </th>
-                        <th className="sticky right-0 z-20 border-b border-slate-100 bg-slate-50 px-4 py-3 text-right shadow-[-1px_0_0_0_rgba(226,232,240,1)]">
-                          Acciones
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedTableUsers.map((user, index) => {
-                        const palette =
-                          AVATAR_STYLES[index % AVATAR_STYLES.length]!;
-                        const emptySummary = {
-                          label: "—",
-                          title: "—",
-                          muted: true,
-                        } satisfies PermissionCellSummary;
-                        const sedesSummary =
-                          user.role === "admin"
-                            ? emptySummary
-                            : summarizeAllowedSedes(
-                                user.allowedSedes,
-                                user.sede ??
-                                  inferSedeFromUsername(user.username),
-                              );
-                        const linesSummary =
-                          user.role === "admin"
-                            ? emptySummary
-                            : summarizeAllowedLines(user.allowedLines);
-                        const dashboardsSummary =
-                          user.role === "admin"
-                            ? emptySummary
-                            : summarizeAllowedDashboards(
-                                user.allowedDashboards,
-                              );
-                        const subdashboardsSummary =
-                          user.role === "admin"
-                            ? emptySummary
-                            : summarizeAllowedSubdashboards(
-                                user.allowedSubdashboards,
-                              );
-                        const specialRoles =
-                          user.role === "admin"
-                            ? []
-                            : (user.specialRoles ?? []);
-                        const specialTitle = specialRoles.join(", ");
-                        return (
-                          <tr
-                            key={user.id}
-                            className="group transition-colors hover:bg-slate-50/90"
-                          >
-                            <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5 shadow-[1px_0_0_0_rgba(226,232,240,1)] group-hover:bg-slate-50">
-                              <div className="flex min-w-42 items-center gap-3">
-                                <div
-                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${palette.bg} ${palette.text}`}
-                                >
-                                  {userInitials(user.username)}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="truncate font-semibold text-slate-900">
-                                    {user.username}
-                                  </div>
-                                  <div className="truncate text-[11px] text-slate-400">
-                                    {user.username}@portal
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
-                              <span
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                                  user.role === "admin"
-                                    ? "border-indigo-100 bg-indigo-50 text-indigo-800"
-                                    : "border-slate-200 bg-slate-50 text-slate-600"
-                                }`}
-                              >
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="mr-1 text-xs font-medium text-slate-500">
+                          Estado:
+                        </span>
+                        {(
+                          [
+                            ["all", "Todos", null, null],
+                            [
+                              "active",
+                              "Activos",
+                              "bg-emerald-500",
+                              "text-emerald-700",
+                            ],
+                            [
+                              "away",
+                              "Ausentes",
+                              "bg-amber-400",
+                              "text-amber-700",
+                            ],
+                            [
+                              "offline",
+                              "Desconectados",
+                              "bg-slate-400",
+                              "text-slate-600",
+                            ],
+                            [
+                              "disabled",
+                              "Desactivados",
+                              "bg-rose-500",
+                              "text-rose-700",
+                            ],
+                          ] as const
+                        ).map(([value, label, dotClass, textClass]) => {
+                          const isSelected = presenceFilter === value;
+                          const count =
+                            value === "all"
+                              ? null
+                              : presenceByUserId === null
+                                ? null
+                                : users.filter(
+                                    (u) =>
+                                      getPresenceBadge(
+                                        u,
+                                        presenceByUserId[u.id] ?? null,
+                                        presenceNow,
+                                      ).state === value,
+                                  ).length;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setPresenceFilter(value)}
+                              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                                isSelected
+                                  ? "bg-indigo-600 text-white shadow-sm"
+                                  : `bg-white ring-1 ring-slate-200 hover:bg-slate-50 ${
+                                      textClass ?? "text-slate-600"
+                                    }`
+                              }`}
+                            >
+                              {dotClass && (
                                 <span
                                   className={`h-1.5 w-1.5 rounded-full ${
-                                    user.role === "admin"
-                                      ? "bg-indigo-500"
-                                      : "bg-slate-400"
+                                    isSelected ? "bg-white" : dotClass
                                   }`}
                                 />
-                                {getPortalProfileLabel(
-                                  resolveUserPortalProfile(user),
-                                )}
-                              </span>
-                            </td>
-                            <PermissionSummaryCell
-                              summary={sedesSummary}
-                              className="max-w-36 border-b border-slate-100 px-3 py-2.5"
-                            />
-                            <PermissionSummaryCell
-                              summary={linesSummary}
-                              className="max-w-28 border-b border-slate-100 px-3 py-2.5"
-                            />
-                            <PermissionSummaryCell
-                              summary={dashboardsSummary}
-                              className="max-w-32 border-b border-slate-100 px-3 py-2.5"
-                            />
-                            <PermissionSummaryCell
-                              summary={subdashboardsSummary}
-                              className="max-w-40 border-b border-slate-100 px-3 py-2.5"
-                            />
-                            <td className="max-w-36 border-b border-slate-100 px-3 py-2.5">
-                              {user.role === "admin" ? (
-                                <span className="text-xs text-slate-400">—</span>
-                              ) : specialRoles.length === 0 ? (
-                                <span className="text-xs text-slate-400">—</span>
-                              ) : (
-                                <div
-                                  className="flex max-w-full items-center gap-1 overflow-hidden"
-                                  title={specialTitle}
-                                >
-                                  <span className="truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
-                                    {specialRoles[0]}
-                                  </span>
-                                  {specialRoles.length > 1 ? (
-                                    <span className="shrink-0 rounded-md bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                                      +{specialRoles.length - 1}
-                                    </span>
-                                  ) : null}
-                                </div>
                               )}
-                            </td>
-                            <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
-                              {presenceByUserId === null ? (
+                              {label}
+                              {count !== null && (
                                 <span
-                                  title="Cargando estado..."
-                                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400"
+                                  className={`ml-0.5 rounded-full px-1.5 text-[10px] font-bold ${
+                                    isSelected
+                                      ? "bg-white/25 text-white"
+                                      : "bg-slate-100 text-slate-600"
+                                  }`}
                                 >
-                                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-300" />
-                                  Cargando
+                                  {count}
                                 </span>
-                              ) : (
-                                (() => {
-                                  const badge = getPresenceBadge(
-                                    user,
-                                    presenceByUserId[user.id] ?? null,
-                                    presenceNow,
-                                  );
-                                  return (
-                                    <span
-                                      title={badge.tooltip}
-                                      className={`inline-flex items-center gap-1.5 text-xs font-semibold ${badge.textClass}`}
-                                    >
-                                      <span
-                                        className={`h-2 w-2 shrink-0 rounded-full ${badge.dotClass} ${
-                                          badge.state === "active"
-                                            ? "animate-pulse"
-                                            : ""
-                                        }`}
-                                      />
-                                      {badge.label}
-                                    </span>
-                                  );
-                                })()
                               )}
-                            </td>
-                            <td className="sticky right-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5 text-right shadow-[-1px_0_0_0_rgba(226,232,240,1)] group-hover:bg-slate-50">
-                              <div className="inline-flex gap-1">
-                                <Link
-                                  href={`/admin/usuarios/${user.id}/metricas`}
-                                  className="rounded-lg p-1.5 text-emerald-600 transition hover:bg-emerald-50"
-                                  title="Ver métricas de uso"
-                                >
-                                  <BarChart3 className="h-4 w-4" />
-                                </Link>
-                                <button
-                                  type="button"
-                                  onClick={() => openEdit(user)}
-                                  className="rounded-lg p-1.5 text-indigo-600 transition hover:bg-indigo-50"
-                                  title="Editar"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(user.id)}
-                                  className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50"
-                                  title="Eliminar"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {filteredTableUsers.length === 0 && (
-                    <div className="py-12 text-center text-sm text-slate-500">
-                      {sortedUsers.length === 0
-                        ? "No hay usuarios registrados todavía."
-                        : "No hay usuarios que coincidan con la búsqueda o filtros."}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
-                </div>
-                <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                  <p className="text-sm text-slate-500">
-                    {filteredTableUsers.length === 0 ? (
-                      <>Mostrando 0 de {sortedUsers.length} usuarios</>
-                    ) : (
-                      <>
-                        Mostrando{" "}
-                        {(usersPage - 1) * USERS_PAGE_SIZE + 1} a{" "}
-                        {Math.min(
-                          usersPage * USERS_PAGE_SIZE,
-                          filteredTableUsers.length,
-                        )}{" "}
-                        de {filteredTableUsers.length} usuarios
-                        {searchQuery.trim() ||
-                        roleFilter !== "all" ||
-                        presenceFilter !== "all"
-                          ? ` (total ${sortedUsers.length})`
-                          : ""}
-                      </>
-                    )}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={usersPage <= 1}
-                      onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
-                      className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <ChevronLeft className="mr-1 h-4 w-4" />
-                      Anterior
-                    </button>
-                    <span className="hidden text-xs text-slate-500 sm:inline">
-                      Página {usersPage} de {usersTotalPages}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={usersPage >= usersTotalPages}
-                      onClick={() =>
-                        setUsersPage((p) => Math.min(usersTotalPages, p + 1))
-                      }
-                      className="inline-flex h-8 items-center rounded-lg border border-slate-900 bg-white px-3 text-xs font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Siguiente
-                      <ChevronRight className="ml-1 h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <aside className="flex flex-col rounded-xl border border-slate-100 bg-white shadow-sm">
-                <div className="flex items-start justify-between gap-2 border-b border-slate-100 p-4 sm:p-5">
-                  <div>
-                    <h2 className="text-base font-bold text-slate-900">
-                      Accesos recientes
-                    </h2>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Últimos {RECENT_ACCESS_LOGS_LIMIT} eventos
-                    </p>
-                  </div>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={handleClearLogs}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Borrar
-                    </button>
-                  )}
-                </div>
-                <div className="relative flex-1 p-4 sm:p-5">
-                  <div className="absolute bottom-6 left-[1.35rem] top-8 w-px bg-slate-200" />
-                  <ul className="relative space-y-0">
-                    {logs.map((log, logIndex) => {
-                      const lp =
-                        AVATAR_STYLES[logIndex % AVATAR_STYLES.length]!;
-                      return (
-                        <li key={log.id} className="relative pl-10 pb-6 last:pb-0">
-                          <div
-                            className={`absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold ${lp.bg} ${lp.text} ring-4 ring-white`}
-                          >
-                            {userInitials(log.username)}
-                          </div>
-                          <div
-                            className={`rounded-lg border p-3 ${
-                              logIndex === 0
-                                ? "border-indigo-200 bg-indigo-50/60"
-                                : "border-slate-100 bg-slate-50/80"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <Link
-                                href={`/admin/usuarios/${log.user_id}/metricas`}
-                                className="font-semibold text-slate-900 transition hover:text-indigo-700 hover:underline"
-                              >
-                                {log.username}
-                              </Link>
-                              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                Login
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {formatRelativeTime(log.logged_at)}
-                            </p>
-                            <p className="mt-1 text-[11px] text-slate-400">
-                              {log.ip ?? "Origen auditado desconocido"}
-                            </p>
-                            <p
-                              className="mt-0.5 text-[11px] text-slate-500"
-                              title={log.user_agent ?? undefined}
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          <th className="sticky left-0 z-20 border-b border-slate-100 bg-slate-50 px-4 py-3 shadow-[1px_0_0_0_rgba(226,232,240,1)]">
+                            Usuario
+                          </th>
+                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                            Perfil
+                          </th>
+                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                            Sede
+                          </th>
+                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                            Líneas
+                          </th>
+                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                            Secciones
+                          </th>
+                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                            Subtableros
+                          </th>
+                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                            Especial
+                          </th>
+                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                            Estado
+                          </th>
+                          <th className="sticky right-0 z-20 border-b border-slate-100 bg-slate-50 px-4 py-3 text-right shadow-[-1px_0_0_0_rgba(226,232,240,1)]">
+                            Acciones
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedTableUsers.map((user, index) => {
+                          const palette =
+                            AVATAR_STYLES[index % AVATAR_STYLES.length]!;
+                          const emptySummary = {
+                            label: "—",
+                            title: "—",
+                            muted: true,
+                          } satisfies PermissionCellSummary;
+                          const sedesSummary =
+                            user.role === "admin"
+                              ? emptySummary
+                              : summarizeAllowedSedes(
+                                  user.allowedSedes,
+                                  user.sede ??
+                                    inferSedeFromUsername(user.username),
+                                );
+                          const linesSummary =
+                            user.role === "admin"
+                              ? emptySummary
+                              : summarizeAllowedLines(user.allowedLines);
+                          const dashboardsSummary =
+                            user.role === "admin"
+                              ? emptySummary
+                              : summarizeAllowedDashboards(
+                                  user.allowedDashboards,
+                                );
+                          const subdashboardsSummary =
+                            user.role === "admin"
+                              ? emptySummary
+                              : summarizeAllowedSubdashboards(
+                                  user.allowedSubdashboards,
+                                );
+                          const specialRoles =
+                            user.role === "admin"
+                              ? []
+                              : (user.specialRoles ?? []);
+                          const specialTitle = specialRoles.join(", ");
+                          return (
+                            <tr
+                              key={user.id}
+                              className="group transition-colors hover:bg-slate-50/90"
                             >
-                              {formatUserAgentLabel(log.user_agent)}
-                            </p>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {logs.length === 0 && (
+                              <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5 shadow-[1px_0_0_0_rgba(226,232,240,1)] group-hover:bg-slate-50">
+                                <div className="flex min-w-42 items-center gap-3">
+                                  <div
+                                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${palette.bg} ${palette.text}`}
+                                  >
+                                    {userInitials(user.username)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="truncate font-semibold text-slate-900">
+                                      {user.username}
+                                    </div>
+                                    <div className="truncate text-[11px] text-slate-400">
+                                      {user.username}@portal
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
+                                <span
+                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                                    user.role === "admin"
+                                      ? "border-indigo-100 bg-indigo-50 text-indigo-800"
+                                      : "border-slate-200 bg-slate-50 text-slate-600"
+                                  }`}
+                                >
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${
+                                      user.role === "admin"
+                                        ? "bg-indigo-500"
+                                        : "bg-slate-400"
+                                    }`}
+                                  />
+                                  {getPortalProfileLabel(
+                                    resolveUserPortalProfile(user),
+                                  )}
+                                </span>
+                              </td>
+                              <PermissionSummaryCell
+                                summary={sedesSummary}
+                                className="max-w-36 border-b border-slate-100 px-3 py-2.5"
+                              />
+                              <PermissionSummaryCell
+                                summary={linesSummary}
+                                className="max-w-28 border-b border-slate-100 px-3 py-2.5"
+                              />
+                              <PermissionSummaryCell
+                                summary={dashboardsSummary}
+                                className="max-w-32 border-b border-slate-100 px-3 py-2.5"
+                              />
+                              <PermissionSummaryCell
+                                summary={subdashboardsSummary}
+                                className="max-w-40 border-b border-slate-100 px-3 py-2.5"
+                              />
+                              <td className="max-w-36 border-b border-slate-100 px-3 py-2.5">
+                                {user.role === "admin" ? (
+                                  <span className="text-xs text-slate-400">
+                                    —
+                                  </span>
+                                ) : specialRoles.length === 0 ? (
+                                  <span className="text-xs text-slate-400">
+                                    —
+                                  </span>
+                                ) : (
+                                  <div
+                                    className="flex max-w-full items-center gap-1 overflow-hidden"
+                                    title={specialTitle}
+                                  >
+                                    <span className="truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                                      {specialRoles[0]}
+                                    </span>
+                                    {specialRoles.length > 1 ? (
+                                      <span className="shrink-0 rounded-md bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                                        +{specialRoles.length - 1}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
+                                {presenceByUserId === null ? (
+                                  <span
+                                    title="Cargando estado..."
+                                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400"
+                                  >
+                                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-300" />
+                                    Cargando
+                                  </span>
+                                ) : (
+                                  (() => {
+                                    const badge = getPresenceBadge(
+                                      user,
+                                      presenceByUserId[user.id] ?? null,
+                                      presenceNow,
+                                    );
+                                    return (
+                                      <span
+                                        title={badge.tooltip}
+                                        className={`inline-flex items-center gap-1.5 text-xs font-semibold ${badge.textClass}`}
+                                      >
+                                        <span
+                                          className={`h-2 w-2 shrink-0 rounded-full ${badge.dotClass} ${
+                                            badge.state === "active"
+                                              ? "animate-pulse"
+                                              : ""
+                                          }`}
+                                        />
+                                        {badge.label}
+                                      </span>
+                                    );
+                                  })()
+                                )}
+                              </td>
+                              <td className="sticky right-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5 text-right shadow-[-1px_0_0_0_rgba(226,232,240,1)] group-hover:bg-slate-50">
+                                <div className="inline-flex gap-1">
+                                  <Link
+                                    href={`/admin/usuarios/${user.id}/metricas`}
+                                    className="rounded-lg p-1.5 text-emerald-600 transition hover:bg-emerald-50"
+                                    title="Ver métricas de uso"
+                                  >
+                                    <BarChart3 className="h-4 w-4" />
+                                  </Link>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEdit(user)}
+                                    className="rounded-lg p-1.5 text-indigo-600 transition hover:bg-indigo-50"
+                                    title="Editar"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(user.id)}
+                                    className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50"
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {filteredTableUsers.length === 0 && (
+                      <div className="py-12 text-center text-sm text-slate-500">
+                        {sortedUsers.length === 0
+                          ? "No hay usuarios registrados todavía."
+                          : "No hay usuarios que coincidan con la búsqueda o filtros."}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                     <p className="text-sm text-slate-500">
-                      Sin accesos registrados.
+                      {filteredTableUsers.length === 0 ? (
+                        <>Mostrando 0 de {sortedUsers.length} usuarios</>
+                      ) : (
+                        <>
+                          Mostrando {(usersPage - 1) * USERS_PAGE_SIZE + 1} a{" "}
+                          {Math.min(
+                            usersPage * USERS_PAGE_SIZE,
+                            filteredTableUsers.length,
+                          )}{" "}
+                          de {filteredTableUsers.length} usuarios
+                          {searchQuery.trim() ||
+                          roleFilter !== "all" ||
+                          presenceFilter !== "all"
+                            ? ` (total ${sortedUsers.length})`
+                            : ""}
+                        </>
+                      )}
                     </p>
-                  )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={usersPage <= 1}
+                        onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
+                        className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ChevronLeft className="mr-1 h-4 w-4" />
+                        Anterior
+                      </button>
+                      <span className="hidden text-xs text-slate-500 sm:inline">
+                        Página {usersPage} de {usersTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={usersPage >= usersTotalPages}
+                        onClick={() =>
+                          setUsersPage((p) => Math.min(usersTotalPages, p + 1))
+                        }
+                        className="inline-flex h-8 items-center rounded-lg border border-slate-900 bg-white px-3 text-xs font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Siguiente
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="border-t border-slate-100 p-4 space-y-2">
-                  <Link
-                    href="/admin/usuarios/accesos"
-                    className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
-                  >
-                    Ver registro completo
-                    <span aria-hidden>→</span>
-                  </Link>
-                  <Link
-                    href="/admin/usuarios/uso-tableros"
-                    className="block text-sm font-medium text-violet-700 transition hover:text-violet-800 hover:underline"
-                  >
-                    Uso de tableros
-                  </Link>
-                  <Link
-                    href="/admin/usuarios/auditoria"
-                    className="block text-sm font-medium text-rose-700 transition hover:text-rose-800 hover:underline"
-                  >
-                    Auditoría
-                  </Link>
-                </div>
-              </aside>
-            </div>
-          </>
-        )}
-      </div>
 
-      <UserFormModal
-        open={formOpen}
-        formState={formState}
-        setFormState={setFormState}
-        onClose={closeForm}
-        onSave={handleSave}
-        saving={saving}
-        isAdminProfile={isAdminProfile}
-        canEditManualPermissions={canEditManualPermissions}
-        canEditDashboardPermissions={canEditDashboardPermissions}
-        dashboardPermissionsOnly={dashboardPermissionsOnly}
-        selectedProfileSummary={selectedProfileSummary}
-        sedeOptions={USER_SEDE_OPTIONS}
-        sectionOptions={SECTION_OPTIONS}
-        subsectionLabels={SUBSECTION_LABELS}
-        specialRoleOptions={SPECIAL_ROLE_OPTIONS}
-        passwordInputRef={passwordInputRef}
-        onPortalProfileChange={(portalProfile) =>
-          setFormState((prev) => applyPortalProfileToForm(prev, portalProfile))
-        }
-      />
+                <aside className="flex flex-col rounded-xl border border-slate-100 bg-white shadow-sm">
+                  <div className="flex items-start justify-between gap-2 border-b border-slate-100 p-4 sm:p-5">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900">
+                        Accesos recientes
+                      </h2>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Últimos {RECENT_ACCESS_LOGS_LIMIT} eventos
+                      </p>
+                    </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleClearLogs}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Borrar
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative flex-1 p-4 sm:p-5">
+                    <div className="absolute bottom-6 left-[1.35rem] top-8 w-px bg-slate-200" />
+                    <ul className="relative space-y-0">
+                      {logs.map((log, logIndex) => {
+                        const lp =
+                          AVATAR_STYLES[logIndex % AVATAR_STYLES.length]!;
+                        return (
+                          <li
+                            key={log.id}
+                            className="relative pl-10 pb-6 last:pb-0"
+                          >
+                            <div
+                              className={`absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold ${lp.bg} ${lp.text} ring-4 ring-white`}
+                            >
+                              {userInitials(log.username)}
+                            </div>
+                            <div
+                              className={`rounded-lg border p-3 ${
+                                logIndex === 0
+                                  ? "border-indigo-200 bg-indigo-50/60"
+                                  : "border-slate-100 bg-slate-50/80"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <Link
+                                  href={`/admin/usuarios/${log.user_id}/metricas`}
+                                  className="font-semibold text-slate-900 transition hover:text-indigo-700 hover:underline"
+                                >
+                                  {log.username}
+                                </Link>
+                                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                  Login
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {formatRelativeTime(log.logged_at)}
+                              </p>
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                {log.ip ?? "Origen auditado desconocido"}
+                              </p>
+                              <p
+                                className="mt-0.5 text-[11px] text-slate-500"
+                                title={log.user_agent ?? undefined}
+                              >
+                                {formatUserAgentLabel(log.user_agent)}
+                              </p>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {logs.length === 0 && (
+                      <p className="text-sm text-slate-500">
+                        Sin accesos registrados.
+                      </p>
+                    )}
+                  </div>
+                  <div className="border-t border-slate-100 p-4 space-y-2">
+                    <Link
+                      href="/admin/usuarios/accesos"
+                      className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
+                    >
+                      Ver registro completo
+                      <span aria-hidden>→</span>
+                    </Link>
+                    <Link
+                      href="/admin/usuarios/uso-tableros"
+                      className="block text-sm font-medium text-violet-700 transition hover:text-violet-800 hover:underline"
+                    >
+                      Uso de tableros
+                    </Link>
+                    <Link
+                      href="/admin/usuarios/auditoria"
+                      className="block text-sm font-medium text-rose-700 transition hover:text-rose-800 hover:underline"
+                    >
+                      Auditoría
+                    </Link>
+                  </div>
+                </aside>
+              </div>
+            </>
+          )}
+        </div>
+
+        <UserFormModal
+          open={formOpen}
+          formState={formState}
+          setFormState={setFormState}
+          onClose={closeForm}
+          onSave={handleSave}
+          saving={saving}
+          isAdminProfile={isAdminProfile}
+          canEditManualPermissions={canEditManualPermissions}
+          canEditDashboardPermissions={canEditDashboardPermissions}
+          dashboardPermissionsOnly={dashboardPermissionsOnly}
+          selectedProfileSummary={selectedProfileSummary}
+          sedeOptions={USER_SEDE_OPTIONS}
+          sectionOptions={SECTION_OPTIONS}
+          subsectionLabels={SUBSECTION_LABELS}
+          specialRoleOptions={SPECIAL_ROLE_OPTIONS}
+          passwordInputRef={passwordInputRef}
+          onPortalProfileChange={(portalProfile) =>
+            setFormState((prev) =>
+              applyPortalProfileToForm(prev, portalProfile),
+            )
+          }
+        />
       </div>
     </div>
   );
