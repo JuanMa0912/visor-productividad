@@ -1432,6 +1432,12 @@ export default function AdminUsuariosPage() {
                   >
                     Uso de tableros
                   </Link>
+                  <Link
+                    href="/admin/usuarios/auditoria"
+                    className="block text-sm font-medium text-rose-700 transition hover:text-rose-800 hover:underline"
+                  >
+                    Auditoría
+                  </Link>
                 </div>
               </aside>
             </div>

@@ -5,6 +5,9 @@
 #   - app_user_activity_log (heartbeats de actividad)
 #   - app_user_login_logs   (historial de logins)
 #   - app_user_sessions     (sesiones expiradas o antiguas)
+# Y de mas de AUDIT_RETENTION_DAYS (default 90) en:
+#   - app_user_login_attempt_log
+#   - app_user_admin_audit
 #
 # Lee las credenciales desde /opt/visor-productividad/.env.local (las mismas
 # que usa el servicio visor.service) y conecta via SSL.
@@ -20,6 +23,7 @@
 set -euo pipefail
 
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
+AUDIT_RETENTION_DAYS="${AUDIT_RETENTION_DAYS:-90}"
 ENV_FILE="${ENV_FILE:-/opt/visor-productividad/.env.local}"
 LOG_FILE="${LOG_FILE:-/var/log/visor-cleanup.log}"
 DRY_RUN=0
@@ -77,10 +81,21 @@ count_rows() {
   "${PSQL[@]}" -c "$sql" | tr -d '[:space:]'
 }
 
+table_exists() {
+  local table="$1"
+  local exists
+  exists=$(count_rows "SELECT to_regclass('public.${table}') IS NOT NULL;")
+  [[ "$exists" == "t" ]]
+}
+
 run_delete() {
   local table="$1"
   local where="$2"
   local before after deleted
+  if ! table_exists "$table"; then
+    log "${table}: omitida (tabla no existe)"
+    return
+  fi
   before=$(count_rows "SELECT COUNT(*) FROM ${table};")
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -95,17 +110,21 @@ run_delete() {
   log "${table}: borradas ${deleted} filas (antes ${before}, ahora ${after})"
 }
 
-log "Iniciando limpieza semanal (retencion=${RETENTION_DAYS} dias, dry_run=${DRY_RUN})"
+log "Iniciando limpieza semanal (retencion=${RETENTION_DAYS} dias, audit=${AUDIT_RETENTION_DAYS} dias, dry_run=${DRY_RUN})"
 
 run_delete app_user_activity_log "observed_at < NOW() - INTERVAL '${RETENTION_DAYS} days'"
 run_delete app_user_login_logs   "logged_at  < NOW() - INTERVAL '${RETENTION_DAYS} days'"
 run_delete app_user_sessions     "expires_at < NOW() OR created_at < NOW() - INTERVAL '${RETENTION_DAYS} days'"
+run_delete app_user_login_attempt_log "logged_at < NOW() - INTERVAL '${AUDIT_RETENTION_DAYS} days'"
+run_delete app_user_admin_audit  "created_at < NOW() - INTERVAL '${AUDIT_RETENTION_DAYS} days'"
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
   log "Ejecutando VACUUM ANALYZE..."
   "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_activity_log;" > /dev/null
   "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_login_logs;"   > /dev/null
   "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_sessions;"     > /dev/null
+  "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_login_attempt_log;" > /dev/null || true
+  "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_admin_audit;" > /dev/null || true
 fi
 
 log "Limpieza completada"

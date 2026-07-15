@@ -41,7 +41,7 @@ seguimiento operativo.
 | Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` | consultas operativas, reporte Alex, planillas y comparativos |
 | Cronograma | `/cronograma` | `/api/cronograma` | lectura de bases de datos embebidas en una pagina de Notion |
 | Excel DIAN | `/ExcelDian` | `/api/excel-dian/export` | exportes DIAN por empresa desde bases PostgreSQL separadas |
-| Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/[id]/metricas` | `/api/admin/*`, `/api/auth/heartbeat` | usuarios, permisos, presencia, login logs y metricas de actividad |
+| Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/auditoria`, `/admin/usuarios/[id]/metricas` | `/api/admin/*`, `/api/auth/heartbeat` | usuarios, permisos, presencia, auditoria admin, logins fallidos y metricas de actividad |
 
 ### Secciones UAID
 

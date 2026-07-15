@@ -2,11 +2,17 @@
 import { getDbPool } from "@/lib/db";
 import {
   applySessionCookies,
+  getAuditNetworkId,
+  getClientIp,
   hashPassword,
   requireAdminSession,
   validatePasswordPolicy,
   verifyCsrf,
 } from "@/lib/auth";
+import {
+  buildUserAuditSnapshot,
+  insertUserAdminAudit,
+} from "@/lib/admin/user-admin-audit";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
 import {
   normalizeAllowedPortalSections,
@@ -634,6 +640,45 @@ export async function POST(req: Request) {
             ),
           }
         : null;
+    if (user && typeof (user as { id?: string }).id === "string") {
+      const created = user as {
+        id: string;
+        username: string;
+        role: string;
+        portalProfile?: string | null;
+        sede?: string | null;
+        allowedSedes?: string[] | null;
+        allowedLines?: string[] | null;
+        allowedDashboards?: string[] | null;
+        allowedSubdashboards?: string[] | null;
+        specialRoles?: string[] | null;
+        is_active?: boolean;
+      };
+      const after = buildUserAuditSnapshot({
+        username: created.username,
+        role: created.role,
+        portalProfile: created.portalProfile ?? portalProfile,
+        sede: created.sede ?? null,
+        allowedSedes: created.allowedSedes ?? allowedSedes,
+        allowedLines: created.allowedLines ?? allowedLines,
+        allowedDashboards: created.allowedDashboards ?? allowedDashboards,
+        allowedSubdashboards:
+          created.allowedSubdashboards ?? allowedSubdashboards,
+        specialRoles: created.specialRoles ?? specialRoles,
+        isActive: created.is_active !== false,
+      });
+      await insertUserAdminAudit(client, {
+        actorUserId: session.user.id,
+        actorUsername: session.user.username,
+        targetUserId: created.id,
+        targetUsername: created.username,
+        action: "create",
+        before: null,
+        after,
+        actorIp: getAuditNetworkId(getClientIp(req)) ?? getClientIp(req),
+        actorUserAgent: req.headers.get("user-agent"),
+      });
+    }
     return withSession(NextResponse.json({ user }));
   } catch (error) {
     const detail =

@@ -9,6 +9,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { insertLoginFailureAttempt } from "@/lib/admin/user-admin-audit";
 import {
   getLocalPortalCloudUrl,
   isLocalPortalClosed,
@@ -118,6 +119,17 @@ export async function POST(req: Request) {
     const blockedUntil = getFailedLoginResetAt(rateLimitKey, userKey, now);
     if (blockedUntil) {
       const retryAfterSeconds = Math.max(1, Math.ceil((blockedUntil - now) / 1000));
+      const blockClient = await (await getDbPool()).connect();
+      try {
+        await insertLoginFailureAttempt(blockClient, {
+          username,
+          reason: "rate_limited",
+          ip: ipForDb,
+          userAgent: req.headers.get("user-agent"),
+        });
+      } finally {
+        blockClient.release();
+      }
       return NextResponse.json(
         { error: "Demasiados intentos. Espera unos minutos e intenta de nuevo." },
         {
@@ -161,6 +173,12 @@ export async function POST(req: Request) {
         // latencias.
         await verifyPassword(password, await getDummyPasswordHash());
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
+        await insertLoginFailureAttempt(client, {
+          username,
+          reason: "unknown_user",
+          ip: ipForDb,
+          userAgent: req.headers.get("user-agent"),
+        });
         await sleep(FAILED_LOGIN_DELAY_MS);
         return NextResponse.json(
           { error: "Credenciales inválidas." },
@@ -191,6 +209,13 @@ export async function POST(req: Request) {
 
       if (!user.is_active) {
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
+        await insertLoginFailureAttempt(client, {
+          username: user.username,
+          userId: user.id,
+          reason: "inactive",
+          ip: ipForDb,
+          userAgent: req.headers.get("user-agent"),
+        });
         await sleep(FAILED_LOGIN_DELAY_MS);
         return NextResponse.json(
           { error: "Cuenta desactivada." },
@@ -201,6 +226,13 @@ export async function POST(req: Request) {
       const ok = await verifyPassword(password, user.password_hash);
       if (!ok) {
         registerFailedLoginAttempt(rateLimitKey, userKey, now);
+        await insertLoginFailureAttempt(client, {
+          username: user.username,
+          userId: user.id,
+          reason: "bad_password",
+          ip: ipForDb,
+          userAgent: req.headers.get("user-agent"),
+        });
         await sleep(FAILED_LOGIN_DELAY_MS);
         return NextResponse.json(
           { error: "Credenciales inválidas." },

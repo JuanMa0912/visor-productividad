@@ -92,6 +92,7 @@ Orden completo despues de `schema-auth.sql`:
 38. `20260709_app_users_portal_profile_asadero.sql` (añade perfil `asadero` al CHECK de `portal_profile`)
 39. `20260710_margen_item_dia_roll_margin.sql` (añade `costo_total`/`margen_pesos` al rollup dia+item para margen % en informe variacion)
 40. `20260715_margen_item_dia_roll_atomic_refresh.sql` (rebuild completo via staging+rename; evita vaciar la tabla durante el refresh)
+41. `20260715_user_audit_trail.sql` (`app_user_admin_audit` + `app_user_login_attempt_log` para auditoría admin y logins fallidos)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
@@ -106,7 +107,9 @@ sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matvie
 | --- | --- | --- |
 | `app_users` | usuarios, roles y permisos | `username` unico, `role` `admin`/`user` |
 | `app_user_sessions` | sesiones activas/revocadas | `token_hash`, `expires_at`, `last_activity_at`, `last_path` |
-| `app_user_login_logs` | bitacora de login | IP auditada, User-Agent, fecha |
+| `app_user_login_logs` | bitacora de login exitoso | IP auditada, User-Agent, fecha |
+| `app_user_login_attempt_log` | intentos de login fallidos | motivo (`unknown_user`, `bad_password`, `inactive`, `rate_limited`, `other`) |
+| `app_user_admin_audit` | mutaciones admin sobre usuarios | before/after JSONB, campos cambiados, actor |
 | `app_user_activity_log` | actividad por heartbeat | una observacion por usuario/sesion/ruta, deduplicada por ventana corta |
 
 Columnas relevantes de `app_users`:
@@ -131,8 +134,16 @@ Columnas relevantes de `app_users`:
 Migracion: `db/migrations/20260701_app_users_password_policy.sql`.
 
 APIs relacionadas: `/api/auth/*`, `/api/admin/users*`,
-`/api/admin/login-logs`, `/api/admin/user-presence`,
-`/api/admin/users/[id]/metrics`.
+`/api/admin/login-logs`, `/api/admin/login-failures`, `/api/admin/audit`,
+`/api/admin/user-presence`, `/api/admin/users/[id]/metrics`.
+
+UI: `/admin/usuarios/auditoria` (cambios admin + fallos de login; export CSV).
+
+Aplicar migracion 41:
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260715_user_audit_trail.sql
+```
 
 ### 4.2 Productividad y analisis horario
 
@@ -311,9 +322,11 @@ cliente autenticado.
 ## 5. Relaciones principales
 
 ```text
-app_users
+  app_users
   -> app_user_sessions
   -> app_user_login_logs
+  -> app_user_login_attempt_log
+  -> app_user_admin_audit
   -> app_user_activity_log
   -> horario_planillas
   -> inventario_x_item_user_presets
@@ -333,12 +346,14 @@ ventas_item_cargas
 
 - `app_user_activity_log` por `observed_at`;
 - `app_user_login_logs` por `logged_at`;
-- `app_user_sessions` expiradas o con `created_at` anterior a la retencion.
+- `app_user_sessions` expiradas o con `created_at` anterior a la retencion;
+- `app_user_login_attempt_log` por `logged_at` (retencion `AUDIT_RETENTION_DAYS`, default 90);
+- `app_user_admin_audit` por `created_at` (misma retencion de auditoria).
 
 El timer systemd esta en `deploy/systemd/`. Ver [`../deploy/README.md`](../deploy/README.md)
 y [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-Default operativo: `RETENTION_DAYS=7`.
+Default operativo: `RETENTION_DAYS=7`, `AUDIT_RETENTION_DAYS=90`.
 
 ## 7. Consultas utiles
 

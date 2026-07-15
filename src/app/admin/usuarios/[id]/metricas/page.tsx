@@ -456,7 +456,7 @@ export default function UserMetricsPage() {
                       </dd>
                     </div>
                   </dl>
-                  <div className="mt-3 border-t border-slate-100 pt-3">
+                  <div className="mt-3 border-t border-slate-100 pt-3 space-y-2">
                     <Link
                       href={`/admin/usuarios/accesos?user=${encodeURIComponent(data.user.username)}`}
                       className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 hover:text-amber-700"
@@ -464,10 +464,88 @@ export default function UserMetricsPage() {
                       <ExternalLink className="h-3 w-3" />
                       Ver registro de accesos
                     </Link>
+                    <Link
+                      href="/admin/usuarios/auditoria"
+                      className="block text-xs font-medium text-rose-700 hover:underline"
+                    >
+                      Ver bitácora global de auditoría
+                    </Link>
                   </div>
                 </div>
               </div>
             </section>
+
+            {data.auditSignals ? (
+              <section className="rounded-xl border border-rose-100 bg-rose-50/40 p-4">
+                <h3 className="mb-3 text-sm font-semibold text-rose-900">
+                  Señales de auditoría (30 días)
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-lg border border-rose-100 bg-white px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                      Logins fallidos
+                    </p>
+                    <p className="text-lg font-semibold text-slate-900">
+                      {data.auditSignals.failedLogins30d}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-rose-100 bg-white px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                      Cambios admin
+                    </p>
+                    <p className="text-lg font-semibold text-slate-900">
+                      {data.auditSignals.adminChanges30d}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-rose-100 bg-white px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                      Dispositivo nuevo (7d)
+                    </p>
+                    <p className="text-lg font-semibold text-slate-900">
+                      {data.auditSignals.newDeviceLast7d ? "Sí" : "No"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-rose-100 bg-white px-3 py-2 sm:col-span-2 lg:col-span-1">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                      Rutas sensibles
+                    </p>
+                    <p className="text-xs font-medium text-slate-800">
+                      {data.auditSignals.sensitivePaths30d.length > 0
+                        ? data.auditSignals.sensitivePaths30d
+                            .map((p) => getPathLabel(p))
+                            .join(" · ")
+                        : "Ninguna"}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-300"
+                    onClick={() => {
+                      const blob = new Blob(
+                        [JSON.stringify(data, null, 2)],
+                        { type: "application/json" },
+                      );
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `auditoria-${data.user.username}-${data.generatedAt.slice(0, 10)}.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    Exportar métricas JSON
+                  </button>
+                  <Link
+                    href="/admin/usuarios/auditoria"
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-300"
+                  >
+                    Abrir bitácora
+                  </Link>
+                </div>
+              </section>
+            ) : null}
 
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <TopPathsList paths={data.topPaths} />

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import { applySessionCookies, requireAdminSession } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
+import { isAuditSensitivePath } from "@/lib/admin/user-admin-audit";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -33,6 +34,13 @@ export type UserMetricsDevice = {
   loginCount: number;
 };
 
+export type UserMetricsAuditSignals = {
+  failedLogins30d: number;
+  adminChanges30d: number;
+  sensitivePaths30d: string[];
+  newDeviceLast7d: boolean;
+};
+
 export type UserMetricsResponse = {
   user: {
     id: string;
@@ -56,6 +64,7 @@ export type UserMetricsResponse = {
   topPaths: UserMetricsTopPath[];
   dailyActivity: UserMetricsDailyActivity[];
   devices: UserMetricsDevice[];
+  auditSignals: UserMetricsAuditSignals;
 };
 
 const UUID_REGEX =
@@ -377,6 +386,92 @@ export async function GET(req: Request, { params }: Params) {
 
     const lastActivityRow = lastActivityResult.rows?.[0] ?? null;
 
+    let failedLogins30d = 0;
+    let adminChanges30d = 0;
+    const sensitivePaths30d: string[] = [];
+    let newDeviceLast7d = false;
+
+    try {
+      const failResult = await client.query<{ n: string }>(
+        `
+        SELECT COUNT(*)::text AS n
+        FROM app_user_login_attempt_log
+        WHERE user_id = $1
+          AND logged_at >= now() - interval '30 days'
+        `,
+        [id],
+      );
+      failedLogins30d = parseInteger(failResult.rows[0]?.n);
+    } catch {
+      /* migracion pendiente */
+    }
+
+    try {
+      const auditResult = await client.query<{ n: string }>(
+        `
+        SELECT COUNT(*)::text AS n
+        FROM app_user_admin_audit
+        WHERE target_user_id = $1
+          AND created_at >= now() - interval '30 days'
+        `,
+        [id],
+      );
+      adminChanges30d = parseInteger(auditResult.rows[0]?.n);
+    } catch {
+      /* migracion pendiente */
+    }
+
+    const sensitiveSeen = new Set<string>();
+    for (const path of topPaths.map((p) => p.path)) {
+      if (isAuditSensitivePath(path) && !sensitiveSeen.has(path)) {
+        sensitiveSeen.add(path);
+        sensitivePaths30d.push(path);
+      }
+    }
+    try {
+      const sensResult = await client.query<{ path: string }>(
+        `
+        SELECT DISTINCT path
+        FROM app_user_activity_log
+        WHERE user_id = $1
+          AND observed_at >= now() - interval '30 days'
+        `,
+        [id],
+      );
+      for (const row of sensResult.rows ?? []) {
+        if (isAuditSensitivePath(row.path) && !sensitiveSeen.has(row.path)) {
+          sensitiveSeen.add(row.path);
+          sensitivePaths30d.push(row.path);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    const cutoff7d = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const olderDevices = devices.filter(
+      (d) => new Date(d.lastSeenAt).getTime() < cutoff7d,
+    );
+    const recentDevices = devices.filter(
+      (d) => new Date(d.lastSeenAt).getTime() >= cutoff7d,
+    );
+    if (olderDevices.length > 0 && recentDevices.length > 0) {
+      const olderKeys = new Set(
+        olderDevices.map(
+          (d) => `${d.browser}|${d.browserVersion ?? ""}|${d.os}|${d.device}`,
+        ),
+      );
+      newDeviceLast7d = recentDevices.some(
+        (d) =>
+          !olderKeys.has(
+            `${d.browser}|${d.browserVersion ?? ""}|${d.os}|${d.device}`,
+          ),
+      );
+    } else if (olderDevices.length === 0 && recentDevices.length > 0 && devices.length === recentDevices.length) {
+      // Solo dispositivos recientes: no marcar como "nuevo" si no hay historial.
+      newDeviceLast7d = false;
+    }
+
     const payload: UserMetricsResponse = {
       user: {
         id: userRow.id,
@@ -400,16 +495,23 @@ export async function GET(req: Request, { params }: Params) {
       topPaths,
       dailyActivity,
       devices,
+      auditSignals: {
+        failedLogins30d,
+        adminChanges30d,
+        sensitivePaths30d: sensitivePaths30d.slice(0, 12),
+        newDeviceLast7d,
+      },
     };
 
-    return withSession(NextResponse.json(payload));
+    return applySessionCookies(NextResponse.json(payload), session);
   } catch (error) {
     console.error("[admin/users/[id]/metrics] error", error);
-    return withSession(
+    return applySessionCookies(
       NextResponse.json(
         { error: "No se pudieron obtener las métricas del usuario." },
         { status: 500 },
       ),
+      session,
     );
   } finally {
     client.release();

@@ -2,11 +2,17 @@ import { NextResponse } from "next/server";
 import { getDbPool } from "@/lib/db";
 import {
   applySessionCookies,
+  getAuditNetworkId,
+  getClientIp,
   hashPassword,
   requireAdminSession,
   validatePasswordPolicy,
   verifyCsrf,
 } from "@/lib/auth";
+import {
+  buildUserAuditSnapshot,
+  insertUserAdminAudit,
+} from "@/lib/admin/user-admin-audit";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
 import {
   normalizeAllowedPortalSections,
@@ -393,7 +399,9 @@ export async function PATCH(req: Request, { params }: Params) {
     const currentResult = await client.query(
       `
       SELECT
+        u.username,
         u.role,
+        u.is_active,
         to_jsonb(u)->>'sede' AS sede,
         to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
         to_jsonb(u)->'allowed_lines' AS "allowedLines",
@@ -415,7 +423,9 @@ export async function PATCH(req: Request, { params }: Params) {
     }
 
     const currentUser = currentResult.rows[0] as {
+      username: string;
       role: "admin" | "user";
+      is_active: boolean;
       sede: string | null;
       allowedSedes: string[] | null;
       allowedLines: string[] | null;
@@ -696,6 +706,8 @@ export async function PATCH(req: Request, { params }: Params) {
     updates.push("updated_at = now()");
     values.push(id);
 
+    const passwordReset =
+      typeof body.password === "string" && body.password.length > 0;
     const result = await client.query(
       `
       UPDATE app_users
@@ -722,6 +734,58 @@ export async function PATCH(req: Request, { params }: Params) {
             ),
           }
         : null;
+
+    if (user) {
+      const updated = user as {
+        username: string;
+        role: string;
+        portalProfile?: string | null;
+        sede?: string | null;
+        allowedSedes?: string[] | null;
+        allowedLines?: string[] | null;
+        allowedDashboards?: string[] | null;
+        allowedSubdashboards?: string[] | null;
+        specialRoles?: string[] | null;
+        is_active?: boolean;
+      };
+      const before = buildUserAuditSnapshot({
+        username: currentUser.username,
+        role: currentUser.role,
+        portalProfile: currentProfile,
+        sede: currentUser.sede,
+        allowedSedes: currentUser.allowedSedes,
+        allowedLines: currentUser.allowedLines,
+        allowedDashboards: currentUser.allowedDashboards,
+        allowedSubdashboards: currentUser.allowedSubdashboards,
+        specialRoles: currentUser.specialRoles,
+        isActive: currentUser.is_active,
+      });
+      const after = buildUserAuditSnapshot({
+        username: updated.username,
+        role: updated.role,
+        portalProfile: updated.portalProfile ?? nextPortalProfile,
+        sede: updated.sede ?? null,
+        allowedSedes: updated.allowedSedes ?? null,
+        allowedLines: updated.allowedLines ?? null,
+        allowedDashboards: updated.allowedDashboards ?? null,
+        allowedSubdashboards: updated.allowedSubdashboards ?? null,
+        specialRoles: updated.specialRoles ?? null,
+        isActive: updated.is_active !== false,
+        passwordReset,
+      });
+      await insertUserAdminAudit(client, {
+        actorUserId: session.user.id,
+        actorUsername: session.user.username,
+        targetUserId: id,
+        targetUsername: updated.username,
+        action: passwordReset ? "password_reset" : "update",
+        before,
+        after,
+        actorIp: getAuditNetworkId(getClientIp(req)) ?? getClientIp(req),
+        actorUserAgent: req.headers.get("user-agent"),
+      });
+    }
+
     return withSession(NextResponse.json({ user }));
   } catch (error) {
     const detail =
@@ -773,6 +837,73 @@ export async function DELETE(_req: Request, { params }: Params) {
 
   const client = await (await getDbPool()).connect();
   try {
+    const existing = await client.query(
+      `
+      SELECT
+        username,
+        role,
+        is_active,
+        to_jsonb(app_users)->>'sede' AS sede,
+        to_jsonb(app_users)->'allowed_sedes' AS "allowedSedes",
+        to_jsonb(app_users)->'allowed_lines' AS "allowedLines",
+        to_jsonb(app_users)->'allowed_dashboards' AS "allowedDashboards",
+        to_jsonb(app_users)->'allowed_subdashboards' AS "allowedSubdashboards",
+        to_jsonb(app_users)->'special_roles' AS "specialRoles",
+        to_jsonb(app_users)->>'portal_profile' AS "portalProfile"
+      FROM app_users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [id],
+    );
+    const row = existing.rows[0] as
+      | {
+          username: string;
+          role: string;
+          is_active: boolean;
+          sede: string | null;
+          allowedSedes: string[] | null;
+          allowedLines: string[] | null;
+          allowedDashboards: string[] | null;
+          allowedSubdashboards: string[] | null;
+          specialRoles: string[] | null;
+          portalProfile: string | null;
+        }
+      | undefined;
+    if (!row) {
+      return NextResponse.json(
+        { error: "Usuario no encontrado." },
+        { status: 404 },
+      );
+    }
+
+    const before = buildUserAuditSnapshot({
+      username: row.username,
+      role: row.role,
+      portalProfile: row.portalProfile,
+      sede: row.sede,
+      allowedSedes: row.allowedSedes,
+      allowedLines: row.allowedLines,
+      allowedDashboards: normalizeAllowedPortalSections(row.allowedDashboards),
+      allowedSubdashboards: normalizeAllowedPortalSubsections(
+        row.allowedSubdashboards,
+      ),
+      specialRoles: row.specialRoles,
+      isActive: row.is_active,
+    });
+
+    await insertUserAdminAudit(client, {
+      actorUserId: session.user.id,
+      actorUsername: session.user.username,
+      targetUserId: id,
+      targetUsername: row.username,
+      action: "delete",
+      before,
+      after: null,
+      actorIp: getAuditNetworkId(getClientIp(_req)) ?? getClientIp(_req),
+      actorUserAgent: _req.headers.get("user-agent"),
+    });
+
     await client.query(`DELETE FROM app_users WHERE id = $1`, [id]);
     return withSession(NextResponse.json({ ok: true }));
   } finally {
