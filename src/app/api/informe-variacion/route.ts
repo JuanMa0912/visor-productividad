@@ -20,6 +20,11 @@ import {
   setCachedInformeMonthBundle,
   setCachedInformePayload,
 } from "@/lib/informe-variacion/informe-cache";
+import {
+  canUseInformePayloadStd,
+  getInformePayloadStd,
+  getInformePayloadStdBundle,
+} from "@/lib/informe-variacion/payload-std-server";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 
@@ -145,6 +150,40 @@ export async function GET(request: Request) {
       );
     }
 
+    const useStd = canUseInformePayloadStd(
+      scope.allowedKeys,
+      lineScope.forcedMargenTipos,
+    );
+    if (useStd) {
+      const stdClient = await (await getDbPool()).connect();
+      try {
+        const snapped = await getInformePayloadStdBundle(
+          stdClient,
+          year,
+          month,
+          availableRanges.map((range) => range.id),
+        );
+        if (snapped) {
+          setCachedInformeMonthBundle(
+            bundleKey,
+            snapped,
+            scope.allowedKeys,
+            lineScope.forcedMargenTipos,
+          );
+          return withSession(
+            NextResponse.json(snapped, {
+              headers: {
+                "Cache-Control": CACHE_CONTROL,
+                "X-Data-Source": "payload-std",
+              },
+            }),
+          );
+        }
+      } finally {
+        stdClient.release();
+      }
+    }
+
     const client = await (await getDbPool()).connect();
     try {
       await client.query("SET LOCAL work_mem = '256MB'");
@@ -268,6 +307,35 @@ export async function GET(request: Request) {
         },
       }),
     );
+  }
+
+  const useStd = canUseInformePayloadStd(
+    scope.allowedKeys,
+    lineScope.forcedMargenTipos,
+  );
+  if (useStd && effectiveRange) {
+    const stdClient = await (await getDbPool()).connect();
+    try {
+      const snapped = await getInformePayloadStd(
+        stdClient,
+        year,
+        month,
+        effectiveRange.id,
+      );
+      if (snapped) {
+        setCachedInformePayload(cacheKey, snapped);
+        return withSession(
+          NextResponse.json(snapped, {
+            headers: {
+              "Cache-Control": CACHE_CONTROL,
+              "X-Data-Source": "payload-std",
+            },
+          }),
+        );
+      }
+    } finally {
+      stdClient.release();
+    }
   }
 
   const client = await (await getDbPool()).connect();

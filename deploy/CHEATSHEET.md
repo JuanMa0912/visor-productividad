@@ -380,6 +380,16 @@ sudo journalctl -u visor-refresh-rotacion -n 30 --no-pager
 
 ### Timer de refresh diario variacion (`margen_item_dia_roll`, 08:30)
 
+Tras el roll, el script tambien materializa `informe_variacion_payload_std`
+(payload JSON scope `*` del mes actual + anterior) para first paint &lt;2s.
+
+```bash
+# Migracion snapshot (una vez)
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260716_informe_variacion_payload_std.sql
+# Warm manual
+sudo -u visor npm run informe:warm-snapshot
+```
+
 Complementa el refresh inline del sync 07:50. Misma VM app-server que rotacion.
 
 ```bash

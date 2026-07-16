@@ -149,3 +149,20 @@ row_count=$("${PSQL[@]}" -c "SELECT COUNT(*) FROM margen_item_dia_roll;" | tr -d
 max_fecha=$("${PSQL[@]}" -c "SELECT COALESCE(MAX(fecha_dcto), '') FROM margen_item_dia_roll;" | tr -d '[:space:]')
 elapsed=$(( $(date +%s) - start_ts ))
 log "Refresh completado: fn=[${result_line:-?}] filas=${row_count} max_fecha=${max_fecha} ${elapsed}s"
+
+# Vista precargada JSON (admins / scope completo) para first paint <2s.
+APP_ROOT="${APP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+if [[ -f "${APP_ROOT}/scripts/warm-informe-variacion-snapshot.mts" ]]; then
+  log "Warming informe_variacion_payload_std..."
+  warm_start=$(date +%s)
+  if (
+    cd "${APP_ROOT}"
+    ENV_FILE="${ENV_FILE}" npx --yes tsx scripts/warm-informe-variacion-snapshot.mts
+  ) >>"${LOG_FILE}" 2>&1; then
+    log "Warm snapshot OK ($(( $(date +%s) - warm_start ))s)"
+  else
+    log "WARN: warm informe_variacion_payload_std fallo (aplica migracion 20260716 si falta la tabla)"
+  fi
+else
+  log "WARN: no encuentro ${APP_ROOT}/scripts/warm-informe-variacion-snapshot.mts"
+fi

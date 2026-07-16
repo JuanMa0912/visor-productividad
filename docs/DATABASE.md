@@ -92,7 +92,8 @@ Orden completo despues de `schema-auth.sql`:
 38. `20260709_app_users_portal_profile_asadero.sql` (añade perfil `asadero` al CHECK de `portal_profile`)
 39. `20260710_margen_item_dia_roll_margin.sql` (añade `costo_total`/`margen_pesos` al rollup dia+item para margen % en informe variacion)
 40. `20260715_margen_item_dia_roll_atomic_refresh.sql` (rebuild completo via staging+rename; evita vaciar la tabla durante el refresh)
-41. `20260715_user_audit_trail.sql` (`app_user_admin_audit` + `app_user_login_attempt_log` para auditoría admin y logins fallidos)
+41. `20260715_user_audit_trail.sql` (`app_user_admin_audit` + `app_user_login_attempt_log`)
+42. `20260716_informe_variacion_payload_std.sql` (snapshot JSON de `/informe-variacion` para first paint rapido)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
@@ -182,6 +183,8 @@ Notas:
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD |
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta consultas pesadas del tablero |
 | `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
+| `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s |
+| `informe_variacion_payload_std_meta` | ultimo warm (refreshed_at, mes, #rangos) |
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
 
 API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`),
@@ -201,8 +204,19 @@ Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_
    `scripts/etl/sync-local-to-gcp.sh` refresca la ventana sincronizada de
    `margen_final_roll` y `margen_item_dia_roll`.
 2. Timer dedicado `visor-refresh-variacion.timer` (08:30 en app-server):
-   `scripts/refresh-variacion-roll.sh` refresca ventana ~60 dias (incremental).
-   Rebuild total: `--full` (staging+rename tras `20260715_..._atomic_refresh.sql`).
+   `scripts/refresh-variacion-roll.sh` refresca ventana ~60 dias (incremental)
+   y al final materializa `informe_variacion_payload_std` (mes actual + anterior,
+   scope `*`). Rebuild total del roll: `--full`.
+
+Warm manual del snapshot (tras aplicar migracion 42):
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260716_informe_variacion_payload_std.sql
+sudo -u visor npm run informe:warm-snapshot
+# Header de respuesta: X-Data-Source: payload-std | cache | database
+```
+
+Usuarios con sedes/tipos restringidos siguen el path SQL + cache de proceso.
 
 Tras migracion nueva o backfill puntual (en GCP como usuario `visor`):
 
