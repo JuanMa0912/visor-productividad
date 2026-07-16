@@ -911,10 +911,12 @@ export const queryFilterOptions = async (
   table: MargenDataTable,
 ) => {
   const params: unknown[] = [];
+  // Conservar `categorias` para que perfiles bloqueados (p. ej. Asaderos = 3)
+  // solo vean líneas / sublíneas / ítems de esa categoría. Limpiar dimensiones
+  // más profundas para no auto-restringir el catálogo de cada nivel.
   const where = buildMargenWhereForTable(
     {
       ...filters,
-      categorias: [],
       lineas: [],
       sublineas: [],
       items: [],

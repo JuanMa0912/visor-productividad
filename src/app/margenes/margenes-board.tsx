@@ -379,7 +379,9 @@ export const MargenesBoard = ({
   const [empresas, setEmpresas] = useState<string[]>([]);
   const [sedes, setSedes] = useState<string[]>([]);
   const [fechas, setFechas] = useState<string[]>([]);
-  const [categorias, setCategorias] = useState<string[]>([]);
+  const [categorias, setCategorias] = useState<string[]>(() =>
+    lockedCategorias?.length ? [...lockedCategorias] : [],
+  );
   const [lineas, setLineas] = useState<string[]>([]);
   const [sublineas, setSublineas] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>([]);
@@ -412,7 +414,18 @@ export const MargenesBoard = ({
 
   useEffect(() => {
     if (!lockedCategorias?.length) return;
-    setCategorias(lockedCategorias);
+    setCategorias([...lockedCategorias]);
+    setFilterOptions(null);
+  }, [lockedCategorias]);
+
+  const resetFilters = useCallback(() => {
+    setEmpresas([]);
+    setSedes([]);
+    setFechas([]);
+    setCategorias(lockedCategorias?.length ? [...lockedCategorias] : []);
+    setLineas([]);
+    setSublineas([]);
+    setItems([]);
   }, [lockedCategorias]);
 
   const queryBase = useMemo(
@@ -473,16 +486,6 @@ export const MargenesBoard = ({
     return parts.join("&");
   }, [sortKey, mgSortDir]);
 
-  const resetFilters = useCallback(() => {
-    setEmpresas([]);
-    setSedes([]);
-    setFechas([]);
-    setCategorias([]);
-    setLineas([]);
-    setSublineas([]);
-    setItems([]);
-  }, []);
-
   const seededFilterOptions = useMemo<MargenFiltersPayload>(() => {
     const empresas = [
       ...new Set(
@@ -519,19 +522,35 @@ export const MargenesBoard = ({
   const activeFilterOptions = filterOptions ?? seededFilterOptions;
 
   const scopedFilterOptions = useMemo(() => {
+    const categorias =
+      lockedCategorias?.length
+        ? activeFilterOptions.categorias.filter((option) =>
+            lockedCategorias.includes(option.value),
+          )
+        : activeFilterOptions.categorias;
+
     if (!allowedSedeKeys || allowedSedeKeys.length === 0) {
-      return activeFilterOptions;
+      return { ...activeFilterOptions, categorias };
     }
     const allowed = new Set(allowedSedeKeys);
     return {
       ...activeFilterOptions,
+      categorias,
       sedes: activeFilterOptions.sedes.filter((option) =>
         allowed.has(option.value),
       ),
     };
-  }, [activeFilterOptions, allowedSedeKeys]);
+  }, [activeFilterOptions, allowedSedeKeys, lockedCategorias]);
 
   const cascadedFilterOptions = useMemo(() => {
+    const sedeOptions =
+      empresas.length === 0
+        ? scopedFilterOptions.sedes
+        : scopedFilterOptions.sedes.filter((option) => {
+            const empresa = option.empresa.trim().toLowerCase();
+            return empresas.includes(empresa);
+          });
+
     const sublineaOptions =
       lineas.length === 0
         ? scopedFilterOptions.sublineas
@@ -559,10 +578,27 @@ export const MargenesBoard = ({
 
     return {
       ...scopedFilterOptions,
+      sedes: sedeOptions,
       sublineas: sublineaOptions,
       items: itemOptions,
     };
-  }, [scopedFilterOptions, lineas, sublineas]);
+  }, [scopedFilterOptions, empresas, lineas, sublineas]);
+
+  const handleEmpresasChange = useCallback(
+    (next: string[]) => {
+      setEmpresas(next);
+      if (next.length === 0) return;
+
+      const allowed = new Set(next.map((value) => value.trim().toLowerCase()));
+      setSedes((current) =>
+        current.filter((value) => {
+          const parsed = parseSedeKey(value);
+          return parsed ? allowed.has(parsed.empresa) : false;
+        }),
+      );
+    },
+    [],
+  );
 
   const loadItemSearch = useCallback(
     async (query: string) => {
@@ -932,7 +968,7 @@ export const MargenesBoard = ({
           label="Empresa"
           values={empresas}
           options={scopedFilterOptions.empresas}
-          onChange={setEmpresas}
+          onChange={handleEmpresasChange}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
         />
@@ -940,7 +976,7 @@ export const MargenesBoard = ({
           label="Sede"
           values={sedes}
           options={
-            scopedFilterOptions.sedes.map((option) => ({
+            cascadedFilterOptions.sedes.map((option) => ({
               value: option.value,
               label: option.label,
               code: option.idCo,
