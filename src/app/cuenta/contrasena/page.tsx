@@ -139,11 +139,11 @@ function CambiarContrasenaPageInner() {
   };
 
   return (
-    <div className="fixed inset-0 z-30 grid h-dvh max-h-dvh grid-cols-1 overflow-hidden lg:grid-cols-[1.1fr_1fr]">
+    <div className="grid min-h-dvh grid-cols-1 lg:fixed lg:inset-0 lg:z-30 lg:h-dvh lg:max-h-dvh lg:grid-cols-[1.1fr_1fr] lg:overflow-hidden">
       <AuthBrandingPanel className="hidden h-full min-h-0 lg:flex" />
 
-      <main className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-slate-50 px-4 py-3 sm:px-8 sm:py-4">
-        <div className="w-full max-w-xl">
+      <main className="flex min-h-dvh items-start justify-center overflow-y-auto bg-slate-50 px-4 py-6 sm:px-8 sm:py-8 lg:h-full lg:min-h-0 lg:items-center lg:py-4">
+        <div className="w-full max-w-xl py-2">
           <div className="flex items-center justify-center gap-4 border-b border-slate-200 pb-3">
             <MercamioLogo className="h-9 w-auto sm:h-10" />
             <MercatodoLogo className="h-9 w-auto sm:h-10" />
@@ -273,9 +273,9 @@ function CambiarContrasenaPageInner() {
 
 function CambiarContrasenaPageFallback() {
   return (
-    <div className="grid h-dvh max-h-dvh grid-cols-1 overflow-hidden lg:grid-cols-[1.1fr_1fr]">
+    <div className="grid min-h-dvh grid-cols-1 lg:h-dvh lg:max-h-dvh lg:grid-cols-[1.1fr_1fr] lg:overflow-hidden">
       <AuthBrandingPanelFallback />
-      <div className="flex h-full items-center justify-center bg-slate-50 px-6">
+      <div className="flex min-h-dvh items-center justify-center bg-slate-50 px-6 lg:h-full">
         <div className="h-80 w-full max-w-xl animate-pulse rounded-2xl bg-slate-200/60" />
       </div>
     </div>

@@ -2670,7 +2670,7 @@ export default function InventarioXItemPage() {
                   onChange={(event) => setMatrixSearchQuery(event.target.value)}
                   placeholder="Buscar sede o empresa"
                   disabled={!hasAppliedCurrentFilters || summaryRows.length === 0}
-                  className="h-9 w-56 rounded-full border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-9 w-full max-w-xs rounded-full border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-56"
                 />
               </div>
               {(!matrixMetricColumns.valorInv ||

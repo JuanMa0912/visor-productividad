@@ -51,15 +51,18 @@ export function PortalBrandingHeader({
     (canAccessCronograma || isAdmin);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/70 backdrop-blur-xl">
+    <header
+      className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/70 backdrop-blur-xl"
+      aria-label="Portal UAID"
+    >
       <div
         className={
           compact
-            ? "mx-auto flex w-full max-w-[1280px] items-center justify-between gap-4 px-4 py-1.5 sm:px-6"
-            : "mx-auto flex w-full max-w-[1280px] items-center justify-between gap-4 px-4 py-3 sm:px-6"
+            ? "mx-auto flex w-full max-w-[1280px] items-center justify-between gap-2 px-3 py-1.5 sm:gap-4 sm:px-6"
+            : "mx-auto flex w-full max-w-[1280px] items-center justify-between gap-2 px-3 py-3 sm:gap-4 sm:px-6"
         }
       >
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
           <span
             className={
               compact
@@ -74,14 +77,14 @@ export function PortalBrandingHeader({
             />
           </span>
           {compact ? (
-            <p className="text-[12px] font-semibold tracking-tight text-foreground">
+            <p className="hidden min-w-0 truncate text-[12px] font-semibold tracking-tight text-foreground sm:block">
               Portal UAID{" "}
               <span className="font-normal text-muted-foreground/80">
                 · {PORTAL_APP_VERSION}
               </span>
             </p>
           ) : (
-            <div className="min-w-0 leading-tight">
+            <div className="hidden min-w-0 leading-tight sm:block">
               <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
                 Portal <span className="text-muted-foreground/80">•</span> UAID{" "}
                 {PORTAL_APP_VERSION}
@@ -93,22 +96,24 @@ export function PortalBrandingHeader({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
           {onBackToSecciones ? (
             <button
               type="button"
               onClick={onBackToSecciones}
+              title={backLabel}
+              aria-label={backLabel}
               className={
                 compact
-                  ? "inline-flex items-center gap-1.5 rounded-md border border-border bg-transparent px-2.5 py-1 text-[11px] font-semibold uppercase tracking-widest text-foreground transition-all hover:border-foreground/45 active:scale-[0.99]"
-                  : "inline-flex items-center gap-2 rounded-lg border border-border bg-transparent px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-foreground transition-all hover:border-foreground/45 hover:shadow-[0_2px_12px_-4px_rgba(15,23,42,0.18)] active:scale-[0.99]"
+                  ? "inline-flex max-w-[9.5rem] items-center gap-1.5 rounded-md border border-border bg-transparent px-2 py-1 text-[11px] font-semibold uppercase tracking-widest text-foreground transition-all hover:border-foreground/45 active:scale-[0.99] sm:max-w-none sm:px-2.5"
+                  : "inline-flex max-w-[9.5rem] items-center gap-1.5 rounded-lg border border-border bg-transparent px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground transition-all hover:border-foreground/45 hover:shadow-[0_2px_12px_-4px_rgba(15,23,42,0.18)] active:scale-[0.99] sm:max-w-none sm:gap-2 sm:px-3 sm:py-2 sm:text-[12px]"
               }
             >
               <ArrowLeft
                 className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"}
                 strokeWidth={2.25}
               />
-              {backLabel}
+              <span className="truncate">{backLabel}</span>
             </button>
           ) : null}
           {showSeccionesShortcut ? (

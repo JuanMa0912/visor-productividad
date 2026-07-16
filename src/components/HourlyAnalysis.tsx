@@ -3494,8 +3494,9 @@ export const HourlyAnalysis = ({
               ) : (
                 <div
                   ref={overtimeTableRef}
-                  className={`mt-3 rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white scroll-mt-24`}
+                  className={`mt-3 overflow-x-auto rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white scroll-mt-24`}
                 >
+                  <div className="min-w-[1100px]">
                   <div
                     className={`sticky top-[57px] z-30 flex flex-wrap items-center justify-between gap-2 rounded-t-xl border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/95 px-2 py-2 backdrop-blur`}
                   >
@@ -3653,6 +3654,7 @@ export const HourlyAnalysis = ({
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               )}
             </div>

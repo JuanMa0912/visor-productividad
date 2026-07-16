@@ -1352,7 +1352,7 @@ export default function HorariosGuardadosPage() {
                             min={employeeDateBounds.min || undefined}
                             max={employeeDateBounds.max || undefined}
                             onChange={(e) => setFilterDateFrom(e.target.value)}
-                            className="w-[150px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                            className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100 sm:w-[150px]"
                           />
                         </label>
 
@@ -1364,7 +1364,7 @@ export default function HorariosGuardadosPage() {
                             min={filterDateFrom || employeeDateBounds.min || undefined}
                             max={employeeDateBounds.max || undefined}
                             onChange={(e) => setFilterDateTo(e.target.value)}
-                            className="w-[150px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                            className="w-full min-w-[9rem] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100 sm:w-[150px]"
                           />
                         </label>
 
@@ -1375,7 +1375,7 @@ export default function HorariosGuardadosPage() {
                             onChange={(e) =>
                               setFilterDayKey(e.target.value as "" | DayKey)
                             }
-                            className="w-[140px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium tracking-normal capitalize text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                            className="w-full min-w-[8rem] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium tracking-normal capitalize text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100 sm:w-[140px]"
                           >
                             <option value="">Todos</option>
                             {DAY_ORDER.map((day) => (
@@ -1392,7 +1392,7 @@ export default function HorariosGuardadosPage() {
                             <select
                               value={filterSede}
                               onChange={(e) => setFilterSede(e.target.value)}
-                              className="w-[180px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                              className="w-full min-w-[10rem] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-900 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100 sm:w-[180px]"
                             >
                               <option value="">Todas</option>
                               {availableSedesForEmployee.map((sede) => (

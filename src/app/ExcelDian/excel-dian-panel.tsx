@@ -447,7 +447,7 @@ export function ExcelDianPanel() {
   return (
     <div className="relative min-h-[calc(100vh-2rem)] overflow-x-hidden bg-[#F8FAFC] px-4 py-12 sm:px-6 md:py-16">
       <div className="relative mx-auto w-full max-w-4xl">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-8 shadow-lg shadow-slate-200/40 md:p-10">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-lg shadow-slate-200/40 sm:p-8 md:p-10">
           <header className="flex flex-col items-center text-center">
             <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-slate-50">
               <FileSpreadsheet

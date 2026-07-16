@@ -193,7 +193,7 @@ export const SurtidoAuditModal = ({
       onClick={onClose}
     >
       <div
-        className="relative flex max-h-[82vh] w-full max-w-5xl flex-col rounded-2xl border border-amber-200 bg-white p-5 shadow-xl sm:p-6"
+        className="relative flex max-h-[min(92dvh,52rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-amber-200 bg-white p-5 shadow-xl sm:p-6"
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -368,7 +368,7 @@ export const SurtidoAuditModal = ({
             </p>
           </div>
         ) : null}
-        <div className="mt-4 min-h-[140px] flex-1 overflow-auto rounded-lg border border-slate-200">
+        <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
           {loading ? (
             <div className="flex items-center justify-center gap-2 p-10 text-slate-600">
               <Loader2 className="h-6 w-6 shrink-0 animate-spin" />
