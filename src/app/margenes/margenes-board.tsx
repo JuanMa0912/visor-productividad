@@ -90,7 +90,7 @@ const marginBar = (pct: number) => {
   const clamped = Math.min(100, Math.max(0, pct));
   return (
     <span
-      className="mt-0.5 block h-1.5 w-14 overflow-hidden rounded-sm bg-[#2a2f47]"
+      className="inline-block h-1.5 w-10 shrink-0 overflow-hidden rounded-sm bg-[#2a2f47] align-middle"
       aria-hidden
     >
       <span
@@ -174,15 +174,13 @@ const colsForDrillLevel = (
       key: "margenPct",
       label: "Margen %",
       align: "right",
-      cellClassName: "min-w-[5.75rem] whitespace-nowrap",
+      cellClassName: "min-w-[7.5rem] whitespace-nowrap",
       sortValue: (row) => row.margenPct,
       render: (row) => (
-        <span className="ml-2 inline-flex w-[4.75rem] flex-col items-end gap-0.5">
-          <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums whitespace-nowrap ${marginBadgeClass(row.margenPct)}`}
-          >
-            {formatPercent(row.margenPct)}
-          </span>
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums whitespace-nowrap ${marginBadgeClass(row.margenPct)}`}
+        >
+          <span className="whitespace-nowrap">{formatPercent(row.margenPct)}</span>
           {marginBar(row.margenPct)}
         </span>
       ),
