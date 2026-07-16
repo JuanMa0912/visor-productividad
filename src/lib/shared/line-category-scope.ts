@@ -26,6 +26,8 @@ export type UserLineCategoryScope = {
   allowedLineIds: string[];
   forcedMargenTipos: string[] | null;
   forcedMargenLineas: string[] | null;
+  /** Tipos de margen a excluir siempre (p. ej. Fruver no debe ver Asaderos/3). */
+  excludedMargenTipos: string[] | null;
   forcedRotacionCategoriaKeys: string[] | null;
   forcedRotacionLineaN1: string[] | null;
   /** La UI no debe permitir salir de la categoría/línea forzada. */
@@ -45,6 +47,7 @@ const emptyScope = (): UserLineCategoryScope => ({
   allowedLineIds: [],
   forcedMargenTipos: null,
   forcedMargenLineas: null,
+  excludedMargenTipos: null,
   forcedRotacionCategoriaKeys: null,
   forcedRotacionLineaN1: null,
   locked: false,
@@ -73,6 +76,7 @@ export const resolveUserLineCategoryScope = (
       allowedLineIds: [ASADERO_LINE_ID],
       forcedMargenTipos: [ASADERO_MARGEN_TIPO_ID],
       forcedMargenLineas: null,
+      excludedMargenTipos: null,
       forcedRotacionCategoriaKeys: [ASADERO_ROTACION_CATEGORIA_KEY],
       forcedRotacionLineaN1: null,
       locked: true,
@@ -86,7 +90,9 @@ export const resolveUserLineCategoryScope = (
     return {
       allowedLineIds: [FRUVER_LINE_ID],
       forcedMargenTipos: null,
+      // "01" también existe en Asaderos (pollo); excluir tipo 3.
       forcedMargenLineas: [FRUVER_MARGEN_LINEA_ID],
+      excludedMargenTipos: [ASADERO_MARGEN_TIPO_ID],
       forcedRotacionCategoriaKeys: null,
       forcedRotacionLineaN1: [FRUVER_ROTACION_LINEA_N1],
       locked: true,
@@ -97,6 +103,7 @@ export const resolveUserLineCategoryScope = (
     allowedLineIds,
     forcedMargenTipos: null,
     forcedMargenLineas: null,
+    excludedMargenTipos: null,
     forcedRotacionCategoriaKeys: null,
     forcedRotacionLineaN1: null,
     locked: false,
@@ -116,13 +123,23 @@ export const applyMargenCategoriaScope = (
   categorias: string[],
   scope: UserLineCategoryScope,
 ): string[] => {
-  if (!scope.forcedMargenTipos?.length) return categorias;
-  if (categorias.length === 0) return [...scope.forcedMargenTipos];
-  const forced = new Set(scope.forcedMargenTipos);
-  const intersected = categorias
-    .map((value) => value.trim())
-    .filter((value) => forced.has(value));
-  return intersected.length > 0 ? intersected : [...scope.forcedMargenTipos];
+  let next = categorias;
+  if (scope.forcedMargenTipos?.length) {
+    if (next.length === 0) {
+      next = [...scope.forcedMargenTipos];
+    } else {
+      const forced = new Set(scope.forcedMargenTipos);
+      const intersected = next
+        .map((value) => value.trim())
+        .filter((value) => forced.has(value));
+      next = intersected.length > 0 ? intersected : [...scope.forcedMargenTipos];
+    }
+  }
+  if (scope.excludedMargenTipos?.length) {
+    const excluded = new Set(scope.excludedMargenTipos);
+    next = next.filter((value) => !excluded.has(value.trim()));
+  }
+  return next;
 };
 
 export const applyMargenLineaScope = (
@@ -183,6 +200,13 @@ export const scopeLineasCacheSuffix = (
 ): string => {
   if (!forcedMargenLineas?.length) return "";
   return `:lin=${[...forcedMargenLineas].map(normalizeScopedLineaN1).sort().join(",")}`;
+};
+
+export const scopeExcludedTiposCacheSuffix = (
+  excludedMargenTipos: string[] | null | undefined,
+): string => {
+  if (!excludedMargenTipos?.length) return "";
+  return `:xtipos=${[...excludedMargenTipos].sort().join(",")}`;
 };
 
 /**

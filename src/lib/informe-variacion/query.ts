@@ -21,6 +21,8 @@ import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
 import { informePayloadHasComparisonData } from "@/lib/informe-variacion/comparison";
 import { sortInformeSedeCatalog } from "@/lib/informe-variacion/sede-order";
+import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
+import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
 import type { InformePeriods } from "@/lib/informe-variacion/types";
 import type {
   InformeCompactRow,
@@ -119,8 +121,23 @@ const buildMargenLineaFilter = (
   return `AND TRIM(COALESCE(id_linea1::text, '')) = ANY($${lineaParam}::text[])`;
 };
 
+const buildMargenExcludedTipoFilter = (
+  table: MargenDataTable,
+  excludedMargenTipos: string[] | null,
+  params: Array<string | string[]>,
+): string => {
+  if (!excludedMargenTipos?.length) return "";
+  params.push(excludedMargenTipos);
+  const tipoParam = 6 + params.length;
+  if (isRollTable(table)) {
+    return `AND NOT (id_tipo = ANY($${tipoParam}::text[]))`;
+  }
+  return `AND NOT (TRIM(COALESCE(id_tipo::text, '')) = ANY($${tipoParam}::text[]))`;
+};
+
 export { buildMargenTipoFilter as buildInformeMargenTipoFilter };
 export { buildMargenLineaFilter as buildInformeMargenLineaFilter };
+export { buildMargenExcludedTipoFilter as buildInformeMargenExcludedTipoFilter };
 
 /**
  * Una sola pasada: MoM + YoY + actual en CASE, filtrando solo las 3 ventanas.
@@ -228,6 +245,7 @@ export const queryInformeVariacionRows = async (
   allowedSedeKeys: string[] | null,
   forcedMargenTipos: string[] | null = null,
   forcedMargenLineas: string[] | null = null,
+  excludedMargenTipos: string[] | null = null,
 ): Promise<InformeDbAggRow[]> => {
   const table = await resolveInformeMargenDataSource(client);
   const extraParams: Array<string | string[]> = [];
@@ -238,9 +256,14 @@ export const queryInformeVariacionRows = async (
     forcedMargenLineas,
     extraParams,
   );
+  const excludedTipoFilterSql = buildMargenExcludedTipoFilter(
+    table,
+    excludedMargenTipos,
+    extraParams,
+  );
   const sql = buildInformeThreePeriodSql(
     table,
-    `${sedeFilterSql}${tipoFilterSql}${lineaFilterSql}`,
+    `${sedeFilterSql}${tipoFilterSql}${lineaFilterSql}${excludedTipoFilterSql}`,
   );
   const params = [
     periods.current.from,
@@ -388,6 +411,7 @@ export type LoadInformeVariacionOptions = {
   dayRange?: InformeDayRangeSpec | null;
   forcedMargenTipos?: string[] | null;
   forcedMargenLineas?: string[] | null;
+  excludedMargenTipos?: string[] | null;
 };
 
 export const loadInformeVariacionPayload = async (
@@ -404,9 +428,22 @@ export const loadInformeVariacionPayload = async (
     allowedSedeKeys,
     options.forcedMargenTipos ?? null,
     options.forcedMargenLineas ?? null,
+    options.excludedMargenTipos ?? null,
   );
   const payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
-  return attachDayRangeMeta(payload, options.dayRange);
+  const lineScope = {
+    ...resolveUserLineCategoryScope(null),
+    forcedMargenTipos: options.forcedMargenTipos ?? null,
+    forcedMargenLineas: options.forcedMargenLineas ?? null,
+    excludedMargenTipos: options.excludedMargenTipos ?? null,
+    locked: Boolean(
+      options.forcedMargenTipos?.length ||
+        options.forcedMargenLineas?.length ||
+        options.excludedMargenTipos?.length,
+    ),
+  };
+  const filtered = filterInformePayloadForLineScope(payload, lineScope);
+  return attachDayRangeMeta(filtered, options.dayRange);
 };
 
 const attachDayRangeMeta = (

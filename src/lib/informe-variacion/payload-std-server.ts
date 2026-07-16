@@ -20,10 +20,12 @@ export const canUseInformePayloadStd = (
   allowedSedeKeys: string[] | null,
   forcedMargenTipos?: string[] | null,
   forcedMargenLineas?: string[] | null,
+  excludedMargenTipos?: string[] | null,
 ): boolean =>
   allowedSedeKeys === null &&
   (forcedMargenTipos == null || forcedMargenTipos.length === 0) &&
-  (forcedMargenLineas == null || forcedMargenLineas.length === 0);
+  (forcedMargenLineas == null || forcedMargenLineas.length === 0) &&
+  (excludedMargenTipos == null || excludedMargenTipos.length === 0);
 
 export const getInformePayloadStd = async (
   client: Queryable,

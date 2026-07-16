@@ -23,6 +23,10 @@ import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion
 import { ensurePrepareInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
 import { prefetchWarmInformeRange } from "@/lib/informe-variacion/use-matrix-agg-cache";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
+import {
+  filterInformePayloadForLineScope,
+  informeLineScopeCacheSuffix,
+} from "@/lib/informe-variacion/informe-line-scope";
 import { cn } from "@/lib/shared/utils";
 
 type InformeMeta = {
@@ -32,14 +36,15 @@ type InformeMeta = {
 const INFORME_SESSION_CACHE_PREFIX = "vp-informe-variacion:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
 
-const buildMonthBundleCacheKey = (year: number, month: number) =>
-  `${year}-${month}:bundle`;
+const buildMonthBundleCacheKey = (year: number, month: number, scopeSuffix = "") =>
+  `${year}-${month}:bundle${scopeSuffix}`;
 
 const buildRangeCacheKey = (
   year: number,
   month: number,
   rangeId: InformeDayRangeId,
-) => `${year}-${month}:range=${rangeId}`;
+  scopeSuffix = "",
+) => `${year}-${month}:range=${rangeId}${scopeSuffix}`;
 
 const readSessionInforme = (key: string): InformeVariacionPayload | null => {
   if (typeof window === "undefined") return null;
@@ -99,6 +104,15 @@ export default function InformeVariacionPage() {
       user.specialRoles,
     );
   }, [user]);
+
+  const lineCategoryScope = useMemo(
+    () => (user ? resolveSessionLineCategoryScope(user) : resolveSessionLineCategoryScope({ role: "user", allowedLines: null })),
+    [user],
+  );
+  const scopeCacheSuffix = useMemo(
+    () => informeLineScopeCacheSuffix(lineCategoryScope),
+    [lineCategoryScope],
+  );
 
   useEffect(() => {
     if (ready && !canAccess) {
@@ -219,16 +233,18 @@ export default function InformeVariacionPage() {
       month: number,
       rangeId: InformeDayRangeId,
       data: InformeVariacionPayload,
-    ) => {
+    ): InformeVariacionPayload | null => {
       // No persistir vacios (p.ej. durante TRUNCATE del refresh diario).
-      if (!data.rows?.length) return;
-      const key = buildRangeCacheKey(year, month, rangeId);
-      memoryCacheRef.current.set(key, data);
-      writeSessionInforme(key, data);
+      const scoped = filterInformePayloadForLineScope(data, lineCategoryScope);
+      if (!scoped.rows?.length) return null;
+      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
+      memoryCacheRef.current.set(key, scoped);
+      writeSessionInforme(key, scoped);
       markRangeReady(rangeId);
-      prefetchWarmInformeRange(data);
+      prefetchWarmInformeRange(scoped);
+      return scoped;
     },
-    [markRangeReady],
+    [lineCategoryScope, markRangeReady, scopeCacheSuffix],
   );
 
   const storeMonthBundle = useCallback(
@@ -250,7 +266,7 @@ export default function InformeVariacionPage() {
       month: number,
       rangeId: InformeDayRangeId,
     ): InformeVariacionPayload | null => {
-      const key = buildRangeCacheKey(year, month, rangeId);
+      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
       const memoryHit = memoryCacheRef.current.get(key);
       if (memoryHit) {
         markRangeReady(rangeId);
@@ -259,14 +275,18 @@ export default function InformeVariacionPage() {
       }
       const sessionHit = readSessionInforme(key);
       if (sessionHit) {
-        memoryCacheRef.current.set(key, sessionHit);
+        const scoped = filterInformePayloadForLineScope(
+          sessionHit,
+          lineCategoryScope,
+        );
+        memoryCacheRef.current.set(key, scoped);
         markRangeReady(rangeId);
-        prefetchWarmInformeRange(sessionHit);
-        return sessionHit;
+        prefetchWarmInformeRange(scoped);
+        return scoped;
       }
       return null;
     },
-    [markRangeReady],
+    [lineCategoryScope, markRangeReady, scopeCacheSuffix],
   );
 
   const fetchRangePayload = useCallback(
@@ -277,7 +297,7 @@ export default function InformeVariacionPage() {
       signal: AbortSignal,
       options: { force?: boolean } = {},
     ): Promise<InformeVariacionPayload> => {
-      const key = buildRangeCacheKey(year, month, rangeId);
+      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
       if (!options.force) {
         const cached = readCachedPayload(year, month, rangeId);
         if (cached) return cached;
@@ -318,8 +338,11 @@ export default function InformeVariacionPage() {
           if (!response.ok) {
             throw new Error(data.error ?? "No fue posible cargar el informe.");
           }
-          storePayload(year, month, rangeId, data);
-          return data;
+          const scoped = storePayload(year, month, rangeId, data);
+          if (!scoped) {
+            throw new Error("Sin datos en el alcance permitido para este informe.");
+          }
+          return scoped;
         } finally {
           window.clearTimeout(timeoutId);
           signal.removeEventListener("abort", onAbort);
@@ -330,7 +353,7 @@ export default function InformeVariacionPage() {
       inflightRef.current.set(key, request);
       return request;
     },
-    [readCachedPayload, router, storePayload],
+    [readCachedPayload, router, storePayload, scopeCacheSuffix],
   );
 
   const fetchMonthBundle = useCallback(
@@ -340,7 +363,7 @@ export default function InformeVariacionPage() {
       signal: AbortSignal,
       options: { force?: boolean } = {},
     ): Promise<"ok" | "fallback"> => {
-      const bundleKey = buildMonthBundleCacheKey(year, month);
+      const bundleKey = buildMonthBundleCacheKey(year, month, scopeCacheSuffix);
       if (!options.force) {
         const ranges = getAvailableInformeDayRanges(year, month);
         const allCached =
@@ -403,7 +426,7 @@ export default function InformeVariacionPage() {
       bundleInflightRef.current.set(bundleKey, request);
       return request;
     },
-    [readCachedPayload, router, storeMonthBundle],
+    [readCachedPayload, router, storeMonthBundle, scopeCacheSuffix],
   );
 
   /** Como rotacion: clic = cambia vista al instante desde cache; red solo de fondo. */
@@ -492,7 +515,7 @@ export default function InformeVariacionPage() {
             inflightRef.current.delete(key);
           }
         }
-        bundleInflightRef.current.delete(buildMonthBundleCacheKey(year, month));
+        bundleInflightRef.current.delete(buildMonthBundleCacheKey(year, month, scopeCacheSuffix));
         clearSessionInformeMonth(year, month);
         setReadyRanges(new Set());
       }
@@ -526,9 +549,9 @@ export default function InformeVariacionPage() {
             if (
               current.has(range.id) ||
               memoryCacheRef.current.has(
-                buildRangeCacheKey(year, month, range.id),
+                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix),
               ) ||
-              readSessionInforme(buildRangeCacheKey(year, month, range.id))
+              readSessionInforme(buildRangeCacheKey(year, month, range.id, scopeCacheSuffix))
             ) {
               kept.add(range.id);
             }
@@ -782,7 +805,7 @@ export default function InformeVariacionPage() {
         }
       }
     },
-    [availableDayRanges, fetchMonthBundle, fetchRangePayload, parsedMonth, readCachedPayload],
+    [availableDayRanges, fetchMonthBundle, fetchRangePayload, parsedMonth, readCachedPayload, scopeCacheSuffix],
   );
 
   // Carga / precarga al entrar o cambiar de mes.
@@ -823,10 +846,6 @@ export default function InformeVariacionPage() {
     (Boolean(payload) &&
       !payloadMatchesSelection &&
       (monthLoadLocked || loading));
-  const lineCategoryScope = useMemo(
-    () => (user ? resolveSessionLineCategoryScope(user) : null),
-    [user],
-  );
 
   if (!ready || !canAccess) {
     return (
@@ -950,11 +969,14 @@ export default function InformeVariacionPage() {
           </div>
         ) : showBoard ? (
           <InformeVariacionBoard
-            key={monthKey || "informe"}
+            key={`${monthKey || "informe"}${scopeCacheSuffix}`}
             payload={payload!}
             dataPending={boardDataPending}
             categoryScopeLocked={Boolean(
-              lineCategoryScope?.forcedMargenTipos?.length,
+              lineCategoryScope.forcedMargenTipos?.length,
+            )}
+            lineScopeLocked={Boolean(
+              lineCategoryScope.forcedMargenLineas?.length,
             )}
           />
         ) : (

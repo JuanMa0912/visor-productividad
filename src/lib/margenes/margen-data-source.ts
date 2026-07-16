@@ -130,6 +130,10 @@ export const buildMargenWhereForTable = (
       params.push(filters.categorias);
       parts.push(`id_tipo = ANY($${params.length}::text[])`);
     }
+    if (filters.excludedCategorias && filters.excludedCategorias.length > 0) {
+      params.push(filters.excludedCategorias);
+      parts.push(`NOT (id_tipo = ANY($${params.length}::text[]))`);
+    }
     if (filters.lineas.length > 0) {
       params.push(filters.lineas);
       parts.push(`id_linea1 = ANY($${params.length}::text[])`);
@@ -172,6 +176,12 @@ export const buildMargenWhereForTable = (
   if (filters.categorias.length > 0) {
     params.push(filters.categorias);
     parts.push(`TRIM(COALESCE(id_tipo::text, '')) = ANY($${params.length}::text[])`);
+  }
+  if (filters.excludedCategorias && filters.excludedCategorias.length > 0) {
+    params.push(filters.excludedCategorias);
+    parts.push(
+      `NOT (TRIM(COALESCE(id_tipo::text, '')) = ANY($${params.length}::text[]))`,
+    );
   }
   if (filters.lineas.length > 0) {
     params.push(filters.lineas);

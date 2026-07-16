@@ -1,15 +1,16 @@
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
-import { scopeLineasCacheSuffix, scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
+import { scopeExcludedTiposCacheSuffix, scopeLineasCacheSuffix, scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
 
 const INFORME_CACHE_TTL_MS = 30 * 60 * 1000;
 
 const scopeCacheSuffix = (
   forcedMargenTipos?: string[] | null,
   forcedMargenLineas?: string[] | null,
+  excludedMargenTipos?: string[] | null,
 ) =>
-  `${scopeTiposCacheSuffix(forcedMargenTipos)}${scopeLineasCacheSuffix(forcedMargenLineas)}`;
+  `${scopeTiposCacheSuffix(forcedMargenTipos)}${scopeLineasCacheSuffix(forcedMargenLineas)}${scopeExcludedTiposCacheSuffix(excludedMargenTipos)}`;
 
 export const buildInformeCacheKey = (
   year: number,
@@ -18,13 +19,14 @@ export const buildInformeCacheKey = (
   dayRangeId?: string | null,
   forcedMargenTipos?: string[] | null,
   forcedMargenLineas?: string[] | null,
+  excludedMargenTipos?: string[] | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
   const range = dayRangeId?.trim() || "1-eom";
-  return `informe:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas)}`;
+  return `informe:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
 };
 
 export const getCachedInformePayload = (
@@ -50,12 +52,13 @@ export const buildInformeBundleCacheKey = (
   allowedSedeKeys: string[] | null,
   forcedMargenTipos?: string[] | null,
   forcedMargenLineas?: string[] | null,
+  excludedMargenTipos?: string[] | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
-  return `informe-bundle:${year}:${month}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas)}`;
+  return `informe-bundle:${year}:${month}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
 };
 
 export const getCachedInformeMonthBundle = (
@@ -71,6 +74,7 @@ export const setCachedInformeMonthBundle = (
   allowedSedeKeys: string[] | null,
   forcedMargenTipos?: string[] | null,
   forcedMargenLineas?: string[] | null,
+  excludedMargenTipos?: string[] | null,
 ): void => {
   const hasRows = Object.values(bundle.payloads).some(
     (payload) => (payload.rows?.length ?? 0) > 0,
@@ -86,6 +90,7 @@ export const setCachedInformeMonthBundle = (
         rangeId,
         forcedMargenTipos,
         forcedMargenLineas,
+        excludedMargenTipos,
       ),
       payload,
     );

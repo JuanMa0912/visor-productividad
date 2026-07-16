@@ -11,6 +11,7 @@ import {
   toCompactDate,
 } from "@/lib/informe-variacion/periods";
 import {
+  buildInformeMargenExcludedTipoFilter,
   buildInformeMargenLineaFilter,
   buildInformeMargenTipoFilter,
   buildInformeVariacionPayload,
@@ -18,6 +19,8 @@ import {
   type InformeDbAggRow,
 } from "@/lib/informe-variacion/query";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
+import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
+import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
 
 export type InformeDailyDbRow = {
   fecha_dcto: string;
@@ -120,6 +123,7 @@ export const queryInformeDailyRows = async (
   forcedMargenTipos: string[] | null = null,
   availableRanges: InformeDayRangeSpec[] = [],
   forcedMargenLineas: string[] | null = null,
+  excludedMargenTipos: string[] | null = null,
 ): Promise<InformeDailyDbRow[]> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
@@ -149,6 +153,11 @@ export const queryInformeDailyRows = async (
     forcedMargenLineas,
     sedeParams,
   );
+  const excludedTipoFilterSql = buildInformeMargenExcludedTipoFilter(
+    MARGEN_ITEM_DIA_ROLL_TABLE,
+    excludedMargenTipos,
+    sedeParams,
+  );
 
   const sql = `
     SELECT
@@ -171,7 +180,7 @@ export const queryInformeDailyRows = async (
         OR (fecha_dcto >= $3 AND fecha_dcto <= $4)
         OR (fecha_dcto >= $5 AND fecha_dcto <= $6)
       )
-      ${sedeFilterSql}${tipoFilterSql}${lineaFilterSql}
+      ${sedeFilterSql}${tipoFilterSql}${lineaFilterSql}${excludedTipoFilterSql}
     GROUP BY
       fecha_dcto,
       empresa_norm,
@@ -320,6 +329,7 @@ export const loadInformeVariacionMonthBundle = async (
   availableRanges: InformeDayRangeSpec[],
   forcedMargenTipos: string[] | null = null,
   forcedMargenLineas: string[] | null = null,
+  excludedMargenTipos: string[] | null = null,
 ): Promise<InformeMonthBundleLoadResult | null> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
@@ -338,7 +348,7 @@ export const loadInformeVariacionMonthBundle = async (
       year,
       month,
       allowedSedeKeys,
-      { dayRange: range, forcedMargenTipos, forcedMargenLineas },
+      { dayRange: range, forcedMargenTipos, forcedMargenLineas, excludedMargenTipos },
     );
     const sqlMs = Date.now() - sqlStarted;
     return {
@@ -366,18 +376,29 @@ export const loadInformeVariacionMonthBundle = async (
     forcedMargenTipos,
     availableRanges,
     forcedMargenLineas,
+    excludedMargenTipos,
   );
   const sqlMs = Date.now() - sqlStarted;
 
   const buildStarted = Date.now();
+  const lineScope = {
+    ...resolveUserLineCategoryScope(null),
+    forcedMargenTipos,
+    forcedMargenLineas,
+    excludedMargenTipos,
+    locked: Boolean(
+      forcedMargenTipos?.length ||
+        forcedMargenLineas?.length ||
+        excludedMargenTipos?.length,
+    ),
+  };
   const payloads: Record<string, InformeVariacionPayload> = {};
   for (const range of availableRanges) {
     const dbRows = aggregateDailyRowsForRange(dailyRows, year, month, range);
     const periods = computeInformePeriods(year, month, range);
-    const payload = buildInformeVariacionPayload(
-      dbRows,
-      periods,
-      allowedSedeKeys,
+    const payload = filterInformePayloadForLineScope(
+      buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys),
+      lineScope,
     );
     payloads[range.id] = {
       ...payload,

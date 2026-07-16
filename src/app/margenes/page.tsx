@@ -389,6 +389,7 @@ export default function MargenesPage() {
                 allowedSedeKeys={allowedSedeKeys}
                 lockedCategorias={lineCategoryScope?.forcedMargenTipos ?? null}
                 lockedLineas={lineCategoryScope?.forcedMargenLineas ?? null}
+                excludedCategorias={lineCategoryScope?.excludedMargenTipos ?? null}
                 categoryScopeLocked={Boolean(
                   lineCategoryScope?.forcedMargenTipos?.length,
                 )}

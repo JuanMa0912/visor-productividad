@@ -405,6 +405,9 @@ export async function GET(request: Request) {
   const lineScope = resolveSessionLineCategoryScope(session.user);
   parsed.categorias = applyMargenCategoriaScope(parsed.categorias, lineScope);
   parsed.lineas = applyMargenLineaScope(parsed.lineas, lineScope);
+  if (lineScope.excludedMargenTipos?.length) {
+    parsed.excludedCategorias = [...lineScope.excludedMargenTipos];
+  }
 
   const pool = await getDbPool();
   const client = await pool.connect();

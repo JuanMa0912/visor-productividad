@@ -9,6 +9,8 @@ export type MargenQueryFilters = {
   empresas: string[];
   sedes: string[];
   categorias: string[];
+  /** Tipos a excluir siempre (p. ej. perfil fruver → sin Asaderos/3). */
+  excludedCategorias?: string[];
   lineas: string[];
   sublineas: string[];
   items: string[];
@@ -189,6 +191,13 @@ export const buildMargenWhereClause = (
   if (filters.categorias.length > 0) {
     params.push(filters.categorias);
     parts.push(`TRIM(COALESCE(id_tipo::text, '')) = ANY($${params.length}::text[])`);
+  }
+
+  if (filters.excludedCategorias && filters.excludedCategorias.length > 0) {
+    params.push(filters.excludedCategorias);
+    parts.push(
+      `NOT (TRIM(COALESCE(id_tipo::text, '')) = ANY($${params.length}::text[]))`,
+    );
   }
 
   if (filters.lineas.length > 0) {

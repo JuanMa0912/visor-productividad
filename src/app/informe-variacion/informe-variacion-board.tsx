@@ -42,6 +42,7 @@ type Props = {
   payload: InformeVariacionPayload;
   dataPending?: boolean;
   categoryScopeLocked?: boolean;
+  lineScopeLocked?: boolean;
 };
 
 const EMP_DOT_CLASS: Record<string, string> = {
@@ -60,6 +61,7 @@ function InformeVariacionBoardReady({
   prepared,
   dataPending = false,
   categoryScopeLocked = false,
+  lineScopeLocked = false,
 }: Props & { prepared: Prepared }) {
   const [kpiMetric, setKpiMetric] = useState<InformeMetric>("v");
   const [sedeMetric, setSedeMetric] = useState<InformeMetric>("v");
@@ -349,6 +351,7 @@ function InformeVariacionBoardReady({
         onChange={updateFilter}
         onClear={clearFilters}
         categoryScopeLocked={categoryScopeLocked}
+        lineScopeLocked={lineScopeLocked}
       />
 
       <div
@@ -703,12 +706,14 @@ function InformeFilters({
   onChange,
   onClear,
   categoryScopeLocked = false,
+  lineScopeLocked = false,
 }: {
   payload: Prepared;
   filters: InformeGlobalFilters;
   onChange: (patch: Partial<InformeGlobalFilters>) => void;
   onClear: () => void;
   categoryScopeLocked?: boolean;
+  lineScopeLocked?: boolean;
 }) {
   const sedeOptions = payload.sedes
     .map((sede, index) => ({ index, sede }))
@@ -810,6 +815,7 @@ function InformeFilters({
           onChange={(value) => onChange({ lin: value, sub: "", item: "" })}
           placeholder="Todas las lineas"
           options={linOptions.map((value) => ({ value: String(value), label: payload.lins[value] }))}
+          disabled={lineScopeLocked}
         />
         <FilterSelect
           value={filters.sub}

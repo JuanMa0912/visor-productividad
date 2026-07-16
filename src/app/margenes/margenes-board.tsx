@@ -365,6 +365,7 @@ export const MargenesBoard = ({
   allowedSedeKeys = null,
   lockedCategorias = null,
   lockedLineas = null,
+  excludedCategorias = null,
   categoryScopeLocked = false,
   lineScopeLocked = false,
 }: {
@@ -377,6 +378,7 @@ export const MargenesBoard = ({
   allowedSedeKeys?: string[] | null;
   lockedCategorias?: string[] | null;
   lockedLineas?: string[] | null;
+  excludedCategorias?: string[] | null;
   categoryScopeLocked?: boolean;
   lineScopeLocked?: boolean;
 }) => {
@@ -535,12 +537,16 @@ export const MargenesBoard = ({
   const activeFilterOptions = filterOptions ?? seededFilterOptions;
 
   const scopedFilterOptions = useMemo(() => {
-    const categorias =
+    let categorias =
       lockedCategorias?.length
         ? activeFilterOptions.categorias.filter((option) =>
             lockedCategorias.includes(option.value),
           )
         : activeFilterOptions.categorias;
+    if (excludedCategorias?.length) {
+      const excluded = new Set(excludedCategorias);
+      categorias = categorias.filter((option) => !excluded.has(option.value));
+    }
     const lineas =
       lockedLineas?.length
         ? activeFilterOptions.lineas.filter((option) =>
@@ -560,7 +566,13 @@ export const MargenesBoard = ({
         allowed.has(option.value),
       ),
     };
-  }, [activeFilterOptions, allowedSedeKeys, lockedCategorias, lockedLineas]);
+  }, [
+    activeFilterOptions,
+    allowedSedeKeys,
+    excludedCategorias,
+    lockedCategorias,
+    lockedLineas,
+  ]);
 
   const cascadedFilterOptions = useMemo(() => {
     const sedeOptions = filterSedeOptionsByEmpresas(

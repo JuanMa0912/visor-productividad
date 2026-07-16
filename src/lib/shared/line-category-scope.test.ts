@@ -31,11 +31,12 @@ describe("resolveUserLineCategoryScope", () => {
     assert.equal(scope.forcedMargenLineas, null);
   });
 
-  it("solo fruver fuerza linea 01 en margen y rotacion", () => {
+  it("solo fruver fuerza linea 01 y excluye categoria 3", () => {
     const scope = resolveUserLineCategoryScope(["fruver"]);
     assert.equal(scope.locked, true);
     assert.deepEqual(scope.forcedMargenLineas, [FRUVER_MARGEN_LINEA_ID]);
     assert.deepEqual(scope.forcedRotacionLineaN1, [FRUVER_ROTACION_LINEA_N1]);
+    assert.deepEqual(scope.excludedMargenTipos, [ASADERO_MARGEN_TIPO_ID]);
     assert.equal(scope.forcedMargenTipos, null);
     assert.equal(scope.forcedRotacionCategoriaKeys, null);
   });
@@ -56,6 +57,11 @@ describe("applyMargenCategoriaScope", () => {
   it("descarta tipos fuera del alcance", () => {
     const scope = resolveUserLineCategoryScope(["asadero"]);
     assert.deepEqual(applyMargenCategoriaScope(["4", "3"], scope), ["3"]);
+  });
+
+  it("fruver elimina categoria 3 de la seleccion", () => {
+    const scope = resolveUserLineCategoryScope(["fruver"]);
+    assert.deepEqual(applyMargenCategoriaScope(["3", "4"], scope), ["4"]);
   });
 });
 
