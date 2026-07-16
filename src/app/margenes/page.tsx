@@ -251,7 +251,7 @@ export default function MargenesPage() {
   }, [boardSedes, catalogSedes]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f18] text-[#dde3f0]">
+    <div className="flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto bg-[#0d0f18] text-[#dde3f0] md:h-dvh md:overflow-hidden">
       <AppTopBar
         backHref="/productividad"
         backLabel="Volver a productividad"
@@ -262,10 +262,10 @@ export default function MargenesPage() {
           <Loader2 className="h-6 w-6 animate-spin text-[#4f8ef7]" />
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0d0f18] text-[13px] text-[#dde3f0]">
+        <div className="flex flex-1 flex-col bg-[#0d0f18] text-[13px] text-[#dde3f0] md:min-h-0 md:overflow-hidden">
           <header
             id={MARGENES_TOUR_ANCHOR.intro}
-            className="flex shrink-0 items-center gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2.5"
+            className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2.5"
           >
             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-[#4f8ef7] to-[#a78bfa]">
               <BarChart3 className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
@@ -342,7 +342,7 @@ export default function MargenesPage() {
 
           <main
             id={MARGENES_TOUR_ANCHOR.main}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            className="flex flex-1 flex-col md:min-h-0 md:overflow-hidden"
           >
             {meta?.message ? (
               <p className="shrink-0 border-b border-[#2a2f47] bg-[#141720] px-4 py-2 text-xs text-[#fbbf24]">

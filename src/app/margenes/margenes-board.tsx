@@ -917,7 +917,7 @@ export const MargenesBoard = ({
   }
 
   return (
-    <>
+    <div className="flex flex-1 flex-col md:min-h-0">
       {categoryScopeLocked ? (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
           Vista restringida a la categoría <span className="font-semibold">Asaderos</span>.
@@ -1050,16 +1050,20 @@ export const MargenesBoard = ({
         </div>
       ) : null}
 
-      <div className="flex shrink-0 border-b border-[#2a2f47] bg-[#141720]">
+      <div className="grid shrink-0 grid-cols-2 border-b border-[#2a2f47] bg-[#141720] sm:flex sm:flex-nowrap">
         {[
           { label: "Ventas netas (miles)", value: kpi ? formatMiles(kpi.ventasNetas) : KPI_PLACEHOLDER, sub: kpi?.subFacturas, tone: "text-[#4f8ef7]" },
           { label: "Costo total (miles)", value: kpi ? formatMiles(kpi.costoTotal) : KPI_PLACEHOLDER, sub: kpi?.subCosto, tone: "text-[#dde3f0]" },
           { label: "Margen $ (miles)", value: kpi ? formatMiles(kpi.margenPesos) : KPI_PLACEHOLDER, sub: kpi?.subMargen, tone: marginToneClass(kpi?.margenPct ?? 0) },
           { label: "Margen %", value: kpi ? formatPercent(kpi.margenPct) : KPI_PLACEHOLDER, sub: kpi?.subPct, tone: marginToneClass(kpi?.margenPct ?? 0) },
-        ].map((item, index, arr) => (
+        ].map((item, index) => (
           <div
             key={item.label}
-            className={`flex-1 px-3.5 py-2.5 ${index < arr.length - 1 ? "border-r border-[#2a2f47]" : ""}`}
+            className={`px-3.5 py-2.5 sm:flex-1 ${
+              index % 2 === 0 ? "border-r border-[#2a2f47]" : ""
+            } ${index < 2 ? "border-b border-[#2a2f47] sm:border-b-0" : ""} ${
+              index < 3 ? "sm:border-r sm:border-[#2a2f47]" : ""
+            }`}
           >
             <div className="mb-0.5 text-[10px] tracking-wide text-[#6b7590] uppercase">
               {item.label}
@@ -1198,7 +1202,7 @@ export const MargenesBoard = ({
         </p>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="overflow-x-auto md:min-h-0 md:flex-1 md:overflow-auto">
         <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
           <thead className="sticky top-0 z-10 bg-[#1b1e2e] text-[#6b7590]">
             <tr>
@@ -1309,6 +1313,6 @@ export const MargenesBoard = ({
           ))}
         </select>
       </div>
-    </>
+    </div>
   );
 };

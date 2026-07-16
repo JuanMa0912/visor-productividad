@@ -12,7 +12,7 @@ import {
   LayoutGrid,
   LogOut,
   Pencil,
-  Search,si 
+  Search,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -22,10 +22,10 @@ import {
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
-import { useDomInputSync } from "@/hooks/use-dom-input-sync"; 
+import { useDomInputSync } from "@/hooks/use-dom-input-sync";
 import {
   PORTAL_SECTION_LABEL_BY_ID,
-  PORTAL_SECTIONS,  
+  PORTAL_SECTIONS,
   resolvePortalSubsectionId,
   resolvePortalSectionId,
 } from "@/lib/shared/portal-sections";
