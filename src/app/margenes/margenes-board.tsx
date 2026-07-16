@@ -15,6 +15,7 @@ import {
 } from "@/lib/margenes/format";
 import {
   empresaLabel,
+  filterSedeOptionsByEmpresas,
   parseSedeKey,
   sedeKey,
   sedeLabel,
@@ -543,13 +544,10 @@ export const MargenesBoard = ({
   }, [activeFilterOptions, allowedSedeKeys, lockedCategorias]);
 
   const cascadedFilterOptions = useMemo(() => {
-    const sedeOptions =
-      empresas.length === 0
-        ? scopedFilterOptions.sedes
-        : scopedFilterOptions.sedes.filter((option) => {
-            const empresa = option.empresa.trim().toLowerCase();
-            return empresas.includes(empresa);
-          });
+    const sedeOptions = filterSedeOptionsByEmpresas(
+      scopedFilterOptions.sedes,
+      empresas,
+    );
 
     const sublineaOptions =
       lineas.length === 0
@@ -584,21 +582,16 @@ export const MargenesBoard = ({
     };
   }, [scopedFilterOptions, empresas, lineas, sublineas]);
 
-  const handleEmpresasChange = useCallback(
-    (next: string[]) => {
-      setEmpresas(next);
-      if (next.length === 0) return;
-
-      const allowed = new Set(next.map((value) => value.trim().toLowerCase()));
-      setSedes((current) =>
-        current.filter((value) => {
-          const parsed = parseSedeKey(value);
-          return parsed ? allowed.has(parsed.empresa) : false;
-        }),
-      );
-    },
-    [],
-  );
+  const handleEmpresasChange = useCallback((next: string[]) => {
+    setEmpresas(next);
+    if (next.length === 0) return;
+    setSedes((current) =>
+      filterSedeOptionsByEmpresas(
+        current.map((value) => ({ value })),
+        next,
+      ).map((option) => option.value),
+    );
+  }, []);
 
   const loadItemSearch = useCallback(
     async (query: string) => {

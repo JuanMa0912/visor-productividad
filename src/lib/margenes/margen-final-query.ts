@@ -51,10 +51,21 @@ const parseList = (raw: string | null) =>
 
 const normalizeEmpresa = (value: string) => value.trim().toLowerCase();
 
+/** Alias históricos BD → clave canónica de filtros. */
+const EMPRESA_ALIASES: Record<string, string> = {
+  mercatodo: "mtodo",
+  merkmios: "bogota",
+};
+
+export const canonicalizeEmpresaKey = (value: string): string => {
+  const normalized = normalizeEmpresa(value);
+  return EMPRESA_ALIASES[normalized] ?? normalized;
+};
+
 const normalizeCo = (value: string) => value.trim().padStart(3, "0");
 
 export const empresaLabel = (empresa: string | null | undefined): string => {
-  const key = normalizeEmpresa(empresa ?? "");
+  const key = canonicalizeEmpresaKey(empresa ?? "");
   return EMPRESA_LABELS[key] ?? (empresa?.trim().toUpperCase() || "—");
 };
 
@@ -63,7 +74,7 @@ export const sedeLabel = (
   idCo: string | null | undefined,
 ): string => {
   const co = normalizeCo(idCo ?? "");
-  const emp = normalizeEmpresa(empresa ?? "");
+  const emp = canonicalizeEmpresaKey(empresa ?? "");
   const canonical = getCanonicalSedeName(co, emp);
   if (canonical) return canonical;
   if (co && emp) return `${empresaLabel(emp)} ${co}`;
@@ -71,12 +82,34 @@ export const sedeLabel = (
 };
 
 export const sedeKey = (empresa: string, idCo: string) =>
-  `${normalizeEmpresa(empresa)}|${normalizeCo(idCo)}`;
+  `${canonicalizeEmpresaKey(empresa)}|${normalizeCo(idCo)}`;
 
 export const parseSedeKey = (key: string): { empresa: string; idCo: string } | null => {
   const [empresa, idCo] = key.split("|");
   if (!empresa || !idCo) return null;
-  return { empresa: normalizeEmpresa(empresa), idCo: normalizeCo(idCo) };
+  return { empresa: canonicalizeEmpresaKey(empresa), idCo: normalizeCo(idCo) };
+};
+
+/** Filtra sedes (`empresa|idCo`) por las empresas seleccionadas en el tablero. */
+export const filterSedeOptionsByEmpresas = <
+  T extends { value: string; empresa?: string | null },
+>(
+  sedes: T[],
+  selectedEmpresas: string[],
+): T[] => {
+  if (selectedEmpresas.length === 0) return sedes;
+  const allowed = new Set(
+    selectedEmpresas.map((value) => canonicalizeEmpresaKey(value)).filter(Boolean),
+  );
+  if (allowed.size === 0) return sedes;
+  return sedes.filter((option) => {
+    const fromKey = parseSedeKey(option.value)?.empresa;
+    const fromField = option.empresa
+      ? canonicalizeEmpresaKey(option.empresa)
+      : null;
+    const empresa = fromKey ?? fromField;
+    return Boolean(empresa && allowed.has(empresa));
+  });
 };
 
 export const parseMargenFilters = (
@@ -105,7 +138,7 @@ export const parseMargenFilters = (
     fromCompact,
     toCompact,
     fechas: parseList(searchParams.get("fecha")).filter((value) => /^\d{8}$/.test(value)),
-    empresas: parseList(searchParams.get("empresa")).map(normalizeEmpresa),
+    empresas: parseList(searchParams.get("empresa")).map(canonicalizeEmpresaKey),
     sedes: parseList(searchParams.get("sede")),
     categorias: parseList(searchParams.get("categoria")),
     lineas: parseList(searchParams.get("linea")),

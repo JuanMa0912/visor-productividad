@@ -3,6 +3,8 @@ import type { MargenQueryFilters } from "@/lib/margenes/margen-final-query";
 import {
   compactDateToIso,
   empresaLabel,
+  filterSedeOptionsByEmpresas,
+  parseSedeKey,
   sedeLabel,
   tipoLabel,
   toMargenPct,
@@ -1081,28 +1083,31 @@ export const queryFilterOptions = async (
   const empresas = sedesLocked
     ? [...new Set(
         filters.sedes
-          .map((key) => key.split("|")[0]?.trim().toLowerCase())
-          .filter(Boolean),
+          .map((key) => parseSedeKey(key)?.empresa)
+          .filter((value): value is string => Boolean(value)),
       )].map((value) => ({
         value,
         label: empresaLabel(value),
       }))
     : [];
 
-  const sedes = sedesLocked
-    ? filters.sedes
-        .map((value) => {
-          const [empresa, idCo] = value.split("|");
-          if (!empresa || !idCo) return null;
-          return {
-            value,
-            label: sedeLabel(empresa, idCo),
-            empresa,
-            idCo,
-          };
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-    : [];
+  const sedes = filterSedeOptionsByEmpresas(
+    sedesLocked
+      ? filters.sedes
+          .map((value) => {
+            const parsed = parseSedeKey(value);
+            if (!parsed) return null;
+            return {
+              value,
+              label: sedeLabel(parsed.empresa, parsed.idCo),
+              empresa: parsed.empresa,
+              idCo: parsed.idCo,
+            };
+          })
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      : [],
+    filters.empresas,
+  );
 
   return {
     empresas,

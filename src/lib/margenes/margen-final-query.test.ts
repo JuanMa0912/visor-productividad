@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildMargenWhereClause,
   compactDateToIso,
+  filterSedeOptionsByEmpresas,
   isoDateToCompact,
   parseMargenFilters,
   parseSedeKey,
@@ -56,4 +57,32 @@ test("buildMargenWhereClause agrega filtros parametrizados", () => {
   assert.match(where, /ANY\(\$\d+::text\[\]\)/);
   assert.equal(parseSedeKey("mercamio|003")?.idCo, "003");
   assert.equal(toMargenPct(100, 25), 25);
+});
+
+test("filterSedeOptionsByEmpresas deja solo sedes de la empresa elegida", () => {
+  const sedes = [
+    { value: "mercamio|001", empresa: "mercamio", label: "Calle 5ta" },
+    { value: "mercamio|002", empresa: "mercamio", label: "La 39" },
+    { value: "mtodo|001", empresa: "mtodo", label: "Floresta" },
+    { value: "mtodo|002", empresa: "mtodo", label: "Floralia" },
+    { value: "bogota|001", empresa: "bogota", label: "Bogotá" },
+  ];
+
+  const onlyMercamio = filterSedeOptionsByEmpresas(sedes, ["mercamio"]);
+  assert.deepEqual(
+    onlyMercamio.map((s) => s.value),
+    ["mercamio|001", "mercamio|002"],
+  );
+
+  const byKeyOnly = filterSedeOptionsByEmpresas(
+    sedes.map(({ value, label }) => ({ value, label })),
+    ["MERCAMIO"],
+  );
+  assert.deepEqual(
+    byKeyOnly.map((s) => s.value),
+    ["mercamio|001", "mercamio|002"],
+  );
+
+  assert.equal(filterSedeOptionsByEmpresas(sedes, []).length, sedes.length);
+  assert.equal(sedeKey("mercatodo", "1"), "mtodo|001");
 });
