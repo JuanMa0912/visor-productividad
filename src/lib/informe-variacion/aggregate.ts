@@ -6,7 +6,7 @@ import type {
   InformeVariacionPayload,
 } from "@/lib/informe-variacion/types";
 import {
-  readInformeRowPeriodTriple,
+  readInformeRowPeriodTripleForLevel,
   informeMetricContextFromPayload,
   type InformeMetricContext,
 } from "@/lib/informe-variacion/informe-metric-values";
@@ -31,6 +31,14 @@ export {
 
 export type PeriodTriple = [number, number, number];
 
+/**
+ * Mismas conversiones de unidades que la matriz en nivel sublínea:
+ * aceites→litros, pastas/fruver→kilos, pollos und, huevos individuales.
+ * Se usa en resumen por sede, KPIs y explorador jerárquico (empresa/sede/categoría)
+ * cuando metric === "u".
+ */
+export const INFORME_UNIT_SUMMARY_KEY_INDEX = 3;
+
 export const sumFilteredRows = (
   rows: InformeCompactRow[],
   metric: InformeMetric,
@@ -40,7 +48,12 @@ export const sumFilteredRows = (
   const totals: PeriodTriple = [0, 0, 0];
   for (const row of rows) {
     if (!pass(row)) continue;
-    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      metricCtx,
+      INFORME_UNIT_SUMMARY_KEY_INDEX,
+    );
     totals[0] += triple[0];
     totals[1] += triple[1];
     totals[2] += triple[2];
@@ -81,7 +94,12 @@ export const aggregateBySede = (
   for (const row of rows) {
     if (!pass(row)) continue;
     const bucket = perSede[row[0]];
-    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      metricCtx,
+      INFORME_UNIT_SUMMARY_KEY_INDEX,
+    );
     bucket[0] += triple[0];
     bucket[1] += triple[1];
     bucket[2] += triple[2];

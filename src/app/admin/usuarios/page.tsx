@@ -22,10 +22,10 @@ import {
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
-import { useDomInputSync } from "@/hooks/use-dom-input-sync";
+import { useDomInputSync } from "@/hooks/use-dom-input-sync"; 
 import {
   PORTAL_SECTION_LABEL_BY_ID,
-  PORTAL_SECTIONS,
+  PORTAL_SECTIONS,  
   resolvePortalSubsectionId,
   resolvePortalSectionId,
 } from "@/lib/shared/portal-sections";
@@ -40,7 +40,6 @@ import {
   portalProfileSuggestsAllSedes,
   portalProfileUsesManualPermissions,
   portalProfileAllowsDashboardOverrides,
-  getAsaderoDashboardOptions,
 } from "@/lib/shared/portal-profiles";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { canonicalizeSedeKey } from "@/lib/horarios/visible-sedes";

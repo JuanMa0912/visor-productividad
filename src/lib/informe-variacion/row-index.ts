@@ -1,7 +1,6 @@
 import type { InformeCompactRow, InformeMetric } from "@/lib/informe-variacion/types";
 import type { PeriodTriple } from "@/lib/informe-variacion/aggregate";
 import {
-  readInformeRowPeriodTriple,
   readInformeRowPeriodTripleForLevel,
   type InformeMetricContext,
 } from "@/lib/informe-variacion/informe-metric-values";
@@ -136,6 +135,10 @@ export const aggregateIndicesByKey = (
   keyIndex: number,
   metricCtx: InformeMetricContext,
 ): Map<number, PeriodTriple> => {
+  // Empresa/sede/categoría (0/1): convertir cada fila como en sublínea.
+  // Línea (2) / sublínea (3): reglas de ese nivel. Ítem (4): crudo.
+  const conversionKeyIndex =
+    metric === "u" && (keyIndex === 0 || keyIndex === 1) ? 3 : keyIndex;
   const map = new Map<number, PeriodTriple>();
   for (const rowIndex of indices) {
     const row = rows[rowIndex];
@@ -146,7 +149,7 @@ export const aggregateIndicesByKey = (
       row,
       metric,
       metricCtx,
-      keyIndex,
+      conversionKeyIndex,
     );
     current[0] += triple[0];
     current[1] += triple[1];
@@ -161,12 +164,19 @@ export const sumRowIndices = (
   indices: readonly number[],
   metric: InformeMetric,
   metricCtx: InformeMetricContext,
+  /** Nivel UOM; por defecto sublínea (mismas reglas que resumen sede / matriz sub). */
+  keyIndex = 3,
 ): PeriodTriple => {
   const totals: PeriodTriple = [0, 0, 0];
   for (const rowIndex of indices) {
     const row = rows[rowIndex];
     if (!row) continue;
-    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      metricCtx,
+      keyIndex,
+    );
     totals[0] += triple[0];
     totals[1] += triple[1];
     totals[2] += triple[2];
