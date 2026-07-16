@@ -32,12 +32,10 @@ export {
 export type PeriodTriple = [number, number, number];
 
 /**
- * Mismas conversiones de unidades que la matriz en nivel sublínea:
- * aceites→litros, pastas/fruver→kilos, pollos und, huevos individuales.
- * Se usa en resumen por sede, KPIs y explorador jerárquico (empresa/sede/categoría)
- * cuando metric === "u".
+ * Nivel para totales padre (empresa/sede/categoría/KPI/resumen):
+ * usa rollup (keyIndex 1) — kilos/litros/pollos sin romper padre>=hijo.
  */
-export const INFORME_UNIT_SUMMARY_KEY_INDEX = 3;
+export const INFORME_UNIT_SUMMARY_KEY_INDEX = 1;
 
 export const sumFilteredRows = (
   rows: InformeCompactRow[],

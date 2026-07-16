@@ -172,6 +172,12 @@ export const readInformeRowPeriodTripleForLevel = (
     return readInformeRowPeriodTriple(row, metric, ctx);
   }
 
+  // Totales padre (empresa/sede/categoría): rollup físico sin romper
+  // padre >= hijo (asadero exclude queda en crudo, no en 0).
+  if (keyIndex === 0 || keyIndex === 1) {
+    return readInformeRowPeriodTripleForRollup(row, metric, ctx);
+  }
+
   if (keyIndex === 3) {
     const linLabel = ctx.lins[row[2]] ?? "";
     const subLabel = ctx.subs[row[3]] ?? "";
@@ -206,6 +212,42 @@ export const readInformeRowPeriodTripleForLevel = (
     return readInformeRowPeriodTriple(row, metric, ctx);
   }
 
+  return readInformeRowPeriodTriple(row, metric, ctx);
+};
+
+/**
+ * Conversión para totales mezclados (empresa / sede / categoría / KPIs).
+ * - Asadero 01 POLLO: reglas de línea (porciones excluidas en crudo).
+ * - Huevos / kilos / litros: igual que sublínea homogénea.
+ * Evita el caso padre < hijo al subir sublínea (exclude → 0).
+ */
+export const readInformeRowPeriodTripleForRollup = (
+  row: InformeCompactRow,
+  metric: InformeMetric,
+  ctx: InformeMetricContext,
+): PeriodTriple => {
+  if (metric !== "u") {
+    return readInformeRowPeriodTriple(row, metric, ctx);
+  }
+
+  const catLabel = ctx.cats[row[1]] ?? "";
+  const linLabel = ctx.lins[row[2]] ?? "";
+  const subLabel = ctx.subs[row[3]] ?? "";
+
+  if (shouldConvertAsaderoToPollosUnd(catLabel, linLabel, subLabel)) {
+    return readInformeRowLinePollosUndTriple(row, ctx);
+  }
+  if (shouldConvertHuevosToUndIndividuales(linLabel, subLabel)) {
+    return readInformeRowHuevosUndTriple(row, ctx);
+  }
+  const subUom = resolveSublineDisplayUom(ctx, row[2], row[3]);
+  if (subUom) {
+    return readInformeRowGroupUomTriple(row, ctx, subUom);
+  }
+  const linUom = resolveLineDisplayUom(ctx, row[2]);
+  if (linUom) {
+    return readInformeRowGroupUomTriple(row, ctx, linUom);
+  }
   return readInformeRowPeriodTriple(row, metric, ctx);
 };
 

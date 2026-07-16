@@ -135,10 +135,6 @@ export const aggregateIndicesByKey = (
   keyIndex: number,
   metricCtx: InformeMetricContext,
 ): Map<number, PeriodTriple> => {
-  // Empresa/sede/categoría (0/1): convertir cada fila como en sublínea.
-  // Línea (2) / sublínea (3): reglas de ese nivel. Ítem (4): crudo.
-  const conversionKeyIndex =
-    metric === "u" && (keyIndex === 0 || keyIndex === 1) ? 3 : keyIndex;
   const map = new Map<number, PeriodTriple>();
   for (const rowIndex of indices) {
     const row = rows[rowIndex];
@@ -149,7 +145,7 @@ export const aggregateIndicesByKey = (
       row,
       metric,
       metricCtx,
-      conversionKeyIndex,
+      keyIndex,
     );
     current[0] += triple[0];
     current[1] += triple[1];
@@ -164,8 +160,8 @@ export const sumRowIndices = (
   indices: readonly number[],
   metric: InformeMetric,
   metricCtx: InformeMetricContext,
-  /** Nivel UOM; por defecto sublínea (mismas reglas que resumen sede / matriz sub). */
-  keyIndex = 3,
+  /** Nivel UOM; 1 = rollup padre (default), 2 línea, 3 sublínea. */
+  keyIndex = 1,
 ): PeriodTriple => {
   const totals: PeriodTriple = [0, 0, 0];
   for (const rowIndex of indices) {

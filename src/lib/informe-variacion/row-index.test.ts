@@ -128,6 +128,30 @@ describe("pollos und en sublinea", () => {
     assert.equal(subAgg.get(0)?.[0], 100);
     assert.equal(lineAgg.get(0)?.[0], 818);
   });
+
+  it("rollup categoria/sede usa reglas de linea (padre >= hijo)", () => {
+    const rows: InformeCompactRow[] = [
+      [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 718, 0, 0, 0, 0, 0],
+    ];
+    const lineCtx = {
+      cats: ["3 Asaderos"],
+      lins: ["01 POLLO ASADO"],
+      subs: ["01 POLLO"],
+      items: ["063018 MUSLO APANADO (NVO)", "063027 PORCION DE PAPAS AMARILLAS (NVO)"],
+      ums: ["", ""],
+      lineDisplayUom: new Map<number, string>(),
+      sublineDisplayUom: new Map<string, string>(),
+      sublineItems: new Map<string, readonly number[]>(),
+      lineItems: new Map<number, readonly number[]>(),
+    };
+    const catAgg = aggregateIndicesByKey(rows, [0, 1], "u", 1, lineCtx);
+    const lineAgg = aggregateIndicesByKey(rows, [0, 1], "u", 2, lineCtx);
+    const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, lineCtx);
+    assert.equal(catAgg.get(0)?.[0], 818);
+    assert.equal(lineAgg.get(0)?.[0], 818);
+    assert.ok((catAgg.get(0)?.[0] ?? 0) >= (subAgg.get(0)?.[0] ?? 0));
+  });
 });
 
 describe("huevos und en sublinea", () => {

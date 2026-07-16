@@ -352,15 +352,12 @@ function InformeVariacionBoardReady({
         </div>
         {kpiMetric === "u" ? (
           <p className="mt-3 text-xs text-slate-500">
-            En unidades, el resumen por sede/empresa, el explorador jerárquico y los
-            KPIs usan las mismas conversiones que la matriz en sublínea: asaderos
-            (01 POLLO) en{" "}
-            <span className="font-medium text-slate-700">pollos und</span>; Mercado
-            convierte gramos/mg/kg a{" "}
-            <span className="font-medium text-slate-700">kilos</span> y ml/cc/cl a{" "}
-            <span className="font-medium text-slate-700">litros</span> cuando la
-            sublínea es homogénea; huevos en individuales. En la matriz, los ítems
-            siguen mostrando unidades de la BD.
+            En unidades, totales de sede/empresa/categoría (matriz, resumen y
+            explorador) convierten kilos/litros/pollos/huevos con reglas de{" "}
+            <span className="font-medium text-slate-700">rollup</span> (en
+            asadero las porciones excluidas siguen en crudo para no romper
+            padre≥hijo). Línea y sublínea usan sus reglas propias; los ítems
+            siguen en unidades de la BD.
           </p>
         ) : null}
       </Section>
