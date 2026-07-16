@@ -86,24 +86,16 @@ type ColDef = {
   cellClassName?: string;
 };
 
-const marginBar = (pct: number) => {
-  const clamped = Math.min(100, Math.max(0, pct));
-  return (
-    <span
-      className="inline-block h-1.5 w-10 shrink-0 overflow-hidden rounded-sm bg-[#2a2f47] align-middle"
-      aria-hidden
-    >
-      <span
-        className="block h-full rounded-sm"
-        style={{
-          width: `${clamped}%`,
-          backgroundColor:
-            pct >= 15 ? "#34d399" : pct >= 5 ? "#fbbf24" : "#f87171",
-        }}
-      />
-    </span>
-  );
-};
+const marginBar = (pct: number) => (
+  <span
+    className="inline-block h-[5px] shrink-0 rounded-sm opacity-60 align-middle"
+    style={{
+      width: `${Math.min(100, Math.max(0, pct))}px`,
+      backgroundColor: pct >= 15 ? "#34d399" : pct >= 5 ? "#fbbf24" : "#f87171",
+    }}
+    aria-hidden
+  />
+);
 
 /** Recorrido: la factura se muestra como "Fact: 000000" (6 dígitos). */
 const formatStepLabel = (step: DrillPathStep | FactNavStep): string => {
@@ -174,11 +166,11 @@ const colsForDrillLevel = (
       key: "margenPct",
       label: "Margen %",
       align: "right",
-      cellClassName: "min-w-[7.5rem] whitespace-nowrap",
+      cellClassName: "min-w-[10.5rem] whitespace-nowrap",
       sortValue: (row) => row.margenPct,
       render: (row) => (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums whitespace-nowrap ${marginBadgeClass(row.margenPct)}`}
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums whitespace-nowrap ${marginBadgeClass(row.margenPct)}`}
         >
           <span className="whitespace-nowrap">{formatPercent(row.margenPct)}</span>
           {marginBar(row.margenPct)}
