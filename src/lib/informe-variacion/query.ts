@@ -105,7 +105,22 @@ const buildMargenTipoFilter = (
   return `AND TRIM(COALESCE(id_tipo::text, '')) = ANY($${tipoParam}::text[])`;
 };
 
+const buildMargenLineaFilter = (
+  table: MargenDataTable,
+  forcedMargenLineas: string[] | null,
+  params: Array<string | string[]>,
+): string => {
+  if (!forcedMargenLineas?.length) return "";
+  params.push(forcedMargenLineas);
+  const lineaParam = 6 + params.length;
+  if (isRollTable(table)) {
+    return `AND id_linea1 = ANY($${lineaParam}::text[])`;
+  }
+  return `AND TRIM(COALESCE(id_linea1::text, '')) = ANY($${lineaParam}::text[])`;
+};
+
 export { buildMargenTipoFilter as buildInformeMargenTipoFilter };
+export { buildMargenLineaFilter as buildInformeMargenLineaFilter };
 
 /**
  * Una sola pasada: MoM + YoY + actual en CASE, filtrando solo las 3 ventanas.
@@ -212,12 +227,21 @@ export const queryInformeVariacionRows = async (
   periods: InformePeriods,
   allowedSedeKeys: string[] | null,
   forcedMargenTipos: string[] | null = null,
+  forcedMargenLineas: string[] | null = null,
 ): Promise<InformeDbAggRow[]> => {
   const table = await resolveInformeMargenDataSource(client);
   const extraParams: Array<string | string[]> = [];
   const sedeFilterSql = buildSedeFilter(table, allowedSedeKeys, extraParams);
   const tipoFilterSql = buildMargenTipoFilter(table, forcedMargenTipos, extraParams);
-  const sql = buildInformeThreePeriodSql(table, `${sedeFilterSql}${tipoFilterSql}`);
+  const lineaFilterSql = buildMargenLineaFilter(
+    table,
+    forcedMargenLineas,
+    extraParams,
+  );
+  const sql = buildInformeThreePeriodSql(
+    table,
+    `${sedeFilterSql}${tipoFilterSql}${lineaFilterSql}`,
+  );
   const params = [
     periods.current.from,
     periods.current.to,
@@ -363,6 +387,7 @@ export const buildInformeVariacionPayload = (
 export type LoadInformeVariacionOptions = {
   dayRange?: InformeDayRangeSpec | null;
   forcedMargenTipos?: string[] | null;
+  forcedMargenLineas?: string[] | null;
 };
 
 export const loadInformeVariacionPayload = async (
@@ -378,6 +403,7 @@ export const loadInformeVariacionPayload = async (
     periods,
     allowedSedeKeys,
     options.forcedMargenTipos ?? null,
+    options.forcedMargenLineas ?? null,
   );
   const payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
   return attachDayRangeMeta(payload, options.dayRange);

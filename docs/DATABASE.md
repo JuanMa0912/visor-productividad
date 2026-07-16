@@ -94,6 +94,7 @@ Orden completo despues de `schema-auth.sql`:
 40. `20260715_margen_item_dia_roll_atomic_refresh.sql` (rebuild completo via staging+rename; evita vaciar la tabla durante el refresh)
 41. `20260715_user_audit_trail.sql` (`app_user_admin_audit` + `app_user_login_attempt_log`)
 42. `20260716_informe_variacion_payload_std.sql` (snapshot JSON de `/informe-variacion` para first paint rapido)
+43. `20260717_app_users_portal_profile_fruver.sql` (añade perfil `fruver` + configura LHERRERA)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
@@ -125,7 +126,7 @@ Columnas relevantes de `app_users`:
 | `allowed_dashboards` | secciones UAID |
 | `allowed_subdashboards` | permisos granulares |
 | `special_roles` | capacidades especiales |
-| `portal_profile` | perfil de negocio (`admin`, `subadmin`, `gerente`, `director_comercial`, `asadero`, `rrhh`, `personalizado`) |
+| `portal_profile` | perfil de negocio (`admin`, `subadmin`, `gerente`, `director_comercial`, `asadero`, `fruver`, `rrhh`, `personalizado`) |
 | `is_active` | bloqueo de acceso |
 | `password_changed_at` | ultimo cambio de contraseña (rotacion cada 30 dias) |
 | `last_login_at`, `last_login_ip` | trazabilidad |
@@ -277,6 +278,11 @@ APIs relacionadas: `/api/rotacion`, `/api/rotacion/cero-estados`,
 Perfil `asadero` (`allowed_lines` solo `asadero`): fuerza categoria de rotacion
 `3` y consulta la tabla cruda `rotacion_base_item_dia_sede` (no matview ni
 `periodo_std`, que excluyen cat. `3`). Ver
+`src/lib/shared/line-category-scope.ts`.
+
+Perfil `fruver` (`allowed_lines` solo `fruver`): fuerza linea N1 `01` en
+margen/informe/rotacion (Fruver no es categoria propia como Asaderos). Misma
+superficie de tableros que asadero. Ver
 `src/lib/shared/line-category-scope.ts`.
 
 ### 4.5 Ventas por item

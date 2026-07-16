@@ -953,7 +953,9 @@ export default function InformeVariacionPage() {
             key={monthKey || "informe"}
             payload={payload!}
             dataPending={boardDataPending}
-            categoryScopeLocked={lineCategoryScope?.locked ?? false}
+            categoryScopeLocked={Boolean(
+              lineCategoryScope?.forcedMargenTipos?.length,
+            )}
           />
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-600">

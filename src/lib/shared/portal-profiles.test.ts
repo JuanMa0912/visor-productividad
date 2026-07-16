@@ -42,6 +42,16 @@ test("materializePortalProfilePermissions aplica preset Asadero", () => {
   assert.equal(permissions.specialRoles?.includes("comparar_horarios"), true);
 });
 
+test("materializePortalProfilePermissions aplica preset Fruver", () => {
+  const permissions = materializePortalProfilePermissions("fruver");
+  assert.equal(permissions.role, "user");
+  assert.deepEqual(permissions.allowedDashboards, ["producto", "operacion"]);
+  assert.deepEqual(permissions.allowedLines, ["fruver"]);
+  assert.equal(permissions.allowedSubdashboards?.includes("margenes"), true);
+  assert.equal(permissions.allowedSubdashboards?.includes("rotacion"), true);
+  assert.equal(permissions.specialRoles?.includes("alex"), false);
+});
+
 test("materializePortalProfilePermissions asadero respeta subconjunto de tableros", () => {
   const permissions = materializePortalProfilePermissions("asadero", {
     allowedDashboards: ["producto"],

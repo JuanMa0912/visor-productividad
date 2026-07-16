@@ -1,9 +1,15 @@
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
-import { scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
+import { scopeLineasCacheSuffix, scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
 
 const INFORME_CACHE_TTL_MS = 30 * 60 * 1000;
+
+const scopeCacheSuffix = (
+  forcedMargenTipos?: string[] | null,
+  forcedMargenLineas?: string[] | null,
+) =>
+  `${scopeTiposCacheSuffix(forcedMargenTipos)}${scopeLineasCacheSuffix(forcedMargenLineas)}`;
 
 export const buildInformeCacheKey = (
   year: number,
@@ -11,13 +17,14 @@ export const buildInformeCacheKey = (
   allowedSedeKeys: string[] | null,
   dayRangeId?: string | null,
   forcedMargenTipos?: string[] | null,
+  forcedMargenLineas?: string[] | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
   const range = dayRangeId?.trim() || "1-eom";
-  return `informe:${year}:${month}:range=${range}:${sedes}${scopeTiposCacheSuffix(forcedMargenTipos)}`;
+  return `informe:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas)}`;
 };
 
 export const getCachedInformePayload = (
@@ -42,12 +49,13 @@ export const buildInformeBundleCacheKey = (
   month: number,
   allowedSedeKeys: string[] | null,
   forcedMargenTipos?: string[] | null,
+  forcedMargenLineas?: string[] | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
-  return `informe-bundle:${year}:${month}:${sedes}${scopeTiposCacheSuffix(forcedMargenTipos)}`;
+  return `informe-bundle:${year}:${month}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas)}`;
 };
 
 export const getCachedInformeMonthBundle = (
@@ -62,6 +70,7 @@ export const setCachedInformeMonthBundle = (
   bundle: InformeVariacionMonthBundle,
   allowedSedeKeys: string[] | null,
   forcedMargenTipos?: string[] | null,
+  forcedMargenLineas?: string[] | null,
 ): void => {
   const hasRows = Object.values(bundle.payloads).some(
     (payload) => (payload.rows?.length ?? 0) > 0,
@@ -76,6 +85,7 @@ export const setCachedInformeMonthBundle = (
         allowedSedeKeys,
         rangeId,
         forcedMargenTipos,
+        forcedMargenLineas,
       ),
       payload,
     );

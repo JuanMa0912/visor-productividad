@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   applyMargenCategoriaScope,
+  applyMargenLineaScope,
   applyRotacionCategoriaKeysScope,
+  applyRotacionLineaN1Scope,
   ASADERO_MARGEN_TIPO_ID,
   ASADERO_ROTACION_CATEGORIA_KEY,
+  FRUVER_MARGEN_LINEA_ID,
+  FRUVER_ROTACION_LINEA_N1,
   resolveRotacionCategoriaPresenceSql,
   resolveUserLineCategoryScope,
 } from "@/lib/shared/line-category-scope";
@@ -14,6 +18,7 @@ describe("resolveUserLineCategoryScope", () => {
     const scope = resolveUserLineCategoryScope(null);
     assert.equal(scope.locked, false);
     assert.equal(scope.forcedMargenTipos, null);
+    assert.equal(scope.forcedMargenLineas, null);
   });
 
   it("solo asadero fuerza categoria 3 en margen y rotacion", () => {
@@ -23,6 +28,16 @@ describe("resolveUserLineCategoryScope", () => {
     assert.deepEqual(scope.forcedRotacionCategoriaKeys, [
       ASADERO_ROTACION_CATEGORIA_KEY,
     ]);
+    assert.equal(scope.forcedMargenLineas, null);
+  });
+
+  it("solo fruver fuerza linea 01 en margen y rotacion", () => {
+    const scope = resolveUserLineCategoryScope(["fruver"]);
+    assert.equal(scope.locked, true);
+    assert.deepEqual(scope.forcedMargenLineas, [FRUVER_MARGEN_LINEA_ID]);
+    assert.deepEqual(scope.forcedRotacionLineaN1, [FRUVER_ROTACION_LINEA_N1]);
+    assert.equal(scope.forcedMargenTipos, null);
+    assert.equal(scope.forcedRotacionCategoriaKeys, null);
   });
 
   it("varias lineas no activa bloqueo de categoria", () => {
@@ -44,10 +59,29 @@ describe("applyMargenCategoriaScope", () => {
   });
 });
 
+describe("applyMargenLineaScope", () => {
+  it("inyecta linea 01 para fruver", () => {
+    const scope = resolveUserLineCategoryScope(["fruver"]);
+    assert.deepEqual(applyMargenLineaScope([], scope), ["01"]);
+  });
+
+  it("normaliza 1 a 01 al intersectar", () => {
+    const scope = resolveUserLineCategoryScope(["fruver"]);
+    assert.deepEqual(applyMargenLineaScope(["1", "08"], scope), ["01"]);
+  });
+});
+
 describe("applyRotacionCategoriaKeysScope", () => {
   it("fuerza clave 3 cuando no hay seleccion", () => {
     const scope = resolveUserLineCategoryScope(["asadero"]);
     assert.deepEqual(applyRotacionCategoriaKeysScope(null, scope), ["3"]);
+  });
+});
+
+describe("applyRotacionLineaN1Scope", () => {
+  it("fuerza linea 01 para fruver", () => {
+    const scope = resolveUserLineCategoryScope(["fruver"]);
+    assert.deepEqual(applyRotacionLineaN1Scope(null, scope), ["01"]);
   });
 });
 

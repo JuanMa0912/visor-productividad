@@ -11,6 +11,7 @@ import {
   toCompactDate,
 } from "@/lib/informe-variacion/periods";
 import {
+  buildInformeMargenLineaFilter,
   buildInformeMargenTipoFilter,
   buildInformeVariacionPayload,
   loadInformeVariacionPayload,
@@ -118,6 +119,7 @@ export const queryInformeDailyRows = async (
   allowedSedeKeys: string[] | null,
   forcedMargenTipos: string[] | null = null,
   availableRanges: InformeDayRangeSpec[] = [],
+  forcedMargenLineas: string[] | null = null,
 ): Promise<InformeDailyDbRow[]> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
@@ -142,6 +144,11 @@ export const queryInformeDailyRows = async (
     forcedMargenTipos,
     sedeParams,
   );
+  const lineaFilterSql = buildInformeMargenLineaFilter(
+    MARGEN_ITEM_DIA_ROLL_TABLE,
+    forcedMargenLineas,
+    sedeParams,
+  );
 
   const sql = `
     SELECT
@@ -164,7 +171,7 @@ export const queryInformeDailyRows = async (
         OR (fecha_dcto >= $3 AND fecha_dcto <= $4)
         OR (fecha_dcto >= $5 AND fecha_dcto <= $6)
       )
-      ${sedeFilterSql}${tipoFilterSql}
+      ${sedeFilterSql}${tipoFilterSql}${lineaFilterSql}
     GROUP BY
       fecha_dcto,
       empresa_norm,
@@ -312,6 +319,7 @@ export const loadInformeVariacionMonthBundle = async (
   allowedSedeKeys: string[] | null,
   availableRanges: InformeDayRangeSpec[],
   forcedMargenTipos: string[] | null = null,
+  forcedMargenLineas: string[] | null = null,
 ): Promise<InformeMonthBundleLoadResult | null> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
@@ -330,7 +338,7 @@ export const loadInformeVariacionMonthBundle = async (
       year,
       month,
       allowedSedeKeys,
-      { dayRange: range, forcedMargenTipos },
+      { dayRange: range, forcedMargenTipos, forcedMargenLineas },
     );
     const sqlMs = Date.now() - sqlStarted;
     return {
@@ -357,6 +365,7 @@ export const loadInformeVariacionMonthBundle = async (
     allowedSedeKeys,
     forcedMargenTipos,
     availableRanges,
+    forcedMargenLineas,
   );
   const sqlMs = Date.now() - sqlStarted;
 

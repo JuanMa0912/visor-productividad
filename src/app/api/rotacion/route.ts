@@ -43,6 +43,8 @@ import {
 } from "@/lib/shared/portal-sections";
 import {
   applyRotacionCategoriaKeysScope,
+  applyRotacionLineaN1Scope,
+  normalizeScopedLineaN1,
   resolveRotacionCategoriaPresenceSql,
   resolveSessionLineCategoryScope,
   rotacionCategoriaScopeCacheSuffix,
@@ -3279,6 +3281,30 @@ export async function GET(request: Request) {
       }
     }
 
+    if (lineScope.forcedRotacionLineaN1?.length) {
+      const forced = new Set(
+        lineScope.forcedRotacionLineaN1.map(normalizeScopedLineaN1),
+      );
+      filters.lineasN1 = filters.lineasN1
+        .map(normalizeScopedLineaN1)
+        .filter((code) => forced.has(code));
+      filters.lineasN1Nombres = Object.fromEntries(
+        Object.entries(filters.lineasN1Nombres).filter(([code]) =>
+          forced.has(normalizeScopedLineaN1(code)),
+        ),
+      );
+      filters.lineasN1PorCategoria = Object.fromEntries(
+        Object.entries(filters.lineasN1PorCategoria)
+          .map(([categoriaKey, lineas]) => [
+            categoriaKey,
+            lineas
+              .map(normalizeScopedLineaN1)
+              .filter((code) => forced.has(code)),
+          ])
+          .filter(([, lineas]) => (lineas as string[]).length > 0),
+      );
+    }
+
     if (requestedLineaN1Scope && selectedVisibleSedes.length > 0) {
       const lineasN2Set = new Set<string>();
       let lineasN2NombresAcc: Record<string, string> = {};
@@ -3420,7 +3446,7 @@ export async function GET(request: Request) {
     const validatedLineasN1 = requestedLineasN1.filter((code) =>
       catalogLineaN1Set.has(normalizeRotationLineaN1Code(code)),
     );
-    const lineasN1ForQuery =
+    const lineasN1ForQueryRaw =
       validatedLineasN1.length > 0
         ? validatedLineasN1
         : catalogLineaN1Set.size > 0 && requestedLineasN1.length > 0
@@ -3428,6 +3454,10 @@ export async function GET(request: Request) {
           : requestedLineasN1.length > 0
             ? requestedLineasN1
             : null;
+    const lineasN1ForQuery = applyRotacionLineaN1Scope(
+      lineasN1ForQueryRaw,
+      lineScope,
+    );
 
     // Resolvemos los campos del esquema UNA sola vez por request y los pasamos
     // a todas las queries por sede. Antes cada `queryRotationRows` ejecutaba su

@@ -19,9 +19,11 @@ const DOES_NOT_EXIST = /does not exist|no existe/i;
 export const canUseInformePayloadStd = (
   allowedSedeKeys: string[] | null,
   forcedMargenTipos?: string[] | null,
+  forcedMargenLineas?: string[] | null,
 ): boolean =>
   allowedSedeKeys === null &&
-  (forcedMargenTipos == null || forcedMargenTipos.length === 0);
+  (forcedMargenTipos == null || forcedMargenTipos.length === 0) &&
+  (forcedMargenLineas == null || forcedMargenLineas.length === 0);
 
 export const getInformePayloadStd = async (
   client: Queryable,

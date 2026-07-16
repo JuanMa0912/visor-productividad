@@ -936,7 +936,9 @@ export default function AdminUsuariosPage() {
   const canEditDashboardPermissions = portalProfileAllowsDashboardOverrides(
     formState.portalProfile,
   );
-  const dashboardPermissionsOnly = formState.portalProfile === "asadero";
+  const dashboardPermissionsOnly =
+    formState.portalProfile === "asadero" ||
+    formState.portalProfile === "fruver";
   const selectedProfileSummary =
     PORTAL_PROFILE_OPTIONS.find(
       (option) => option.id === formState.portalProfile,

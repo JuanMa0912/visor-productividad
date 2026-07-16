@@ -136,7 +136,7 @@ export async function GET(request: Request) {
       year,
       month,
       scope.allowedKeys,
-      lineScope.forcedMargenTipos,
+      lineScope.forcedMargenTipos, lineScope.forcedMargenLineas,
     );
     const cachedBundle = getCachedInformeMonthBundle(bundleKey);
     if (cachedBundle) {
@@ -152,7 +152,7 @@ export async function GET(request: Request) {
 
     const useStd = canUseInformePayloadStd(
       scope.allowedKeys,
-      lineScope.forcedMargenTipos,
+      lineScope.forcedMargenTipos, lineScope.forcedMargenLineas,
     );
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
@@ -168,7 +168,7 @@ export async function GET(request: Request) {
             bundleKey,
             snapped,
             scope.allowedKeys,
-            lineScope.forcedMargenTipos,
+            lineScope.forcedMargenTipos, lineScope.forcedMargenLineas,
           );
           return withSession(
             NextResponse.json(snapped, {
@@ -197,7 +197,7 @@ export async function GET(request: Request) {
         month,
         scope.allowedKeys,
         availableRanges,
-        lineScope.forcedMargenTipos,
+        lineScope.forcedMargenTipos, lineScope.forcedMargenLineas,
       );
       const elapsedMs = Date.now() - startedAt;
 
@@ -227,7 +227,7 @@ export async function GET(request: Request) {
         bundleKey,
         bundle,
         scope.allowedKeys,
-        lineScope.forcedMargenTipos,
+        lineScope.forcedMargenTipos, lineScope.forcedMargenLineas,
       );
 
       return withSession(
@@ -295,7 +295,7 @@ export async function GET(request: Request) {
     month,
     scope.allowedKeys,
     effectiveRange?.id,
-    lineScope.forcedMargenTipos,
+    lineScope.forcedMargenTipos, lineScope.forcedMargenLineas,
   );
   const cached = getCachedInformePayload(cacheKey);
   if (cached) {
@@ -311,7 +311,7 @@ export async function GET(request: Request) {
 
   const useStd = canUseInformePayloadStd(
     scope.allowedKeys,
-    lineScope.forcedMargenTipos,
+    lineScope.forcedMargenTipos, lineScope.forcedMargenLineas,
   );
   if (useStd && effectiveRange) {
     const stdClient = await (await getDbPool()).connect();
@@ -352,7 +352,7 @@ export async function GET(request: Request) {
       scope.allowedKeys,
       {
         dayRange: effectiveRange,
-        forcedMargenTipos: lineScope.forcedMargenTipos,
+        forcedMargenTipos: lineScope.forcedMargenTipos, forcedMargenLineas: lineScope.forcedMargenLineas,
       },
     );
     const elapsedMs = Date.now() - startedAt;

@@ -70,7 +70,7 @@ Codigo compartido sin UI de pagina.
 | `utils.ts` | helpers genericos como `cn` |
 | `portal-sections.ts` | secciones UAID, subtableros, alias legacy y validacion de acceso |
 | `special-role-features.ts` | capacidades por `special_roles` |
-| `line-category-scope.ts` | alcance por `allowed_lines` (p. ej. asadero → cat. margen/rotacion `3`) |
+| `line-category-scope.ts` | alcance por `allowed_lines` (asadero → cat. `3`; fruver → linea N1 `01`) |
 | `rate-limit.ts` | rate limit en memoria por IP |
 | `export-utils.ts` | utilidades para exportar tablas/graficos |
 | `agent-debug-log.ts` | logging opcional de depuracion en desarrollo |

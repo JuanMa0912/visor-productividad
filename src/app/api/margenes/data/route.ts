@@ -43,6 +43,7 @@ import {
 } from "@/lib/margenes/margen-sede-scope";
 import {
   applyMargenCategoriaScope,
+  applyMargenLineaScope,
   resolveSessionLineCategoryScope,
 } from "@/lib/shared/line-category-scope";
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
@@ -403,6 +404,7 @@ export async function GET(request: Request) {
 
   const lineScope = resolveSessionLineCategoryScope(session.user);
   parsed.categorias = applyMargenCategoriaScope(parsed.categorias, lineScope);
+  parsed.lineas = applyMargenLineaScope(parsed.lineas, lineScope);
 
   const pool = await getDbPool();
   const client = await pool.connect();

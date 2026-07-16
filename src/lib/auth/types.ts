@@ -14,6 +14,7 @@ export type PortalProfileId =
   | "gerente"
   | "director_comercial"
   | "asadero"
+  | "fruver"
   | "rrhh"
   | "personalizado";
 

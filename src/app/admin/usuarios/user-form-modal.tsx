@@ -38,6 +38,7 @@ import type { PortalProfileId } from "@/lib/auth/types";
 import {
   getPortalProfileLabel,
   getAsaderoDashboardOptions,
+  getFruverDashboardOptions,
   PORTAL_PROFILE_OPTIONS,
   portalProfileRequiresAssignedSedes,
 } from "@/lib/shared/portal-profiles";
@@ -339,33 +340,38 @@ export function UserFormModal({
       ? [
           `${formState.allowedDashboards.length || "Todas"} secciones`,
           `${formState.allowedSubdashboards.length || "Todos"} subtableros`,
-          "Línea fija: Asadero",
+          formState.portalProfile === "fruver"
+            ? "Línea fija: Fruver"
+            : "Línea fija: Asadero",
         ].join(" · ")
       : selectedProfileSummary;
 
-  const asaderoDashboardOptions = useMemo(
-    () => getAsaderoDashboardOptions(),
-    [],
+  const lineLockedDashboardOptions = useMemo(
+    () =>
+      formState.portalProfile === "fruver"
+        ? getFruverDashboardOptions()
+        : getAsaderoDashboardOptions(),
+    [formState.portalProfile],
   );
   const visibleSectionOptions = useMemo(
     () =>
       dashboardPermissionsOnly
         ? sectionOptions.filter((option) =>
-            asaderoDashboardOptions.sections.includes(
-              option.id as (typeof asaderoDashboardOptions.sections)[number],
+            lineLockedDashboardOptions.sections.includes(
+              option.id as (typeof lineLockedDashboardOptions.sections)[number],
             ),
           )
         : sectionOptions,
-    [asaderoDashboardOptions.sections, dashboardPermissionsOnly, sectionOptions],
+    [lineLockedDashboardOptions, dashboardPermissionsOnly, sectionOptions],
   );
   const visiblePortalSections = useMemo(
     () =>
       dashboardPermissionsOnly
         ? PORTAL_SECTIONS.filter((section) =>
-            asaderoDashboardOptions.sections.includes(section.id),
+            lineLockedDashboardOptions.sections.includes(section.id),
           )
         : PORTAL_SECTIONS,
-    [asaderoDashboardOptions.sections, dashboardPermissionsOnly],
+    [lineLockedDashboardOptions, dashboardPermissionsOnly],
   );
 
   const renderStepContent = () => {
@@ -618,14 +624,24 @@ export function UserFormModal({
         <Stepper>
           {dashboardPermissionsOnly ? (
             <p className="mb-3 rounded-lg border border-amber-100 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
-              Perfil <span className="font-semibold">Asadero</span>: puedes quitar
-              tableros, pero la línea y la categoría siguen fijas en asadero.
+              Perfil{" "}
+              <span className="font-semibold">
+                {formState.portalProfile === "fruver" ? "Fruver" : "Asadero"}
+              </span>
+              : puedes quitar tableros, pero la línea sigue fija en{" "}
+              {formState.portalProfile === "fruver" ? "fruver" : "asadero"}.
             </p>
           ) : null}
           <StepperStep
             index={1}
             title="Secciones permitidas"
-            description={dashboardPermissionsOnly ? "Solo tableros del perfil Asadero" : "Vacío = todas"}
+            description={
+              dashboardPermissionsOnly
+                ? `Solo tableros del perfil ${
+                    formState.portalProfile === "fruver" ? "Fruver" : "Asadero"
+                  }`
+                : "Vacío = todas"
+            }
             summary={
               formState.allowedDashboards.length === 0
                 ? "Todas las secciones"
@@ -682,7 +698,7 @@ export function UserFormModal({
                     options={PORTAL_SUBSECTIONS_BY_SECTION[section.id]
                       .filter((subId) =>
                         dashboardPermissionsOnly
-                          ? asaderoDashboardOptions.subsections.includes(subId)
+                          ? lineLockedDashboardOptions.subsections.includes(subId)
                           : true,
                       )
                       .map((subId) => ({

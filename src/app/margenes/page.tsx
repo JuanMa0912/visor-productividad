@@ -388,7 +388,13 @@ export default function MargenesPage() {
                 onSedeDrill={handleSedeDrill}
                 allowedSedeKeys={allowedSedeKeys}
                 lockedCategorias={lineCategoryScope?.forcedMargenTipos ?? null}
-                categoryScopeLocked={lineCategoryScope?.locked ?? false}
+                lockedLineas={lineCategoryScope?.forcedMargenLineas ?? null}
+                categoryScopeLocked={Boolean(
+                  lineCategoryScope?.forcedMargenTipos?.length,
+                )}
+                lineScopeLocked={Boolean(
+                  lineCategoryScope?.forcedMargenLineas?.length,
+                )}
               />
             )}
           </main>

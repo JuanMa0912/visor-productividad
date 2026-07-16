@@ -5,7 +5,7 @@ import {
   normalizeAllowedPortalSubsections,
   PORTAL_SUBSECTIONS_BY_SECTION,
 } from "@/lib/shared/portal-sections";
-import { ASADERO_LINE_ID } from "@/lib/shared/line-category-scope";
+import { ASADERO_LINE_ID, FRUVER_LINE_ID } from "@/lib/shared/line-category-scope";
 
 export type { PortalProfileId };
 
@@ -15,6 +15,7 @@ export const PORTAL_PROFILE_IDS: PortalProfileId[] = [
   "gerente",
   "director_comercial",
   "asadero",
+  "fruver",
   "rrhh",
   "personalizado",
 ];
@@ -55,6 +56,12 @@ export const PORTAL_PROFILE_OPTIONS: Array<{
       "Márgenes, rotación, variación y operación (horas) solo con datos de Asaderos. Puedes quitar tableros; la línea sigue fija en asadero.",
   },
   {
+    id: "fruver",
+    label: "Fruver",
+    summary:
+      "Márgenes, rotación, variación y operación (horas) solo con datos de Fruver. Puedes quitar tableros; la línea sigue fija en fruver.",
+  },
+  {
     id: "rrhh",
     label: "RRHH",
     summary:
@@ -84,9 +91,18 @@ const ASADERO_SUBSECTIONS: PortalSubsectionId[] = [
 
 const ASADERO_SECTIONS: PortalSectionId[] = ["producto", "operacion"];
 
+/** Mismos tableros que Asadero; solo cambia la línea forzada (fruver). */
+const FRUVER_SUBSECTIONS: PortalSubsectionId[] = [...ASADERO_SUBSECTIONS];
+const FRUVER_SECTIONS: PortalSectionId[] = [...ASADERO_SECTIONS];
+
 export const getAsaderoDashboardOptions = () => ({
   sections: [...ASADERO_SECTIONS],
   subsections: [...ASADERO_SUBSECTIONS],
+});
+
+export const getFruverDashboardOptions = () => ({
+  sections: [...FRUVER_SECTIONS],
+  subsections: [...FRUVER_SUBSECTIONS],
 });
 
 const COMMERCIAL_SPECIAL_ROLES = [
@@ -101,6 +117,8 @@ const COMMERCIAL_SPECIAL_ROLES = [
 const ASADERO_SPECIAL_ROLES = COMMERCIAL_SPECIAL_ROLES.filter(
   (role) => role !== "alex",
 );
+
+const FRUVER_SPECIAL_ROLES = [...ASADERO_SPECIAL_ROLES];
 
 const RRHH_SPECIAL_ROLES = [
   "alex",
@@ -171,6 +189,14 @@ const PROFILE_PRESETS: Record<
     allowedLines: [ASADERO_LINE_ID],
     specialRoles: [...ASADERO_SPECIAL_ROLES],
   },
+  fruver: {
+    portalProfile: "fruver",
+    role: "user",
+    allowedDashboards: FRUVER_SECTIONS,
+    allowedSubdashboards: FRUVER_SUBSECTIONS,
+    allowedLines: [FRUVER_LINE_ID],
+    specialRoles: [...FRUVER_SPECIAL_ROLES],
+  },
   rrhh: {
     portalProfile: "rrhh",
     role: "user",
@@ -212,7 +238,14 @@ export const portalProfileUsesManualPermissions = (
 /** Perfiles que permiten ajustar secciones/subtableros sin pasar a personalizado. */
 export const portalProfileAllowsDashboardOverrides = (
   profileId: PortalProfileId,
-): boolean => profileId === "personalizado" || profileId === "asadero";
+): boolean =>
+  profileId === "personalizado" ||
+  profileId === "asadero" ||
+  profileId === "fruver";
+
+const isLineLockedPortalProfile = (
+  profileId: PortalProfileId,
+): boolean => profileId === "asadero" || profileId === "fruver";
 
 const isSubset = <T extends string>(
   actual: T[] | null,
@@ -224,7 +257,7 @@ const isSubset = <T extends string>(
   return actual.every((value) => allowedSet.has(value));
 };
 
-const constrainAsaderoDashboardOverrides = (
+const constrainLineLockedDashboardOverrides = (
   preset: PortalProfileMaterializedPermissions,
   overrides: PortalProfilePermissionOverrides,
 ): Pick<
@@ -273,6 +306,7 @@ export const portalProfileSuggestsAllSedes = (
   profileId === "subadmin" ||
   profileId === "director_comercial" ||
   profileId === "asadero" ||
+  profileId === "fruver" ||
   profileId === "rrhh";
 
 const emptyToNull = <T>(value: T[] | null | undefined): T[] | null => {
@@ -305,11 +339,11 @@ export const materializePortalProfilePermissions = (
     };
   }
 
-  if (profileId === "asadero") {
-    const preset = PROFILE_PRESETS.asadero;
+  if (isLineLockedPortalProfile(profileId)) {
+    const preset = PROFILE_PRESETS[profileId];
     return {
       ...preset,
-      ...constrainAsaderoDashboardOverrides(preset, overrides),
+      ...constrainLineLockedDashboardOverrides(preset, overrides),
     };
   }
 
@@ -365,7 +399,7 @@ export const inferPortalProfileFromStoredPermissions = (user: {
     if (profileId === "personalizado" || profileId === "admin") continue;
     const preset = PROFILE_PRESETS[profileId];
     const dashboardsMatch =
-      profileId === "asadero"
+      isLineLockedPortalProfile(profileId)
         ? isSubset(
             normalizeAllowedPortalSections(user.allowedDashboards),
             preset.allowedDashboards,

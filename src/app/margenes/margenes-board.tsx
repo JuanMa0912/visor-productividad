@@ -364,7 +364,9 @@ export const MargenesBoard = ({
   onSedeDrill,
   allowedSedeKeys = null,
   lockedCategorias = null,
+  lockedLineas = null,
   categoryScopeLocked = false,
+  lineScopeLocked = false,
 }: {
   dateStart: string;
   dateEnd: string;
@@ -374,7 +376,9 @@ export const MargenesBoard = ({
   /** null = todas las sedes del catálogo (admin / Todas). */
   allowedSedeKeys?: string[] | null;
   lockedCategorias?: string[] | null;
+  lockedLineas?: string[] | null;
   categoryScopeLocked?: boolean;
+  lineScopeLocked?: boolean;
 }) => {
   const [filterOptions, setFilterOptions] = useState<MargenFiltersPayload | null>(null);
   const [empresas, setEmpresas] = useState<string[]>([]);
@@ -383,7 +387,9 @@ export const MargenesBoard = ({
   const [categorias, setCategorias] = useState<string[]>(() =>
     lockedCategorias?.length ? [...lockedCategorias] : [],
   );
-  const [lineas, setLineas] = useState<string[]>([]);
+  const [lineas, setLineas] = useState<string[]>(() =>
+    lockedLineas?.length ? [...lockedLineas] : [],
+  );
   const [sublineas, setSublineas] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>([]);
   const [itemSearchOptions, setItemSearchOptions] = useState<FilterOption[]>([]);
@@ -419,15 +425,21 @@ export const MargenesBoard = ({
     setFilterOptions(null);
   }, [lockedCategorias]);
 
+  useEffect(() => {
+    if (!lockedLineas?.length) return;
+    setLineas([...lockedLineas]);
+    setFilterOptions(null);
+  }, [lockedLineas]);
+
   const resetFilters = useCallback(() => {
     setEmpresas([]);
     setSedes([]);
     setFechas([]);
     setCategorias(lockedCategorias?.length ? [...lockedCategorias] : []);
-    setLineas([]);
+    setLineas(lockedLineas?.length ? [...lockedLineas] : []);
     setSublineas([]);
     setItems([]);
-  }, [lockedCategorias]);
+  }, [lockedCategorias, lockedLineas]);
 
   const queryBase = useMemo(
     () =>
@@ -529,19 +541,26 @@ export const MargenesBoard = ({
             lockedCategorias.includes(option.value),
           )
         : activeFilterOptions.categorias;
+    const lineas =
+      lockedLineas?.length
+        ? activeFilterOptions.lineas.filter((option) =>
+            lockedLineas.includes(option.value),
+          )
+        : activeFilterOptions.lineas;
 
     if (!allowedSedeKeys || allowedSedeKeys.length === 0) {
-      return { ...activeFilterOptions, categorias };
+      return { ...activeFilterOptions, categorias, lineas };
     }
     const allowed = new Set(allowedSedeKeys);
     return {
       ...activeFilterOptions,
       categorias,
+      lineas,
       sedes: activeFilterOptions.sedes.filter((option) =>
         allowed.has(option.value),
       ),
     };
-  }, [activeFilterOptions, allowedSedeKeys, lockedCategorias]);
+  }, [activeFilterOptions, allowedSedeKeys, lockedCategorias, lockedLineas]);
 
   const cascadedFilterOptions = useMemo(() => {
     const sedeOptions = filterSedeOptionsByEmpresas(
@@ -1003,6 +1022,7 @@ export const MargenesBoard = ({
           onChange={handleLineasChange}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
+          disabled={lineScopeLocked}
         />
         <MargenesMultiSelect
           label="Sublínea"
