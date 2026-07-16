@@ -84,15 +84,24 @@ type ColDef = {
   drill?: boolean;
 };
 
-const marginBar = (pct: number) => (
-  <span
-    className="ml-1 inline-block h-[5px] rounded-sm opacity-60"
-    style={{
-      width: `${Math.min(100, Math.max(0, pct))}px`,
-      backgroundColor: pct >= 15 ? "#34d399" : pct >= 5 ? "#fbbf24" : "#f87171",
-    }}
-  />
-);
+const marginBar = (pct: number) => {
+  const clamped = Math.min(100, Math.max(0, pct));
+  return (
+    <span
+      className="mt-0.5 block h-1 w-12 overflow-hidden rounded-sm bg-[#2a2f47]"
+      aria-hidden
+    >
+      <span
+        className="block h-full rounded-sm"
+        style={{
+          width: `${clamped}%`,
+          backgroundColor:
+            pct >= 15 ? "#34d399" : pct >= 5 ? "#fbbf24" : "#f87171",
+        }}
+      />
+    </span>
+  );
+};
 
 /** Recorrido: la factura se muestra como "Fact: 000000" (6 dígitos). */
 const formatStepLabel = (step: DrillPathStep | FactNavStep): string => {
@@ -162,8 +171,12 @@ const colsForDrillLevel = (
       align: "right",
       sortValue: (row) => row.margenPct,
       render: (row) => (
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${marginBadgeClass(row.margenPct)}`}>
-          {formatPercent(row.margenPct)}
+        <span className="inline-flex min-w-[4.5rem] flex-col items-end">
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums whitespace-nowrap ${marginBadgeClass(row.margenPct)}`}
+          >
+            {formatPercent(row.margenPct)}
+          </span>
           {marginBar(row.margenPct)}
         </span>
       ),
