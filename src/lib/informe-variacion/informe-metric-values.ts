@@ -3,6 +3,8 @@ import type { PeriodTriple } from "@/lib/informe-variacion/aggregate";
 import { metricOffset } from "@/lib/informe-variacion/format";
 import {
   convertAsaderoQtyToPollosUnd,
+  floorCompletePollosUnd,
+  isAsaderoPollosUndContribution,
   resolveAsaderoPollosConversion,
   shouldConvertAsaderoToPollosUnd,
 } from "@/lib/informe-variacion/asadero-pollos-und";
@@ -129,6 +131,32 @@ export const readInformeRowLinePollosUndTriple = (
     convertAsaderoQtyToPollosUnd(yoy, itemLabel, unitId, linLabel, subLabel),
   ];
 };
+
+export const isInformeRowAsaderoPollosUndContribution = (
+  row: InformeCompactRow,
+  ctx: InformeMetricContext,
+): boolean => {
+  const catLabel = ctx.cats[row[1]] ?? "";
+  const linLabel = ctx.lins[row[2]] ?? "";
+  const subLabel = ctx.subs[row[3]] ?? "";
+  const itemLabel = ctx.items[row[4]] ?? "";
+  const unitId = ctx.ums[row[4]] ?? "";
+  return isAsaderoPollosUndContribution(
+    catLabel,
+    linLabel,
+    subLabel,
+    itemLabel,
+    unitId,
+  );
+};
+
+export const floorPeriodTripleCompletePollos = (
+  triple: PeriodTriple,
+): PeriodTriple => [
+  floorCompletePollosUnd(triple[0]),
+  floorCompletePollosUnd(triple[1]),
+  floorCompletePollosUnd(triple[2]),
+];
 
 /** Total de linea 12 HUEVOS: huevos individuales por empaque. */
 export const readInformeRowLineHuevosUndTriple = (

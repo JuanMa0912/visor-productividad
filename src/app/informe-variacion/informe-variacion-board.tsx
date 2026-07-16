@@ -351,8 +351,9 @@ function InformeVariacionBoardReady({
             explorador) convierten kilos/litros/pollos/huevos con reglas de{" "}
             <span className="font-medium text-slate-700">rollup</span> (en
             asadero las porciones excluidas siguen en crudo para no romper
-            padre≥hijo). Línea y sublínea usan sus reglas propias; los ítems
-            siguen en unidades de la BD.
+            padre≥hijo). En el resumen por empresa/sede, los pollos und se
+            muestran solo enteros (se descartan fracciones). Línea y sublínea
+            usan sus reglas propias; los ítems siguen en unidades de la BD.
           </p>
         ) : null}
       </Section>
@@ -915,6 +916,7 @@ function SedeSummaryTable({
     payload.sedes.length,
     pass,
     payload.metricCtx,
+    { floorCompletePollosUnd: true },
   );
   const perSedeVentas = aggregateVentasBySede(
     payload.rows,

@@ -46,6 +46,7 @@ export const buildSedeSummaryExportRows = (
     payload.sedes.length,
     pass,
     payload.metricCtx,
+    { floorCompletePollosUnd: true },
   );
   const perSedeVentas = aggregateVentasBySede(payload.rows, payload.sedes.length, pass);
   const perSedeMargin = aggregateMarginBySede(payload.rows, payload.sedes.length, pass);

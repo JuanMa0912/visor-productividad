@@ -98,4 +98,32 @@ describe("resumen sede aplica conversiones UOM de matriz", () => {
     });
     assert.equal(bySede.get(0)?.[0], expectedLiters);
   });
+
+  it("en resumen sede trunca pollos und a enteros y deja el resto intacto", () => {
+    // 10 presas = 1.25 pollos → floor 1; 3 und de porcion quedan en crudo.
+    const ctx: InformeMetricContext = {
+      cats: ["3 Asaderos", "3 Asaderos"],
+      lins: ["01 POLLO ASADO", "01 POLLO ASADO"],
+      subs: ["01 POLLO", "01 POLLO"],
+      items: [
+        "063019 PECHUGA APANADA (NVO)",
+        "063027 PORCION DE PAPAS AMARILLAS (NVO)",
+      ],
+      ums: ["UND", "UND"],
+      lineDisplayUom: new Map(),
+      sublineDisplayUom: new Map(),
+      sublineItems: new Map(),
+      lineItems: new Map(),
+    };
+    const rows: InformeCompactRow[] = [
+      row14(0, 0, 10),
+      row14(0, 1, 3),
+    ];
+    const withFloor = aggregateBySede(rows, "u", 1, () => true, ctx, {
+      floorCompletePollosUnd: true,
+    });
+    const withoutFloor = aggregateBySede(rows, "u", 1, () => true, ctx);
+    assert.equal(withoutFloor[0]![0], 10 / 8 + 3);
+    assert.equal(withFloor[0]![0], 1 + 3);
+  });
 });

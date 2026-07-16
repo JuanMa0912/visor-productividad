@@ -8,6 +8,8 @@ import type {
 import {
   readInformeRowPeriodTripleForLevel,
   informeMetricContextFromPayload,
+  isInformeRowAsaderoPollosUndContribution,
+  floorPeriodTripleCompletePollos,
   type InformeMetricContext,
 } from "@/lib/informe-variacion/informe-metric-values";
 import { buildInformeLineUomIndex } from "@/lib/informe-variacion/line-item-uom";
@@ -87,21 +89,49 @@ export const aggregateBySede = (
   sedeCount: number,
   pass: (row: InformeCompactRow) => boolean,
   metricCtx: InformeMetricContext,
+  options?: { floorCompletePollosUnd?: boolean },
 ): PeriodTriple[] => {
+  const floorPollos = metric === "u" && Boolean(options?.floorCompletePollosUnd);
   const perSede = Array.from({ length: sedeCount }, () => [0, 0, 0] as PeriodTriple);
+  const perSedePollos = floorPollos
+    ? Array.from({ length: sedeCount }, () => [0, 0, 0] as PeriodTriple)
+    : null;
+
   for (const row of rows) {
     if (!pass(row)) continue;
-    const bucket = perSede[row[0]];
+    const bucket = perSede[row[0]]!;
     const triple = readInformeRowPeriodTripleForLevel(
       row,
       metric,
       metricCtx,
       INFORME_UNIT_SUMMARY_KEY_INDEX,
     );
+    if (
+      floorPollos &&
+      perSedePollos &&
+      isInformeRowAsaderoPollosUndContribution(row, metricCtx)
+    ) {
+      const chicken = perSedePollos[row[0]]!;
+      chicken[0] += triple[0];
+      chicken[1] += triple[1];
+      chicken[2] += triple[2];
+      continue;
+    }
     bucket[0] += triple[0];
     bucket[1] += triple[1];
     bucket[2] += triple[2];
   }
+
+  if (perSedePollos) {
+    for (let index = 0; index < sedeCount; index += 1) {
+      const floored = floorPeriodTripleCompletePollos(perSedePollos[index]!);
+      const bucket = perSede[index]!;
+      bucket[0] += floored[0];
+      bucket[1] += floored[1];
+      bucket[2] += floored[2];
+    }
+  }
+
   return perSede;
 };
 

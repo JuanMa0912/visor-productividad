@@ -189,7 +189,9 @@ export const resolveAsaderoPollosUnitKind = (
   lineLabel = "",
 ): AsaderoPollosUnitKind => resolveAsaderoPollosConversion(itemLabel, unitId, lineLabel).kind;
 
-/** 8 presas = 1 pollo; 2 medios = 1 pollo; 4 cuartos = 1 pollo; entero = 1. */
+/** 1 unidad vendida de pechuga/ala/muslo/contramuslo = 1 presa.
+ *  Un pollo despresado aporta ~8 piezas (no 8 pechugas): por eso
+ *  pollos und = (suma de presas) / 8. Medios /2, cuartos /4, entero = 1. */
 export const asaderoQtyToPollosUnd = (
   qty: number,
   kind: AsaderoPollosUnitKind,
@@ -224,4 +226,30 @@ export const convertAsaderoQtyToPollosUnd = (
     subLabel,
   );
   return asaderoQtyToPollosUnd(qty, kind, presaUnits ?? 1);
+};
+
+/**
+ * True si la fila aporta equivalentes de pollo (no porciones/exclude).
+ * Usado para truncar a pollos completos en el resumen por sede.
+ */
+export const isAsaderoPollosUndContribution = (
+  catLabel: string,
+  lineLabel: string,
+  subLabel: string,
+  itemLabel: string,
+  unitId: string,
+): boolean => {
+  if (!shouldConvertAsaderoToPollosUnd(catLabel, lineLabel, subLabel)) {
+    return false;
+  }
+  return (
+    resolveAsaderoPollosConversion(itemLabel, unitId, lineLabel, subLabel)
+      .kind !== "exclude"
+  );
+};
+
+/** Descarta fracciones: solo pollos enteros (cantidades >= 0). */
+export const floorCompletePollosUnd = (qty: number): number => {
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  return Math.floor(qty);
 };
