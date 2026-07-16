@@ -26,9 +26,18 @@ const getOrBuildPrepared = (payload: InformeVariacionPayload): Prepared => {
   return next;
 };
 
+/** Sync: garantiza prepare en WeakMap antes de pintar otro corte. */
+export const ensurePrepareInformeData = (
+  payload: InformeVariacionPayload,
+): Prepared => getOrBuildPrepared(payload);
+
+export const isPrepareInformeDataCached = (
+  payload: InformeVariacionPayload,
+): boolean => preparedByPayload.has(payload);
+
 /**
  * Precalcula indices en idle cuando un rango entra al cache de memoria.
- * Asi el clic de corte reusa el resultado y no muestra "Indexando…".
+ * Asi el clic de corte reusa el resultado y no bloquea el hilo al cambiar.
  */
 export const prefetchPrepareInformeData = (
   payload: InformeVariacionPayload,

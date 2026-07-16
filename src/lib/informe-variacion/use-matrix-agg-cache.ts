@@ -12,29 +12,69 @@ import { filterRowIndices, type PeriodTriple } from "@/lib/informe-variacion/agg
 import {
   buildMatrixAggCache,
   buildSublineItemAgg,
+  getUnfilteredMatrixWarm,
+  mergeUnfilteredMatrixWarm,
   otherInformeMetric,
+  warmUnfilteredMatrixAgg,
   type MatrixAggCache,
   type PartialDualMatrixAggCache,
   type SublineItemAgg,
 } from "@/lib/informe-variacion/matrix-agg-cache";
 import { readInformeRowPeriodTriple } from "@/lib/informe-variacion/informe-metric-values";
-import type { InformeMetric } from "@/lib/informe-variacion/types";
+import type {
+  InformeCompactRow,
+  InformeMetric,
+  InformeVariacionPayload,
+} from "@/lib/informe-variacion/types";
 import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
+import { ensurePrepareInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
 
+type DualCacheState = {
+  rows: InformeCompactRow[] | null;
+  dual: PartialDualMatrixAggCache;
+};
+
 const EMPTY_ITEM_AGG: SublineItemAgg = { byItem: new Map(), topItems: [] };
+const EMPTY_DUAL: PartialDualMatrixAggCache = { u: null, v: null };
 
 /** Prefetch de la otra metrica: debe correr aunque el tab este ocupado. */
 const OTHER_METRIC_IDLE_TIMEOUT_MS = 8_000;
+const RANGE_WARM_IDLE_TIMEOUT_MS = 2_500;
 
-const scheduleIdle = (fn: () => void): (() => void) => {
+const scheduleIdle = (
+  fn: () => void,
+  timeoutMs = OTHER_METRIC_IDLE_TIMEOUT_MS,
+): (() => void) => {
   if (typeof requestIdleCallback !== "undefined") {
-    const id = requestIdleCallback(fn, { timeout: OTHER_METRIC_IDLE_TIMEOUT_MS });
+    const id = requestIdleCallback(fn, { timeout: timeoutMs });
     return () => cancelIdleCallback(id);
   }
   const id = setTimeout(fn, 0);
   return () => clearTimeout(id);
+};
+
+/**
+ * Tras guardar un rango en memoria: prepare + matriz u/v sin filtros en idle.
+ * El cambio de corte reusa ambos caches y evita "Preparando matriz…".
+ */
+export const prefetchWarmInformeRange = (
+  payload: InformeVariacionPayload,
+): void => {
+  if (typeof window === "undefined") return;
+  scheduleIdle(() => {
+    const prepared = ensurePrepareInformeData(payload);
+    const warm = getUnfilteredMatrixWarm(prepared.rows);
+    if (warm?.u && warm?.v) return;
+    warmUnfilteredMatrixAgg(
+      prepared.rows,
+      prepared.rowIndex,
+      prepared.sedes.length,
+      prepared.metricCtx,
+      ["u", "v"],
+    );
+  }, RANGE_WARM_IDLE_TIMEOUT_MS);
 };
 
 export const useMatrixAggCache = (
@@ -49,18 +89,27 @@ export const useMatrixAggCache = (
 
   const filteredSet = useMemo(() => new Set(filteredIndices), [filteredIndices]);
 
-  const [dualCache, setDualCache] = useState<PartialDualMatrixAggCache>({
-    u: null,
-    v: null,
+  const isUnfiltered = filteredIndices.length === payload.rows.length;
+  const warmedDual = isUnfiltered
+    ? getUnfilteredMatrixWarm(payload.rows)
+    : undefined;
+
+  const [cacheState, setCacheState] = useState<DualCacheState>({
+    rows: null,
+    dual: EMPTY_DUAL,
   });
-  const dualCacheRef = useRef(dualCache);
-  dualCacheRef.current = dualCache;
+
+  const dualCacheRef = useRef(cacheState.dual);
+  const metricRef = useRef(metric);
+  useEffect(() => {
+    dualCacheRef.current = cacheState.dual;
+  }, [cacheState.dual]);
+  useEffect(() => {
+    metricRef.current = metric;
+  }, [metric]);
 
   const itemCacheRef = useRef(new Map<string, SublineItemAgg>());
   const [itemCacheTick, setItemCacheTick] = useState(0);
-
-  const metricRef = useRef(metric);
-  metricRef.current = metric;
 
   const buildArgs = useMemo(
     () => ({
@@ -70,15 +119,24 @@ export const useMatrixAggCache = (
       filteredIndices,
       sedeCount: payload.sedes.length,
       metricCtx: payload.metricCtx,
+      isUnfiltered,
     }),
     [
       filteredIndices,
       filteredSet,
+      isUnfiltered,
       payload.metricCtx,
       payload.rowIndex,
       payload.rows,
       payload.sedes.length,
     ],
+  );
+
+  const commitDual = useCallback(
+    (rows: InformeCompactRow[], dual: PartialDualMatrixAggCache) => {
+      setCacheState({ rows, dual });
+    },
+    [],
   );
 
   const buildOne = useCallback(
@@ -95,34 +153,77 @@ export const useMatrixAggCache = (
     [buildArgs],
   );
 
+  // Rebuild async (setTimeout/idle) para no setState sync en el cuerpo del effect.
   useEffect(() => {
-    itemCacheRef.current.clear();
-    setItemCacheTick(0);
-  }, [buildArgs]);
-
-  // Rebuild solo cuando cambian datos/filtros. NO al cambiar Unidades↔Valor:
-  // antes se vaciaban ambas metricas y el hilo principal se bloqueaba ~10s.
-  useEffect(() => {
-    setDualCache({ u: null, v: null });
     let cancelled = false;
     let cancelSecondary: (() => void) | undefined;
+    itemCacheRef.current = new Map();
 
     const timeoutId = setTimeout(() => {
       if (cancelled) return;
       const active = metricRef.current;
+
+      if (buildArgs.isUnfiltered) {
+        const warm = getUnfilteredMatrixWarm(buildArgs.rows);
+        if (warm?.[active]) {
+          commitDual(buildArgs.rows, warm);
+          if (!warm[otherInformeMetric(active)]) {
+            cancelSecondary = scheduleIdle(() => {
+              if (cancelled) return;
+              const other = otherInformeMetric(active);
+              if (getUnfilteredMatrixWarm(buildArgs.rows)?.[other]) return;
+              const second = buildOne(other);
+              if (cancelled) return;
+              const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
+                [other]: second,
+              } as PartialDualMatrixAggCache);
+              commitDual(buildArgs.rows, next);
+            });
+          }
+          return;
+        }
+      }
+
       const first = buildOne(active);
       if (cancelled) return;
-      setDualCache((current) => ({ ...current, [active]: first }));
+      if (buildArgs.isUnfiltered) {
+        const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
+          [active]: first,
+        } as PartialDualMatrixAggCache);
+        commitDual(buildArgs.rows, next);
+      } else {
+        setCacheState({
+          rows: buildArgs.rows,
+          dual: { ...EMPTY_DUAL, [active]: first },
+        });
+      }
 
       cancelSecondary = scheduleIdle(() => {
         if (cancelled) return;
         const other = otherInformeMetric(active);
-        if (dualCacheRef.current[other]) return;
+        if (buildArgs.isUnfiltered) {
+          if (getUnfilteredMatrixWarm(buildArgs.rows)?.[other]) return;
+        } else if (dualCacheRef.current[other]) {
+          return;
+        }
         const second = buildOne(other);
         if (cancelled) return;
-        setDualCache((current) =>
-          current[other] ? current : { ...current, [other]: second },
-        );
+        if (buildArgs.isUnfiltered) {
+          const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
+            [other]: second,
+          } as PartialDualMatrixAggCache);
+          commitDual(buildArgs.rows, next);
+        } else {
+          setCacheState((current) => {
+            if (current.rows !== buildArgs.rows || current.dual[other]) {
+              return current;
+            }
+            return {
+              rows: buildArgs.rows,
+              dual: { ...current.dual, [other]: second },
+            };
+          });
+        }
       });
     }, 0);
 
@@ -131,30 +232,57 @@ export const useMatrixAggCache = (
       clearTimeout(timeoutId);
       cancelSecondary?.();
     };
-  }, [buildArgs, buildOne]);
+  }, [buildArgs, buildOne, commitDual]);
 
   // Si el usuario cambia de metrica antes del prefetch, construye solo la faltante.
   useEffect(() => {
-    if (dualCacheRef.current[metric]) return;
-
     let cancelled = false;
     const timeoutId = setTimeout(() => {
-      if (cancelled || dualCacheRef.current[metric]) return;
+      if (cancelled) return;
+      const warmHit = buildArgs.isUnfiltered
+        ? getUnfilteredMatrixWarm(buildArgs.rows)?.[metric]
+        : null;
+      if (warmHit || dualCacheRef.current[metric]) return;
+
       const built = buildOne(metric);
       if (cancelled) return;
-      setDualCache((current) =>
-        current[metric] ? current : { ...current, [metric]: built },
-      );
+      if (buildArgs.isUnfiltered) {
+        const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
+          [metric]: built,
+        } as PartialDualMatrixAggCache);
+        commitDual(buildArgs.rows, next);
+      } else {
+        setCacheState((current) => {
+          if (current.rows !== buildArgs.rows || current.dual[metric]) {
+            return current;
+          }
+          return {
+            rows: buildArgs.rows,
+            dual: { ...current.dual, [metric]: built },
+          };
+        });
+      }
     }, 0);
 
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [metric, buildOne]);
+  }, [metric, buildOne, buildArgs, commitDual]);
 
-  const cacheReady = dualCache[metric] !== null;
-  const aggCache = dualCache[metric];
+  // Preferir warm por identidad de `rows` en el mismo render del cambio de corte.
+  const stateIsForCurrentRows = cacheState.rows === payload.rows;
+  const resolvedDual: PartialDualMatrixAggCache = isUnfiltered
+    ? {
+        u: warmedDual?.u ?? (stateIsForCurrentRows ? cacheState.dual.u : null),
+        v: warmedDual?.v ?? (stateIsForCurrentRows ? cacheState.dual.v : null),
+      }
+    : stateIsForCurrentRows
+      ? cacheState.dual
+      : EMPTY_DUAL;
+
+  const cacheReady = resolvedDual[metric] !== null;
+  const aggCache = resolvedDual[metric];
 
   const ensureSublineItems = useCallback(
     (catLinSub: string, activeMetric: InformeMetric): SublineItemAgg => {
@@ -162,9 +290,9 @@ export const useMatrixAggCache = (
       const cached = itemCacheRef.current.get(key);
       if (cached) return cached;
 
-      const indices = (buildArgs.rowIndex.indicesByCatLinSub.get(catLinSub) ?? []).filter(
-        (index) => buildArgs.filteredSet.has(index),
-      );
+      const indices = (
+        buildArgs.rowIndex.indicesByCatLinSub.get(catLinSub) ?? []
+      ).filter((index) => buildArgs.filteredSet.has(index));
       const next = buildSublineItemAgg(
         buildArgs.rows,
         indices,
@@ -187,7 +315,11 @@ export const useMatrixAggCache = (
       );
       for (const rowIndex of filteredIndices) {
         const row = payload.rows[rowIndex]!;
-        const triple = readInformeRowPeriodTriple(row, activeMetric, payload.metricCtx);
+        const triple = readInformeRowPeriodTriple(
+          row,
+          activeMetric,
+          payload.metricCtx,
+        );
         const bucket = buckets[row[0]];
         bucket[0] += triple[0];
         bucket[1] += triple[1];
@@ -195,7 +327,10 @@ export const useMatrixAggCache = (
       }
       return buckets;
     };
-    return { u: build("u"), v: build("v") } satisfies Record<InformeMetric, PeriodTriple[]>;
+    return { u: build("u"), v: build("v") } satisfies Record<
+      InformeMetric,
+      PeriodTriple[]
+    >;
   }, [filteredIndices, payload.metricCtx, payload.rows, payload.sedes.length]);
 
   const totPer = totPerByMetric[metric];

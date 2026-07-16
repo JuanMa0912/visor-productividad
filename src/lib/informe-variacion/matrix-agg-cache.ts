@@ -109,3 +109,58 @@ export const buildDualMatrixAggCache = (
 
 export const otherInformeMetric = (metric: InformeMetric): InformeMetric =>
   metric === "u" ? "v" : "u";
+
+/**
+ * Cache de matriz sin filtros, keyed por el array `rows` del payload.
+ * Permite cambiar de corte sin reconstruir ni mostrar "Preparando matriz…".
+ */
+const unfilteredMatrixWarmByRows = new WeakMap<
+  InformeCompactRow[],
+  PartialDualMatrixAggCache
+>();
+
+export const getUnfilteredMatrixWarm = (
+  rows: InformeCompactRow[],
+): PartialDualMatrixAggCache | undefined => unfilteredMatrixWarmByRows.get(rows);
+
+export const mergeUnfilteredMatrixWarm = (
+  rows: InformeCompactRow[],
+  patch: PartialDualMatrixAggCache,
+): PartialDualMatrixAggCache => {
+  const current = unfilteredMatrixWarmByRows.get(rows) ?? { u: null, v: null };
+  const next: PartialDualMatrixAggCache = {
+    u: patch.u ?? current.u,
+    v: patch.v ?? current.v,
+  };
+  unfilteredMatrixWarmByRows.set(rows, next);
+  return next;
+};
+
+export const warmUnfilteredMatrixAgg = (
+  rows: InformeCompactRow[],
+  rowIndex: InformeRowIndex,
+  sedeCount: number,
+  metricCtx: InformeMetricContext,
+  metrics: readonly InformeMetric[] = ["u", "v"],
+): PartialDualMatrixAggCache => {
+  const existing = unfilteredMatrixWarmByRows.get(rows) ?? { u: null, v: null };
+  const missing = metrics.filter((metric) => !existing[metric]);
+  if (missing.length === 0) return existing;
+
+  const filteredIndices = rows.map((_, index) => index);
+  const filteredSet = new Set(filteredIndices);
+  const patch: PartialDualMatrixAggCache = { ...existing };
+  for (const metric of missing) {
+    patch[metric] = buildMatrixAggCache(
+      rows,
+      rowIndex,
+      filteredSet,
+      filteredIndices,
+      metric,
+      sedeCount,
+      metricCtx,
+    );
+  }
+  unfilteredMatrixWarmByRows.set(rows, patch);
+  return patch;
+};

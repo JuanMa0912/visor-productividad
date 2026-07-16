@@ -20,7 +20,8 @@ import {
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse, readInformeBundleApiResponse, isInformeMonthBundleResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
-import { prefetchPrepareInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
+import { ensurePrepareInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
+import { prefetchWarmInformeRange } from "@/lib/informe-variacion/use-matrix-agg-cache";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import { cn } from "@/lib/shared/utils";
 
@@ -225,7 +226,7 @@ export default function InformeVariacionPage() {
       memoryCacheRef.current.set(key, data);
       writeSessionInforme(key, data);
       markRangeReady(rangeId);
-      prefetchPrepareInformeData(data);
+      prefetchWarmInformeRange(data);
     },
     [markRangeReady],
   );
@@ -253,14 +254,14 @@ export default function InformeVariacionPage() {
       const memoryHit = memoryCacheRef.current.get(key);
       if (memoryHit) {
         markRangeReady(rangeId);
-        prefetchPrepareInformeData(memoryHit);
+        prefetchWarmInformeRange(memoryHit);
         return memoryHit;
       }
       const sessionHit = readSessionInforme(key);
       if (sessionHit) {
         memoryCacheRef.current.set(key, sessionHit);
         markRangeReady(rangeId);
-        prefetchPrepareInformeData(sessionHit);
+        prefetchWarmInformeRange(sessionHit);
         return sessionHit;
       }
       return null;
@@ -419,7 +420,8 @@ export default function InformeVariacionPage() {
       const cached = readCachedPayload(year, month, rangeId);
       if (cached) {
         setRangeSwitchPending(false);
-        // Sync: el board reusa indices cacheados (WeakMap) → cambio sin spinner.
+        // Sync: prepare + matriz warm (si idle ya termino) → cambio sin spinner.
+        ensurePrepareInformeData(cached);
         setPayload(cached);
         return;
       }
@@ -889,7 +891,7 @@ export default function InformeVariacionPage() {
                 {periodControlsDisabled
                   ? "Cargando periodo seleccionado…"
                   : preloadReady
-                    ? "Todos los rangos listos · cambio instantaneo"
+                    ? "Todos los rangos listos · cambio instantaneo (vista precargada)"
                     : prefetchTotal > 0
                       ? `Cargando rangos ${Math.min(readyRanges.size, prefetchTotal)}/${prefetchTotal} · aparecen al quedar listos`
                       : "Solo aparecen periodos ya cerrados en el mes"}
