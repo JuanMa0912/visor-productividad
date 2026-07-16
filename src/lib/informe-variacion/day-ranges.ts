@@ -9,8 +9,7 @@ export const INFORME_DAY_RANGES = [
   { id: "1-eom", label: "1 al fin", fromDay: 1, toDay: null },
 ] as const;
 
-export type FixedInformeDayRangeId = (typeof INFORME_DAY_RANGES)[number]["id"];
-export type InformeDayRangeId = FixedInformeDayRangeId | `1-${number}`;
+export type InformeDayRangeId = (typeof INFORME_DAY_RANGES)[number]["id"];
 
 /** Acepta YYYYMMDD o YYYY-MM-DD (fecha_dcto::text en PostgreSQL). */
 export const normalizeInformeCompactDate = (
@@ -70,23 +69,10 @@ export const resolveInformeReferenceDay = (
   return ref;
 };
 
-const maxCumulativeEndDay = (
-  ranges: readonly InformeDayRangeSpec[],
-  monthLast: number,
-): number =>
-  ranges
-    .filter((range) => range.fromDay === 1)
-    .reduce((max, range) => Math.max(max, range.toDay ?? monthLast), 0);
-
-const buildPartialMonthCumulativeRange = (
-  refDay: number,
-): InformeDayRangeSpec => ({
-  id: `1-${refDay}`,
-  label: `1 al ${refDay}`,
-  fromDay: 1,
-  toDay: refDay,
-});
-
+/**
+ * Solo los cortes del Excel canonico (semanas 7/14/21/28 + 1 al fin).
+ * No inventa acumulados parciales tipo "1 al 15".
+ */
 export const getAvailableInformeDayRanges = (
   year: number,
   month: number,
@@ -97,16 +83,10 @@ export const getAvailableInformeDayRanges = (
   if (refDay <= 0) return [];
 
   const monthLast = lastDayOfMonth(year, month);
-  const fixed = INFORME_DAY_RANGES.filter((range) => {
+  return INFORME_DAY_RANGES.filter((range) => {
     const endDay = range.toDay ?? monthLast;
     return refDay >= endDay;
   }).map((range) => ({ ...range }));
-
-  const maxFixedCumulative = maxCumulativeEndDay(fixed, monthLast);
-  if (refDay > maxFixedCumulative) {
-    return [...fixed, buildPartialMonthCumulativeRange(refDay)];
-  }
-  return fixed;
 };
 
 export const defaultInformeDayRangeId = (
@@ -116,7 +96,10 @@ export const defaultInformeDayRangeId = (
   const cumulative = available.filter((range) => range.fromDay === 1);
   const pool = cumulative.length > 0 ? cumulative : available;
   return pool.reduce((best, range) =>
-    (range.toDay ?? 0) > (best.toDay ?? 0) ? range : best,
+    (range.toDay ?? Number.POSITIVE_INFINITY) >
+    (best.toDay ?? Number.POSITIVE_INFINITY)
+      ? range
+      : best,
   ).id;
 };
 
@@ -124,15 +107,8 @@ export const parseInformeDayRangeId = (
   value: string | null | undefined,
 ): InformeDayRangeSpec | null => {
   if (!value?.trim()) return null;
-  const trimmed = value.trim();
-  const found = DAY_RANGE_BY_ID.get(trimmed as FixedInformeDayRangeId);
-  if (found) return { ...found };
-
-  const partial = /^1-(\d{1,2})$/.exec(trimmed);
-  if (!partial) return null;
-  const toDay = Number(partial[1]);
-  if (!Number.isInteger(toDay) || toDay < 1 || toDay > 31) return null;
-  return buildPartialMonthCumulativeRange(toDay);
+  const found = DAY_RANGE_BY_ID.get(value.trim() as InformeDayRangeId);
+  return found ? { ...found } : null;
 };
 
 export const isInformeDayRangeAvailable = (

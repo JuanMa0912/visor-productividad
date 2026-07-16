@@ -3,25 +3,28 @@ import { describe, it } from "node:test";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  parseInformeDayRangeId,
   payloadMatchesInformeSelection,
 } from "@/lib/informe-variacion/day-ranges";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 
 describe("getAvailableInformeDayRanges", () => {
-  it("en dia 15 del mes muestra los primeros 3 rangos y el acumulado parcial", () => {
+  it("en dia 15 solo muestra cortes Excel ya cerrados (sin 1 al 15 inventado)", () => {
     const asOf = new Date(2026, 6, 15);
     const available = getAvailableInformeDayRanges(2026, 7, asOf);
     assert.deepEqual(
       available.map((range) => range.id),
-      ["1-7", "1-14", "8-14", "1-15"],
+      ["1-7", "1-14", "8-14"],
     );
   });
 
-  it("en mes cerrado muestra todos los rangos", () => {
+  it("en mes cerrado muestra todos los rangos del Excel", () => {
     const asOf = new Date(2026, 6, 1);
     const available = getAvailableInformeDayRanges(2026, 6, asOf);
-    assert.equal(available.length, 8);
-    assert.equal(available.at(-1)?.id, "1-eom");
+    assert.deepEqual(
+      available.map((range) => range.id),
+      ["1-7", "1-14", "8-14", "1-21", "15-21", "1-28", "22-28", "1-eom"],
+    );
   });
 
   it("respeta maxDate de BD en mes en curso", () => {
@@ -33,28 +36,34 @@ describe("getAvailableInformeDayRanges", () => {
     );
   });
 
-  it("con datos hasta el dia 9 agrega rango acumulado 1 al 9", () => {
+  it("con datos hasta el dia 9 solo deja 1 al 7", () => {
     const asOf = new Date(2026, 6, 10);
     const available = getAvailableInformeDayRanges(2026, 7, asOf, "20260709");
     assert.deepEqual(
       available.map((range) => range.id),
-      ["1-7", "1-9"],
+      ["1-7"],
     );
-    assert.equal(defaultInformeDayRangeId(available), "1-9");
+    assert.equal(defaultInformeDayRangeId(available), "1-7");
   });
 
   it("normaliza maxDate ISO desde PostgreSQL", () => {
     const asOf = new Date(2026, 6, 10);
     const available = getAvailableInformeDayRanges(2026, 7, asOf, "2026-07-09");
-    assert.equal(defaultInformeDayRangeId(available), "1-9");
+    assert.equal(defaultInformeDayRangeId(available), "1-7");
+  });
+
+  it("rechaza ids inventados tipo 1-15", () => {
+    assert.equal(parseInformeDayRangeId("1-15"), null);
+    assert.equal(parseInformeDayRangeId("1-9"), null);
+    assert.ok(parseInformeDayRangeId("1-14"));
   });
 });
 
 describe("defaultInformeDayRangeId", () => {
-  it("elige el acumulado mas amplio disponible", () => {
+  it("elige el acumulado Excel mas amplio disponible", () => {
     const asOf = new Date(2026, 6, 15);
     const available = getAvailableInformeDayRanges(2026, 7, asOf);
-    assert.equal(defaultInformeDayRangeId(available), "1-15");
+    assert.equal(defaultInformeDayRangeId(available), "1-14");
   });
 });
 

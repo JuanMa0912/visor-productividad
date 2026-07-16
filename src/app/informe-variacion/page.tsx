@@ -20,6 +20,7 @@ import {
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse, readInformeBundleApiResponse, isInformeMonthBundleResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
+import { prefetchPrepareInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import { cn } from "@/lib/shared/utils";
 
@@ -224,6 +225,7 @@ export default function InformeVariacionPage() {
       memoryCacheRef.current.set(key, data);
       writeSessionInforme(key, data);
       markRangeReady(rangeId);
+      prefetchPrepareInformeData(data);
     },
     [markRangeReady],
   );
@@ -251,12 +253,14 @@ export default function InformeVariacionPage() {
       const memoryHit = memoryCacheRef.current.get(key);
       if (memoryHit) {
         markRangeReady(rangeId);
+        prefetchPrepareInformeData(memoryHit);
         return memoryHit;
       }
       const sessionHit = readSessionInforme(key);
       if (sessionHit) {
         memoryCacheRef.current.set(key, sessionHit);
         markRangeReady(rangeId);
+        prefetchPrepareInformeData(sessionHit);
         return sessionHit;
       }
       return null;
@@ -415,9 +419,8 @@ export default function InformeVariacionPage() {
       const cached = readCachedPayload(year, month, rangeId);
       if (cached) {
         setRangeSwitchPending(false);
-        startTransition(() => {
-          setPayload(cached);
-        });
+        // Sync: el board reusa indices cacheados (WeakMap) → cambio sin spinner.
+        setPayload(cached);
         return;
       }
 
