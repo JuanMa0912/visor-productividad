@@ -2687,12 +2687,6 @@ export function RotacionPageInner() {
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
                   {pageDescription}
                 </p>
-                {lineCategoryScope?.locked ? (
-                  <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    Vista restringida a la categoría{" "}
-                    <span className="font-semibold">Asaderos</span>.
-                  </p>
-                ) : null}
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
                 <div className="flex w-full flex-wrap justify-end gap-2">

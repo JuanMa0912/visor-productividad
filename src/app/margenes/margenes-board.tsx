@@ -82,13 +82,15 @@ type ColDef = {
   render?: (row: DrillRow) => React.ReactNode;
   sortValue?: (row: DrillRow) => number | string;
   drill?: boolean;
+  /** Clases extra para th/td (p. ej. min-width en columnas numéricas). */
+  cellClassName?: string;
 };
 
 const marginBar = (pct: number) => {
   const clamped = Math.min(100, Math.max(0, pct));
   return (
     <span
-      className="mt-0.5 block h-1 w-12 overflow-hidden rounded-sm bg-[#2a2f47]"
+      className="mt-0.5 block h-1.5 w-14 overflow-hidden rounded-sm bg-[#2a2f47]"
       aria-hidden
     >
       <span
@@ -144,6 +146,7 @@ const colsForDrillLevel = (
       key: "ventasNetas",
       label: "Venta (miles)",
       align: "right",
+      cellClassName: "min-w-[6.5rem] whitespace-nowrap tabular-nums",
       sortValue: (row) => row.ventasNetas,
       render: (row) => formatMiles(row.ventasNetas),
     },
@@ -151,6 +154,7 @@ const colsForDrillLevel = (
       key: "costoTotal",
       label: "Costo (miles)",
       align: "right",
+      cellClassName: "min-w-[6.5rem] whitespace-nowrap tabular-nums",
       sortValue: (row) => row.costoTotal,
       render: (row) => formatMiles(row.costoTotal),
     },
@@ -158,9 +162,10 @@ const colsForDrillLevel = (
       key: "margenPesos",
       label: "Margen $ (miles)",
       align: "right",
+      cellClassName: "min-w-[7rem] whitespace-nowrap tabular-nums",
       sortValue: (row) => row.margenPesos,
       render: (row) => (
-        <span className={marginToneClass(row.margenPct)}>
+        <span className={`whitespace-nowrap tabular-nums ${marginToneClass(row.margenPct)}`}>
           {formatMiles(row.margenPesos)}
         </span>
       ),
@@ -169,9 +174,10 @@ const colsForDrillLevel = (
       key: "margenPct",
       label: "Margen %",
       align: "right",
+      cellClassName: "min-w-[5.75rem] whitespace-nowrap",
       sortValue: (row) => row.margenPct,
       render: (row) => (
-        <span className="inline-flex min-w-[4.5rem] flex-col items-end">
+        <span className="ml-2 inline-flex w-[4.75rem] flex-col items-end gap-0.5">
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums whitespace-nowrap ${marginBadgeClass(row.margenPct)}`}
           >
@@ -931,11 +937,6 @@ export const MargenesBoard = ({
 
   return (
     <div className="flex flex-1 flex-col md:min-h-0">
-      {categoryScopeLocked ? (
-        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
-          Vista restringida a la categoría <span className="font-semibold">Asaderos</span>.
-        </div>
-      ) : null}
       <div className="flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2">
         <MargenesMultiSelect
           label="Empresa"
@@ -1216,13 +1217,13 @@ export const MargenesBoard = ({
       ) : null}
 
       <div className="overflow-x-auto md:min-h-0 md:flex-1 md:overflow-auto">
-        <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
+        <table className="w-max min-w-full border-collapse text-left text-xs">
           <thead className="sticky top-0 z-10 bg-[#1b1e2e] text-[#6b7590]">
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`cursor-pointer px-2.5 py-2 text-[10px] font-semibold tracking-wide uppercase select-none hover:text-[#dde3f0] ${column.align === "right" ? "text-right" : ""}`}
+                  className={`cursor-pointer px-2.5 py-2 text-[10px] font-semibold tracking-wide uppercase select-none hover:text-[#dde3f0] ${column.align === "right" ? "text-right" : ""} ${column.cellClassName ?? ""}`}
                   onClick={() => {
                     setSortKey(column.key);
                     setMgSortDir((current) => (sortKey === column.key && current === "desc" ? "asc" : "desc"));
@@ -1262,7 +1263,7 @@ export const MargenesBoard = ({
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-2.5 py-1.5 ${column.align === "right" ? "text-right" : ""} ${column.drill ? "text-[#dde3f0] after:ml-0.5 after:opacity-40 after:content-['›']" : ""}`}
+                    className={`px-2.5 py-1.5 ${column.align === "right" ? "text-right" : ""} ${column.drill ? "text-[#dde3f0] after:ml-0.5 after:opacity-40 after:content-['›']" : ""} ${column.cellClassName ?? ""}`}
                   >
                     {column.render ? column.render(acumRow) : null}
                   </td>
@@ -1278,7 +1279,7 @@ export const MargenesBoard = ({
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-2.5 py-1.5 ${column.align === "right" ? "text-right" : ""} ${column.drill ? "text-[#dde3f0] after:ml-0.5 after:opacity-40 after:content-['›']" : ""}`}
+                    className={`px-2.5 py-1.5 ${column.align === "right" ? "text-right" : ""} ${column.drill ? "text-[#dde3f0] after:ml-0.5 after:opacity-40 after:content-['›']" : ""} ${column.cellClassName ?? ""}`}
                   >
                     {column.render ? column.render(row) : null}
                   </td>

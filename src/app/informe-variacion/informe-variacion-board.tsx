@@ -261,11 +261,6 @@ function InformeVariacionBoardReady({
           Actualizando cifras del periodo seleccionado…
         </div>
       ) : null}
-      {categoryScopeLocked ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Vista restringida a la categoría <span className="font-semibold">Asaderos</span>.
-        </div>
-      ) : null}
       {payload.meta.comparisonAvailable === false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           No hay datos reales de comparacion (MoM / YoY) en margen para este mes. Los
