@@ -3494,11 +3494,16 @@ export const HourlyAnalysis = ({
               ) : (
                 <div
                   ref={overtimeTableRef}
-                  className={`mt-3 overflow-x-auto rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white scroll-mt-24`}
+                  className={`mt-3 max-h-[min(70vh,720px)] overflow-auto rounded-xl ${OVERTIME_TABLE_OUTER_BORDER_CLASS} bg-white scroll-mt-24`}
                 >
                   <div className="min-w-[1100px]">
+                  {/* Sticky dentro del scroll de la tabla (no del viewport):
+                      evita que paginación/encabezados tapen la primera fila. */}
                   <div
-                    className={`sticky top-[57px] z-30 flex flex-wrap items-center justify-between gap-2 rounded-t-xl border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/95 px-2 py-2 backdrop-blur`}
+                    className={`sticky top-0 z-30 rounded-t-xl border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50`}
+                  >
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-2 px-2 py-2"
                   >
                     <div className="flex flex-wrap items-center gap-1">
                       <button
@@ -3554,7 +3559,7 @@ export const HourlyAnalysis = ({
                     </span>
                   </div>
                   <div
-                    className={`sticky top-[97px] z-20 grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr_1fr_1.2fr] gap-1 border-b-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} bg-slate-50/95 px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 backdrop-blur`}
+                    className={`grid grid-cols-[38px_52px_2.6fr_1fr_1.2fr_64px_56px_1.6fr_1fr_1.2fr_1fr_1.2fr] gap-1 border-t-2 ${OVERTIME_TABLE_INNER_BORDER_CLASS} px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500`}
                   >
                     <span className="text-center whitespace-nowrap">#</span>
                     <span className="text-center whitespace-nowrap">Excel</span>
@@ -3572,6 +3577,7 @@ export const HourlyAnalysis = ({
                       "Depto.",
                       "center",
                     )}
+                  </div>
                   </div>
                   {pagedOvertimeEmployees.map((employee, index) => {
                     const employeeKey = getOvertimeEmployeeKey(employee);

@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   LogOut,
   Pencil,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -41,6 +42,11 @@ import {
   portalProfileUsesManualPermissions,
   portalProfileAllowsDashboardOverrides,
 } from "@/lib/shared/portal-profiles";
+import {
+  ASADERO_LINE_ID,
+  FRUVER_LINE_ID,
+  resolveUserLineCategoryScope,
+} from "@/lib/shared/line-category-scope";
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { canonicalizeSedeKey } from "@/lib/horarios/visible-sedes";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
@@ -269,6 +275,9 @@ type PermissionCellSummary = {
   label: string;
   title: string;
   muted: boolean;
+  /** Aviso de alcance fijo (p. ej. solo Asaderos en variación/márgenes). */
+  badge?: string;
+  badgeTitle?: string;
 };
 
 const isBroadPermissionLabel = (label: string) =>
@@ -313,12 +322,33 @@ const summarizeAllowedLines = (
   allowedLines: string[] | null,
 ): PermissionCellSummary => {
   if (!allowedLines || allowedLines.length === 0) {
-    return { label: "Todas", title: "Todas", muted: true };
+    return {
+      label: "Todas",
+      title:
+        "Todas las líneas. Las sedes «Todas» no restringen categorías del informe.",
+      muted: true,
+    };
   }
-  return summarizeLabeledList(
+  const summary = summarizeLabeledList(
     allowedLines.map((lineId) => lineLabelById.get(lineId) ?? lineId),
     { allLabel: "Todas", emptyLabel: "Todas" },
   );
+  const scope = resolveUserLineCategoryScope(allowedLines);
+  if (!scope.locked) return summary;
+
+  const lockLabel =
+    scope.allowedLineIds[0] === ASADERO_LINE_ID
+      ? "Solo Asaderos"
+      : scope.allowedLineIds[0] === FRUVER_LINE_ID
+        ? "Solo Fruver"
+        : "Línea fija";
+  return {
+    ...summary,
+    badge: lockLabel,
+    badgeTitle:
+      "Márgenes, rotación e informe de variación quedan acotados a esta línea/categoría. Tener sedes «Todas» no amplía ese alcance.",
+    title: `${summary.title} · ${lockLabel}`,
+  };
 };
 
 const summarizeAllowedDashboards = (
@@ -392,14 +422,24 @@ const PermissionSummaryCell = ({
   className?: string;
 }) => (
   <td className={className}>
-    <span
-      title={summary.title}
-      className={`block max-w-full truncate text-xs ${
-        summary.muted ? "text-slate-400" : "font-medium text-slate-700"
-      }`}
-    >
-      {summary.label}
-    </span>
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span
+        title={summary.title}
+        className={`block max-w-full truncate text-xs ${
+          summary.muted ? "text-slate-400" : "font-medium text-slate-700"
+        }`}
+      >
+        {summary.label}
+      </span>
+      {summary.badge ? (
+        <span
+          title={summary.badgeTitle ?? summary.badge}
+          className="w-fit max-w-full truncate rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+        >
+          {summary.badge}
+        </span>
+      ) : null}
+    </div>
   </td>
 );
 
@@ -527,6 +567,7 @@ export default function AdminUsuariosPage() {
     string
   > | null>(null);
   const [presenceNow, setPresenceNow] = useState<number>(() => Date.now());
+  const [flushingCache, setFlushingCache] = useState(false);
 
   const getCsrfToken = () => getCookieValue("vp_csrf");
 
@@ -892,6 +933,43 @@ export default function AdminUsuariosPage() {
     router.replace("/login");
   };
 
+  const handleFlushServerCache = async () => {
+    if (
+      !confirm(
+        "¿Vaciar la cache en memoria del servidor (informe + márgenes)? La próxima carga de esos tableros será más lenta. No cambia datos ni permisos.",
+      )
+    ) {
+      return;
+    }
+    const csrfToken = requireCsrfToken();
+    if (!csrfToken) return;
+    setFlushingCache(true);
+    try {
+      const response = await fetch("/api/admin/cache/flush", {
+        method: "POST",
+        headers: { "x-csrf-token": csrfToken },
+      });
+      if (handleAuthFailure(response.status)) return;
+      const data = (await response.json()) as {
+        error?: string;
+        cleared?: number;
+      };
+      if (!response.ok) {
+        toast.error(data.error ?? "No se pudo vaciar la cache.");
+        return;
+      }
+      toast.success(
+        typeof data.cleared === "number"
+          ? `Cache vaciada (${data.cleared} entradas).`
+          : "Cache vaciada.",
+      );
+    } catch {
+      toast.error("Error de red al vaciar la cache.");
+    } finally {
+      setFlushingCache(false);
+    }
+  };
+
   const handleClearLogs = async () => {
     if (
       !confirm(
@@ -976,6 +1054,18 @@ export default function AdminUsuariosPage() {
                 <LayoutGrid className="h-4 w-4 text-slate-500" />
                 Ir a secciones
               </Link>
+              <button
+                type="button"
+                onClick={() => void handleFlushServerCache()}
+                disabled={flushingCache}
+                title="Vacía cache en memoria del proceso (informe y márgenes). No afecta sessionStorage de cada navegador."
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${flushingCache ? "animate-spin" : ""}`}
+                />
+                {flushingCache ? "Vaciando…" : "Vaciar cache"}
+              </button>
               <button
                 type="button"
                 onClick={openCreate}
@@ -1233,7 +1323,10 @@ export default function AdminUsuariosPage() {
                           <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
                             Sede
                           </th>
-                          <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">
+                          <th
+                            className="border-b border-slate-100 bg-slate-50/80 px-3 py-3"
+                            title="Líneas de productividad. Si aparece «Solo Asaderos» o «Solo Fruver», variación/márgenes/rotación quedan acotados aunque las sedes sean «Todas»."
+                          >
                             Líneas
                           </th>
                           <th className="border-b border-slate-100 bg-slate-50/80 px-3 py-3">

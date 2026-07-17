@@ -4,7 +4,7 @@ Documento tecnico principal del repositorio. La aplicacion es un portal interno
 Next.js para la UAID de Mercamio, Mercatodo y Merkmios, con PostgreSQL como
 fuente principal de datos operativos, comerciales y administrativos.
 
-Estado de referencia: codigo versionado revisado el **2026-06-10**.
+Estado de referencia: codigo versionado revisado el **2026-07-17**.
 
 ## 1. Mapa rapido
 
@@ -34,6 +34,7 @@ seguimiento operativo.
 | Hub Venta UAID | `/venta` | - | acceso agrupado a ventas e inventario |
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV/XLSX/PDF/PNG |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
+| Informe variacion | `/informe-variacion` | `/api/informe-variacion` | MoM/YoY; alcance por `allowed_lines` (asadero/fruver) |
 | Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, estados de S.inventario y auditoria |
 | Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario y resumenes con margen `SUM/SUM` |
 | Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | matrices, pivotes y presets por usuario |
@@ -41,7 +42,7 @@ seguimiento operativo.
 | Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` | consultas operativas, reporte Alex, planillas y comparativos |
 | Cronograma | `/cronograma` | `/api/cronograma` | lectura de bases de datos embebidas en una pagina de Notion |
 | Excel DIAN | `/ExcelDian` | `/api/excel-dian/export` | exportes DIAN por empresa desde bases PostgreSQL separadas |
-| Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/auditoria`, `/admin/usuarios/[id]/metricas` | `/api/admin/*`, `/api/auth/heartbeat` | usuarios, permisos, presencia, auditoria admin, logins fallidos y metricas de actividad |
+| Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/auditoria`, `/admin/usuarios/[id]/metricas` | `/api/admin/*`, `/api/auth/heartbeat` | usuarios, permisos, presencia, auditoria admin, flush de cache en memoria, logins fallidos y metricas de actividad |
 
 ### Secciones UAID
 
@@ -117,7 +118,7 @@ HTTPS se debe remover esa excepcion o establecer `true`. Ver
 | --- | --- |
 | `role` | `admin` o `user`; admin omite restricciones funcionales |
 | `allowed_sedes` | sedes visibles; `NULL` o lista vacia normalizada equivale a todas |
-| `allowed_lines` | lineas visibles; `NULL` equivale a todas |
+| `allowed_lines` | lineas visibles; `NULL` equivale a todas. Si solo queda `asadero` o `fruver`, margenes/rotacion/variacion se acotan (sedes «Todas» no amplian ese alcance) |
 | `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` equivale a todas |
 | `allowed_subdashboards` | permisos granulares por subtablero; `NULL` equivale a todos |
 | `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `rotacion` legacy, `comparar_horarios`, `abcd`, `historial_sinventario`, `crear_horario_predeterminado` |
@@ -148,6 +149,7 @@ Algunos limites explicitos:
 | `/api/admin/users/[id]` PATCH/DELETE | 20 req/min/IP / 15 req/min/IP |
 | `/api/admin/user-presence` | 240 req/min/IP |
 | `/api/admin/users/[id]/metrics` | 60 req/min/IP |
+| `/api/admin/cache/flush` | 20 req/min/IP (POST CSRF; vacia cache en memoria del proceso) |
 | `/api/admin/login-logs` GET/DELETE | 60 req/min/IP / 10 req/min/IP |
 | `/api/auth/login` | limites propios por IP auditada y usuario |
 
