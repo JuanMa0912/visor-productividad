@@ -29,6 +29,7 @@ import {
   JORNADA_TOUR_ANCHOR,
   JORNADA_TOUR_STEPS,
 } from "@/lib/ui/portal-tours/jornada-tour-steps";
+import { twoMarksLabelForRange } from "@/lib/horarios/jornada-hour-thresholds";
 import "driver.js/dist/driver.css";
 import "@/lib/ui/product-tour/product-tour.css";
 
@@ -99,13 +100,18 @@ const OVERTIME_EXTRA_SEDES: Sede[] = [
   { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
 ];
 
-const ALEX_EXPORT_FIELDS: AlexExportField[] = [
+const buildAlexExportFields = (twoMarksLabel: string): AlexExportField[] => [
   {
     key: "moreThan72With2",
-    header: "+ 7:20h con 2 marcaciones",
-    toggleLabel: "+ 7:20h / 2 marcas",
+    header: `+ ${twoMarksLabel} con 2 marcaciones`,
+    toggleLabel: `+ ${twoMarksLabel} / 2 marcas`,
     width: 32,
-    comparisonHeader: "Mas 7.2",
+    comparisonHeader:
+      twoMarksLabel === "7:00h"
+        ? "Mas 7.0"
+        : twoMarksLabel === "7:20h"
+          ? "Mas 7.2"
+          : "Mas 7.0/7.2",
   },
   {
     key: "moreThan92",
@@ -130,6 +136,9 @@ const ALEX_EXPORT_FIELDS: AlexExportField[] = [
   },
 ];
 
+const ALEX_EXPORT_FIELD_KEYS = buildAlexExportFields("7:00h").map(
+  (field) => field.key,
+);
 const createEmptyAlexTotals = (): AlexReportTotals => ({
   moreThan72With2: 0,
   moreThan92: 0,
@@ -204,7 +213,7 @@ export default function JornadaExtendidaPage() {
   const [isAlexExportMenuOpen, setIsAlexExportMenuOpen] = useState(false);
   const [alexSelectedFields, setAlexSelectedFields] = useState<
     AlexExportFieldKey[]
-  >(() => ALEX_EXPORT_FIELDS.map((field) => field.key));
+  >(() => [...ALEX_EXPORT_FIELD_KEYS]);
   const [alexSortField, setAlexSortField] = useState<AlexSortField | null>(
     null,
   );
@@ -355,6 +364,12 @@ export default function JornadaExtendidaPage() {
     return `${fmt(alexStartDate)} a ${fmt(alexEndDate)}`;
   }, [alexEndDate, alexStartDate]);
 
+  const alexExportFields = useMemo(
+    () =>
+      buildAlexExportFields(twoMarksLabelForRange(alexStartDate, alexEndDate)),
+    [alexEndDate, alexStartDate],
+  );
+
   const formatRangeLabel = useCallback((start: string, end: string) => {
     if (!start || !end) return "";
     const fmt = (value: string) => {
@@ -493,10 +508,10 @@ export default function JornadaExtendidaPage() {
 
   const alexIncludedFields = useMemo(
     () =>
-      ALEX_EXPORT_FIELDS.filter((field) =>
+      alexExportFields.filter((field) =>
         alexSelectedFields.includes(field.key),
       ),
-    [alexSelectedFields],
+    [alexExportFields, alexSelectedFields],
   );
   const sortAlexRows = useCallback(
     (rows: AlexReportRow[]) => {
@@ -559,9 +574,9 @@ export default function JornadaExtendidaPage() {
   );
   const alexTableMinWidth = alexCompareOpen
     ? ALEX_SEDE_COLUMN_WIDTH +
-      ALEX_EXPORT_FIELDS.length * ALEX_COMPARE_METRIC_COLUMN_WIDTH * 2
+      alexExportFields.length * ALEX_COMPARE_METRIC_COLUMN_WIDTH * 2
     : ALEX_SEDE_COLUMN_WIDTH +
-      ALEX_EXPORT_FIELDS.length * ALEX_BASE_METRIC_COLUMN_WIDTH;
+      alexExportFields.length * ALEX_BASE_METRIC_COLUMN_WIDTH;
 
   const toggleAlexSelectedField = (fieldKey: AlexExportFieldKey) => {
     setAlexExportError(null);
@@ -761,7 +776,7 @@ export default function JornadaExtendidaPage() {
     periodTwoTotals: AlexReportTotals,
   ) => {
     const sheet = workbook.addWorksheet(sheetName);
-    const metricColumns = ALEX_EXPORT_FIELDS.map((field) => ({
+    const metricColumns = alexExportFields.map((field) => ({
       key: field.key,
       header: field.comparisonHeader,
       width: Math.max(10, Math.min(12, field.comparisonHeader.length + 1)),
@@ -1383,8 +1398,8 @@ export default function JornadaExtendidaPage() {
                       Tablero de tiempos
                     </p>
                     <h2 className="mt-1 text-lg font-bold leading-tight text-slate-900 sm:text-[1.6rem]">
-                      + 7:20h con 2 marcaciones, 9:20h, marc. impares e
-                      inasistencias
+                      + {twoMarksLabelForRange(alexStartDate, alexEndDate)} con
+                      2 marcaciones, 9:20h, marc. impares e inasistencias
                     </h2>
                     {alexRangeLabel && (
                       <p className="mt-1 text-base font-bold text-red-700">
@@ -1482,7 +1497,7 @@ export default function JornadaExtendidaPage() {
                                 </p>
                                 <p className="text-xs text-slate-500">
                                   {alexSelectedFields.length ===
-                                  ALEX_EXPORT_FIELDS.length
+                                  alexExportFields.length
                                     ? "Sede + todas las métricas"
                                     : `Sede + ${alexIncludedFields.length} columna(s)`}
                                 </p>
@@ -1492,7 +1507,7 @@ export default function JornadaExtendidaPage() {
                                 exportar.
                               </p>
                               <div className="mt-3 flex flex-wrap gap-2">
-                                {ALEX_EXPORT_FIELDS.map((field) => {
+                                {alexExportFields.map((field) => {
                                   const selected = alexSelectedFields.includes(
                                     field.key,
                                   );
@@ -1629,7 +1644,7 @@ export default function JornadaExtendidaPage() {
                             style={{ width: `${ALEX_SEDE_COLUMN_WIDTH}px` }}
                           />
                           {alexCompareOpen
-                            ? ALEX_EXPORT_FIELDS.flatMap((field) => [
+                            ? alexExportFields.flatMap((field) => [
                                 <col
                                   key={`${field.key}-compare-day`}
                                   style={{
@@ -1643,7 +1658,7 @@ export default function JornadaExtendidaPage() {
                                   }}
                                 />,
                               ])
-                            : ALEX_EXPORT_FIELDS.map((field) => (
+                            : alexExportFields.map((field) => (
                                 <col
                                   key={`${field.key}-base`}
                                   style={{
@@ -1669,7 +1684,7 @@ export default function JornadaExtendidaPage() {
                                 >
                                   {renderAlexSortHeader("sede", "Sede")}
                                 </th>
-                                {ALEX_EXPORT_FIELDS.map((field) => (
+                                {alexExportFields.map((field) => (
                                   <th
                                     key={`${field.key}-group`}
                                     className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-white px-3 py-2 text-center font-bold`}
@@ -1691,7 +1706,7 @@ export default function JornadaExtendidaPage() {
                                 ))}
                               </tr>
                               <tr>
-                                {ALEX_EXPORT_FIELDS.map((field) => (
+                                {alexExportFields.map((field) => (
                                   <Fragment key={`${field.key}-expanded`}>
                                     <th
                                       className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#fde9a8] px-3 py-2 text-center font-bold text-red-600`}
@@ -1741,7 +1756,8 @@ export default function JornadaExtendidaPage() {
                               >
                                 {renderAlexSortHeader(
                                   "moreThan72With2",
-                                  "+ 7:20h con 2 marcaciones",
+                                  alexExportFields[0]?.header ??
+                                    "+ 7:00h con 2 marcaciones",
                                   "right",
                                 )}
                               </th>
@@ -1806,7 +1822,7 @@ export default function JornadaExtendidaPage() {
                               </td>
                               {alexCompareOpen ? (
                                 <>
-                                  {ALEX_EXPORT_FIELDS.map((field) => (
+                                  {alexExportFields.map((field) => (
                                     <Fragment key={`${row.sede}-${field.key}`}>
                                       <td
                                         className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#fff0b8] px-3 py-2 text-center text-slate-800`}
@@ -1871,7 +1887,7 @@ export default function JornadaExtendidaPage() {
                             </td>
                             {alexCompareOpen ? (
                               <>
-                                {ALEX_EXPORT_FIELDS.map((field) => (
+                                {alexExportFields.map((field) => (
                                   <Fragment key={`totals-${field.key}`}>
                                     <td
                                       className={`${ALEX_TABLE_CELL_BORDER_CLASS} bg-[#f8df8c] px-3 py-2 text-center`}

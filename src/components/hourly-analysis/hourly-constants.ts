@@ -1,4 +1,9 @@
 import type { PersonBreakdownView } from "./types";
+import {
+  NINE_TWENTY_THRESHOLD_MINUTES,
+  TWO_MARKS_THRESHOLD_MINUTES_LEGACY,
+  TWO_MARKS_UPPER_BOUND_MINUTES,
+} from "@/lib/horarios/jornada-hour-thresholds";
 
 export const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
   weekday: "long",
@@ -49,16 +54,13 @@ export const CASHIER_PAGE_SIZE_DEFAULT = 30;
 export const CASHIER_PAGE_TAB_WINDOW = 8;
 
 // Umbrales para los botones "Ver personas >X:YYh".
-// Se usa `>` (estricto), asi que las constantes apuntan al ultimo minuto
-// excluido.
-// >9:20 -> arranca en 9:21: NO se cuentan las jornadas de exactamente 9:20,
-// solo desde 9:21h en adelante.
-export const ALERT_THRESHOLD_MINUTES = 9 * 60 + 20;
-export const TWO_MARKS_ALERT_THRESHOLD_MINUTES = 7 * 60 + 30; // >7:30 -> arranca en 7:31
-// Limite superior del rango ">7:20H con 2 marcaciones" (inclusivo). Se queda
-// en 9:19 (sin cambios): una jornada de exactamente 9:20 no entra aqui ni en
-// ">9:20H", queda fuera de ambos buckets a proposito.
-export const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = 9 * 60 + 19;
+// El bucket de 2 marcaciones es date-aware desde 2026-07-16 (-20 min);
+// ver `src/lib/horarios/jornada-hour-thresholds.ts`. 9:20h no cambia.
+export const ALERT_THRESHOLD_MINUTES = NINE_TWENTY_THRESHOLD_MINUTES;
+/** @deprecated Preferir twoMarksThresholdMinutesForDate(workedDate). */
+export const TWO_MARKS_ALERT_THRESHOLD_MINUTES =
+  TWO_MARKS_THRESHOLD_MINUTES_LEGACY;
+export const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = TWO_MARKS_UPPER_BOUND_MINUTES;
 
 export const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";
 export const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-200";

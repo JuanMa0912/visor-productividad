@@ -7,6 +7,10 @@ import {
 } from "@/lib/shared/portal-sections";
 import { isDepartamentoAllowedForLines } from "@/lib/shared/departamento-line";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
+import {
+  NINE_TWENTY_THRESHOLD_HOURS as HOURS_9_20,
+  isInTwoMarksHoursBucket,
+} from "@/lib/horarios/jornada-hour-thresholds";
 
 type AlexRow = {
   sede: string;
@@ -199,17 +203,6 @@ const normalizeIncidentValue = (value: string | null | undefined) =>
 const isAbsenceIncident = (value: string | null | undefined) =>
   normalizeIncidentValue(value).includes("inasistencia");
 
-// Se conserva la etiqueta visible 7:20h, pero el filtro interno usa 7:29h.
-const HOURS_7_20 = 7 + 29 / 60;
-// Tope superior (inclusivo) del rango "7:20h con 2 marcaciones": 9:19:30.
-// Se mantiene en 9:19.5 (sin cambios) para no alterar ese bucket.
-const HOURS_720_UPPER = 9 + 19.5 / 60;
-// Umbral de "9:20h": ahora arranca en 9:21 (corte interno 9:20:30) para NO
-// contar jornadas de exactamente 9:20. Con `>` y el medio minuto se incluyen
-// las representaciones decimales de 9:21 (9.35) y se excluyen las de 9:20
-// (9.33, 9.333, 9.3333...). Resultado: una jornada de exactamente 9:20 no cae
-// en ningun bucket (ni en "7:20 con 2 marcaciones" ni en "9:20h").
-const HOURS_9_20 = 9 + 20.5 / 60;
 const NO_STORE_CACHE_CONTROL = "no-store, private";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
@@ -485,6 +478,7 @@ export async function GET(request: Request) {
       )
       SELECT
         raw_sede,
+        worked_date::text AS worked_date,
         departamento,
         total_hours,
         marks_count,
@@ -506,6 +500,7 @@ export async function GET(request: Request) {
     for (const row of result.rows ?? []) {
       const typed = row as {
         raw_sede: string | null;
+        worked_date: string | null;
         departamento: string | null;
         total_hours: number | string | null;
         marks_count: number | null;
@@ -534,12 +529,14 @@ export async function GET(request: Request) {
       const marksCount = Number(typed.marks_count ?? 0);
       const incident = typed.incidencia;
       const hasSiNomina = typed.has_si_nomina === true;
+      const workedDate =
+        typeof typed.worked_date === "string"
+          ? typed.worked_date.slice(0, 10)
+          : null;
       const current = counters.get(sedeMapped)!;
 
       if (
-        totalHours > HOURS_7_20 &&
-        totalHours <= HOURS_720_UPPER &&
-        marksCount === 2 &&
+        isInTwoMarksHoursBucket(totalHours, marksCount, workedDate) &&
         hasSiNomina
       ) {
         current.moreThan72With2 += 1;

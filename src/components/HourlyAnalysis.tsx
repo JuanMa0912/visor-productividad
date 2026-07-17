@@ -56,9 +56,11 @@ import {
   OVERTIME_TABLE_INNER_BORDER_CLASS,
   OVERTIME_TABLE_OUTER_BORDER_CLASS,
   PERSON_BREAKDOWN_VIEW_OPTIONS,
-  TWO_MARKS_ALERT_THRESHOLD_MINUTES,
-  TWO_MARKS_ALERT_UPPER_BOUND_MINUTES,
 } from "@/components/hourly-analysis/hourly-constants";
+import {
+  isInTwoMarksMinutesBucket,
+  twoMarksLabelForRange,
+} from "@/lib/horarios/jornada-hour-thresholds";
 import {
   calcVtaHr,
   cashierHourDetailCacheKey,
@@ -2170,10 +2172,10 @@ export const HourlyAnalysis = ({
               );
               if (overtimeAlertMode === "720-2marks") {
                 const marks = employee.marksCount ?? 0;
-                return (
-                  employeeMinutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
-                  employeeMinutes <= TWO_MARKS_ALERT_UPPER_BOUND_MINUTES &&
-                  marks === 2
+                return isInTwoMarksMinutesBucket(
+                  employeeMinutes,
+                  marks,
+                  employee.workedDate,
                 );
               }
               return employeeMinutes > ALERT_THRESHOLD_MINUTES;
@@ -2279,10 +2281,10 @@ export const HourlyAnalysis = ({
       baseFilteredOvertimeEmployees.filter((employee) => {
         const minutes = decimalHoursToMinutes(employee.workedHours);
         const marks = employee.marksCount ?? 0;
-        return (
-          minutes > TWO_MARKS_ALERT_THRESHOLD_MINUTES &&
-          minutes <= TWO_MARKS_ALERT_UPPER_BOUND_MINUTES &&
-          marks === 2
+        return isInTwoMarksMinutesBucket(
+          minutes,
+          marks,
+          employee.workedDate,
         );
       }).length,
     [baseFilteredOvertimeEmployees],
@@ -2320,6 +2322,10 @@ export const HourlyAnalysis = ({
   const displayAlexAlertCount920 = alexAlertCount920;
   const displayAlexAlertCount720 = alexAlertCount720;
   const displayIncidenceCount = incidenceCount;
+  const twoMarksChipLabel = useMemo(
+    () => twoMarksLabelForRange(overtimeDateStart, overtimeDateEnd),
+    [overtimeDateEnd, overtimeDateStart],
+  );
   useEffect(() => {
     if (!isAlexStrictMode) return;
     setOvertimeSedeFilter([]);
@@ -3126,7 +3132,7 @@ export const HourlyAnalysis = ({
                         : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
                     }`}
                   >
-                    {`>7:20h con 2 marcaciones ${displayAlexAlertCount720}`}
+                    {`>${twoMarksChipLabel} con 2 marcaciones ${displayAlexAlertCount720}`}
                   </button>
                   {overtimeExcludedIds.size > 0 && (
                     <button
