@@ -464,12 +464,50 @@ export default function InventarioXItemPage() {
           "No fue posible consultar los filtros de inventario.",
         );
 
-        setFilters(
-          payload.filters ?? {
-            companies: [],
-            sedes: [],
-          },
-        );
+        const nextFilters = payload.filters ?? {
+          companies: [],
+          sedes: [],
+        };
+        setFilters({
+          companies: nextFilters.companies.map((company) =>
+            company.trim().toLowerCase(),
+          ),
+          sedes: nextFilters.sedes.map((sede) => ({
+            ...sede,
+            empresa: sede.empresa.trim().toLowerCase(),
+          })),
+        });
+        // Si el catalogo trae empresas nuevas (mtodo/bogota) y la seleccion
+        // actual no las incluye, ampliar a todas para no dejar al usuario
+        // atrapado solo en Mercamio tras un cache viejo.
+        setSelectedCompanyState((current) => {
+          const nextCompanies = nextFilters.companies.map((company) =>
+            company.trim().toLowerCase(),
+          );
+          if (nextCompanies.length === 0) return current;
+          if (current.length === 0) return nextCompanies;
+          const normalizedCurrent = current.map((company) =>
+            company.trim().toLowerCase(),
+          );
+          const expandFromMercamioOnly =
+            normalizedCurrent.length === 1 &&
+            normalizedCurrent[0] === "mercamio" &&
+            nextCompanies.length > 1;
+          if (expandFromMercamioOnly) {
+            queueMicrotask(() => {
+              setSelectedSedeState(
+                nextFilters.sedes.map((sede) =>
+                  buildSedeOptionValue(
+                    sede.empresa.trim().toLowerCase(),
+                    sede.sedeId,
+                  ),
+                ),
+              );
+            });
+            return nextCompanies;
+          }
+          return normalizedCurrent;
+        });
         setAvailableDate(payload.meta?.availableDate ?? "");
         setAvailableDateStart(payload.meta?.availableDateStart ?? "");
         setAvailableDateEnd(payload.meta?.availableDateEnd ?? "");

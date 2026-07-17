@@ -56,6 +56,46 @@ const SEDE_NAME_BY_KEY: Record<string, string> = {
 };
 
 /**
+ * Empresas canónicas para filtros de inventario/rotación (códigos BD).
+ * Excluye alias (`mercatodo`, `merkmios`) para no duplicar en el dropdown.
+ */
+export const INVENTARIO_CANONICAL_EMPRESAS = [
+  "mercamio",
+  "mtodo",
+  "bogota",
+] as const;
+
+export type InventarioCanonicalEmpresa =
+  (typeof INVENTARIO_CANONICAL_EMPRESAS)[number];
+
+export const isInventarioCanonicalEmpresa = (
+  value: string,
+): value is InventarioCanonicalEmpresa =>
+  (INVENTARIO_CANONICAL_EMPRESAS as readonly string[]).includes(value);
+
+/**
+ * Semilla de sedes por empresa para el dropdown de inventario-x-item.
+ * Garantiza que Comercializadora (mtodo) y Merkmios (bogota) existan aunque
+ * el corte diario de BD venga incompleto o el cache de proceso este viejo.
+ */
+export const listCanonicalInventarioFilterSedes = (): Array<{
+  empresa: string;
+  sedeId: string;
+  sedeName: string;
+}> => {
+  const rows: Array<{ empresa: string; sedeId: string; sedeName: string }> = [];
+  for (const [key, sedeName] of Object.entries(SEDE_NAME_BY_KEY)) {
+    const separator = key.indexOf("|");
+    if (separator <= 0) continue;
+    const sedeId = key.slice(0, separator);
+    const empresa = key.slice(separator + 1);
+    if (!isInventarioCanonicalEmpresa(empresa)) continue;
+    rows.push({ empresa, sedeId, sedeName });
+  }
+  return rows;
+};
+
+/**
  * Devuelve el nombre canonico de una sede dado su `(sedeId, empresa)`.
  * Retorna `null` si la combinacion no esta en el catalogo (caller decide el
  * fallback: dejar el `sede_name` que vino de la DB, mostrar el ID, etc.).

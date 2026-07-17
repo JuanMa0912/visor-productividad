@@ -13,7 +13,7 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
-import { getCanonicalSedeName } from "@/lib/shared/sede-names";
+import { getCanonicalSedeName, listCanonicalInventarioFilterSedes } from "@/lib/shared/sede-names";
 import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
@@ -316,10 +316,11 @@ const getInventoryFilterCatalog = async (
 ): Promise<InventoryFilterCatalog> => {
   const now = Date.now();
   // Catalogo de empresas/sedes: SIEMPRE sobre la ultima fecha con datos en BD
-  // (`max`), no sobre el dateEnd del filtro del usuario. Si el rango termina
-  // en un dia donde una empresa aun no cargo inventario (lag ETL), esa empresa
-  // no debe desaparecer del dropdown.
-  const dateKey = catalogDateCompact;
+  // (`max`), no sobre el dateEnd del filtro del usuario. Ademas se fusiona
+  // con el catalogo canonico (mercamio/mtodo/bogota) para que Comercializadora
+  // y Merkmios no desaparezcan del dropdown si el corte diario viene incompleto.
+  // v3: invalida caches de proceso que solo tenian mercamio.
+  const dateKey = `v3:${catalogDateCompact}`;
   if (
     filterCatalogCache &&
     filterCatalogCache.dateKey === dateKey &&
@@ -364,22 +365,26 @@ const getInventoryFilterCatalog = async (
     //    `${empresa}::${sedeId}` y mostraba warnings tipo
     //    "Encountered two children with the same key, mercamio::003".
     const sedeByKey = new Map<string, { empresa: string; sedeId: string; sedeName: string }>();
-    for (const row of (result.rows ?? []) as InventoryFilterDbRow[]) {
-      if (HIDDEN_SEDE_KEYS.has(normalizeKey(row.sede_name))) continue;
-      const key = `${row.empresa}::${row.sede_id}`;
-      // El canonico depende solo de `(empresa, sedeId)`, asi que todas las
-      // filas con la misma clave producen el MISMO `sedeName` y la dedup por
-      // longitud no afecta. Solo cuando no hay canonico (sedes nuevas no
-      // catalogadas) la comparacion por longitud decide cual variante de la
-      // BD conservar: la mas larga = mas descriptiva.
-      const sedeName = getCanonicalSedeName(row.sede_id, row.empresa) ?? row.sede_name;
+    const upsertSede = (empresaRaw: string, sedeIdRaw: string, sedeNameRaw: string) => {
+      const empresa = empresaRaw.trim().toLowerCase();
+      const sedeId = sedeIdRaw.trim();
+      if (!empresa || !sedeId) return;
+      if (HIDDEN_SEDE_KEYS.has(normalizeKey(sedeNameRaw))) return;
+      const key = `${empresa}::${sedeId}`;
+      const sedeName = getCanonicalSedeName(sedeId, empresa) ?? sedeNameRaw;
       const current = sedeByKey.get(key);
       if (!current || sedeName.length > current.sedeName.length) {
-        sedeByKey.set(key, {
-          empresa: row.empresa,
-          sedeId: row.sede_id,
-          sedeName,
-        });
+        sedeByKey.set(key, { empresa, sedeId, sedeName });
+      }
+    };
+
+    for (const row of (result.rows ?? []) as InventoryFilterDbRow[]) {
+      upsertSede(row.empresa, row.sede_id, row.sede_name);
+    }
+    // Semilla canonica: garantiza mtodo/bogota aunque el dia max no las traiga.
+    for (const seed of listCanonicalInventarioFilterSedes()) {
+      if (!sedeByKey.has(`${seed.empresa}::${seed.sedeId}`)) {
+        upsertSede(seed.empresa, seed.sedeId, seed.sedeName);
       }
     }
     const sedes = Array.from(sedeByKey.values());
