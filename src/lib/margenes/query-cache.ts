@@ -41,3 +41,15 @@ export const setCachedQuery = (
   }
   CACHE.set(key, { expires: Date.now() + ttlMs, value });
 };
+
+/** Vacia toda la cache en memoria de este proceso (margenes + informe). */
+export const clearCachedQueries = (): { cleared: number } => {
+  const cleared = CACHE.size;
+  CACHE.clear();
+  return { cleared };
+};
+
+export const getCachedQueryStats = (): { size: number; maxEntries: number } => ({
+  size: CACHE.size,
+  maxEntries: MAX_ENTRIES,
+});

@@ -112,6 +112,7 @@ Codigo compartido sin UI de pagina.
 | `auth/*` | login, logout, me, cambio de password y heartbeat |
 | `admin/users`, `admin/users/[id]`, `admin/users/[id]/metrics` | usuarios y metricas por usuario |
 | `admin/login-logs`, `admin/login-failures`, `admin/audit`, `admin/user-presence`, `admin/uso-tableros` | accesos, fallos de login, auditoría admin, presencia y uso de tableros |
+| `admin/cache/flush` | POST (CSRF): vacía cache en memoria del proceso (informe + márgenes). GET: tamaño actual |
 | `productivity` | productividad por linea con cache de archivo opcional |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por linea/sede |

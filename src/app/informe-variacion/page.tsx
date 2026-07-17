@@ -33,8 +33,36 @@ type InformeMeta = {
   maxDate: string | null;
 };
 
-const INFORME_SESSION_CACHE_PREFIX = "vp-informe-variacion:";
+/**
+ * v3: namespace por usuario + invalidación global.
+ * v1 compartía clave entre usuarios; v2 namespaced; v3 fuerza wipe al desplegar
+ * tras el incidente de payloads solo-Asaderos en sessionStorage.
+ */
+const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v3:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
+
+const sessionStoragePrefixForUser = (
+  userId: string | number | null | undefined,
+) => `${INFORME_SESSION_CACHE_BASE}u=${userId ?? "anon"}:`;
+
+const purgeLegacyInformeSessionCache = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (
+        key?.startsWith("vp-informe-variacion:") &&
+        !key.startsWith(INFORME_SESSION_CACHE_BASE)
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    for (const key of keysToRemove) sessionStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+};
 
 const buildMonthBundleCacheKey = (year: number, month: number, scopeSuffix = "") =>
   `${year}-${month}:bundle${scopeSuffix}`;
@@ -46,10 +74,13 @@ const buildRangeCacheKey = (
   scopeSuffix = "",
 ) => `${year}-${month}:range=${rangeId}${scopeSuffix}`;
 
-const readSessionInforme = (key: string): InformeVariacionPayload | null => {
+const readSessionInforme = (
+  storagePrefix: string,
+  key: string,
+): InformeVariacionPayload | null => {
   if (typeof window === "undefined") return null;
   try {
-    const storageKey = `${INFORME_SESSION_CACHE_PREFIX}${key}`;
+    const storageKey = `${storagePrefix}${key}`;
     const raw = sessionStorage.getItem(storageKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as InformeVariacionPayload;
@@ -63,11 +94,15 @@ const readSessionInforme = (key: string): InformeVariacionPayload | null => {
   }
 };
 
-const writeSessionInforme = (key: string, payload: InformeVariacionPayload) => {
+const writeSessionInforme = (
+  storagePrefix: string,
+  key: string,
+  payload: InformeVariacionPayload,
+) => {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.setItem(
-      `${INFORME_SESSION_CACHE_PREFIX}${key}`,
+      `${storagePrefix}${key}`,
       JSON.stringify(payload),
     );
   } catch {
@@ -75,9 +110,13 @@ const writeSessionInforme = (key: string, payload: InformeVariacionPayload) => {
   }
 };
 
-const clearSessionInformeMonth = (year: number, month: number) => {
+const clearSessionInformeMonth = (
+  storagePrefix: string,
+  year: number,
+  month: number,
+) => {
   if (typeof window === "undefined") return;
-  const prefix = `${INFORME_SESSION_CACHE_PREFIX}${year}-${month}:range=`;
+  const prefix = `${storagePrefix}${year}-${month}:`;
   try {
     const keysToRemove: string[] = [];
     for (let i = 0; i < sessionStorage.length; i += 1) {
@@ -113,12 +152,20 @@ export default function InformeVariacionPage() {
     () => informeLineScopeCacheSuffix(lineCategoryScope),
     [lineCategoryScope],
   );
+  const sessionStoragePrefix = useMemo(
+    () => sessionStoragePrefixForUser(user?.id),
+    [user?.id],
+  );
 
   useEffect(() => {
     if (ready && !canAccess) {
       router.replace("/secciones");
     }
   }, [canAccess, ready, router]);
+
+  useEffect(() => {
+    purgeLegacyInformeSessionCache();
+  }, []);
 
   const [metaLoading, setMetaLoading] = useState(true);
   const [maxDate, setMaxDate] = useState<string | null>(null);
@@ -150,6 +197,12 @@ export default function InformeVariacionPage() {
   useEffect(() => {
     dayRangeIdRef.current = dayRangeId;
   }, [dayRangeId]);
+
+  useEffect(() => {
+    memoryCacheRef.current.clear();
+    inflightRef.current.clear();
+    bundleInflightRef.current.clear();
+  }, [user?.id]);
 
   useEffect(() => {
     if (!ready || !canAccess) return;
@@ -239,12 +292,12 @@ export default function InformeVariacionPage() {
       if (!scoped.rows?.length) return null;
       const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
       memoryCacheRef.current.set(key, scoped);
-      writeSessionInforme(key, scoped);
+      writeSessionInforme(sessionStoragePrefix, key, scoped);
       markRangeReady(rangeId);
       prefetchWarmInformeRange(scoped);
       return scoped;
     },
-    [lineCategoryScope, markRangeReady, scopeCacheSuffix],
+    [lineCategoryScope, markRangeReady, scopeCacheSuffix, sessionStoragePrefix],
   );
 
   const storeMonthBundle = useCallback(
@@ -273,7 +326,7 @@ export default function InformeVariacionPage() {
         prefetchWarmInformeRange(memoryHit);
         return memoryHit;
       }
-      const sessionHit = readSessionInforme(key);
+      const sessionHit = readSessionInforme(sessionStoragePrefix, key);
       if (sessionHit) {
         const scoped = filterInformePayloadForLineScope(
           sessionHit,
@@ -286,7 +339,12 @@ export default function InformeVariacionPage() {
       }
       return null;
     },
-    [lineCategoryScope, markRangeReady, scopeCacheSuffix],
+    [
+      lineCategoryScope,
+      markRangeReady,
+      scopeCacheSuffix,
+      sessionStoragePrefix,
+    ],
   );
 
   const fetchRangePayload = useCallback(
@@ -516,7 +574,7 @@ export default function InformeVariacionPage() {
           }
         }
         bundleInflightRef.current.delete(buildMonthBundleCacheKey(year, month, scopeCacheSuffix));
-        clearSessionInformeMonth(year, month);
+        clearSessionInformeMonth(sessionStoragePrefix, year, month);
         setReadyRanges(new Set());
       }
 
@@ -551,7 +609,10 @@ export default function InformeVariacionPage() {
               memoryCacheRef.current.has(
                 buildRangeCacheKey(year, month, range.id, scopeCacheSuffix),
               ) ||
-              readSessionInforme(buildRangeCacheKey(year, month, range.id, scopeCacheSuffix))
+              readSessionInforme(
+                sessionStoragePrefix,
+                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix),
+              )
             ) {
               kept.add(range.id);
             }
@@ -805,7 +866,7 @@ export default function InformeVariacionPage() {
         }
       }
     },
-    [availableDayRanges, fetchMonthBundle, fetchRangePayload, parsedMonth, readCachedPayload, scopeCacheSuffix],
+    [availableDayRanges, fetchMonthBundle, fetchRangePayload, parsedMonth, readCachedPayload, scopeCacheSuffix, sessionStoragePrefix],
   );
 
   // Carga / precarga al entrar o cambiar de mes.
