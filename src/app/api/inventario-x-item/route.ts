@@ -156,11 +156,9 @@ const buildHiddenSedeWhereClause = (sedeNameExpr: string) =>
 let dateRangeCache:
   | { value: { min: string | null; max: string | null }; expiresAt: number }
   | null = null;
-// Cache del catalogo de filtros. La clave es UNICAMENTE el `dateEnd` porque
-// el catalogo se calcula sobre la ultima fecha del rango (las empresas/sedes
-// son estables dia a dia). Asi cualquier rango que termine en la misma fecha
-// reutiliza el mismo cache (antes la clave era `start-end` y cada cambio de
-// rango invalidaba todo).
+// Cache del catalogo de filtros. La clave es la fecha MAX disponible en BD:
+// el catalogo de empresas/sedes no debe depender del dateEnd elegido por el
+// usuario (un dia sin ETL de mtodo/bogota ocultaba esas empresas del dropdown).
 let filterCatalogCache:
   | { dateKey: string; value: InventoryFilterCatalog; expiresAt: number }
   | null = null;
@@ -313,13 +311,15 @@ const getAvailableDateRange = async () => {
 };
 
 const getInventoryFilterCatalog = async (
-  dateRangeCompact: { start: string; end: string },
+  catalogDateCompact: string,
   precomputedFields?: RotacionBaseSqlFields,
 ): Promise<InventoryFilterCatalog> => {
   const now = Date.now();
-  // Solo dependemos de `dateEnd`: el catalogo se calcula sobre la ultima
-  // fecha del rango. Cualquier rango con el mismo `end` reusa el cache.
-  const dateKey = dateRangeCompact.end;
+  // Catalogo de empresas/sedes: SIEMPRE sobre la ultima fecha con datos en BD
+  // (`max`), no sobre el dateEnd del filtro del usuario. Si el rango termina
+  // en un dia donde una empresa aun no cargo inventario (lag ETL), esa empresa
+  // no debe desaparecer del dropdown.
+  const dateKey = catalogDateCompact;
   if (
     filterCatalogCache &&
     filterCatalogCache.dateKey === dateKey &&
@@ -332,11 +332,7 @@ const getInventoryFilterCatalog = async (
   try {
     const fields = precomputedFields ?? (await resolveRotacionBaseSqlFields(client));
     const dateColumn = fields.dateColumn;
-    // El catalogo solo escanea la ULTIMA fecha del rango ($1). Las empresas
-    // y sedes son estables dia a dia, asi que no tiene sentido escanear
-    // semanas/meses solo para sacar combinaciones unicas. En la prod real
-    // esto baja el costo de ~16s (escan de mes) a sub-segundo (1 dia con
-    // indice `rotacion_base_new_idx_fecha_dia`).
+    // Un solo dia (max disponible) con indice por fecha: barato y estable.
     const result = await client.query(
       `
       SELECT DISTINCT
@@ -349,7 +345,7 @@ const getInventoryFilterCatalog = async (
         AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
       `,
-      [dateRangeCompact.end],
+      [catalogDateCompact],
     );
 
     // 1. Red de seguridad: el WHERE SQL ya filtra las sedes ocultas, pero
@@ -1228,10 +1224,7 @@ export async function GET(request: Request) {
     }
 
     const [filters, rows, matrixRows] = await Promise.all([
-      getInventoryFilterCatalog(
-        { start: dateStartCompact, end: dateEndCompact },
-        precomputedFields,
-      ),
+      getInventoryFilterCatalog(maxDateCompact, precomputedFields),
       mode === "catalog"
         ? queryInventoryCatalogRows({
             dateRangeCompact: { start: dateStartCompact, end: dateEndCompact },

@@ -21,6 +21,15 @@ export const getCookieValue = (name: string) => {
   return match ? decodeURIComponent(match[1]) : null;
 };
 
+/** Etiquetas de empresa como en el resto del portal (BD usa mtodo/bogota). */
+export const formatInventarioEmpresaLabel = (empresa: string): string => {
+  const key = empresa.trim().toLowerCase();
+  if (key === "mtodo" || key === "mercatodo") return "Comercializadora";
+  if (key === "bogota" || key === "merkmios") return "Merkmios";
+  if (key === "mercamio") return "Mercamio";
+  return empresa.trim().toUpperCase();
+};
+
 /**
  * Rango por defecto: misma regla que rotacion (`getRollingMonthBackRange`).
  * ~30/31 dias hacia atras desde el ultimo dato, acotado al minimo disponible.

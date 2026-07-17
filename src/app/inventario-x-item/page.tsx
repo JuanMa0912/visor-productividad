@@ -78,6 +78,7 @@ import {
   dateLabelOptions,
   getCookieValue,
   defaultRollingMonthBackRange,
+  formatInventarioEmpresaLabel,
   isStaleMonthToDatePartialDefault,
   isStalePreviousMonthDefaultRange,
   compareText,
@@ -671,7 +672,7 @@ export default function InventarioXItemPage() {
     () =>
       filters.companies.map((company) => ({
         value: company,
-        label: company.toUpperCase(),
+        label: formatInventarioEmpresaLabel(company),
         key: `company-${company}`,
       })),
     [filters.companies],
