@@ -11,6 +11,7 @@ import {
 } from "@/lib/margenes/margen-final-query";
 import {
   buildMargenWhereForTable,
+  clienteSelectSql,
   isRollTable,
   mercadoTipoSql,
   sedeDistinctKeySql,
@@ -87,6 +88,9 @@ export type DrillRow = {
   linea?: string;
   documento?: string;
   tipdoc?: string;
+  documentoDocfc?: string;
+  idTerc?: string;
+  nombreTerc?: string;
   sede?: string;
   empresa?: string;
   idCo?: string;
@@ -173,6 +177,12 @@ const buildFactWhere = (
   return [base, ...fact].join(" AND ");
 };
 
+const cleanText = (value: unknown): string | undefined => {
+  if (value == null) return undefined;
+  const trimmed = String(value).trim();
+  return trimmed === "" ? undefined : trimmed;
+};
+
 const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
   const documento = String(row.documento);
   const tipdoc = String(row.tipdoc);
@@ -185,6 +195,9 @@ const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
     label: documento,
     documento,
     tipdoc,
+    documentoDocfc: cleanText(row.documento_docfc),
+    idTerc: cleanText(row.id_terc),
+    nombreTerc: cleanText(row.nombre_terc),
     empresa,
     idCo,
     sede: sedeLabel(empresa, idCo),
@@ -651,6 +664,7 @@ export const queryDrillRows = async (
         ${documentoExpr(table)} AS documento,
         ${tipdocExpr(table)} AS tipdoc,
         ${sedeSelectSql(table)},
+        ${clienteSelectSql(table)},
         ${metricsSqlFor(table)}
       FROM ${table}
       WHERE ${where}
@@ -808,6 +822,7 @@ export const queryFactNavRows = async (
         ${documentoExpr(table)} AS documento,
         ${tipdocExpr(table)} AS tipdoc,
         ${sedeSelectSql(table)},
+        ${clienteSelectSql(table)},
         ${metricsSqlFor(table)}
       FROM ${table}
       WHERE ${factWhere}
@@ -852,6 +867,7 @@ export const queryFactListRows = async (
       ${tipdocExpr(table)} AS tipdoc,
       fecha_dcto,
       ${sedeCols},
+      ${clienteSelectSql(table)},
       ${metricsSqlFor(table)}
     FROM ${table}
     WHERE ${where}

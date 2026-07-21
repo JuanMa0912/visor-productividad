@@ -204,6 +204,17 @@ export const sedeSelectSql = (table: MargenDataTable) =>
     ? `empresa_norm AS empresa, id_co_norm AS id_co`
     : `LOWER(TRIM(COALESCE(empresa, ''))) AS empresa, LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co`;
 
+/**
+ * Columnas de cliente/factura para el nivel Factura: nombre_terc (maestro),
+ * id_terc y documento_docfc (doc POS acumulado). Son atributos de la factura, asi
+ * que van como MAX() sobre el grupo (pasajeras, no cambian el grano ni el GROUP BY).
+ * En el roll ya vienen trimmeadas; en el crudo se recortan aqui.
+ */
+export const clienteSelectSql = (table: MargenDataTable) =>
+  isRollTable(table)
+    ? `MAX(NULLIF(nombre_terc, '')) AS nombre_terc, MAX(NULLIF(id_terc, '')) AS id_terc, MAX(NULLIF(documento_docfc, '')) AS documento_docfc`
+    : `MAX(NULLIF(TRIM(nombre_terc), '')) AS nombre_terc, MAX(NULLIF(TRIM(id_terc), '')) AS id_terc, MAX(NULLIF(TRIM(documento_docfc), '')) AS documento_docfc`;
+
 /** Expresión de sede para COUNT(DISTINCT ...) en agregaciones. */
 export const sedeDistinctKeySql = (table: MargenDataTable) =>
   isRollTable(table)
