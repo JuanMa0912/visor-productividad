@@ -24,6 +24,8 @@
     "benchmark:inventario-x-item": "tsx scripts/benchmark-inventario-x-item.mjs",
     "benchmark:margenes": "tsx scripts/benchmark-margenes.mts",
     "benchmark:informe-variacion": "tsx scripts/benchmark-informe-variacion.mts",
+    "benchmark:views-server": "tsx scripts/benchmark-views-server.mts",
+    "benchmark:views-http": "node scripts/benchmark-views-http.mjs",
     "informe:warm-snapshot": "tsx scripts/warm-informe-variacion-snapshot.mts",
     "margen:refresh-roll": "tsx scripts/refresh-margen-roll.mts",
     "rotacion:email": "tsx scripts/rotacion-daily-email.mts",

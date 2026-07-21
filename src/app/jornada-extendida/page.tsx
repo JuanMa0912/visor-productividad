@@ -29,7 +29,10 @@ import {
   JORNADA_TOUR_ANCHOR,
   JORNADA_TOUR_STEPS,
 } from "@/lib/ui/portal-tours/jornada-tour-steps";
-import { twoMarksLabelForRange } from "@/lib/horarios/jornada-hour-thresholds";
+import {
+  nineTwentyLabelForRange,
+  twoMarksLabelForRange,
+} from "@/lib/horarios/jornada-hour-thresholds";
 import "driver.js/dist/driver.css";
 import "@/lib/ui/product-tour/product-tour.css";
 
@@ -100,7 +103,10 @@ const OVERTIME_EXTRA_SEDES: Sede[] = [
   { id: "Planta Desprese Pollo", name: "Planta Desprese Pollo" },
 ];
 
-const buildAlexExportFields = (twoMarksLabel: string): AlexExportField[] => [
+const buildAlexExportFields = (
+  twoMarksLabel: string,
+  nineTwentyLabel: string,
+): AlexExportField[] => [
   {
     key: "moreThan72With2",
     header: `+ ${twoMarksLabel} con 2 marcaciones`,
@@ -115,10 +121,15 @@ const buildAlexExportFields = (twoMarksLabel: string): AlexExportField[] => [
   },
   {
     key: "moreThan92",
-    header: "9:20h",
-    toggleLabel: "9:20h",
+    header: nineTwentyLabel,
+    toggleLabel: nineTwentyLabel,
     width: 18,
-    comparisonHeader: "9:20",
+    comparisonHeader:
+      nineTwentyLabel === "9:00h"
+        ? "9:00"
+        : nineTwentyLabel === "9:20h"
+          ? "9:20"
+          : "9:00/9:20",
   },
   {
     key: "oddMarks",
@@ -136,7 +147,7 @@ const buildAlexExportFields = (twoMarksLabel: string): AlexExportField[] => [
   },
 ];
 
-const ALEX_EXPORT_FIELD_KEYS = buildAlexExportFields("7:00h").map(
+const ALEX_EXPORT_FIELD_KEYS = buildAlexExportFields("7:00h", "9:00h").map(
   (field) => field.key,
 );
 const createEmptyAlexTotals = (): AlexReportTotals => ({
@@ -366,7 +377,10 @@ export default function JornadaExtendidaPage() {
 
   const alexExportFields = useMemo(
     () =>
-      buildAlexExportFields(twoMarksLabelForRange(alexStartDate, alexEndDate)),
+      buildAlexExportFields(
+        twoMarksLabelForRange(alexStartDate, alexEndDate),
+        nineTwentyLabelForRange(alexStartDate, alexEndDate),
+      ),
     [alexEndDate, alexStartDate],
   );
 
@@ -1399,7 +1413,9 @@ export default function JornadaExtendidaPage() {
                     </p>
                     <h2 className="mt-1 text-lg font-bold leading-tight text-slate-900 sm:text-[1.6rem]">
                       + {twoMarksLabelForRange(alexStartDate, alexEndDate)} con
-                      2 marcaciones, 9:20h, marc. impares e inasistencias
+                      2 marcaciones,{" "}
+                      {nineTwentyLabelForRange(alexStartDate, alexEndDate)},
+                      marc. impares e inasistencias
                     </h2>
                     {alexRangeLabel && (
                       <p className="mt-1 text-base font-bold text-red-700">
@@ -1773,7 +1789,7 @@ export default function JornadaExtendidaPage() {
                               >
                                 {renderAlexSortHeader(
                                   "moreThan92",
-                                  "9:20h",
+                                  alexExportFields[1]?.header ?? "9:00h",
                                   "right",
                                 )}
                               </th>

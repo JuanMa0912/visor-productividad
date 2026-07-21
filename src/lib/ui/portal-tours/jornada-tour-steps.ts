@@ -27,7 +27,7 @@ export const JORNADA_TOUR_STEPS: DriveStep[] = [
     popover: {
       title: "Tablero de tiempos",
       description:
-        "Resumen de +7:00h (desde 16/07/2026; antes 7:20h) con 2 marcas, 9:20h, marcaciones impares e inasistencias. Filtra por fechas, sede y departamento.",
+        "Resumen de +7:00h (desde 16/07/2026; antes 7:20h) con 2 marcas, 9:00h (antes 9:20h), marcaciones impares e inasistencias. Filtra por fechas, sede y departamento.",
       side: "top",
       align: "start",
     },

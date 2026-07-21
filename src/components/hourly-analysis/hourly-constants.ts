@@ -1,8 +1,8 @@
 import type { PersonBreakdownView } from "./types";
 import {
-  NINE_TWENTY_THRESHOLD_MINUTES,
+  NINE_TWENTY_THRESHOLD_MINUTES_LEGACY,
   TWO_MARKS_THRESHOLD_MINUTES_LEGACY,
-  TWO_MARKS_UPPER_BOUND_MINUTES,
+  TWO_MARKS_UPPER_BOUND_MINUTES_LEGACY,
 } from "@/lib/horarios/jornada-hour-thresholds";
 
 export const hourlyDateLabelOptions: Intl.DateTimeFormatOptions = {
@@ -54,13 +54,16 @@ export const CASHIER_PAGE_SIZE_DEFAULT = 30;
 export const CASHIER_PAGE_TAB_WINDOW = 8;
 
 // Umbrales para los botones "Ver personas >X:YYh".
-// El bucket de 2 marcaciones es date-aware desde 2026-07-16 (-20 min);
-// ver `src/lib/horarios/jornada-hour-thresholds.ts`. 9:20h no cambia.
-export const ALERT_THRESHOLD_MINUTES = NINE_TWENTY_THRESHOLD_MINUTES;
+// Ambos buckets (7:xx / 9:xx) son date-aware desde 2026-07-16 (-20 min);
+// ver `src/lib/horarios/jornada-hour-thresholds.ts`.
+/** @deprecated Preferir nineTwentyThresholdMinutesForDate(workedDate). */
+export const ALERT_THRESHOLD_MINUTES = NINE_TWENTY_THRESHOLD_MINUTES_LEGACY;
 /** @deprecated Preferir twoMarksThresholdMinutesForDate(workedDate). */
 export const TWO_MARKS_ALERT_THRESHOLD_MINUTES =
   TWO_MARKS_THRESHOLD_MINUTES_LEGACY;
-export const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES = TWO_MARKS_UPPER_BOUND_MINUTES;
+/** @deprecated Preferir twoMarksUpperBoundMinutesForDate(workedDate). */
+export const TWO_MARKS_ALERT_UPPER_BOUND_MINUTES =
+  TWO_MARKS_UPPER_BOUND_MINUTES_LEGACY;
 
 export const OVERTIME_TABLE_OUTER_BORDER_CLASS = "border border-slate-200/90";
 export const OVERTIME_TABLE_INNER_BORDER_CLASS = "border-slate-200";

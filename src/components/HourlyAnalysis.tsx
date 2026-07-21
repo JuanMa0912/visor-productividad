@@ -43,7 +43,6 @@ import type {
 } from "@/components/hourly-analysis/types";
 export type { HourlyAnalysisExportHandle } from "@/components/hourly-analysis/types";
 import {
-  ALERT_THRESHOLD_MINUTES,
   CASHIER_CARGO_SELECT_EMPTY,
   CASHIER_FIXED_CARGOS,
   CASHIER_MONTH_TOP_N,
@@ -58,7 +57,9 @@ import {
   PERSON_BREAKDOWN_VIEW_OPTIONS,
 } from "@/components/hourly-analysis/hourly-constants";
 import {
+  isInNineTwentyMinutesBucket,
   isInTwoMarksMinutesBucket,
+  nineTwentyLabelForRange,
   twoMarksLabelForRange,
 } from "@/lib/horarios/jornada-hour-thresholds";
 import {
@@ -2178,7 +2179,10 @@ export const HourlyAnalysis = ({
                   employee.workedDate,
                 );
               }
-              return employeeMinutes > ALERT_THRESHOLD_MINUTES;
+              return isInNineTwentyMinutesBucket(
+                employeeMinutes,
+                employee.workedDate,
+              );
             })
           : baseFilteredOvertimeEmployees;
     const compareByDate = (left: OvertimeEmployee, right: OvertimeEmployee) =>
@@ -2293,7 +2297,7 @@ export const HourlyAnalysis = ({
     () =>
       baseFilteredOvertimeEmployees.filter((employee) => {
         const minutes = decimalHoursToMinutes(employee.workedHours);
-        return minutes > ALERT_THRESHOLD_MINUTES;
+        return isInNineTwentyMinutesBucket(minutes, employee.workedDate);
       }).length,
     [baseFilteredOvertimeEmployees],
   );
@@ -2324,6 +2328,10 @@ export const HourlyAnalysis = ({
   const displayIncidenceCount = incidenceCount;
   const twoMarksChipLabel = useMemo(
     () => twoMarksLabelForRange(overtimeDateStart, overtimeDateEnd),
+    [overtimeDateEnd, overtimeDateStart],
+  );
+  const nineTwentyChipLabel = useMemo(
+    () => nineTwentyLabelForRange(overtimeDateStart, overtimeDateEnd),
     [overtimeDateEnd, overtimeDateStart],
   );
   useEffect(() => {
@@ -3111,7 +3119,7 @@ export const HourlyAnalysis = ({
                         : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
                     }`}
                   >
-                    {`Jornada 9:20h ${displayAlexAlertCount920}`}
+                    {`Jornada ${nineTwentyChipLabel} ${displayAlexAlertCount920}`}
                   </button>
                   <button
                     type="button"
@@ -3380,7 +3388,7 @@ export const HourlyAnalysis = ({
               {isAlexStrictMode && (
                 <p className="mt-2 text-xs font-semibold text-amber-700">
                   Modo Alex activo: el listado usa exactamente la misma regla
-                  del reporte (9:20h) y bloquea filtros que cambian
+                  del reporte ({nineTwentyChipLabel}) y bloquea filtros que cambian
                   el conteo.
                 </p>
               )}

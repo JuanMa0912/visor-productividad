@@ -1,18 +1,20 @@
 /**
- * Umbrales del bucket "X:YYh con 2 marcaciones" en jornada-extendida / Alex.
+ * Umbrales de buckets "X:YYh" en jornada-extendida / Alex.
  *
- * Desde 2026-07-16 Colombia redujo 20 minutos la jornada base usada en ese
- * bucket: la etiqueta pasa de 7:20h a 7:00h. El bucket de 9:20h NO cambia.
+ * Desde 2026-07-16 Colombia redujo 20 minutos la jornada base:
+ * - 7:20h → 7:00h (bucket 2 marcaciones)
+ * - 9:20h → 9:00h
  *
- * Los cortes internos conservan el margen historico respecto a la etiqueta
- * (UI: +10 min; API Alex: +9 min) para no alterar el comportamiento relativo.
+ * Los cortes internos del bucket 7:xx conservan el margen historico respecto
+ * a la etiqueta (UI: +10 min; API Alex: +9 min). El tope superior del bucket
+ * 7:xx baja junto con el umbral de 9:xx para no solaparse.
  */
 
 export const JORNADA_TWO_MARKS_SHORTENED_FROM = "2026-07-16";
 
-/** Etiqueta operativa antes del cambio. */
+/** Etiqueta operativa 7:xx antes del cambio. */
 export const TWO_MARKS_LABEL_LEGACY = "7:20h";
-/** Etiqueta operativa desde el 16/07/2026. */
+/** Etiqueta operativa 7:xx desde el 16/07/2026. */
 export const TWO_MARKS_LABEL_SHORTENED = "7:00h";
 
 /**
@@ -31,13 +33,44 @@ export const TWO_MARKS_THRESHOLD_HOURS_LEGACY = 7 + 29 / 60;
 export const TWO_MARKS_THRESHOLD_HOURS_SHORTENED =
   TWO_MARKS_THRESHOLD_HOURS_LEGACY - 20 / 60;
 
-/** Tope superior del bucket 7:xx (inclusivo). No se mueve; 9:20 queda intacto. */
-export const TWO_MARKS_UPPER_BOUND_MINUTES = 9 * 60 + 19;
-export const TWO_MARKS_UPPER_BOUND_HOURS = 9 + 19.5 / 60;
+/** Etiqueta operativa 9:xx antes del cambio. */
+export const NINE_TWENTY_LABEL_LEGACY = "9:20h";
+/** Etiqueta operativa 9:xx desde el 16/07/2026. */
+export const NINE_TWENTY_LABEL_SHORTENED = "9:00h";
 
-/** Bucket 9:20h (sin cambios). */
-export const NINE_TWENTY_THRESHOLD_MINUTES = 9 * 60 + 20;
-export const NINE_TWENTY_THRESHOLD_HOURS = 9 + 20.5 / 60;
+/** UI (`>` estricto). Legacy >9:20. Shortened >9:00. */
+export const NINE_TWENTY_THRESHOLD_MINUTES_LEGACY = 9 * 60 + 20;
+export const NINE_TWENTY_THRESHOLD_MINUTES_SHORTENED =
+  NINE_TWENTY_THRESHOLD_MINUTES_LEGACY - 20;
+
+/**
+ * API Alex (horas decimales, `>` estricto).
+ * Legacy 9:20.5 → Shortened 9:00.5.
+ */
+export const NINE_TWENTY_THRESHOLD_HOURS_LEGACY = 9 + 20.5 / 60;
+export const NINE_TWENTY_THRESHOLD_HOURS_SHORTENED =
+  NINE_TWENTY_THRESHOLD_HOURS_LEGACY - 20 / 60;
+
+/** @deprecated Preferir NINE_TWENTY_THRESHOLD_MINUTES_LEGACY / ForDate. */
+export const NINE_TWENTY_THRESHOLD_MINUTES = NINE_TWENTY_THRESHOLD_MINUTES_LEGACY;
+/** @deprecated Preferir NINE_TWENTY_THRESHOLD_HOURS_LEGACY / ForDate. */
+export const NINE_TWENTY_THRESHOLD_HOURS = NINE_TWENTY_THRESHOLD_HOURS_LEGACY;
+
+/**
+ * Tope superior del bucket 7:xx (inclusivo). Baja 20 min junto con 9:xx
+ * para que no se solape con el alert de 9:00h.
+ */
+export const TWO_MARKS_UPPER_BOUND_MINUTES_LEGACY = 9 * 60 + 19;
+export const TWO_MARKS_UPPER_BOUND_MINUTES_SHORTENED =
+  TWO_MARKS_UPPER_BOUND_MINUTES_LEGACY - 20;
+export const TWO_MARKS_UPPER_BOUND_HOURS_LEGACY = 9 + 19.5 / 60;
+export const TWO_MARKS_UPPER_BOUND_HOURS_SHORTENED =
+  TWO_MARKS_UPPER_BOUND_HOURS_LEGACY - 20 / 60;
+
+/** @deprecated Preferir twoMarksUpperBoundMinutesForDate. */
+export const TWO_MARKS_UPPER_BOUND_MINUTES = TWO_MARKS_UPPER_BOUND_MINUTES_LEGACY;
+/** @deprecated Preferir twoMarksUpperBoundHoursForDate. */
+export const TWO_MARKS_UPPER_BOUND_HOURS = TWO_MARKS_UPPER_BOUND_HOURS_LEGACY;
 
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -72,6 +105,20 @@ export const twoMarksThresholdHoursForDate = (
     ? TWO_MARKS_THRESHOLD_HOURS_SHORTENED
     : TWO_MARKS_THRESHOLD_HOURS_LEGACY;
 
+export const twoMarksUpperBoundMinutesForDate = (
+  workedDate: string | null | undefined,
+): number =>
+  usesShortenedTwoMarksThreshold(workedDate)
+    ? TWO_MARKS_UPPER_BOUND_MINUTES_SHORTENED
+    : TWO_MARKS_UPPER_BOUND_MINUTES_LEGACY;
+
+export const twoMarksUpperBoundHoursForDate = (
+  workedDate: string | null | undefined,
+): number =>
+  usesShortenedTwoMarksThreshold(workedDate)
+    ? TWO_MARKS_UPPER_BOUND_HOURS_SHORTENED
+    : TWO_MARKS_UPPER_BOUND_HOURS_LEGACY;
+
 export const twoMarksLabelForDate = (
   workedDate: string | null | undefined,
 ): string =>
@@ -79,21 +126,41 @@ export const twoMarksLabelForDate = (
     ? TWO_MARKS_LABEL_SHORTENED
     : TWO_MARKS_LABEL_LEGACY;
 
-/**
- * Etiqueta para un rango (chips / export). Si cruza el corte, menciona ambos.
- */
-export const twoMarksLabelForRange = (
+export const nineTwentyThresholdMinutesForDate = (
+  workedDate: string | null | undefined,
+): number =>
+  usesShortenedTwoMarksThreshold(workedDate)
+    ? NINE_TWENTY_THRESHOLD_MINUTES_SHORTENED
+    : NINE_TWENTY_THRESHOLD_MINUTES_LEGACY;
+
+export const nineTwentyThresholdHoursForDate = (
+  workedDate: string | null | undefined,
+): number =>
+  usesShortenedTwoMarksThreshold(workedDate)
+    ? NINE_TWENTY_THRESHOLD_HOURS_SHORTENED
+    : NINE_TWENTY_THRESHOLD_HOURS_LEGACY;
+
+export const nineTwentyLabelForDate = (
+  workedDate: string | null | undefined,
+): string =>
+  usesShortenedTwoMarksThreshold(workedDate)
+    ? NINE_TWENTY_LABEL_SHORTENED
+    : NINE_TWENTY_LABEL_LEGACY;
+
+const labelForRange = (
   startDate: string | null | undefined,
   endDate: string | null | undefined,
+  legacy: string,
+  shortened: string,
 ): string => {
   const start = normalizeJornadaDateKey(startDate);
   const end = normalizeJornadaDateKey(endDate);
-  if (!start && !end) return TWO_MARKS_LABEL_SHORTENED;
+  if (!start && !end) return shortened;
   if (end && end < JORNADA_TWO_MARKS_SHORTENED_FROM) {
-    return TWO_MARKS_LABEL_LEGACY;
+    return legacy;
   }
   if (start && start >= JORNADA_TWO_MARKS_SHORTENED_FROM) {
-    return TWO_MARKS_LABEL_SHORTENED;
+    return shortened;
   }
   if (
     start &&
@@ -101,17 +168,44 @@ export const twoMarksLabelForRange = (
     start < JORNADA_TWO_MARKS_SHORTENED_FROM &&
     end >= JORNADA_TWO_MARKS_SHORTENED_FROM
   ) {
-    return `${TWO_MARKS_LABEL_SHORTENED}/${TWO_MARKS_LABEL_LEGACY}`;
+    return `${shortened}/${legacy}`;
   }
-  // Solo start o solo end ambiguo: preferir shortened si alguna punta ya paso el corte.
   if (
     (start && start >= JORNADA_TWO_MARKS_SHORTENED_FROM) ||
     (end && end >= JORNADA_TWO_MARKS_SHORTENED_FROM)
   ) {
-    return TWO_MARKS_LABEL_SHORTENED;
+    return shortened;
   }
-  return TWO_MARKS_LABEL_LEGACY;
+  return legacy;
 };
+
+/**
+ * Etiqueta 7:xx para un rango (chips / export). Si cruza el corte, menciona ambos.
+ */
+export const twoMarksLabelForRange = (
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+): string =>
+  labelForRange(
+    startDate,
+    endDate,
+    TWO_MARKS_LABEL_LEGACY,
+    TWO_MARKS_LABEL_SHORTENED,
+  );
+
+/**
+ * Etiqueta 9:xx para un rango (chips / export). Si cruza el corte, menciona ambos.
+ */
+export const nineTwentyLabelForRange = (
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+): string =>
+  labelForRange(
+    startDate,
+    endDate,
+    NINE_TWENTY_LABEL_LEGACY,
+    NINE_TWENTY_LABEL_SHORTENED,
+  );
 
 export const isInTwoMarksHoursBucket = (
   totalHours: number,
@@ -119,7 +213,7 @@ export const isInTwoMarksHoursBucket = (
   workedDate: string | null | undefined,
 ): boolean =>
   totalHours > twoMarksThresholdHoursForDate(workedDate) &&
-  totalHours <= TWO_MARKS_UPPER_BOUND_HOURS &&
+  totalHours <= twoMarksUpperBoundHoursForDate(workedDate) &&
   marksCount === 2;
 
 export const isInTwoMarksMinutesBucket = (
@@ -128,5 +222,15 @@ export const isInTwoMarksMinutesBucket = (
   workedDate: string | null | undefined,
 ): boolean =>
   totalMinutes > twoMarksThresholdMinutesForDate(workedDate) &&
-  totalMinutes <= TWO_MARKS_UPPER_BOUND_MINUTES &&
+  totalMinutes <= twoMarksUpperBoundMinutesForDate(workedDate) &&
   marksCount === 2;
+
+export const isInNineTwentyMinutesBucket = (
+  totalMinutes: number,
+  workedDate: string | null | undefined,
+): boolean => totalMinutes > nineTwentyThresholdMinutesForDate(workedDate);
+
+export const isInNineTwentyHoursBucket = (
+  totalHours: number,
+  workedDate: string | null | undefined,
+): boolean => totalHours > nineTwentyThresholdHoursForDate(workedDate);

@@ -8,7 +8,7 @@ import {
 import { isDepartamentoAllowedForLines } from "@/lib/shared/departamento-line";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
-  NINE_TWENTY_THRESHOLD_HOURS as HOURS_9_20,
+  isInNineTwentyHoursBucket,
   isInTwoMarksHoursBucket,
 } from "@/lib/horarios/jornada-hour-thresholds";
 
@@ -541,7 +541,7 @@ export async function GET(request: Request) {
       ) {
         current.moreThan72With2 += 1;
       }
-      if (totalHours > HOURS_9_20 && hasSiNomina) {
+      if (isInNineTwentyHoursBucket(totalHours, workedDate) && hasSiNomina) {
         current.moreThan92 += 1;
       }
       if (marksCount > 0 && marksCount % 2 !== 0) {
