@@ -4,7 +4,12 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, User } from "lucide-react";
 import { AuthBrandingPanel } from "@/components/portal/auth-branding-panel";
-import { MercamioLogo, MercatodoLogo } from "@/components/portal/brand-logos";
+import {
+  DinastiaLogo,
+  MercamioLogo,
+  MercatodoLogo,
+  MerkmiosLogo,
+} from "@/components/portal/brand-logos";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { AuthUser } from "@/lib/auth/types";
 
@@ -72,10 +77,12 @@ export function LoginPageInner() {
       <AuthBrandingPanel className="min-h-[280px] lg:min-h-screen" />
 
       <main className="flex items-center justify-center bg-slate-50 px-6 py-12 lg:px-12">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center justify-center gap-5 border-b border-slate-200 pb-6">
-            <MercamioLogo className="h-16 w-auto" />
-            <MercatodoLogo className="h-16 w-auto" />
+        <div className="w-full max-w-md">
+          <div className="mb-8 grid grid-cols-2 items-center justify-items-center gap-x-4 gap-y-3 border-b border-slate-200 pb-6">
+            <MercamioLogo className="h-14 w-auto max-w-full object-contain" />
+            <MercatodoLogo className="h-14 w-auto max-w-full object-contain" />
+            <MerkmiosLogo className="h-14 w-auto max-w-full object-contain" />
+            <DinastiaLogo className="h-14 w-auto max-w-full object-contain" />
           </div>
 
           <h2 className="text-3xl font-bold text-slate-900">Bienvenido</h2>

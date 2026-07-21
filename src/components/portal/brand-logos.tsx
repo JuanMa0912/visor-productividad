@@ -35,3 +35,31 @@ export function MercatodoLogo({ className }: BrandLogoProps) {
     />
   );
 }
+
+export function MerkmiosLogo({ className }: BrandLogoProps) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- static public asset; bypass image optimizer
+    <img
+      src="/logos/merkmios.png"
+      alt="MerkMios"
+      width={210}
+      height={70}
+      className={className}
+      decoding="async"
+    />
+  );
+}
+
+export function DinastiaLogo({ className }: BrandLogoProps) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- static public asset; bypass image optimizer
+    <img
+      src="/logos/dinastia.png"
+      alt="Outlet Dinastía"
+      width={210}
+      height={99}
+      className={className}
+      decoding="async"
+    />
+  );
+}
