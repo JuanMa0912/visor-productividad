@@ -15,6 +15,7 @@ import {
   Search,
 } from "lucide-react";
 import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
+import { logExportDownload } from "@/lib/client/log-export-download";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { ScrollToTopButton } from "@/components/ui/scroll-to-top-button";
@@ -490,6 +491,16 @@ export default function HorariosCompararPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      logExportDownload({
+        panelPath: "/horarios-comparar",
+        exportKind: "comparar-horarios",
+        format: "xlsx",
+        fileName: `comparar-horarios_${sedeTag}_${start}_${end}.xlsx`,
+        dateFrom: start,
+        dateTo: end,
+        filters: { sede },
+        rowCount: filteredRows.length,
+      });
     } finally {
       setExportingExcel(false);
     }
@@ -578,9 +589,18 @@ export default function HorariosCompararPage() {
         },
       });
       const sedeTag = safeExportFileSegment(sede || "todas");
-      doc.save(
-        `comparar-horarios_${sedeTag}_${start}_${end}_${buildCompararExportStamp()}.pdf`,
-      );
+      const pdfName = `comparar-horarios_${sedeTag}_${start}_${end}_${buildCompararExportStamp()}.pdf`;
+      doc.save(pdfName);
+      logExportDownload({
+        panelPath: "/horarios-comparar",
+        exportKind: "comparar-horarios",
+        format: "pdf",
+        fileName: pdfName,
+        dateFrom: start,
+        dateTo: end,
+        filters: { sede },
+        rowCount: filteredRows.length,
+      });
     } finally {
       setExportingPdf(false);
     }

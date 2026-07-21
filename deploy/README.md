@@ -14,6 +14,9 @@ El runbook general de despliegue Linux esta en
 | `app_user_activity_log` | `observed_at < NOW() - INTERVAL '<RETENTION_DAYS> days'` |
 | `app_user_login_logs` | `logged_at < NOW() - INTERVAL '<RETENTION_DAYS> days'` |
 | `app_user_sessions` | `expires_at < NOW()` o `created_at` anterior a la retencion |
+| `app_user_login_attempt_log` | `logged_at` con `AUDIT_RETENTION_DAYS` (default 90) |
+| `app_user_admin_audit` | `created_at` con `AUDIT_RETENTION_DAYS` (default 90) |
+| `app_export_download_log` | `created_at` con `DOWNLOAD_RETENTION_DAYS` (default 274 ~ 9 meses) |
 
 Despues ejecuta `VACUUM (ANALYZE)` sobre esas tablas, excepto en `--dry-run`.
 
@@ -21,7 +24,9 @@ Despues ejecuta `VACUUM (ANALYZE)` sobre esas tablas, excepto en `--dry-run`.
 
 | Variable | Default | Uso |
 | --- | --- | --- |
-| `RETENTION_DAYS` | `7` | ventana de retencion |
+| `RETENTION_DAYS` | `7` | ventana de retencion actividad/login/sesiones |
+| `AUDIT_RETENTION_DAYS` | `90` | retencion auditoria admin + fallos login |
+| `DOWNLOAD_RETENTION_DAYS` | `274` | retencion bitacora de descargas (~9 meses) |
 | `ENV_FILE` | `/opt/visor-productividad/.env.local` | archivo con credenciales DB |
 | `LOG_FILE` | `/var/log/visor-cleanup.log` | log persistente adicional al journal |
 | `DB_SSL` | `false` | si es `true`, usa `PGSSLMODE=require` |

@@ -10,6 +10,7 @@ import {
   type TipoHorarioRow,
   type TiposHorarioResponse,
 } from "@/lib/horarios/tipos-horario";
+import { logExportDownload } from "@/lib/client/log-export-download";
 
 type TiposHorarioPanelProps = {
   open: boolean;
@@ -219,7 +220,21 @@ export function TiposHorarioPanel({ open, onClose, availableSedes }: TiposHorari
     link.download = `tipos-horario-${rango}.xlsx`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [data, departamentoFilter, contratoFilter, minDias]);
+    logExportDownload({
+      panelPath: "/jornada-extendida",
+      exportKind: "tipos-horario",
+      format: "xlsx",
+      fileName: `tipos-horario-${rango}.xlsx`,
+      dateFrom: data.usedRange?.start ?? null,
+      dateTo: data.usedRange?.end ?? null,
+      filters: {
+        departamento: departamentoFilter,
+        contrato: contratoFilter,
+        minDias,
+      },
+      rowCount: data.rows?.length ?? null,
+    });
+  }, [contratoFilter, data, departamentoFilter, minDias]);
 
   if (!open) return null;
 

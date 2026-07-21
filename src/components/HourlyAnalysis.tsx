@@ -62,6 +62,7 @@ import {
   nineTwentyLabelForRange,
   twoMarksLabelForRange,
 } from "@/lib/horarios/jornada-hour-thresholds";
+import { logExportDownload } from "@/lib/client/log-export-download";
 import {
   calcVtaHr,
   cashierHourDetailCacheKey,
@@ -1397,6 +1398,15 @@ export const HourlyAnalysis = ({
     link.download = `productividad-por-hora-${dateKey}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+    logExportDownload({
+      panelPath: "/jornada-extendida",
+      exportKind: "productividad-por-hora",
+      format: "csv",
+      fileName: `productividad-por-hora-${dateKey}.csv`,
+      dateFrom: selectedDate,
+      dateTo: selectedDate,
+      rowCount: hourlyExportRows.length,
+    });
     return true;
   }, [hourlyExportRows, selectedDate]);
 
@@ -1441,6 +1451,15 @@ export const HourlyAnalysis = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    logExportDownload({
+      panelPath: "/jornada-extendida",
+      exportKind: "productividad-por-hora",
+      format: "xlsx",
+      fileName: `productividad-por-hora-${dateKey}.xlsx`,
+      dateFrom: selectedDate,
+      dateTo: selectedDate,
+      rowCount: hourlyExportRows.length,
+    });
     return true;
   }, [hourlyExportRows, selectedDate]);
 
@@ -2576,6 +2595,21 @@ export const HourlyAnalysis = ({
     link.download = `horario-${dateKey}.xlsx`;
     link.click();
     URL.revokeObjectURL(url);
+    logExportDownload({
+      panelPath: "/jornada-extendida",
+      exportKind: "horarios-extra",
+      format: "xlsx",
+      fileName: `horario-${dateKey}.xlsx`,
+      dateFrom:
+        enableOvertimeDateRange && overtimeDateStart
+          ? overtimeDateStart
+          : selectedDate,
+      dateTo:
+        enableOvertimeDateRange && overtimeDateEnd
+          ? overtimeDateEnd
+          : selectedDate,
+      rowCount: exportEmployees.length,
+    });
   };
 
   const handleExportCashierListXlsx = async () => {
@@ -2658,6 +2692,14 @@ export const HourlyAnalysis = ({
     link.download = `aporte-individual-cajeros-${dateKey}.xlsx`;
     link.click();
     URL.revokeObjectURL(url);
+    logExportDownload({
+      panelPath: "/jornada-extendida",
+      exportKind: "aporte-cajeros",
+      format: "xlsx",
+      fileName: `aporte-individual-cajeros-${dateKey}.xlsx`,
+      dateFrom: range?.start ?? selectedDate,
+      dateTo: range?.end ?? selectedDate,
+    });
   };
 
   return (

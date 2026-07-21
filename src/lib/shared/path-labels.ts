@@ -33,6 +33,7 @@ const EXACT_PATH_LABELS: Record<string, string> = {
   "/admin/usuarios/accesos/pormes": "Admin · Accesos por mes",
   "/admin/usuarios/uso-tableros": "Admin · Uso de tableros",
   "/admin/usuarios/auditoria": "Admin · Auditoría",
+  "/admin/usuarios/descargas": "Admin · Descargas",
   "/ExcelDian": "Excel DIAN",
 };
 

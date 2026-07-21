@@ -8,6 +8,8 @@
 # Y de mas de AUDIT_RETENTION_DAYS (default 90) en:
 #   - app_user_login_attempt_log
 #   - app_user_admin_audit
+# Y de mas de DOWNLOAD_RETENTION_DAYS (default 274 ~ 9 meses) en:
+#   - app_export_download_log
 #
 # Lee las credenciales desde /opt/visor-productividad/.env.local (las mismas
 # que usa el servicio visor.service) y conecta via SSL.
@@ -24,6 +26,7 @@ set -euo pipefail
 
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 AUDIT_RETENTION_DAYS="${AUDIT_RETENTION_DAYS:-90}"
+DOWNLOAD_RETENTION_DAYS="${DOWNLOAD_RETENTION_DAYS:-274}"
 ENV_FILE="${ENV_FILE:-/opt/visor-productividad/.env.local}"
 LOG_FILE="${LOG_FILE:-/var/log/visor-cleanup.log}"
 DRY_RUN=0
@@ -110,13 +113,14 @@ run_delete() {
   log "${table}: borradas ${deleted} filas (antes ${before}, ahora ${after})"
 }
 
-log "Iniciando limpieza semanal (retencion=${RETENTION_DAYS} dias, audit=${AUDIT_RETENTION_DAYS} dias, dry_run=${DRY_RUN})"
+log "Iniciando limpieza semanal (retencion=${RETENTION_DAYS} dias, audit=${AUDIT_RETENTION_DAYS} dias, downloads=${DOWNLOAD_RETENTION_DAYS} dias, dry_run=${DRY_RUN})"
 
 run_delete app_user_activity_log "observed_at < NOW() - INTERVAL '${RETENTION_DAYS} days'"
 run_delete app_user_login_logs   "logged_at  < NOW() - INTERVAL '${RETENTION_DAYS} days'"
 run_delete app_user_sessions     "expires_at < NOW() OR created_at < NOW() - INTERVAL '${RETENTION_DAYS} days'"
 run_delete app_user_login_attempt_log "logged_at < NOW() - INTERVAL '${AUDIT_RETENTION_DAYS} days'"
 run_delete app_user_admin_audit  "created_at < NOW() - INTERVAL '${AUDIT_RETENTION_DAYS} days'"
+run_delete app_export_download_log "created_at < NOW() - INTERVAL '${DOWNLOAD_RETENTION_DAYS} days'"
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
   log "Ejecutando VACUUM ANALYZE..."
@@ -125,6 +129,7 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
   "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_sessions;"     > /dev/null
   "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_login_attempt_log;" > /dev/null || true
   "${PSQL[@]}" -c "VACUUM (ANALYZE) app_user_admin_audit;" > /dev/null || true
+  "${PSQL[@]}" -c "VACUUM (ANALYZE) app_export_download_log;" > /dev/null || true
 fi
 
 log "Limpieza completada"

@@ -153,6 +153,7 @@ import { ROTACION_TOUR_ANCHOR } from "./rotacion-tour-anchors";
 import "driver.js/dist/driver.css";
 import "@/lib/ui/product-tour/product-tour.css";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
+import { logExportDownload } from "@/lib/client/log-export-download";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
 import {
   buildRotacionRowsCacheKey,
@@ -2524,6 +2525,21 @@ export function RotacionPageInner() {
         }
 
         await writeRotacionExcel(groups);
+        const fileName = `rotacion_${buildExportFileStamp()}.xlsx`;
+        logExportDownload({
+          panelPath: "/rotacion",
+          exportKind: "rotacion-excel",
+          format: "xlsx",
+          fileName,
+          dateFrom: dateRange.start,
+          dateTo: dateRange.end,
+          filters: {
+            sedes: includedSedeValues,
+            lineasN1: selectedLineaN1Values,
+            categorias: selectedCategoriaKeys,
+          },
+          rowCount,
+        });
         setIsExportSedePickerOpen(false);
       } finally {
         setIsExportingExcel(false);
@@ -2652,13 +2668,29 @@ export function RotacionPageInner() {
           URL.revokeObjectURL(url);
           openWhatsAppDesktopPreferred();
         }
+        logExportDownload({
+          panelPath: "/rotacion",
+          exportKind: "rotacion-compartir",
+          format:
+            mime.includes("pdf")
+              ? "pdf"
+              : mime.includes("png")
+                ? "png"
+                : mime.includes("jpeg") || mime.includes("jpg")
+                  ? "jpeg"
+                  : "other",
+          fileName: filename,
+          dateFrom: dateRange.start,
+          dateTo: dateRange.end,
+          rowCount: exportRowCount,
+        });
         whatsappDetailsRef.current?.removeAttribute("open");
       } finally {
         whatsappShareLockRef.current = false;
         setIsWhatsAppSharing(false);
       }
     },
-    [buildRotacionPdfDocument, exportRowCount],
+    [buildRotacionPdfDocument, dateRange.end, dateRange.start, exportRowCount],
   );
 
   if (!ready) {

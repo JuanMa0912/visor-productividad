@@ -48,6 +48,7 @@ import {
   type ItemPreset,
 } from "@/lib/inventario/x-item-presets";
 import { formatDateLabel } from "@/lib/shared/utils";
+import { logExportDownload } from "@/lib/client/log-export-download";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
@@ -2356,6 +2357,19 @@ export default function InventarioXItemPage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      logExportDownload({
+        panelPath: "/inventario-x-item",
+        exportKind: "inventario-x-item",
+        format: "xlsx",
+        fileName: `inventario-x-item-${safeCompany}-${safeSede}.xlsx`,
+        dateFrom: selectedDateStart,
+        dateTo: selectedDateEnd,
+        filters: {
+          empresas: selectedCompanyState,
+          sede: selectedSedeLabel,
+        },
+        rowCount: filteredSortedMatrixRows.length,
+      });
     } finally {
       setExportingExcel(false);
     }
@@ -2366,7 +2380,9 @@ export default function InventarioXItemPage() {
     matrixTotalsByItem,
     multipleCompaniesInMatrix,
     selectedCompanyState,
+    selectedDateEnd,
     selectedDateLabel,
+    selectedDateStart,
     selectedSedeLabel,
     summaryRows,
   ]);

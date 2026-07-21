@@ -24,6 +24,7 @@ import { downloadInformeSedeSummaryExcel } from "@/lib/informe-variacion/export-
 import { matrixExportFilename } from "@/lib/informe-variacion/export-matrix";
 import { downloadInformeMatrixExcel } from "@/lib/informe-variacion/export-matrix-excel";
 import { downloadInformeMatrixPdf } from "@/lib/informe-variacion/export-matrix-pdf";
+import { logExportDownload } from "@/lib/client/log-export-download";
 import {
   EMPTY_INFORME_FILTERS,
   INFORME_EMPRESA_ORDER,
@@ -181,15 +182,29 @@ function InformeVariacionBoardReady({
 
   const exportSedeSummary = useCallback(async () => {
     const rows = buildSedeSummaryExportRows(prepared, sedeMetric, pass);
+    const filename = sedeSummaryExportFilename(
+      payload.periods.current.label,
+      sedeMetric,
+    );
     await downloadInformeSedeSummaryExcel({
       rows,
       metric: sedeMetric,
       periodLabel: payload.periods.current.label,
       yoyLabel,
       momLabel,
-      filename: sedeSummaryExportFilename(payload.periods.current.label, sedeMetric),
+      filename,
     });
-  }, [momLabel, pass, prepared, payload.periods.current.label, sedeMetric, yoyLabel]);
+    logExportDownload({
+      panelPath: "/informe-variacion",
+      exportKind: "informe-sede-summary",
+      format: "xlsx",
+      fileName: filename,
+      dateFrom: payload.periods.current.from,
+      dateTo: payload.periods.current.to,
+      filters: { metric: sedeMetric },
+      rowCount: rows.length,
+    });
+  }, [momLabel, pass, prepared, payload.periods.current, sedeMetric, yoyLabel]);
 
   const matrixExportOptions = useMemo(
     () => ({
@@ -215,30 +230,62 @@ function InformeVariacionBoardReady({
   );
 
   const exportMatrixExcel = useCallback(async () => {
+    const filename = matrixExportFilename(
+      payload.periods.current.label,
+      matrixMetric,
+      matrixMode,
+      matrixDisplay,
+      "xlsx",
+    );
     await downloadInformeMatrixExcel({
       ...matrixExportOptions,
-      filename: matrixExportFilename(
-        payload.periods.current.label,
-        matrixMetric,
-        matrixMode,
-        matrixDisplay,
-        "xlsx",
-      ),
+      filename,
     });
-  }, [matrixDisplay, matrixExportOptions, matrixMetric, matrixMode, payload.periods.current.label]);
+    logExportDownload({
+      panelPath: "/informe-variacion",
+      exportKind: "informe-matriz",
+      format: "xlsx",
+      fileName: filename,
+      dateFrom: payload.periods.current.from,
+      dateTo: payload.periods.current.to,
+      filters: { metric: matrixMetric, mode: matrixMode, display: matrixDisplay },
+    });
+  }, [
+    matrixDisplay,
+    matrixExportOptions,
+    matrixMetric,
+    matrixMode,
+    payload.periods.current,
+  ]);
 
   const exportMatrixPdf = useCallback(() => {
+    const filename = matrixExportFilename(
+      payload.periods.current.label,
+      matrixMetric,
+      matrixMode,
+      matrixDisplay,
+      "pdf",
+    );
     downloadInformeMatrixPdf({
       ...matrixExportOptions,
-      filename: matrixExportFilename(
-        payload.periods.current.label,
-        matrixMetric,
-        matrixMode,
-        matrixDisplay,
-        "pdf",
-      ),
+      filename,
     });
-  }, [matrixDisplay, matrixExportOptions, matrixMetric, matrixMode, payload.periods.current.label]);
+    logExportDownload({
+      panelPath: "/informe-variacion",
+      exportKind: "informe-matriz",
+      format: "pdf",
+      fileName: filename,
+      dateFrom: payload.periods.current.from,
+      dateTo: payload.periods.current.to,
+      filters: { metric: matrixMetric, mode: matrixMode, display: matrixDisplay },
+    });
+  }, [
+    matrixDisplay,
+    matrixExportOptions,
+    matrixMetric,
+    matrixMode,
+    payload.periods.current,
+  ]);
 
   return (
     <div className="space-y-5" aria-busy={dataPending}>

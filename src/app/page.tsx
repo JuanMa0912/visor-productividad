@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react";
 import { animate, remove } from "animejs";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { logExportDownload } from "@/lib/client/log-export-download";
 import {
   escapeCsvValue,
   formatPdfDate,
@@ -2341,6 +2342,19 @@ export default function Home() {
           } else {
             await handleDownloadXlsx(payload);
           }
+          logExportDownload({
+            panelPath: "/",
+            exportKind: "productividad-lineas",
+            format,
+            fileName:
+              format === "xlsx"
+                ? "reporte-productividad.xlsx"
+                : `reporte-productividad-${format}`,
+            dateFrom: payload.dateRange.start,
+            dateTo: payload.dateRange.end,
+            filters: { sedes: exportSedeIds, viewMode },
+            rowCount: payload.pdfLines.length,
+          });
 
           setExportModalOpen(false);
           return;

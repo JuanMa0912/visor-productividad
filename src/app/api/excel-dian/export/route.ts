@@ -1,6 +1,11 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
-import { applySessionCookies, requireAuthSession } from "@/lib/auth";
+import {
+  applySessionCookies,
+  getAuditNetworkId,
+  getClientIp,
+  requireAuthSession,
+} from "@/lib/auth";
 import {
   EXCEL_DIAN_ID_EMP,
   getExcelDianPool,
@@ -17,6 +22,8 @@ import {
   EXCEL_DIAN_EMPRESA_OPTIONS,
   isExcelDianEmpresaEnabled,
 } from "@/app/ExcelDian/excel-dian-empresa";
+import { tryLogApiExportDownload } from "@/lib/admin/log-api-export-download";
+import { getDbPool } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -541,6 +548,34 @@ export async function GET(request: Request) {
       const body = Buffer.isBuffer(raw) ? raw : Buffer.from(new Uint8Array(raw as ArrayBuffer));
       const filename = `medios-magneticos-${empresa}-${sl}-${el}.xlsx`;
       const byteLength = body.length;
+
+      if (session) {
+        try {
+          const logClient = await (await getDbPool()).connect();
+          try {
+            const clientIp = getClientIp(request);
+            await tryLogApiExportDownload(logClient, {
+              userId: session.user.id,
+              username: session.user.username,
+              panelPath: "/ExcelDian",
+              exportKind: "excel-dian",
+              format: "xlsx",
+              fileName: filename,
+              dateFrom: String(sl),
+              dateTo: String(el),
+              filters: { empresa },
+              rowCount: rows.length,
+              byteSize: byteLength,
+              ip: getAuditNetworkId(clientIp) ?? clientIp,
+              userAgent: request.headers.get("user-agent"),
+            });
+          } finally {
+            logClient.release();
+          }
+        } catch {
+          /* bitacora best-effort */
+        }
+      }
 
       return finalizeResponse(
         new NextResponse(body, {

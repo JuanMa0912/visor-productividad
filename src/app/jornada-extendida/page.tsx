@@ -33,6 +33,7 @@ import {
   nineTwentyLabelForRange,
   twoMarksLabelForRange,
 } from "@/lib/horarios/jornada-hour-thresholds";
+import { logExportDownload } from "@/lib/client/log-export-download";
 import "driver.js/dist/driver.css";
 import "@/lib/ui/product-tour/product-tour.css";
 
@@ -1110,6 +1111,19 @@ export default function JornadaExtendidaPage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      logExportDownload({
+        panelPath: "/jornada-extendida",
+        exportKind: "alex-tablero",
+        format: "xlsx",
+        fileName: `reporte-alex-${alexStartDate || "inicio"}-${alexEndDate || "fin"}.xlsx`,
+        dateFrom: alexStartDate,
+        dateTo: alexEndDate,
+        filters: {
+          sede: alexSelectedSede,
+          department: alexSelectedDepartment,
+        },
+        rowCount: sortedAlexRows.length,
+      });
       setIsAlexExportMenuOpen(false);
     } catch (error) {
       console.error("[jornada-extendida] Error exportando Excel Alex:", error);
@@ -1175,6 +1189,19 @@ export default function JornadaExtendidaPage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      logExportDownload({
+        panelPath: "/jornada-extendida",
+        exportKind: "alex-comparacion-periodos",
+        format: "xlsx",
+        fileName: `comparacion-periodos-${alexComparePeriods.yesterday.start}-${alexComparePeriods.monthToDate.start}-${alexComparePeriods.monthToDate.end}.xlsx`,
+        dateFrom: alexComparePeriods.monthToDate.start,
+        dateTo: alexComparePeriods.monthToDate.end,
+        filters: {
+          yesterday: alexComparePeriods.yesterday,
+          monthToDate: alexComparePeriods.monthToDate,
+        },
+        rowCount: displayedAlexRows.length,
+      });
       setIsAlexExportMenuOpen(false);
     } catch (error) {
       console.error(

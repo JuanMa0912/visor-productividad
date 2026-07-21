@@ -95,6 +95,7 @@ Orden completo despues de `schema-auth.sql`:
 41. `20260715_user_audit_trail.sql` (`app_user_admin_audit` + `app_user_login_attempt_log`)
 42. `20260716_informe_variacion_payload_std.sql` (snapshot JSON de `/informe-variacion` para first paint rapido)
 43. `20260717_app_users_portal_profile_fruver.sql` (añade perfil `fruver` + configura LHERRERA)
+44. `20260721_app_export_download_log.sql` (bitacora de descargas/exports; solo metadatos; retencion ~9 meses)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
@@ -113,6 +114,7 @@ sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matvie
 | `app_user_login_attempt_log` | intentos de login fallidos | motivo (`unknown_user`, `bad_password`, `inactive`, `rate_limited`, `other`) |
 | `app_user_admin_audit` | mutaciones admin sobre usuarios | before/after JSONB, campos cambiados, actor |
 | `app_user_activity_log` | actividad por heartbeat | una observacion por usuario/sesion/ruta, deduplicada por ventana corta |
+| `app_export_download_log` | descargas/exports | usuario, panel, formato, archivo, rango fechas, filtros JSON; sin binario; retencion ~9 meses |
 
 Columnas relevantes de `app_users`:
 
@@ -137,14 +139,22 @@ Migracion: `db/migrations/20260701_app_users_password_policy.sql`.
 
 APIs relacionadas: `/api/auth/*`, `/api/admin/users*`,
 `/api/admin/login-logs`, `/api/admin/login-failures`, `/api/admin/audit`,
+`/api/admin/exports`, `/api/exports/log`,
 `/api/admin/user-presence`, `/api/admin/users/[id]/metrics`.
 
-UI: `/admin/usuarios/auditoria` (cambios admin + fallos de login; export CSV).
+UI: `/admin/usuarios/auditoria` (cambios admin + fallos de login; export CSV),
+`/admin/usuarios/descargas` (metadatos de Excel/PDF/CSV/imagenes; solo admin).
 
 Aplicar migracion 41:
 
 ```bash
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260715_user_audit_trail.sql
+```
+
+Aplicar migracion 44 (descargas):
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260721_app_export_download_log.sql
 ```
 
 ### 4.2 Productividad y analisis horario
@@ -368,12 +378,13 @@ ventas_item_cargas
 - `app_user_login_logs` por `logged_at`;
 - `app_user_sessions` expiradas o con `created_at` anterior a la retencion;
 - `app_user_login_attempt_log` por `logged_at` (retencion `AUDIT_RETENTION_DAYS`, default 90);
-- `app_user_admin_audit` por `created_at` (misma retencion de auditoria).
+- `app_user_admin_audit` por `created_at` (misma retencion de auditoria);
+- `app_export_download_log` por `created_at` (retencion `DOWNLOAD_RETENTION_DAYS`, default 274 ~ 9 meses).
 
 El timer systemd esta en `deploy/systemd/`. Ver [`../deploy/README.md`](../deploy/README.md)
 y [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-Default operativo: `RETENTION_DAYS=7`, `AUDIT_RETENTION_DAYS=90`.
+Default operativo: `RETENTION_DAYS=7`, `AUDIT_RETENTION_DAYS=90`, `DOWNLOAD_RETENTION_DAYS=274`.
 
 ## 7. Consultas utiles
 

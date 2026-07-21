@@ -1687,6 +1687,12 @@ export default function AdminUsuariosPage() {
                     >
                       Auditoría
                     </Link>
+                    <Link
+                      href="/admin/usuarios/descargas"
+                      className="block text-sm font-medium text-emerald-700 transition hover:text-emerald-800 hover:underline"
+                    >
+                      Descargas
+                    </Link>
                   </div>
                 </aside>
               </div>
