@@ -8,12 +8,15 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
+  Download,
   Filter,
+  History,
   LayoutGrid,
   LogOut,
   Pencil,
   RefreshCw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -1154,6 +1157,48 @@ export default function AdminUsuariosPage() {
                 </div>
               </div>
 
+              <nav
+                aria-label="Herramientas de administración"
+                className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+              >
+                <Link
+                  href="/admin/usuarios/accesos"
+                  className="inline-flex items-center gap-2.5 rounded-xl border border-sky-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-sky-800 shadow-sm transition hover:border-sky-300 hover:bg-sky-50"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                    <History className="h-4 w-4" />
+                  </span>
+                  Accesos
+                </Link>
+                <Link
+                  href="/admin/usuarios/uso-tableros"
+                  className="inline-flex items-center gap-2.5 rounded-xl border border-violet-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:border-violet-300 hover:bg-violet-50"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                    <BarChart3 className="h-4 w-4" />
+                  </span>
+                  Uso de tableros
+                </Link>
+                <Link
+                  href="/admin/usuarios/auditoria"
+                  className="inline-flex items-center gap-2.5 rounded-xl border border-rose-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-rose-800 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-700">
+                    <ShieldAlert className="h-4 w-4" />
+                  </span>
+                  Auditoría
+                </Link>
+                <Link
+                  href="/admin/usuarios/descargas"
+                  className="inline-flex items-center gap-2.5 rounded-xl border border-emerald-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                    <Download className="h-4 w-4" />
+                  </span>
+                  Descargas
+                </Link>
+              </nav>
+
               <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
                 <div className="self-start overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
                   <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-5">
@@ -1599,16 +1644,24 @@ export default function AdminUsuariosPage() {
                         Últimos {RECENT_ACCESS_LOGS_LIMIT} eventos
                       </p>
                     </div>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={handleClearLogs}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Link
+                        href="/admin/usuarios/accesos"
+                        className="inline-flex items-center rounded-lg px-2 py-1 text-xs font-semibold text-sky-700 transition hover:bg-sky-50"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Borrar
-                      </button>
-                    )}
+                        Ver todos
+                      </Link>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={handleClearLogs}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Borrar
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="relative min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
                     <div className="pointer-events-none absolute bottom-6 left-[1.35rem] top-8 w-px bg-slate-200" />
@@ -1666,33 +1719,6 @@ export default function AdminUsuariosPage() {
                         Sin accesos registrados.
                       </p>
                     )}
-                  </div>
-                  <div className="mt-auto shrink-0 space-y-2 border-t border-slate-100 p-4">
-                    <Link
-                      href="/admin/usuarios/accesos"
-                      className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
-                    >
-                      Ver registro completo
-                      <span aria-hidden>→</span>
-                    </Link>
-                    <Link
-                      href="/admin/usuarios/uso-tableros"
-                      className="block text-sm font-medium text-violet-700 transition hover:text-violet-800 hover:underline"
-                    >
-                      Uso de tableros
-                    </Link>
-                    <Link
-                      href="/admin/usuarios/auditoria"
-                      className="block text-sm font-medium text-rose-700 transition hover:text-rose-800 hover:underline"
-                    >
-                      Auditoría
-                    </Link>
-                    <Link
-                      href="/admin/usuarios/descargas"
-                      className="block text-sm font-medium text-emerald-700 transition hover:text-emerald-800 hover:underline"
-                    >
-                      Descargas
-                    </Link>
                   </div>
                 </aside>
               </div>
