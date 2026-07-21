@@ -9,6 +9,11 @@ ETL de margenes: carga "movimiento unificado" desde las BD POS de origen
 - Impoconsumo (2026-07-06): para la linea 33 (BEBIDAS ALCOHOLICAS: licores,
   cerveza, vino) el bruto cargado (vlrtot_bru) YA incluye el impoconsumo
   (vlrimpcon1) -> entra a ventas y margen. Resto de lineas sin cambio.
+- Factura+cliente (2026-07-21): se agregan documento_docfc (doc POS acumulado, 16),
+  id_terc y nombre_terc. El nombre maestro NO vive en cmmovimiento_pdv: se resuelve
+  con LEFT JOIN a terceros por (codigo, sucursal) [indice terceros_codigo_sucursal],
+  proyectando solo descripcion. LEFT para no descartar ventas de contado cuyo id_terc
+  no exista en terceros (un INNER borraria esas ventas del margen).
 - Idempotente por "reemplazar el dia": por cada empresa y dia del rango hace
   DELETE (fecha_dcto, empresa) + COPY, en una transaccion. Re-correr NO duplica.
 - Carga rapida: COPY postgres->postgres (formato texto, NULL-safe). PG16 mejoro
@@ -54,7 +59,7 @@ COLS = (
     "item_descripcion, id_tipo, id_linea1, nombre_linea1, id_linea2, nombre_linea2, "
     "id_linea, nombre_linea, id_unidad, cantidad, precio_uni, dscto_netos, vlrtot_bru, "
     "vlrimpcon1, ven_totales, precio_unitario, tot_costo, costo_unitario, documento_fc, "
-    "id_tipdoc_fc, vend_cc, vend_cc_desc"
+    "id_tipdoc_fc, vend_cc, vend_cc_desc, documento_docfc, id_terc, nombre_terc"
 )
 
 # Query identica a tu consulta_Movimiento_bd.py, con 2 cambios:
@@ -121,13 +126,24 @@ SELECT
     m.documento_fc,
     m.id_tipdoc_fc,
     m.vend_cc,
-    m.vend_cc_desc
+    m.vend_cc_desc,
+    -- Factura + cliente (2026-07-21). documento_docfc = documento POS acumulado (16);
+    -- id_terc / nombre_terc identifican al tercero de la factura. Van al final para no
+    -- descuadrar el mapeo posicional COPY <-> COLS (ambos anexan estas 3 al final).
+    m.documento_docfc,
+    m.id_terc,
+    t.descripcion AS nombre_terc
 FROM mv AS m
 JOIN items  AS i  ON m.id_item = i.id_item
 JOIN lineas AS l1 ON i.id_linea1 = l1.id_linea AND i.id_tipo = l1.id_tipo
 JOIN lineas AS l2 ON i.id_linea2 = l2.id_linea AND i.id_tipo = l2.id_tipo
 JOIN lineas AS l3 ON i.id_linea  = l3.id_linea AND i.id_tipo = l3.id_tipo
 LEFT JOIN costo_kit AS ck ON ck.id_kit = i.id_item
+-- Nombre maestro del tercero: vive en terceros.descripcion (NO en cmmovimiento_pdv).
+-- LEFT y por (codigo, sucursal) [indice terceros_codigo_sucursal] -> barato sobre el
+-- corte diario+empresa, y no descarta ventas de contado cuyo id_terc no exista en
+-- terceros. Solo se proyecta descripcion (no ensancha el hash del join).
+LEFT JOIN terceros  AS t  ON m.id_terc = t.codigo AND m.id_suc = t.sucursal
 WHERE i.id_tipo IN ('3', '4')   -- solo categorias 3 y 4 (mercado); excluye V (2026-07-06)
 """
 

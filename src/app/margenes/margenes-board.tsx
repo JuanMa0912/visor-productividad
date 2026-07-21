@@ -343,7 +343,35 @@ const colsForDrillLevel = (
       label: "# Factura",
       drill: true,
       sortValue: (row) => row.label,
-      render: (row) => row.label,
+      render: (row) => (
+        <span className="flex flex-col leading-tight">
+          <span>{row.label}</span>
+          {row.documentoDocfc && row.documentoDocfc !== row.documento ? (
+            <span className="font-mono text-[10px] text-[#6b7590]">
+              {row.documentoDocfc}
+            </span>
+          ) : null}
+        </span>
+      ),
+    });
+    cols.push({
+      key: "cliente",
+      label: "Cliente",
+      cellClassName: "min-w-[11rem] max-w-[16rem]",
+      sortValue: (row) => row.nombreTerc ?? "",
+      render: (row) =>
+        row.nombreTerc || row.idTerc ? (
+          <span className="flex flex-col leading-tight">
+            <span className="truncate">{row.nombreTerc ?? "—"}</span>
+            {row.idTerc ? (
+              <span className="font-mono text-[10px] text-[#6b7590]">
+                {row.idTerc}
+              </span>
+            ) : null}
+          </span>
+        ) : (
+          "—"
+        ),
     });
     return [...cols, ...metricsTail.slice(1), ...base];
   }
