@@ -68,12 +68,12 @@ export async function GET(req: Request) {
   const params: unknown[] = [];
 
   if (username) {
-    params.push(username.toLowerCase());
-    conditions.push(`lower(username) = $${params.length}`);
+    params.push(`%${username.toLowerCase()}%`);
+    conditions.push(`lower(username) LIKE $${params.length}`);
   }
   if (panelPath) {
-    params.push(panelPath);
-    conditions.push(`panel_path = $${params.length}`);
+    params.push(`${panelPath}%`);
+    conditions.push(`panel_path LIKE $${params.length}`);
   }
   if (format) {
     params.push(format.toLowerCase());

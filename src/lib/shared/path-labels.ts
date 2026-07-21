@@ -47,6 +47,22 @@ const PREFIX_LABELS: Array<{ prefix: string; label: string }> = [
 
 export const PATH_LABEL_FALLBACK = "Eligiendo tablero";
 
+/** Paneles típicos con export, para filtros en /admin/usuarios/descargas. */
+export const EXPORT_PANEL_FILTER_OPTIONS: ReadonlyArray<{
+  path: string;
+  label: string;
+}> = [
+  { path: "/", label: "Productividad por linea" },
+  { path: "/rotacion", label: "Rotacion" },
+  { path: "/informe-variacion", label: "Informe de variacion" },
+  { path: "/jornada-extendida", label: "Jornada extendida" },
+  { path: "/inventario-x-item", label: "Inventario por item" },
+  { path: "/horarios-comparar", label: "Planilla vs asistencia" },
+  { path: "/ExcelDian", label: "Excel DIAN" },
+  { path: "/margenes", label: "Margenes" },
+  { path: "/ventas-x-item", label: "Ventas por item" },
+];
+
 /**
  * Recibe un path (con o sin trailing slash) y devuelve un nombre amigable.
  * Si el path es nulo / vacio devuelve un fallback ("Eligiendo tablero").
