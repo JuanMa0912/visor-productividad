@@ -13,6 +13,7 @@ import {
 } from "@/lib/margenes/margen-final-query";
 import {
   buildMargenWhereForTable,
+  clienteSelectSql,
   isRollTable,
   resolveMargenDataSource,
   sedeSelectSql,
@@ -241,6 +242,7 @@ const queryTable = async (
         id_tipdoc_fc AS tipdoc,
         fecha_dcto,
         ${sedeCols},
+        ${clienteSelectSql(table)},
         ${metrics}
       FROM ${table}
       WHERE ${where}
@@ -255,6 +257,7 @@ const queryTable = async (
         TRIM(COALESCE(id_tipdoc_fc::text, '')) AS tipdoc,
         fecha_dcto,
         ${sedeCols},
+        ${clienteSelectSql(table)},
         ${metrics}
       FROM ${table}
       WHERE ${where}
@@ -268,9 +271,16 @@ const queryTable = async (
     return result.rows.map((row) => {
       const ventasNetas = toNumber(row.ventas_netas);
       const margenPesos = toNumber(row.margen_pesos);
+      const clean = (value: unknown) => {
+        const text = value == null ? "" : String(value).trim();
+        return text === "" ? undefined : text;
+      };
       return {
         documento: row.documento,
         tipdoc: row.tipdoc,
+        documentoDocfc: clean(row.documento_docfc),
+        idTerc: clean(row.id_terc),
+        nombreTerc: clean(row.nombre_terc),
         fecha: compactDateToIso(row.fecha_dcto) ?? row.fecha_dcto,
         sede: sedeLabel(row.empresa, row.id_co),
         ventasNetas,
