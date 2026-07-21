@@ -369,25 +369,29 @@ export default function AdminExportDownloadsPage() {
               />
             </label>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button type="submit" size="sm" disabled={loading}>
-              <Search className="h-4 w-4" />
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
               Buscar
-            </Button>
+            </button>
             {hasActiveFilters ? (
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
                 onClick={clearFilters}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
               >
                 <X className="h-4 w-4" />
                 Limpiar
-              </Button>
+              </button>
             ) : null}
-            <p className="text-xs text-slate-400">
-              Usuario acepta coincidencia parcial · panel por ruta
-            </p>
           </div>
         </form>
 
