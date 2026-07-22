@@ -7,24 +7,27 @@ describe("canAccessInformeVariacion", () => {
     assert.equal(canAccessInformeVariacion("admin", [], []), true);
   });
 
-  it("permite subseccion margenes", () => {
+  it("no hereda de margenes ni rotacion", () => {
     assert.equal(
       canAccessInformeVariacion("user", ["producto"], ["margenes"]),
-      true,
+      false,
     );
-  });
-
-  it("permite subseccion rotacion", () => {
     assert.equal(
       canAccessInformeVariacion("user", ["producto"], ["rotacion"]),
-      true,
+      false,
+    );
+    assert.equal(
+      canAccessInformeVariacion("user", ["producto"], ["margenes", "rotacion"]),
+      false,
     );
   });
 
-  it("permite rol especial rotacion legacy", () => {
+  it("no hereda del rol especial rotacion", () => {
     assert.equal(
-      canAccessInformeVariacion("user", ["producto"], [], ["rotacion"]),
-      true,
+      canAccessInformeVariacion("user", ["producto"], ["mix-y-linea"], [
+        "rotacion",
+      ]),
+      false,
     );
   });
 
@@ -37,12 +40,19 @@ describe("canAccessInformeVariacion", () => {
 
   it("permite solo informe sin margenes ni rotacion en lista explicita", () => {
     assert.equal(
-      canAccessInformeVariacion("user", ["producto"], ["mix-y-linea", "informe-variacion"]),
+      canAccessInformeVariacion("user", ["producto"], [
+        "mix-y-linea",
+        "informe-variacion",
+      ]),
       true,
     );
   });
 
-  it("niega sin producto ni rol especial", () => {
+  it("lista vacia de subtableros = todos (incluye informe)", () => {
+    assert.equal(canAccessInformeVariacion("user", ["producto"], []), true);
+  });
+
+  it("niega sin producto o sin subseccion informe", () => {
     assert.equal(canAccessInformeVariacion("user", ["rrhh"], ["margenes"]), false);
     assert.equal(
       canAccessInformeVariacion("user", ["producto"], ["mix-y-linea"]),

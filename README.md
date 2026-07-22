@@ -131,6 +131,7 @@ Reglas notables:
 - `/cronograma` se muestra en UI a usuarios con `special_roles` que incluya `cronograma`.
 - `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
 - Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
+- `/informe-variacion` exige el subtablero `informe-variacion` (no se hereda de `margenes` ni `rotacion`).
 
 ### Headers y rate limiting
 

@@ -72,25 +72,19 @@ export function canAccessRotacionBoard(
 
 /**
  * Puede acceder al informe de variacion MoM/YoY.
- * Requiere seccion producto y subseccion rotacion o margenes, o rol especial `rotacion`
- * (compatibilidad legacy sin subsecciones granulares).
+ * Requiere seccion producto y subseccion `informe-variacion` (permiso propio;
+ * no se hereda de margenes ni rotacion).
+ * `allowedSubdashboards` vacio/null = todos los subtableros (incluye informe).
  */
 export function canAccessInformeVariacion(
   role: string,
   allowedDashboards: unknown,
   allowedSubdashboards: unknown,
-  specialRoles?: string[] | null,
+  _specialRoles?: string[] | null,
 ): boolean {
   if (role === "admin") return true;
   if (!canAccessPortalSection(allowedDashboards, "producto")) return false;
-  if (
-    canAccessPortalSubsection(allowedSubdashboards, "informe-variacion") ||
-    canAccessPortalSubsection(allowedSubdashboards, "rotacion") ||
-    canAccessPortalSubsection(allowedSubdashboards, "margenes")
-  ) {
-    return true;
-  }
-  return canAccessRotacionBoard(specialRoles, false);
+  return canAccessPortalSubsection(allowedSubdashboards, "informe-variacion");
 }
 
 /**
