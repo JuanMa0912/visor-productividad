@@ -32,6 +32,7 @@ import {
 } from "@/lib/margenes/fact-path";
 import {
   buildMargenOrderBy,
+  boardMetricsSqlFor,
   KPI_MERCADO_TIPO,
   metricsSqlFor,
   marginPct,
@@ -998,16 +999,28 @@ export const querySedeCompare = async (
 
 const SIN_CLIENTE_LABEL = "Sin cliente";
 
+const compactRangeDayCount = (fromCompact: string, toCompact: string) => {
+  const from = compactDateToIso(fromCompact);
+  const to = compactDateToIso(toCompact);
+  if (!from || !to) return 0;
+  const start = Date.parse(`${from}T12:00:00Z`);
+  const end = Date.parse(`${to}T12:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
+  return Math.floor((end - start) / 86_400_000) + 1;
+};
+
+/** KPI + filas de clientes en un solo barrido (evita queryKpi paralelo). */
 export const queryClienteCompare = async (
   client: PoolClient,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   search?: string,
-) => {
+): Promise<{ kpi: MargenKpi; rows: DrillRow[] }> => {
   const params: unknown[] = [];
   let where = buildMargenWhereForTable(filters, params, table);
   const idTerc = idTercExpr(table);
   const nombreTerc = nombreTercExpr(table);
+  const metrics = boardMetricsSqlFor(table);
 
   if (search?.trim()) {
     params.push(`%${search.trim().toLowerCase()}%`);
@@ -1022,18 +1035,18 @@ export const queryClienteCompare = async (
     SELECT
       ${idTerc} AS id_terc,
       MAX(${nombreTerc}) AS nombre_terc,
-      ${metricsSqlFor(table)}
+      ${metrics}
     FROM ${table}
     WHERE ${where}
     GROUP BY 1
-    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
-    LIMIT 1000
     `,
     params,
   );
 
-  return result.rows.map((row) => {
-    const metrics = mapMetrics(row);
+  const orderBy = filters.orderBy;
+  const orderDir = filters.orderDir === "asc" ? 1 : -1;
+  const allRows = result.rows.map((row) => {
+    const metricsMapped = mapMetrics(row);
     const id = String(row.id_terc ?? "").trim();
     const nombre = cleanText(row.nombre_terc);
     const label = nombre ?? (id ? id : SIN_CLIENTE_LABEL);
@@ -1044,50 +1057,117 @@ export const queryClienteCompare = async (
       idTerc: id || undefined,
       nombreTerc: nombre,
       drillable: true,
-      ...metrics,
+      ...metricsMapped,
     } satisfies DrillRow;
   });
+
+  allRows.sort((a, b) => {
+    if (orderBy && orderBy in a) {
+      const av = a[orderBy as keyof DrillRow];
+      const bv = b[orderBy as keyof DrillRow];
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * orderDir;
+      }
+      return String(av ?? "").localeCompare(String(bv ?? "")) * orderDir;
+    }
+    return (b.ventasNetas - a.ventasNetas) * (filters.orderDir === "asc" ? -1 : 1);
+  });
+
+  let ventasNetas = 0;
+  let costoTotal = 0;
+  let margenPesos = 0;
+  let cantidad = 0;
+  let ventasConIva = 0;
+  let facturas = 0;
+  for (const row of allRows) {
+    ventasNetas += row.ventasNetas;
+    costoTotal += row.costoTotal;
+    margenPesos += row.margenPesos;
+    cantidad += row.cantidad;
+    ventasConIva += row.ventasConIva;
+    facturas += row.facturas;
+  }
+
+  const kpi = buildKpiPayload({
+    ventas_netas: ventasNetas,
+    costo_total: costoTotal,
+    margen_pesos: margenPesos,
+    cantidad,
+    ventas_con_iva: ventasConIva,
+    facturas,
+    margen_pct: marginPct(ventasNetas, margenPesos),
+    pvu_iva: unitSaleWithTax(ventasConIva, cantidad),
+    pcu: unitCost(costoTotal, cantidad),
+    dias: compactRangeDayCount(filters.fromCompact, filters.toCompact),
+    sedes: filters.sedes.length,
+  });
+
+  return {
+    kpi,
+    rows: allRows.slice(0, 1000),
+  };
 };
 
+/** KPI + facturas de un cliente; ambas queries usan indice (id_terc, fecha). */
 export const queryClienteFacturas = async (
   client: PoolClient,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   idTerc: string,
   search?: string,
-) => {
-  const params: unknown[] = [];
-  let where = buildMargenWhereForTable(filters, params, table);
-  const idTercSql = idTercExpr(table);
-  params.push(idTerc.trim());
-  where += ` AND ${idTercSql} = $${params.length}`;
+): Promise<{ kpi: MargenKpi; rows: DrillRow[] }> => {
+  const buildWhere = () => {
+    const params: unknown[] = [];
+    let where = buildMargenWhereForTable(filters, params, table);
+    const idTercSql = idTercExpr(table);
+    params.push(idTerc.trim());
+    where += ` AND ${idTercSql} = $${params.length}`;
+    if (search?.trim()) {
+      params.push(`%${search.trim().toLowerCase()}%`);
+      where += ` AND LOWER(${documentoExpr(table)}) LIKE $${params.length}`;
+    }
+    where += ` AND ${documentoNotNull(table)}`;
+    return { where, params };
+  };
 
-  if (search?.trim()) {
-    params.push(`%${search.trim().toLowerCase()}%`);
-    where += ` AND LOWER(${documentoExpr(table)}) LIKE $${params.length}`;
-  }
-
+  const metrics = boardMetricsSqlFor(table);
+  const sedeKey = sedeDistinctKeySql(table);
   const sedeCols = sedeSelectSql(table);
-  const result = await client.query(
-    `
-    SELECT
-      ${documentoExpr(table)} AS documento,
-      ${tipdocExpr(table)} AS tipdoc,
-      fecha_dcto,
-      ${sedeCols},
-      ${clienteSelectSql(table)},
-      ${metricsSqlFor(table)}
-    FROM ${table}
-    WHERE ${where}
-      AND ${documentoNotNull(table)}
-    GROUP BY 1, 2, 3, 4, 5
-    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
-    LIMIT 1000
-    `,
-    params,
-  );
+  const { where: kpiWhere, params: kpiParams } = buildWhere();
+  const { where: rowWhere, params: rowParams } = buildWhere();
 
-  return result.rows.map((row) => {
+  const [kpiResult, rowResult] = await Promise.all([
+    client.query(
+      `
+      SELECT
+        ${metrics},
+        COUNT(DISTINCT fecha_dcto) AS dias,
+        COUNT(DISTINCT ${sedeKey}) AS sedes
+      FROM ${table}
+      WHERE ${kpiWhere}
+      `,
+      kpiParams,
+    ),
+    client.query(
+      `
+      SELECT
+        ${documentoExpr(table)} AS documento,
+        ${tipdocExpr(table)} AS tipdoc,
+        fecha_dcto,
+        ${sedeCols},
+        ${clienteSelectSql(table)},
+        ${metrics}
+      FROM ${table}
+      WHERE ${rowWhere}
+      GROUP BY 1, 2, 3, 4, 5
+      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+      LIMIT 1000
+      `,
+      rowParams,
+    ),
+  ]);
+
+  const rows = rowResult.rows.map((row) => {
     const mapped = mapFacturaBoardRow(row);
     return {
       ...mapped,
@@ -1095,6 +1175,11 @@ export const queryClienteFacturas = async (
       fecha: formatDayLabel(String(row.fecha_dcto)),
     };
   });
+
+  return {
+    kpi: buildKpiPayload(kpiResult.rows[0] ?? {}),
+    rows,
+  };
 };
 
 export const queryFilterOptions = async (

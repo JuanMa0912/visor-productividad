@@ -540,15 +540,11 @@ export async function GET(request: Request) {
       payload = { kpi, rows };
     } else if (mode === "cliente") {
       const search = url.searchParams.get("search") ?? undefined;
-      const [kpi, rows] = await Promise.all([
-        queryKpi(client, parsed, [], dataTable, { mercadoOnly: false }),
-        queryClienteCompare(client, parsed, dataTable, search),
-      ]);
+      payload = await queryClienteCompare(client, parsed, dataTable, search);
       payload = {
-        kpi,
+        ...payload,
         level: 0,
         levelName: "Cliente",
-        rows,
       };
     } else if (mode === "cliente-facturas") {
       const idTerc = url.searchParams.get("idTerc") ?? "";
@@ -562,15 +558,16 @@ export async function GET(request: Request) {
         ]);
         payload = { kpi, ...table };
       } else {
-        const [kpi, rows] = await Promise.all([
-          queryKpi(client, parsed, [], dataTable, { mercadoOnly: false }),
-          queryClienteFacturas(client, parsed, dataTable, idTerc, search),
-        ]);
         payload = {
-          kpi,
+          ...(await queryClienteFacturas(
+            client,
+            parsed,
+            dataTable,
+            idTerc,
+            search,
+          )),
           level: 1,
           levelName: "Factura",
-          rows,
         };
       }
     } else {
