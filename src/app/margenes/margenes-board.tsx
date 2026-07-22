@@ -23,8 +23,13 @@ import {
 import { DRILL_LEVEL_NAMES } from "@/lib/margenes/drill-path";
 import { MargenesMultiSelect } from "@/app/margenes/margenes-multi-select";
 
-type BoardMode = "drill" | "fact" | "sede";
+type BoardMode = "drill" | "fact" | "sede" | "cliente";
 type FactTab = "nav" | "list";
+
+type ClienteFocus = {
+  idTerc: string;
+  label: string;
+};
 
 type FilterOption = {
   value: string;
@@ -128,6 +133,8 @@ const buildFacturaNavStep = (row: DrillRow): FactNavStep => {
 type ColsForDrillLevelOptions = {
   showSede?: boolean;
   showFecha?: boolean;
+  /** Oculta columna Cliente (p. ej. al listar facturas de un cliente ya filtrado). */
+  hideCliente?: boolean;
 };
 
 const colsForDrillLevel = (
@@ -211,6 +218,31 @@ const colsForDrillLevel = (
     },
   ];
 
+  if (level === -2) {
+    return [
+      {
+        key: "cod",
+        label: "ID cliente",
+        sortValue: (row) => row.cod,
+        render: (row) => (
+          <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+            {row.cod}
+          </span>
+        ),
+      },
+      {
+        key: "label",
+        label: "Cliente",
+        drill: true,
+        cellClassName: "min-w-[12rem] max-w-[20rem]",
+        sortValue: (row) => row.label,
+        render: (row) => <span className="truncate">{row.label}</span>,
+      },
+      ...metricsTail,
+      ...base,
+    ];
+  }
+
   if (level === -1) {
     return [
       {
@@ -221,7 +253,7 @@ const colsForDrillLevel = (
       },
       {
         key: "cod",
-        label: "Cód.",
+        label: "CO",
         sortValue: (row) => row.cod,
         render: (row) => (
           <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
@@ -233,8 +265,8 @@ const colsForDrillLevel = (
         key: "sede",
         label: "Sede",
         drill: true,
-        sortValue: (row) => (row as DrillRow & { sede?: string }).sede ?? row.label,
-        render: (row) => (row as DrillRow & { sede?: string }).sede ?? row.label,
+        sortValue: (row) => row.sede ?? "",
+        render: (row) => row.sede ?? "—",
       },
       {
         key: "dias",
@@ -242,13 +274,6 @@ const colsForDrillLevel = (
         align: "right",
         sortValue: (row) => (row as DrillRow & { dias?: number }).dias ?? 0,
         render: (row) => (row as DrillRow & { dias?: number }).dias ?? 0,
-      },
-      {
-        key: "items",
-        label: "Ítems",
-        align: "right",
-        sortValue: (row) => row.items ?? 0,
-        render: (row) => row.items ?? 0,
       },
       ...metricsTail,
       ...base,
@@ -338,37 +363,79 @@ const colsForDrillLevel = (
         render: (row) => row.fecha ?? "—",
       });
     }
+    if (!options.hideCliente) {
+      cols.push({
+        key: "cliente",
+        label: "Cliente",
+        cellClassName: "min-w-[11rem] max-w-[16rem]",
+        sortValue: (row) => row.nombreTerc ?? row.idTerc ?? "",
+        render: (row) =>
+          row.nombreTerc || row.idTerc ? (
+            <span className="flex flex-col leading-tight">
+              <span className="truncate">{row.nombreTerc ?? "—"}</span>
+              {row.idTerc ? (
+                <span className="font-mono text-[10px] text-[#6b7590]">
+                  {row.idTerc}
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            "—"
+          ),
+      });
+    }
+    cols.push({
+      key: "caja",
+      label: "Caja",
+      sortValue: (row) => row.idCaja ?? "",
+      render: (row) =>
+        row.idCaja ? (
+          <span className="font-mono text-[11px]">{row.idCaja}</span>
+        ) : (
+          "—"
+        ),
+    });
     cols.push({
       key: "label",
-      label: "# Factura",
+      label: "Consecutivo",
       drill: true,
       sortValue: (row) => row.label,
       render: (row) => (
         <span className="flex flex-col leading-tight">
-          <span>{row.label}</span>
-          {row.documentoDocfc && row.documentoDocfc !== row.documento ? (
-            <span className="font-mono text-[10px] text-[#6b7590]">
-              {row.documentoDocfc}
-            </span>
+          <span className="font-mono">{row.label}</span>
+          {row.tipdoc ? (
+            <span className="text-[10px] text-[#6b7590]">{row.tipdoc}</span>
           ) : null}
         </span>
       ),
     });
     cols.push({
-      key: "cliente",
-      label: "Cliente",
-      cellClassName: "min-w-[11rem] max-w-[16rem]",
-      sortValue: (row) => row.nombreTerc ?? "",
+      key: "vendedor",
+      label: "Vendedor",
+      cellClassName: "min-w-[10rem] max-w-[16rem]",
+      sortValue: (row) => row.vendCcDesc ?? row.vendCc ?? "",
       render: (row) =>
-        row.nombreTerc || row.idTerc ? (
+        row.vendCcDesc || row.vendCc ? (
           <span className="flex flex-col leading-tight">
-            <span className="truncate">{row.nombreTerc ?? "—"}</span>
-            {row.idTerc ? (
+            <span className="truncate">{row.vendCcDesc ?? "—"}</span>
+            {row.vendCc ? (
               <span className="font-mono text-[10px] text-[#6b7590]">
-                {row.idTerc}
+                {row.vendCc}
               </span>
             ) : null}
           </span>
+        ) : (
+          "—"
+        ),
+    });
+    cols.push({
+      key: "documento",
+      label: "Documento",
+      cellClassName: "min-w-[9rem]",
+      sortValue: (row) => row.documentoDocfc ?? "",
+      render: (row) =>
+        row.documentoDocfc ? (
+          <span className="font-mono text-[11px]">{row.documentoDocfc}</span>
         ) : (
           "—"
         ),
@@ -430,8 +497,11 @@ export const MargenesBoard = ({
   const [factTab, setFactTab] = useState<FactTab>("nav");
   const [drillPath, setDrillPath] = useState<DrillPathStep[]>([]);
   const [factPath, setFactPath] = useState<FactNavStep[]>([]);
+  const [clienteFocus, setClienteFocus] = useState<ClienteFocus | null>(null);
+  const [clienteFactPath, setClienteFactPath] = useState<FactNavStep[]>([]);
   const [drillSearch, setDrillSearch] = useState("");
   const [factSearch, setFactSearch] = useState("");
+  const [clienteSearch, setClienteSearch] = useState("");
   const [mgSortDir, setMgSortDir] = useState<"asc" | "desc">("asc");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -822,6 +892,28 @@ export const MargenesBoard = ({
         return;
       }
 
+      if (mode === "cliente") {
+        let url = "";
+        if (clienteFocus) {
+          url = `/api/margenes/data?mode=cliente-facturas&idTerc=${encodeURIComponent(clienteFocus.idTerc)}&factPath=${encodeURIComponent(JSON.stringify(clienteFactPath))}&${queryBase}`;
+          if (clienteSearch.trim()) url += `&search=${encodeURIComponent(clienteSearch.trim())}`;
+        } else {
+          url = `/api/margenes/data?mode=cliente&${queryBase}`;
+          if (clienteSearch.trim()) url += `&search=${encodeURIComponent(clienteSearch.trim())}`;
+        }
+        if (orderParam) url += `&${orderParam}`;
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? "Error cargando clientes.");
+        }
+        const data = (await response.json()) as TablePayload;
+        setPayload(data);
+        setSedeKpi(null);
+        setSedeRows([]);
+        return;
+      }
+
       let url = "";
       if (mode === "drill") {
         url = `/api/margenes/data?mode=drill&drillPath=${encodeURIComponent(JSON.stringify(drillPath))}&${queryBase}`;
@@ -857,8 +949,11 @@ export const MargenesBoard = ({
     factTab,
     drillPath,
     factPath,
+    clienteFocus,
+    clienteFactPath,
     drillSearch,
     factSearch,
+    clienteSearch,
     queryBase,
     orderParam,
   ]);
@@ -877,7 +972,20 @@ export const MargenesBoard = ({
 
   useEffect(() => {
     setPage(0);
-  }, [mode, factTab, drillPath, factPath, drillSearch, factSearch, queryBase, sortKey, mgSortDir]);
+  }, [
+    mode,
+    factTab,
+    drillPath,
+    factPath,
+    clienteFocus,
+    clienteFactPath,
+    drillSearch,
+    factSearch,
+    clienteSearch,
+    queryBase,
+    sortKey,
+    mgSortDir,
+  ]);
 
   useEffect(() => {
     if (!dataCommitted) return;
@@ -890,21 +998,26 @@ export const MargenesBoard = ({
 
   const viewingInvoiceDetail =
     (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
-    (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura");
+    (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura") ||
+    (mode === "cliente" &&
+      clienteFactPath.some((step) => step.type === "factura"));
 
   const showSedeInFacturas = effectiveSedes.length > 1;
 
   const columns = useMemo(() => {
     if (mode === "sede") return colsForDrillLevel(-1);
+    if (mode === "cliente" && !clienteFocus) return colsForDrillLevel(-2);
     if (viewingInvoiceDetail) return colsForDrillLevel(6);
     const isFacturaList =
       (mode === "drill" && activeLevel === 5) ||
       (mode === "fact" && factTab === "nav" && activeLevel === 2) ||
-      (mode === "fact" && factTab === "list");
+      (mode === "fact" && factTab === "list") ||
+      (mode === "cliente" && Boolean(clienteFocus));
     if (isFacturaList) {
       return colsForDrillLevel(5, {
         showSede: showSedeInFacturas,
-        showFecha: mode === "fact" && factTab === "list",
+        showFecha: (mode === "fact" && factTab === "list") || mode === "cliente",
+        hideCliente: mode === "cliente",
       });
     }
     return colsForDrillLevel(activeLevel);
@@ -914,6 +1027,7 @@ export const MargenesBoard = ({
     factTab,
     viewingInvoiceDetail,
     showSedeInFacturas,
+    clienteFocus,
   ]);
 
   const rawRows = useMemo(
@@ -964,6 +1078,22 @@ export const MargenesBoard = ({
       return;
     }
 
+    if (mode === "cliente") {
+      if (!clienteFocus) {
+        setClienteFocus({
+          idTerc: row.idTerc ?? "",
+          label: row.label,
+        });
+        setClienteFactPath([]);
+        setClienteSearch("");
+        return;
+      }
+      if (clienteFactPath.length === 0 && row.documento) {
+        setClienteFactPath([buildFacturaNavStep(row)]);
+      }
+      return;
+    }
+
     if (mode === "drill") {
       if (row.drillStep) {
         setDrillPath((current) => [...current, row.drillStep!]);
@@ -993,11 +1123,13 @@ export const MargenesBoard = ({
   const showSearch =
     dataCommitted &&
     ((mode === "drill" && (activeLevel === 4 || drillSearch.trim() !== "")) ||
-      (mode === "fact" && !viewingInvoiceDetail));
+      (mode === "fact" && !viewingInvoiceDetail) ||
+      (mode === "cliente" && !viewingInvoiceDetail));
 
   const showSortBar =
     dataCommitted &&
     (mode === "sede" ||
+      mode === "cliente" ||
       activeLevel >= 5 ||
       mode === "fact" ||
       (mode === "drill" && drillSearch.trim() !== ""));
@@ -1097,6 +1229,7 @@ export const MargenesBoard = ({
         {[
           { id: "drill" as const, label: "📦 Producto" },
           { id: "fact" as const, label: "📋 Por Factura" },
+          { id: "cliente" as const, label: "👤 Por Cliente" },
           { id: "sede" as const, label: "🏢 Por Sede" },
         ].map((tab) => (
           <button
@@ -1106,6 +1239,9 @@ export const MargenesBoard = ({
               setMode(tab.id);
               setDrillPath([]);
               setFactPath([]);
+              setClienteFocus(null);
+              setClienteFactPath([]);
+              setClienteSearch("");
             }}
             className={`border-b-2 px-4 py-2 text-xs font-semibold whitespace-nowrap ${
               mode === tab.id
@@ -1172,25 +1308,47 @@ export const MargenesBoard = ({
       {showSearch ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-[#2a2f47] bg-[#1b1e2e] px-4 py-2">
           <span className="text-[11px] text-[#6b7590] whitespace-nowrap">
-            {mode === "drill" ? "🔍 Buscar ítem:" : "🔍 Buscar factura:"}
+            {mode === "drill"
+              ? "🔍 Buscar ítem:"
+              : mode === "cliente" && !clienteFocus
+                ? "🔍 Buscar cliente:"
+                : "🔍 Buscar factura:"}
           </span>
           <input
-            value={mode === "drill" ? drillSearch : factSearch}
-            onChange={(event) =>
+            value={
               mode === "drill"
-                ? setDrillSearch(event.target.value)
-                : setFactSearch(event.target.value)
+                ? drillSearch
+                : mode === "cliente"
+                  ? clienteSearch
+                  : factSearch
             }
+            onChange={(event) => {
+              if (mode === "drill") setDrillSearch(event.target.value);
+              else if (mode === "cliente") setClienteSearch(event.target.value);
+              else setFactSearch(event.target.value);
+            }}
             placeholder={
-              mode === "drill" ? "Código o nombre de ítem…" : "Número de factura…"
+              mode === "drill"
+                ? "Código o nombre de ítem…"
+                : mode === "cliente" && !clienteFocus
+                  ? "Nombre o ID de cliente…"
+                  : "Número de factura…"
             }
             className="min-w-0 flex-1 rounded-md border border-[#2a2f47] bg-[#232740] px-3 py-1.5 text-xs text-[#dde3f0] outline-none focus:border-[#4f8ef7]"
           />
-          {(mode === "drill" ? drillSearch : factSearch) ? (
+          {(mode === "drill"
+            ? drillSearch
+            : mode === "cliente"
+              ? clienteSearch
+              : factSearch) ? (
             <button
               type="button"
               className="rounded border border-[#2a2f47] px-2 py-1 text-[11px] text-[#6b7590] hover:text-[#dde3f0]"
-              onClick={() => (mode === "drill" ? setDrillSearch("") : setFactSearch(""))}
+              onClick={() => {
+                if (mode === "drill") setDrillSearch("");
+                else if (mode === "cliente") setClienteSearch("");
+                else setFactSearch("");
+              }}
             >
               ✕ Limpiar
             </button>
@@ -1248,6 +1406,49 @@ export const MargenesBoard = ({
           ))}
           <span className="ml-auto rounded-full border border-[#2a2f47] bg-[#232740] px-2 py-0.5 text-[10px] text-[#6b7590]">
             Nivel: {payload?.levelName ?? "Fecha"}
+          </span>
+        </div>
+      ) : null}
+
+      {mode === "cliente" ? (
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#2a2f47] bg-[#141720] px-4 py-1.5 text-xs">
+          <button
+            type="button"
+            className="text-[#4f8ef7] hover:underline"
+            onClick={() => {
+              setClienteFocus(null);
+              setClienteFactPath([]);
+              setClienteSearch("");
+            }}
+          >
+            Clientes
+          </button>
+          {clienteFocus ? (
+            <span className="flex items-center gap-1">
+              <span className="text-[#2a2f47]">›</span>
+              <button
+                type="button"
+                className="text-[#4f8ef7] hover:underline"
+                onClick={() => setClienteFactPath([])}
+              >
+                {clienteFocus.label}
+              </button>
+            </span>
+          ) : null}
+          {clienteFactPath.map((step, index) => (
+            <span key={`${step.type}-${index}`} className="flex items-center gap-1">
+              <span className="text-[#2a2f47]">›</span>
+              <button
+                type="button"
+                className="text-[#4f8ef7] hover:underline"
+                onClick={() => setClienteFactPath(clienteFactPath.slice(0, index + 1))}
+              >
+                {formatStepLabel(step)}
+              </button>
+            </span>
+          ))}
+          <span className="ml-auto rounded-full border border-[#2a2f47] bg-[#232740] px-2 py-0.5 text-[10px] text-[#6b7590]">
+            Nivel: {payload?.levelName ?? "Cliente"}
           </span>
         </div>
       ) : null}

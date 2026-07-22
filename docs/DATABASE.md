@@ -96,6 +96,8 @@ Orden completo despues de `schema-auth.sql`:
 42. `20260716_informe_variacion_payload_std.sql` (snapshot JSON de `/informe-variacion` para first paint rapido)
 43. `20260717_app_users_portal_profile_fruver.sql` (añade perfil `fruver` + configura LHERRERA)
 44. `20260721_app_export_download_log.sql` (bitacora de descargas/exports; solo metadatos; retencion ~9 meses)
+45. `20260721_margen_factura_cliente.sql` (`documento_docfc`/`id_terc`/`nombre_terc` en `margen_final` + roll)
+46. `20260722_margen_factura_caja_vendedor.sql` (`id_caja`/`vend_cc`/`vend_cc_desc` en roll; refresh con MAX por factura)
 
 Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
 
@@ -191,8 +193,8 @@ Notas:
 | Tabla | Uso |
 | --- | --- |
 | `margenes_linea_co_dia` | legacy: agregados por linea/sede/dia (feb 2026 en prod) |
-| `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD |
-| `margen_final_roll` | rollup factura+item/dia/sede; alimenta consultas pesadas del tablero |
+| `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD; incluye `id_caja`, `vend_cc`/`vend_cc_desc`, `documento_docfc`, `id_terc`/`nombre_terc` |
+| `margen_final_roll` | rollup factura+item/dia/sede; alimenta `/margenes` (Producto/Factura/Cliente/Sede); atributos de factura vía MAX |
 | `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
 | `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s |
 | `informe_variacion_payload_std_meta` | ultimo warm (refreshed_at, mes, #rangos) |
@@ -207,7 +209,20 @@ En `/margenes`, sin categoría seleccionada el tablero default es Mercado
 default; ver `shouldApplyMercadoTipoDefault` en `src/lib/margenes/metrics.ts`.
 
 Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`,
-`db/migrations/20260708_margen_item_dia_roll.sql`.
+`db/migrations/20260708_margen_item_dia_roll.sql`, `db/migrations/20260721_margen_factura_cliente.sql`,
+`db/migrations/20260722_margen_factura_caja_vendedor.sql`.
+
+En el tablero `/margenes`: pestaña **Por Cliente** agrupa por `id_terc`; al
+abrir una factura se muestran Cliente, Caja, Consecutivo, Vendedor y Documento
+(`documento_docfc`). Tras las migraciones 45–46 hay que refrescar el roll
+(al menos desde `20260701`, fecha desde la que el ETL llena cliente/docfc):
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260721_margen_factura_cliente.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260722_margen_factura_caja_vendedor.sql
+# incremental (recomendado) o full:
+sudo -u visor env MARGEN_ROLL_FROM=20260701 MARGEN_ROLL_TO=20260722 npm run margen:refresh-roll
+```
 
 **Refresh automatico (dos caminos):**
 

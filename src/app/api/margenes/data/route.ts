@@ -26,6 +26,8 @@ import {
 import { parseDrillPath } from "@/lib/margenes/drill-path";
 import { parseFactPath, factPathToInvoiceKpiDrillPath } from "@/lib/margenes/fact-path";
 import {
+  queryClienteCompare,
+  queryClienteFacturas,
   queryDrillBoard,
   queryFactListRows,
   queryFactNavRows,
@@ -61,6 +63,8 @@ type DataMode =
   | "drill"
   | "fact-nav"
   | "fact-list"
+  | "cliente"
+  | "cliente-facturas"
   | MargenViewMode;
 
 const HEAVY_MODES: DataMode[] = [
@@ -71,6 +75,8 @@ const HEAVY_MODES: DataMode[] = [
   "drill",
   "fact-nav",
   "fact-list",
+  "cliente",
+  "cliente-facturas",
   "producto",
   "factura",
   "sede",
@@ -281,6 +287,9 @@ const queryTable = async (
         documentoDocfc: clean(row.documento_docfc),
         idTerc: clean(row.id_terc),
         nombreTerc: clean(row.nombre_terc),
+        idCaja: clean(row.id_caja),
+        vendCc: clean(row.vend_cc),
+        vendCcDesc: clean(row.vend_cc_desc),
         fecha: compactDateToIso(row.fecha_dcto) ?? row.fecha_dcto,
         sede: sedeLabel(row.empresa, row.id_co),
         ventasNetas,
@@ -529,6 +538,41 @@ export async function GET(request: Request) {
         querySedeCompare(client, parsed, dataTable),
       ]);
       payload = { kpi, rows };
+    } else if (mode === "cliente") {
+      const search = url.searchParams.get("search") ?? undefined;
+      const [kpi, rows] = await Promise.all([
+        queryKpi(client, parsed, [], dataTable, { mercadoOnly: false }),
+        queryClienteCompare(client, parsed, dataTable, search),
+      ]);
+      payload = {
+        kpi,
+        level: 0,
+        levelName: "Cliente",
+        rows,
+      };
+    } else if (mode === "cliente-facturas") {
+      const idTerc = url.searchParams.get("idTerc") ?? "";
+      const search = url.searchParams.get("search") ?? undefined;
+      const factPath = parseFactPath(url.searchParams.get("factPath"));
+      if (factPath.some((step) => step.type === "factura")) {
+        const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
+        const [kpi, table] = await Promise.all([
+          queryKpi(client, parsed, kpiPath, dataTable, { mercadoOnly: false }),
+          queryFactNavRows(client, parsed, factPath, dataTable, search),
+        ]);
+        payload = { kpi, ...table };
+      } else {
+        const [kpi, rows] = await Promise.all([
+          queryKpi(client, parsed, [], dataTable, { mercadoOnly: false }),
+          queryClienteFacturas(client, parsed, dataTable, idTerc, search),
+        ]);
+        payload = {
+          kpi,
+          level: 1,
+          levelName: "Factura",
+          rows,
+        };
+      }
     } else {
       payload = {
         rows: await queryTable(client, parsed, mode, dataTable),

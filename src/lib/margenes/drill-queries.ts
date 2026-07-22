@@ -12,8 +12,10 @@ import {
 import {
   buildMargenWhereForTable,
   clienteSelectSql,
+  idTercExpr,
   isRollTable,
   mercadoTipoSql,
+  nombreTercExpr,
   sedeDistinctKeySql,
   sedeSelectSql,
   type MargenDataTable,
@@ -91,6 +93,9 @@ export type DrillRow = {
   documentoDocfc?: string;
   idTerc?: string;
   nombreTerc?: string;
+  idCaja?: string;
+  vendCc?: string;
+  vendCcDesc?: string;
   sede?: string;
   empresa?: string;
   idCo?: string;
@@ -198,6 +203,9 @@ const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
     documentoDocfc: cleanText(row.documento_docfc),
     idTerc: cleanText(row.id_terc),
     nombreTerc: cleanText(row.nombre_terc),
+    idCaja: cleanText(row.id_caja),
+    vendCc: cleanText(row.vend_cc),
+    vendCcDesc: cleanText(row.vend_cc_desc),
     empresa,
     idCo,
     sede: sedeLabel(empresa, idCo),
@@ -919,6 +927,107 @@ export const querySedeCompare = async (
       dias: toNum(row.dias),
       drillable: true,
       ...metrics,
+    };
+  });
+};
+
+const SIN_CLIENTE_LABEL = "Sin cliente";
+
+export const queryClienteCompare = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  table: MargenDataTable,
+  search?: string,
+) => {
+  const params: unknown[] = [];
+  let where = buildMargenWhereForTable(filters, params, table);
+  const idTerc = idTercExpr(table);
+  const nombreTerc = nombreTercExpr(table);
+
+  if (search?.trim()) {
+    params.push(`%${search.trim().toLowerCase()}%`);
+    where += ` AND (
+      LOWER(${idTerc}) LIKE $${params.length}
+      OR LOWER(COALESCE(${nombreTerc}, '')) LIKE $${params.length}
+    )`;
+  }
+
+  const result = await client.query(
+    `
+    SELECT
+      ${idTerc} AS id_terc,
+      MAX(${nombreTerc}) AS nombre_terc,
+      ${metricsSqlFor(table)}
+    FROM ${table}
+    WHERE ${where}
+    GROUP BY 1
+    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+    LIMIT 1000
+    `,
+    params,
+  );
+
+  return result.rows.map((row) => {
+    const metrics = mapMetrics(row);
+    const id = String(row.id_terc ?? "").trim();
+    const nombre = cleanText(row.nombre_terc);
+    const label = nombre ?? (id ? id : SIN_CLIENTE_LABEL);
+    return {
+      key: id || "__SIN_CLIENTE__",
+      cod: id || "—",
+      label,
+      idTerc: id || undefined,
+      nombreTerc: nombre,
+      drillable: true,
+      ...metrics,
+    } satisfies DrillRow;
+  });
+};
+
+export const queryClienteFacturas = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  table: MargenDataTable,
+  idTerc: string,
+  search?: string,
+) => {
+  const params: unknown[] = [];
+  let where = buildMargenWhereForTable(filters, params, table);
+  const idTercSql = idTercExpr(table);
+  params.push(idTerc.trim());
+  where += ` AND ${idTercSql} = $${params.length}`;
+
+  if (search?.trim()) {
+    params.push(`%${search.trim().toLowerCase()}%`);
+    where += ` AND LOWER(${documentoExpr(table)}) LIKE $${params.length}`;
+  }
+
+  const sedeCols = sedeSelectSql(table);
+  const result = await client.query(
+    `
+    SELECT
+      ${documentoExpr(table)} AS documento,
+      ${tipdocExpr(table)} AS tipdoc,
+      fecha_dcto,
+      ${sedeCols},
+      ${clienteSelectSql(table)},
+      ${metricsSqlFor(table)}
+    FROM ${table}
+    WHERE ${where}
+      AND ${documentoNotNull(table)}
+    GROUP BY 1, 2, 3, 4, 5
+    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+    LIMIT 1000
+    `,
+    params,
+  );
+
+  return result.rows.map((row) => {
+    const mapped = mapFacturaBoardRow(row);
+    return {
+      ...mapped,
+      key: `${mapped.empresa}|${mapped.idCo}|${mapped.documento}|${mapped.tipdoc}|${String(row.fecha_dcto)}`,
+      fecha: formatDayLabel(String(row.fecha_dcto)),
     };
   });
 };

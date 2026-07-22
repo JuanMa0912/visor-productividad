@@ -205,15 +205,40 @@ export const sedeSelectSql = (table: MargenDataTable) =>
     : `LOWER(TRIM(COALESCE(empresa, ''))) AS empresa, LPAD(TRIM(COALESCE(id_co, '')), 3, '0') AS id_co`;
 
 /**
- * Columnas de cliente/factura para el nivel Factura: nombre_terc (maestro),
- * id_terc y documento_docfc (doc POS acumulado). Son atributos de la factura, asi
- * que van como MAX() sobre el grupo (pasajeras, no cambian el grano ni el GROUP BY).
- * En el roll ya vienen trimmeadas; en el crudo se recortan aqui.
+ * Atributos de factura (pasajeros vía MAX, no cambian GROUP BY):
+ * cliente (nombre_terc/id_terc), documento POS (documento_docfc),
+ * caja (id_caja) y vendedor (vend_cc / vend_cc_desc).
+ * En el roll ya vienen trimmeadas; en el crudo se recortan aquí.
  */
 export const clienteSelectSql = (table: MargenDataTable) =>
   isRollTable(table)
-    ? `MAX(NULLIF(nombre_terc, '')) AS nombre_terc, MAX(NULLIF(id_terc, '')) AS id_terc, MAX(NULLIF(documento_docfc, '')) AS documento_docfc`
-    : `MAX(NULLIF(TRIM(nombre_terc), '')) AS nombre_terc, MAX(NULLIF(TRIM(id_terc), '')) AS id_terc, MAX(NULLIF(TRIM(documento_docfc), '')) AS documento_docfc`;
+    ? [
+        `MAX(NULLIF(nombre_terc, '')) AS nombre_terc`,
+        `MAX(NULLIF(id_terc, '')) AS id_terc`,
+        `MAX(NULLIF(documento_docfc, '')) AS documento_docfc`,
+        `MAX(NULLIF(id_caja, '')) AS id_caja`,
+        `MAX(NULLIF(vend_cc, '')) AS vend_cc`,
+        `MAX(NULLIF(vend_cc_desc, '')) AS vend_cc_desc`,
+      ].join(", ")
+    : [
+        `MAX(NULLIF(TRIM(nombre_terc), '')) AS nombre_terc`,
+        `MAX(NULLIF(TRIM(id_terc), '')) AS id_terc`,
+        `MAX(NULLIF(TRIM(documento_docfc), '')) AS documento_docfc`,
+        `MAX(NULLIF(TRIM(id_caja), '')) AS id_caja`,
+        `MAX(NULLIF(TRIM(vend_cc), '')) AS vend_cc`,
+        `MAX(NULLIF(TRIM(vend_cc_desc), '')) AS vend_cc_desc`,
+      ].join(", ");
+
+/** Clave de cliente para GROUP BY / filtros (vacío = sin tercero identificado). */
+export const idTercExpr = (table: MargenDataTable) =>
+  isRollTable(table)
+    ? `COALESCE(NULLIF(id_terc, ''), '')`
+    : `COALESCE(NULLIF(TRIM(id_terc), ''), '')`;
+
+export const nombreTercExpr = (table: MargenDataTable) =>
+  isRollTable(table)
+    ? `NULLIF(nombre_terc, '')`
+    : `NULLIF(TRIM(nombre_terc), '')`;
 
 /** Expresión de sede para COUNT(DISTINCT ...) en agregaciones. */
 export const sedeDistinctKeySql = (table: MargenDataTable) =>
