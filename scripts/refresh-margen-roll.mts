@@ -11,7 +11,10 @@
 import pg from "pg";
 import { performance } from "node:perf_hooks";
 import { loadEnvFiles, resolvePgClientConfig } from "./db-client-config.mjs";
-import { resetMargenDataSourceCache } from "../src/lib/margenes/margen-data-source";
+import {
+  assertMargenRollFacturaAttrs,
+  resetMargenDataSourceCache,
+} from "../src/lib/margenes/margen-data-source";
 
 loadEnvFiles();
 
@@ -73,6 +76,13 @@ const main = async () => {
       console.error(
         "Tabla margen_final_roll no existe. Aplica db/migrations/20260702_margen_final_roll.sql.",
       );
+      process.exit(1);
+    }
+
+    try {
+      await assertMargenRollFacturaAttrs(client);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
 

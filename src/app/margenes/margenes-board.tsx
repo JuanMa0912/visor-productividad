@@ -882,8 +882,20 @@ export const MargenesBoard = ({
           cache: "no-store",
         });
         if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(body?.error ?? "Error cargando sedes.");
+          const body = (await response.json().catch(() => null)) as {
+            error?: string;
+            detail?: string;
+          } | null;
+          const fallback =
+            mode === "sede"
+              ? "Error cargando sedes."
+              : mode === "cliente"
+                ? "Error cargando clientes."
+                : "Error cargando datos.";
+          const message = body?.detail
+            ? `${body.error ?? fallback} (${body.detail})`
+            : (body?.error ?? fallback);
+          throw new Error(message);
         }
         const data = (await response.json()) as { kpi: MargenKpi; rows: DrillRow[] };
         setSedeKpi(data.kpi);
@@ -904,8 +916,14 @@ export const MargenesBoard = ({
         if (orderParam) url += `&${orderParam}`;
         const response = await fetch(url, { cache: "no-store" });
         if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(body?.error ?? "Error cargando clientes.");
+          const body = (await response.json().catch(() => null)) as {
+            error?: string;
+            detail?: string;
+          } | null;
+          const message = body?.detail
+            ? `${body.error ?? "Error cargando clientes."} (${body.detail})`
+            : (body?.error ?? "Error cargando clientes.");
+          throw new Error(message);
         }
         const data = (await response.json()) as TablePayload;
         setPayload(data);
@@ -929,8 +947,14 @@ export const MargenesBoard = ({
       if (orderParam) url += `&${orderParam}`;
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? "Error cargando datos.");
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+          detail?: string;
+        } | null;
+        const message = body?.detail
+          ? `${body.error ?? "Error cargando datos."} (${body.detail})`
+          : (body?.error ?? "Error cargando datos.");
+        throw new Error(message);
       }
       const data = (await response.json()) as TablePayload;
       setPayload(data);
@@ -1008,8 +1032,10 @@ export const MargenesBoard = ({
     if (mode === "sede") return colsForDrillLevel(-1);
     if (mode === "cliente" && !clienteFocus) return colsForDrillLevel(-2);
     if (viewingInvoiceDetail) return colsForDrillLevel(6);
+    const drillFacturaLevel =
+      mode === "drill" && (activeLevel === 5 || drillPath.length === 5);
     const isFacturaList =
-      (mode === "drill" && activeLevel === 5) ||
+      drillFacturaLevel ||
       (mode === "fact" && factTab === "nav" && activeLevel === 2) ||
       (mode === "fact" && factTab === "list") ||
       (mode === "cliente" && Boolean(clienteFocus));
@@ -1020,7 +1046,12 @@ export const MargenesBoard = ({
         hideCliente: mode === "cliente",
       });
     }
-    return colsForDrillLevel(activeLevel);
+    // En drill, preferir el path local si el payload aún no llegó / fallo.
+    const levelFromPath =
+      mode === "drill" && drillPath.length > 0 && drillPath.length < 5
+        ? drillPath.length
+        : activeLevel;
+    return colsForDrillLevel(levelFromPath);
   }, [
     mode,
     activeLevel,
@@ -1028,6 +1059,7 @@ export const MargenesBoard = ({
     viewingInvoiceDetail,
     showSedeInFacturas,
     clienteFocus,
+    drillPath.length,
   ]);
 
   const rawRows = useMemo(

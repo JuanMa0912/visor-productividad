@@ -214,7 +214,8 @@ Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_
 
 En el tablero `/margenes`: pestaña **Por Cliente** agrupa por `id_terc`; al
 abrir una factura se muestran Cliente, Caja, Consecutivo, Vendedor y Documento
-(`documento_docfc`). Tras las migraciones 45–46 hay que refrescar el roll
+(`documento_docfc`). Esas columnas son **obligatorias** en `margen_final_roll`
+(no hay fallback a NULL). Tras las migraciones 45–46 hay que refrescar el roll
 (al menos desde `20260701`, fecha desde la que el ETL llena cliente/docfc):
 
 ```bash
@@ -223,6 +224,9 @@ sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260722_marge
 # incremental (recomendado) o full:
 sudo -u visor env MARGEN_ROLL_FROM=20260701 MARGEN_ROLL_TO=20260722 npm run margen:refresh-roll
 ```
+
+`npm run margen:refresh-roll` y `/api/margenes/data` fallan con mensaje claro si
+faltan esas columnas en el roll.
 
 **Refresh automatico (dos caminos):**
 

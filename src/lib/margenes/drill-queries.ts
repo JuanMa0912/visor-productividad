@@ -195,6 +195,7 @@ const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
   const idCo = String(row.id_co);
   const metrics = mapMetrics(row);
   return {
+    ...metrics,
     key: `${empresa}|${idCo}|${documento}|${tipdoc}`,
     cod: documento,
     label: documento,
@@ -218,7 +219,6 @@ const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
       empresa,
       idCo,
     },
-    ...metrics,
   };
 };
 

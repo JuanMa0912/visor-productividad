@@ -1,4 +1,5 @@
 import { margenMetricSelect } from "@/lib/margenes/margen-final-query";
+import type { MargenDataTable } from "@/lib/margenes/margen-data-source";
 
 export const METRICS_SQL = `
   COALESCE(SUM(COALESCE(vlrtot_bru, 0)), 0) AS ventas_netas,
@@ -117,7 +118,7 @@ export const ROLL_METRICS_SQL = `
   , CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(costo_total,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pcu
 `;
 
-export const metricsSqlFor = (table: "margen_final" | "margen_final_roll") =>
+export const metricsSqlFor = (table: MargenDataTable) =>
   table === "margen_final_roll" ? ROLL_METRICS_SQL : METRICS_SQL;
 
 export const ROLL_SUMMARY_METRICS_SQL = `
@@ -126,6 +127,5 @@ export const ROLL_SUMMARY_METRICS_SQL = `
   COALESCE(SUM(margen_pesos), 0) AS margen_pesos
 `;
 
-export const summaryMetricsSqlFor = (
-  table: "margen_final" | "margen_final_roll",
-) => (table === "margen_final_roll" ? ROLL_SUMMARY_METRICS_SQL : margenMetricSelect);
+export const summaryMetricsSqlFor = (table: MargenDataTable) =>
+  table === "margen_final_roll" ? ROLL_SUMMARY_METRICS_SQL : margenMetricSelect;

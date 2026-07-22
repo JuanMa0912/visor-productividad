@@ -18,6 +18,45 @@ let itemDiaRollAvailable: boolean | null = null;
 export const isRollTable = (table: MargenDataTable): boolean =>
   table === MARGEN_ROLL_TABLE || table === MARGEN_ITEM_DIA_ROLL_TABLE;
 
+/** Columnas de factura que el tablero exige en margen_final_roll. */
+export const MARGEN_ROLL_FACTURA_ATTR_COLUMNS = [
+  "documento_docfc",
+  "id_terc",
+  "nombre_terc",
+  "id_caja",
+  "vend_cc",
+  "vend_cc_desc",
+] as const;
+
+/**
+ * Verifica que el roll tenga attrs de factura (cliente/caja/vendedor/doc).
+ * Si faltan: hay que aplicar 20260721 + 20260722 y refrescar el roll.
+ */
+export const assertMargenRollFacturaAttrs = async (
+  client: PoolClient,
+): Promise<void> => {
+  const result = await client.query<{ column_name: string }>(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'margen_final_roll'
+      AND column_name = ANY($1::text[])
+    `,
+    [MARGEN_ROLL_FACTURA_ATTR_COLUMNS],
+  );
+  const present = new Set(result.rows.map((row) => row.column_name));
+  const missing = MARGEN_ROLL_FACTURA_ATTR_COLUMNS.filter(
+    (column) => !present.has(column),
+  );
+  if (missing.length === 0) return;
+  throw new Error(
+    `margen_final_roll sin columnas de factura: ${missing.join(", ")}. ` +
+      `Aplica db/migrations/20260721_margen_factura_cliente.sql y ` +
+      `db/migrations/20260722_margen_factura_caja_vendedor.sql; luego npm run margen:refresh-roll.`,
+  );
+};
+
 export const resolveMargenDataSource = async (
   client: PoolClient,
 ): Promise<MargenDataTable> => {
@@ -41,8 +80,14 @@ export const resolveMargenDataSource = async (
   const populated = await client.query<{ ok: boolean }>(`
     SELECT EXISTS (SELECT 1 FROM margen_final_roll LIMIT 1) AS ok
   `);
-  rollTableAvailable = Boolean(populated.rows[0]?.ok);
-  return rollTableAvailable ? MARGEN_ROLL_TABLE : MARGEN_RAW_TABLE;
+  if (!populated.rows[0]?.ok) {
+    rollTableAvailable = false;
+    return MARGEN_RAW_TABLE;
+  }
+
+  await assertMargenRollFacturaAttrs(client);
+  rollTableAvailable = true;
+  return MARGEN_ROLL_TABLE;
 };
 
 /** Preferido por /informe-variacion: item/dia sin factura (mas pequeño que margen_final_roll). */
@@ -206,39 +251,59 @@ export const sedeSelectSql = (table: MargenDataTable) =>
 
 /**
  * Atributos de factura (pasajeros vía MAX, no cambian GROUP BY):
- * cliente (nombre_terc/id_terc), documento POS (documento_docfc),
- * caja (id_caja) y vendedor (vend_cc / vend_cc_desc).
- * En el roll ya vienen trimmeadas; en el crudo se recortan aquí.
+ * cliente, documento POS, caja y vendedor. Exigidos en margen_final_roll
+ * (migraciones 20260721 + 20260722 + refresh).
  */
-export const clienteSelectSql = (table: MargenDataTable) =>
-  isRollTable(table)
-    ? [
-        `MAX(NULLIF(nombre_terc, '')) AS nombre_terc`,
-        `MAX(NULLIF(id_terc, '')) AS id_terc`,
-        `MAX(NULLIF(documento_docfc, '')) AS documento_docfc`,
-        `MAX(NULLIF(id_caja, '')) AS id_caja`,
-        `MAX(NULLIF(vend_cc, '')) AS vend_cc`,
-        `MAX(NULLIF(vend_cc_desc, '')) AS vend_cc_desc`,
-      ].join(", ")
-    : [
-        `MAX(NULLIF(TRIM(nombre_terc), '')) AS nombre_terc`,
-        `MAX(NULLIF(TRIM(id_terc), '')) AS id_terc`,
-        `MAX(NULLIF(TRIM(documento_docfc), '')) AS documento_docfc`,
-        `MAX(NULLIF(TRIM(id_caja), '')) AS id_caja`,
-        `MAX(NULLIF(TRIM(vend_cc), '')) AS vend_cc`,
-        `MAX(NULLIF(TRIM(vend_cc_desc), '')) AS vend_cc_desc`,
-      ].join(", ");
+export const clienteSelectSql = (table: MargenDataTable) => {
+  // margen_item_dia_roll no tiene grano de factura.
+  if (table === MARGEN_ITEM_DIA_ROLL_TABLE) {
+    return [
+      "NULL::text AS nombre_terc",
+      "NULL::text AS id_terc",
+      "NULL::text AS documento_docfc",
+      "NULL::text AS id_caja",
+      "NULL::text AS vend_cc",
+      "NULL::text AS vend_cc_desc",
+    ].join(", ");
+  }
+
+  if (table === MARGEN_ROLL_TABLE) {
+    return [
+      `MAX(NULLIF(nombre_terc, '')) AS nombre_terc`,
+      `MAX(NULLIF(id_terc, '')) AS id_terc`,
+      `MAX(NULLIF(documento_docfc, '')) AS documento_docfc`,
+      `MAX(NULLIF(id_caja, '')) AS id_caja`,
+      `MAX(NULLIF(vend_cc, '')) AS vend_cc`,
+      `MAX(NULLIF(vend_cc_desc, '')) AS vend_cc_desc`,
+    ].join(", ");
+  }
+
+  return [
+    `MAX(NULLIF(TRIM(nombre_terc), '')) AS nombre_terc`,
+    `MAX(NULLIF(TRIM(id_terc), '')) AS id_terc`,
+    `MAX(NULLIF(TRIM(documento_docfc), '')) AS documento_docfc`,
+    `MAX(NULLIF(TRIM(id_caja), '')) AS id_caja`,
+    `MAX(NULLIF(TRIM(vend_cc), '')) AS vend_cc`,
+    `MAX(NULLIF(TRIM(vend_cc_desc), '')) AS vend_cc_desc`,
+  ].join(", ");
+};
 
 /** Clave de cliente para GROUP BY / filtros (vacío = sin tercero identificado). */
-export const idTercExpr = (table: MargenDataTable) =>
-  isRollTable(table)
-    ? `COALESCE(NULLIF(id_terc, ''), '')`
-    : `COALESCE(NULLIF(TRIM(id_terc), ''), '')`;
+export const idTercExpr = (table: MargenDataTable) => {
+  if (table === MARGEN_ITEM_DIA_ROLL_TABLE) return `''`;
+  if (table === MARGEN_ROLL_TABLE) {
+    return `COALESCE(NULLIF(id_terc, ''), '')`;
+  }
+  return `COALESCE(NULLIF(TRIM(id_terc), ''), '')`;
+};
 
-export const nombreTercExpr = (table: MargenDataTable) =>
-  isRollTable(table)
-    ? `NULLIF(nombre_terc, '')`
-    : `NULLIF(TRIM(nombre_terc), '')`;
+export const nombreTercExpr = (table: MargenDataTable) => {
+  if (table === MARGEN_ITEM_DIA_ROLL_TABLE) return `NULL::text`;
+  if (table === MARGEN_ROLL_TABLE) {
+    return `NULLIF(nombre_terc, '')`;
+  }
+  return `NULLIF(TRIM(nombre_terc), '')`;
+};
 
 /** Expresión de sede para COUNT(DISTINCT ...) en agregaciones. */
 export const sedeDistinctKeySql = (table: MargenDataTable) =>

@@ -595,12 +595,17 @@ export async function GET(request: Request) {
     return response;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
+    const detail = error instanceof Error ? error.message : String(error);
     console.error("[margenes/data] error", {
       mode,
-      error: error instanceof Error ? error.message : String(error),
+      error: detail,
     });
     return NextResponse.json(
-      { error: "Error consultando margen_final." },
+      {
+        error: "Error consultando margen_final.",
+        detail:
+          process.env.NODE_ENV !== "production" ? detail : undefined,
+      },
       { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
     );
   } finally {
