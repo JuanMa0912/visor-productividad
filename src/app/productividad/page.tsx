@@ -131,17 +131,11 @@ export default function ProductividadHubPage() {
     user,
   ]);
 
-  // Un solo módulo permitido: ir directo (evita hub vacío/confuso).
   useEffect(() => {
-    if (!ready) return;
-    if (visibleModules.length === 1 && visibleModules[0]?.href) {
-      router.replace(visibleModules[0].href);
-      return;
-    }
-    if (visibleModules.length === 0) {
+    if (ready && visibleModules.length === 0) {
       router.replace("/secciones");
     }
-  }, [ready, router, visibleModules]);
+  }, [ready, router, visibleModules.length]);
 
   const tourSteps = useMemo(() => buildPortalHubTourSteps("producto"), []);
 
@@ -152,7 +146,7 @@ export default function ProductividadHubPage() {
     theme: hubTour.theme,
     userId: user?.id,
     ready,
-    contentReady: visibleModules.length > 1,
+    contentReady: visibleModules.length > 0,
   });
 
   const canAccessCronograma = hasSpecialRole("cronograma");
@@ -162,16 +156,6 @@ export default function ProductividadHubPage() {
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
         <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
           <p className="text-sm text-slate-600">Cargando seccion...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (visibleModules.length <= 1) {
-    return (
-      <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
-        <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
-          <p className="text-sm text-slate-600">Abriendo modulo...</p>
         </div>
       </div>
     );
