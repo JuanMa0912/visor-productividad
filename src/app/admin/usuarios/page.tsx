@@ -261,7 +261,6 @@ const SPECIAL_ROLE_OPTIONS = [
     id: "replicar_lunes",
     label: "Replicar lunes",
   },
-  { id: "rotacion", label: "Rotacion (compat.)" },
   { id: "comparar_horarios", label: "Comparar horarios" },
   { id: "abcd", label: "ABCD" },
   {

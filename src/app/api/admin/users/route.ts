@@ -45,7 +45,6 @@ const ALLOWED_SPECIAL_ROLE_SET = new Set([
   "alex",
   "cronograma",
   "replicar_lunes",
-  "rotacion",
   "comparar_horarios",
   "abcd",
   "historial_sinventario",
@@ -317,14 +316,9 @@ const resolveValidSpecialRoles = (value: unknown) => {
   if (normalized.length === 0) {
     return { ok: true as const, value: null as string[] | null };
   }
-  const invalid = normalized.filter((role) => !ALLOWED_SPECIAL_ROLE_SET.has(role));
-  if (invalid.length > 0) {
-    return {
-      ok: false as const,
-      error: "Hay roles especiales no válidos en la selección.",
-    };
-  }
-  return { ok: true as const, value: normalized };
+  // Descarta ids retirados (p. ej. `rotacion` legacy) en vez de fallar el alta.
+  const valid = normalized.filter((role) => ALLOWED_SPECIAL_ROLE_SET.has(role));
+  return { ok: true as const, value: valid.length > 0 ? valid : null };
 };
 
 export async function GET(req: Request) {

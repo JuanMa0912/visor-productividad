@@ -46,7 +46,6 @@ const ALLOWED_SPECIAL_ROLE_SET = new Set([
   "alex",
   "cronograma",
   "replicar_lunes",
-  "rotacion",
   "comparar_horarios",
   "abcd",
   "historial_sinventario",

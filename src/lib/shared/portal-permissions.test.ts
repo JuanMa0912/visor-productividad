@@ -5,9 +5,7 @@ import {
   canAccessPortalSubsection,
   normalizeAllowedPortalSubsections,
 } from "./portal-sections";
-import {
-  canAccessRotacionBoard,
-} from "./special-role-features";
+import { canAccessRotacionBoard } from "./special-role-features";
 
 test("empty portal permission lists mean all sections and subdashboards", () => {
   assert.equal(canAccessPortalSection([], "producto"), true);
@@ -15,16 +13,21 @@ test("empty portal permission lists mean all sections and subdashboards", () => 
   assert.equal(normalizeAllowedPortalSubsections([]), null);
 });
 
-test("explicit subdashboard selection grants rotacion without legacy special role", () => {
+test("explicit subdashboard selection grants rotacion", () => {
   assert.equal(canAccessRotacionBoard(null, false, ["rotacion"]), true);
   assert.equal(canAccessRotacionBoard([], false, ["rotacion"]), true);
 });
 
-test("explicit subdashboard restriction blocks rotacion even with legacy special role", () => {
+test("explicit subdashboard restriction blocks rotacion", () => {
   assert.equal(canAccessRotacionBoard(["rotacion"], false, ["margenes"]), false);
 });
 
-test("legacy rotacion special role still works when subdashboard data is not provided", () => {
-  assert.equal(canAccessRotacionBoard(["rotacion"], false), true);
+test("sin allowedSubdashboards no hay acceso (ya no hay rol especial rotacion)", () => {
+  assert.equal(canAccessRotacionBoard(["rotacion"], false), false);
   assert.equal(canAccessRotacionBoard(null, false), false);
+});
+
+test("lista vacia de subtableros = todos (incluye rotacion)", () => {
+  assert.equal(canAccessRotacionBoard(null, false, []), true);
+  assert.equal(canAccessRotacionBoard(null, false, null), true);
 });
