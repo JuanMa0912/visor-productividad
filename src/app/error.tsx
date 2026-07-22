@@ -36,6 +36,26 @@ export default function PortalErrorBoundary({
     // dejamos console.error para que aparezca en el servidor de logs de
     // Next y el devtools del cliente. NO incluyas datos del usuario aqui.
     console.error("[portal-error-boundary]", error);
+
+    // Tras un deploy, el cliente puede pedir chunks viejos (404) y caer aqui.
+    // Recargar una vez suele resolver el desfase HTML/JS.
+    const isChunkError =
+      error.name === "ChunkLoadError" ||
+      /Loading chunk [\w-]+ failed/i.test(error.message) ||
+      /Failed to load chunk/i.test(error.message);
+    if (!isChunkError || typeof window === "undefined") return;
+
+    const reloadKey = "vp_chunk_reload";
+    try {
+      if (sessionStorage.getItem(reloadKey) === "1") {
+        sessionStorage.removeItem(reloadKey);
+        return;
+      }
+      sessionStorage.setItem(reloadKey, "1");
+      window.location.reload();
+    } catch {
+      // sessionStorage puede fallar en modo restringido; no bloqueamos la UI.
+    }
   }, [error]);
 
   return (

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { PortalBrandingHeader } from "./portal-branding-header";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 
@@ -34,14 +33,17 @@ export function AppTopBar({
   compact = false,
   onTourHelp,
 }: AppTopBarProps) {
-  const router = useRouter();
   const { user, status } = useAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
 
   const hasDistinctBack = showBack && backHref !== "/secciones";
   const backProps = hasDistinctBack
     ? {
-        onBackToSecciones: () => router.push(backHref),
+        // Navegacion completa: evita quedar atrapado en bundles SPA viejos
+        // (p. ej. un redirect automatico a /rotacion tras un deploy).
+        onBackToSecciones: () => {
+          window.location.assign(backHref);
+        },
         backLabel,
       }
     : {};
