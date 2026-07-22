@@ -1021,6 +1021,25 @@ export const MargenesBoard = ({
     }
   }, [mode, drillPath]);
 
+  // Detalle de factura: no reutilizar sort de listados (facturas/categorías/etc.).
+  useEffect(() => {
+    const onInvoiceDetail =
+      (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
+      (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura") ||
+      (mode === "cliente" &&
+        clienteFactPath.some((step) => step.type === "factura"));
+    if (!onInvoiceDetail) return;
+    if (
+      sortKey === "facturas" ||
+      sortKey === "categorias" ||
+      sortKey === "lineas" ||
+      sortKey === "sublineas" ||
+      sortKey === "items"
+    ) {
+      setSortKey(null);
+    }
+  }, [mode, factPath, drillPath, clienteFactPath, sortKey]);
+
   useEffect(() => {
     setPage(0);
   }, [

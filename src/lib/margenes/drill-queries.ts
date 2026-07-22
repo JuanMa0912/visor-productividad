@@ -12,6 +12,7 @@ import {
 import {
   buildMargenWhereForTable,
   clienteSelectSql,
+  facturaSedeSqlFilters,
   idTercExpr,
   isRollTable,
   mercadoTipoSql,
@@ -400,6 +401,17 @@ const queryDrillLevel0 = async (
   return { kpi, level: 0, levelName: "Día", rows };
 };
 
+/** Columnas ORDER BY válidas en detalle de factura (SELECT reducido). */
+const INVOICE_LINE_ORDER_ALLOWED = [
+  "ventasNetas",
+  "costoTotal",
+  "margenPesos",
+  "margenPct",
+  "cantidad",
+  "pvuIva",
+  "pcu",
+];
+
 /** Todas las líneas de una factura (sin filtros de ítem/categoría del drill). */
 const queryInvoiceLineRows = async (
   client: PoolClient,
@@ -408,6 +420,7 @@ const queryInvoiceLineRows = async (
   tipdoc: string,
   level: number,
   table: MargenDataTable,
+  sede?: { empresa?: string; idCo?: string },
 ): Promise<{ level: number; levelName: string; rows: DrillRow[] }> => {
   const params: unknown[] = [];
   let where = buildMargenWhereForTable(filters, params, table);
@@ -415,6 +428,22 @@ const queryInvoiceLineRows = async (
   where += ` AND ${documentoExpr(table)} = $${params.length - 1}`;
   where += ` AND ${tipdocExpr(table)} = $${params.length}`;
   where += ` AND ${documentoNotNull(table)}`;
+  const sedeParts = facturaSedeSqlFilters(
+    { empresa: sede?.empresa, idCo: sede?.idCo },
+    params,
+    table,
+  );
+  if (sedeParts.length > 0) {
+    where += ` AND ${sedeParts.join(" AND ")}`;
+  }
+
+  // Evita ORDER BY facturas/categorias/margen_pct sin alias en el SELECT.
+  const orderSql = buildMargenOrderBy(
+    filters.orderBy,
+    filters.orderDir,
+    "ventas_netas DESC",
+    INVOICE_LINE_ORDER_ALLOWED,
+  );
 
   const roll = isRollTable(table);
   const result = await client.query(
@@ -422,16 +451,33 @@ const queryInvoiceLineRows = async (
       ? `
     SELECT
       id_item,
-      COALESCE(NULLIF(item_descripcion, ''), id_item) AS descripcion,
-      id_linea1,
-      COALESCE(NULLIF(nombre_linea1, ''), id_linea1) AS linea,
-      cantidad,
-      ventas_netas,
-      costo_total,
-      ventas_con_iva
+      COALESCE(NULLIF(MAX(item_descripcion), ''), id_item) AS descripcion,
+      MAX(id_linea1) AS id_linea1,
+      COALESCE(NULLIF(MAX(nombre_linea1), ''), MAX(id_linea1)) AS linea,
+      COALESCE(SUM(cantidad), 0) AS cantidad,
+      COALESCE(SUM(ventas_netas), 0) AS ventas_netas,
+      COALESCE(SUM(costo_total), 0) AS costo_total,
+      COALESCE(SUM(margen_pesos), 0) AS margen_pesos,
+      COALESCE(SUM(ventas_con_iva), 0) AS ventas_con_iva,
+      CASE
+        WHEN SUM(COALESCE(ventas_netas, 0)) > 0
+        THEN SUM(COALESCE(margen_pesos, 0)) / SUM(COALESCE(ventas_netas, 0))
+        ELSE 0
+      END AS margen_pct,
+      CASE
+        WHEN SUM(COALESCE(cantidad, 0)) > 0
+        THEN SUM(COALESCE(ventas_con_iva, 0)) / SUM(COALESCE(cantidad, 0))
+        ELSE 0
+      END AS pvu_iva,
+      CASE
+        WHEN SUM(COALESCE(cantidad, 0)) > 0
+        THEN SUM(COALESCE(costo_total, 0)) / SUM(COALESCE(cantidad, 0))
+        ELSE 0
+      END AS pcu
     FROM ${table}
     WHERE ${where}
-    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+    GROUP BY id_item
+    ${orderSql}
     `
       : `
     SELECT
@@ -442,11 +488,28 @@ const queryInvoiceLineRows = async (
       COALESCE(SUM(COALESCE(cantidad, 0)), 0) AS cantidad,
       COALESCE(SUM(COALESCE(vlrtot_bru, 0)), 0) AS ventas_netas,
       COALESCE(SUM(COALESCE(tot_costo, 0)), 0) AS costo_total,
-      COALESCE(SUM(COALESCE(ven_totales, 0)), 0) AS ventas_con_iva
+      COALESCE(SUM(COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0)), 0) AS margen_pesos,
+      COALESCE(SUM(COALESCE(ven_totales, 0)), 0) AS ventas_con_iva,
+      CASE
+        WHEN SUM(COALESCE(vlrtot_bru, 0)) > 0
+        THEN SUM(COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0))
+             / SUM(COALESCE(vlrtot_bru, 0))
+        ELSE 0
+      END AS margen_pct,
+      CASE
+        WHEN SUM(COALESCE(cantidad, 0)) > 0
+        THEN SUM(COALESCE(ven_totales, 0)) / SUM(COALESCE(cantidad, 0))
+        ELSE 0
+      END AS pvu_iva,
+      CASE
+        WHEN SUM(COALESCE(cantidad, 0)) > 0
+        THEN SUM(COALESCE(tot_costo, 0)) / SUM(COALESCE(cantidad, 0))
+        ELSE 0
+      END AS pcu
     FROM ${table}
     WHERE ${where}
     GROUP BY 1, 2, 3, 4
-    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+    ${orderSql}
     `,
     params,
   );
@@ -699,6 +762,7 @@ export const queryDrillRows = async (
       factura.tipdoc,
       6,
       table,
+      { empresa: factura.empresa, idCo: factura.idCo },
     );
   }
 
@@ -753,6 +817,7 @@ export const queryFactNavRows = async (
       factura.tipdoc,
       3,
       table,
+      { empresa: factura.empresa, idCo: factura.idCo },
     );
   }
 

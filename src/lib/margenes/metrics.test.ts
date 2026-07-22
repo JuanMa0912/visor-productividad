@@ -30,6 +30,23 @@ test("buildMargenOrderBy usa whitelist de metricas", () => {
   );
 });
 
+test("buildMargenOrderBy respeta allowed del SELECT reducido", () => {
+  assert.equal(
+    buildMargenOrderBy("facturas", "desc", "ventas_netas DESC", [
+      "ventasNetas",
+      "margenPct",
+    ]),
+    "ORDER BY ventas_netas DESC",
+  );
+  assert.equal(
+    buildMargenOrderBy("margenPct", "asc", "ventas_netas DESC", [
+      "ventasNetas",
+      "margenPct",
+    ]),
+    "ORDER BY margen_pct ASC NULLS LAST",
+  );
+});
+
 test("shouldApplyMercadoTipoDefault solo sin categorias", () => {
   assert.equal(shouldApplyMercadoTipoDefault([]), true);
   assert.equal(shouldApplyMercadoTipoDefault(null), true);
