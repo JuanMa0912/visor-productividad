@@ -284,6 +284,9 @@ export function usePermissions() {
   const { user } = useAuth();
   return useMemo(() => {
     const isAdmin = user?.role === "admin";
+    const specialRoles = Array.isArray(user?.specialRoles)
+      ? user.specialRoles
+      : [];
     return {
       isAdmin,
       hasSection: (section: PortalSectionId) =>
@@ -302,7 +305,7 @@ export function usePermissions() {
               )),
         ),
       hasSpecialRole: (role: string) =>
-        Boolean(user && (isAdmin || user.specialRoles?.includes(role))),
+        Boolean(user && (isAdmin || specialRoles.includes(role))),
     };
   }, [user]);
 }

@@ -1,6 +1,7 @@
 import type { AuthRole, PortalProfileId } from "@/lib/auth/types";
 import type { PortalSectionId, PortalSubsectionId } from "@/lib/shared/portal-sections";
 import {
+  ensureParentSectionsForSubsections,
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
   PORTAL_SUBSECTIONS_BY_SECTION,
@@ -291,7 +292,10 @@ const constrainLineLockedDashboardOverrides = (
   }
 
   return {
-    allowedDashboards: dashboards,
+    allowedDashboards: ensureParentSectionsForSubsections(
+      dashboards,
+      subdashboards,
+    ),
     allowedSubdashboards: subdashboards,
   };
 };
@@ -325,15 +329,18 @@ export const materializePortalProfilePermissions = (
   overrides: PortalProfilePermissionOverrides = {},
 ): PortalProfileMaterializedPermissions => {
   if (profileId === "personalizado") {
+    const allowedSubdashboards = normalizeAllowedPortalSubsections(
+      emptyToNull(overrides.allowedSubdashboards),
+    );
+    const allowedDashboards = ensureParentSectionsForSubsections(
+      normalizeAllowedPortalSections(emptyToNull(overrides.allowedDashboards)),
+      allowedSubdashboards,
+    );
     return {
       portalProfile: "personalizado",
       role: "user",
-      allowedDashboards: normalizeAllowedPortalSections(
-        emptyToNull(overrides.allowedDashboards),
-      ),
-      allowedSubdashboards: normalizeAllowedPortalSubsections(
-        emptyToNull(overrides.allowedSubdashboards),
-      ),
+      allowedDashboards,
+      allowedSubdashboards,
       allowedLines: emptyToNull(overrides.allowedLines),
       specialRoles: emptyToNull(overrides.specialRoles),
     };

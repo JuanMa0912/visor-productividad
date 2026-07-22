@@ -57,6 +57,7 @@ export function canAccessRotacionBoard(
   allowedSubdashboards?: unknown,
 ): boolean {
   if (isAdmin) return true;
+  // Sin 3er argumento (= undefined): denegar. null/[] = todos los subtableros.
   if (allowedSubdashboards === undefined) return false;
   return canAccessPortalSubsection(allowedSubdashboards, "rotacion");
 }

@@ -45,6 +45,9 @@ import {
 import {
   PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTIONS,
+  ensureParentSectionsForSubsections,
+  normalizeAllowedPortalSections,
+  normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
 import { DEFAULT_LINES } from "@/lib/shared/constants";
 import { cn } from "@/lib/shared/utils";
@@ -707,14 +710,30 @@ export function UserFormModal({
                       }))}
                     selected={formState.allowedSubdashboards}
                     onToggle={(id, checked) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        allowedSubdashboards: checked
+                      setFormState((prev) => {
+                        const nextSubs = checked
                           ? prev.allowedSubdashboards.filter(
                               (entry) => entry !== id,
                             )
-                          : [...prev.allowedSubdashboards, id],
-                      }))
+                          : [...prev.allowedSubdashboards, id];
+                        // Si las secciones ya están restringidas, asegurar el padre.
+                        // Lista vacía = "todas" → no forzar padres (sigue siendo todas).
+                        if (prev.allowedDashboards.length === 0) {
+                          return { ...prev, allowedSubdashboards: nextSubs };
+                        }
+                        const parentSections =
+                          ensureParentSectionsForSubsections(
+                            normalizeAllowedPortalSections(
+                              prev.allowedDashboards,
+                            ),
+                            normalizeAllowedPortalSubsections(nextSubs),
+                          ) ?? [];
+                        return {
+                          ...prev,
+                          allowedSubdashboards: nextSubs,
+                          allowedDashboards: parentSections,
+                        };
+                      })
                     }
                     maxHeightClass="max-h-none"
                   />

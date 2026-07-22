@@ -179,6 +179,34 @@ export const canAccessPortalSubsection = (
   return normalized.includes(requiredSubsection);
 };
 
+/**
+ * Secciones padre de los subtableros dados.
+ * `null` secciones (= todas) se deja igual: ya incluye a los padres.
+ * Lista restringida: se fusionan los padres de cada subtablero.
+ */
+export const ensureParentSectionsForSubsections = (
+  sections: PortalSectionId[] | null,
+  subsections: PortalSubsectionId[] | null,
+): PortalSectionId[] | null => {
+  if (sections === null) return null;
+  if (!subsections || subsections.length === 0) return sections;
+
+  const parents = new Set<PortalSectionId>(sections);
+  const subsectionSet = new Set(subsections);
+  for (const sectionId of Object.keys(
+    PORTAL_SUBSECTIONS_BY_SECTION,
+  ) as PortalSectionId[]) {
+    if (
+      PORTAL_SUBSECTIONS_BY_SECTION[sectionId].some((subId) =>
+        subsectionSet.has(subId),
+      )
+    ) {
+      parents.add(sectionId);
+    }
+  }
+  return Array.from(parents);
+};
+
 export const PORTAL_SECTION_LABEL_BY_ID = new Map(
   PORTAL_SECTIONS.map((section) => [section.id, section.label]),
 );

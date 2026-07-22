@@ -553,7 +553,7 @@ export const getUserSession = async (): Promise<UserSession | null> => {
         allowedSubdashboards: normalizeAllowedPortalSubsections(
           row.allowedSubdashboards,
         ),
-        specialRoles: row.specialRoles,
+        specialRoles: Array.isArray(row.specialRoles) ? row.specialRoles : null,
         portalProfile: profileResult.ok ? profileResult.value : null,
         is_active: row.is_active,
         last_login_at: row.last_login_at,

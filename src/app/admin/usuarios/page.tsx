@@ -30,6 +30,9 @@ import { useDomInputSync } from "@/hooks/use-dom-input-sync";
 import {
   PORTAL_SECTION_LABEL_BY_ID,
   PORTAL_SECTIONS,
+  ensureParentSectionsForSubsections,
+  normalizeAllowedPortalSections,
+  normalizeAllowedPortalSubsections,
   resolvePortalSubsectionId,
   resolvePortalSectionId,
 } from "@/lib/shared/portal-sections";
@@ -825,6 +828,22 @@ export default function AdminUsuariosPage() {
       if (trimmedPassword.length > 0 && trimmedPassword.length < 8) {
         throw new Error("La contrasena debe tener minimo 8 caracteres.");
       }
+      const syncedDashboards =
+        formState.portalProfile === "admin"
+          ? null
+          : ensureParentSectionsForSubsections(
+              normalizeAllowedPortalSections(
+                formState.allowedDashboards.length > 0
+                  ? formState.allowedDashboards
+                  : null,
+              ),
+              normalizeAllowedPortalSubsections(
+                formState.allowedSubdashboards.length > 0
+                  ? formState.allowedSubdashboards
+                  : null,
+              ),
+            );
+
       const payload: Record<string, unknown> = {
         username: formState.username.trim(),
         portalProfile: formState.portalProfile,
@@ -846,12 +865,7 @@ export default function AdminUsuariosPage() {
             : formState.allowedLines.length > 0
               ? formState.allowedLines
               : null,
-        allowedDashboards:
-          formState.portalProfile === "admin"
-            ? null
-            : formState.allowedDashboards.length > 0
-              ? formState.allowedDashboards
-              : null,
+        allowedDashboards: syncedDashboards,
         allowedSubdashboards:
           formState.portalProfile === "admin"
             ? null

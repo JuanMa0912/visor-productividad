@@ -71,7 +71,7 @@ export function AppTopBar({
       isAdmin={isAdmin}
       compact={compact}
       username={user.username ?? null}
-      sede={user.sede}
+      sede={typeof user.sede === "string" ? user.sede : null}
       showSeccionesShortcut={showBack}
       onTourHelp={onTourHelp}
       {...backProps}

@@ -34,7 +34,8 @@ import {
 import "driver.js/dist/driver.css";
 import "@/lib/ui/product-tour/product-tour.css";
 
-const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
+/** Catálogo fijo de módulos Producto (orden de UI). */
+const PRODUCTO_MODULES: HubModuleItem[] = [
   {
     id: "productividad-home",
     icon: LineChart,
@@ -53,27 +54,25 @@ const BASE_PRODUCTO_MODULES: HubModuleItem[] = [
       "Entiende el aporte de cada linea al resultado desde margen, utilidad y rentabilidad.",
     href: "/margenes",
   },
+  {
+    id: "rotacion",
+    icon: RefreshCw,
+    badge: "ROTACION",
+    title: "Inventario con baja salida",
+    description:
+      "Visualiza productos con baja rotacion y los items que no se estan moviendo por sede.",
+    href: "/rotacion",
+  },
+  {
+    id: "informe-variacion",
+    icon: TrendingUp,
+    badge: "INFORME",
+    title: "Informe de Variacion",
+    description:
+      "Analiza variaciones comerciales MoM y YoY por sede, linea, sublinea e item desde margen unificado.",
+    href: "/informe-variacion",
+  },
 ];
-
-const ROTACION_MODULE: HubModuleItem = {
-  id: "rotacion",
-  icon: RefreshCw,
-  badge: "ROTACION",
-  title: "Inventario con baja salida",
-  description:
-    "Visualiza productos con baja rotacion y los items que no se estan moviendo por sede.",
-  href: "/rotacion",
-};
-
-const INFORME_VARIACION_MODULE: HubModuleItem = {
-  id: "informe-variacion",
-  icon: TrendingUp,
-  badge: "INFORME",
-  title: "Informe de Variacion",
-  description:
-    "Analiza variaciones comerciales MoM y YoY por sede, linea, sublinea e item desde margen unificado.",
-  href: "/informe-variacion",
-};
 
 const hubTour = PORTAL_HUB_TOUR_CONFIG.producto;
 
@@ -89,14 +88,16 @@ export default function ProductividadHubPage() {
     }
   }, [ready, hasSection, router]);
 
+  const allowedSubdashboards = user?.allowedSubdashboards ?? null;
+
   const canSeeRotacion = useMemo(
     () =>
       canAccessRotacionBoard(
         user?.specialRoles ?? null,
         isAdmin,
-        user?.allowedSubdashboards ?? null,
+        allowedSubdashboards,
       ),
-    [user?.specialRoles, user?.allowedSubdashboards, isAdmin],
+    [user?.specialRoles, allowedSubdashboards, isAdmin],
   );
 
   const canSeeInforme = useMemo(
@@ -112,38 +113,35 @@ export default function ProductividadHubPage() {
     [user],
   );
 
-  const modules = useMemo(() => {
-    const result = [...BASE_PRODUCTO_MODULES];
-    if (canSeeRotacion) {
-      result.splice(2, 0, ROTACION_MODULE);
-    }
-    if (canSeeInforme) {
-      const rotacionIndex = result.findIndex((module) => module.id === "rotacion");
-      const insertAt = rotacionIndex >= 0 ? rotacionIndex + 1 : 2;
-      result.splice(insertAt, 0, INFORME_VARIACION_MODULE);
-    }
-    return result;
-  }, [canSeeInforme, canSeeRotacion]);
+  const visibleModules = useMemo(() => {
+    if (!user && !isAdmin) return [];
+    return PRODUCTO_MODULES.filter((module) => {
+      if (isAdmin) return true;
+      if (module.id === "rotacion") return canSeeRotacion;
+      if (module.id === "informe-variacion") return canSeeInforme;
+      const subId = resolvePortalSubsectionId(module.id);
+      if (!subId) return false;
+      return canAccessPortalSubsection(allowedSubdashboards, subId);
+    });
+  }, [
+    allowedSubdashboards,
+    canSeeInforme,
+    canSeeRotacion,
+    isAdmin,
+    user,
+  ]);
 
-  const allowedSubdashboards = user?.allowedSubdashboards ?? null;
-  const visibleModules = useMemo(
-    () =>
-      modules.filter((module) => {
-        if (module.disabled) return true;
-        if (isAdmin) return true;
-        if (module.id === "informe-variacion") return canSeeInforme;
-        const subId = resolvePortalSubsectionId(module.id);
-        if (!subId) return false;
-        return canAccessPortalSubsection(allowedSubdashboards, subId);
-      }),
-    [allowedSubdashboards, canSeeInforme, isAdmin, modules],
-  );
-
+  // Un solo módulo permitido: ir directo (evita hub vacío/confuso).
   useEffect(() => {
-    if (ready && visibleModules.length === 0) {
+    if (!ready) return;
+    if (visibleModules.length === 1 && visibleModules[0]?.href) {
+      router.replace(visibleModules[0].href);
+      return;
+    }
+    if (visibleModules.length === 0) {
       router.replace("/secciones");
     }
-  }, [ready, router, visibleModules.length]);
+  }, [ready, router, visibleModules]);
 
   const tourSteps = useMemo(() => buildPortalHubTourSteps("producto"), []);
 
@@ -154,7 +152,7 @@ export default function ProductividadHubPage() {
     theme: hubTour.theme,
     userId: user?.id,
     ready,
-    contentReady: visibleModules.length > 0,
+    contentReady: visibleModules.length > 1,
   });
 
   const canAccessCronograma = hasSpecialRole("cronograma");
@@ -169,13 +167,23 @@ export default function ProductividadHubPage() {
     );
   }
 
+  if (visibleModules.length <= 1) {
+    return (
+      <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
+        <div className="mx-auto w-full max-w-2xl rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)]">
+          <p className="text-sm text-slate-600">Abriendo modulo...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-foreground">
       <PortalBrandingHeader
         canAccessCronograma={canAccessCronograma}
         isAdmin={isAdmin}
         username={user.username}
-        sede={user.sede}
+        sede={typeof user.sede === "string" ? user.sede : null}
         showSeccionesShortcut
         onTourHelp={startTour}
       />

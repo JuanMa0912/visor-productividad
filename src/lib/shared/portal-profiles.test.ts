@@ -63,6 +63,24 @@ test("materializePortalProfilePermissions asadero respeta subconjunto de tablero
   assert.deepEqual(permissions.allowedLines, ["asadero"]);
 });
 
+test("materializePortalProfilePermissions personalizado añade seccion padre", () => {
+  const permissions = materializePortalProfilePermissions("personalizado", {
+    allowedDashboards: ["venta"],
+    allowedSubdashboards: ["rotacion"],
+  });
+  assert.deepEqual(permissions.allowedDashboards, ["venta", "producto"]);
+  assert.deepEqual(permissions.allowedSubdashboards, ["rotacion"]);
+});
+
+test("materializePortalProfilePermissions personalizado no restringe si secciones vacias", () => {
+  const permissions = materializePortalProfilePermissions("personalizado", {
+    allowedDashboards: [],
+    allowedSubdashboards: ["rotacion"],
+  });
+  assert.equal(permissions.allowedDashboards, null);
+  assert.deepEqual(permissions.allowedSubdashboards, ["rotacion"]);
+});
+
 test("inferPortalProfileFromStoredPermissions detecta subadmin", () => {
   const profile = inferPortalProfileFromStoredPermissions({
     role: "user",
