@@ -78,11 +78,20 @@ export function LoginPageInner() {
 
       <main className="flex items-center justify-center bg-slate-50 px-6 py-12 lg:px-12">
         <div className="w-full max-w-md">
-          <div className="mb-8 grid grid-cols-2 items-center justify-items-center gap-x-4 gap-y-3 border-b border-slate-200 pb-6">
-            <MercamioLogo className="h-14 w-auto max-w-full object-contain" />
-            <MercatodoLogo className="h-14 w-auto max-w-full object-contain" />
-            <MerkmiosLogo className="h-14 w-auto max-w-full object-contain" />
-            <DinastiaLogo className="h-14 w-auto max-w-full object-contain" />
+          <div className="mb-8 grid grid-cols-2 gap-x-4 gap-y-4 border-b border-slate-200 pb-6">
+            {/* MercaMio primero (marca principal). Celdas fijas para igualar tamaño visual. */}
+            <div className="flex h-20 items-center justify-center overflow-hidden">
+              <MercamioLogo className="h-16 w-auto max-w-full object-contain" />
+            </div>
+            <div className="flex h-20 items-center justify-center overflow-hidden">
+              <MercatodoLogo className="h-16 w-auto max-w-full object-contain" />
+            </div>
+            <div className="flex h-20 items-center justify-center overflow-hidden">
+              <MerkmiosLogo className="h-[4.75rem] w-auto max-w-[110%] object-contain" />
+            </div>
+            <div className="flex h-20 items-center justify-center overflow-hidden">
+              <DinastiaLogo className="h-[4.75rem] w-auto max-w-[110%] object-contain" />
+            </div>
           </div>
 
           <h2 className="text-3xl font-bold text-slate-900">Bienvenido</h2>
