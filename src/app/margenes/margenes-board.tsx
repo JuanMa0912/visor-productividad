@@ -116,6 +116,25 @@ const formatStepLabel = (step: DrillPathStep | FactNavStep): string => {
   return step.label;
 };
 
+/** Consecutivo POS: rellena a 6 dígitos cuando es numérico. */
+const formatConsecutivo = (documento: string | undefined): string => {
+  const doc = String(documento ?? "").trim();
+  if (!doc) return "—";
+  return /^\d+$/.test(doc) ? doc.padStart(6, "0") : doc;
+};
+
+/**
+ * documento_docfc típico: 01-002-9X-556907 → 01 · 002 · 9X · 556907
+ * (empresa · sede · tipdoc · consecutivo)
+ */
+const formatDocumentoDocfc = (raw: string | undefined): string => {
+  const value = String(raw ?? "").trim();
+  if (!value) return "—";
+  const parts = value.split("-").map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 3) return parts.join(" · ");
+  return value;
+};
+
 const buildFacturaNavStep = (row: DrillRow): FactNavStep => {
   if (row.drillStep?.type === "factura") {
     return row.drillStep;
@@ -370,9 +389,9 @@ const colsForDrillLevel = (
         cellClassName: "min-w-[11rem] max-w-[16rem]",
         sortValue: (row) => row.nombreTerc ?? row.idTerc ?? "",
         render: (row) =>
-          row.nombreTerc || row.idTerc ? (
-            <span className="flex flex-col leading-tight">
-              <span className="truncate">{row.nombreTerc ?? "—"}</span>
+        row.nombreTerc || row.idTerc ? (
+            <span className="flex flex-col gap-0.5 leading-snug">
+              <span className="truncate text-[#dde3f0]">{row.nombreTerc ?? "—"}</span>
               {row.idTerc ? (
                 <span className="font-mono text-[10px] text-[#6b7590]">
                   {row.idTerc}
@@ -390,7 +409,7 @@ const colsForDrillLevel = (
       sortValue: (row) => row.idCaja ?? "",
       render: (row) =>
         row.idCaja ? (
-          <span className="font-mono text-[11px]">{row.idCaja}</span>
+          <span className="font-mono text-[11px] tabular-nums">{row.idCaja}</span>
         ) : (
           "—"
         ),
@@ -399,12 +418,17 @@ const colsForDrillLevel = (
       key: "label",
       label: "Consecutivo",
       drill: true,
-      sortValue: (row) => row.label,
+      cellClassName: "min-w-[7.5rem] whitespace-nowrap",
+      sortValue: (row) => row.documento ?? row.label,
       render: (row) => (
-        <span className="flex flex-col leading-tight">
-          <span className="font-mono">{row.label}</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="font-mono text-[12px] font-semibold tabular-nums text-[#dde3f0]">
+            {formatConsecutivo(row.documento ?? row.label)}
+          </span>
           {row.tipdoc ? (
-            <span className="text-[10px] text-[#6b7590]">{row.tipdoc}</span>
+            <span className="rounded border border-[#2a2f47] bg-[#1b1e2e] px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-[#8b93a7]">
+              {row.tipdoc}
+            </span>
           ) : null}
         </span>
       ),
@@ -416,8 +440,8 @@ const colsForDrillLevel = (
       sortValue: (row) => row.vendCcDesc ?? row.vendCc ?? "",
       render: (row) =>
         row.vendCcDesc || row.vendCc ? (
-          <span className="flex flex-col leading-tight">
-            <span className="truncate">{row.vendCcDesc ?? "—"}</span>
+          <span className="flex flex-col gap-0.5 leading-snug">
+            <span className="truncate text-[#dde3f0]">{row.vendCcDesc ?? "—"}</span>
             {row.vendCc ? (
               <span className="font-mono text-[10px] text-[#6b7590]">
                 {row.vendCc}
@@ -431,11 +455,16 @@ const colsForDrillLevel = (
     cols.push({
       key: "documento",
       label: "Documento",
-      cellClassName: "min-w-[9rem]",
+      cellClassName: "min-w-[11rem] whitespace-nowrap",
       sortValue: (row) => row.documentoDocfc ?? "",
       render: (row) =>
         row.documentoDocfc ? (
-          <span className="font-mono text-[11px]">{row.documentoDocfc}</span>
+          <span
+            className="font-mono text-[11px] tabular-nums tracking-wide text-[#a8b0c2]"
+            title={row.documentoDocfc}
+          >
+            {formatDocumentoDocfc(row.documentoDocfc)}
+          </span>
         ) : (
           "—"
         ),
@@ -870,34 +899,37 @@ export const MargenesBoard = ({
     void loadFilters();
   }, [filtersLoading, loadFilters]);
 
-  const loadBoard = useCallback(async () => {
+  const loadBoard = useCallback(async (signal?: AbortSignal) => {
     if (!dataCommitted || selectedSedes.length === 0) return;
     setLoading(true);
-    setFilterOptions(null);
     setError(null);
+    const aborted = () => Boolean(signal?.aborted);
+
+    const readError = async (
+      response: Response,
+      fallback: string,
+    ): Promise<string> => {
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        detail?: string;
+      } | null;
+      return body?.detail
+        ? `${body.error ?? fallback} (${body.detail})`
+        : (body?.error ?? fallback);
+    };
+
     try {
       if (mode === "sede") {
         const sedeUrl = `/api/margenes/data?mode=sede&${queryBase}${orderParam ? `&${orderParam}` : ""}`;
         const response = await fetch(sedeUrl, {
           cache: "no-store",
+          signal,
         });
         if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as {
-            error?: string;
-            detail?: string;
-          } | null;
-          const fallback =
-            mode === "sede"
-              ? "Error cargando sedes."
-              : mode === "cliente"
-                ? "Error cargando clientes."
-                : "Error cargando datos.";
-          const message = body?.detail
-            ? `${body.error ?? fallback} (${body.detail})`
-            : (body?.error ?? fallback);
-          throw new Error(message);
+          throw new Error(await readError(response, "Error cargando sedes."));
         }
         const data = (await response.json()) as { kpi: MargenKpi; rows: DrillRow[] };
+        if (aborted()) return;
         setSedeKpi(data.kpi);
         setSedeRows(data.rows);
         setPayload(null);
@@ -914,18 +946,12 @@ export const MargenesBoard = ({
           if (clienteSearch.trim()) url += `&search=${encodeURIComponent(clienteSearch.trim())}`;
         }
         if (orderParam) url += `&${orderParam}`;
-        const response = await fetch(url, { cache: "no-store" });
+        const response = await fetch(url, { cache: "no-store", signal });
         if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as {
-            error?: string;
-            detail?: string;
-          } | null;
-          const message = body?.detail
-            ? `${body.error ?? "Error cargando clientes."} (${body.detail})`
-            : (body?.error ?? "Error cargando clientes.");
-          throw new Error(message);
+          throw new Error(await readError(response, "Error cargando clientes."));
         }
         const data = (await response.json()) as TablePayload;
+        if (aborted()) return;
         setPayload(data);
         setSedeKpi(null);
         setSedeRows([]);
@@ -945,26 +971,27 @@ export const MargenesBoard = ({
       }
 
       if (orderParam) url += `&${orderParam}`;
-      const response = await fetch(url, { cache: "no-store" });
+      const response = await fetch(url, { cache: "no-store", signal });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-          detail?: string;
-        } | null;
-        const message = body?.detail
-          ? `${body.error ?? "Error cargando datos."} (${body.detail})`
-          : (body?.error ?? "Error cargando datos.");
-        throw new Error(message);
+        throw new Error(await readError(response, "Error cargando datos."));
       }
       const data = (await response.json()) as TablePayload;
+      if (aborted()) return;
       setPayload(data);
       setSedeKpi(null);
       setSedeRows([]);
     } catch (loadError) {
+      if (aborted()) return;
+      if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        return;
+      }
+      if (loadError instanceof Error && loadError.name === "AbortError") {
+        return;
+      }
       setError(loadError instanceof Error ? loadError.message : "Error cargando datos.");
-      setPayload(null);
+      // No vaciar payload: evita parpadeo / datos cruzados al fallar una carrera.
     } finally {
-      setLoading(false);
+      if (!aborted()) setLoading(false);
     }
   }, [
     dataCommitted,
@@ -1011,9 +1038,22 @@ export const MargenesBoard = ({
     mgSortDir,
   ]);
 
+  // Al cambiar de vista/ruta, vaciar filas viejas para no mostrar datos cruzados
+  // mientras llega la nueva respuesta (AbortController evita que la vieja las pise).
+  useEffect(() => {
+    setPayload(null);
+    setSedeRows([]);
+    setSedeKpi(null);
+    setError(null);
+  }, [mode, factTab, drillPath, factPath, clienteFocus, clienteFactPath]);
+
   useEffect(() => {
     if (!dataCommitted) return;
-    void loadBoard();
+    const controller = new AbortController();
+    void loadBoard(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [dataCommitted, loadBoard]);
 
   const kpi = mode === "sede" ? sedeKpi : payload?.kpi;
