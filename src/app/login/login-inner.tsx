@@ -79,18 +79,18 @@ export function LoginPageInner() {
       <main className="flex items-center justify-center bg-slate-50 px-6 py-12 lg:px-12">
         <div className="w-full max-w-md">
           <div className="mb-8 grid grid-cols-2 gap-x-4 gap-y-4 border-b border-slate-200 pb-6">
-            {/* MercaMio primero (marca principal). Celdas fijas para igualar tamaño visual. */}
-            <div className="flex h-20 items-center justify-center overflow-hidden">
+            {/* MercaMio primero (marca principal). Misma caja para las 4 marcas. */}
+            <div className="flex h-20 items-center justify-center">
               <MercamioLogo className="h-16 w-auto max-w-full object-contain" />
             </div>
-            <div className="flex h-20 items-center justify-center overflow-hidden">
+            <div className="flex h-20 items-center justify-center">
               <MercatodoLogo className="h-16 w-auto max-w-full object-contain" />
             </div>
-            <div className="flex h-20 items-center justify-center overflow-hidden">
-              <MerkmiosLogo className="h-[4.75rem] w-auto max-w-[110%] object-contain" />
+            <div className="flex h-20 items-center justify-center">
+              <MerkmiosLogo className="h-16 w-auto max-w-full object-contain" />
             </div>
-            <div className="flex h-20 items-center justify-center overflow-hidden">
-              <DinastiaLogo className="h-[4.75rem] w-auto max-w-[110%] object-contain" />
+            <div className="flex h-20 items-center justify-center">
+              <DinastiaLogo className="h-16 w-auto max-w-full object-contain" />
             </div>
           </div>
 
