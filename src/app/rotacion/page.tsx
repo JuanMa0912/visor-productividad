@@ -1406,18 +1406,33 @@ export function RotacionPageInner() {
     });
   }, [lineaN1FamilyKeys, lineaN1Options]);
 
+  const prevN1ForN2Ref = useRef<string | null>(null);
+  const prevN2OptionValuesRef = useRef<string[]>([]);
+
   useEffect(() => {
     if (!singleSelectedLineaN1) {
+      prevN1ForN2Ref.current = null;
+      prevN2OptionValuesRef.current = [];
       setSelectedLineaN2Values([]);
       return;
     }
     const optionValues = lineaN2Options.map((option) => option.value);
     const optionSet = new Set(optionValues);
+    const n1Changed = prevN1ForN2Ref.current !== singleSelectedLineaN1;
+    const prevOptionSet = new Set(prevN2OptionValuesRef.current);
+    // Catálogo N2 suele llegar en 2 pasos (filas parciales → API completa).
+    // Si aparecen códigos nuevos, marcar todas otra vez.
+    const catalogExpanded =
+      !n1Changed &&
+      optionValues.some((value) => !prevOptionSet.has(value));
+
+    prevN1ForN2Ref.current = singleSelectedLineaN1;
+    prevN2OptionValuesRef.current = optionValues;
+
     setSelectedLineaN2Values((prev) => {
-      const kept = prev.filter((value) => optionSet.has(value));
-      if (kept.length === 0 && optionValues.length > 0) return optionValues;
-      if (kept.length === 0) return [];
-      return kept;
+      if (optionValues.length === 0) return [];
+      if (n1Changed || catalogExpanded) return optionValues;
+      return prev.filter((value) => optionSet.has(value));
     });
   }, [singleSelectedLineaN1, lineaN2Options]);
 
