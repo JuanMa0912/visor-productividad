@@ -94,16 +94,26 @@ Orden completo despues de `schema-auth.sql`:
 40. `20260715_margen_item_dia_roll_atomic_refresh.sql` (rebuild completo via staging+rename; evita vaciar la tabla durante el refresh)
 41. `20260715_user_audit_trail.sql` (`app_user_admin_audit` + `app_user_login_attempt_log`)
 42. `20260716_informe_variacion_payload_std.sql` (snapshot JSON de `/informe-variacion` para first paint rapido)
-44. `20260723_dinastia_tenant_tables.sql` (tablas `margen_dinastia` / `rotacion_dinastia` / `ventas_dinastia` + `app_users.allowed_empresas`)
-44. `20260721_app_export_download_log.sql` (bitacora de descargas/exports; solo metadatos; retencion ~9 meses)
-45. `20260721_margen_factura_cliente.sql` (`documento_docfc`/`id_terc`/`nombre_terc` en `margen_final` + roll)
-46. `20260722_margen_factura_caja_vendedor.sql` (`id_caja`/`vend_cc`/`vend_cc_desc` en roll; refresh con MAX por factura)
-47. `20260723_margen_cliente_perf_indexes.sql` (indices `id_terc`/`documento_fc` en roll para pestaña Por Cliente)
+43. `20260721_app_export_download_log.sql` (bitacora de descargas/exports; solo metadatos; retencion ~9 meses)
+44. `20260721_margen_factura_cliente.sql` (`documento_docfc`/`id_terc`/`nombre_terc` en `margen_final` + roll)
+45. `20260722_margen_factura_caja_vendedor.sql` (`id_caja`/`vend_cc`/`vend_cc_desc` en roll; refresh con MAX por factura)
+46. `20260723_margen_cliente_perf_indexes.sql` (indices `id_terc`/`documento_fc` en roll para pestaña Por Cliente)
+47. `20260723_dinastia_tenant_tables.sql` (tablas `margen_dinastia` / `rotacion_dinastia` / `ventas_dinastia` + `app_users.allowed_empresas`)
+48. `20260723_rotacion_dinastia_matview.sql` (matview `rotacion_dinastia_item_dia_clean` + snapshot `rotacion_dinastia_item_periodo_std`)
 
-Tras `20260708_rotacion_clean_matview_n2_stable`, refrescar matview y snapshot:
+Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot:
 
 ```bash
 sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
+```
+
+El script refresca legacy y Dinastia. Tras aplicar solo la migracion Dinastia (matview vacia):
+
+```sql
+SET statement_timeout = 0;
+REFRESH MATERIALIZED VIEW rotacion_dinastia_item_dia_clean;
+ANALYZE rotacion_dinastia_item_dia_clean;
+SELECT * FROM refresh_rotacion_dinastia_item_periodo_std();
 ```
 
 
@@ -288,6 +298,9 @@ porcentajes.
 | `rotacion_item_dia_clean` | matview (migracion) | pre-limpia/agrega diario para `/api/rotacion`; expone `linea_n2_codigo` y `sublinea` (migraciones `20260706`/`20260708`). Excluye categoria Asaderos (`3`) y `V` |
 | `rotacion_item_periodo_std` | refresh nocturno | snapshot agregado rango rolling default (~1-3 s); hereda exclusion de cat. `3`/`V` de la matview |
 | `rotacion_item_periodo_std_meta` | refresh nocturno | periodo_start/end y refreshed_at del snapshot |
+| `rotacion_dinastia_item_dia_clean` | matview (`20260723_rotacion_dinastia_matview`) | mismo rol que `rotacion_item_dia_clean` sobre `rotacion_dinastia` |
+| `rotacion_dinastia_item_periodo_std` | refresh nocturno | snapshot rolling default para tenant Dinastia |
+| `rotacion_dinastia_item_periodo_std_meta` | refresh nocturno | meta del snapshot Dinastia |
 | `rotacion_v4` | ETL/servidor (legacy, sin UI en portal) |
 | `rotacion_abcd_config` | runtime/API | umbrales ABCD globales |
 | `rotacion_abcd_config_sede` | runtime/API | umbrales ABCD por empresa/sede |

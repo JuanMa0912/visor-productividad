@@ -24,7 +24,7 @@ export type RotacionRowsIdbCacheValue = {
 };
 
 /** Invalida entradas IDB anteriores cuando cambia el shape de filas (p. ej. metadata N2). */
-const ROTACION_ROWS_CACHE_SCHEMA = 3;
+const ROTACION_ROWS_CACHE_SCHEMA = 4;
 
 export const buildRotacionRowsCacheKey = (
   apiBasePath: string,

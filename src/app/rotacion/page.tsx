@@ -54,6 +54,11 @@ import {
   type CeroRotacionEstado,
   type RotacionSurtidoEstadoContext,
 } from "@/lib/rotacion/cero-estado";
+import {
+  ROTACION_SOURCE_DINASTIA,
+  ROTACION_SOURCE_LEGACY,
+  type RotacionSourceTable,
+} from "@/lib/rotacion/source-tables";
 import { cn, formatDateLabel } from "@/lib/shared/utils";
 import {
   FilterFieldLabel,
@@ -185,15 +190,26 @@ const formatLoadDuration = (ms: number): string => {
   return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 };
 
+const coerceRotacionSourceTable = (
+  value: string | undefined | null,
+): RotacionSourceTable | null => {
+  if (value === ROTACION_SOURCE_DINASTIA || value === ROTACION_SOURCE_LEGACY) {
+    return value;
+  }
+  return null;
+};
+
 export function RotacionPageInner() {
   const {
     apiBasePath,
-    sourceTable,
+    sourceTable: defaultSourceTable,
     lastSedeStorageKey,
     pageTitle,
     pageDescription,
     exportFilePrefix,
   } = useRotacionViewConfig();
+  const [activeSourceTable, setActiveSourceTable] = useState(defaultSourceTable);
+  const sourceTable = activeSourceTable;
   const router = useRouter();
   const { user: authUser, status: authStatus } = useRequireAuth();
   const { isAdmin, hasSection, hasSubsection } = usePermissions();
@@ -547,6 +563,10 @@ export function RotacionPageInner() {
         );
 
         applyFetchedRows(fetched, "Tabla lista");
+        const nextSource = coerceRotacionSourceTable(fetched.sourceTable);
+        if (nextSource) {
+          setActiveSourceTable(nextSource);
+        }
         void writeRotacionRowsIdbCache(rowsCacheKey, fetched);
         return true;
       } catch (err) {
@@ -770,6 +790,14 @@ export function RotacionPageInner() {
               comboParams.set("end", dateRange.end);
             }
             comboParams.set("catalogOnly", "1");
+            const comboEmpresas = Array.from(
+              new Set(
+                targetSedeSelectionsForQuery.map((s) => s.empresa).filter(Boolean),
+              ),
+            );
+            if (comboEmpresas.length === 1) {
+              comboParams.set("empresa", comboEmpresas[0]!);
+            }
             targetSedeSelectionsForQuery.forEach((sedeMeta) => {
               comboParams.append(
                 "sedeScope",
@@ -803,7 +831,16 @@ export function RotacionPageInner() {
               allLineasN1Nombres,
               comboPayload.filters?.lineasN1Nombres,
             );
+            if (comboPayload.meta?.sourceTable) {
+              const nextSource = coerceRotacionSourceTable(
+                comboPayload.meta.sourceTable,
+              );
+              if (nextSource) setActiveSourceTable(nextSource);
+            }
           }
+        } else {
+          const nextSource = coerceRotacionSourceTable(payload.meta?.sourceTable);
+          if (nextSource) setActiveSourceTable(nextSource);
         }
 
         setFilterCatalog({

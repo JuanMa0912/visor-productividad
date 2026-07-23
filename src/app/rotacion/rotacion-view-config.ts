@@ -1,8 +1,8 @@
-import { ROTACION_SOURCE_LEGACY } from "@/lib/rotacion/source-tables";
+import { ROTACION_SOURCE_LEGACY, type RotacionSourceTable } from "@/lib/rotacion/source-tables";
 
 export type RotacionViewConfig = {
   apiBasePath: string;
-  sourceTable: typeof ROTACION_SOURCE_LEGACY;
+  sourceTable: RotacionSourceTable;
   pageTitle: string;
   pageBadge: string;
   pageDescription: string;

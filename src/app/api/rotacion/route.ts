@@ -11,6 +11,8 @@ import { getRotacionSourceTable, runWithRotacionSourceTableAsync } from "@/lib/r
 import {
   ROTACION_SOURCE_DINASTIA,
   ROTACION_SOURCE_LEGACY,
+  resolveRotacionCleanMatview,
+  resolveRotacionPeriodoStdTable,
 } from "@/lib/rotacion/source-tables";
 import {
   canonicalizeEmpresaCode,
@@ -211,17 +213,17 @@ const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
  * cae al query original sobre la tabla cruda. Detectarla cada vez seria caro:
  * cacheamos el probe por 5 min.
  */
-const ROTACION_CLEAN_MATVIEW_NAME = "rotacion_item_dia_clean";
 const ROTACION_CLEAN_MATVIEW_PROBE_CACHE_TTL_MS = 5 * 60 * 1000;
+const rotacionCleanMatViewProbeCache = new Map<
+  string,
+  { exists: boolean; expiresAt: number }
+>();
 const ROTACION_SCHEMA_PROBE_CACHE_TTL_MS = 5 * 60 * 1000;
-let rotacionCleanMatViewProbeCache:
-  | { exists: boolean; expiresAt: number }
-  | null = null;
 let rotacionPeriodoStdSublineaProbeCache:
-  | { hasSublinea: boolean; expiresAt: number }
+  | { table: string; hasSublinea: boolean; expiresAt: number }
   | null = null;
 let rotacionMatviewSublineaProbeCache:
-  | { hasSublinea: boolean; expiresAt: number }
+  | { table: string; hasSublinea: boolean; expiresAt: number }
   | null = null;
 
 const tableHasColumn = async (
@@ -246,20 +248,23 @@ const tableHasColumn = async (
 const probeRotacionPeriodoStdHasSublineaColumns = async (
   client: RotacionBaseQueryClient,
 ): Promise<boolean> => {
+  const table = resolveRotacionPeriodoStdTable(getRotacionSourceTable());
   const now = Date.now();
   if (
     rotacionPeriodoStdSublineaProbeCache &&
-    rotacionPeriodoStdSublineaProbeCache.expiresAt > now
+    rotacionPeriodoStdSublineaProbeCache.expiresAt > now &&
+    rotacionPeriodoStdSublineaProbeCache.table === table
   ) {
     return rotacionPeriodoStdSublineaProbeCache.hasSublinea;
   }
   try {
     const hasSublinea = await tableHasColumn(
       client,
-      "rotacion_item_periodo_std",
+      table,
       "linea_n2_codigo",
     );
     rotacionPeriodoStdSublineaProbeCache = {
+      table,
       hasSublinea,
       expiresAt: now + ROTACION_SCHEMA_PROBE_CACHE_TTL_MS,
     };
@@ -272,20 +277,23 @@ const probeRotacionPeriodoStdHasSublineaColumns = async (
 const probeRotacionMatviewHasSublineaColumns = async (
   client: RotacionBaseQueryClient,
 ): Promise<boolean> => {
+  const table = resolveRotacionCleanMatview(getRotacionSourceTable());
   const now = Date.now();
   if (
     rotacionMatviewSublineaProbeCache &&
-    rotacionMatviewSublineaProbeCache.expiresAt > now
+    rotacionMatviewSublineaProbeCache.expiresAt > now &&
+    rotacionMatviewSublineaProbeCache.table === table
   ) {
     return rotacionMatviewSublineaProbeCache.hasSublinea;
   }
   try {
     const hasSublinea = await tableHasColumn(
       client,
-      ROTACION_CLEAN_MATVIEW_NAME,
+      table,
       "linea_n2_codigo",
     );
     rotacionMatviewSublineaProbeCache = {
+      table,
       hasSublinea,
       expiresAt: now + ROTACION_SCHEMA_PROBE_CACHE_TTL_MS,
     };
@@ -1184,16 +1192,16 @@ export const getRotationFilterCatalog = async (
     if (
       startIso &&
       endIso &&
-      sourceTable === ROTACION_SOURCE_LEGACY &&
       matchesRotacionPeriodoStdRange(periodoMeta, startIso, endIso)
     ) {
+      const periodoTable = resolveRotacionPeriodoStdTable(sourceTable);
       const periodoResult = await client.query(
         `
         SELECT DISTINCT
           empresa,
           sede_id,
           sede_name
-        FROM rotacion_item_periodo_std
+        FROM ${periodoTable}
         ORDER BY empresa ASC, sede_name ASC, sede_id ASC
         `,
       );
@@ -1371,7 +1379,8 @@ const queryRotationLineasN2 = async ({
   const value = await withPoolClient(async (client) => {
     const forceRawCategories = Boolean(forcedRotacionCategoriaKeys?.length);
     const matViewExists =
-      !forceRawCategories && (await ensureRotacionCleanMatViewProbe(client));
+      !forceRawCategories &&
+      (await ensureRotacionCleanMatViewProbe(client));
     const hasMatviewN2 =
       matViewExists &&
       (await probeRotacionMatviewHasSublineaColumns(client));
@@ -1382,7 +1391,7 @@ const queryRotationLineasN2 = async ({
         SELECT DISTINCT
           COALESCE(NULLIF(TRIM(linea_n2_codigo), ''), '__sin_n2__') AS linea_n2_raw,
           sublinea
-        FROM rotacion_item_dia_clean
+        FROM ${resolveRotacionCleanMatview(getRotacionSourceTable())}
         WHERE fecha BETWEEN $1::date AND $2::date
           AND sede_id = $3
           AND ($4::text IS NULL OR empresa = $4)
@@ -1479,7 +1488,8 @@ const queryRotationItemLineaN2Index = async ({
     const out: Record<string, string> = {};
     const forceRawCategories = Boolean(forcedRotacionCategoriaKeys?.length);
     const matViewExists =
-      !forceRawCategories && (await ensureRotacionCleanMatViewProbe(client));
+      !forceRawCategories &&
+      (await ensureRotacionCleanMatViewProbe(client));
     const hasMatviewN2 =
       matViewExists &&
       (await probeRotacionMatviewHasSublineaColumns(client));
@@ -1492,7 +1502,7 @@ const queryRotationItemLineaN2Index = async ({
           sede_id,
           item,
           linea_n2_codigo
-        FROM rotacion_item_dia_clean
+        FROM ${resolveRotacionCleanMatview(getRotacionSourceTable())}
         WHERE fecha BETWEEN $1::date AND $2::date
           AND sede_id = $3
           AND ($4::text IS NULL OR empresa = $4)
@@ -1838,7 +1848,7 @@ async function queryRotationRowsViaPeriodoStd({
       TO_CHAR(last_purchase_date, 'YYYY-MM-DD') AS last_purchase_date,
       effective_days,
       status
-    FROM rotacion_item_periodo_std
+    FROM ${resolveRotacionPeriodoStdTable(getRotacionSourceTable())}
     WHERE ($1::text IS NULL OR empresa = $1)
       AND ($2::text IS NULL OR sede_id = $2)
       AND (
@@ -1888,31 +1898,28 @@ async function queryRotationRowsViaPeriodoStd({
 }
 
 /**
- * Detecta si la matview `rotacion_item_dia_clean` existe en la BD.
- * Cache 5 min para no pagar el SELECT contra pg_matviews en cada request.
- * Si la matview no existe (porque aun no se aplico la migracion), devolvemos
- * `false` y el caller hace fallback al query original.
+ * Detecta si la matview limpia del tenant actual existe en la BD.
+ * Cache 5 min por nombre de matview.
  */
 async function ensureRotacionCleanMatViewProbe(
   client: RotacionBaseQueryClient,
 ): Promise<boolean> {
+  const matviewName = resolveRotacionCleanMatview(getRotacionSourceTable());
   const now = Date.now();
-  if (
-    rotacionCleanMatViewProbeCache &&
-    rotacionCleanMatViewProbeCache.expiresAt > now
-  ) {
-    return rotacionCleanMatViewProbeCache.exists;
+  const cached = rotacionCleanMatViewProbeCache.get(matviewName);
+  if (cached && cached.expiresAt > now) {
+    return cached.exists;
   }
   try {
     const result = await client.query(
       "SELECT 1 FROM pg_matviews WHERE matviewname = $1 LIMIT 1",
-      [ROTACION_CLEAN_MATVIEW_NAME],
+      [matviewName],
     );
     const exists = (result.rows?.length ?? 0) > 0;
-    rotacionCleanMatViewProbeCache = {
+    rotacionCleanMatViewProbeCache.set(matviewName, {
       exists,
       expiresAt: now + ROTACION_CLEAN_MATVIEW_PROBE_CACHE_TTL_MS,
-    };
+    });
     return exists;
   } catch (err) {
     console.warn(
@@ -1967,7 +1974,7 @@ const buildRotacionMatviewSql = (
         fecha_ultima_compra,
         fecha_ultima_entrada,
         carga_ts
-      FROM rotacion_item_dia_clean
+      FROM ${resolveRotacionCleanMatview(getRotacionSourceTable())}
       WHERE fecha BETWEEN $1::date AND $2::date
         AND ($5::text IS NULL OR empresa = $5)
         AND ($6::text IS NULL OR sede_id = $6)
@@ -3097,7 +3104,7 @@ export async function GET(request: Request) {
             meta: {
               effectiveRange: { start: "", end: "" },
               availableRange: { min: "", max: "" },
-              sourceTable: getRotacionSourceTable(),
+              sourceTable: rotacionSourceTable,
               maxSalesValue: null,
               abcdConfig,
             },
@@ -3455,7 +3462,7 @@ export async function GET(request: Request) {
                 min: minAvailableDate,
                 max: maxAvailableDate,
               },
-              sourceTable: getRotacionSourceTable(),
+              sourceTable: rotacionSourceTable,
               maxSalesValue,
               abcdConfig: scopedAbcdConfig,
               periodoStd: periodoStdMeta,
@@ -3489,7 +3496,7 @@ export async function GET(request: Request) {
                 min: minAvailableDate,
                 max: maxAvailableDate,
               },
-              sourceTable: getRotacionSourceTable(),
+              sourceTable: rotacionSourceTable,
               maxSalesValue,
               abcdConfig: scopedAbcdConfig,
               periodoStd: periodoStdMeta,
@@ -3705,7 +3712,7 @@ export async function GET(request: Request) {
               min: minAvailableDate,
               max: maxAvailableDate,
             },
-            sourceTable: getRotacionSourceTable(),
+            sourceTable: rotacionSourceTable,
             maxSalesValue,
             abcdConfig: scopedAbcdConfig,
             periodoStd: periodoStdMeta,
@@ -3751,7 +3758,7 @@ export async function GET(request: Request) {
           meta: {
             effectiveRange: { start: "", end: "" },
             availableRange: { min: "", max: "" },
-            sourceTable: getRotacionSourceTable(),
+            sourceTable: rotacionSourceTable,
             maxSalesValue: null,
             abcdConfig: DEFAULT_ABCD_CONFIG,
           },

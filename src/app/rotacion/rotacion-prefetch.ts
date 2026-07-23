@@ -17,6 +17,7 @@ export type RotacionSedeOption = {
 export type RotacionRowsFetchResult = {
   rows: RotationRow[];
   abcdConfig?: AbcdConfig;
+  sourceTable?: string;
 };
 
 const inFlightFetches = new Map<string, Promise<RotacionRowsFetchResult | null>>();
@@ -147,6 +148,12 @@ export async function fetchRotacionRowsForCache(input: {
       input.sedeSelections.forEach((sede) => {
         params.append("sedeScope", `${sede.empresa}::${sede.sedeId}`);
       });
+      const empresas = Array.from(
+        new Set(input.sedeSelections.map((sede) => sede.empresa.trim()).filter(Boolean)),
+      );
+      if (empresas.length === 1) {
+        params.set("empresa", empresas[0]!);
+      }
 
       const response = await fetch(
         `${input.apiBasePath}?${params.toString()}`,
@@ -175,6 +182,7 @@ export async function fetchRotacionRowsForCache(input: {
           input.sedeSelections.length === 1
             ? payload.meta?.abcdConfig
             : undefined,
+        sourceTable: payload.meta?.sourceTable,
       };
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return null;
