@@ -24,7 +24,7 @@ import {
   summaryMetricsSqlFor,
 } from "@/lib/margenes/metrics";
 import { parseDrillPath } from "@/lib/margenes/drill-path";
-import { parseFactPath, factPathToInvoiceKpiDrillPath } from "@/lib/margenes/fact-path";
+import { parseFactPath } from "@/lib/margenes/fact-path";
 import {
   queryClienteCompare,
   queryClienteFacturas,
@@ -33,6 +33,7 @@ import {
   queryFactNavRows,
   queryFilterOptions,
   queryFilterItemSearch,
+  queryInvoiceDetailBoard,
   queryKpi,
   querySedeCompare,
 } from "@/lib/margenes/drill-queries";
@@ -508,27 +509,18 @@ export async function GET(request: Request) {
     } else if (mode === "fact-nav") {
       const factPath = parseFactPath(url.searchParams.get("factPath"));
       const search = url.searchParams.get("search") ?? undefined;
-      const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
-      // Secuencial: un PoolClient no admite queries concurrentes (Promise.all cuelga).
-      const kpi = await queryKpi(client, parsed, kpiPath, dataTable, {
-        mercadoOnly: false,
-      });
-      const table = await queryFactNavRows(
-        client,
-        parsed,
-        factPath,
-        dataTable,
-        search,
-      );
-      payload = { kpi, ...table };
-    } else if (mode === "fact-list") {
-      const search = url.searchParams.get("search") ?? undefined;
-      const factPath = parseFactPath(url.searchParams.get("factPath"));
-      const mercadoOnly = false;
-      if (factPath.some((step) => step.type === "factura")) {
-        const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
-        const kpi = await queryKpi(client, parsed, kpiPath, dataTable, {
-          mercadoOnly,
+      const factura = factPath.find((step) => step.type === "factura");
+      if (factura?.type === "factura") {
+        payload = await queryInvoiceDetailBoard(
+          client,
+          parsed,
+          factura,
+          dataTable,
+          3,
+        );
+      } else {
+        const kpi = await queryKpi(client, parsed, [], dataTable, {
+          mercadoOnly: false,
         });
         const table = await queryFactNavRows(
           client,
@@ -538,6 +530,20 @@ export async function GET(request: Request) {
           search,
         );
         payload = { kpi, ...table };
+      }
+    } else if (mode === "fact-list") {
+      const search = url.searchParams.get("search") ?? undefined;
+      const factPath = parseFactPath(url.searchParams.get("factPath"));
+      const mercadoOnly = false;
+      const factura = factPath.find((step) => step.type === "factura");
+      if (factura?.type === "factura") {
+        payload = await queryInvoiceDetailBoard(
+          client,
+          parsed,
+          factura,
+          dataTable,
+          3,
+        );
       } else {
         const kpi = await queryKpi(client, parsed, [], dataTable, {
           mercadoOnly,
@@ -563,9 +569,14 @@ export async function GET(request: Request) {
       payload = { kpi, rows };
     } else if (mode === "cliente") {
       const search = url.searchParams.get("search") ?? undefined;
-      payload = await queryClienteCompare(client, parsed, dataTable, search);
+      const clientePayload = await queryClienteCompare(
+        client,
+        parsed,
+        dataTable,
+        search,
+      );
       payload = {
-        ...payload,
+        ...clientePayload,
         level: 0,
         levelName: "Cliente",
       };
@@ -573,19 +584,15 @@ export async function GET(request: Request) {
       const idTerc = url.searchParams.get("idTerc") ?? "";
       const search = url.searchParams.get("search") ?? undefined;
       const factPath = parseFactPath(url.searchParams.get("factPath"));
-      if (factPath.some((step) => step.type === "factura")) {
-        const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
-        const kpi = await queryKpi(client, parsed, kpiPath, dataTable, {
-          mercadoOnly: false,
-        });
-        const table = await queryFactNavRows(
+      const factura = factPath.find((step) => step.type === "factura");
+      if (factura?.type === "factura") {
+        payload = await queryInvoiceDetailBoard(
           client,
           parsed,
-          factPath,
+          factura,
           dataTable,
-          search,
+          3,
         );
-        payload = { kpi, ...table };
       } else {
         payload = {
           ...(await queryClienteFacturas(

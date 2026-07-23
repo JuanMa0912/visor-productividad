@@ -18,6 +18,8 @@ export type DrillPathStep =
       label: string;
       empresa?: string;
       idCo?: string;
+      /** YYYYMMDD — acelera el index lookup del detalle. */
+      fechaDcto?: string;
     };
 
 export const DRILL_LEVEL_NAMES = [
@@ -96,6 +98,10 @@ export const drillPathSqlFilters = (
       `${tipdocFc} = $${params.length}`,
     );
     parts.push(...facturaSedeSqlFilters(factura, params, table));
+    if (factura.fechaDcto && /^[0-9]{8}$/.test(factura.fechaDcto)) {
+      params.push(factura.fechaDcto);
+      parts.push(`fecha_dcto = $${params.length}`);
+    }
   }
 
   return parts;

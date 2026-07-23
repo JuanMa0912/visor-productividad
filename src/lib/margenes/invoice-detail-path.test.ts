@@ -78,6 +78,9 @@ describe("factPathToInvoiceKpiDrillPath", () => {
           documento: "FV-300",
           tipdoc: "02",
           label: "FV-300",
+          empresa: "mercamio",
+          idCo: "003",
+          fechaDcto: "20260715",
         },
       ]),
       [
@@ -86,6 +89,9 @@ describe("factPathToInvoiceKpiDrillPath", () => {
           documento: "FV-300",
           tipdoc: "02",
           label: "FV-300",
+          empresa: "mercamio",
+          idCo: "003",
+          fechaDcto: "20260715",
         },
       ],
     );

@@ -5,6 +5,7 @@ import {
   empresaLabel,
   filterSedeOptionsByEmpresas,
   parseSedeKey,
+  sedeKey,
   sedeLabel,
   tipoLabel,
   toMargenPct,
@@ -102,6 +103,8 @@ export type DrillRow = {
   empresa?: string;
   idCo?: string;
   fecha?: string;
+  /** Fecha compacta YYYYMMDD (para lookup rápido de factura). */
+  fechaDcto?: string;
   drillable: boolean;
   drillStep?: DrillPathStep;
   isAcum?: boolean;
@@ -195,7 +198,8 @@ const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
   const tipdoc = String(row.tipdoc);
   const empresa = String(row.empresa);
   const idCo = String(row.id_co);
-  const metrics = mapMetrics(row);
+  const fechaDcto = cleanText(row.fecha_dcto);
+  const metrics = mapMetrics(row as Record<string, string | number>);
   return {
     ...metrics,
     key: `${empresa}|${idCo}|${documento}|${tipdoc}`,
@@ -212,6 +216,7 @@ const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
     empresa,
     idCo,
     sede: sedeLabel(empresa, idCo),
+    fechaDcto,
     drillable: true,
     drillStep: {
       type: "factura",
@@ -220,6 +225,7 @@ const mapFacturaBoardRow = (row: Record<string, unknown>): DrillRow => {
       label: documento,
       empresa,
       idCo,
+      ...(fechaDcto ? { fechaDcto } : {}),
     },
   };
 };
@@ -437,32 +443,195 @@ const BOARD_FACTURA_ORDER_ALLOWED = [
   "pcu",
 ];
 
-/** Todas las líneas de una factura (sin filtros de ítem/categoría del drill). */
-const queryInvoiceLineRows = async (
-  client: PoolClient,
+type InvoiceFactRef = {
+  documento: string;
+  tipdoc: string;
+  empresa?: string;
+  idCo?: string;
+  fechaDcto?: string;
+};
+
+/** Si el usuario tiene sedes acotadas, no servir facturas de otra sede. */
+const invoiceSedeAllowed = (
   filters: MargenQueryFilters,
-  documento: string,
-  tipdoc: string,
-  level: number,
+  factura: InvoiceFactRef,
+): boolean => {
+  if (filters.sedes.length === 0) return true;
+  const empresa = factura.empresa?.trim();
+  const idCo = factura.idCo?.trim();
+  if (!empresa || !idCo) return true;
+  const key = sedeKey(empresa, idCo);
+  return filters.sedes.some((raw) => {
+    const parsed = parseSedeKey(raw);
+    return parsed !== null && sedeKey(parsed.empresa, parsed.idCo) === key;
+  });
+};
+
+/**
+ * WHERE del detalle de factura: igualdad por documento/tipdoc/sede/fecha
+ * para usar margen_final_roll_idx_documento (evita BETWEEN + UNNEST de sedes).
+ */
+const buildInvoiceDetailWhere = (
+  filters: MargenQueryFilters,
+  factura: InvoiceFactRef,
+  params: unknown[],
   table: MargenDataTable,
-  sede?: { empresa?: string; idCo?: string },
-): Promise<{ level: number; levelName: string; rows: DrillRow[] }> => {
-  const params: unknown[] = [];
-  let where = buildMargenWhereForTable(filters, params, table);
-  params.push(documento, tipdoc);
-  where += ` AND ${documentoExpr(table)} = $${params.length - 1}`;
-  where += ` AND ${tipdocExpr(table)} = $${params.length}`;
-  where += ` AND ${documentoNotNull(table)}`;
+): string => {
+  const parts: string[] = [];
+  const roll = isRollTable(table);
+
+  params.push(factura.documento, factura.tipdoc);
+  parts.push(`${documentoExpr(table)} = $${params.length - 1}`);
+  parts.push(`${tipdocExpr(table)} = $${params.length}`);
+  parts.push(documentoNotNull(table));
+
   const sedeParts = facturaSedeSqlFilters(
-    { empresa: sede?.empresa, idCo: sede?.idCo },
+    { empresa: factura.empresa, idCo: factura.idCo },
     params,
     table,
   );
   if (sedeParts.length > 0) {
-    where += ` AND ${sedeParts.join(" AND ")}`;
+    parts.push(...sedeParts);
+  } else if (filters.sedes.length > 0) {
+    const sedePairs = filters.sedes
+      .map(parseSedeKey)
+      .filter((pair): pair is { empresa: string; idCo: string } => pair !== null);
+    if (sedePairs.length > 0) {
+      const empresaList = sedePairs.map((pair) => pair.empresa);
+      const coList = sedePairs.map((pair) => pair.idCo);
+      params.push(empresaList, coList);
+      if (roll) {
+        parts.push(
+          `(empresa_norm, id_co_norm) IN (
+            SELECT * FROM UNNEST($${params.length - 1}::text[], $${params.length}::text[]) AS t(empresa, id_co)
+          )`,
+        );
+      } else {
+        parts.push(
+          `(LOWER(TRIM(COALESCE(empresa, ''))), LPAD(TRIM(COALESCE(id_co, '')), 3, '0')) IN (
+            SELECT * FROM UNNEST($${params.length - 1}::text[], $${params.length}::text[]) AS t(empresa, id_co)
+          )`,
+        );
+      }
+    }
   }
 
-  // Evita ORDER BY facturas/categorias/margen_pct sin alias en el SELECT.
+  if (factura.fechaDcto && /^[0-9]{8}$/.test(factura.fechaDcto)) {
+    params.push(factura.fechaDcto);
+    parts.push(`fecha_dcto = $${params.length}`);
+  } else if (filters.fechas.length > 0) {
+    params.push(filters.fechas);
+    parts.push(`fecha_dcto = ANY($${params.length}::text[])`);
+  } else {
+    params.push(filters.fromCompact, filters.toCompact);
+    parts.push(`fecha_dcto BETWEEN $${params.length - 1} AND $${params.length}`);
+  }
+
+  if (filters.empresas.length > 0 && !factura.empresa?.trim()) {
+    params.push(filters.empresas);
+    parts.push(
+      roll
+        ? `empresa_norm = ANY($${params.length}::text[])`
+        : `LOWER(TRIM(COALESCE(empresa, ''))) = ANY($${params.length}::text[])`,
+    );
+  }
+
+  if (roll) {
+    if (filters.categorias.length > 0) {
+      params.push(filters.categorias);
+      parts.push(`id_tipo = ANY($${params.length}::text[])`);
+    }
+    if (filters.excludedCategorias && filters.excludedCategorias.length > 0) {
+      params.push(filters.excludedCategorias);
+      parts.push(`NOT (id_tipo = ANY($${params.length}::text[]))`);
+    }
+    if (filters.lineas.length > 0) {
+      params.push(filters.lineas);
+      parts.push(`id_linea1 = ANY($${params.length}::text[])`);
+    }
+    if (filters.sublineas.length > 0) {
+      params.push(filters.sublineas);
+      parts.push(`id_linea2 = ANY($${params.length}::text[])`);
+    }
+    if (filters.items.length > 0) {
+      params.push(filters.items);
+      parts.push(`id_item = ANY($${params.length}::text[])`);
+    }
+  } else {
+    if (filters.categorias.length > 0) {
+      params.push(filters.categorias);
+      parts.push(
+        `TRIM(COALESCE(id_tipo::text, '')) = ANY($${params.length}::text[])`,
+      );
+    }
+    if (filters.excludedCategorias && filters.excludedCategorias.length > 0) {
+      params.push(filters.excludedCategorias);
+      parts.push(
+        `NOT (TRIM(COALESCE(id_tipo::text, '')) = ANY($${params.length}::text[]))`,
+      );
+    }
+    if (filters.lineas.length > 0) {
+      params.push(filters.lineas);
+      parts.push(
+        `TRIM(COALESCE(id_linea1::text, '')) = ANY($${params.length}::text[])`,
+      );
+    }
+    if (filters.sublineas.length > 0) {
+      params.push(filters.sublineas);
+      parts.push(
+        `TRIM(COALESCE(id_linea2::text, '')) = ANY($${params.length}::text[])`,
+      );
+    }
+    if (filters.items.length > 0) {
+      params.push(filters.items);
+      parts.push(
+        `TRIM(COALESCE(id_item::text, '')) = ANY($${params.length}::text[])`,
+      );
+    }
+  }
+
+  return parts.join(" AND ");
+};
+
+const kpiFromInvoiceLines = (rows: DrillRow[]): MargenKpi => {
+  let ventasNetas = 0;
+  let costoTotal = 0;
+  let cantidad = 0;
+  let ventasConIva = 0;
+  for (const row of rows) {
+    ventasNetas += row.ventasNetas;
+    costoTotal += row.costoTotal;
+    cantidad += row.cantidad;
+    ventasConIva += row.ventasConIva;
+  }
+  const margenPesos = ventasNetas - costoTotal;
+  return buildKpiPayload({
+    ventas_netas: ventasNetas,
+    costo_total: costoTotal,
+    margen_pesos: margenPesos,
+    cantidad,
+    ventas_con_iva: ventasConIva,
+    facturas: rows.length > 0 ? 1 : 0,
+    dias: rows.length > 0 ? 1 : 0,
+    sedes: rows.length > 0 ? 1 : 0,
+  });
+};
+
+/** Líneas de una factura vía lookup indexado (documento + tipdoc + sede + fecha). */
+const queryInvoiceLineRows = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  factura: InvoiceFactRef,
+  level: number,
+  table: MargenDataTable,
+): Promise<{ level: number; levelName: string; rows: DrillRow[] }> => {
+  if (!invoiceSedeAllowed(filters, factura)) {
+    return { level, levelName: "Ítems de factura", rows: [] };
+  }
+
+  const params: unknown[] = [];
+  const where = buildInvoiceDetailWhere(filters, factura, params, table);
+
   const orderSql = buildMargenOrderBy(
     filters.orderBy,
     filters.orderDir,
@@ -543,6 +712,32 @@ const queryInvoiceLineRows = async (
     level,
     levelName: "Ítems de factura",
     rows: mapInvoiceLineRows(result.rows),
+  };
+};
+
+/** Detalle de factura: un solo round-trip; KPI se agrega desde las líneas. */
+export const queryInvoiceDetailBoard = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  factura: InvoiceFactRef,
+  table: MargenDataTable,
+  level = 3,
+): Promise<{
+  kpi: MargenKpi;
+  level: number;
+  levelName: string;
+  rows: DrillRow[];
+}> => {
+  const tableResult = await queryInvoiceLineRows(
+    client,
+    filters,
+    factura,
+    level,
+    table,
+  );
+  return {
+    kpi: kpiFromInvoiceLines(tableResult.rows),
+    ...tableResult,
   };
 };
 
@@ -780,15 +975,7 @@ export const queryDrillRows = async (
 
   const factura = path.find((step) => step.type === "factura");
   if (factura?.type === "factura") {
-    return queryInvoiceLineRows(
-      client,
-      filters,
-      factura.documento,
-      factura.tipdoc,
-      6,
-      table,
-      { empresa: factura.empresa, idCo: factura.idCo },
-    );
+    return queryInvoiceLineRows(client, filters, factura, 6, table);
   }
 
   return {
@@ -819,6 +1006,11 @@ export const queryDrillBoard = async (
   }
 
   const kpiPath = drillPathForInvoiceDetail(path);
+  const factura = kpiPath.find((step) => step.type === "factura");
+  if (factura?.type === "factura") {
+    return queryInvoiceDetailBoard(client, filters, factura, table, 6);
+  }
+
   // Secuencial: mismo PoolClient no soporta queries concurrentes.
   const kpi = await queryKpi(client, filters, kpiPath, table);
   const tableResult = await queryDrillRows(
@@ -840,15 +1032,7 @@ export const queryFactNavRows = async (
 ): Promise<{ level: number; levelName: string; rows: DrillRow[] }> => {
   const factura = path.find((step) => step.type === "factura");
   if (factura?.type === "factura") {
-    return queryInvoiceLineRows(
-      client,
-      filters,
-      factura.documento,
-      factura.tipdoc,
-      3,
-      table,
-      { empresa: factura.empresa, idCo: factura.idCo },
-    );
+    return queryInvoiceLineRows(client, filters, factura, 3, table);
   }
 
   const level = path.length;

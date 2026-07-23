@@ -148,6 +148,7 @@ const buildFacturaNavStep = (row: DrillRow): FactNavStep => {
     label: row.label,
     empresa: row.empresa,
     idCo: row.idCo,
+    ...(row.fechaDcto ? { fechaDcto: row.fechaDcto } : {}),
   };
 };
 
