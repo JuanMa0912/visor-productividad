@@ -2,6 +2,7 @@ import {
   filterRowIndices,
   aggregateIndicesBySede,
   filterIndexedRowIndices,
+  INFORME_UNIT_SUMMARY_KEY_INDEX,
   type PeriodTriple,
 } from "@/lib/informe-variacion/aggregate";
 import {
@@ -10,7 +11,7 @@ import {
   formatInformeValue,
   heatmapCellStyle,
 } from "@/lib/informe-variacion/format";
-import { readInformeRowPeriodTriple } from "@/lib/informe-variacion/informe-metric-values";
+import { readInformeRowPeriodTripleForLevel } from "@/lib/informe-variacion/informe-metric-values";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 
@@ -198,7 +199,12 @@ export const buildMatrixExportRows = ({
   const totPer: PeriodTriple[] = Array.from({ length: payload.sedes.length }, () => [0, 0, 0]);
   for (const rowIndex of filteredIndices) {
     const row = payload.rows[rowIndex]!;
-    const triple = readInformeRowPeriodTriple(row, metric, payload.metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      payload.metricCtx,
+      INFORME_UNIT_SUMMARY_KEY_INDEX,
+    );
     const bucket = totPer[row[0]]!;
     bucket[0] += triple[0];
     bucket[1] += triple[1];

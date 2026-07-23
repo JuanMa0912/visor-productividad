@@ -154,10 +154,10 @@ describe("buildInformeLineUomIndex", () => {
       lins: ["01 FRUVER", "08 ACEITES"],
     };
     const rows: InformeCompactRow[] = [
-      [0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 1, 20, 0, 0, 0, 0, 0],
-      [0, 0, 1, 1, 2, 5, 0, 0, 0, 0, 0],
-      [0, 0, 1, 1, 3, 8, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 20, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 1, 1, 2, 5, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 1, 1, 3, 8, 0, 0, 0, 0, 0, 0, 0, 0],
     ];
     const rowIndex = buildInformeRowIndex(rows, ["E1"]);
     const index = buildInformeLineUomIndex(rowIndex, ctx);

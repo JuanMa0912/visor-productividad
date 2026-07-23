@@ -190,6 +190,9 @@ const buildInformeThreePeriodSql = (
         OR SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(ventas_netas, 0) ELSE 0 END) <> 0
         OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(ventas_netas, 0) ELSE 0 END) <> 0
         OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(ventas_netas, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(margen_pesos, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(margen_pesos, 0) ELSE 0 END) <> 0
+        OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(margen_pesos, 0) ELSE 0 END) <> 0
     `;
   }
 
@@ -236,6 +239,9 @@ const buildInformeThreePeriodSql = (
       OR SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) <> 0
       OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) <> 0
       OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(vlrtot_bru, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $1 AND fecha_dcto <= $2 THEN COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $3 AND fecha_dcto <= $4 THEN COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0) ELSE 0 END) <> 0
+      OR SUM(CASE WHEN fecha_dcto >= $5 AND fecha_dcto <= $6 THEN COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0) ELSE 0 END) <> 0
   `;
 };
 
@@ -282,7 +288,10 @@ export const queryInformeVariacionRows = async (
       toNum(row.u_yoy) !== 0 ||
       toNum(row.v_cur) !== 0 ||
       toNum(row.v_mom) !== 0 ||
-      toNum(row.v_yoy) !== 0,
+      toNum(row.v_yoy) !== 0 ||
+      toNum(row.m_cur) !== 0 ||
+      toNum(row.m_mom) !== 0 ||
+      toNum(row.m_yoy) !== 0,
   );
 };
 

@@ -8,7 +8,7 @@ import {
   useState,
   startTransition,
 } from "react";
-import { filterRowIndices, type PeriodTriple } from "@/lib/informe-variacion/aggregate";
+import { filterRowIndices, INFORME_UNIT_SUMMARY_KEY_INDEX, type PeriodTriple } from "@/lib/informe-variacion/aggregate";
 import {
   buildMatrixAggCache,
   buildSublineItemAgg,
@@ -20,7 +20,7 @@ import {
   type PartialDualMatrixAggCache,
   type SublineItemAgg,
 } from "@/lib/informe-variacion/matrix-agg-cache";
-import { readInformeRowPeriodTriple } from "@/lib/informe-variacion/informe-metric-values";
+import { readInformeRowPeriodTripleForLevel } from "@/lib/informe-variacion/informe-metric-values";
 import type {
   InformeCompactRow,
   InformeMetric,
@@ -315,10 +315,11 @@ export const useMatrixAggCache = (
       );
       for (const rowIndex of filteredIndices) {
         const row = payload.rows[rowIndex]!;
-        const triple = readInformeRowPeriodTriple(
+        const triple = readInformeRowPeriodTripleForLevel(
           row,
           activeMetric,
           payload.metricCtx,
+          INFORME_UNIT_SUMMARY_KEY_INDEX,
         );
         const bucket = buckets[row[0]];
         bucket[0] += triple[0];

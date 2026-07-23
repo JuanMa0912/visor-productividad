@@ -178,7 +178,7 @@ export const resolveGroupDisplayUom = (
 
   for (const index of itemIndices) {
     const itemLabel = ctx.items[index] ?? "";
-    const unitId = ctx.ums[index] ?? "";
+    const unitId = ctx.ums?.[index] ?? "";
     const text = normalizeUomText(itemLabel);
 
     if (isExplicitCountItem(text)) return null;
@@ -235,8 +235,9 @@ const mergeItemIndices = (
 /** Agrupa ítems por sublínea/línea y calcula kilos o litros para cada grupo. */
 export const buildInformeLineUomIndex = (
   rowIndex: InformeRowIndex,
-  ctx: { items: string[]; ums: string[] },
+  ctx: { items: string[]; ums?: string[] },
 ): InformeLineUomIndex => {
+  const safeCtx = { items: ctx.items, ums: ctx.ums ?? [] };
   const lineDisplayUom = new Map<number, string>();
   const sublineDisplayUom = new Map<string, string>();
   const sublineItemsMap = new Map<string, Set<number>>();
@@ -262,13 +263,13 @@ export const buildInformeLineUomIndex = (
 
   for (const [subKey, itemSet] of sublineItemsMap) {
     const itemIndices = [...itemSet];
-    const label = resolveGroupDisplayUom(itemIndices, ctx);
+    const label = resolveGroupDisplayUom(itemIndices, safeCtx);
     if (label) sublineDisplayUom.set(subKey, label);
   }
 
   for (const [lin, itemSet] of lineItemsMap) {
     const itemIndices = [...itemSet];
-    const label = resolveGroupDisplayUom(itemIndices, ctx);
+    const label = resolveGroupDisplayUom(itemIndices, safeCtx);
     if (label) lineDisplayUom.set(lin, label);
   }
 

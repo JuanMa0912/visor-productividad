@@ -20,12 +20,13 @@ const samplePayload = (): InformeVariacionPayload => ({
   ],
   rows: [
     [0, 0, 0, 0, 0, 100, 80, 90, 200, 160, 180, 40, 32, 36],
-    [1, 0, 0, 0, 1, 50, 40, 45, 120, 100, 110],
+    [1, 0, 0, 0, 1, 50, 40, 45, 120, 100, 110, 20, 16, 18],
   ],
   cats: ["Asaderos"],
   lins: ["Pollo"],
   subs: ["Entero"],
   items: ["Pollo entero", "Pollo entero premium"],
+  ums: ["UND", "UND"],
   meta: { rowCount: 2, comparisonAvailable: true, generatedAt: "20260710120000" },
 });
 

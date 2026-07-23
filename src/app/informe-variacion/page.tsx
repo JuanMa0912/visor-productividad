@@ -359,8 +359,13 @@ export default function InformeVariacionPage() {
       if (!options.force) {
         const cached = readCachedPayload(year, month, rangeId);
         if (cached) return cached;
-        const inflight = inflightRef.current.get(key);
-        if (inflight) return inflight;
+        if (!signal.aborted) {
+          const inflight = inflightRef.current.get(key);
+          if (inflight) return inflight;
+        }
+      }
+      if (signal.aborted) {
+        throw new DOMException("Aborted", "AbortError");
       }
 
       const request = (async () => {
@@ -372,11 +377,15 @@ export default function InformeVariacionPage() {
           INFORME_FETCH_TIMEOUT_MS,
         );
         try {
+          if (signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
           const params = new URLSearchParams({
             year: String(year),
             month: String(month),
             range: rangeId,
           });
+          if (options.force) params.set("force", "1");
           const response = await fetch(
             `/api/informe-variacion?${params.toString()}`,
             {
@@ -384,6 +393,9 @@ export default function InformeVariacionPage() {
               signal: timeoutController.signal,
             },
           );
+          if (signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
           if (response.status === 401) {
             router.replace("/login");
             throw new Error("No autorizado.");
@@ -396,6 +408,9 @@ export default function InformeVariacionPage() {
           if (!response.ok) {
             throw new Error(data.error ?? "No fue posible cargar el informe.");
           }
+          if (signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
           const scoped = storePayload(year, month, rangeId, data);
           if (!scoped) {
             throw new Error("Sin datos en el alcance permitido para este informe.");
@@ -404,7 +419,9 @@ export default function InformeVariacionPage() {
         } finally {
           window.clearTimeout(timeoutId);
           signal.removeEventListener("abort", onAbort);
-          inflightRef.current.delete(key);
+          if (inflightRef.current.get(key) === request) {
+            inflightRef.current.delete(key);
+          }
         }
       })();
 
@@ -423,7 +440,7 @@ export default function InformeVariacionPage() {
     ): Promise<"ok" | "fallback"> => {
       const bundleKey = buildMonthBundleCacheKey(year, month, scopeCacheSuffix);
       if (!options.force) {
-        const ranges = getAvailableInformeDayRanges(year, month);
+        const ranges = getAvailableInformeDayRanges(year, month, new Date(), maxDate);
         const allCached =
           ranges.length > 0 &&
           ranges.every((range) =>
@@ -431,11 +448,13 @@ export default function InformeVariacionPage() {
           );
         if (allCached) return "ok";
 
-        const inflight = bundleInflightRef.current.get(bundleKey);
-        if (inflight) {
-          await inflight;
-          return "ok";
+        if (!signal.aborted) {
+          const inflight = bundleInflightRef.current.get(bundleKey);
+          if (inflight) return inflight;
         }
+      }
+      if (signal.aborted) {
+        throw new DOMException("Aborted", "AbortError");
       }
 
       const request = (async (): Promise<"ok" | "fallback"> => {
@@ -448,15 +467,22 @@ export default function InformeVariacionPage() {
         signal.addEventListener("abort", onAbort);
 
         try {
+          if (signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
           const params = new URLSearchParams({
             year: String(year),
             month: String(month),
             bundle: "month",
           });
+          if (options.force) params.set("force", "1");
           const response = await fetch(
             `/api/informe-variacion?${params.toString()}`,
             { cache: "no-store", signal: controller.signal },
           );
+          if (signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
           if (response.status === 401) {
             router.replace("/login");
             throw new Error("Sesion expirada.");
@@ -472,19 +498,24 @@ export default function InformeVariacionPage() {
           if (!isInformeMonthBundleResponse(data)) {
             return "fallback" as const;
           }
+          if (signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
           storeMonthBundle(year, month, data.payloads);
           return "ok" as const;
         } finally {
           window.clearTimeout(timeoutId);
           signal.removeEventListener("abort", onAbort);
-          bundleInflightRef.current.delete(bundleKey);
+          if (bundleInflightRef.current.get(bundleKey) === request) {
+            bundleInflightRef.current.delete(bundleKey);
+          }
         }
       })();
 
       bundleInflightRef.current.set(bundleKey, request);
       return request;
     },
-    [readCachedPayload, router, storeMonthBundle, scopeCacheSuffix],
+    [maxDate, readCachedPayload, router, storeMonthBundle, scopeCacheSuffix],
   );
 
   /** Como rotacion: clic = cambia vista al instante desde cache; red solo de fondo. */

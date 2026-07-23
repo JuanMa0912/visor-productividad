@@ -1,4 +1,4 @@
-import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
+import { deleteCachedQuery, getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { scopeExcludedTiposCacheSuffix, scopeLineasCacheSuffix, scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
@@ -95,4 +95,9 @@ export const setCachedInformeMonthBundle = (
       payload,
     );
   }
+};
+
+/** Invalida payload/bundle en memoria (botón Actualizar). */
+export const invalidateInformeCacheKey = (key: string): void => {
+  deleteCachedQuery(key);
 };

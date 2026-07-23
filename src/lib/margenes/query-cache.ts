@@ -49,6 +49,9 @@ export const clearCachedQueries = (): { cleared: number } => {
   return { cleared };
 };
 
+/** Elimina una entrada concreta (p. ej. Actualizar del informe). */
+export const deleteCachedQuery = (key: string): boolean => CACHE.delete(key);
+
 export const getCachedQueryStats = (): { size: number; maxEntries: number } => ({
   size: CACHE.size,
   maxEntries: MAX_ENTRIES,

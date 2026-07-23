@@ -64,7 +64,7 @@ describe("pastas en gramos -> kilos en sublinea", () => {
       lins: ["18 PASTAS ALIMENTICIAS"],
     };
     const rows: InformeCompactRow[] = PASTA_QTYS.map((qty, itemIndex) => [
-      0, 0, 0, 0, itemIndex, qty, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, itemIndex, qty, 0, 0, 0, 0, 0, 0, 0, 0,
     ]);
     const rowIndex = buildInformeRowIndex(rows, ["E1"]);
     const index = buildInformeLineUomIndex(rowIndex, ctx);

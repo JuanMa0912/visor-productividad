@@ -34,7 +34,7 @@ describe("sortInformeSedeCatalog", () => {
       subs: ["00 Sub"],
       items: ["item"],
       ums: [""],
-      rows: [[0, 0, 0, 0, 0, 1, 1, 1, 10, 10, 10]],
+      rows: [[0, 0, 0, 0, 0, 1, 1, 1, 10, 10, 10, 0, 0, 0]],
       meta: { rowCount: 1, generatedAt: "2026-01-01T00:00:00.000Z" },
     };
 

@@ -17,6 +17,7 @@ import {
   buildInformeCacheKey,
   getCachedInformeMonthBundle,
   getCachedInformePayload,
+  invalidateInformeCacheKey,
   setCachedInformeMonthBundle,
   setCachedInformePayload,
 } from "@/lib/informe-variacion/informe-cache";
@@ -103,24 +104,43 @@ export async function GET(request: Request) {
 
   const metaClient = await (await getDbPool()).connect();
   let maxCompactDate: string | null = null;
+  let metaFailed = false;
   try {
     try {
       const meta = await loadInformeVariacionMeta(metaClient, scope.allowedKeys);
       maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
     } catch (metaError) {
+      metaFailed = true;
       console.error("[informe-variacion] error cargando maxDate:", metaError);
     }
   } finally {
     metaClient.release();
   }
 
+  // Sin maxDate del ETL, no abrir rangos del mes en curso (evita cortes adelantados).
+  const asOf = new Date();
+  const isCurrentMonth =
+    year === asOf.getFullYear() && month === asOf.getMonth() + 1;
+  if (metaFailed && isCurrentMonth) {
+    return withSession(
+      NextResponse.json(
+        {
+          error:
+            "No fue posible consultar la fecha maxima de datos. Reintenta en unos segundos.",
+        },
+        { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
   const availableRanges = getAvailableInformeDayRanges(
     year,
     month,
-    new Date(),
+    asOf,
     maxCompactDate,
   );
   const wantsBundle = url.searchParams.get("bundle") === "month";
+  const forceRefresh = url.searchParams.get("force") === "1";
 
   if (wantsBundle) {
     if (availableRanges.length === 0) {
@@ -138,22 +158,41 @@ export async function GET(request: Request) {
       scope.allowedKeys,
       lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
     );
-    const cachedBundle = getCachedInformeMonthBundle(bundleKey);
-    if (cachedBundle) {
-      return withSession(
-        NextResponse.json(cachedBundle, {
-          headers: {
-            "Cache-Control": CACHE_CONTROL,
-            "X-Data-Source": "cache",
-          },
-        }),
-      );
+    if (forceRefresh) {
+      invalidateInformeCacheKey(bundleKey);
+      for (const range of availableRanges) {
+        invalidateInformeCacheKey(
+          buildInformeCacheKey(
+            year,
+            month,
+            scope.allowedKeys,
+            range.id,
+            lineScope.forcedMargenTipos,
+            lineScope.forcedMargenLineas,
+            lineScope.excludedMargenTipos,
+          ),
+        );
+      }
+    } else {
+      const cachedBundle = getCachedInformeMonthBundle(bundleKey);
+      if (cachedBundle) {
+        return withSession(
+          NextResponse.json(cachedBundle, {
+            headers: {
+              "Cache-Control": CACHE_CONTROL,
+              "X-Data-Source": "cache",
+            },
+          }),
+        );
+      }
     }
 
-    const useStd = canUseInformePayloadStd(
-      scope.allowedKeys,
-      lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-    );
+    const useStd =
+      !forceRefresh &&
+      canUseInformePayloadStd(
+        scope.allowedKeys,
+        lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
+      );
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
       try {
@@ -186,6 +225,7 @@ export async function GET(request: Request) {
 
     const client = await (await getDbPool()).connect();
     try {
+      await client.query("BEGIN");
       await client.query("SET LOCAL work_mem = '256MB'");
       await client.query("SET LOCAL statement_timeout = '120s'");
       await client.query("SET LOCAL jit = off");
@@ -200,6 +240,7 @@ export async function GET(request: Request) {
         lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
       );
       const elapsedMs = Date.now() - startedAt;
+      await client.query("COMMIT");
 
       if (!loaded) {
         return withSession(
@@ -243,6 +284,11 @@ export async function GET(request: Request) {
         }),
       );
     } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        /* ignore */
+      }
       console.error("Error en /api/informe-variacion (bundle):", error);
       return withSession(
         NextResponse.json(
@@ -269,7 +315,10 @@ export async function GET(request: Request) {
       ),
     );
   }
-  if (dayRange && !isInformeDayRangeAvailable(dayRange.id, year, month, new Date(), maxCompactDate)) {
+  if (
+    dayRange &&
+    !isInformeDayRangeAvailable(dayRange.id, year, month, asOf, maxCompactDate)
+  ) {
     return withSession(
       NextResponse.json(
         { error: "El rango de dias seleccionado aun no esta disponible para este mes." },
@@ -297,22 +346,28 @@ export async function GET(request: Request) {
     effectiveRange?.id,
     lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
   );
-  const cached = getCachedInformePayload(cacheKey);
-  if (cached) {
-    return withSession(
-      NextResponse.json(cached, {
-        headers: {
-          "Cache-Control": CACHE_CONTROL,
-          "X-Data-Source": "cache",
-        },
-      }),
-    );
+  if (forceRefresh) {
+    invalidateInformeCacheKey(cacheKey);
+  } else {
+    const cached = getCachedInformePayload(cacheKey);
+    if (cached) {
+      return withSession(
+        NextResponse.json(cached, {
+          headers: {
+            "Cache-Control": CACHE_CONTROL,
+            "X-Data-Source": "cache",
+          },
+        }),
+      );
+    }
   }
 
-  const useStd = canUseInformePayloadStd(
-    scope.allowedKeys,
-    lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-  );
+  const useStd =
+    !forceRefresh &&
+    canUseInformePayloadStd(
+      scope.allowedKeys,
+      lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
+    );
   if (useStd && effectiveRange) {
     const stdClient = await (await getDbPool()).connect();
     try {
@@ -340,6 +395,7 @@ export async function GET(request: Request) {
 
   const client = await (await getDbPool()).connect();
   try {
+    await client.query("BEGIN");
     await client.query("SET LOCAL work_mem = '256MB'");
     await client.query("SET LOCAL statement_timeout = '90s'");
     await client.query("SET LOCAL jit = off");
@@ -358,6 +414,7 @@ export async function GET(request: Request) {
       },
     );
     const elapsedMs = Date.now() - startedAt;
+    await client.query("COMMIT");
     if (elapsedMs > 5_000) {
       console.info(
         `[informe-variacion] query lenta ${elapsedMs}ms year=${year} month=${month} range=${effectiveRange.id} rows=${payload.meta.rowCount}`,
@@ -377,6 +434,11 @@ export async function GET(request: Request) {
       }),
     );
   } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* ignore */
+    }
     console.error("Error en /api/informe-variacion:", error);
     return withSession(
       NextResponse.json(

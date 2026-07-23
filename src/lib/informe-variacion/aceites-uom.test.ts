@@ -64,7 +64,7 @@ describe("aceites liquidos captura de pantalla", () => {
       lineItems: new Map<number, readonly number[]>(),
     };
     const rows: InformeCompactRow[] = ACEITE_QTYS.map((qty, itemIndex) => [
-      0, 0, 0, 0, itemIndex, qty, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, itemIndex, qty, 0, 0, 0, 0, 0, 0, 0, 0,
     ]);
     const subAgg = aggregateIndicesByKey(rows, rows.map((_, index) => index), "u", 3, ctx);
     let expected = 0;
@@ -83,7 +83,7 @@ describe("aceites liquidos captura de pantalla", () => {
       lins: ["08 ACEITES"],
     };
     const rows: InformeCompactRow[] = ACEITE_QTYS.map((qty, itemIndex) => [
-      0, 0, 0, 0, itemIndex, qty, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, itemIndex, qty, 0, 0, 0, 0, 0, 0, 0, 0,
     ]);
     const rowIndex = buildInformeRowIndex(rows, ["E1"]);
     const index = buildInformeLineUomIndex(rowIndex, ctx);

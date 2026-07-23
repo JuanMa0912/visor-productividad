@@ -285,7 +285,7 @@ export const informeMetricContextFromPayload = (
     lins: string[];
     subs: string[];
     items: string[];
-    ums: string[];
+    ums?: string[];
   },
   uomIndex?: {
     lineDisplayUom: ReadonlyMap<number, string>;
@@ -298,7 +298,7 @@ export const informeMetricContextFromPayload = (
   lins: payload.lins,
   subs: payload.subs,
   items: payload.items,
-  ums: payload.ums,
+  ums: payload.ums ?? [],
   lineDisplayUom: uomIndex?.lineDisplayUom ?? new Map(),
   sublineDisplayUom: uomIndex?.sublineDisplayUom ?? new Map(),
   sublineItems: uomIndex?.sublineItems ?? new Map(),

@@ -10,9 +10,9 @@ import {
 } from "@/lib/informe-variacion/row-index";
 
 const sampleRows: InformeCompactRow[] = [
-  [0, 1, 10, 100, 1000, 5, 4, 3, 100, 90, 80],
-  [0, 1, 10, 100, 1001, 2, 2, 2, 50, 45, 40],
-  [1, 2, 20, 200, 2000, 1, 1, 1, 20, 18, 15],
+  [0, 1, 10, 100, 1000, 5, 4, 3, 100, 90, 80, 0, 0, 0],
+  [0, 1, 10, 100, 1001, 2, 2, 2, 50, 45, 40, 0, 0, 0],
+  [1, 2, 20, 200, 2000, 1, 1, 1, 20, 18, 15, 0, 0, 0],
 ];
 
 describe("buildInformeRowIndex", () => {
@@ -81,8 +81,8 @@ describe("sumRowIndices", () => {
 
 describe("pollos und en sublinea", () => {
   const polloRows: InformeCompactRow[] = [
-    [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0],
   ];
   const ctx = {
     cats: ["3 Asaderos"],
@@ -109,8 +109,8 @@ describe("pollos und en sublinea", () => {
 
   it("en linea suma pollos und y porciones excluidas en crudo", () => {
     const rows: InformeCompactRow[] = [
-      [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 1, 718, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 718, 0, 0, 0, 0, 0, 0, 0, 0],
     ];
     const lineCtx = {
       cats: ["3 Asaderos"],
@@ -131,8 +131,8 @@ describe("pollos und en sublinea", () => {
 
   it("rollup categoria/sede usa reglas de linea (padre >= hijo)", () => {
     const rows: InformeCompactRow[] = [
-      [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 1, 718, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 800, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 718, 0, 0, 0, 0, 0, 0, 0, 0],
     ];
     const lineCtx = {
       cats: ["3 Asaderos"],
@@ -174,7 +174,7 @@ describe("huevos und en sublinea", () => {
 
   it("mantiene empaques crudos a nivel item", () => {
     const rows: InformeCompactRow[] = [
-      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0],
     ];
     const itemAgg = aggregateIndicesByKey(rows, [0], "u", 4, ctx);
     assert.equal(itemAgg.get(0)?.[0], 100);
@@ -182,8 +182,8 @@ describe("huevos und en sublinea", () => {
 
   it("convierte a huevos individuales en total de sublinea", () => {
     const rows: InformeCompactRow[] = [
-      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 1, 10, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 10, 0, 0, 0, 0, 0, 0, 0, 0],
     ];
     const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, ctx);
     assert.equal(subAgg.get(0)?.[0], 3_010);
@@ -215,15 +215,15 @@ describe("kilos y litros en linea/sublinea", () => {
   };
 
   it("mantiene empaques crudos a nivel item", () => {
-    const rows: InformeCompactRow[] = [[0, 0, 1, 0, 2, 10, 0, 0, 0, 0, 0]];
+    const rows: InformeCompactRow[] = [[0, 0, 1, 0, 2, 10, 0, 0, 0, 0, 0, 0, 0, 0]];
     const itemAgg = aggregateIndicesByKey(rows, [0], "u", 4, ctx);
     assert.equal(itemAgg.get(2)?.[0], 10);
   });
 
   it("convierte a kilos en total de sublinea fruver", () => {
     const rows: InformeCompactRow[] = [
-      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 1, 50, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 50, 0, 0, 0, 0, 0, 0, 0, 0],
     ];
     const subAgg = aggregateIndicesByKey(rows, [0, 1], "u", 3, ctx);
     assert.equal(subAgg.get(0)?.[0], 150);
@@ -231,8 +231,8 @@ describe("kilos y litros en linea/sublinea", () => {
 
   it("convierte a litros en total de linea aceites", () => {
     const rows: InformeCompactRow[] = [
-      [0, 0, 1, 0, 2, 10, 0, 0, 0, 0, 0],
-      [0, 0, 1, 0, 3, 2, 0, 0, 0, 0, 0],
+      [0, 0, 1, 0, 2, 10, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 1, 0, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0],
     ];
     const lineAgg = aggregateIndicesByKey(rows, [0, 1], "u", 2, ctx);
     assert.equal(lineAgg.get(1)?.[0], 15);

@@ -185,7 +185,12 @@ export const levelAggregateBySede = (
       map.set(key, perSede);
     }
     const bucket = perSede[row[0]];
-    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      metricCtx,
+      keyIndex,
+    );
     bucket[0] += triple[0];
     bucket[1] += triple[1];
     bucket[2] += triple[2];
@@ -205,7 +210,12 @@ export const aggregateByKey = (
     if (!pass(row)) continue;
     const key = row[keyIndex];
     const current = map.get(key) ?? [0, 0, 0];
-    const triple = readInformeRowPeriodTriple(row, metric, metricCtx);
+    const triple = readInformeRowPeriodTripleForLevel(
+      row,
+      metric,
+      metricCtx,
+      keyIndex,
+    );
     current[0] += triple[0];
     current[1] += triple[1];
     current[2] += triple[2];
@@ -240,7 +250,11 @@ export const filterRowIndices = (
 };
 
 export const prepareInformeData = (payload: InformeVariacionPayload) => {
-  const ordered = reorderInformeVariacionSedes(payload);
+  const withUms = {
+    ...payload,
+    ums: payload.ums ?? [],
+  };
+  const ordered = reorderInformeVariacionSedes(withUms);
   const sedeEmpresas = buildSedeEmpresaMap(ordered.sedes);
   const sedeYoy = buildSedeYoyFlags(ordered.sedes);
   const itemsLow = buildItemsLower(ordered.items);

@@ -71,10 +71,18 @@ export const buildInformeRowIndex = (
   });
 
   const uniqueSorted = (map: Map<number, number[]>) =>
-    [...map.entries()].map(([key, values]) => [key, [...new Set(values)]] as const);
+    [...map.entries()].map(([key, values]) => {
+      const unique = [...new Set(values)];
+      unique.sort((a, b) => a - b);
+      return [key, unique] as const;
+    });
 
   const uniqueSortedKey = (map: Map<string, number[]>) =>
-    [...map.entries()].map(([key, values]) => [key, [...new Set(values)]] as const);
+    [...map.entries()].map(([key, values]) => {
+      const unique = [...new Set(values)];
+      unique.sort((a, b) => a - b);
+      return [key, unique] as const;
+    });
 
   return {
     bySede,
@@ -86,13 +94,9 @@ export const buildInformeRowIndex = (
     indicesByCatLin,
     indicesByCatLinSub,
     allCats: [...catSet].sort((a, b) => a - b),
-    linsByCat: new Map(uniqueSorted(linsByCat).map(([k, v]) => [k, v.sort((a, b) => a - b)])),
-    subsByCatLin: new Map(
-      uniqueSortedKey(subsByCatLin).map(([k, v]) => [k, v.sort((a, b) => a - b)]),
-    ),
-    itemsByCatLinSub: new Map(
-      uniqueSortedKey(itemsByCatLinSub).map(([k, v]) => [k, v.sort((a, b) => a - b)]),
-    ),
+    linsByCat: new Map(uniqueSorted(linsByCat)),
+    subsByCatLin: new Map(uniqueSortedKey(subsByCatLin)),
+    itemsByCatLinSub: new Map(uniqueSortedKey(itemsByCatLinSub)),
   };
 };
 
