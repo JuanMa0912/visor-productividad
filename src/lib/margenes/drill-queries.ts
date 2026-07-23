@@ -282,6 +282,14 @@ const buildKpiPayload = (row: Record<string, string | number>): MargenKpi => {
   const metrics = mapMetrics(row);
   const dias = toNum(row.dias);
   const sedes = toNum(row.sedes);
+  // boardMetricsSqlFor no emite categorias/lineas/items; no inventar "0 categ.".
+  const hasDimCounts =
+    Object.prototype.hasOwnProperty.call(row, "categorias") ||
+    Object.prototype.hasOwnProperty.call(row, "lineas") ||
+    Object.prototype.hasOwnProperty.call(row, "items");
+  const cantidadLabel = metrics.cantidad.toLocaleString("es-CO", {
+    maximumFractionDigits: 2,
+  });
   return {
     key: "kpi",
     cod: "kpi",
@@ -291,8 +299,12 @@ const buildKpiPayload = (row: Record<string, string | number>): MargenKpi => {
     dias,
     sedes,
     subFacturas: `${metrics.facturas} facturas`,
-    subCosto: `${metrics.categorias} categ. · ${metrics.lineas} lín.`,
-    subMargen: `${metrics.items} ítems · ${metrics.cantidad.toLocaleString("es-CO", { maximumFractionDigits: 2 })} uds`,
+    subCosto: hasDimCounts
+      ? `${metrics.categorias} categ. · ${metrics.lineas} lín.`
+      : `${cantidadLabel} uds`,
+    subMargen: hasDimCounts
+      ? `${metrics.items} ítems · ${cantidadLabel} uds`
+      : `${metrics.margenPct.toFixed(1)}% margen`,
     subPct: `${sedes} sedes · ${dias} días`,
   };
 };
@@ -409,6 +421,18 @@ const INVOICE_LINE_ORDER_ALLOWED = [
   "margenPesos",
   "margenPct",
   "cantidad",
+  "pvuIva",
+  "pcu",
+];
+
+/** Columnas ORDER BY válidas con boardMetricsSqlFor (Por Cliente / facturas). */
+const BOARD_FACTURA_ORDER_ALLOWED = [
+  "ventasNetas",
+  "costoTotal",
+  "margenPesos",
+  "margenPct",
+  "cantidad",
+  "facturas",
   "pvuIva",
   "pcu",
 ];
@@ -1160,7 +1184,12 @@ export const queryClienteFacturas = async (
       FROM ${table}
       WHERE ${rowWhere}
       GROUP BY 1, 2, 3, 4, 5
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+      ${buildMargenOrderBy(
+        filters.orderBy,
+        filters.orderDir,
+        "ventas_netas DESC",
+        BOARD_FACTURA_ORDER_ALLOWED,
+      )}
       LIMIT 1000
       `,
       rowParams,

@@ -47,6 +47,29 @@ test("buildMargenOrderBy respeta allowed del SELECT reducido", () => {
   );
 });
 
+test("buildMargenOrderBy board factura rechaza categorias/lineas/items", () => {
+  const boardAllowed = [
+    "ventasNetas",
+    "costoTotal",
+    "margenPesos",
+    "margenPct",
+    "cantidad",
+    "facturas",
+    "pvuIva",
+    "pcu",
+  ];
+  for (const key of ["categorias", "lineas", "sublineas", "items"] as const) {
+    assert.equal(
+      buildMargenOrderBy(key, "desc", "ventas_netas DESC", boardAllowed),
+      "ORDER BY ventas_netas DESC",
+    );
+  }
+  assert.equal(
+    buildMargenOrderBy("facturas", "asc", "ventas_netas DESC", boardAllowed),
+    "ORDER BY facturas ASC NULLS LAST",
+  );
+});
+
 test("shouldApplyMercadoTipoDefault solo sin categorias", () => {
   assert.equal(shouldApplyMercadoTipoDefault([]), true);
   assert.equal(shouldApplyMercadoTipoDefault(null), true);

@@ -8,11 +8,13 @@ import {
   clearCachedQueries,
   getCachedQueryStats,
 } from "@/lib/margenes/query-cache";
+import { resetMargenDataSourceCache } from "@/lib/margenes/margen-data-source";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 /**
  * POST /api/admin/cache/flush
- * Vacia la cache en memoria del proceso (informe variación + márgenes).
+ * Vacia la cache en memoria del proceso (informe variación + márgenes)
+ * y el flag de disponibilidad de margen_final_roll / item_dia_roll.
  * No limpia sessionStorage de los browsers de los usuarios.
  */
 export async function POST(req: Request) {
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
 
   const before = getCachedQueryStats();
   const { cleared } = clearCachedQueries();
+  resetMargenDataSourceCache();
   const after = getCachedQueryStats();
 
   return withSession(
@@ -54,7 +57,7 @@ export async function POST(req: Request) {
       cleared,
       before,
       after,
-      note: "Cache en memoria del proceso vaciada. sessionStorage de clientes no se afecta; use bump de prefijo o hard refresh.",
+      note: "Cache en memoria del proceso vaciada (queries + fuente roll). sessionStorage de clientes no se afecta; use bump de prefijo o hard refresh.",
     }),
   );
 }

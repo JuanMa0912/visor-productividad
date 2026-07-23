@@ -73,6 +73,7 @@ export const resolveMargenDataSource = async (
     ) AS ok
   `);
   if (!result.rows[0]?.ok) {
+    // Tabla ausente: cachear negativo (solo revive con resetMargenDataSourceCache).
     rollTableAvailable = false;
     return MARGEN_RAW_TABLE;
   }
@@ -81,7 +82,8 @@ export const resolveMargenDataSource = async (
     SELECT EXISTS (SELECT 1 FROM margen_final_roll LIMIT 1) AS ok
   `);
   if (!populated.rows[0]?.ok) {
-    rollTableAvailable = false;
+    // No cachear "vacío": tras un refresh el roll se llena y el proceso
+    // debe volver a detectar sin reiniciar Node.
     return MARGEN_RAW_TABLE;
   }
 

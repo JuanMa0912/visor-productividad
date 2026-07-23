@@ -509,6 +509,16 @@ export const MargenesBoard = ({
   const [filterOptions, setFilterOptions] = useState<MargenFiltersPayload | null>(null);
   const [empresas, setEmpresas] = useState<string[]>([]);
   const [sedes, setSedes] = useState<string[]>([]);
+  const selectedSedesKey = useMemo(
+    () => [...selectedSedes].sort().join(","),
+    [selectedSedes],
+  );
+
+  // Si el padre cambia sedes (modal / drill Por Sede), no conservar el
+  // override del multi-select local (si no, effectiveSedes queda stale).
+  useEffect(() => {
+    setSedes([]);
+  }, [selectedSedesKey]);
   const [fechas, setFechas] = useState<string[]>([]);
   const [categorias, setCategorias] = useState<string[]>(() =>
     lockedCategorias?.length ? [...lockedCategorias] : [],
@@ -1327,13 +1337,15 @@ export const MargenesBoard = ({
             key={tab.id}
             type="button"
             onClick={() => {
-              setMode(tab.id);
-              setDrillPath([]);
-              setFactPath([]);
-              setClienteFocus(null);
-              setClienteFactPath([]);
-              setClienteSearch("");
-            }}
+                setMode(tab.id);
+                setDrillPath([]);
+                setFactPath([]);
+                setClienteFocus(null);
+                setClienteFactPath([]);
+                setClienteSearch("");
+                setSortKey(null);
+                setMgSortDir("asc");
+              }}
             className={`border-b-2 px-4 py-2 text-xs font-semibold whitespace-nowrap ${
               mode === tab.id
                 ? "border-[#4f8ef7] text-[#4f8ef7]"

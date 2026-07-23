@@ -48,6 +48,9 @@ import {
   applyMargenCategoriaScope,
   applyMargenLineaScope,
   resolveSessionLineCategoryScope,
+  scopeExcludedTiposCacheSuffix,
+  scopeLineasCacheSuffix,
+  scopeTiposCacheSuffix,
 } from "@/lib/shared/line-category-scope";
 import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 
@@ -457,7 +460,9 @@ export async function GET(request: Request) {
       );
     }
 
-    const cacheKey = url.search;
+    // Incluir scope de línea/categoría en la clave: admin vs asadero/fruver
+    // no deben compartir payload aunque la URL sea idéntica.
+    const cacheKey = `${url.search}${scopeTiposCacheSuffix(lineScope.forcedMargenTipos)}${scopeLineasCacheSuffix(lineScope.forcedMargenLineas)}${scopeExcludedTiposCacheSuffix(lineScope.excludedMargenTipos)}`;
     const cachedPayload = getCachedQuery(cacheKey);
     if (cachedPayload !== null) {
       const cachedResponse = NextResponse.json(cachedPayload, {
