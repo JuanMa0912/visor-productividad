@@ -65,6 +65,8 @@ type TablePayload = {
   level: number;
   levelName: string;
   rows: DrillRow[];
+  truncated?: boolean;
+  totalClientes?: number;
 };
 
 const PAGE_SIZES = [50, 100, 200];
@@ -541,7 +543,7 @@ export const MargenesBoard = ({
   const [drillSearch, setDrillSearch] = useState("");
   const [factSearch, setFactSearch] = useState("");
   const [clienteSearch, setClienteSearch] = useState("");
-  const [mgSortDir, setMgSortDir] = useState<"asc" | "desc">("asc");
+  const [mgSortDir, setMgSortDir] = useState<"asc" | "desc">("desc");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
@@ -1140,24 +1142,24 @@ export const MargenesBoard = ({
   const acumRow = useMemo(() => rawRows.find((row) => row.isAcum) ?? null, [rawRows]);
   const dataRows = useMemo(() => rawRows.filter((row) => !row.isAcum), [rawRows]);
 
-  // El orden por columnas-metrica lo hace el SERVIDOR (orderParam -> refetch, respeta el LIMIT).
-  // Aqui solo ordenamos en cliente las columnas de dimension (no estan en SERVER_SORT_KEYS).
+  // Orden local siempre que haya columna activa: feedback inmediato al clic.
+  // El refetch con orderParam sigue sirviendo para el top-N (LIMIT 1000) en servidor.
   const sortedRows = useMemo(() => {
     const rows = [...dataRows];
-    if (sortKey && !SERVER_SORT_KEYS.has(sortKey)) {
-      const col = columns.find((column) => column.key === sortKey);
-      if (col?.sortValue) {
-        const factor = mgSortDir === "desc" ? -1 : 1;
-        rows.sort((a, b) => {
-          const av = col.sortValue!(a);
-          const bv = col.sortValue!(b);
-          if (typeof av === "number" && typeof bv === "number") return (av - bv) * factor;
-          return (
-            String(av).localeCompare(String(bv), "es", { numeric: true }) * factor
-          );
-        });
+    if (!sortKey) return rows;
+    const col = columns.find((column) => column.key === sortKey);
+    if (!col?.sortValue) return rows;
+    const factor = mgSortDir === "desc" ? -1 : 1;
+    rows.sort((a, b) => {
+      const av = col.sortValue!(a);
+      const bv = col.sortValue!(b);
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * factor;
       }
-    }
+      return (
+        String(av).localeCompare(String(bv), "es", { numeric: true }) * factor
+      );
+    });
     return rows;
   }, [dataRows, sortKey, columns, mgSortDir]);
 
@@ -1236,7 +1238,9 @@ export const MargenesBoard = ({
       (mode === "drill" && drillSearch.trim() !== ""));
 
   const sortLabel =
-    mode === "sede" ? "Ordenar por ventas:" : "Ordenar por margen:";
+    mode === "sede" || mode === "cliente"
+      ? "Ordenar por ventas:"
+      : "Ordenar por margen:";
 
   if (!dataCommitted) {
     return (
@@ -1344,7 +1348,7 @@ export const MargenesBoard = ({
                 setClienteFactPath([]);
                 setClienteSearch("");
                 setSortKey(null);
-                setMgSortDir("asc");
+                setMgSortDir("desc");
               }}
             className={`border-b-2 px-4 py-2 text-xs font-semibold whitespace-nowrap ${
               mode === tab.id
@@ -1609,7 +1613,13 @@ export const MargenesBoard = ({
                   className={`cursor-pointer px-2.5 py-2 text-[10px] font-semibold tracking-wide uppercase select-none hover:text-[#dde3f0] ${column.align === "right" ? "text-right" : ""} ${column.cellClassName ?? ""}`}
                   onClick={() => {
                     setSortKey(column.key);
-                    setMgSortDir((current) => (sortKey === column.key && current === "desc" ? "asc" : "desc"));
+                    setMgSortDir((current) =>
+                      sortKey === column.key && current === "desc"
+                        ? "asc"
+                        : sortKey === column.key && current === "asc"
+                          ? "desc"
+                          : "desc",
+                    );
                   }}
                 >
                   <span className="inline-flex items-center gap-0.5">
@@ -1678,6 +1688,12 @@ export const MargenesBoard = ({
           {sortedRows.length === 0
             ? "0 filas"
             : `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, sortedRows.length)} de ${sortedRows.length}`}
+          {mode === "cliente" &&
+          !clienteFocus &&
+          payload?.truncated &&
+          typeof payload.totalClientes === "number"
+            ? ` (top ${sortedRows.length} de ${payload.totalClientes.toLocaleString("es-CO")}; usa búsqueda para refinar)`
+            : null}
         </span>
         <button
           type="button"

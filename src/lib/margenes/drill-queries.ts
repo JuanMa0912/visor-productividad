@@ -1003,7 +1003,7 @@ export const querySedeCompare = async (
     FROM ${table}
     WHERE ${where}
     GROUP BY 1, 2
-    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+    ${buildMargenOrderBy(filters.orderBy, filters.orderDir ?? "desc", "ventas_netas")}
     `,
     params,
   );
@@ -1023,23 +1023,18 @@ export const querySedeCompare = async (
 
 const SIN_CLIENTE_LABEL = "Sin cliente";
 
-const compactRangeDayCount = (fromCompact: string, toCompact: string) => {
-  const from = compactDateToIso(fromCompact);
-  const to = compactDateToIso(toCompact);
-  if (!from || !to) return 0;
-  const start = Date.parse(`${from}T12:00:00Z`);
-  const end = Date.parse(`${to}T12:00:00Z`);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
-  return Math.floor((end - start) / 86_400_000) + 1;
-};
-
 /** KPI + filas de clientes en un solo barrido (evita queryKpi paralelo). */
 export const queryClienteCompare = async (
   client: PoolClient,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   search?: string,
-): Promise<{ kpi: MargenKpi; rows: DrillRow[] }> => {
+): Promise<{
+  kpi: MargenKpi;
+  rows: DrillRow[];
+  truncated: boolean;
+  totalClientes: number;
+}> => {
   const params: unknown[] = [];
   let where = buildMargenWhereForTable(filters, params, table);
   const idTerc = idTercExpr(table);
@@ -1054,18 +1049,31 @@ export const queryClienteCompare = async (
     )`;
   }
 
-  const result = await client.query(
-    `
-    SELECT
-      ${idTerc} AS id_terc,
-      MAX(${nombreTerc}) AS nombre_terc,
-      ${metrics}
-    FROM ${table}
-    WHERE ${where}
-    GROUP BY 1
-    `,
-    params,
-  );
+  const sedeKey = sedeDistinctKeySql(table);
+  const [result, metaResult] = await Promise.all([
+    client.query(
+      `
+      SELECT
+        ${idTerc} AS id_terc,
+        MAX(${nombreTerc}) AS nombre_terc,
+        ${metrics}
+      FROM ${table}
+      WHERE ${where}
+      GROUP BY 1
+      `,
+      params,
+    ),
+    client.query(
+      `
+      SELECT
+        COUNT(DISTINCT fecha_dcto) AS dias,
+        COUNT(DISTINCT ${sedeKey}) AS sedes
+      FROM ${table}
+      WHERE ${where}
+      `,
+      params,
+    ),
+  ]);
 
   const orderBy = filters.orderBy;
   const orderDir = filters.orderDir === "asc" ? 1 : -1;
@@ -1086,13 +1094,17 @@ export const queryClienteCompare = async (
   });
 
   allRows.sort((a, b) => {
-    if (orderBy && orderBy in a) {
+    if (orderBy) {
       const av = a[orderBy as keyof DrillRow];
       const bv = b[orderBy as keyof DrillRow];
       if (typeof av === "number" && typeof bv === "number") {
         return (av - bv) * orderDir;
       }
-      return String(av ?? "").localeCompare(String(bv ?? "")) * orderDir;
+      if (av !== undefined || bv !== undefined) {
+        return String(av ?? "").localeCompare(String(bv ?? ""), "es", {
+          numeric: true,
+        }) * orderDir;
+      }
     }
     return (b.ventasNetas - a.ventasNetas) * (filters.orderDir === "asc" ? -1 : 1);
   });
@@ -1112,6 +1124,7 @@ export const queryClienteCompare = async (
     facturas += row.facturas;
   }
 
+  const meta = metaResult.rows[0] ?? {};
   const kpi = buildKpiPayload({
     ventas_netas: ventasNetas,
     costo_total: costoTotal,
@@ -1122,13 +1135,16 @@ export const queryClienteCompare = async (
     margen_pct: marginPct(ventasNetas, margenPesos),
     pvu_iva: unitSaleWithTax(ventasConIva, cantidad),
     pcu: unitCost(costoTotal, cantidad),
-    dias: compactRangeDayCount(filters.fromCompact, filters.toCompact),
-    sedes: filters.sedes.length,
+    dias: toNum(meta.dias as string | number | undefined),
+    sedes: toNum(meta.sedes as string | number | undefined),
   });
 
+  const truncated = allRows.length > 1000;
   return {
     kpi,
     rows: allRows.slice(0, 1000),
+    truncated,
+    totalClientes: allRows.length,
   };
 };
 
@@ -1186,8 +1202,8 @@ export const queryClienteFacturas = async (
       GROUP BY 1, 2, 3, 4, 5
       ${buildMargenOrderBy(
         filters.orderBy,
-        filters.orderDir,
-        "ventas_netas DESC",
+        filters.orderDir ?? "desc",
+        "ventas_netas",
         BOARD_FACTURA_ORDER_ALLOWED,
       )}
       LIMIT 1000

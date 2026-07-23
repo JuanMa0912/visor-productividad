@@ -47,6 +47,17 @@ test("buildMargenOrderBy respeta allowed del SELECT reducido", () => {
   );
 });
 
+test("buildMargenOrderBy sin columna respeta orderDir si fallback no trae ASC/DESC", () => {
+  assert.equal(
+    buildMargenOrderBy(undefined, "asc", "ventas_netas"),
+    "ORDER BY ventas_netas ASC",
+  );
+  assert.equal(
+    buildMargenOrderBy(undefined, "desc", "ventas_netas"),
+    "ORDER BY ventas_netas DESC",
+  );
+});
+
 test("buildMargenOrderBy board factura rechaza categorias/lineas/items", () => {
   const boardAllowed = [
     "ventasNetas",
