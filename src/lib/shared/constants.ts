@@ -16,10 +16,16 @@ export const MERCATODO_SEDES = ["Floresta", "Floralia", "Guaduales"];
 
 export const MERKMIOS_SEDES = ["Bogota", "Chia"];
 
+export const DINASTIA_SEDES = [
+  "Dinastia 1 Santa Elena",
+  "Dinastia 2 CR Primera",
+];
+
 export const BRANCH_LOCATIONS = [
   ...MERCAMIO_SEDES,
   ...MERCATODO_SEDES,
   ...MERKMIOS_SEDES,
+  ...DINASTIA_SEDES,
 ];
 
 export const SEDE_ORDER = [
@@ -34,6 +40,8 @@ export const SEDE_ORDER = [
   "Guaduales",
   "Bogota",
   "Chia",
+  "Dinastia 1 Santa Elena",
+  "Dinastia 2 CR Primera",
 ];
 
 /**
@@ -75,6 +83,10 @@ export const SEDE_ORDER_INDEX_MAP: Map<string, number> = (() => {
   addAlias("Plaza Mayor de Chia", "Chia");
   addAlias("Palmira Mercamio", "Palmira");
   addAlias("Mercatodo Floralia", "Floralia");
+  addAlias("DINASTIA 1 SANTA ELENA", "Dinastia 1 Santa Elena");
+  addAlias("Dinastia 001", "Dinastia 1 Santa Elena");
+  addAlias("DINASTIA 2 CR PRIMERA", "Dinastia 2 CR Primera");
+  addAlias("Dinastia 002", "Dinastia 2 CR Primera");
   return map;
 })();
 
@@ -97,6 +109,7 @@ export const SEDE_GROUPS: Array<{ id: string; name: string; sedes: string[] }> =
     { id: "mercamio", name: "Mercamio", sedes: MERCAMIO_SEDES },
     { id: "mercatodo", name: "Mercatodo", sedes: MERCATODO_SEDES },
     { id: "merkmios", name: "Merkmios", sedes: MERKMIOS_SEDES },
+    { id: "dinastia", name: "Dinastía", sedes: DINASTIA_SEDES },
   ];
 
 export const DEFAULT_SEDES: Sede[] = BRANCH_LOCATIONS.map((sede) => ({

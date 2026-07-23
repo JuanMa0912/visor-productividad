@@ -6,11 +6,13 @@ import { KPI_MERCADO_TIPO } from "@/lib/margenes/metrics";
 export type MargenDataTable =
   | "margen_final"
   | "margen_final_roll"
-  | "margen_item_dia_roll";
+  | "margen_item_dia_roll"
+  | "margen_dinastia";
 
 export const MARGEN_ROLL_TABLE: MargenDataTable = "margen_final_roll";
 export const MARGEN_ITEM_DIA_ROLL_TABLE: MargenDataTable = "margen_item_dia_roll";
 export const MARGEN_RAW_TABLE: MargenDataTable = "margen_final";
+export const MARGEN_DINASTIA_TABLE: MargenDataTable = "margen_dinastia";
 
 let rollTableAvailable: boolean | null = null;
 let itemDiaRollAvailable: boolean | null = null;
@@ -59,7 +61,25 @@ export const assertMargenRollFacturaAttrs = async (
 
 export const resolveMargenDataSource = async (
   client: PoolClient,
+  options?: { kind?: "default" | "dinastia" },
 ): Promise<MargenDataTable> => {
+  if (options?.kind === "dinastia") {
+    const exists = await client.query<{ ok: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'margen_dinastia'
+      ) AS ok
+    `);
+    if (!exists.rows[0]?.ok) {
+      throw new Error(
+        "Tabla margen_dinastia no disponible. Aplica db/migrations/20260723_dinastia_tenant_tables.sql y carga datos.",
+      );
+    }
+    return MARGEN_DINASTIA_TABLE;
+  }
+
   if (process.env.MARGEN_FORCE_RAW === "1") return MARGEN_RAW_TABLE;
   if (rollTableAvailable === true) return MARGEN_ROLL_TABLE;
   if (rollTableAvailable === false) return MARGEN_RAW_TABLE;
@@ -95,7 +115,11 @@ export const resolveMargenDataSource = async (
 /** Preferido por /informe-variacion: item/dia sin factura (mas pequeño que margen_final_roll). */
 export const resolveInformeMargenDataSource = async (
   client: PoolClient,
+  options?: { kind?: "default" | "dinastia" },
 ): Promise<MargenDataTable> => {
+  if (options?.kind === "dinastia") {
+    return resolveMargenDataSource(client, { kind: "dinastia" });
+  }
   if (process.env.MARGEN_FORCE_RAW === "1") return MARGEN_RAW_TABLE;
 
   // No cachear "vacio" de forma permanente: un TRUNCATE/refresh puede dejar

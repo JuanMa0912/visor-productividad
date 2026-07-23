@@ -330,8 +330,13 @@ export const loadInformeVariacionMonthBundle = async (
   forcedMargenTipos: string[] | null = null,
   forcedMargenLineas: string[] | null = null,
   excludedMargenTipos: string[] | null = null,
+  options?: { kind?: "default" | "dinastia" },
 ): Promise<InformeMonthBundleLoadResult | null> => {
-  const table = await resolveInformeMargenDataSource(client);
+  const kind = options?.kind ?? "default";
+  // Bundle diario solo existe sobre margen_item_dia_roll (tenant default).
+  if (kind === "dinastia") return null;
+
+  const table = await resolveInformeMargenDataSource(client, { kind });
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
     return null;
   }

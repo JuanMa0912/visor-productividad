@@ -20,6 +20,11 @@ import {
   type MargenDataTable,
 } from "@/lib/margenes/margen-data-source";
 import {
+  resolveDataSourceKind,
+  resolveEmpresasHintForTenant,
+  stripDinastiaSedeKeys,
+} from "@/lib/shared/data-tenant";
+import {
   buildMargenOrderBy,
   summaryMetricsSqlFor,
 } from "@/lib/margenes/metrics";
@@ -425,6 +430,27 @@ export async function GET(request: Request) {
     );
   }
 
+  const empresaHint = resolveEmpresasHintForTenant(
+    parsed.empresas,
+    parsed.sedes,
+    "|",
+  );
+  const dataSource = resolveDataSourceKind(session.user, empresaHint);
+  if (!dataSource.ok) {
+    return NextResponse.json(
+      { error: dataSource.error },
+      { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+  if (dataSource.kind === "dinastia") {
+    if (parsed.empresas.length === 0) {
+      parsed.empresas = ["dinastia"];
+    }
+  } else if (parsed.sedes.length > 0) {
+    // "Todas" / mezcla: consultar tablas historicas sin claves Dinastia.
+    parsed.sedes = stripDinastiaSedeKeys(parsed.sedes, "|");
+  }
+
   const lineScope = resolveSessionLineCategoryScope(session.user);
   parsed.categorias = applyMargenCategoriaScope(parsed.categorias, lineScope);
   parsed.lineas = applyMargenLineaScope(parsed.lineas, lineScope);
@@ -436,7 +462,7 @@ export async function GET(request: Request) {
   const client = await pool.connect();
   try {
     const tableExists = await ensureMargenTable(client);
-    if (!tableExists) {
+    if (!tableExists && dataSource.kind === "default") {
       return NextResponse.json(
         {
           error:
@@ -444,6 +470,23 @@ export async function GET(request: Request) {
         },
         { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
       );
+    }
+    if (dataSource.kind === "dinastia") {
+      const dinastiaExists = await client.query<{ ok: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'margen_dinastia'
+        ) AS ok
+      `);
+      if (!dinastiaExists.rows[0]?.ok) {
+        return NextResponse.json(
+          {
+            error:
+              "Tabla margen_dinastia no existe. Aplica db/migrations/20260723_dinastia_tenant_tables.sql.",
+          },
+          { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+        );
+      }
     }
 
     if (HEAVY_MODES.includes(mode) && parsed.sedes.length === 0) {
@@ -461,9 +504,8 @@ export async function GET(request: Request) {
       );
     }
 
-    // Incluir scope de línea/categoría en la clave: admin vs asadero/fruver
-    // no deben compartir payload aunque la URL sea idéntica.
-    const cacheKey = `${url.search}${scopeTiposCacheSuffix(lineScope.forcedMargenTipos)}${scopeLineasCacheSuffix(lineScope.forcedMargenLineas)}${scopeExcludedTiposCacheSuffix(lineScope.excludedMargenTipos)}`;
+    // Incluir scope de línea/categoría y tenant en la clave.
+    const cacheKey = `${url.search}${scopeTiposCacheSuffix(lineScope.forcedMargenTipos)}${scopeLineasCacheSuffix(lineScope.forcedMargenLineas)}${scopeExcludedTiposCacheSuffix(lineScope.excludedMargenTipos)}:ds=${dataSource.kind}`;
     const cachedPayload = getCachedQuery(cacheKey);
     if (cachedPayload !== null) {
       const cachedResponse = NextResponse.json(cachedPayload, {
@@ -481,7 +523,9 @@ export async function GET(request: Request) {
     await client.query("BEGIN");
     await client.query("SET LOCAL work_mem = '256MB'");
 
-    const dataTable = await resolveMargenDataSource(client);
+    const dataTable = await resolveMargenDataSource(client, {
+      kind: dataSource.kind,
+    });
 
     let payload: unknown;
     if (mode === "summary") {

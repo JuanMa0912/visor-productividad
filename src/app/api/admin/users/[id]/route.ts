@@ -14,6 +14,7 @@ import {
   insertUserAdminAudit,
 } from "@/lib/admin/user-admin-audit";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
+import { resolveValidAllowedEmpresas } from "@/lib/shared/data-tenant";
 import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
@@ -128,6 +129,21 @@ const hasAllowedSedesColumn = async (client: {
     FROM information_schema.columns
     WHERE table_name = 'app_users'
       AND column_name = 'allowed_sedes'
+    LIMIT 1
+    `,
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const hasAllowedEmpresasColumn = async (client: {
+  query: (queryText: string) => Promise<{ rows?: unknown[] }>;
+}) => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'app_users'
+      AND column_name = 'allowed_empresas'
     LIMIT 1
     `,
   );
@@ -347,6 +363,7 @@ export async function PATCH(req: Request, { params }: Params) {
     portalProfile?: string;
     sede?: string | null;
     allowedSedes?: string[] | null;
+    allowedEmpresas?: string[] | null;
     allowedLines?: string[] | null;
     allowedDashboards?: string[] | null;
     allowedSubdashboards?: string[] | null;
@@ -363,11 +380,25 @@ export async function PATCH(req: Request, { params }: Params) {
   try {
     const sedeEnabled = await hasSedeColumn(client);
     const allowedSedesEnabled = await hasAllowedSedesColumn(client);
+    const allowedEmpresasEnabled = await hasAllowedEmpresasColumn(client);
     const allowedLinesEnabled = await hasAllowedLinesColumn(client);
     const allowedDashboardsEnabled = await hasAllowedDashboardsColumn(client);
     const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
     const portalProfileEnabled = await hasPortalProfileColumn(client);
+    if (
+      !allowedEmpresasEnabled &&
+      body.allowedEmpresas !== undefined &&
+      body.allowedEmpresas !== null
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Falta aplicar migracion de empresas permitidas en app_users (db/migrations/20260723_dinastia_tenant_tables.sql).",
+        },
+        { status: 400 },
+      );
+    }
     const wantsAllowedSubdashboardsUpdate =
       body.allowedSubdashboards !== undefined &&
       body.allowedSubdashboards !== null &&
@@ -403,6 +434,7 @@ export async function PATCH(req: Request, { params }: Params) {
         u.is_active,
         to_jsonb(u)->>'sede' AS sede,
         to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
+        to_jsonb(u)->'allowed_empresas' AS "allowedEmpresas",
         to_jsonb(u)->'allowed_lines' AS "allowedLines",
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
@@ -427,6 +459,7 @@ export async function PATCH(req: Request, { params }: Params) {
       is_active: boolean;
       sede: string | null;
       allowedSedes: string[] | null;
+      allowedEmpresas: string[] | null;
       allowedLines: string[] | null;
       allowedDashboards: string[] | null;
       allowedSubdashboards: string[] | null;
@@ -448,6 +481,7 @@ export async function PATCH(req: Request, { params }: Params) {
       body.portalProfile !== undefined ||
       body.role !== undefined ||
       body.allowedSedes !== undefined ||
+      body.allowedEmpresas !== undefined ||
       body.allowedLines !== undefined ||
       body.allowedDashboards !== undefined ||
       body.allowedSubdashboards !== undefined ||
@@ -456,6 +490,7 @@ export async function PATCH(req: Request, { params }: Params) {
     let nextRole = currentUser.role;
     let nextPortalProfile = currentProfile;
     let nextAllowedSedes = currentUser.allowedSedes;
+    let nextAllowedEmpresas = currentUser.allowedEmpresas;
     let nextAllowedLines = currentUser.allowedLines;
     let nextAllowedDashboards = currentUser.allowedDashboards;
     let nextAllowedSubdashboards = currentUser.allowedSubdashboards;
@@ -487,9 +522,19 @@ export async function PATCH(req: Request, { params }: Params) {
       nextAllowedDashboards = resolved.allowedDashboards;
       nextAllowedSubdashboards = resolved.allowedSubdashboards;
       nextSpecialRoles = resolved.specialRoles;
+      if (body.allowedEmpresas !== undefined) {
+        nextAllowedEmpresas = Array.isArray(body.allowedEmpresas)
+          ? body.allowedEmpresas
+          : body.allowedEmpresas;
+      }
     }
 
     const allowedSedesResult = resolveValidAllowedSedes(nextAllowedSedes);
+    const allowedEmpresasResult = resolveValidAllowedEmpresas(
+      body.allowedEmpresas !== undefined
+        ? body.allowedEmpresas
+        : nextAllowedEmpresas,
+    );
     const allowedLinesResult = resolveValidAllowedLines(nextAllowedLines);
     const allowedDashboardsResult =
       resolveValidAllowedDashboards(nextAllowedDashboards);
@@ -511,6 +556,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!allowedSedesResult.ok) {
       return NextResponse.json(
         { error: allowedSedesResult.error },
+        { status: 400 },
+      );
+    }
+    if (!allowedEmpresasResult.ok) {
+      return NextResponse.json(
+        { error: allowedEmpresasResult.error },
         { status: 400 },
       );
     }
@@ -598,6 +649,17 @@ export async function PATCH(req: Request, { params }: Params) {
                   null,
           );
         }
+      }
+      if (
+        allowedEmpresasEnabled &&
+        (body.allowedEmpresas !== undefined || nextRole === "admin")
+      ) {
+        updates.push(`allowed_empresas = $${idx++}::jsonb`);
+        values.push(
+          nextRole === "admin" || allowedEmpresasResult.value == null
+            ? null
+            : JSON.stringify(allowedEmpresasResult.value),
+        );
       }
       if (allowedLinesEnabled) {
         addUpdate(

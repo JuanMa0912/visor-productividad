@@ -252,8 +252,11 @@ export const queryInformeVariacionRows = async (
   forcedMargenTipos: string[] | null = null,
   forcedMargenLineas: string[] | null = null,
   excludedMargenTipos: string[] | null = null,
+  options?: { kind?: "default" | "dinastia" },
 ): Promise<InformeDbAggRow[]> => {
-  const table = await resolveInformeMargenDataSource(client);
+  const table = await resolveInformeMargenDataSource(client, {
+    kind: options?.kind,
+  });
   const extraParams: Array<string | string[]> = [];
   const sedeFilterSql = buildSedeFilter(table, allowedSedeKeys, extraParams);
   const tipoFilterSql = buildMargenTipoFilter(table, forcedMargenTipos, extraParams);
@@ -421,6 +424,7 @@ export type LoadInformeVariacionOptions = {
   forcedMargenTipos?: string[] | null;
   forcedMargenLineas?: string[] | null;
   excludedMargenTipos?: string[] | null;
+  kind?: "default" | "dinastia";
 };
 
 export const loadInformeVariacionPayload = async (
@@ -438,6 +442,7 @@ export const loadInformeVariacionPayload = async (
     options.forcedMargenTipos ?? null,
     options.forcedMargenLineas ?? null,
     options.excludedMargenTipos ?? null,
+    { kind: options.kind },
   );
   const payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
   const lineScope = {

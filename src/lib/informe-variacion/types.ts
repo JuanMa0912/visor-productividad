@@ -74,6 +74,7 @@ export const INFORME_EMPRESA_ORDER = [
   { key: "mtodo", label: "Comercializadora" },
   { key: "mercamio", label: "Mercamio" },
   { key: "bogota", label: "Merkmios" },
+  { key: "dinastia", label: "Dinastía" },
 ] as const;
 
 export const EMPTY_INFORME_FILTERS: InformeGlobalFilters = {

@@ -94,7 +94,7 @@ Orden completo despues de `schema-auth.sql`:
 40. `20260715_margen_item_dia_roll_atomic_refresh.sql` (rebuild completo via staging+rename; evita vaciar la tabla durante el refresh)
 41. `20260715_user_audit_trail.sql` (`app_user_admin_audit` + `app_user_login_attempt_log`)
 42. `20260716_informe_variacion_payload_std.sql` (snapshot JSON de `/informe-variacion` para first paint rapido)
-43. `20260717_app_users_portal_profile_fruver.sql` (añade perfil `fruver` + configura LHERRERA)
+44. `20260723_dinastia_tenant_tables.sql` (tablas `margen_dinastia` / `rotacion_dinastia` / `ventas_dinastia` + `app_users.allowed_empresas`)
 44. `20260721_app_export_download_log.sql` (bitacora de descargas/exports; solo metadatos; retencion ~9 meses)
 45. `20260721_margen_factura_cliente.sql` (`documento_docfc`/`id_terc`/`nombre_terc` en `margen_final` + roll)
 46. `20260722_margen_factura_caja_vendedor.sql` (`id_caja`/`vend_cc`/`vend_cc_desc` en roll; refresh con MAX por factura)
@@ -127,6 +127,7 @@ Columnas relevantes de `app_users`:
 | `role` | `admin` o `user` |
 | `sede` | fallback legacy |
 | `allowed_sedes` | JSONB de sedes visibles |
+| `allowed_empresas` | JSONB de empresas BD (`mercamio`, `mtodo`, `bogota`, `dinastia`); `NULL` = todas |
 | `allowed_lines` | lineas visibles |
 | `allowed_dashboards` | secciones UAID |
 | `allowed_subdashboards` | permisos granulares |
@@ -197,6 +198,7 @@ Notas:
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD; incluye `id_caja`, `vend_cc`/`vend_cc_desc`, `documento_docfc`, `id_terc`/`nombre_terc` |
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta `/margenes` (Producto/Factura/Cliente/Sede); atributos de factura vía MAX |
 | `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
+| `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Productividad (`ventas_dinastia`) pendiente. |
 | `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s |
 | `informe_variacion_payload_std_meta` | ultimo warm (refreshed_at, mes, #rangos) |
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |

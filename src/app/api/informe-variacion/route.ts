@@ -28,6 +28,10 @@ import {
 } from "@/lib/informe-variacion/payload-std-server";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
+import {
+  resolveDataSourceKind,
+  userIsDinastiaOnly,
+} from "@/lib/shared/data-tenant";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -91,6 +95,7 @@ export async function GET(request: Request) {
     role: session.user.role,
     sede: session.user.sede,
     allowedSedes: session.user.allowedSedes,
+    allowedEmpresas: session.user.allowedEmpresas,
   });
   const lineScope = resolveSessionLineCategoryScope(session.user);
   if (!scope.authorized) {
@@ -102,12 +107,31 @@ export async function GET(request: Request) {
     );
   }
 
+  const empresaParam = url.searchParams.get("empresa")?.trim() || null;
+  const selectedEmpresas = empresaParam
+    ? [empresaParam]
+    : userIsDinastiaOnly(session.user)
+      ? ["dinastia"]
+      : [];
+  const dataSource = resolveDataSourceKind(session.user, selectedEmpresas);
+  if (!dataSource.ok) {
+    return withSession(
+      NextResponse.json(
+        { error: dataSource.error },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  const dataKind = dataSource.kind;
+
   const metaClient = await (await getDbPool()).connect();
   let maxCompactDate: string | null = null;
   let metaFailed = false;
   try {
     try {
-      const meta = await loadInformeVariacionMeta(metaClient, scope.allowedKeys);
+      const meta = await loadInformeVariacionMeta(metaClient, scope.allowedKeys, {
+        kind: dataKind,
+      });
       maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
     } catch (metaError) {
       metaFailed = true;
@@ -152,17 +176,17 @@ export async function GET(request: Request) {
       );
     }
 
-    const bundleKey = buildInformeBundleCacheKey(
+    const bundleKey = `${buildInformeBundleCacheKey(
       year,
       month,
       scope.allowedKeys,
       lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-    );
+    )}:ds=${dataKind}`;
     if (forceRefresh) {
       invalidateInformeCacheKey(bundleKey);
       for (const range of availableRanges) {
         invalidateInformeCacheKey(
-          buildInformeCacheKey(
+          `${buildInformeCacheKey(
             year,
             month,
             scope.allowedKeys,
@@ -170,7 +194,7 @@ export async function GET(request: Request) {
             lineScope.forcedMargenTipos,
             lineScope.forcedMargenLineas,
             lineScope.excludedMargenTipos,
-          ),
+          )}:ds=${dataKind}`,
         );
       }
     } else {
@@ -188,6 +212,7 @@ export async function GET(request: Request) {
     }
 
     const useStd =
+      dataKind === "default" &&
       !forceRefresh &&
       canUseInformePayloadStd(
         scope.allowedKeys,
@@ -238,6 +263,7 @@ export async function GET(request: Request) {
         scope.allowedKeys,
         availableRanges,
         lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
+        { kind: dataKind },
       );
       const elapsedMs = Date.now() - startedAt;
       await client.query("COMMIT");
@@ -339,13 +365,13 @@ export async function GET(request: Request) {
     );
   }
 
-  const cacheKey = buildInformeCacheKey(
+  const cacheKey = `${buildInformeCacheKey(
     year,
     month,
     scope.allowedKeys,
     effectiveRange?.id,
     lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-  );
+  )}:ds=${dataKind}`;
   if (forceRefresh) {
     invalidateInformeCacheKey(cacheKey);
   } else {
@@ -363,6 +389,7 @@ export async function GET(request: Request) {
   }
 
   const useStd =
+    dataKind === "default" &&
     !forceRefresh &&
     canUseInformePayloadStd(
       scope.allowedKeys,
@@ -411,6 +438,7 @@ export async function GET(request: Request) {
         forcedMargenTipos: lineScope.forcedMargenTipos,
         forcedMargenLineas: lineScope.forcedMargenLineas,
         excludedMargenTipos: lineScope.excludedMargenTipos,
+        kind: dataKind,
       },
     );
     const elapsedMs = Date.now() - startedAt;

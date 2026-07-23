@@ -15,6 +15,9 @@ import {
 } from "@/lib/admin/user-admin-audit";
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
 import {
+  resolveValidAllowedEmpresas,
+} from "@/lib/shared/data-tenant";
+import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
   resolvePortalSectionId,
@@ -126,6 +129,21 @@ const hasAllowedSedesColumn = async (client: {
     FROM information_schema.columns
     WHERE table_name = 'app_users'
       AND column_name = 'allowed_sedes'
+    LIMIT 1
+    `,
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const hasAllowedEmpresasColumn = async (client: {
+  query: (queryText: string) => Promise<{ rows?: unknown[] }>;
+}) => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'app_users'
+      AND column_name = 'allowed_empresas'
     LIMIT 1
     `,
   );
@@ -353,6 +371,7 @@ export async function GET(req: Request) {
         u.role,
         to_jsonb(u)->>'sede' AS sede,
         to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
+        to_jsonb(u)->'allowed_empresas' AS "allowedEmpresas",
         to_jsonb(u)->'allowed_lines' AS "allowedLines",
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
@@ -436,6 +455,7 @@ export async function POST(req: Request) {
     portalProfile?: string;
     sede?: string | null;
     allowedSedes?: string[] | null;
+    allowedEmpresas?: string[] | null;
     allowedLines?: string[] | null;
     allowedDashboards?: string[] | null;
     allowedSubdashboards?: string[] | null;
@@ -455,6 +475,7 @@ export async function POST(req: Request) {
   const role = resolved.role;
   const sede = resolveValidSede(body.sede);
   const allowedSedesResult = resolveValidAllowedSedes(resolved.allowedSedes);
+  const allowedEmpresasResult = resolveValidAllowedEmpresas(body.allowedEmpresas);
   const allowedLinesResult = resolveValidAllowedLines(resolved.allowedLines);
   const allowedDashboardsResult = resolveValidAllowedDashboards(
     resolved.allowedDashboards,
@@ -495,6 +516,12 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  if (!allowedEmpresasResult.ok) {
+    return NextResponse.json(
+      { error: allowedEmpresasResult.error },
+      { status: 400 },
+    );
+  }
   if (!allowedLinesResult.ok) {
     return NextResponse.json(
       { error: allowedLinesResult.error },
@@ -530,6 +557,20 @@ export async function POST(req: Request) {
     const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
     const portalProfileEnabled = await hasPortalProfileColumn(client);
+    const allowedEmpresasEnabled = await hasAllowedEmpresasColumn(client);
+    if (
+      !allowedEmpresasEnabled &&
+      body.allowedEmpresas !== undefined &&
+      body.allowedEmpresas !== null
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Falta aplicar migracion de empresas permitidas en app_users (db/migrations/20260723_dinastia_tenant_tables.sql).",
+        },
+        { status: 400 },
+      );
+    }
     if (!allowedSubdashboardsEnabled && body.allowedSubdashboards !== undefined) {
       return NextResponse.json(
         {
@@ -617,6 +658,29 @@ export async function POST(req: Request) {
               `,
               [username, passwordHash, role],
             );
+    const allowedEmpresas =
+      role === "admin"
+        ? null
+        : allowedEmpresasResult.value === undefined
+          ? null
+          : allowedEmpresasResult.value;
+    if (
+      allowedEmpresasEnabled &&
+      result.rows?.[0] &&
+      typeof (result.rows[0] as { id?: string }).id === "string"
+    ) {
+      await client.query(
+        `
+        UPDATE app_users
+        SET allowed_empresas = $1::jsonb
+        WHERE id = $2
+        `,
+        [
+          allowedEmpresas === null ? null : JSON.stringify(allowedEmpresas),
+          (result.rows[0] as { id: string }).id,
+        ],
+      );
+    }
     const user =
       result.rows && result.rows[0]
         ? {

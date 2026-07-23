@@ -53,6 +53,10 @@ const SEDE_NAME_BY_KEY: Record<string, string> = {
   "002|bogota": "Chía",
   "001|merkmios": "Bogotá",
   "002|merkmios": "Chía",
+
+  // ── Dinastía (GCP: rotacion_dinastia.nombre_sede) ────────────────────────
+  "001|dinastia": "Dinastia 1 Santa Elena",
+  "002|dinastia": "Dinastia 2 CR Primera",
 };
 
 /**
@@ -63,6 +67,7 @@ export const INVENTARIO_CANONICAL_EMPRESAS = [
   "mercamio",
   "mtodo",
   "bogota",
+  "dinastia",
 ] as const;
 
 export type InventarioCanonicalEmpresa =

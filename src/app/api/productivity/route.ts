@@ -229,6 +229,9 @@ const SEDE_NAMES: Record<string, string> = {
   // Merkmios (en BD aparece como "bogota")
   "001|bogota": "Bogotá",
   "002|bogota": "Chía",
+  // Dinastía
+  "001|dinastia": "Dinastia 1 Santa Elena",
+  "002|dinastia": "Dinastia 2 CR Primera",
 };
 
 // Función para obtener el nombre de sede a partir de centro_operacion y empresa

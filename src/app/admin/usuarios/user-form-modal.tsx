@@ -332,6 +332,13 @@ export function UserFormModal({
         ? "Ninguna"
         : formState.allowedSedes.join(", ");
 
+  const empresaSummary =
+    formState.portalProfile === "admin"
+      ? "Todas (admin)"
+      : formState.allowedEmpresas.length === 0
+        ? "Todas"
+        : formState.allowedEmpresas.join(", ");
+
   const permissionsSummary = canEditManualPermissions
     ? [
         `${formState.allowedDashboards.length || "Todas"} secciones`,
@@ -618,6 +625,58 @@ export function UserFormModal({
               />
             </div>
           </div>
+
+          <div>
+            <p className="text-sm font-medium text-slate-700">
+              Empresas de datos
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {isAdminProfile
+                ? "Los perfiles admin ven todas las empresas (sin mezclar Dinastía en la misma consulta)."
+                : "Vacío = todas excepto que elijas solo Dinastía u otras. No se puede mezclar Dinastía con el resto en una consulta."}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(
+                [
+                  ["mercamio", "Mercamio"],
+                  ["mtodo", "Comercializadora"],
+                  ["bogota", "Merkmios"],
+                  ["dinastia", "Dinastía"],
+                ] as const
+              ).map(([id, label]) => {
+                const checked = formState.allowedEmpresas.includes(id);
+                return (
+                  <label
+                    key={id}
+                    className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                      isAdminProfile
+                        ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
+                        : checked
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border-slate-300"
+                      disabled={isAdminProfile}
+                      checked={checked}
+                      onChange={(event) => {
+                        const nextChecked = event.target.checked;
+                        setFormState((prev) => ({
+                          ...prev,
+                          allowedEmpresas: nextChecked
+                            ? [...prev.allowedEmpresas, id]
+                            : prev.allowedEmpresas.filter((value) => value !== id),
+                        }));
+                      }}
+                    />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         </div>
       );
     }
@@ -821,6 +880,7 @@ export function UserFormModal({
             value={getPortalProfileLabel(formState.portalProfile)}
           />
           <SummaryRow label="Sedes" value={sedeSummary} />
+          <SummaryRow label="Empresas datos" value={empresaSummary} />
           <SummaryRow
             label="Estado"
             value={formState.is_active ? "Activa" : "Inactiva"}

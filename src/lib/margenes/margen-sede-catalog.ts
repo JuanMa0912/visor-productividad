@@ -26,6 +26,8 @@ const STATIC_SEDE_ENTRIES: Array<{ idCo: string; empresa: string }> = [
   { idCo: "003", empresa: "mtodo" },
   { idCo: "001", empresa: "bogota" },
   { idCo: "002", empresa: "bogota" },
+  { idCo: "001", empresa: "dinastia" },
+  { idCo: "002", empresa: "dinastia" },
 ];
 
 export const listMargenSedeCatalogOptions = (): MargenSedeCatalogOption[] => {

@@ -506,6 +506,7 @@ export const getUserSession = async (): Promise<UserSession | null> => {
         u.role,
         to_jsonb(u)->>'sede' AS sede,
         to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
+        to_jsonb(u)->'allowed_empresas' AS "allowedEmpresas",
         to_jsonb(u)->'allowed_lines' AS "allowedLines",
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
@@ -548,6 +549,9 @@ export const getUserSession = async (): Promise<UserSession | null> => {
         role: row.role,
         sede: row.sede,
         allowedSedes: row.allowedSedes,
+        allowedEmpresas: Array.isArray(row.allowedEmpresas)
+          ? row.allowedEmpresas
+          : row.allowedEmpresas ?? null,
         allowedLines: row.allowedLines,
         allowedDashboards: normalizeAllowedPortalSections(row.allowedDashboards),
         allowedSubdashboards: normalizeAllowedPortalSubsections(

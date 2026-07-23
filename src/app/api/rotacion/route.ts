@@ -7,7 +7,20 @@ import {
   type RotacionBaseQueryClient,
   type RotacionBaseSqlFields,
 } from "@/lib/rotacion/base-fields";
-import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
+import { getRotacionSourceTable, runWithRotacionSourceTableAsync } from "@/lib/rotacion/source-context";
+import {
+  ROTACION_SOURCE_DINASTIA,
+  ROTACION_SOURCE_LEGACY,
+} from "@/lib/rotacion/source-tables";
+import {
+  canonicalizeEmpresaCode,
+  parseAllowedEmpresas,
+  resolveDataSourceKind,
+  resolveEmpresasHintForTenant,
+  userHasDinastiaAccess,
+  userIsDinastiaOnly,
+} from "@/lib/shared/data-tenant";
+import { mergeDinastiaIntoRotationCatalog } from "@/lib/rotacion/dinastia-catalog";
 import { normalizeRotationCategoriaKey } from "@/lib/rotacion/dimensions";
 import type {
   RotacionDataSource,
@@ -680,9 +693,23 @@ export const resolveVisibleSedes = (
     role: "admin" | "user";
     sede: string | null;
     allowedSedes?: string[] | null;
+    allowedEmpresas?: string[] | null;
   },
   catalog: RotationFilterCatalog,
 ) => {
+  const filterByEmpresas = (
+    sedes: RotationFilterCatalog["sedes"],
+  ): RotationFilterCatalog["sedes"] => {
+    if (sessionUser.role === "admin") return sedes;
+    const allowed = parseAllowedEmpresas(sessionUser.allowedEmpresas);
+    if (allowed === null) return sedes;
+    const allowedSet = new Set(allowed);
+    return sedes.filter((sede) => {
+      const code = canonicalizeEmpresaCode(sede.empresa);
+      return code !== null && allowedSet.has(code);
+    });
+  };
+
   if (sessionUser.role === "admin") {
     return {
       authorized: true,
@@ -704,12 +731,14 @@ export const resolveVisibleSedes = (
   if (normalizedAllowed.has(normalizeKey("Todas"))) {
     return {
       authorized: true,
-      visibleSedes: catalog.sedes,
+      visibleSedes: filterByEmpresas(catalog.sedes),
     };
   }
 
-  const visibleFromAllowed = catalog.sedes.filter((sede) =>
-    catalogSedeMatchesAllowedKeys(sede, normalizedAllowed, canonicalAllowed),
+  const visibleFromAllowed = filterByEmpresas(
+    catalog.sedes.filter((sede) =>
+      catalogSedeMatchesAllowedKeys(sede, normalizedAllowed, canonicalAllowed),
+    ),
   );
 
   /** Lista explicita en perfil: siempre autorizado; la lista puede quedar vacia si aun no hay filas en BD para esas sedes. */
@@ -725,10 +754,12 @@ export const resolveVisibleSedes = (
     const legacyCanon = canonicalSedeKey(sessionUser.sede ?? "");
     const legacySet = legacyKey ? new Set([legacyKey]) : new Set<string>();
     const legacyCanonSet = legacyCanon ? new Set([legacyCanon]) : new Set<string>();
-    const legacyVisible = catalog.sedes.filter((sede) =>
-      legacyKey
-        ? catalogSedeMatchesAllowedKeys(sede, legacySet, legacyCanonSet)
-        : false,
+    const legacyVisible = filterByEmpresas(
+      catalog.sedes.filter((sede) =>
+        legacyKey
+          ? catalogSedeMatchesAllowedKeys(sede, legacySet, legacyCanonSet)
+          : false,
+      ),
     );
     if (legacyVisible.length > 0) {
       return {
@@ -736,6 +767,18 @@ export const resolveVisibleSedes = (
         visibleSedes: legacyVisible,
       };
     }
+  }
+
+  // Usuario solo-Dinastia sin sedes: todas las Dinastia del catalogo.
+  const empresaFiltered = filterByEmpresas(catalog.sedes);
+  if (
+    empresaFiltered.length > 0 &&
+    empresaFiltered.every((sede) => sede.empresa === "dinastia")
+  ) {
+    return {
+      authorized: true,
+      visibleSedes: empresaFiltered,
+    };
   }
 
   return {
@@ -1141,6 +1184,7 @@ export const getRotationFilterCatalog = async (
     if (
       startIso &&
       endIso &&
+      sourceTable === ROTACION_SOURCE_LEGACY &&
       matchesRotacionPeriodoStdRange(periodoMeta, startIso, endIso)
     ) {
       const periodoResult = await client.query(
@@ -2991,6 +3035,41 @@ export async function GET(request: Request) {
     );
   }
 
+  const tenantUrl = new URL(request.url);
+  const tenantEmpresa = tenantUrl.searchParams.get("empresa")?.trim() || null;
+  const tenantSedeScopes = tenantUrl.searchParams
+    .getAll("sedeScope")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const tenantSelected = tenantEmpresa
+    ? [tenantEmpresa]
+    : resolveEmpresasHintForTenant(
+        userIsDinastiaOnly(session.user) ? ["dinastia"] : [],
+        tenantSedeScopes,
+        "::",
+      );
+  // Si el hint quedo vacio pero el usuario es solo-Dinastia, forzar dinastia.
+  const tenantSelectedFinal =
+    tenantSelected.length > 0
+      ? tenantSelected
+      : userIsDinastiaOnly(session.user)
+        ? ["dinastia"]
+        : [];
+  const tenantSource = resolveDataSourceKind(session.user, tenantSelectedFinal);
+  if (!tenantSource.ok) {
+    return withSession(
+      NextResponse.json(
+        { error: tenantSource.error },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  const rotacionSourceTable =
+    tenantSource.kind === "dinastia"
+      ? ROTACION_SOURCE_DINASTIA
+      : ROTACION_SOURCE_LEGACY;
+
+  return runWithRotacionSourceTableAsync(rotacionSourceTable, async () => {
   try {
     const bounds = await getAvailableBounds();
     const abcdConfig = await getRotacionAbcdConfig();
@@ -3101,7 +3180,7 @@ export async function GET(request: Request) {
     const boundedRange = limitDateRangeWindow(effectiveRange);
     const catalogStartCompact = isoToCompactDate(boundedRange.start);
     const catalogEndCompact = isoToCompactDate(boundedRange.end);
-    const fullCatalog =
+    const fullCatalogRaw =
       catalogStartCompact &&
       catalogEndCompact &&
       catalogStartCompact <= catalogEndCompact
@@ -3118,6 +3197,11 @@ export async function GET(request: Request) {
             categorias: [] as RotationCategoriaOption[],
             lineasN1PorCategoria: {} as Record<string, string[]>,
           };
+    const fullCatalog =
+      rotacionSourceTable === ROTACION_SOURCE_LEGACY &&
+      userHasDinastiaAccess(session.user)
+        ? mergeDinastiaIntoRotationCatalog(fullCatalogRaw)
+        : fullCatalogRaw;
     const sedeAccess = resolveVisibleSedes(session.user, fullCatalog);
     const lineScope = resolveSessionLineCategoryScope(session.user);
 
@@ -3680,6 +3764,7 @@ export async function GET(request: Request) {
       ),
     );
   }
+  });
 }
 
 export async function PUT(request: Request) {

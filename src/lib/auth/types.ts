@@ -27,6 +27,8 @@ export type AuthUser = {
   portalProfile?: PortalProfileId | null;
   sede: string | null;
   allowedSedes: string[] | null;
+  /** Empresas BD permitidas (`mercamio`/`mtodo`/`bogota`/`dinastia`). null = todas. */
+  allowedEmpresas?: string[] | null;
   allowedLines: string[] | null;
   allowedDashboards: string[] | null;
   allowedSubdashboards: string[] | null;
@@ -52,6 +54,7 @@ export type AuthUserPublic = Pick<
   | "role"
   | "sede"
   | "allowedSedes"
+  | "allowedEmpresas"
   | "allowedLines"
   | "allowedDashboards"
   | "allowedSubdashboards"

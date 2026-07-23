@@ -9,6 +9,8 @@ export type UserFormState = {
   role: "admin" | "user";
   sede: string;
   allowedSedes: string[];
+  /** Vacio = todas las empresas (null en BD). */
+  allowedEmpresas: string[];
   allowedLines: string[];
   allowedDashboards: string[];
   allowedSubdashboards: string[];
@@ -31,6 +33,7 @@ export const serializeUserFormState = (state: UserFormState): string =>
     username: state.username.trim(),
     portalProfile: state.portalProfile,
     allowedSedes: [...state.allowedSedes].sort(),
+    allowedEmpresas: [...state.allowedEmpresas].sort(),
     allowedLines: [...state.allowedLines].sort(),
     allowedDashboards: [...state.allowedDashboards].sort(),
     allowedSubdashboards: [...state.allowedSubdashboards].sort(),

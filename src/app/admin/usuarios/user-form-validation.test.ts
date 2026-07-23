@@ -14,6 +14,7 @@ const baseState = (): UserFormState => ({
   role: "user",
   sede: "",
   allowedSedes: ["Palmira"],
+  allowedEmpresas: [],
   allowedLines: [],
   allowedDashboards: [],
   allowedSubdashboards: [],

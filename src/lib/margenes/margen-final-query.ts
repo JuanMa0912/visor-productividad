@@ -33,6 +33,7 @@ const EMPRESA_LABELS: Record<string, string> = {
   mercatodo: "MERCATODO",
   bogota: "BOGOTA",
   merkmios: "MERKMIOS",
+  dinastia: "DINASTIA",
 };
 
 export const compactDateToIso = (compact: string | null | undefined): string | null => {

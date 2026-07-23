@@ -49,14 +49,20 @@ const buildMetaSedeFilter = (
 export const loadInformeVariacionMeta = async (
   client: PoolClient,
   allowedSedeKeys: string[] | null,
+  options?: { kind?: "default" | "dinastia" },
 ): Promise<InformeVariacionMeta> => {
-  const tableCheck = await client.query(`
+  const kind = options?.kind ?? "default";
+  const requiredTable = kind === "dinastia" ? "margen_dinastia" : "margen_final";
+  const tableCheck = await client.query(
+    `
     SELECT 1
     FROM information_schema.tables
     WHERE table_schema = 'public'
-      AND table_name = 'margen_final'
+      AND table_name = $1
     LIMIT 1
-  `);
+  `,
+    [requiredTable],
+  );
 
   if (!tableCheck.rows?.length) {
     return {
@@ -64,11 +70,13 @@ export const loadInformeVariacionMeta = async (
       maxDate: null,
       table: null,
       message:
-        "Tabla margen_final no existe aun. Aplica db/migrations/20260622_margen_final.sql.",
+        kind === "dinastia"
+          ? "Tabla margen_dinastia no existe aun. Aplica db/migrations/20260723_dinastia_tenant_tables.sql."
+          : "Tabla margen_final no existe aun. Aplica db/migrations/20260622_margen_final.sql.",
     };
   }
 
-  const table = await resolveInformeMargenDataSource(client);
+  const table = await resolveInformeMargenDataSource(client, { kind });
   const params: Array<string | string[]> = [];
   const sedeFilterSql = buildMetaSedeFilter(table, allowedSedeKeys, params);
 

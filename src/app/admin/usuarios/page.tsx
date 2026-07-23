@@ -92,6 +92,7 @@ type UserRow = {
   portalProfile?: PortalProfileId | null;
   sede: string | null;
   allowedSedes: string[] | null;
+  allowedEmpresas: string[] | null;
   allowedLines: string[] | null;
   allowedDashboards: string[] | null;
   allowedSubdashboards: string[] | null;
@@ -118,6 +119,7 @@ const emptyForm: UserFormState = {
   role: "user",
   sede: "",
   allowedSedes: [],
+  allowedEmpresas: [],
   allowedLines: [],
   allowedDashboards: [],
   allowedSubdashboards: [],
@@ -792,6 +794,9 @@ export default function AdminUsuariosPage() {
           ? user.sede
           : (allowedSedes[0] ?? inferSedeFromUsername(user.username) ?? ""),
       allowedSedes,
+      allowedEmpresas: Array.isArray(user.allowedEmpresas)
+        ? [...user.allowedEmpresas]
+        : [],
       ...formArrays,
       password: "",
       is_active: user.is_active,
@@ -858,6 +863,12 @@ export default function AdminUsuariosPage() {
             ? null
             : formState.allowedSedes.length > 0
               ? formState.allowedSedes
+              : null,
+        allowedEmpresas:
+          formState.portalProfile === "admin"
+            ? null
+            : formState.allowedEmpresas.length > 0
+              ? formState.allowedEmpresas
               : null,
         allowedLines:
           formState.portalProfile === "admin"

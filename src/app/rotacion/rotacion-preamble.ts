@@ -1659,6 +1659,7 @@ const COMPANY_LABELS: Record<string, string> = {
   mercamio: "Mercamio",
   mtodo: "Comercializadora",
   bogota: "Merkmios",
+  dinastia: "Dinastía",
 };
 
 const formatCompanyLabel = (value: string) =>

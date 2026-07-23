@@ -6,11 +6,13 @@ import {
   listMargenSedeCatalogOptions,
   type MargenSedeCatalogOption,
 } from "@/lib/margenes/margen-sede-catalog";
+import { canonicalizeEmpresaCode } from "@/lib/shared/data-tenant";
 
 export type MargenSessionSedeScope = {
   role: "admin" | "user";
   sede: string | null;
   allowedSedes?: string[] | null;
+  allowedEmpresas?: string[] | null;
 };
 
 const hasAllSedesToken = (allowedSedes: string[]) =>
@@ -29,6 +31,26 @@ const matchCatalogByAllowedNames = (
   return keys;
 };
 
+const filterCatalogByEmpresas = (
+  catalog: MargenSedeCatalogOption[],
+  allowedEmpresas?: string[] | null,
+): MargenSedeCatalogOption[] => {
+  if (allowedEmpresas == null) return catalog;
+  if (!Array.isArray(allowedEmpresas) || allowedEmpresas.length === 0) {
+    return catalog;
+  }
+  const allowed = new Set(
+    allowedEmpresas
+      .map((value) => canonicalizeEmpresaCode(value))
+      .filter((value): value is NonNullable<typeof value> => value !== null),
+  );
+  if (allowed.size === 0) return catalog;
+  return catalog.filter((option) => {
+    const code = canonicalizeEmpresaCode(option.empresa);
+    return code !== null && allowed.has(code);
+  });
+};
+
 export const resolveMargenSedeScope = (
   sessionUser: MargenSessionSedeScope,
 ): {
@@ -36,7 +58,10 @@ export const resolveMargenSedeScope = (
   hasAllSedes: boolean;
   allowedKeys: string[] | null;
 } => {
-  const catalog = listMargenSedeCatalogOptions();
+  const catalog = filterCatalogByEmpresas(
+    listMargenSedeCatalogOptions(),
+    sessionUser.role === "admin" ? null : sessionUser.allowedEmpresas,
+  );
 
   if (sessionUser.role === "admin") {
     return { authorized: true, hasAllSedes: true, allowedKeys: null };
@@ -47,7 +72,15 @@ export const resolveMargenSedeScope = (
     : [];
 
   if (hasAllSedesToken(rawAllowed)) {
-    return { authorized: true, hasAllSedes: true, allowedKeys: null };
+    // Sin restriccion de empresas: null = catálogo completo (compat).
+    if (sessionUser.allowedEmpresas == null) {
+      return { authorized: true, hasAllSedes: true, allowedKeys: null };
+    }
+    return {
+      authorized: catalog.length > 0,
+      hasAllSedes: true,
+      allowedKeys: catalog.map((option) => option.value),
+    };
   }
 
   const canonicalAllowed = rawAllowed
@@ -69,13 +102,25 @@ export const resolveMargenSedeScope = (
     }
   }
 
+  // Usuario solo-Dinastia sin sedes explicitas: todas las sedes Dinastia del catalogo.
+  if (catalog.length > 0 && catalog.every((o) => o.empresa === "dinastia")) {
+    return {
+      authorized: true,
+      hasAllSedes: true,
+      allowedKeys: catalog.map((option) => option.value),
+    };
+  }
+
   return { authorized: false, hasAllSedes: false, allowedKeys: [] };
 };
 
 export const filterMargenSedeCatalogForUser = (
   sessionUser: MargenSessionSedeScope,
 ): MargenSedeCatalogOption[] => {
-  const catalog = listMargenSedeCatalogOptions();
+  const catalog = filterCatalogByEmpresas(
+    listMargenSedeCatalogOptions(),
+    sessionUser.role === "admin" ? null : sessionUser.allowedEmpresas,
+  );
   const scope = resolveMargenSedeScope(sessionUser);
   if (!scope.authorized) return [];
   if (scope.allowedKeys === null) return catalog;
