@@ -546,6 +546,8 @@ export function RotacionPageInner() {
           onForbidden: (message) => {
             setError(message);
             setHasLoadedItems(false);
+            setIsLoadingData(false);
+            console.warn("[rotacion] API 403:", message);
           },
         });
         if (options?.signal?.aborted) {
@@ -810,6 +812,14 @@ export function RotacionPageInner() {
             );
             if (comboResponse.status === 401) {
               router.replace("/login");
+              return;
+            }
+            if (comboResponse.status === 403) {
+              const forbiddenMessage =
+                await readRotationApiForbiddenMessage(comboResponse);
+              if (generation !== catalogLoadGenerationRef.current) return;
+              setError(forbiddenMessage);
+              console.warn("[rotacion] catalogo por sede 403:", forbiddenMessage);
               return;
             }
             if (comboResponse.ok) {

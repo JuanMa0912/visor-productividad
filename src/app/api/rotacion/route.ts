@@ -3204,11 +3204,12 @@ export async function GET(request: Request) {
             categorias: [] as RotationCategoriaOption[],
             lineasN1PorCategoria: {} as Record<string, string[]>,
           };
-    const fullCatalog =
-      rotacionSourceTable === ROTACION_SOURCE_LEGACY &&
-      userHasDinastiaAccess(session.user)
-        ? mergeDinastiaIntoRotationCatalog(fullCatalogRaw)
-        : fullCatalogRaw;
+    // Siempre sembrar Dinastia si el usuario puede verla: al cambiar a
+    // rotacion_dinastia el DISTINCT puede venir vacio (matview sin refresh /
+    // rango sin filas) y si no mergeamos el sedeScope termina en 403.
+    const fullCatalog = userHasDinastiaAccess(session.user)
+      ? mergeDinastiaIntoRotationCatalog(fullCatalogRaw)
+      : fullCatalogRaw;
     const sedeAccess = resolveVisibleSedes(session.user, fullCatalog);
     const lineScope = resolveSessionLineCategoryScope(session.user);
 
@@ -3233,14 +3234,28 @@ export async function GET(request: Request) {
       categorias: [],
       lineasN1PorCategoria: {},
     };
+    const normalizeSedeIdToken = (value: string) => {
+      const trimmed = value.trim();
+      if (/^\d+$/.test(trimmed)) return trimmed.padStart(3, "0");
+      return trimmed;
+    };
+
+    const findVisibleSede = (empresa: string, sedeId: string) => {
+      const empresaKey = empresa.trim().toLowerCase();
+      const sedeKey = normalizeSedeIdToken(sedeId);
+      return (
+        visibleSedes.find(
+          (sede) =>
+            sede.empresa.trim().toLowerCase() === empresaKey &&
+            normalizeSedeIdToken(sede.sedeId) === sedeKey,
+        ) ?? null
+      );
+    };
+
     const requestedVisibleSede =
       requestedSedeId === null
         ? null
-        : (visibleSedes.find(
-            (sede) =>
-              sede.sedeId === requestedSedeId &&
-              (!requestedCompany || sede.empresa === requestedCompany),
-          ) ?? null);
+        : findVisibleSede(requestedCompany ?? "", requestedSedeId);
 
     if (requestedSedeId && !requestedVisibleSede) {
       return withSession(
@@ -3258,11 +3273,7 @@ export async function GET(request: Request) {
         const empresa = scope.slice(0, idx).trim();
         const sedeId = scope.slice(idx + 2).trim();
         if (!empresa || !sedeId) return null;
-        return (
-          visibleSedes.find(
-            (sede) => sede.empresa === empresa && sede.sedeId === sedeId,
-          ) ?? null
-        );
+        return findVisibleSede(empresa, sedeId);
       })
       .filter(Boolean) as RotationFilterCatalog["sedes"];
 

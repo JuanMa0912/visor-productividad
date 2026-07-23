@@ -16,6 +16,15 @@ export const DINASTIA_ROTACION_SEDES = [
   },
 ] as const;
 
+const normalizeSedeIdToken = (value: string) => {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return trimmed.padStart(3, "0");
+  return trimmed;
+};
+
+const sedeCatalogKey = (empresa: string, sedeId: string) =>
+  `${empresa.trim().toLowerCase()}::${normalizeSedeIdToken(sedeId)}`;
+
 export const mergeDinastiaIntoRotationCatalog = <
   T extends {
     companies: string[];
@@ -25,11 +34,11 @@ export const mergeDinastiaIntoRotationCatalog = <
   catalog: T,
 ): T => {
   const seen = new Set(
-    catalog.sedes.map((sede) => `${sede.empresa}::${sede.sedeId}`),
+    catalog.sedes.map((sede) => sedeCatalogKey(sede.empresa, sede.sedeId)),
   );
   const sedes = [...catalog.sedes];
   for (const entry of DINASTIA_ROTACION_SEDES) {
-    const key = `${entry.empresa}::${entry.sedeId}`;
+    const key = sedeCatalogKey(entry.empresa, entry.sedeId);
     if (seen.has(key)) continue;
     seen.add(key);
     sedes.push({ ...entry });
