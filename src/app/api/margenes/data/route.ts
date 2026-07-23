@@ -509,10 +509,17 @@ export async function GET(request: Request) {
       const factPath = parseFactPath(url.searchParams.get("factPath"));
       const search = url.searchParams.get("search") ?? undefined;
       const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
-      const [kpi, table] = await Promise.all([
-        queryKpi(client, parsed, kpiPath, dataTable, { mercadoOnly: false }),
-        queryFactNavRows(client, parsed, factPath, dataTable, search),
-      ]);
+      // Secuencial: un PoolClient no admite queries concurrentes (Promise.all cuelga).
+      const kpi = await queryKpi(client, parsed, kpiPath, dataTable, {
+        mercadoOnly: false,
+      });
+      const table = await queryFactNavRows(
+        client,
+        parsed,
+        factPath,
+        dataTable,
+        search,
+      );
       payload = { kpi, ...table };
     } else if (mode === "fact-list") {
       const search = url.searchParams.get("search") ?? undefined;
@@ -520,16 +527,27 @@ export async function GET(request: Request) {
       const mercadoOnly = false;
       if (factPath.some((step) => step.type === "factura")) {
         const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
-        const [kpi, table] = await Promise.all([
-          queryKpi(client, parsed, kpiPath, dataTable, { mercadoOnly }),
-          queryFactNavRows(client, parsed, factPath, dataTable, search),
-        ]);
+        const kpi = await queryKpi(client, parsed, kpiPath, dataTable, {
+          mercadoOnly,
+        });
+        const table = await queryFactNavRows(
+          client,
+          parsed,
+          factPath,
+          dataTable,
+          search,
+        );
         payload = { kpi, ...table };
       } else {
-        const [kpi, rows] = await Promise.all([
-          queryKpi(client, parsed, [], dataTable, { mercadoOnly }),
-          queryFactListRows(client, parsed, dataTable, search),
-        ]);
+        const kpi = await queryKpi(client, parsed, [], dataTable, {
+          mercadoOnly,
+        });
+        const rows = await queryFactListRows(
+          client,
+          parsed,
+          dataTable,
+          search,
+        );
         payload = {
           kpi,
           level: 0,
@@ -538,10 +556,10 @@ export async function GET(request: Request) {
         };
       }
     } else if (mode === "sede") {
-      const [kpi, rows] = await Promise.all([
-        queryKpi(client, parsed, [], dataTable, { mercadoOnly: false }),
-        querySedeCompare(client, parsed, dataTable),
-      ]);
+      const kpi = await queryKpi(client, parsed, [], dataTable, {
+        mercadoOnly: false,
+      });
+      const rows = await querySedeCompare(client, parsed, dataTable);
       payload = { kpi, rows };
     } else if (mode === "cliente") {
       const search = url.searchParams.get("search") ?? undefined;
@@ -557,10 +575,16 @@ export async function GET(request: Request) {
       const factPath = parseFactPath(url.searchParams.get("factPath"));
       if (factPath.some((step) => step.type === "factura")) {
         const kpiPath = factPathToInvoiceKpiDrillPath(factPath);
-        const [kpi, table] = await Promise.all([
-          queryKpi(client, parsed, kpiPath, dataTable, { mercadoOnly: false }),
-          queryFactNavRows(client, parsed, factPath, dataTable, search),
-        ]);
+        const kpi = await queryKpi(client, parsed, kpiPath, dataTable, {
+          mercadoOnly: false,
+        });
+        const table = await queryFactNavRows(
+          client,
+          parsed,
+          factPath,
+          dataTable,
+          search,
+        );
         payload = { kpi, ...table };
       } else {
         payload = {

@@ -819,10 +819,15 @@ export const queryDrillBoard = async (
   }
 
   const kpiPath = drillPathForInvoiceDetail(path);
-  const [kpi, tableResult] = await Promise.all([
-    queryKpi(client, filters, kpiPath, table),
-    queryDrillRows(client, filters, path, table, search),
-  ]);
+  // Secuencial: mismo PoolClient no soporta queries concurrentes.
+  const kpi = await queryKpi(client, filters, kpiPath, table);
+  const tableResult = await queryDrillRows(
+    client,
+    filters,
+    path,
+    table,
+    search,
+  );
   return { kpi, ...tableResult };
 };
 
@@ -1050,30 +1055,29 @@ export const queryClienteCompare = async (
   }
 
   const sedeKey = sedeDistinctKeySql(table);
-  const [result, metaResult] = await Promise.all([
-    client.query(
-      `
-      SELECT
-        ${idTerc} AS id_terc,
-        MAX(${nombreTerc}) AS nombre_terc,
-        ${metrics}
-      FROM ${table}
-      WHERE ${where}
-      GROUP BY 1
-      `,
-      params,
-    ),
-    client.query(
-      `
-      SELECT
-        COUNT(DISTINCT fecha_dcto) AS dias,
-        COUNT(DISTINCT ${sedeKey}) AS sedes
-      FROM ${table}
-      WHERE ${where}
-      `,
-      params,
-    ),
-  ]);
+  // Secuencial: mismo PoolClient no soporta queries concurrentes.
+  const result = await client.query(
+    `
+    SELECT
+      ${idTerc} AS id_terc,
+      MAX(${nombreTerc}) AS nombre_terc,
+      ${metrics}
+    FROM ${table}
+    WHERE ${where}
+    GROUP BY 1
+    `,
+    params,
+  );
+  const metaResult = await client.query(
+    `
+    SELECT
+      COUNT(DISTINCT fecha_dcto) AS dias,
+      COUNT(DISTINCT ${sedeKey}) AS sedes
+    FROM ${table}
+    WHERE ${where}
+    `,
+    params,
+  );
 
   const orderBy = filters.orderBy;
   const orderDir = filters.orderDir === "asc" ? 1 : -1;
@@ -1176,41 +1180,40 @@ export const queryClienteFacturas = async (
   const { where: kpiWhere, params: kpiParams } = buildWhere();
   const { where: rowWhere, params: rowParams } = buildWhere();
 
-  const [kpiResult, rowResult] = await Promise.all([
-    client.query(
-      `
-      SELECT
-        ${metrics},
-        COUNT(DISTINCT fecha_dcto) AS dias,
-        COUNT(DISTINCT ${sedeKey}) AS sedes
-      FROM ${table}
-      WHERE ${kpiWhere}
-      `,
-      kpiParams,
-    ),
-    client.query(
-      `
-      SELECT
-        ${documentoExpr(table)} AS documento,
-        ${tipdocExpr(table)} AS tipdoc,
-        fecha_dcto,
-        ${sedeCols},
-        ${clienteSelectSql(table)},
-        ${metrics}
-      FROM ${table}
-      WHERE ${rowWhere}
-      GROUP BY 1, 2, 3, 4, 5
-      ${buildMargenOrderBy(
-        filters.orderBy,
-        filters.orderDir ?? "desc",
-        "ventas_netas",
-        BOARD_FACTURA_ORDER_ALLOWED,
-      )}
-      LIMIT 1000
-      `,
-      rowParams,
-    ),
-  ]);
+  // Secuencial: mismo PoolClient no soporta queries concurrentes.
+  const kpiResult = await client.query(
+    `
+    SELECT
+      ${metrics},
+      COUNT(DISTINCT fecha_dcto) AS dias,
+      COUNT(DISTINCT ${sedeKey}) AS sedes
+    FROM ${table}
+    WHERE ${kpiWhere}
+    `,
+    kpiParams,
+  );
+  const rowResult = await client.query(
+    `
+    SELECT
+      ${documentoExpr(table)} AS documento,
+      ${tipdocExpr(table)} AS tipdoc,
+      fecha_dcto,
+      ${sedeCols},
+      ${clienteSelectSql(table)},
+      ${metrics}
+    FROM ${table}
+    WHERE ${rowWhere}
+    GROUP BY 1, 2, 3, 4, 5
+    ${buildMargenOrderBy(
+      filters.orderBy,
+      filters.orderDir ?? "desc",
+      "ventas_netas",
+      BOARD_FACTURA_ORDER_ALLOWED,
+    )}
+    LIMIT 1000
+    `,
+    rowParams,
+  );
 
   const rows = rowResult.rows.map((row) => {
     const mapped = mapFacturaBoardRow(row);
