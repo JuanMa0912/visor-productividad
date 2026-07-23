@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Refresca la vista materializada rotacion_item_dia_clean.
+# Refresca vistas materializadas de rotacion (legacy + Dinastia).
 #
-# La vista vive en Cloud SQL (produxdia) y pre-procesa rotacion_base_item_dia_sede:
-# limpia strings (TRIM/COALESCE/LPAD), pre-filtra categorias/sedes excluidas, y
-# agrega por (fecha, empresa, sede_id, item) ignorando bodega_local. El endpoint
-# /api/rotacion lee de esta vista en vez de la tabla cruda, evitando que el
-# planner tenga que sortear 478k filas por sede en cada request.
+# Legacy: rotacion_item_dia_clean + refresh_rotacion_item_periodo_std()
+# Dinastia: rotacion_dinastia_item_dia_clean + refresh_rotacion_dinastia_item_periodo_std()
 #
 # Uso:
 #   sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
@@ -86,57 +83,98 @@ run_psql_maintenance() {
   "${PSQL[@]}" -c "SET statement_timeout = 0;" -c "$1"
 }
 
-refresh_matview() {
-  local concurrent=$1
+refresh_named_matview() {
+  local name=$1
+  local concurrent=$2
   if [[ "$concurrent" -eq 1 ]]; then
-    run_psql_maintenance "REFRESH MATERIALIZED VIEW CONCURRENTLY rotacion_item_dia_clean;"
+    run_psql_maintenance "REFRESH MATERIALIZED VIEW CONCURRENTLY ${name};"
   else
-    run_psql_maintenance "REFRESH MATERIALIZED VIEW rotacion_item_dia_clean;"
+    run_psql_maintenance "REFRESH MATERIALIZED VIEW ${name};"
   fi
 }
 
-# Verifica que la vista exista. Si no esta, salimos con codigo 0 (no es error,
-# probablemente la migracion 20260616_rotacion_clean_matview.sql todavia no se
-# aplico). El endpoint hace fallback a la tabla cruda.
-exists=$("${PSQL[@]}" -c "SELECT 1 FROM pg_matviews WHERE matviewname = 'rotacion_item_dia_clean' LIMIT 1;" | tr -d '[:space:]')
-if [[ -z "$exists" ]]; then
-  log "Vista rotacion_item_dia_clean no existe; skip. Aplica db/migrations/20260616_rotacion_clean_matview.sql primero."
+refresh_one_matview() {
+  local name=$1
+  local concurrent=$2
+  if [[ "$concurrent" -eq 1 ]]; then
+    if ! refresh_named_matview "$name" 1; then
+      log "WARN: REFRESH CONCURRENTLY ${name} fallo; reintentando sin CONCURRENTLY"
+      refresh_named_matview "$name" 0
+    fi
+  else
+    refresh_named_matview "$name" 0
+  fi
+  run_psql_maintenance "ANALYZE ${name};" > /dev/null
+  local row_count
+  row_count=$("${PSQL[@]}" -c "SELECT COUNT(*) FROM ${name};" | tr -d '[:space:]')
+  echo "$row_count"
+}
+
+refresh_periodo_fn() {
+  local fn_name=$1
+  local exists
+  exists=$("${PSQL[@]}" -c "SELECT 1 FROM pg_proc WHERE proname = '${fn_name}' LIMIT 1;" | tr -d '[:space:]')
+  if [[ -z "$exists" ]]; then
+    log "Funcion ${fn_name} no existe; aplica la migracion correspondiente primero."
+    return 0
+  fi
+  local periodo_start_ts periodo_line periodo_elapsed
+  periodo_start_ts=$(date +%s)
+  log "Iniciando ${fn_name}()"
+  periodo_line=$(run_psql_maintenance "SELECT out_periodo_start, out_periodo_end, out_row_count FROM ${fn_name}();" | head -n 1)
+  periodo_elapsed=$(( $(date +%s) - periodo_start_ts ))
+  if [[ -n "$periodo_line" ]]; then
+    log "Periodo std ${fn_name}: ${periodo_line} (${periodo_elapsed}s)"
+  else
+    log "Periodo std ${fn_name}: sin filas (matview vacia o skip) (${periodo_elapsed}s)"
+  fi
+}
+
+matview_exists() {
+  local name=$1
+  local exists
+  exists=$("${PSQL[@]}" -c "SELECT 1 FROM pg_matviews WHERE matviewname = '${name}' LIMIT 1;" | tr -d '[:space:]')
+  [[ -n "$exists" ]]
+}
+
+legacy_exists=0
+dinastia_exists=0
+if matview_exists "rotacion_item_dia_clean"; then
+  legacy_exists=1
+fi
+if matview_exists "rotacion_dinastia_item_dia_clean"; then
+  dinastia_exists=1
+fi
+
+if [[ "$legacy_exists" -eq 0 && "$dinastia_exists" -eq 0 ]]; then
+  log "Ninguna matview de rotacion existe; skip. Aplica migraciones 20260616 / 20260723 primero."
   exit 0
 fi
 
 if [[ "$PERIODO_ONLY" -eq 0 ]]; then
-  start_ts=$(date +%s)
-  log "Iniciando REFRESH MATERIALIZED VIEW rotacion_item_dia_clean (concurrent=${CONCURRENT})"
-
-  if [[ "$CONCURRENT" -eq 1 ]]; then
-    if ! refresh_matview 1; then
-      log "WARN: REFRESH CONCURRENTLY fallo; reintentando sin CONCURRENTLY (bloquea lecturas brevemente)"
-      refresh_matview 0
-    fi
+  if [[ "$legacy_exists" -eq 1 ]]; then
+    start_ts=$(date +%s)
+    log "Iniciando REFRESH MATERIALIZED VIEW rotacion_item_dia_clean (concurrent=${CONCURRENT})"
+    row_count=$(refresh_one_matview "rotacion_item_dia_clean" "$CONCURRENT")
+    elapsed=$(( $(date +%s) - start_ts ))
+    log "Refresh legacy completado: ${row_count} filas, ${elapsed}s"
   else
-    refresh_matview 0
+    log "Vista rotacion_item_dia_clean no existe; skip legacy."
   fi
 
-  run_psql_maintenance "ANALYZE rotacion_item_dia_clean;" > /dev/null
-
-  row_count=$("${PSQL[@]}" -c "SELECT COUNT(*) FROM rotacion_item_dia_clean;" | tr -d '[:space:]')
-  elapsed=$(( $(date +%s) - start_ts ))
-  log "Refresh completado: ${row_count} filas, ${elapsed}s"
-else
-  log "Modo --periodo-only: omitiendo REFRESH de rotacion_item_dia_clean"
-fi
-
-periodo_fn_exists=$("${PSQL[@]}" -c "SELECT 1 FROM pg_proc WHERE proname = 'refresh_rotacion_item_periodo_std' LIMIT 1;" | tr -d '[:space:]')
-if [[ -n "$periodo_fn_exists" ]]; then
-  periodo_start_ts=$(date +%s)
-  log "Iniciando refresh_rotacion_item_periodo_std()"
-  periodo_line=$(run_psql_maintenance "SELECT out_periodo_start, out_periodo_end, out_row_count FROM refresh_rotacion_item_periodo_std();" | head -n 1)
-  periodo_elapsed=$(( $(date +%s) - periodo_start_ts ))
-  if [[ -n "$periodo_line" ]]; then
-    log "Periodo std refresh: ${periodo_line} (${periodo_elapsed}s)"
+  if [[ "$dinastia_exists" -eq 1 ]]; then
+    start_ts=$(date +%s)
+    # Primera carga / sin indice UNIQUE usable: preferir sin CONCURRENTLY.
+    log "Iniciando REFRESH MATERIALIZED VIEW rotacion_dinastia_item_dia_clean (concurrent=0)"
+    row_count=$(refresh_one_matview "rotacion_dinastia_item_dia_clean" 0)
+    elapsed=$(( $(date +%s) - start_ts ))
+    log "Refresh Dinastia completado: ${row_count} filas, ${elapsed}s"
   else
-    log "Periodo std refresh: sin filas (matview vacia o skip) (${periodo_elapsed}s)"
+    log "Vista rotacion_dinastia_item_dia_clean no existe; skip Dinastia."
   fi
 else
-  log "Funcion refresh_rotacion_item_periodo_std no existe; aplica db/migrations/20260617_rotacion_periodo_std.sql"
+  log "Modo --periodo-only: omitiendo REFRESH de matviews diarias"
 fi
+
+refresh_periodo_fn "refresh_rotacion_item_periodo_std"
+refresh_periodo_fn "refresh_rotacion_dinastia_item_periodo_std"

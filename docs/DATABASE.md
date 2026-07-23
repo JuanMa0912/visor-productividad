@@ -101,19 +101,26 @@ Orden completo despues de `schema-auth.sql`:
 47. `20260723_dinastia_tenant_tables.sql` (tablas `margen_dinastia` / `rotacion_dinastia` / `ventas_dinastia` + `app_users.allowed_empresas`)
 48. `20260723_rotacion_dinastia_matview.sql` (matview `rotacion_dinastia_item_dia_clean` + snapshot `rotacion_dinastia_item_periodo_std`)
 
-Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot:
+Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
 ```bash
 sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh
 ```
 
-El script refresca legacy y Dinastia. Tras aplicar solo la migracion Dinastia (matview vacia):
+El script lee `.env.local` y refresca legacy + Dinastia. Si solo quieres Dinastia a mano:
 
-```sql
+```bash
+sudo -u visor bash -lc '
+set -a; source /opt/visor-productividad/.env.local; set +a
+export PGPASSWORD="$DB_PASSWORD"
+export PGSSLMODE="${DB_SSL:-require}"
+psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 SET statement_timeout = 0;
 REFRESH MATERIALIZED VIEW rotacion_dinastia_item_dia_clean;
 ANALYZE rotacion_dinastia_item_dia_clean;
 SELECT * FROM refresh_rotacion_dinastia_item_periodo_std();
+SQL
+'
 ```
 
 
