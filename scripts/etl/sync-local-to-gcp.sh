@@ -408,6 +408,24 @@ refresh_margen_roll() {
   "${GCP_PSQL[@]}" -c "ANALYZE margen_final_roll;" >/dev/null 2>&1 || true
   log "Refresh de margen_final_roll OK."
 
+  # Dinastia: roll dedicado (si existe).
+  dinastia_fn="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_proc WHERE proname='refresh_margen_dinastia_roll' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -n "$dinastia_fn" ]]; then
+    if [[ "$MARGEN_FULL" -eq 1 ]]; then
+      log "Refrescando margen_dinastia_roll COMPLETO..."
+      "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_margen_dinastia_roll();" >/dev/null 2>&1 \
+        || { log "WARN: refresh de margen_dinastia_roll fallo."; }
+    else
+      log "Refrescando margen_dinastia_roll [$DESDEC..$HASTAC]..."
+      "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_margen_dinastia_roll('$DESDEC', '$HASTAC');" >/dev/null 2>&1 \
+        || { log "WARN: refresh de margen_dinastia_roll fallo."; }
+    fi
+    "${GCP_PSQL[@]}" -c "ANALYZE margen_dinastia_roll;" >/dev/null 2>&1 || true
+    log "Refresh de margen_dinastia_roll OK."
+  else
+    log "Funcion refresh_margen_dinastia_roll no existe en GCP; omito rollup Dinastia."
+  fi
+
   # Informe de variacion: depende de margen_item_dia_roll (alimentado desde margen_final_roll).
   item_fn="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_proc WHERE proname='refresh_margen_item_dia_roll' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
   if [[ -z "$item_fn" ]]; then

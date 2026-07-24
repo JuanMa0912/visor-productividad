@@ -7,20 +7,27 @@ export type MargenDataTable =
   | "margen_final"
   | "margen_final_roll"
   | "margen_item_dia_roll"
-  | "margen_dinastia";
+  | "margen_dinastia"
+  | "margen_dinastia_roll";
 
 export const MARGEN_ROLL_TABLE: MargenDataTable = "margen_final_roll";
 export const MARGEN_ITEM_DIA_ROLL_TABLE: MargenDataTable = "margen_item_dia_roll";
 export const MARGEN_RAW_TABLE: MargenDataTable = "margen_final";
 export const MARGEN_DINASTIA_TABLE: MargenDataTable = "margen_dinastia";
+export const MARGEN_DINASTIA_ROLL_TABLE: MargenDataTable = "margen_dinastia_roll";
 
 let rollTableAvailable: boolean | null = null;
+let dinastiaRollAvailable: boolean | null = null;
 let itemDiaRollAvailable: boolean | null = null;
 
-export const isRollTable = (table: MargenDataTable): boolean =>
-  table === MARGEN_ROLL_TABLE || table === MARGEN_ITEM_DIA_ROLL_TABLE;
+/** Roll factura+item (legacy o Dinastia). */
+export const isFacturaItemRollTable = (table: MargenDataTable): boolean =>
+  table === MARGEN_ROLL_TABLE || table === MARGEN_DINASTIA_ROLL_TABLE;
 
-/** Columnas de factura que el tablero exige en margen_final_roll. */
+export const isRollTable = (table: MargenDataTable): boolean =>
+  isFacturaItemRollTable(table) || table === MARGEN_ITEM_DIA_ROLL_TABLE;
+
+/** Columnas de factura que el tablero exige en rolls factura+item. */
 export const MARGEN_ROLL_FACTURA_ATTR_COLUMNS = [
   "documento_docfc",
   "id_terc",
@@ -32,20 +39,21 @@ export const MARGEN_ROLL_FACTURA_ATTR_COLUMNS = [
 
 /**
  * Verifica que el roll tenga attrs de factura (cliente/caja/vendedor/doc).
- * Si faltan: hay que aplicar 20260721 + 20260722 y refrescar el roll.
+ * Si faltan: hay que aplicar migraciones y refrescar el roll.
  */
 export const assertMargenRollFacturaAttrs = async (
   client: PoolClient,
+  tableName: string = "margen_final_roll",
 ): Promise<void> => {
   const result = await client.query<{ column_name: string }>(
     `
     SELECT column_name
     FROM information_schema.columns
     WHERE table_schema = 'public'
-      AND table_name = 'margen_final_roll'
-      AND column_name = ANY($1::text[])
+      AND table_name = $1
+      AND column_name = ANY($2::text[])
     `,
-    [MARGEN_ROLL_FACTURA_ATTR_COLUMNS],
+    [tableName, MARGEN_ROLL_FACTURA_ATTR_COLUMNS],
   );
   const present = new Set(result.rows.map((row) => row.column_name));
   const missing = MARGEN_ROLL_FACTURA_ATTR_COLUMNS.filter(
@@ -53,9 +61,11 @@ export const assertMargenRollFacturaAttrs = async (
   );
   if (missing.length === 0) return;
   throw new Error(
-    `margen_final_roll sin columnas de factura: ${missing.join(", ")}. ` +
-      `Aplica db/migrations/20260721_margen_factura_cliente.sql y ` +
-      `db/migrations/20260722_margen_factura_caja_vendedor.sql; luego npm run margen:refresh-roll.`,
+    `${tableName} sin columnas de factura: ${missing.join(", ")}. ` +
+      (tableName === "margen_dinastia_roll"
+        ? `Aplica db/migrations/20260724_margen_dinastia_roll.sql; luego npm run margen:refresh-roll.`
+        : `Aplica db/migrations/20260721_margen_factura_cliente.sql y ` +
+          `db/migrations/20260722_margen_factura_caja_vendedor.sql; luego npm run margen:refresh-roll.`),
   );
 };
 
@@ -77,7 +87,34 @@ export const resolveMargenDataSource = async (
         "Tabla margen_dinastia no disponible. Aplica db/migrations/20260723_dinastia_tenant_tables.sql y carga datos.",
       );
     }
-    return MARGEN_DINASTIA_TABLE;
+
+    if (process.env.MARGEN_FORCE_RAW === "1") return MARGEN_DINASTIA_TABLE;
+    if (dinastiaRollAvailable === true) return MARGEN_DINASTIA_ROLL_TABLE;
+    if (dinastiaRollAvailable === false) return MARGEN_DINASTIA_TABLE;
+
+    const rollExists = await client.query<{ ok: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'margen_dinastia_roll'
+      ) AS ok
+    `);
+    if (!rollExists.rows[0]?.ok) {
+      dinastiaRollAvailable = false;
+      return MARGEN_DINASTIA_TABLE;
+    }
+
+    const populated = await client.query<{ ok: boolean }>(`
+      SELECT EXISTS (SELECT 1 FROM margen_dinastia_roll LIMIT 1) AS ok
+    `);
+    if (!populated.rows[0]?.ok) {
+      return MARGEN_DINASTIA_TABLE;
+    }
+
+    await assertMargenRollFacturaAttrs(client, "margen_dinastia_roll");
+    dinastiaRollAvailable = true;
+    return MARGEN_DINASTIA_ROLL_TABLE;
   }
 
   if (process.env.MARGEN_FORCE_RAW === "1") return MARGEN_RAW_TABLE;
@@ -93,7 +130,6 @@ export const resolveMargenDataSource = async (
     ) AS ok
   `);
   if (!result.rows[0]?.ok) {
-    // Tabla ausente: cachear negativo (solo revive con resetMargenDataSourceCache).
     rollTableAvailable = false;
     return MARGEN_RAW_TABLE;
   }
@@ -102,8 +138,6 @@ export const resolveMargenDataSource = async (
     SELECT EXISTS (SELECT 1 FROM margen_final_roll LIMIT 1) AS ok
   `);
   if (!populated.rows[0]?.ok) {
-    // No cachear "vacío": tras un refresh el roll se llena y el proceso
-    // debe volver a detectar sin reiniciar Node.
     return MARGEN_RAW_TABLE;
   }
 
@@ -122,9 +156,6 @@ export const resolveInformeMargenDataSource = async (
   }
   if (process.env.MARGEN_FORCE_RAW === "1") return MARGEN_RAW_TABLE;
 
-  // No cachear "vacio" de forma permanente: un TRUNCATE/refresh puede dejar
-  // EXISTS=false un momento y el proceso seguiria leyendo el fallback mal,
-  // o al reves quedarse en la tabla vacia. Solo cacheamos "tabla no existe".
   if (itemDiaRollAvailable === false) {
     return resolveMargenDataSource(client);
   }
@@ -154,11 +185,14 @@ export const resolveInformeMargenDataSource = async (
 
 export const resetMargenDataSourceCache = () => {
   rollTableAvailable = null;
+  dinastiaRollAvailable = null;
   itemDiaRollAvailable = null;
 };
 
 export const mercadoTipoSql = (table: MargenDataTable): string =>
-  isRollTable(table) ? `id_tipo = '${KPI_MERCADO_TIPO}'` : `TRIM(COALESCE(id_tipo::text, '')) = '${KPI_MERCADO_TIPO}'`;
+  isRollTable(table)
+    ? `id_tipo = '${KPI_MERCADO_TIPO}'`
+    : `TRIM(COALESCE(id_tipo::text, '')) = '${KPI_MERCADO_TIPO}'`;
 
 /**
  * Normaliza fecha_dcto a YYYYMMDD para comparar con filtros compactos.
@@ -171,7 +205,7 @@ export const fechaDctoCompactSql = (table: MargenDataTable): string => {
 
 /** Dinastia no usa el mismo catalogo de id_tipo; no forzar Mercado (4). */
 export const shouldSkipMercadoTipoDefault = (table: MargenDataTable): boolean =>
-  table === MARGEN_DINASTIA_TABLE;
+  table === MARGEN_DINASTIA_TABLE || table === MARGEN_DINASTIA_ROLL_TABLE;
 
 export const buildMargenWhereForTable = (
   filters: MargenQueryFilters,
@@ -293,11 +327,9 @@ export const sedeSelectSql = (table: MargenDataTable) =>
 
 /**
  * Atributos de factura (pasajeros vía MAX, no cambian GROUP BY):
- * cliente, documento POS, caja y vendedor. Exigidos en margen_final_roll
- * (migraciones 20260721 + 20260722 + refresh).
+ * cliente, documento POS, caja y vendedor.
  */
 export const clienteSelectSql = (table: MargenDataTable) => {
-  // margen_item_dia_roll no tiene grano de factura.
   if (table === MARGEN_ITEM_DIA_ROLL_TABLE) {
     return [
       "NULL::text AS nombre_terc",
@@ -309,7 +341,7 @@ export const clienteSelectSql = (table: MargenDataTable) => {
     ].join(", ");
   }
 
-  if (table === MARGEN_ROLL_TABLE) {
+  if (isFacturaItemRollTable(table)) {
     return [
       `MAX(NULLIF(nombre_terc, '')) AS nombre_terc`,
       `MAX(NULLIF(id_terc, '')) AS id_terc`,
@@ -333,7 +365,7 @@ export const clienteSelectSql = (table: MargenDataTable) => {
 /** Clave de cliente para GROUP BY / filtros (vacío = sin tercero identificado). */
 export const idTercExpr = (table: MargenDataTable) => {
   if (table === MARGEN_ITEM_DIA_ROLL_TABLE) return `''`;
-  if (table === MARGEN_ROLL_TABLE) {
+  if (isFacturaItemRollTable(table)) {
     return `COALESCE(NULLIF(id_terc, ''), '')`;
   }
   return `COALESCE(NULLIF(TRIM(id_terc), ''), '')`;
@@ -341,7 +373,7 @@ export const idTercExpr = (table: MargenDataTable) => {
 
 export const nombreTercExpr = (table: MargenDataTable) => {
   if (table === MARGEN_ITEM_DIA_ROLL_TABLE) return `NULL::text`;
-  if (table === MARGEN_ROLL_TABLE) {
+  if (isFacturaItemRollTable(table)) {
     return `NULLIF(nombre_terc, '')`;
   }
   return `NULLIF(TRIM(nombre_terc), '')`;

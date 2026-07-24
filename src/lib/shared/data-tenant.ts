@@ -156,8 +156,8 @@ export const MARGEN_TABLE_BY_KIND = {
   },
   dinastia: {
     raw: "margen_dinastia",
-    roll: "margen_dinastia",
-    itemDia: "margen_dinastia",
+    roll: "margen_dinastia_roll",
+    itemDia: "margen_dinastia_roll",
   },
 } as const;
 

@@ -100,6 +100,7 @@ Orden completo despues de `schema-auth.sql`:
 46. `20260723_margen_cliente_perf_indexes.sql` (indices `id_terc`/`documento_fc` en roll para pestaña Por Cliente)
 47. `20260723_dinastia_tenant_tables.sql` (tablas `margen_dinastia` / `rotacion_dinastia` / `ventas_dinastia` + `app_users.allowed_empresas`)
 48. `20260723_rotacion_dinastia_matview.sql` (matview `rotacion_dinastia_item_dia_clean` + snapshot `rotacion_dinastia_item_periodo_std`)
+49. `20260724_margen_dinastia_roll.sql` (rollup factura+item `margen_dinastia_roll` + `refresh_margen_dinastia_roll`)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -215,32 +216,37 @@ Notas:
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD; incluye `id_caja`, `vend_cc`/`vend_cc_desc`, `documento_docfc`, `id_terc`/`nombre_terc` |
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta `/margenes` (Producto/Factura/Cliente/Sede); atributos de factura vía MAX |
 | `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
-| `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Sin roll dedicado: `/margenes` lee la tabla cruda. Productividad (`ventas_dinastia`) pendiente. |
+| `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Productividad (`ventas_dinastia`) pendiente. |
+| `margen_dinastia_roll` | rollup factura+item desde `margen_dinastia`; alimenta `/margenes` tenant Dinastia (paridad con `margen_final_roll`). |
 | `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s |
 | `informe_variacion_payload_std_meta` | ultimo warm (refreshed_at, mes, #rangos) |
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
 
 API: `/api/margenes` (legacy), `/api/margenes/meta` (bounds de `margen_final` o `margen_dinastia` segun `?empresa=` / usuario solo-Dinastia),
-`/api/margenes/data` (tablero drill; tenant via sedes `dinastia|*`), `/api/informe-variacion` (prefiere
+`/api/margenes/data` (tablero drill; Dinastia usa `margen_dinastia_roll` si esta poblado, si no fallback a crudo), `/api/informe-variacion` (prefiere
 `margen_item_dia_roll` si existe y tiene filas).
 
-Verificar datos Dinastia en Cloud SQL:
+Verificar / poblar roll Dinastia:
 
 ```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260724_margen_dinastia_roll.sql
+sudo -u visor env MARGEN_ROLL_SINGLE=1 npm run margen:refresh-roll
+# solo Dinastia incremental:
 sudo -u visor bash -lc '
 set -a; source /opt/visor-productividad/.env.local; set +a
 export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
 psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" -c "
-SELECT COUNT(*) AS filas, MIN(fecha_dcto), MAX(fecha_dcto) FROM margen_dinastia;
-SELECT LOWER(TRIM(empresa)) AS empresa, LPAD(TRIM(id_co), 3, '"'"'0'"'"') AS id_co, COUNT(*)
-FROM margen_dinastia GROUP BY 1, 2 ORDER BY 1, 2;
+SET statement_timeout = 0;
+SELECT * FROM refresh_margen_dinastia_roll();
 "
 '
 ```
 
 En `/margenes`, sin categoría seleccionada el tablero default es Mercado
-(`id_tipo = 4`). Con categoría explícita (perfil asadero → `3`) no se aplica ese
-default; ver `shouldApplyMercadoTipoDefault` en `src/lib/margenes/metrics.ts`.
+(`id_tipo = 4`) **solo en tablas legacy**. En Dinastia (`margen_dinastia` /
+`margen_dinastia_roll`) no se fuerza Mercado porque el feed usa `id_tipo = 1`.
+Con categoría explícita (perfil asadero → `3`) no se aplica ese default; ver
+`shouldApplyMercadoTipoDefault` / `shouldSkipMercadoTipoDefault`.
 
 Migraciones: `db/migrations/20260622_margen_final.sql`, `db/migrations/20260702_margen_final_roll.sql`,
 `db/migrations/20260708_margen_item_dia_roll.sql`, `db/migrations/20260721_margen_factura_cliente.sql`,

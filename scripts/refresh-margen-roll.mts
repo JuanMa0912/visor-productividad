@@ -1,11 +1,13 @@
 /**
- * Pobla margen_final_roll desde margen_final (rollup factura+ítem).
- * Ejecutar tras cada carga ETL diaria de margen_final.
+ * Pobla rolls de margen:
+ *   - margen_final_roll (legacy) + margen_item_dia_roll
+ *   - margen_dinastia_roll (si existe la funcion/tabla)
  *
  * Uso:
  *   npm run margen:refresh-roll
- *   MARGEN_ROLL_FROM=20260601 MARGEN_ROLL_TO=20260601 npm run margen:refresh-roll  # un día
- *   MARGEN_ROLL_SINGLE=1 npm run margen:refresh-roll   # full en una sola llamada (BD pequeña)
+ *   MARGEN_ROLL_FROM=20260601 MARGEN_ROLL_TO=20260601 npm run margen:refresh-roll
+ *   MARGEN_ROLL_SINGLE=1 npm run margen:refresh-roll
+ *   MARGEN_ROLL_SKIP_DINASTIA=1 npm run margen:refresh-roll
  */
 
 import pg from "pg";
@@ -22,6 +24,7 @@ const SINGLE = process.env.MARGEN_ROLL_SINGLE === "1";
 const FROM = process.env.MARGEN_ROLL_FROM?.trim() ?? "";
 const TO = process.env.MARGEN_ROLL_TO?.trim() ?? "";
 const INCREMENTAL = Boolean(FROM && TO);
+const SKIP_DINASTIA = process.env.MARGEN_ROLL_SKIP_DINASTIA === "1";
 
 const formatMs = (ms: number) =>
   ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${Math.round(ms / 1000)} s`;
@@ -39,77 +42,89 @@ const refreshChunk = async (
   const result = await client.query<{
     inserted_rows: string;
     elapsed_ms: string;
-  }>(
-    `SELECT * FROM refresh_margen_final_roll($1, $2)`,
-    [from, to],
-  );
+  }>(`SELECT * FROM refresh_margen_final_roll($1, $2)`, [from, to]);
   return {
     rows: Number(result.rows[0]?.inserted_rows ?? 0),
     ms: Number(result.rows[0]?.elapsed_ms ?? 0),
   };
 };
 
-const listMonthKeys = async (client: pg.PoolClient) => {
-  const result = await client.query<{ ym: string }>(`
-    SELECT DISTINCT left(fecha_dcto, 6) AS ym
-    FROM margen_final
-    WHERE fecha_dcto IS NOT NULL
-      AND fecha_dcto ~ '^[0-9]{8}$'
-    ORDER BY 1
-  `);
-  return result.rows.map((row) => row.ym);
+const refreshDinastiaChunk = async (
+  client: pg.PoolClient,
+  from: string | null,
+  to: string | null,
+) => {
+  const result = await client.query<{
+    inserted_rows: string;
+    elapsed_ms: string;
+  }>(`SELECT * FROM refresh_margen_dinastia_roll($1, $2)`, [from, to]);
+  return {
+    rows: Number(result.rows[0]?.inserted_rows ?? 0),
+    ms: Number(result.rows[0]?.elapsed_ms ?? 0),
+  };
 };
 
-const main = async () => {
-  const pool = new pg.Pool(resolvePgClientConfig());
-  const client = await pool.connect();
+const listMonthKeys = async (client: pg.PoolClient, table: string) => {
+  const result = await client.query<{ ym: string }>(
+    `
+    SELECT DISTINCT left(
+      regexp_replace(left(fecha_dcto::text, 10), '[^0-9]', '', 'g'),
+      6
+    ) AS ym
+    FROM ${table}
+    WHERE fecha_dcto IS NOT NULL
+      AND regexp_replace(left(fecha_dcto::text, 10), '[^0-9]', '', 'g') ~ '^[0-9]{8}$'
+    ORDER BY 1
+    `,
+  );
+  return result.rows.map((row) => row.ym).filter((ym) => /^\d{6}$/.test(ym));
+};
+
+const refreshLegacyRoll = async (client: pg.PoolClient) => {
+  const exists = await client.query<{ ok: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'margen_final_roll'
+    ) AS ok
+  `);
+  if (!exists.rows[0]?.ok) {
+    console.error(
+      "Tabla margen_final_roll no existe. Aplica db/migrations/20260702_margen_final_roll.sql.",
+    );
+    process.exit(1);
+  }
+
   try {
-    const exists = await client.query<{ ok: boolean }>(`
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name = 'margen_final_roll'
-      ) AS ok
-    `);
-    if (!exists.rows[0]?.ok) {
-      console.error(
-        "Tabla margen_final_roll no existe. Aplica db/migrations/20260702_margen_final_roll.sql.",
-      );
-      process.exit(1);
-    }
+    await assertMargenRollFacturaAttrs(client);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 
-    try {
-      await assertMargenRollFacturaAttrs(client);
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
+  await disableTimeouts(client);
+  const t0 = performance.now();
+  let totalRows = 0;
 
-    await disableTimeouts(client);
-    const t0 = performance.now();
-    let totalRows = 0;
-
-    if (INCREMENTAL) {
-      console.log(`Refresh incremental ${FROM} → ${TO}...`);
-      const chunk = await refreshChunk(client, FROM, TO);
-      totalRows = chunk.rows;
-      console.log(`  ${totalRows.toLocaleString("es-CO")} filas (${formatMs(chunk.ms)})`);
-      await client.query("ANALYZE margen_final_roll");
-    } else if (SINGLE) {
-      console.log("Refresh completo (una sola pasada)...");
-      const chunk = await refreshChunk(client, null, null);
-      totalRows = chunk.rows;
-      console.log(`  ${totalRows.toLocaleString("es-CO")} filas (${formatMs(chunk.ms)})`);
+  if (INCREMENTAL) {
+    console.log(`[legacy] Refresh incremental ${FROM} → ${TO}...`);
+    const chunk = await refreshChunk(client, FROM, TO);
+    totalRows = chunk.rows;
+    console.log(`  ${totalRows.toLocaleString("es-CO")} filas (${formatMs(chunk.ms)})`);
+    await client.query("ANALYZE margen_final_roll");
+  } else if (SINGLE) {
+    console.log("[legacy] Refresh completo (una sola pasada)...");
+    const chunk = await refreshChunk(client, null, null);
+    totalRows = chunk.rows;
+    console.log(`  ${totalRows.toLocaleString("es-CO")} filas (${formatMs(chunk.ms)})`);
+  } else {
+    const months = await listMonthKeys(client, "margen_final");
+    if (months.length === 0) {
+      console.log("[legacy] margen_final no tiene fechas válidas; nada que refrescar.");
     } else {
-      const months = await listMonthKeys(client);
-      if (months.length === 0) {
-        console.log("margen_final no tiene fechas válidas; nada que refrescar.");
-        return;
-      }
-
       console.log(
-        `Refresh completo por meses (${months.length} chunks). Aplica migración 20260703 si falla por timeout.`,
+        `[legacy] Refresh completo por meses (${months.length} chunks).`,
       );
       await client.query("TRUNCATE margen_final_roll");
 
@@ -127,11 +142,91 @@ const main = async () => {
 
       await client.query("ANALYZE margen_final_roll");
     }
+  }
 
-    resetMargenDataSourceCache();
+  console.log(
+    `[legacy] Listo: ${totalRows.toLocaleString("es-CO")} filas rollup en ${formatMs(performance.now() - t0)}.`,
+  );
+};
+
+const refreshDinastiaRoll = async (client: pg.PoolClient) => {
+  if (SKIP_DINASTIA) {
+    console.log("[dinastia] Omitido (MARGEN_ROLL_SKIP_DINASTIA=1).");
+    return;
+  }
+
+  const fnExists = await client.query<{ ok: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_proc WHERE proname = 'refresh_margen_dinastia_roll' LIMIT 1
+    ) AS ok
+  `);
+  if (!fnExists.rows[0]?.ok) {
     console.log(
-      `Listo: ${totalRows.toLocaleString("es-CO")} filas rollup en ${formatMs(performance.now() - t0)}.`,
+      "[dinastia] Funcion refresh_margen_dinastia_roll no existe. Aplica db/migrations/20260724_margen_dinastia_roll.sql.",
     );
+    return;
+  }
+
+  const srcExists = await client.query<{ ok: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'margen_dinastia'
+    ) AS ok
+  `);
+  if (!srcExists.rows[0]?.ok) {
+    console.log("[dinastia] Tabla margen_dinastia no existe; skip.");
+    return;
+  }
+
+  await disableTimeouts(client);
+  const t0 = performance.now();
+  let totalRows = 0;
+
+  if (INCREMENTAL) {
+    console.log(`[dinastia] Refresh incremental ${FROM} → ${TO}...`);
+    const chunk = await refreshDinastiaChunk(client, FROM, TO);
+    totalRows = chunk.rows;
+    console.log(`  ${totalRows.toLocaleString("es-CO")} filas (${formatMs(chunk.ms)})`);
+    await client.query("ANALYZE margen_dinastia_roll");
+  } else if (SINGLE) {
+    console.log("[dinastia] Refresh completo (una sola pasada)...");
+    const chunk = await refreshDinastiaChunk(client, null, null);
+    totalRows = chunk.rows;
+    console.log(`  ${totalRows.toLocaleString("es-CO")} filas (${formatMs(chunk.ms)})`);
+  } else {
+    const months = await listMonthKeys(client, "margen_dinastia");
+    if (months.length === 0) {
+      console.log("[dinastia] margen_dinastia sin fechas válidas; skip.");
+      return;
+    }
+    console.log(
+      `[dinastia] Refresh completo por meses (${months.length} chunks).`,
+    );
+    await client.query("TRUNCATE margen_dinastia_roll");
+    for (const ym of months) {
+      const from = `${ym}01`;
+      const to = `${ym}31`;
+      const label = `${ym.slice(0, 4)}-${ym.slice(4, 6)}`;
+      const chunkStarted = performance.now();
+      const chunk = await refreshDinastiaChunk(client, from, to);
+      totalRows += chunk.rows;
+      console.log(
+        `  ${label}: ${chunk.rows.toLocaleString("es-CO")} filas (${formatMs(performance.now() - chunkStarted)})`,
+      );
+    }
+    await client.query("ANALYZE margen_dinastia_roll");
+  }
+
+  console.log(
+    `[dinastia] Listo: ${totalRows.toLocaleString("es-CO")} filas rollup en ${formatMs(performance.now() - t0)}.`,
+  );
+};
+
+const main = async () => {
+  const pool = new pg.Pool(resolvePgClientConfig());
+  const client = await pool.connect();
+  try {
+    await refreshLegacyRoll(client);
 
     const itemDiaExists = await client.query<{ ok: boolean }>(`
       SELECT EXISTS (
@@ -142,7 +237,7 @@ const main = async () => {
       ) AS ok
     `);
     if (itemDiaExists.rows[0]?.ok) {
-      console.log("Refrescando margen_item_dia_roll (informe-variacion)...");
+      console.log("[legacy] Refrescando margen_item_dia_roll (informe-variacion)...");
       const itemStarted = performance.now();
       const itemResult = await client.query<{
         inserted_rows: string;
@@ -157,12 +252,14 @@ const main = async () => {
       console.log(
         `  margen_item_dia_roll: ${itemRows.toLocaleString("es-CO")} filas (${formatMs(performance.now() - itemStarted)})`,
       );
-      resetMargenDataSourceCache();
     } else {
       console.log(
-        "Aviso: margen_item_dia_roll no existe. Aplica db/migrations/20260708_margen_item_dia_roll.sql para acelerar /informe-variacion.",
+        "[legacy] Aviso: margen_item_dia_roll no existe. Aplica 20260708_margen_item_dia_roll.sql.",
       );
     }
+
+    await refreshDinastiaRoll(client);
+    resetMargenDataSourceCache();
   } finally {
     client.release();
     await pool.end();

@@ -151,10 +151,14 @@ export const BOARD_METRICS_SQL = `
 `;
 
 export const metricsSqlFor = (table: MargenDataTable) =>
-  table === "margen_final_roll" ? ROLL_METRICS_SQL : METRICS_SQL;
+  table === "margen_final_roll" || table === "margen_dinastia_roll"
+    ? ROLL_METRICS_SQL
+    : METRICS_SQL;
 
 export const boardMetricsSqlFor = (table: MargenDataTable) =>
-  table === "margen_final_roll" ? ROLL_BOARD_METRICS_SQL : BOARD_METRICS_SQL;
+  table === "margen_final_roll" || table === "margen_dinastia_roll"
+    ? ROLL_BOARD_METRICS_SQL
+    : BOARD_METRICS_SQL;
 
 export const ROLL_SUMMARY_METRICS_SQL = `
   COALESCE(SUM(ventas_netas), 0) AS ventas_netas,
@@ -163,4 +167,6 @@ export const ROLL_SUMMARY_METRICS_SQL = `
 `;
 
 export const summaryMetricsSqlFor = (table: MargenDataTable) =>
-  table === "margen_final_roll" ? ROLL_SUMMARY_METRICS_SQL : margenMetricSelect;
+  table === "margen_final_roll" || table === "margen_dinastia_roll"
+    ? ROLL_SUMMARY_METRICS_SQL
+    : margenMetricSelect;
