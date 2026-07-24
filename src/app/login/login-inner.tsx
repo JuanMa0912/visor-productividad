@@ -25,7 +25,7 @@ const sanitizeFrom = (raw: string | null): string => {
 export function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signIn } = useAuth();
+  const { signIn, refresh } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,6 +40,7 @@ export function LoginPageInner() {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ username, password }),
       });
 
@@ -56,7 +57,15 @@ export function LoginPageInner() {
         throw new Error("Respuesta de login invalida (falta usuario).");
       }
 
+      // Hidrata el contexto de inmediato (evita rebote a /login) y luego
+      // relee /api/auth/me por si el login omitiera algun campo de permisos
+      // (p. ej. allowedEmpresas / Dinastia).
       signIn(payload.user);
+      try {
+        await refresh();
+      } catch {
+        // best-effort: ya tenemos el user del login
+      }
 
       if (payload.user.passwordChangeRequired) {
         router.push("/cuenta/contrasena?required=1");

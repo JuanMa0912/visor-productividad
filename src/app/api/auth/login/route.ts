@@ -151,6 +151,7 @@ export async function POST(req: Request) {
           u.role,
           to_jsonb(u)->>'sede' AS sede,
           to_jsonb(u)->'allowed_sedes' AS "allowedSedes",
+          to_jsonb(u)->'allowed_empresas' AS "allowedEmpresas",
           to_jsonb(u)->'allowed_lines' AS "allowedLines",
           to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
           to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
@@ -192,6 +193,7 @@ export async function POST(req: Request) {
         role: "admin" | "user";
         sede: string | null;
         allowedSedes: string[] | null;
+        allowedEmpresas: string[] | null;
         allowedLines: string[] | null;
         allowedDashboards: string[] | null;
         allowedSubdashboards: string[] | null;
@@ -281,6 +283,9 @@ export async function POST(req: Request) {
           role: user.role,
           sede: user.sede,
           allowedSedes: user.allowedSedes,
+          allowedEmpresas: Array.isArray(user.allowedEmpresas)
+            ? user.allowedEmpresas
+            : user.allowedEmpresas ?? null,
           allowedLines: user.allowedLines,
           allowedDashboards,
           allowedSubdashboards,

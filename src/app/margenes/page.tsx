@@ -142,7 +142,10 @@ export default function MargenesPage() {
         const metaUrl = metaEmpresaParam
           ? `/api/margenes/meta?empresa=${encodeURIComponent(metaEmpresaParam)}`
           : "/api/margenes/meta";
-        const response = await fetch(metaUrl, { cache: "no-store" });
+        const response = await fetch(metaUrl, {
+          cache: "no-store",
+          credentials: "include",
+        });
         if (response.status === 401) {
           router.replace("/login");
           return;
