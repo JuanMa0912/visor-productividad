@@ -137,10 +137,17 @@ export async function GET(request: Request) {
         .filter((option) => option.empresa === "dinastia")
         .map((option) => option.value);
     }
-  } else if (dataKind === "default" && allowedSedeKeys) {
-    allowedSedeKeys = allowedSedeKeys.filter(
-      (key) => !key.toLowerCase().startsWith("dinastia|"),
-    );
+  } else if (dataKind === "default") {
+    if (allowedSedeKeys) {
+      allowedSedeKeys = allowedSedeKeys.filter(
+        (key) => !key.toLowerCase().startsWith("dinastia|"),
+      );
+    } else {
+      // Admin / "todas": catalogo historico sin Dinastia (vive en otra tabla).
+      allowedSedeKeys = listMargenSedeCatalogOptions()
+        .filter((option) => option.empresa !== "dinastia")
+        .map((option) => option.value);
+    }
   }
 
   const metaClient = await (await getDbPool()).connect();

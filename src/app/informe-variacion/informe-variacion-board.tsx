@@ -836,7 +836,9 @@ function InformeFilters({
           value={filters.emp}
           onChange={(value) => onChange({ emp: value, sede: "" })}
           placeholder="Todas las empresas"
-          options={INFORME_EMPRESA_ORDER.map((entry) => ({
+          options={INFORME_EMPRESA_ORDER.filter((entry) =>
+            payload.sedes.some((sede) => sede.e === entry.label),
+          ).map((entry) => ({
             value: entry.label,
             label: entry.label,
           }))}

@@ -112,11 +112,17 @@ export async function GET(request: Request) {
         .filter((option) => option.empresa === DINASTIA_EMPRESA_CODE)
         .map((option) => option.value);
     }
-  } else if (dataKind === "default" && allowedKeys) {
-    allowedKeys = allowedKeys.filter((key) => {
-      const empresa = key.split("|")[0] ?? "";
-      return canonicalizeEmpresaCode(empresa) !== DINASTIA_EMPRESA_CODE;
-    });
+  } else if (dataKind === "default") {
+    if (allowedKeys) {
+      allowedKeys = allowedKeys.filter((key) => {
+        const empresa = key.split("|")[0] ?? "";
+        return canonicalizeEmpresaCode(empresa) !== DINASTIA_EMPRESA_CODE;
+      });
+    } else {
+      allowedKeys = listMargenSedeCatalogOptions()
+        .filter((option) => option.empresa !== DINASTIA_EMPRESA_CODE)
+        .map((option) => option.value);
+    }
   }
 
   const cacheKey = buildCacheKey(allowedKeys, dataKind);
