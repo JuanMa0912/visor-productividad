@@ -59,10 +59,10 @@ describe("data-tenant", () => {
     );
   });
 
-  it("hint con mezcla no fuerza Dinastia", () => {
+  it("hint con mezcla propaga empresas para rechazo", () => {
     assert.deepEqual(
       resolveEmpresasHintForTenant([], ["dinastia|001", "mercamio|001"]),
-      [],
+      ["dinastia", "mercamio"],
     );
   });
 

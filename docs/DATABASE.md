@@ -215,14 +215,28 @@ Notas:
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD; incluye `id_caja`, `vend_cc`/`vend_cc_desc`, `documento_docfc`, `id_terc`/`nombre_terc` |
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta `/margenes` (Producto/Factura/Cliente/Sede); atributos de factura vía MAX |
 | `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
-| `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Productividad (`ventas_dinastia`) pendiente. |
+| `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Sin roll dedicado: `/margenes` lee la tabla cruda. Productividad (`ventas_dinastia`) pendiente. |
 | `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s |
 | `informe_variacion_payload_std_meta` | ultimo warm (refreshed_at, mes, #rangos) |
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
 
-API: `/api/margenes` (legacy), `/api/margenes/meta` (estado de `margen_final`),
-`/api/margenes/data` (tablero drill), `/api/informe-variacion` (prefiere
+API: `/api/margenes` (legacy), `/api/margenes/meta` (bounds de `margen_final` o `margen_dinastia` segun `?empresa=` / usuario solo-Dinastia),
+`/api/margenes/data` (tablero drill; tenant via sedes `dinastia|*`), `/api/informe-variacion` (prefiere
 `margen_item_dia_roll` si existe y tiene filas).
+
+Verificar datos Dinastia en Cloud SQL:
+
+```bash
+sudo -u visor bash -lc '
+set -a; source /opt/visor-productividad/.env.local; set +a
+export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" -c "
+SELECT COUNT(*) AS filas, MIN(fecha_dcto), MAX(fecha_dcto) FROM margen_dinastia;
+SELECT LOWER(TRIM(empresa)) AS empresa, LPAD(TRIM(id_co), 3, '"'"'0'"'"') AS id_co, COUNT(*)
+FROM margen_dinastia GROUP BY 1, 2 ORDER BY 1, 2;
+"
+'
+```
 
 En `/margenes`, sin categoría seleccionada el tablero default es Mercado
 (`id_tipo = 4`). Con categoría explícita (perfil asadero → `3`) no se aplica ese

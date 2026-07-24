@@ -23,6 +23,7 @@ import {
   resolveDataSourceKind,
   resolveEmpresasHintForTenant,
   stripDinastiaSedeKeys,
+  userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
 import {
   buildMargenOrderBy,
@@ -430,11 +431,17 @@ export async function GET(request: Request) {
     );
   }
 
-  const empresaHint = resolveEmpresasHintForTenant(
+  const empresaHintRaw = resolveEmpresasHintForTenant(
     parsed.empresas,
     parsed.sedes,
     "|",
   );
+  const empresaHint =
+    empresaHintRaw.length > 0
+      ? empresaHintRaw
+      : userIsDinastiaOnly(session.user)
+        ? ["dinastia"]
+        : [];
   const dataSource = resolveDataSourceKind(session.user, empresaHint);
   if (!dataSource.ok) {
     return NextResponse.json(
@@ -447,7 +454,7 @@ export async function GET(request: Request) {
       parsed.empresas = ["dinastia"];
     }
   } else if (parsed.sedes.length > 0) {
-    // "Todas" / mezcla: consultar tablas historicas sin claves Dinastia.
+    // "Todas": consultar tablas historicas sin claves Dinastia.
     parsed.sedes = stripDinastiaSedeKeys(parsed.sedes, "|");
   }
 

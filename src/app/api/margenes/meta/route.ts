@@ -6,6 +6,11 @@ import {
 } from "@/lib/shared/portal-sections";
 import { getDbPool } from "@/lib/db";
 import { compactRangeSpanDays } from "@/lib/margenes/date-range";
+import {
+  canonicalizeEmpresaCode,
+  DINASTIA_EMPRESA_CODE,
+  userIsDinastiaOnly,
+} from "@/lib/shared/data-tenant";
 
 const CACHE_CONTROL = "no-store, private";
 const META_TTL_MS = 60_000;
@@ -25,9 +30,24 @@ type MetaPayload = {
   error?: string;
 };
 
-let metaCache: { at: number; payload: MetaPayload } | null = null;
+type MetaTable = "margen_final" | "margen_dinastia";
 
-export async function GET() {
+const metaCacheByTable = new Map<
+  MetaTable,
+  { at: number; payload: MetaPayload }
+>();
+
+const resolveMetaTable = (
+  user: { role: "admin" | "user"; allowedEmpresas?: string[] | null },
+  empresaParam: string | null,
+): MetaTable => {
+  if (userIsDinastiaOnly(user)) return "margen_dinastia";
+  const code = canonicalizeEmpresaCode(empresaParam);
+  if (code === DINASTIA_EMPRESA_CODE) return "margen_dinastia";
+  return "margen_final";
+};
+
+export async function GET(request: Request) {
   const session = await requireAuthSession();
   if (!session) {
     return NextResponse.json(
@@ -47,8 +67,15 @@ export async function GET() {
     );
   }
 
-  if (metaCache && Date.now() - metaCache.at < META_TTL_MS) {
-    const response = NextResponse.json(metaCache.payload, {
+  const url = new URL(request.url);
+  const metaTable = resolveMetaTable(
+    session.user,
+    url.searchParams.get("empresa"),
+  );
+
+  const cached = metaCacheByTable.get(metaTable);
+  if (cached && Date.now() - cached.at < META_TTL_MS) {
+    const response = NextResponse.json(cached.payload, {
       headers: { "Cache-Control": CACHE_CONTROL },
     });
     response.cookies.set(
@@ -62,24 +89,29 @@ export async function GET() {
   const pool = await getDbPool();
   const client = await pool.connect();
   try {
-    const tableCheck = await client.query(`
+    const tableCheck = await client.query(
+      `
       SELECT 1
       FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name = 'margen_final'
+        AND table_name = $1
       LIMIT 1
-    `);
+      `,
+      [metaTable],
+    );
 
     if (!tableCheck.rows?.length) {
       const payload: MetaPayload = {
         ready: false,
-        table: "margen_final",
+        table: metaTable,
         rowCount: 0,
         minDate: null,
         maxDate: null,
         sedeCount: 0,
         message:
-          "Tabla margen_final no existe aun. Aplica db/migrations/20260622_margen_final.sql.",
+          metaTable === "margen_dinastia"
+            ? "Tabla margen_dinastia no existe aun. Aplica db/migrations/20260723_dinastia_tenant_tables.sql."
+            : "Tabla margen_final no existe aun. Aplica db/migrations/20260622_margen_final.sql.",
       };
       const response = NextResponse.json(payload, {
         headers: { "Cache-Control": CACHE_CONTROL },
@@ -97,25 +129,26 @@ export async function GET() {
       max_date: string | null;
       has_rows: boolean;
       row_estimate: string | null;
-    }>(`
+    }>(
+      `
       SELECT
         (
           SELECT fecha_dcto
-          FROM margen_final
+          FROM ${metaTable}
           WHERE fecha_dcto IS NOT NULL
           ORDER BY fecha_dcto ASC
           LIMIT 1
         ) AS min_date,
         (
           SELECT fecha_dcto
-          FROM margen_final
+          FROM ${metaTable}
           WHERE fecha_dcto IS NOT NULL
           ORDER BY fecha_dcto DESC
           LIMIT 1
         ) AS max_date,
         EXISTS (
           SELECT 1
-          FROM margen_final
+          FROM ${metaTable}
           WHERE fecha_dcto IS NOT NULL
           LIMIT 1
         ) AS has_rows,
@@ -124,13 +157,14 @@ export async function GET() {
           FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname = 'public'
-            AND c.relname = 'margen_final'
+            AND c.relname = $1
         ) AS row_estimate
-    `);
+      `,
+      [metaTable],
+    );
 
     const row = bounds.rows[0];
     const rawEstimate = Number(row?.row_estimate ?? 0);
-    // reltuples a veces llega mal tipado / overflow; evita mostrar negativos.
     const rowCount =
       Number.isFinite(rawEstimate) && rawEstimate > 0
         ? Math.trunc(rawEstimate)
@@ -145,9 +179,14 @@ export async function GET() {
       distinctDateCount = spanDays > 0 && spanDays <= 62 ? spanDays : 0;
     }
 
+    const emptyMessage =
+      metaTable === "margen_dinastia"
+        ? "Tabla margen_dinastia vacia. Pendiente carga ETL desde origen."
+        : "Tabla margen_final vacia. Pendiente carga ETL desde origen.";
+
     const payload: MetaPayload = {
       ready: hasRows,
-      table: "margen_final",
+      table: metaTable,
       rowCount,
       minDate,
       maxDate,
@@ -156,12 +195,10 @@ export async function GET() {
       dates: [],
       sedeCount: 0,
       rowCountIsEstimate: true,
-      message: hasRows
-        ? null
-        : "Tabla margen_final vacia. Pendiente carga ETL desde origen.",
+      message: hasRows ? null : emptyMessage,
     };
 
-    metaCache = { at: Date.now(), payload };
+    metaCacheByTable.set(metaTable, { at: Date.now(), payload });
 
     const response = NextResponse.json(payload, {
       headers: { "Cache-Control": CACHE_CONTROL },
@@ -174,10 +211,11 @@ export async function GET() {
     return response;
   } catch (error) {
     console.error("[margenes/meta] error", {
+      table: metaTable,
       error: error instanceof Error ? error.message : String(error),
     });
     return NextResponse.json(
-      { error: "Error consultando metadata de margen_final." },
+      { error: `Error consultando metadata de ${metaTable}.` },
       { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
     );
   } finally {

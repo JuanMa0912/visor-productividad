@@ -197,7 +197,8 @@ export const empresasFromScopeKeys = (
 /**
  * Empuje de tenant cuando el UI manda sedes pero deja empresa vacía.
  * - Solo Dinastía → `["dinastia"]`
- * - Mezcla / solo default → `[]` (= "Todas" → tablas historicas)
+ * - Solo default → `[]` (= "Todas" → tablas historicas)
+ * - Mezcla → propaga ambas para que `resolveDataSourceKind` la rechace
  */
 export const resolveEmpresasHintForTenant = (
   selectedEmpresas: string[],
@@ -207,8 +208,11 @@ export const resolveEmpresasHintForTenant = (
   if (selectedEmpresas.length > 0) return selectedEmpresas;
   const fromKeys = empresasFromScopeKeys(scopeKeys, separator);
   if (fromKeys.length === 0) return [];
-  const onlyDinastia = fromKeys.every((code) => code === DINASTIA_EMPRESA_CODE);
-  return onlyDinastia ? [DINASTIA_EMPRESA_CODE] : [];
+  const hasDinastia = fromKeys.includes(DINASTIA_EMPRESA_CODE);
+  const hasDefault = fromKeys.some((code) => code !== DINASTIA_EMPRESA_CODE);
+  if (hasDinastia && hasDefault) return fromKeys;
+  if (hasDinastia) return [DINASTIA_EMPRESA_CODE];
+  return [];
 };
 
 /** Quita sedes Dinastía del filtro cuando la consulta va a tablas historicas. */

@@ -112,6 +112,26 @@ export default function MargenesPage() {
     }
   }, [boardReady, hasSection, hasSubsection, router]);
 
+  const metaEmpresaParam = useMemo(() => {
+    if (!user) return null;
+    if (
+      Array.isArray(user.allowedEmpresas) &&
+      user.allowedEmpresas.length > 0 &&
+      user.allowedEmpresas.every(
+        (code) => String(code).trim().toLowerCase() === "dinastia",
+      )
+    ) {
+      return "dinastia";
+    }
+    if (
+      catalogSedes.length > 0 &&
+      catalogSedes.every((sede) => sede.empresa === "dinastia")
+    ) {
+      return "dinastia";
+    }
+    return null;
+  }, [user, catalogSedes]);
+
   useEffect(() => {
     if (!boardReady) return;
 
@@ -119,7 +139,10 @@ export default function MargenesPage() {
     const load = async () => {
       setLoadingMeta(true);
       try {
-        const response = await fetch("/api/margenes/meta", { cache: "no-store" });
+        const metaUrl = metaEmpresaParam
+          ? `/api/margenes/meta?empresa=${encodeURIComponent(metaEmpresaParam)}`
+          : "/api/margenes/meta";
+        const response = await fetch(metaUrl, { cache: "no-store" });
         if (response.status === 401) {
           router.replace("/login");
           return;
@@ -139,7 +162,7 @@ export default function MargenesPage() {
         if (!cancelled) {
           setMeta({
             ready: false,
-            table: "margen_final",
+            table: metaEmpresaParam === "dinastia" ? "margen_dinastia" : "margen_final",
             rowCount: 0,
             minDate: null,
             maxDate: null,
@@ -156,7 +179,7 @@ export default function MargenesPage() {
     return () => {
       cancelled = true;
     };
-  }, [boardReady, router]);
+  }, [boardReady, metaEmpresaParam, router]);
 
   useEffect(() => {
     if (!meta?.ready || catalogSedes.length === 0 || dataCommitted) return;
@@ -219,11 +242,62 @@ export default function MargenesPage() {
 
   const confirmSedeSelection = useCallback(() => {
     if (pendingSedes.length === 0) return;
-    setSelectedSedes(pendingSedes);
-    setBoardSedes(pendingSedes);
-    setDataCommitted(true);
-    setSedePickerOpen(false);
-  }, [pendingSedes]);
+
+    const pendingEmpresas = Array.from(
+      new Set(
+        pendingSedes
+          .map((value) => {
+            const idx = value.indexOf("|");
+            return idx > 0 ? value.slice(0, idx).trim().toLowerCase() : "";
+          })
+          .filter(Boolean),
+      ),
+    );
+    const hasDinastia = pendingEmpresas.includes("dinastia");
+    const hasOther = pendingEmpresas.some((code) => code !== "dinastia");
+    if (hasDinastia && hasOther) {
+      window.alert(
+        "No se puede consultar Dinastía junto con otras empresas. Elige solo Dinastía o solo el resto.",
+      );
+      return;
+    }
+
+    const applySelection = () => {
+      setSelectedSedes(pendingSedes);
+      setBoardSedes(pendingSedes);
+      setDataCommitted(true);
+      setSedePickerOpen(false);
+    };
+
+    if (!hasDinastia || metaEmpresaParam === "dinastia") {
+      applySelection();
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          "/api/margenes/meta?empresa=dinastia",
+          { cache: "no-store" },
+        );
+        if (response.ok) {
+          const payload = (await response.json()) as MargenMeta;
+          setMeta(payload);
+          if (payload.minDate && payload.maxDate) {
+            const range = defaultMargenDateRange(payload.minDate, payload.maxDate);
+            if (range) {
+              setDateStart(range.start);
+              setDateEnd(range.end);
+            }
+          }
+        }
+      } catch {
+        // Si falla meta Dinastia, igual consultamos; el API data valida.
+      } finally {
+        applySelection();
+      }
+    })();
+  }, [pendingSedes, metaEmpresaParam]);
 
   const handleSedeDrill = useCallback((sede: string) => {
     setBoardSedes([sede]);
@@ -272,7 +346,7 @@ export default function MargenesPage() {
             </div>
             <h1 className="text-sm font-bold">Análisis de Margen</h1>
             <span className="rounded-full border border-[#2a2f47] bg-[#232740] px-2.5 py-0.5 text-[11px] text-[#6b7590]">
-              margen_final · dark
+              {meta?.table ?? "margen_final"} · dark
             </span>
             <button
               type="button"
