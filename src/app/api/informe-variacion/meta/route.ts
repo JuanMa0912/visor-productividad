@@ -27,7 +27,7 @@ const buildCacheKey = (
   allowedKeys: string[] | null,
   kind: "default" | "dinastia",
 ) => {
-  const scope = !allowedKeys?.length ? "*" : [...allowedKeys].sort().join(",");
+  const scope = allowedKeys === null ? "*" : [...allowedKeys].sort().join(",");
   return `${kind}:${scope}`;
 };
 
@@ -100,6 +100,7 @@ export async function GET(request: Request) {
   }
 
   // Si el tenant es Dinastia, acotar sedes a esas claves (evita mezclar catalogo).
+  // Admin histórico: mantener null para no forzar filtro amplio en meta.
   let allowedKeys = scope.allowedKeys;
   if (dataKind === "dinastia") {
     if (allowedKeys) {
@@ -112,17 +113,11 @@ export async function GET(request: Request) {
         .filter((option) => option.empresa === DINASTIA_EMPRESA_CODE)
         .map((option) => option.value);
     }
-  } else if (dataKind === "default") {
-    if (allowedKeys) {
-      allowedKeys = allowedKeys.filter((key) => {
-        const empresa = key.split("|")[0] ?? "";
-        return canonicalizeEmpresaCode(empresa) !== DINASTIA_EMPRESA_CODE;
-      });
-    } else {
-      allowedKeys = listMargenSedeCatalogOptions()
-        .filter((option) => option.empresa !== DINASTIA_EMPRESA_CODE)
-        .map((option) => option.value);
-    }
+  } else if (dataKind === "default" && allowedKeys) {
+    allowedKeys = allowedKeys.filter((key) => {
+      const empresa = key.split("|")[0] ?? "";
+      return canonicalizeEmpresaCode(empresa) !== DINASTIA_EMPRESA_CODE;
+    });
   }
 
   const cacheKey = buildCacheKey(allowedKeys, dataKind);

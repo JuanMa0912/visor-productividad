@@ -91,7 +91,8 @@ const buildSedeFilterDaily = (
   allowedSedeKeys: string[] | null,
   params: Array<string | string[]>,
 ): string => {
-  if (!allowedSedeKeys || allowedSedeKeys.length === 0) return "";
+  if (allowedSedeKeys === null) return "";
+  if (allowedSedeKeys.length === 0) return "AND FALSE";
 
   const pairs = allowedSedeKeys
     .map((key) => {
@@ -101,7 +102,7 @@ const buildSedeFilterDaily = (
     })
     .filter((pair): pair is { empresa: string; idCo: string } => pair !== null);
 
-  if (pairs.length === 0) return "";
+  if (pairs.length === 0) return "AND FALSE";
 
   params.push(
     pairs.map((pair) => pair.empresa),
@@ -389,7 +390,13 @@ export const loadInformeVariacionMonthBundle = async (
       year,
       month,
       allowedSedeKeys,
-      { dayRange: range, forcedMargenTipos, forcedMargenLineas, excludedMargenTipos },
+      {
+        dayRange: range,
+        forcedMargenTipos,
+        forcedMargenLineas,
+        excludedMargenTipos,
+        kind,
+      },
     );
     const sqlMs = Date.now() - sqlStarted;
     return {
@@ -438,7 +445,7 @@ export const loadInformeVariacionMonthBundle = async (
     const dbRows = aggregateDailyRowsForRange(dailyRows, year, month, range);
     const periods = computeInformePeriods(year, month, range);
     const payload = filterInformePayloadForLineScope(
-      buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys),
+      buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys, kind),
       lineScope,
     );
     payloads[range.id] = {

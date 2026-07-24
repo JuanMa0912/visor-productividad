@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
-import { canAccessPortalSection } from "@/lib/shared/portal-sections";
+import {
+  canAccessPortalSection,
+  canAccessPortalSubsection,
+} from "@/lib/shared/portal-sections";
 import {
   buildDateNotFoundError,
   enrichVentasXItemAvailabilityBounds,
@@ -9,6 +12,10 @@ import {
   validateVentasXItemDateRange,
 } from "@/lib/ventas/x-item-date-range";
 import { normalizeEmpresa, normalizeIdCo } from "@/lib/ventas/x-item";
+import {
+  buildVentasSedePairWhereClause,
+  resolveVentasXItemScope,
+} from "@/lib/ventas/x-item-scope";
 
 type VentasXItemDbRow = {
   empresa: string | null;
@@ -108,7 +115,11 @@ export async function GET(request: Request) {
   const allowedDashboards = session.user.allowedDashboards;
   if (
     session.user.role !== "admin" &&
-    !canAccessPortalSection(allowedDashboards, "venta")
+    (!canAccessPortalSection(allowedDashboards, "venta") ||
+      !canAccessPortalSubsection(
+        session.user.allowedSubdashboards,
+        "ventas-x-item",
+      ))
   ) {
     return withSession(
       NextResponse.json(
@@ -140,8 +151,10 @@ export async function GET(request: Request) {
   const start = url.searchParams.get("start");
   const end = url.searchParams.get("end");
   const itemQuery = (url.searchParams.get("itemQuery") ?? "").trim().toLowerCase();
-  const empresas = parseList(url.searchParams.get("empresa")).map(normalizeEmpresa);
-  const idCos = parseList(url.searchParams.get("idCo")).map((value) =>
+  const requestedEmpresas = parseList(url.searchParams.get("empresa")).map(
+    normalizeEmpresa,
+  );
+  const requestedIdCos = parseList(url.searchParams.get("idCo")).map((value) =>
     normalizeIdCo(value),
   );
   const itemIds = parseList(url.searchParams.get("itemIds"));
@@ -157,6 +170,32 @@ export async function GET(request: Request) {
   const optionLimit = Number.isFinite(optionLimitParam)
     ? Math.max(20, Math.min(300, Math.floor(optionLimitParam)))
     : 80;
+
+  const scope = resolveVentasXItemScope(session.user, requestedEmpresas);
+  if (!scope.ok) {
+    return withSession(
+      NextResponse.json(
+        { error: scope.error },
+        { status: scope.status, headers: { "Cache-Control": "no-store" } },
+      ),
+    );
+  }
+  const empresas = scope.empresas ?? [];
+  let sedePairs = scope.sedePairs;
+  let idCos = requestedIdCos;
+  if (sedePairs && requestedIdCos.length > 0) {
+    const idSet = new Set(requestedIdCos);
+    sedePairs = sedePairs.filter((pair) => idSet.has(pair.idCo));
+    if (sedePairs.length === 0) {
+      return withSession(
+        NextResponse.json(
+          { error: "Las sedes solicitadas no estan permitidas para tu usuario." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        ),
+      );
+    }
+    idCos = [];
+  }
 
   const pool = await getDbPool();
   const client = await pool.connect();
@@ -189,6 +228,8 @@ export async function GET(request: Request) {
       const metaWhere: string[] = [];
       const empresaClause = buildEmpresaWhereClause("", metaParams, empresas);
       if (empresaClause) metaWhere.push(empresaClause);
+      const sedeClause = buildVentasSedePairWhereClause("", metaParams, sedePairs);
+      if (sedeClause) metaWhere.push(sedeClause);
 
       const availability = await getVentasXItemDateAvailability(
         client,
@@ -229,6 +270,14 @@ export async function GET(request: Request) {
     );
     if (availabilityEmpresaClause) {
       availabilityWhere.push(availabilityEmpresaClause);
+    }
+    const availabilitySedeClause = buildVentasSedePairWhereClause(
+      "",
+      availabilityParams,
+      sedePairs,
+    );
+    if (availabilitySedeClause) {
+      availabilityWhere.push(availabilitySedeClause);
     }
 
     const availability = await getVentasXItemDateAvailability(
@@ -283,6 +332,12 @@ export async function GET(request: Request) {
 
       const empresaClause = buildEmpresaWhereClause("base.", summaryParams, empresas);
       if (empresaClause) summaryWhere.push(empresaClause);
+      const sedeClause = buildVentasSedePairWhereClause(
+        "base.",
+        summaryParams,
+        sedePairs,
+      );
+      if (sedeClause) summaryWhere.push(sedeClause);
 
       if (itemIds.length > 0) {
         summaryParams.push(itemIds);
@@ -350,6 +405,9 @@ export async function GET(request: Request) {
 
     const empresaClause = buildEmpresaWhereClause("base.", params, empresas);
     if (empresaClause) where.push(empresaClause);
+
+    const sedeClause = buildVentasSedePairWhereClause("base.", params, sedePairs);
+    if (sedeClause) where.push(sedeClause);
 
     const idCoClause = buildIdCoWhereClause("base.", params, idCos);
     if (idCoClause) where.push(idCoClause);

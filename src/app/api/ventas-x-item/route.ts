@@ -13,6 +13,10 @@ import {
   validateVentasXItemDateRange,
 } from "@/lib/ventas/x-item-date-range";
 import { normalizeEmpresa } from "@/lib/ventas/x-item";
+import {
+  buildVentasSedePairWhereClause,
+  resolveVentasXItemScope,
+} from "@/lib/ventas/x-item-scope";
 
 type VentasXItemDbRow = {
   empresa: string | null;
@@ -132,7 +136,9 @@ export async function GET(request: Request) {
   const mode = (url.searchParams.get("mode") ?? "").trim().toLowerCase();
   const start = url.searchParams.get("start");
   const end = url.searchParams.get("end");
-  const empresas = parseList(url.searchParams.get("empresa")).map(normalizeEmpresa);
+  const requestedEmpresas = parseList(url.searchParams.get("empresa")).map(
+    normalizeEmpresa,
+  );
   const itemIds = parseList(url.searchParams.get("itemIds"));
   const maxRowsParam = Number(url.searchParams.get("maxRows") ?? 500000);
   const maxRows = Number.isFinite(maxRowsParam)
@@ -142,6 +148,18 @@ export async function GET(request: Request) {
   const offset = Number.isFinite(offsetParam)
     ? Math.max(0, Math.floor(offsetParam))
     : 0;
+
+  const scope = resolveVentasXItemScope(session.user, requestedEmpresas);
+  if (!scope.ok) {
+    return withSession(
+      NextResponse.json(
+        { error: scope.error },
+        { status: scope.status, headers: { "Cache-Control": "no-store" } },
+      ),
+    );
+  }
+  const empresas = scope.empresas ?? [];
+  const sedePairs = scope.sedePairs;
 
   const pool = await getDbPool();
   const client = await pool.connect();
@@ -174,6 +192,8 @@ export async function GET(request: Request) {
       const metaWhere: string[] = [];
       const empresaClause = buildEmpresaWhereClause("", metaParams, empresas);
       if (empresaClause) metaWhere.push(empresaClause);
+      const sedeClause = buildVentasSedePairWhereClause("", metaParams, sedePairs);
+      if (sedeClause) metaWhere.push(sedeClause);
 
       const availability = await getVentasXItemDateAvailability(
         client,
@@ -214,6 +234,14 @@ export async function GET(request: Request) {
     );
     if (availabilityEmpresaClause) {
       availabilityWhere.push(availabilityEmpresaClause);
+    }
+    const availabilitySedeClause = buildVentasSedePairWhereClause(
+      "",
+      availabilityParams,
+      sedePairs,
+    );
+    if (availabilitySedeClause) {
+      availabilityWhere.push(availabilitySedeClause);
     }
 
     const availability = await getVentasXItemDateAvailability(
@@ -268,6 +296,12 @@ export async function GET(request: Request) {
 
       const empresaClause = buildEmpresaWhereClause("base.", summaryParams, empresas);
       if (empresaClause) summaryWhere.push(empresaClause);
+      const sedeClause = buildVentasSedePairWhereClause(
+        "base.",
+        summaryParams,
+        sedePairs,
+      );
+      if (sedeClause) summaryWhere.push(sedeClause);
 
       if (itemIds.length > 0) {
         summaryParams.push(itemIds);
@@ -335,6 +369,8 @@ export async function GET(request: Request) {
 
     const empresaClause = buildEmpresaWhereClause("base.", params, empresas);
     if (empresaClause) where.push(empresaClause);
+    const sedeClause = buildVentasSedePairWhereClause("base.", params, sedePairs);
+    if (sedeClause) where.push(sedeClause);
 
     params.push(maxRows);
     const limitParamIndex = params.length;

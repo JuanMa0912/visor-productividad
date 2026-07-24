@@ -50,6 +50,7 @@ import {
 import {
   assertMargenSedesAllowed,
   filterMargenSedeCatalogForUser,
+  resolveMargenSedeScope,
 } from "@/lib/margenes/margen-sede-scope";
 import {
   applyMargenCategoriaScope,
@@ -374,35 +375,56 @@ export async function GET(request: Request) {
     const pool = await getDbPool();
     const client = await pool.connect();
     try {
-      const tableExists = await ensureMargenTable(client);
-      if (!tableExists) {
+      const sedeEmpresaHint = userIsDinastiaOnly(session.user)
+        ? ["dinastia"]
+        : [];
+      const sedeDataSource = resolveDataSourceKind(
+        session.user,
+        sedeEmpresaHint,
+      );
+      if (!sedeDataSource.ok) {
         return NextResponse.json(
-          {
-            error:
-              "Tabla margen_final no existe. Aplica db/migrations/20260622_margen_final.sql.",
-          },
-          { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+          { error: sedeDataSource.error },
+          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
         );
       }
 
-      const dataTable = await resolveMargenDataSource(client);
-      const payload = await querySedesCatalog(client, dataTable);
+      if (sedeDataSource.kind === "default") {
+        const tableExists = await ensureMargenTable(client);
+        if (!tableExists) {
+          return NextResponse.json(
+            {
+              error:
+                "Tabla margen_final no existe. Aplica db/migrations/20260622_margen_final.sql.",
+            },
+            { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+          );
+        }
+      } else {
+        // Asegura que la tabla Dinastia exista (lanza si falta migracion).
+        await resolveMargenDataSource(client, { kind: "dinastia" });
+      }
+
+      const scope = resolveMargenSedeScope(session.user);
+      if (!scope.authorized) {
+        return NextResponse.json(
+          { error: "No tienes sedes asignadas para márgenes." },
+          { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+        );
+      }
+
+      // Catalogo estatico acotado al usuario/tenant (no depender del DISTINCT BD,
+      // que en Dinastia puede venir vacio sin roll/refresh).
       const allowedCatalog = filterMargenSedeCatalogForUser(session.user);
-      const allowedValues =
-        allowedCatalog.length > 0
-          ? new Set(allowedCatalog.map((option) => option.value))
-          : null;
-      const scopedPayload =
-        allowedValues === null
-          ? payload
-          : {
-              sedes: payload.sedes.filter((option) =>
-                allowedValues.has(option.value),
-              ),
-            };
-      const response = NextResponse.json(scopedPayload, {
-        headers: { "Cache-Control": CACHE_CONTROL },
-      });
+      const sedes =
+        sedeDataSource.kind === "dinastia"
+          ? allowedCatalog.filter((option) => option.empresa === "dinastia")
+          : allowedCatalog.filter((option) => option.empresa !== "dinastia");
+
+      const response = NextResponse.json(
+        { sedes },
+        { headers: { "Cache-Control": CACHE_CONTROL } },
+      );
       response.cookies.set(
         "vp_session",
         session.token,
@@ -415,7 +437,12 @@ export async function GET(request: Request) {
         error: error instanceof Error ? error.message : String(error),
       });
       return NextResponse.json(
-        { error: "Error consultando margen_final." },
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Error consultando sedes de márgenes.",
+        },
         { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
       );
     } finally {

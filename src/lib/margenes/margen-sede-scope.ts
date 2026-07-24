@@ -6,7 +6,11 @@ import {
   listMargenSedeCatalogOptions,
   type MargenSedeCatalogOption,
 } from "@/lib/margenes/margen-sede-catalog";
-import { canonicalizeEmpresaCode } from "@/lib/shared/data-tenant";
+import {
+  canonicalizeEmpresaCode,
+  DEFAULT_EMPRESA_CODES,
+  type EmpresaCode,
+} from "@/lib/shared/data-tenant";
 
 export type MargenSessionSedeScope = {
   role: "admin" | "user";
@@ -31,24 +35,47 @@ const matchCatalogByAllowedNames = (
   return keys;
 };
 
+/**
+ * null = sin filtro (catalogo completo, tipicamente admin).
+ * [] = ninguna empresa (denegar).
+ * lista = filtrar; codigos invalidos → ninguna (no promover a "todas").
+ */
 const filterCatalogByEmpresas = (
   catalog: MargenSedeCatalogOption[],
   allowedEmpresas?: string[] | null,
 ): MargenSedeCatalogOption[] => {
   if (allowedEmpresas == null) return catalog;
   if (!Array.isArray(allowedEmpresas) || allowedEmpresas.length === 0) {
-    return catalog;
+    return [];
   }
   const allowed = new Set(
     allowedEmpresas
       .map((value) => canonicalizeEmpresaCode(value))
       .filter((value): value is NonNullable<typeof value> => value !== null),
   );
-  if (allowed.size === 0) return catalog;
+  if (allowed.size === 0) return [];
   return catalog.filter((option) => {
     const code = canonicalizeEmpresaCode(option.empresa);
     return code !== null && allowed.has(code);
   });
+};
+
+/** No-admin sin empresas → historico (sin Dinastia). Admin → null (todas). */
+const resolveEmpresaFilterForUser = (
+  sessionUser: MargenSessionSedeScope,
+): EmpresaCode[] | null => {
+  if (sessionUser.role === "admin") return null;
+  if (
+    sessionUser.allowedEmpresas == null ||
+    (Array.isArray(sessionUser.allowedEmpresas) &&
+      sessionUser.allowedEmpresas.length === 0)
+  ) {
+    return [...DEFAULT_EMPRESA_CODES];
+  }
+  const codes = sessionUser.allowedEmpresas
+    .map((value) => canonicalizeEmpresaCode(value))
+    .filter((value): value is EmpresaCode => value !== null);
+  return codes.length > 0 ? codes : [...DEFAULT_EMPRESA_CODES];
 };
 
 export const resolveMargenSedeScope = (
@@ -58,9 +85,10 @@ export const resolveMargenSedeScope = (
   hasAllSedes: boolean;
   allowedKeys: string[] | null;
 } => {
+  const empresaFilter = resolveEmpresaFilterForUser(sessionUser);
   const catalog = filterCatalogByEmpresas(
     listMargenSedeCatalogOptions(),
-    sessionUser.role === "admin" ? null : sessionUser.allowedEmpresas,
+    empresaFilter,
   );
 
   if (sessionUser.role === "admin") {
@@ -72,10 +100,7 @@ export const resolveMargenSedeScope = (
     : [];
 
   if (hasAllSedesToken(rawAllowed)) {
-    // Sin restriccion de empresas: null = catálogo completo (compat).
-    if (sessionUser.allowedEmpresas == null) {
-      return { authorized: true, hasAllSedes: true, allowedKeys: null };
-    }
+    // Catalogo ya acotado por empresas (historico o lista explicita).
     return {
       authorized: catalog.length > 0,
       hasAllSedes: true,
@@ -117,9 +142,10 @@ export const resolveMargenSedeScope = (
 export const filterMargenSedeCatalogForUser = (
   sessionUser: MargenSessionSedeScope,
 ): MargenSedeCatalogOption[] => {
+  const empresaFilter = resolveEmpresaFilterForUser(sessionUser);
   const catalog = filterCatalogByEmpresas(
     listMargenSedeCatalogOptions(),
-    sessionUser.role === "admin" ? null : sessionUser.allowedEmpresas,
+    empresaFilter,
   );
   const scope = resolveMargenSedeScope(sessionUser);
   if (!scope.authorized) return [];

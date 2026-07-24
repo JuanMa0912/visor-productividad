@@ -5,7 +5,9 @@
  * `ventas_dinastia`). El resto usa las tablas historicas.
  *
  * Reglas:
- * - admin / allowedEmpresas null → puede ver todas (incluye Dinastia).
+ * - admin → puede ver todas (incluye Dinastia), pero no mezclar en una consulta.
+ * - usuario con `allowedEmpresas` null/vacio → solo historico
+ *   (Mercamio/Comercializadora/Merkmios). Dinastia requiere marca explicita.
  * - usuario solo `dinastia` → siempre tablas *_dinastia.
  * - usuario sin `dinastia` → nunca tablas *_dinastia.
  * - no mezclar Dinastia + otras empresas en la misma consulta.
@@ -71,7 +73,7 @@ export type EmpresaScopeInput = {
   allowedEmpresas?: string[] | null;
 };
 
-/** null = todas las empresas (admin o sin restriccion). */
+/** null = todas las empresas historicas + Dinastia solo para admin. */
 export const resolveAllowedEmpresaCodes = (
   user: EmpresaScopeInput,
 ): EmpresaCode[] | null => {
@@ -79,9 +81,14 @@ export const resolveAllowedEmpresaCodes = (
   return parseAllowedEmpresas(user.allowedEmpresas);
 };
 
+/**
+ * Dinastia es opt-in: admin siempre; usuario solo si la tiene marcada.
+ * `allowedEmpresas` null/vacio en no-admin = historico, sin Dinastia.
+ */
 export const userHasDinastiaAccess = (user: EmpresaScopeInput): boolean => {
-  const codes = resolveAllowedEmpresaCodes(user);
-  if (codes === null) return true;
+  if (user.role === "admin") return true;
+  const codes = parseAllowedEmpresas(user.allowedEmpresas);
+  if (codes === null) return false;
   return codes.includes(DINASTIA_EMPRESA_CODE);
 };
 
@@ -241,6 +248,8 @@ export const resolveValidAllowedEmpresas = (
       error: "Las empresas permitidas no son validas.",
     };
   }
+  // Vacio → null = "historico completo" (sin Dinastia) para no-admin.
+  // Dinastia solo entra si se marca explicitamente en el array.
   if (value.length === 0) return { ok: true, value: null };
 
   const out: EmpresaCode[] = [];

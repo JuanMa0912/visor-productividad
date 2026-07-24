@@ -4,6 +4,15 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 import { normalizeKeyCompact } from "@/lib/shared/normalize";
+import { isSamePlanillaSede } from "@/lib/horarios/planilla-sede";
+import {
+  filterMargenSedeCatalogForUser,
+  resolveMargenSedeScope,
+} from "@/lib/margenes/margen-sede-scope";
+import {
+  userHasDinastiaAccess,
+  userIsDinastiaOnly,
+} from "@/lib/shared/data-tenant";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -210,6 +219,41 @@ const filterDailyDataByAllowedLines = (
       lines: item.lines.filter((line) => allowedSet.has(normalizeLineId(line.id))),
     }))
     .filter((item) => item.lines.length > 0);
+};
+
+const isDinastiaSedeName = (sede: string) =>
+  normalizeSedeKey(sede).includes("dinastia");
+
+/** Aplica alcance de sedes/empresas (incluye ocultar Dinastia si no hay permiso). */
+const filterDailyDataBySedeScope = (
+  dailyData: DailyProductivity[],
+  sessionUser: {
+    role: "admin" | "user";
+    sede: string | null;
+    allowedSedes?: string[] | null;
+    allowedEmpresas?: string[] | null;
+  },
+): DailyProductivity[] => {
+  let scoped = dailyData;
+
+  if (userIsDinastiaOnly(sessionUser)) {
+    scoped = scoped.filter((item) => isDinastiaSedeName(item.sede));
+  } else if (!userHasDinastiaAccess(sessionUser)) {
+    scoped = scoped.filter((item) => !isDinastiaSedeName(item.sede));
+  }
+
+  const sedeScope = resolveMargenSedeScope(sessionUser);
+  if (!sedeScope.authorized) return [];
+  if (sedeScope.allowedKeys === null) return scoped;
+
+  const allowedLabels = filterMargenSedeCatalogForUser(sessionUser).map(
+    (option) => option.label,
+  );
+  if (allowedLabels.length === 0) return [];
+
+  return scoped.filter((item) =>
+    allowedLabels.some((label) => isSamePlanillaSede(item.sede, label)),
+  );
 };
 
 // Mapeo de centro_operacion + empresa_bd a nombre de sede
@@ -635,7 +679,10 @@ export async function GET(request: Request) {
   if (serveFileCache) {
     const cached = await readCache();
     if (cached && cached.length > 0) {
-      const scopedCached = filterDailyDataByAllowedLines(cached, allowedLineIds);
+      const scopedCached = filterDailyDataBySedeScope(
+        filterDailyDataByAllowedLines(cached, allowedLineIds),
+        session.user,
+      );
       return withSession(buildCacheResponse(scopedCached));
     }
   }
@@ -643,7 +690,10 @@ export async function GET(request: Request) {
     await testDbConnection();
     /** Consultas + escritura de caché; compartido entre peticiones concurrentes sin caché. */
     const rawDaily = await runColdProductivityLoad();
-    const dailyData = filterDailyDataByAllowedLines(rawDaily, allowedLineIds);
+    const dailyData = filterDailyDataBySedeScope(
+      filterDailyDataByAllowedLines(rawDaily, allowedLineIds),
+      session.user,
+    );
     if (dailyData.length > 0) {
       const dbRes = NextResponse.json(
         {

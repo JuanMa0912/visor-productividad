@@ -72,4 +72,26 @@ describe("data-tenant", () => {
       ["mercamio|001"],
     );
   });
+
+  it("usuario sin empresas no tiene Dinastia (opt-in)", () => {
+    assert.equal(
+      userHasDinastiaAccess({ role: "user", allowedEmpresas: null }),
+      false,
+    );
+    assert.equal(
+      userHasDinastiaAccess({ role: "user", allowedEmpresas: [] }),
+      false,
+    );
+    assert.equal(userHasDinastiaAccess({ role: "admin" }), true);
+  });
+
+  it("usuario con dinastia marcada si tiene acceso", () => {
+    assert.equal(
+      userHasDinastiaAccess({
+        role: "user",
+        allowedEmpresas: ["mercamio", "dinastia"],
+      }),
+      true,
+    );
+  });
 });

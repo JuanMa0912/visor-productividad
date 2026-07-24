@@ -336,7 +336,7 @@ export function UserFormModal({
     formState.portalProfile === "admin"
       ? "Todas (admin)"
       : formState.allowedEmpresas.length === 0
-        ? "Todas"
+        ? "Histórico (sin Dinastía)"
         : formState.allowedEmpresas.join(", ");
 
   const permissionsSummary = canEditManualPermissions
@@ -633,7 +633,7 @@ export function UserFormModal({
             <p className="mt-0.5 text-xs text-slate-500">
               {isAdminProfile
                 ? "Los perfiles admin ven todas las empresas (sin mezclar Dinastía en la misma consulta)."
-                : "Vacío = todas excepto que elijas solo Dinastía u otras. No se puede mezclar Dinastía con el resto en una consulta."}
+                : "Vacío = Mercamio + Comercializadora + Merkmios (sin Dinastía). Marca Dinastía solo si debe ver esas tablas. No se puede mezclar Dinastía con el resto en una consulta."}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {(

@@ -39,7 +39,7 @@ test("usuario con Floresta solo ve mtodo|001", () => {
   assert.equal(allowed.ok, true);
 });
 
-test("Todas mantiene catálogo completo para no admin", () => {
+test("Todas sin empresas = historico (sin Dinastia)", () => {
   const user = {
     role: "user" as const,
     sede: null,
@@ -47,7 +47,25 @@ test("Todas mantiene catálogo completo para no admin", () => {
   };
   const scope = resolveMargenSedeScope(user);
   assert.equal(scope.hasAllSedes, true);
-  assert.equal(scope.allowedKeys, null);
+  assert.ok(Array.isArray(scope.allowedKeys));
+  assert.ok((scope.allowedKeys?.length ?? 0) > 0);
+  assert.ok(
+    scope.allowedKeys?.every((key) => !key.startsWith("dinastia|")),
+  );
+  const denied = assertMargenSedesAllowed(["dinastia|001"], user);
+  assert.equal(denied.ok, false);
+});
+
+test("usuario con Dinastia explicita ve sedes Dinastia", () => {
+  const user = {
+    role: "user" as const,
+    sede: null,
+    allowedSedes: ["Todas"],
+    allowedEmpresas: ["dinastia"],
+  };
+  const catalog = filterMargenSedeCatalogForUser(user);
+  assert.ok(catalog.length > 0);
+  assert.ok(catalog.every((option) => option.empresa === "dinastia"));
 });
 
 test("legacy sede restringe catálogo", () => {

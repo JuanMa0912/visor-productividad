@@ -33,6 +33,7 @@ import {
   userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
+import { stripDinastiaFromInformePayload } from "@/lib/informe-variacion/sede-order";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -126,6 +127,9 @@ export async function GET(request: Request) {
   const dataKind = dataSource.kind;
 
   // Alinear sedes visibles con el tenant (no mezclar Dinastia + legacy).
+  // Importante: para admin en histórico dejar `null` (no expandir a lista)
+  // para no desactivar el snapshot rápido `informe_variacion_payload_std`.
+  // El catálogo del payload ya excluye Dinastia cuando kind=default.
   let allowedSedeKeys = scope.allowedKeys;
   if (dataKind === "dinastia") {
     if (allowedSedeKeys) {
@@ -137,17 +141,10 @@ export async function GET(request: Request) {
         .filter((option) => option.empresa === "dinastia")
         .map((option) => option.value);
     }
-  } else if (dataKind === "default") {
-    if (allowedSedeKeys) {
-      allowedSedeKeys = allowedSedeKeys.filter(
-        (key) => !key.toLowerCase().startsWith("dinastia|"),
-      );
-    } else {
-      // Admin / "todas": catalogo historico sin Dinastia (vive en otra tabla).
-      allowedSedeKeys = listMargenSedeCatalogOptions()
-        .filter((option) => option.empresa !== "dinastia")
-        .map((option) => option.value);
-    }
+  } else if (dataKind === "default" && allowedSedeKeys) {
+    allowedSedeKeys = allowedSedeKeys.filter(
+      (key) => !key.toLowerCase().startsWith("dinastia|"),
+    );
   }
 
   const metaClient = await (await getDbPool()).connect();
@@ -254,14 +251,23 @@ export async function GET(request: Request) {
           availableRanges.map((range) => range.id),
         );
         if (snapped) {
+          const cleaned = {
+            ...snapped,
+            payloads: Object.fromEntries(
+              Object.entries(snapped.payloads).map(([rangeId, payload]) => [
+                rangeId,
+                stripDinastiaFromInformePayload(payload),
+              ]),
+            ),
+          };
           setCachedInformeMonthBundle(
             bundleKey,
-            snapped,
+            cleaned,
             allowedSedeKeys,
             lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
           );
           return withSession(
-            NextResponse.json(snapped, {
+            NextResponse.json(cleaned, {
               headers: {
                 "Cache-Control": CACHE_CONTROL,
                 "X-Data-Source": "payload-std",
@@ -431,9 +437,10 @@ export async function GET(request: Request) {
         effectiveRange.id,
       );
       if (snapped) {
-        setCachedInformePayload(cacheKey, snapped);
+        const cleaned = stripDinastiaFromInformePayload(snapped);
+        setCachedInformePayload(cacheKey, cleaned);
         return withSession(
-          NextResponse.json(snapped, {
+          NextResponse.json(cleaned, {
             headers: {
               "Cache-Control": CACHE_CONTROL,
               "X-Data-Source": "payload-std",

@@ -98,3 +98,65 @@ export const reorderInformeVariacionSedes = (
 
   return { ...payload, sedes, rows };
 };
+
+/** Filtra sedes del payload y remapea índices de filas. */
+export const filterInformeVariacionSedes = (
+  payload: InformeVariacionPayload,
+  keep: (sede: InformeVariacionPayload["sedes"][number]) => boolean,
+): InformeVariacionPayload => {
+  const kept = payload.sedes
+    .map((sede, index) => ({ sede, index }))
+    .filter((entry) => keep(entry.sede));
+  if (kept.length === payload.sedes.length) return payload;
+  if (kept.length === 0) {
+    return {
+      ...payload,
+      sedes: [],
+      rows: [],
+      meta: { ...payload.meta, rowCount: 0 },
+    };
+  }
+
+  const remap = new Map<number, number>();
+  kept.forEach((entry, newIndex) => {
+    remap.set(entry.index, newIndex);
+  });
+  const sedes = kept.map((entry) => entry.sede);
+  const rows = payload.rows
+    .filter((row) => remap.has(row[0]))
+    .map((row) => {
+      const sedeIdx = remap.get(row[0])!;
+      return [
+        sedeIdx,
+        row[1],
+        row[2],
+        row[3],
+        row[4],
+        row[5],
+        row[6],
+        row[7],
+        row[8],
+        row[9],
+        row[10],
+        row[11] ?? 0,
+        row[12] ?? 0,
+        row[13] ?? 0,
+      ] as InformeCompactRow;
+    });
+
+  return {
+    ...payload,
+    sedes,
+    rows,
+    meta: { ...payload.meta, rowCount: rows.length },
+  };
+};
+
+/** Quita sedes Dinastía de payloads históricos (p. ej. snapshot std antiguo). */
+export const stripDinastiaFromInformePayload = (
+  payload: InformeVariacionPayload,
+): InformeVariacionPayload =>
+  filterInformeVariacionSedes(
+    payload,
+    (sede) => !sede.key.toLowerCase().startsWith("dinastia|"),
+  );

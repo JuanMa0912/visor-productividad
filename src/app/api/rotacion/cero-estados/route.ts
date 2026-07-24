@@ -23,6 +23,8 @@ import {
   getRotationFilterCatalog,
   resolveVisibleSedes,
 } from "@/app/api/rotacion/route";
+import { mergeDinastiaIntoRotationCatalog } from "@/lib/rotacion/dinastia-catalog";
+import { userHasDinastiaAccess } from "@/lib/shared/data-tenant";
 
 const CACHE_CONTROL = "no-store";
 
@@ -207,7 +209,10 @@ const resolveAuthorizedScopesForRequest = async (
   | { ok: true; scopes: Array<{ empresa: string; sedeId: string }> }
   | { ok: false; response: NextResponse }
 > => {
-  const catalog = await getRotationFilterCatalog(start, end);
+  const catalogRaw = await getRotationFilterCatalog(start, end);
+  const catalog = userHasDinastiaAccess(session.user)
+    ? mergeDinastiaIntoRotationCatalog(catalogRaw)
+    : catalogRaw;
   const { visibleSedes } = resolveVisibleSedes(session.user, catalog);
   const visibleKeys = new Set(
     visibleSedes.map((s) => scopeKey({ empresa: s.empresa, sedeId: s.sedeId })),

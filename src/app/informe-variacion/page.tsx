@@ -406,7 +406,8 @@ export default function InformeVariacionPage() {
         throw new DOMException("Aborted", "AbortError");
       }
 
-      const request = (async () => {
+      let request!: Promise<InformeVariacionPayload>;
+      request = (async () => {
         const timeoutController = new AbortController();
         const onAbort = () => timeoutController.abort();
         signal.addEventListener("abort", onAbort);
@@ -496,7 +497,8 @@ export default function InformeVariacionPage() {
         throw new DOMException("Aborted", "AbortError");
       }
 
-      const request = (async (): Promise<"ok" | "fallback"> => {
+      let request!: Promise<"ok" | "fallback">;
+      request = (async (): Promise<"ok" | "fallback"> => {
         const controller = new AbortController();
         const timeoutId = window.setTimeout(
           () => controller.abort(),

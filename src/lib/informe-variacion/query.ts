@@ -63,7 +63,9 @@ const buildSedeFilter = (
   allowedSedeKeys: string[] | null,
   params: Array<string | string[]>,
 ): string => {
-  if (!allowedSedeKeys || allowedSedeKeys.length === 0) return "";
+  // null = sin filtro (admin / todas). [] = denegar (no confundir con "todas").
+  if (allowedSedeKeys === null) return "";
+  if (allowedSedeKeys.length === 0) return "AND FALSE";
 
   const pairs = allowedSedeKeys
     .map((key) => {
@@ -73,7 +75,7 @@ const buildSedeFilter = (
     })
     .filter((pair): pair is { empresa: string; idCo: string } => pair !== null);
 
-  if (pairs.length === 0) return "";
+  if (pairs.length === 0) return "AND FALSE";
 
   params.push(
     pairs.map((pair) => pair.empresa),
@@ -311,23 +313,37 @@ const indexLabel = (
   return index;
 };
 
-const buildSedeCatalog = (
-  allowedSedeKeys: string[] | null,
+const catalogForKind = (
+  kind: "default" | "dinastia" = "default",
 ): MargenSedeCatalogOption[] => {
   const catalog = listMargenSedeCatalogOptions();
-  const filtered =
-    !allowedSedeKeys || allowedSedeKeys.length === 0
-      ? catalog
-      : catalog.filter((option) => allowedSedeKeys.includes(option.value));
-  return sortInformeSedeCatalog(filtered);
+  if (kind === "dinastia") {
+    return catalog.filter((option) => option.empresa === "dinastia");
+  }
+  return catalog.filter((option) => option.empresa !== "dinastia");
+};
+
+const buildSedeCatalog = (
+  allowedSedeKeys: string[] | null,
+  kind: "default" | "dinastia" = "default",
+): MargenSedeCatalogOption[] => {
+  const catalog = catalogForKind(kind);
+  // null = catálogo del tenant; [] = ninguna sede (no "todas").
+  if (allowedSedeKeys === null) return sortInformeSedeCatalog(catalog);
+  if (allowedSedeKeys.length === 0) return [];
+  const allowed = new Set(allowedSedeKeys);
+  return sortInformeSedeCatalog(
+    catalog.filter((option) => allowed.has(option.value)),
+  );
 };
 
 export const buildInformeVariacionPayload = (
   dbRows: InformeDbAggRow[],
   periods: InformePeriods,
   allowedSedeKeys: string[] | null,
+  kind: "default" | "dinastia" = "default",
 ): InformeVariacionPayload => {
-  const catalog = buildSedeCatalog(allowedSedeKeys);
+  const catalog = buildSedeCatalog(allowedSedeKeys, kind);
   const sedeIndex = new Map<string, number>();
   const sedes = catalog.map((option, index) => {
     sedeIndex.set(option.value, index);
@@ -444,7 +460,12 @@ export const loadInformeVariacionPayload = async (
     options.excludedMargenTipos ?? null,
     { kind: options.kind },
   );
-  const payload = buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys);
+  const payload = buildInformeVariacionPayload(
+    dbRows,
+    periods,
+    allowedSedeKeys,
+    options.kind ?? "default",
+  );
   const lineScope = {
     ...resolveUserLineCategoryScope(null),
     forcedMargenTipos: options.forcedMargenTipos ?? null,

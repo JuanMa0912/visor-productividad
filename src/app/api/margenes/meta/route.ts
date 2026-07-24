@@ -9,6 +9,7 @@ import { compactRangeSpanDays } from "@/lib/margenes/date-range";
 import {
   canonicalizeEmpresaCode,
   DINASTIA_EMPRESA_CODE,
+  userHasDinastiaAccess,
   userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
 
@@ -40,10 +41,15 @@ const metaCacheByTable = new Map<
 const resolveMetaTable = (
   user: { role: "admin" | "user"; allowedEmpresas?: string[] | null },
   empresaParam: string | null,
-): MetaTable => {
+): MetaTable | { error: string } => {
   if (userIsDinastiaOnly(user)) return "margen_dinastia";
   const code = canonicalizeEmpresaCode(empresaParam);
-  if (code === DINASTIA_EMPRESA_CODE) return "margen_dinastia";
+  if (code === DINASTIA_EMPRESA_CODE) {
+    if (!userHasDinastiaAccess(user)) {
+      return { error: "No tienes permiso para consultar metadata de Dinastía." };
+    }
+    return "margen_dinastia";
+  }
   return "margen_final";
 };
 
@@ -68,10 +74,17 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const metaTable = resolveMetaTable(
+  const metaTableOrError = resolveMetaTable(
     session.user,
     url.searchParams.get("empresa"),
   );
+  if (typeof metaTableOrError === "object") {
+    return NextResponse.json(
+      { error: metaTableOrError.error },
+      { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+  const metaTable = metaTableOrError;
 
   const cached = metaCacheByTable.get(metaTable);
   if (cached && Date.now() - cached.at < META_TTL_MS) {
