@@ -333,8 +333,44 @@ export const loadInformeVariacionMonthBundle = async (
   options?: { kind?: "default" | "dinastia" },
 ): Promise<InformeMonthBundleLoadResult | null> => {
   const kind = options?.kind ?? "default";
-  // Bundle diario solo existe sobre margen_item_dia_roll (tenant default).
-  if (kind === "dinastia") return null;
+
+  // Dinastia: no hay margen_item_dia_roll dedicado. Armar bundle rango-a-rango
+  // desde margen_dinastia_roll / crudo (mas lento, pero funcional).
+  if (kind === "dinastia") {
+    if (availableRanges.length === 0) return null;
+    const sqlStarted = Date.now();
+    const payloads: Record<string, InformeVariacionPayload> = {};
+    for (const range of availableRanges) {
+      payloads[range.id] = await loadInformeVariacionPayload(
+        client,
+        year,
+        month,
+        allowedSedeKeys,
+        {
+          dayRange: range,
+          forcedMargenTipos,
+          forcedMargenLineas,
+          excludedMargenTipos,
+          kind: "dinastia",
+        },
+      );
+    }
+    const sqlMs = Date.now() - sqlStarted;
+    return {
+      bundle: {
+        bundle: true,
+        year,
+        month,
+        payloads,
+        rangeIds: availableRanges.map((range) => range.id),
+      },
+      stats: {
+        sqlMs,
+        buildMs: 0,
+        dailyRowCount: 0,
+      },
+    };
+  }
 
   const table = await resolveInformeMargenDataSource(client, { kind });
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {

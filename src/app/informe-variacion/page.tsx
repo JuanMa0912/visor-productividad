@@ -27,6 +27,11 @@ import {
   filterInformePayloadForLineScope,
   informeLineScopeCacheSuffix,
 } from "@/lib/informe-variacion/informe-line-scope";
+import {
+  DINASTIA_EMPRESA_CODE,
+  userHasDinastiaAccess,
+  userIsDinastiaOnly,
+} from "@/lib/shared/data-tenant";
 import { cn } from "@/lib/shared/utils";
 
 type InformeMeta = {
@@ -148,9 +153,39 @@ export default function InformeVariacionPage() {
     () => (user ? resolveSessionLineCategoryScope(user) : resolveSessionLineCategoryScope({ role: "user", allowedLines: null })),
     [user],
   );
+  const dinastiaOnly = useMemo(
+    () =>
+      Boolean(
+        user &&
+          userIsDinastiaOnly({
+            role: user.role,
+            allowedEmpresas: user.allowedEmpresas,
+          }),
+      ),
+    [user],
+  );
+  const canSelectDinastia = useMemo(
+    () =>
+      Boolean(
+        user &&
+          userHasDinastiaAccess({
+            role: user.role,
+            allowedEmpresas: user.allowedEmpresas,
+          }),
+      ),
+    [user],
+  );
+  const [dataTenant, setDataTenant] = useState<"default" | "dinastia">("default");
+  useEffect(() => {
+    if (dinastiaOnly) setDataTenant("dinastia");
+  }, [dinastiaOnly]);
+
+  const tenantEmpresaParam =
+    dataTenant === "dinastia" ? DINASTIA_EMPRESA_CODE : null;
   const scopeCacheSuffix = useMemo(
-    () => informeLineScopeCacheSuffix(lineCategoryScope),
-    [lineCategoryScope],
+    () =>
+      `${informeLineScopeCacheSuffix(lineCategoryScope)}:ds=${dataTenant}`,
+    [lineCategoryScope, dataTenant],
   );
   const sessionStoragePrefix = useMemo(
     () => sessionStoragePrefixForUser(user?.id),
@@ -202,7 +237,7 @@ export default function InformeVariacionPage() {
     memoryCacheRef.current.clear();
     inflightRef.current.clear();
     bundleInflightRef.current.clear();
-  }, [user?.id]);
+  }, [user?.id, dataTenant]);
 
   useEffect(() => {
     if (!ready || !canAccess) return;
@@ -210,7 +245,10 @@ export default function InformeVariacionPage() {
     const loadMeta = async () => {
       setMetaLoading(true);
       try {
-        const response = await fetch("/api/informe-variacion/meta", {
+        const metaUrl = tenantEmpresaParam
+          ? `/api/informe-variacion/meta?empresa=${encodeURIComponent(tenantEmpresaParam)}`
+          : "/api/informe-variacion/meta";
+        const response = await fetch(metaUrl, {
           cache: "no-store",
         });
         if (response.status === 401) {
@@ -239,7 +277,7 @@ export default function InformeVariacionPage() {
     return () => {
       cancelled = true;
     };
-  }, [canAccess, ready, router]);
+  }, [canAccess, ready, router, tenantEmpresaParam]);
 
   const parsedMonth = useMemo(() => parseYearMonthInput(monthInput), [monthInput]);
 
@@ -386,6 +424,7 @@ export default function InformeVariacionPage() {
             range: rangeId,
           });
           if (options.force) params.set("force", "1");
+          if (tenantEmpresaParam) params.set("empresa", tenantEmpresaParam);
           const response = await fetch(
             `/api/informe-variacion?${params.toString()}`,
             {
@@ -428,7 +467,7 @@ export default function InformeVariacionPage() {
       inflightRef.current.set(key, request);
       return request;
     },
-    [readCachedPayload, router, storePayload, scopeCacheSuffix],
+    [readCachedPayload, router, storePayload, scopeCacheSuffix, tenantEmpresaParam],
   );
 
   const fetchMonthBundle = useCallback(
@@ -476,6 +515,7 @@ export default function InformeVariacionPage() {
             bundle: "month",
           });
           if (options.force) params.set("force", "1");
+          if (tenantEmpresaParam) params.set("empresa", tenantEmpresaParam);
           const response = await fetch(
             `/api/informe-variacion?${params.toString()}`,
             { cache: "no-store", signal: controller.signal },
@@ -515,7 +555,7 @@ export default function InformeVariacionPage() {
       bundleInflightRef.current.set(bundleKey, request);
       return request;
     },
-    [maxDate, readCachedPayload, router, storeMonthBundle, scopeCacheSuffix],
+    [maxDate, readCachedPayload, router, storeMonthBundle, scopeCacheSuffix, tenantEmpresaParam],
   );
 
   /** Como rotacion: clic = cambia vista al instante desde cache; red solo de fondo. */
@@ -965,6 +1005,33 @@ export default function InformeVariacionPage() {
           </div>
         </div>
         <div className="mb-4 flex flex-wrap items-end justify-end gap-3">
+          {canSelectDinastia && !dinastiaOnly ? (
+            <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+              Fuente de datos
+              <select
+                value={dataTenant}
+                disabled={periodControlsDisabled}
+                onChange={(event) => {
+                  if (periodControlsDisabled) return;
+                  const next =
+                    event.target.value === "dinastia" ? "dinastia" : "default";
+                  setDataTenant(next);
+                  setPayload(null);
+                  setReadyRanges(new Set());
+                  setError(null);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+              >
+                <option value="default">Mercamio / Comercializadora / Merkmios</option>
+                <option value="dinastia">Dinastía</option>
+              </select>
+            </label>
+          ) : null}
+          {dinastiaOnly ? (
+            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              Fuente: Dinastía
+            </span>
+          ) : null}
           <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
             Periodo actual
             <input

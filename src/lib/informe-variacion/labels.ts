@@ -2,6 +2,7 @@ import { getCanonicalSedeName } from "@/lib/shared/sede-names";
 import { INFORME_EMPRESA_ORDER } from "@/lib/informe-variacion/types";
 
 const TIPO_NAMES: Record<string, string> = {
+  "1": "General",
   "3": "Asaderos",
   "4": "Mercado",
   C: "Concesiones",

@@ -3,7 +3,14 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { loadInformeVariacionMeta } from "@/lib/informe-variacion/meta";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
+import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
+import {
+  canonicalizeEmpresaCode,
+  DINASTIA_EMPRESA_CODE,
+  resolveDataSourceKind,
+  userIsDinastiaOnly,
+} from "@/lib/shared/data-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +23,15 @@ let metaCache: {
   payload: Awaited<ReturnType<typeof loadInformeVariacionMeta>>;
 } | null = null;
 
-const buildCacheKey = (allowedKeys: string[] | null) => {
-  if (!allowedKeys?.length) return "*";
-  return [...allowedKeys].sort().join(",");
+const buildCacheKey = (
+  allowedKeys: string[] | null,
+  kind: "default" | "dinastia",
+) => {
+  const scope = !allowedKeys?.length ? "*" : [...allowedKeys].sort().join(",");
+  return `${kind}:${scope}`;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await requireAuthSession();
   if (!session) {
     return NextResponse.json(
@@ -55,10 +65,29 @@ export async function GET() {
     );
   }
 
+  const url = new URL(request.url);
+  const empresaParam = url.searchParams.get("empresa")?.trim() || null;
+  const selectedEmpresas = empresaParam
+    ? [empresaParam]
+    : userIsDinastiaOnly(session.user)
+      ? [DINASTIA_EMPRESA_CODE]
+      : [];
+  const dataSource = resolveDataSourceKind(session.user, selectedEmpresas);
+  if (!dataSource.ok) {
+    return withSession(
+      NextResponse.json(
+        { error: dataSource.error },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  const dataKind = dataSource.kind;
+
   const scope = resolveMargenSedeScope({
     role: session.user.role,
     sede: session.user.sede,
     allowedSedes: session.user.allowedSedes,
+    allowedEmpresas: session.user.allowedEmpresas,
   });
 
   if (!scope.authorized) {
@@ -70,7 +99,27 @@ export async function GET() {
     );
   }
 
-  const cacheKey = buildCacheKey(scope.allowedKeys);
+  // Si el tenant es Dinastia, acotar sedes a esas claves (evita mezclar catalogo).
+  let allowedKeys = scope.allowedKeys;
+  if (dataKind === "dinastia") {
+    if (allowedKeys) {
+      allowedKeys = allowedKeys.filter((key) => {
+        const empresa = key.split("|")[0] ?? "";
+        return canonicalizeEmpresaCode(empresa) === DINASTIA_EMPRESA_CODE;
+      });
+    } else {
+      allowedKeys = listMargenSedeCatalogOptions()
+        .filter((option) => option.empresa === DINASTIA_EMPRESA_CODE)
+        .map((option) => option.value);
+    }
+  } else if (dataKind === "default" && allowedKeys) {
+    allowedKeys = allowedKeys.filter((key) => {
+      const empresa = key.split("|")[0] ?? "";
+      return canonicalizeEmpresaCode(empresa) !== DINASTIA_EMPRESA_CODE;
+    });
+  }
+
+  const cacheKey = buildCacheKey(allowedKeys, dataKind);
   if (metaCache && metaCache.key === cacheKey && Date.now() - metaCache.at < META_TTL_MS) {
     return withSession(
       NextResponse.json(metaCache.payload, {
@@ -81,7 +130,9 @@ export async function GET() {
 
   const client = await (await getDbPool()).connect();
   try {
-    const payload = await loadInformeVariacionMeta(client, scope.allowedKeys);
+    const payload = await loadInformeVariacionMeta(client, allowedKeys, {
+      kind: dataKind,
+    });
     metaCache = { at: Date.now(), key: cacheKey, payload };
     return withSession(
       NextResponse.json(payload, {

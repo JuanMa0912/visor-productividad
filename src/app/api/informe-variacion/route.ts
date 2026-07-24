@@ -32,6 +32,7 @@ import {
   resolveDataSourceKind,
   userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
+import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -124,12 +125,30 @@ export async function GET(request: Request) {
   }
   const dataKind = dataSource.kind;
 
+  // Alinear sedes visibles con el tenant (no mezclar Dinastia + legacy).
+  let allowedSedeKeys = scope.allowedKeys;
+  if (dataKind === "dinastia") {
+    if (allowedSedeKeys) {
+      allowedSedeKeys = allowedSedeKeys.filter((key) =>
+        key.toLowerCase().startsWith("dinastia|"),
+      );
+    } else {
+      allowedSedeKeys = listMargenSedeCatalogOptions()
+        .filter((option) => option.empresa === "dinastia")
+        .map((option) => option.value);
+    }
+  } else if (dataKind === "default" && allowedSedeKeys) {
+    allowedSedeKeys = allowedSedeKeys.filter(
+      (key) => !key.toLowerCase().startsWith("dinastia|"),
+    );
+  }
+
   const metaClient = await (await getDbPool()).connect();
   let maxCompactDate: string | null = null;
   let metaFailed = false;
   try {
     try {
-      const meta = await loadInformeVariacionMeta(metaClient, scope.allowedKeys, {
+      const meta = await loadInformeVariacionMeta(metaClient, allowedSedeKeys, {
         kind: dataKind,
       });
       maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
@@ -179,7 +198,7 @@ export async function GET(request: Request) {
     const bundleKey = `${buildInformeBundleCacheKey(
       year,
       month,
-      scope.allowedKeys,
+      allowedSedeKeys,
       lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
     )}:ds=${dataKind}`;
     if (forceRefresh) {
@@ -189,7 +208,7 @@ export async function GET(request: Request) {
           `${buildInformeCacheKey(
             year,
             month,
-            scope.allowedKeys,
+            allowedSedeKeys,
             range.id,
             lineScope.forcedMargenTipos,
             lineScope.forcedMargenLineas,
@@ -215,7 +234,7 @@ export async function GET(request: Request) {
       dataKind === "default" &&
       !forceRefresh &&
       canUseInformePayloadStd(
-        scope.allowedKeys,
+        allowedSedeKeys,
         lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
       );
     if (useStd) {
@@ -231,7 +250,7 @@ export async function GET(request: Request) {
           setCachedInformeMonthBundle(
             bundleKey,
             snapped,
-            scope.allowedKeys,
+            allowedSedeKeys,
             lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
           );
           return withSession(
@@ -260,7 +279,7 @@ export async function GET(request: Request) {
         client,
         year,
         month,
-        scope.allowedKeys,
+        allowedSedeKeys,
         availableRanges,
         lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
         { kind: dataKind },
@@ -293,7 +312,7 @@ export async function GET(request: Request) {
       setCachedInformeMonthBundle(
         bundleKey,
         bundle,
-        scope.allowedKeys,
+        allowedSedeKeys,
         lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
       );
 
@@ -368,7 +387,7 @@ export async function GET(request: Request) {
   const cacheKey = `${buildInformeCacheKey(
     year,
     month,
-    scope.allowedKeys,
+    allowedSedeKeys,
     effectiveRange?.id,
     lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
   )}:ds=${dataKind}`;
@@ -392,7 +411,7 @@ export async function GET(request: Request) {
     dataKind === "default" &&
     !forceRefresh &&
     canUseInformePayloadStd(
-      scope.allowedKeys,
+      allowedSedeKeys,
       lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
     );
   if (useStd && effectiveRange) {
@@ -432,7 +451,7 @@ export async function GET(request: Request) {
       client,
       year,
       month,
-      scope.allowedKeys,
+      allowedSedeKeys,
       {
         dayRange: effectiveRange,
         forcedMargenTipos: lineScope.forcedMargenTipos,

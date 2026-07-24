@@ -217,7 +217,7 @@ Notas:
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta `/margenes` (Producto/Factura/Cliente/Sede); atributos de factura vía MAX |
 | `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
 | `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Productividad (`ventas_dinastia`) pendiente. |
-| `margen_dinastia_roll` | rollup factura+item desde `margen_dinastia`; alimenta `/margenes` tenant Dinastia (paridad con `margen_final_roll`). |
+| `margen_dinastia_roll` | rollup factura+item desde `margen_dinastia`; alimenta `/margenes` e `/informe-variacion` tenant Dinastia (sin `item_dia` dedicado; el informe arma bundle rango-a-rango). |
 | `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s |
 | `informe_variacion_payload_std_meta` | ultimo warm (refreshed_at, mes, #rangos) |
 | `margenes_linea_co_dia_clean` | matview legacy sobre `margenes_linea_co_dia` |
