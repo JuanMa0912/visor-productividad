@@ -1,6 +1,7 @@
 import type { MargenDataTable } from "@/lib/margenes/margen-data-source";
 import {
   facturaSedeSqlFilters,
+  fechaDctoCompactSql,
   isRollTable,
 } from "@/lib/margenes/margen-data-source";
 
@@ -62,8 +63,12 @@ export const drillPathSqlFilters = (
 
   const day = path[0];
   if (day?.type === "day") {
-    params.push(day.fecha);
-    parts.push(`fecha_dcto = $${params.length}`);
+    const compact =
+      /^\d{8}$/.test(day.fecha)
+        ? day.fecha
+        : day.fecha.slice(0, 10).replace(/[^0-9]/g, "");
+    params.push(/^\d{8}$/.test(compact) ? compact : day.fecha);
+    parts.push(`${fechaDctoCompactSql(table)} = $${params.length}`);
   }
 
   const tipo = path.find((step) => step.type === "tipo");
@@ -100,7 +105,7 @@ export const drillPathSqlFilters = (
     parts.push(...facturaSedeSqlFilters(factura, params, table));
     if (factura.fechaDcto && /^[0-9]{8}$/.test(factura.fechaDcto)) {
       params.push(factura.fechaDcto);
-      parts.push(`fecha_dcto = $${params.length}`);
+      parts.push(`${fechaDctoCompactSql(table)} = $${params.length}`);
     }
   }
 

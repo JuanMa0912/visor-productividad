@@ -14,12 +14,14 @@ import {
   buildMargenWhereForTable,
   clienteSelectSql,
   facturaSedeSqlFilters,
+  fechaDctoCompactSql,
   idTercExpr,
   isRollTable,
   mercadoTipoSql,
   nombreTercExpr,
   sedeDistinctKeySql,
   sedeSelectSql,
+  shouldSkipMercadoTipoDefault,
   type MargenDataTable,
 } from "@/lib/margenes/margen-data-source";
 import {
@@ -335,7 +337,9 @@ const sortDayRows = (rows: DrillRow[], filters: MargenQueryFilters) => {
 
 const withMercadoDefaultCategoria = (
   filters: MargenQueryFilters,
+  table: MargenDataTable,
 ): MargenQueryFilters => {
+  if (shouldSkipMercadoTipoDefault(table)) return filters;
   if (!shouldApplyMercadoTipoDefault(filters.categorias)) return filters;
   return { ...filters, categorias: [KPI_MERCADO_TIPO] };
 };
@@ -354,7 +358,7 @@ const queryDrillLevel0 = async (
   const params: unknown[] = [];
   // Sin categoría → Mercado (4). Con categoría explícita (p. ej. asaderos = 3)
   // no AND-ear Mercado: antes dejaba el tablero en cero.
-  const levelFilters = withMercadoDefaultCategoria(filters);
+  const levelFilters = withMercadoDefaultCategoria(filters, table);
   const dayWhere = buildWhere(levelFilters, [], params, table, false);
   const sedeKey = sedeDistinctKeySql(table);
 
@@ -518,13 +522,15 @@ const buildInvoiceDetailWhere = (
 
   if (factura.fechaDcto && /^[0-9]{8}$/.test(factura.fechaDcto)) {
     params.push(factura.fechaDcto);
-    parts.push(`fecha_dcto = $${params.length}`);
+    parts.push(`${fechaDctoCompactSql(table)} = $${params.length}`);
   } else if (filters.fechas.length > 0) {
     params.push(filters.fechas);
-    parts.push(`fecha_dcto = ANY($${params.length}::text[])`);
+    parts.push(`${fechaDctoCompactSql(table)} = ANY($${params.length}::text[])`);
   } else {
     params.push(filters.fromCompact, filters.toCompact);
-    parts.push(`fecha_dcto BETWEEN $${params.length - 1} AND $${params.length}`);
+    parts.push(
+      `${fechaDctoCompactSql(table)} BETWEEN $${params.length - 1} AND $${params.length}`,
+    );
   }
 
   if (filters.empresas.length > 0 && !factura.empresa?.trim()) {
@@ -765,6 +771,7 @@ export const queryKpi = async (
 
   const params: unknown[] = [];
   const mercadoOnly =
+    !shouldSkipMercadoTipoDefault(table) &&
     shouldApplyMercadoTipoDefault(filters.categorias) &&
     (options?.mercadoOnly ?? path.length <= 1);
   const where = buildWhere(filters, path, params, table, mercadoOnly);

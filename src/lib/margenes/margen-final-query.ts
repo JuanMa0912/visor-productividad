@@ -37,13 +37,20 @@ const EMPRESA_LABELS: Record<string, string> = {
 };
 
 export const compactDateToIso = (compact: string | null | undefined): string | null => {
-  if (!compact || !/^\d{8}$/.test(compact)) return null;
-  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+  if (!compact) return null;
+  const trimmed = compact.trim();
+  // ISO (margen_dinastia a veces llega así) o YYYYMMDD.
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+  if (!/^\d{8}$/.test(trimmed)) return null;
+  return `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`;
 };
 
 export const isoDateToCompact = (iso: string | null | undefined): string | null => {
-  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
-  return iso.replace(/-/g, "");
+  if (!iso) return null;
+  const trimmed = iso.trim();
+  if (/^\d{8}$/.test(trimmed)) return trimmed;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return null;
+  return trimmed.slice(0, 10).replace(/-/g, "");
 };
 
 const parseList = (raw: string | null) =>

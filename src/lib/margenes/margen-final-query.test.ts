@@ -11,13 +11,15 @@ import {
   toMargenPct,
 } from "@/lib/margenes/margen-final-query";
 
-test("compactDateToIso convierte YYYYMMDD", () => {
+test("compactDateToIso convierte YYYYMMDD e ISO", () => {
   assert.equal(compactDateToIso("20260623"), "2026-06-23");
+  assert.equal(compactDateToIso("2026-06-23"), "2026-06-23");
   assert.equal(compactDateToIso("bad"), null);
 });
 
-test("isoDateToCompact convierte YYYY-MM-DD", () => {
+test("isoDateToCompact convierte YYYY-MM-DD y YYYYMMDD", () => {
   assert.equal(isoDateToCompact("2026-06-23"), "20260623");
+  assert.equal(isoDateToCompact("20260623"), "20260623");
   assert.equal(isoDateToCompact("2026-6-3"), null);
 });
 

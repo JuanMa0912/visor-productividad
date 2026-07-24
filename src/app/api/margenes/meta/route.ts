@@ -170,8 +170,15 @@ export async function GET(request: Request) {
         ? Math.trunc(rawEstimate)
         : 0;
     const hasRows = Boolean(row?.has_rows);
-    const minDate = row?.min_date ?? null;
-    const maxDate = row?.max_date ?? null;
+    const normalizeMetaDate = (raw: string | null | undefined): string | null => {
+      if (!raw) return null;
+      const trimmed = raw.trim();
+      if (/^\d{8}$/.test(trimmed)) return trimmed;
+      const digits = trimmed.slice(0, 10).replace(/[^0-9]/g, "");
+      return /^\d{8}$/.test(digits) ? digits : null;
+    };
+    const minDate = normalizeMetaDate(row?.min_date ?? null);
+    const maxDate = normalizeMetaDate(row?.max_date ?? null);
 
     let distinctDateCount = 0;
     if (hasRows && minDate && maxDate && minDate <= maxDate) {

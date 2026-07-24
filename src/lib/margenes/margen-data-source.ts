@@ -160,19 +160,35 @@ export const resetMargenDataSourceCache = () => {
 export const mercadoTipoSql = (table: MargenDataTable): string =>
   isRollTable(table) ? `id_tipo = '${KPI_MERCADO_TIPO}'` : `TRIM(COALESCE(id_tipo::text, '')) = '${KPI_MERCADO_TIPO}'`;
 
+/**
+ * Normaliza fecha_dcto a YYYYMMDD para comparar con filtros compactos.
+ * margen_dinastia a veces llega como ISO (`2026-07-21`) en vez de `20260721`.
+ */
+export const fechaDctoCompactSql = (table: MargenDataTable): string => {
+  if (isRollTable(table)) return "fecha_dcto";
+  return `regexp_replace(left(fecha_dcto::text, 10), '[^0-9]', '', 'g')`;
+};
+
+/** Dinastia no usa el mismo catalogo de id_tipo; no forzar Mercado (4). */
+export const shouldSkipMercadoTipoDefault = (table: MargenDataTable): boolean =>
+  table === MARGEN_DINASTIA_TABLE;
+
 export const buildMargenWhereForTable = (
   filters: MargenQueryFilters,
   params: unknown[],
   table: MargenDataTable,
 ): string => {
   const parts = ["fecha_dcto IS NOT NULL"];
+  const fechaExpr = fechaDctoCompactSql(table);
 
   if (filters.fechas.length > 0) {
     params.push(filters.fechas);
-    parts.push(`fecha_dcto = ANY($${params.length}::text[])`);
+    parts.push(`${fechaExpr} = ANY($${params.length}::text[])`);
   } else {
     params.push(filters.fromCompact, filters.toCompact);
-    parts.push(`fecha_dcto BETWEEN $${params.length - 1} AND $${params.length}`);
+    parts.push(
+      `${fechaExpr} BETWEEN $${params.length - 1} AND $${params.length}`,
+    );
   }
 
   if (isRollTable(table)) {
