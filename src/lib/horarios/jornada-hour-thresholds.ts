@@ -234,32 +234,3 @@ export const isInNineTwentyHoursBucket = (
   totalHours: number,
   workedDate: string | null | undefined,
 ): boolean => totalHours > nineTwentyThresholdHoursForDate(workedDate);
-
-/**
- * 2 marcaciones y jornada incompleta (< 7:00h exactas).
- * Casos que no generan incidencia por marcar entrada/salida pero no completar turno.
- * Umbral fijo a 7h (no usa el regimen 7:20 legacy).
- */
-export const isUnderTwoMarksLabelMinutes = (
-  totalMinutes: number,
-  marksCount: number,
-  _workedDate?: string | null,
-): boolean =>
-  marksCount === 2 &&
-  Number.isFinite(totalMinutes) &&
-  totalMinutes >= 0 &&
-  totalMinutes < 7 * 60;
-
-/**
- * 4 marcaciones y jornada larga (> 9:00h exactas).
- * Para vigilar extras cuando hay doble entrada/salida.
- * Umbral fijo a 9h (no usa el regimen 9:20 legacy).
- */
-export const isOverNineWithFourMarksMinutes = (
-  totalMinutes: number,
-  marksCount: number,
-  _workedDate?: string | null,
-): boolean =>
-  marksCount === 4 &&
-  Number.isFinite(totalMinutes) &&
-  totalMinutes > 9 * 60;
