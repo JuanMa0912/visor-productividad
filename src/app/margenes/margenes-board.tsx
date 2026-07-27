@@ -102,7 +102,7 @@ type ColDef = {
 
 const marginBar = (pct: number) => (
   <span
-    className="inline-block h-[5px] shrink-0 rounded-sm opacity-60 align-middle"
+    className="inline-block h-5px shrink-0 rounded-sm opacity-60 align-middle"
     style={{
       width: `${Math.min(100, Math.max(0, pct))}px`,
       backgroundColor: pct >= 15 ? "#34d399" : pct >= 5 ? "#fbbf24" : "#f87171",
@@ -138,7 +138,10 @@ const formatConsecutivo = (documento: string | undefined): string => {
 const formatDocumentoDocfc = (raw: string | undefined): string => {
   const value = String(raw ?? "").trim();
   if (!value) return "—";
-  const parts = value.split("-").map((part) => part.trim()).filter(Boolean);
+  const parts = value
+    .split("-")
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (parts.length >= 3) return parts.join(" · ");
   return value;
 };
@@ -195,7 +198,9 @@ const colsForDrillLevel = (
       cellClassName: "min-w-[7rem] whitespace-nowrap tabular-nums",
       sortValue: (row) => row.margenPesos,
       render: (row) => (
-        <span className={`whitespace-nowrap tabular-nums ${marginToneClass(row.margenPct)}`}>
+        <span
+          className={`whitespace-nowrap tabular-nums ${marginToneClass(row.margenPct)}`}
+        >
           {formatMiles(row.margenPesos)}
         </span>
       ),
@@ -210,7 +215,9 @@ const colsForDrillLevel = (
         <span
           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums whitespace-nowrap ${marginBadgeClass(row.margenPct)}`}
         >
-          <span className="whitespace-nowrap">{formatPercent(row.margenPct)}</span>
+          <span className="whitespace-nowrap">
+            {formatPercent(row.margenPct)}
+          </span>
           {marginBar(row.margenPct)}
         </span>
       ),
@@ -303,8 +310,10 @@ const colsForDrillLevel = (
       {
         key: "empresa",
         label: "Empresa",
-        sortValue: (row) => (row as DrillRow & { empresa?: string }).empresa ?? "",
-        render: (row) => (row as DrillRow & { empresa?: string }).empresa ?? "—",
+        sortValue: (row) =>
+          (row as DrillRow & { empresa?: string }).empresa ?? "",
+        render: (row) =>
+          (row as DrillRow & { empresa?: string }).empresa ?? "—",
       },
       {
         key: "cod",
@@ -354,48 +363,170 @@ const colsForDrillLevel = (
             row.label
           ),
       },
-      { key: "categorias", label: "Categ.", align: "right", sortValue: (row) => row.categorias ?? 0, render: (row) => row.categorias ?? 0 },
-      { key: "lineas", label: "Líneas", align: "right", sortValue: (row) => row.lineas ?? 0, render: (row) => row.lineas ?? 0 },
-      { key: "sublineas", label: "Sublín.", align: "right", sortValue: (row) => row.sublineas ?? 0, render: (row) => row.sublineas ?? 0 },
-      { key: "items", label: "Ítems", align: "right", sortValue: (row) => row.items ?? 0, render: (row) => row.items ?? 0 },
+      {
+        key: "categorias",
+        label: "Categ.",
+        align: "right",
+        sortValue: (row) => row.categorias ?? 0,
+        render: (row) => row.categorias ?? 0,
+      },
+      {
+        key: "lineas",
+        label: "Líneas",
+        align: "right",
+        sortValue: (row) => row.lineas ?? 0,
+        render: (row) => row.lineas ?? 0,
+      },
+      {
+        key: "sublineas",
+        label: "Sublín.",
+        align: "right",
+        sortValue: (row) => row.sublineas ?? 0,
+        render: (row) => row.sublineas ?? 0,
+      },
+      {
+        key: "items",
+        label: "Ítems",
+        align: "right",
+        sortValue: (row) => row.items ?? 0,
+        render: (row) => row.items ?? 0,
+      },
       ...metricsTail,
       ...base,
     ];
   }
   if (level === 1) {
     return [
-      { key: "cod", label: "Cód.", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
-      { key: "label", label: "Categoría", drill: true, sortValue: (row) => row.label, render: (row) => row.label },
-      { key: "lineas", label: "Líneas", align: "right", sortValue: (row) => row.lineas ?? 0, render: (row) => row.lineas ?? 0 },
-      { key: "sublineas", label: "Sublín.", align: "right", sortValue: (row) => row.sublineas ?? 0, render: (row) => row.sublineas ?? 0 },
-      { key: "items", label: "Ítems", align: "right", sortValue: (row) => row.items ?? 0, render: (row) => row.items ?? 0 },
+      {
+        key: "cod",
+        label: "Cód.",
+        sortValue: (row) => row.cod,
+        render: (row) => (
+          <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+            {row.cod}
+          </span>
+        ),
+      },
+      {
+        key: "label",
+        label: "Categoría",
+        drill: true,
+        sortValue: (row) => row.label,
+        render: (row) => row.label,
+      },
+      {
+        key: "lineas",
+        label: "Líneas",
+        align: "right",
+        sortValue: (row) => row.lineas ?? 0,
+        render: (row) => row.lineas ?? 0,
+      },
+      {
+        key: "sublineas",
+        label: "Sublín.",
+        align: "right",
+        sortValue: (row) => row.sublineas ?? 0,
+        render: (row) => row.sublineas ?? 0,
+      },
+      {
+        key: "items",
+        label: "Ítems",
+        align: "right",
+        sortValue: (row) => row.items ?? 0,
+        render: (row) => row.items ?? 0,
+      },
       ...metricsTail,
       ...base,
     ];
   }
   if (level === 2) {
     return [
-      { key: "cod", label: "Cód.", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
-      { key: "label", label: "Línea", drill: true, sortValue: (row) => row.label, render: (row) => row.label },
-      { key: "sublineas", label: "Sublín.", align: "right", sortValue: (row) => row.sublineas ?? 0, render: (row) => row.sublineas ?? 0 },
-      { key: "items", label: "Ítems", align: "right", sortValue: (row) => row.items ?? 0, render: (row) => row.items ?? 0 },
+      {
+        key: "cod",
+        label: "Cód.",
+        sortValue: (row) => row.cod,
+        render: (row) => (
+          <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+            {row.cod}
+          </span>
+        ),
+      },
+      {
+        key: "label",
+        label: "Línea",
+        drill: true,
+        sortValue: (row) => row.label,
+        render: (row) => row.label,
+      },
+      {
+        key: "sublineas",
+        label: "Sublín.",
+        align: "right",
+        sortValue: (row) => row.sublineas ?? 0,
+        render: (row) => row.sublineas ?? 0,
+      },
+      {
+        key: "items",
+        label: "Ítems",
+        align: "right",
+        sortValue: (row) => row.items ?? 0,
+        render: (row) => row.items ?? 0,
+      },
       ...metricsTail,
       ...base,
     ];
   }
   if (level === 3) {
     return [
-      { key: "cod", label: "Cód.", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
-      { key: "label", label: "Sublínea", drill: true, sortValue: (row) => row.label, render: (row) => row.label },
-      { key: "items", label: "Ítems", align: "right", sortValue: (row) => row.items ?? 0, render: (row) => row.items ?? 0 },
+      {
+        key: "cod",
+        label: "Cód.",
+        sortValue: (row) => row.cod,
+        render: (row) => (
+          <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+            {row.cod}
+          </span>
+        ),
+      },
+      {
+        key: "label",
+        label: "Sublínea",
+        drill: true,
+        sortValue: (row) => row.label,
+        render: (row) => row.label,
+      },
+      {
+        key: "items",
+        label: "Ítems",
+        align: "right",
+        sortValue: (row) => row.items ?? 0,
+        render: (row) => row.items ?? 0,
+      },
       ...metricsTail,
       ...base,
     ];
   }
   if (level === 4) {
     return [
-      { key: "cod", label: "Cód. Ítem", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
-      { key: "label", label: "Descripción", drill: true, sortValue: (row) => row.label, render: (row) => <span className="max-w-[240px] truncate">{row.label}</span> },
+      {
+        key: "cod",
+        label: "Cód. Ítem",
+        sortValue: (row) => row.cod,
+        render: (row) => (
+          <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+            {row.cod}
+          </span>
+        ),
+      },
+      {
+        key: "label",
+        label: "Descripción",
+        drill: true,
+        sortValue: (row) => row.label,
+        render: (row) => (
+          <span className="max-w-240px truncate">{row.label}</span>
+        ),
+      },
       ...metricsTail,
       ...base,
     ];
@@ -425,9 +556,11 @@ const colsForDrillLevel = (
         cellClassName: "min-w-[11rem] max-w-[16rem]",
         sortValue: (row) => row.nombreTerc ?? row.idTerc ?? "",
         render: (row) =>
-        row.nombreTerc || row.idTerc ? (
+          row.nombreTerc || row.idTerc ? (
             <span className="flex flex-col gap-0.5 leading-snug">
-              <span className="truncate text-[#dde3f0]">{row.nombreTerc ?? "—"}</span>
+              <span className="truncate text-[#dde3f0]">
+                {row.nombreTerc ?? "—"}
+              </span>
               {row.idTerc ? (
                 <span className="font-mono text-[10px] text-[#6b7590]">
                   {row.idTerc}
@@ -445,7 +578,9 @@ const colsForDrillLevel = (
       sortValue: (row) => row.idCaja ?? "",
       render: (row) =>
         row.idCaja ? (
-          <span className="font-mono text-[11px] tabular-nums">{row.idCaja}</span>
+          <span className="font-mono text-[11px] tabular-nums">
+            {row.idCaja}
+          </span>
         ) : (
           "—"
         ),
@@ -478,7 +613,9 @@ const colsForDrillLevel = (
         render: (row) =>
           row.vendCcDesc || row.vendCc ? (
             <span className="flex flex-col gap-0.5 leading-snug">
-              <span className="truncate text-[#dde3f0]">{row.vendCcDesc ?? "—"}</span>
+              <span className="truncate text-[#dde3f0]">
+                {row.vendCcDesc ?? "—"}
+              </span>
               {row.vendCc ? (
                 <span className="font-mono text-[10px] text-[#6b7590]">
                   {row.vendCc}
@@ -510,9 +647,30 @@ const colsForDrillLevel = (
     return [...cols, ...metricsTail.slice(1), ...base];
   }
   return [
-    { key: "cod", label: "Cód.", sortValue: (row) => row.cod, render: (row) => <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">{row.cod}</span> },
-    { key: "label", label: "Descripción", sortValue: (row) => row.label, render: (row) => <span className="max-w-[240px] truncate">{row.label}</span> },
-    { key: "linea", label: "Línea", sortValue: (row) => row.linea ?? "", render: (row) => row.linea ?? "—" },
+    {
+      key: "cod",
+      label: "Cód.",
+      sortValue: (row) => row.cod,
+      render: (row) => (
+        <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+          {row.cod}
+        </span>
+      ),
+    },
+    {
+      key: "label",
+      label: "Descripción",
+      sortValue: (row) => row.label,
+      render: (row) => (
+        <span className="max-w-240px truncate">{row.label}</span>
+      ),
+    },
+    {
+      key: "linea",
+      label: "Línea",
+      sortValue: (row) => row.linea ?? "",
+      render: (row) => row.linea ?? "—",
+    },
     ...metricsTail.slice(0, 3),
     ...base,
   ];
@@ -544,7 +702,8 @@ export const MargenesBoard = ({
   categoryScopeLocked?: boolean;
   lineScopeLocked?: boolean;
 }) => {
-  const [filterOptions, setFilterOptions] = useState<MargenFiltersPayload | null>(null);
+  const [filterOptions, setFilterOptions] =
+    useState<MargenFiltersPayload | null>(null);
   const [empresas, setEmpresas] = useState<string[]>([]);
   const [sedes, setSedes] = useState<string[]>([]);
   const selectedSedesKey = useMemo(
@@ -566,7 +725,9 @@ export const MargenesBoard = ({
   );
   const [sublineas, setSublineas] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>([]);
-  const [itemSearchOptions, setItemSearchOptions] = useState<FilterOption[]>([]);
+  const [itemSearchOptions, setItemSearchOptions] = useState<FilterOption[]>(
+    [],
+  );
   const [itemSearchLoading, setItemSearchLoading] = useState(false);
   const [itemSearchQuery, setItemSearchQuery] = useState("");
 
@@ -576,7 +737,9 @@ export const MargenesBoard = ({
   const [factPath, setFactPath] = useState<FactNavStep[]>([]);
   const [clienteFocus, setClienteFocus] = useState<ClienteFocus | null>(null);
   const [clienteFactPath, setClienteFactPath] = useState<FactNavStep[]>([]);
-  const [vendedorFocus, setVendedorFocus] = useState<VendedorFocus | null>(null);
+  const [vendedorFocus, setVendedorFocus] = useState<VendedorFocus | null>(
+    null,
+  );
   const [vendedorFactPath, setVendedorFactPath] = useState<FactNavStep[]>([]);
   const [drillSearch, setDrillSearch] = useState("");
   const [factSearch, setFactSearch] = useState("");
@@ -715,22 +878,20 @@ export const MargenesBoard = ({
   const activeFilterOptions = filterOptions ?? seededFilterOptions;
 
   const scopedFilterOptions = useMemo(() => {
-    let categorias =
-      lockedCategorias?.length
-        ? activeFilterOptions.categorias.filter((option) =>
-            lockedCategorias.includes(option.value),
-          )
-        : activeFilterOptions.categorias;
+    let categorias = lockedCategorias?.length
+      ? activeFilterOptions.categorias.filter((option) =>
+          lockedCategorias.includes(option.value),
+        )
+      : activeFilterOptions.categorias;
     if (excludedCategorias?.length) {
       const excluded = new Set(excludedCategorias);
       categorias = categorias.filter((option) => !excluded.has(option.value));
     }
-    const lineas =
-      lockedLineas?.length
-        ? activeFilterOptions.lineas.filter((option) =>
-            lockedLineas.includes(option.value),
-          )
-        : activeFilterOptions.lineas;
+    const lineas = lockedLineas?.length
+      ? activeFilterOptions.lineas.filter((option) =>
+          lockedLineas.includes(option.value),
+        )
+      : activeFilterOptions.lineas;
 
     if (!allowedSedeKeys || allowedSedeKeys.length === 0) {
       return { ...activeFilterOptions, categorias, lineas };
@@ -874,12 +1035,7 @@ export const MargenesBoard = ({
           option.code.toLowerCase().includes(q),
       ),
     );
-  }, [
-    cascadedFilterOptions.items,
-    itemSearchOptions,
-    itemSearchQuery,
-    items,
-  ]);
+  }, [cascadedFilterOptions.items, itemSearchOptions, itemSearchQuery, items]);
 
   useEffect(() => {
     setItemSearchOptions([]);
@@ -895,7 +1051,9 @@ export const MargenesBoard = ({
           .filter((option) => option.linea && next.includes(option.linea))
           .map((option) => option.value),
       );
-      setSublineas((current) => current.filter((value) => allowedSublineas.has(value)));
+      setSublineas((current) =>
+        current.filter((value) => allowedSublineas.has(value)),
+      );
 
       const allowedItems = new Set(
         scopedFilterOptions.items
@@ -934,9 +1092,12 @@ export const MargenesBoard = ({
   const loadFilters = useCallback(async () => {
     setFiltersLoading(true);
     try {
-      const response = await fetch(`/api/margenes/data?mode=filters&${queryBase}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/api/margenes/data?mode=filters&${queryBase}`,
+        {
+          cache: "no-store",
+        },
+      );
       if (!response.ok) return;
       const data = (await response.json()) as MargenFiltersPayload;
       setFilterOptions(data);
@@ -950,140 +1111,164 @@ export const MargenesBoard = ({
     void loadFilters();
   }, [filtersLoading, loadFilters]);
 
-  const loadBoard = useCallback(async (signal?: AbortSignal) => {
-    if (!dataCommitted || selectedSedes.length === 0) return;
-    setLoading(true);
-    setError(null);
-    const aborted = () => Boolean(signal?.aborted);
+  const loadBoard = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!dataCommitted || selectedSedes.length === 0) return;
+      setLoading(true);
+      setError(null);
+      const aborted = () => Boolean(signal?.aborted);
 
-    const readError = async (
-      response: Response,
-      fallback: string,
-    ): Promise<string> => {
-      const body = (await response.json().catch(() => null)) as {
-        error?: string;
-        detail?: string;
-      } | null;
-      return body?.detail
-        ? `${body.error ?? fallback} (${body.detail})`
-        : (body?.error ?? fallback);
-    };
+      const readError = async (
+        response: Response,
+        fallback: string,
+      ): Promise<string> => {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+          detail?: string;
+        } | null;
+        return body?.detail
+          ? `${body.error ?? fallback} (${body.detail})`
+          : (body?.error ?? fallback);
+      };
 
-    try {
-      if (mode === "sede") {
-        const sedeUrl = `/api/margenes/data?mode=sede&${queryBase}${orderParam ? `&${orderParam}` : ""}`;
-        const response = await fetch(sedeUrl, {
-          cache: "no-store",
-          signal,
-        });
-        if (!response.ok) {
-          throw new Error(await readError(response, "Error cargando sedes."));
+      try {
+        if (mode === "sede") {
+          const sedeUrl = `/api/margenes/data?mode=sede&${queryBase}${orderParam ? `&${orderParam}` : ""}`;
+          const response = await fetch(sedeUrl, {
+            cache: "no-store",
+            signal,
+          });
+          if (!response.ok) {
+            throw new Error(await readError(response, "Error cargando sedes."));
+          }
+          const data = (await response.json()) as {
+            kpi: MargenKpi;
+            rows: DrillRow[];
+          };
+          if (aborted()) return;
+          setSedeKpi(data.kpi);
+          setSedeRows(data.rows);
+          setPayload(null);
+          return;
         }
-        const data = (await response.json()) as { kpi: MargenKpi; rows: DrillRow[] };
-        if (aborted()) return;
-        setSedeKpi(data.kpi);
-        setSedeRows(data.rows);
-        setPayload(null);
-        return;
-      }
 
-      if (mode === "cliente") {
+        if (mode === "cliente") {
+          let url = "";
+          if (clienteFocus) {
+            url = `/api/margenes/data?mode=cliente-facturas&idTerc=${encodeURIComponent(clienteFocus.idTerc)}&factPath=${encodeURIComponent(JSON.stringify(clienteFactPath))}&${queryBase}`;
+            if (clienteSearch.trim())
+              url += `&search=${encodeURIComponent(clienteSearch.trim())}`;
+          } else {
+            url = `/api/margenes/data?mode=cliente&${queryBase}`;
+            if (clienteSearch.trim())
+              url += `&search=${encodeURIComponent(clienteSearch.trim())}`;
+          }
+          if (orderParam) url += `&${orderParam}`;
+          const response = await fetch(url, { cache: "no-store", signal });
+          if (!response.ok) {
+            throw new Error(
+              await readError(response, "Error cargando clientes."),
+            );
+          }
+          const data = (await response.json()) as TablePayload;
+          if (aborted()) return;
+          setPayload(data);
+          setSedeKpi(null);
+          setSedeRows([]);
+          return;
+        }
+
+        if (mode === "vendedor") {
+          let url = "";
+          if (vendedorFocus) {
+            url = `/api/margenes/data?mode=vendedor-facturas&vendCc=${encodeURIComponent(vendedorFocus.vendCc)}&factPath=${encodeURIComponent(JSON.stringify(vendedorFactPath))}&${queryBase}`;
+            if (vendedorSearch.trim())
+              url += `&search=${encodeURIComponent(vendedorSearch.trim())}`;
+          } else {
+            url = `/api/margenes/data?mode=vendedor&${queryBase}`;
+            if (vendedorSearch.trim())
+              url += `&search=${encodeURIComponent(vendedorSearch.trim())}`;
+          }
+          if (orderParam) url += `&${orderParam}`;
+          const response = await fetch(url, { cache: "no-store", signal });
+          if (!response.ok) {
+            throw new Error(
+              await readError(response, "Error cargando vendedores."),
+            );
+          }
+          const data = (await response.json()) as TablePayload;
+          if (aborted()) return;
+          setPayload(data);
+          setSedeKpi(null);
+          setSedeRows([]);
+          return;
+        }
+
         let url = "";
-        if (clienteFocus) {
-          url = `/api/margenes/data?mode=cliente-facturas&idTerc=${encodeURIComponent(clienteFocus.idTerc)}&factPath=${encodeURIComponent(JSON.stringify(clienteFactPath))}&${queryBase}`;
-          if (clienteSearch.trim()) url += `&search=${encodeURIComponent(clienteSearch.trim())}`;
+        if (mode === "drill") {
+          url = `/api/margenes/data?mode=drill&drillPath=${encodeURIComponent(JSON.stringify(drillPath))}&${queryBase}`;
+          if (drillSearch.trim())
+            url += `&search=${encodeURIComponent(drillSearch.trim())}`;
+        } else if (factTab === "nav") {
+          url = `/api/margenes/data?mode=fact-nav&factPath=${encodeURIComponent(JSON.stringify(factPath))}&${queryBase}`;
+          if (factSearch.trim())
+            url += `&search=${encodeURIComponent(factSearch.trim())}`;
         } else {
-          url = `/api/margenes/data?mode=cliente&${queryBase}`;
-          if (clienteSearch.trim()) url += `&search=${encodeURIComponent(clienteSearch.trim())}`;
+          url = `/api/margenes/data?mode=fact-list&factPath=${encodeURIComponent(JSON.stringify(factPath))}&${queryBase}`;
+          if (factSearch.trim())
+            url += `&search=${encodeURIComponent(factSearch.trim())}`;
         }
+
         if (orderParam) url += `&${orderParam}`;
         const response = await fetch(url, { cache: "no-store", signal });
         if (!response.ok) {
-          throw new Error(await readError(response, "Error cargando clientes."));
+          throw new Error(await readError(response, "Error cargando datos."));
         }
         const data = (await response.json()) as TablePayload;
         if (aborted()) return;
         setPayload(data);
         setSedeKpi(null);
         setSedeRows([]);
-        return;
-      }
-
-      if (mode === "vendedor") {
-        let url = "";
-        if (vendedorFocus) {
-          url = `/api/margenes/data?mode=vendedor-facturas&vendCc=${encodeURIComponent(vendedorFocus.vendCc)}&factPath=${encodeURIComponent(JSON.stringify(vendedorFactPath))}&${queryBase}`;
-          if (vendedorSearch.trim()) url += `&search=${encodeURIComponent(vendedorSearch.trim())}`;
-        } else {
-          url = `/api/margenes/data?mode=vendedor&${queryBase}`;
-          if (vendedorSearch.trim()) url += `&search=${encodeURIComponent(vendedorSearch.trim())}`;
-        }
-        if (orderParam) url += `&${orderParam}`;
-        const response = await fetch(url, { cache: "no-store", signal });
-        if (!response.ok) {
-          throw new Error(await readError(response, "Error cargando vendedores."));
-        }
-        const data = (await response.json()) as TablePayload;
+      } catch (loadError) {
         if (aborted()) return;
-        setPayload(data);
-        setSedeKpi(null);
-        setSedeRows([]);
-        return;
+        if (
+          loadError instanceof DOMException &&
+          loadError.name === "AbortError"
+        ) {
+          return;
+        }
+        if (loadError instanceof Error && loadError.name === "AbortError") {
+          return;
+        }
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Error cargando datos.",
+        );
+        // No vaciar payload: evita parpadeo / datos cruzados al fallar una carrera.
+      } finally {
+        if (!aborted()) setLoading(false);
       }
-
-      let url = "";
-      if (mode === "drill") {
-        url = `/api/margenes/data?mode=drill&drillPath=${encodeURIComponent(JSON.stringify(drillPath))}&${queryBase}`;
-        if (drillSearch.trim()) url += `&search=${encodeURIComponent(drillSearch.trim())}`;
-      } else if (factTab === "nav") {
-        url = `/api/margenes/data?mode=fact-nav&factPath=${encodeURIComponent(JSON.stringify(factPath))}&${queryBase}`;
-        if (factSearch.trim()) url += `&search=${encodeURIComponent(factSearch.trim())}`;
-      } else {
-        url = `/api/margenes/data?mode=fact-list&factPath=${encodeURIComponent(JSON.stringify(factPath))}&${queryBase}`;
-        if (factSearch.trim()) url += `&search=${encodeURIComponent(factSearch.trim())}`;
-      }
-
-      if (orderParam) url += `&${orderParam}`;
-      const response = await fetch(url, { cache: "no-store", signal });
-      if (!response.ok) {
-        throw new Error(await readError(response, "Error cargando datos."));
-      }
-      const data = (await response.json()) as TablePayload;
-      if (aborted()) return;
-      setPayload(data);
-      setSedeKpi(null);
-      setSedeRows([]);
-    } catch (loadError) {
-      if (aborted()) return;
-      if (loadError instanceof DOMException && loadError.name === "AbortError") {
-        return;
-      }
-      if (loadError instanceof Error && loadError.name === "AbortError") {
-        return;
-      }
-      setError(loadError instanceof Error ? loadError.message : "Error cargando datos.");
-      // No vaciar payload: evita parpadeo / datos cruzados al fallar una carrera.
-    } finally {
-      if (!aborted()) setLoading(false);
-    }
-  }, [
-    dataCommitted,
-    selectedSedes,
-    mode,
-    factTab,
-    drillPath,
-    factPath,
-    clienteFocus,
-    clienteFactPath,
-    vendedorFocus,
-    vendedorFactPath,
-    drillSearch,
-    factSearch,
-    clienteSearch,
-    vendedorSearch,
-    queryBase,
-    orderParam,
-  ]);
+    },
+    [
+      dataCommitted,
+      selectedSedes,
+      mode,
+      factTab,
+      drillPath,
+      factPath,
+      clienteFocus,
+      clienteFactPath,
+      vendedorFocus,
+      vendedorFactPath,
+      drillSearch,
+      factSearch,
+      clienteSearch,
+      vendedorSearch,
+      queryBase,
+      orderParam,
+    ],
+  );
 
   useEffect(() => {
     if (mode !== "drill") return;
@@ -1101,7 +1286,8 @@ export const MargenesBoard = ({
   useEffect(() => {
     const onInvoiceDetail =
       (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
-      (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura") ||
+      (mode === "drill" &&
+        drillPath[drillPath.length - 1]?.type === "factura") ||
       (mode === "cliente" &&
         clienteFactPath.some((step) => step.type === "factura")) ||
       (mode === "vendedor" &&
@@ -1145,7 +1331,16 @@ export const MargenesBoard = ({
     setSedeRows([]);
     setSedeKpi(null);
     setError(null);
-  }, [mode, factTab, drillPath, factPath, clienteFocus, clienteFactPath, vendedorFocus, vendedorFactPath]);
+  }, [
+    mode,
+    factTab,
+    drillPath,
+    factPath,
+    clienteFocus,
+    clienteFactPath,
+    vendedorFocus,
+    vendedorFactPath,
+  ]);
 
   useEffect(() => {
     if (!dataCommitted) return;
@@ -1217,8 +1412,14 @@ export const MargenesBoard = ({
   );
 
   // El ACUMULADO va FIJO arriba: se saca de las filas, no lo tocan orden/paginacion/filtros.
-  const acumRow = useMemo(() => rawRows.find((row) => row.isAcum) ?? null, [rawRows]);
-  const dataRows = useMemo(() => rawRows.filter((row) => !row.isAcum), [rawRows]);
+  const acumRow = useMemo(
+    () => rawRows.find((row) => row.isAcum) ?? null,
+    [rawRows],
+  );
+  const dataRows = useMemo(
+    () => rawRows.filter((row) => !row.isAcum),
+    [rawRows],
+  );
 
   // Orden local siempre que haya columna activa: feedback inmediato al clic.
   // El refetch con orderParam sigue sirviendo para el top-N (LIMIT 1000) en servidor.
@@ -1360,13 +1561,11 @@ export const MargenesBoard = ({
         <MargenesMultiSelect
           label="Sede"
           values={sedes}
-          options={
-            cascadedFilterOptions.sedes.map((option) => ({
-              value: option.value,
-              label: option.label,
-              code: option.idCo,
-            }))
-          }
+          options={cascadedFilterOptions.sedes.map((option) => ({
+            value: option.value,
+            label: option.label,
+            code: option.idCo,
+          }))}
           onChange={setSedes}
           onOpen={ensureFilters}
           loading={filtersLoading && !filterOptions}
@@ -1438,18 +1637,18 @@ export const MargenesBoard = ({
             key={tab.id}
             type="button"
             onClick={() => {
-                setMode(tab.id);
-                setDrillPath([]);
-                setFactPath([]);
-                setClienteFocus(null);
-                setClienteFactPath([]);
-                setClienteSearch("");
-                setVendedorFocus(null);
-                setVendedorFactPath([]);
-                setVendedorSearch("");
-                setSortKey(null);
-                setMgSortDir("desc");
-              }}
+              setMode(tab.id);
+              setDrillPath([]);
+              setFactPath([]);
+              setClienteFocus(null);
+              setClienteFactPath([]);
+              setClienteSearch("");
+              setVendedorFocus(null);
+              setVendedorFactPath([]);
+              setVendedorSearch("");
+              setSortKey(null);
+              setMgSortDir("desc");
+            }}
             className={`border-b-2 px-4 py-2 text-xs font-semibold whitespace-nowrap ${
               mode === tab.id
                 ? "border-[#4f8ef7] text-[#4f8ef7]"
@@ -1488,10 +1687,30 @@ export const MargenesBoard = ({
 
       <div className="grid shrink-0 grid-cols-2 border-b border-[#2a2f47] bg-[#141720] sm:flex sm:flex-nowrap">
         {[
-          { label: "Ventas netas (miles)", value: kpi ? formatMiles(kpi.ventasNetas) : KPI_PLACEHOLDER, sub: kpi?.subFacturas, tone: "text-[#4f8ef7]" },
-          { label: "Costo total (miles)", value: kpi ? formatMiles(kpi.costoTotal) : KPI_PLACEHOLDER, sub: kpi?.subCosto, tone: "text-[#dde3f0]" },
-          { label: "Margen $ (miles)", value: kpi ? formatMiles(kpi.margenPesos) : KPI_PLACEHOLDER, sub: kpi?.subMargen, tone: marginToneClass(kpi?.margenPct ?? 0) },
-          { label: "Margen %", value: kpi ? formatPercent(kpi.margenPct) : KPI_PLACEHOLDER, sub: kpi?.subPct, tone: marginToneClass(kpi?.margenPct ?? 0) },
+          {
+            label: "Ventas netas (miles)",
+            value: kpi ? formatMiles(kpi.ventasNetas) : KPI_PLACEHOLDER,
+            sub: kpi?.subFacturas,
+            tone: "text-[#4f8ef7]",
+          },
+          {
+            label: "Costo total (miles)",
+            value: kpi ? formatMiles(kpi.costoTotal) : KPI_PLACEHOLDER,
+            sub: kpi?.subCosto,
+            tone: "text-[#dde3f0]",
+          },
+          {
+            label: "Margen $ (miles)",
+            value: kpi ? formatMiles(kpi.margenPesos) : KPI_PLACEHOLDER,
+            sub: kpi?.subMargen,
+            tone: marginToneClass(kpi?.margenPct ?? 0),
+          },
+          {
+            label: "Margen %",
+            value: kpi ? formatPercent(kpi.margenPct) : KPI_PLACEHOLDER,
+            sub: kpi?.subPct,
+            tone: marginToneClass(kpi?.margenPct ?? 0),
+          },
         ].map((item, index) => (
           <div
             key={item.label}
@@ -1505,9 +1724,17 @@ export const MargenesBoard = ({
               {item.label}
             </div>
             <div className={`text-lg font-bold ${item.tone}`}>
-              {loading && !kpi ? <Loader2 className="h-4 w-4 animate-spin" /> : item.value}
+              {loading && !kpi ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                item.value
+              )}
             </div>
-            {item.sub ? <div className="mt-0.5 text-[10px] text-[#6b7590]">{item.sub}</div> : null}
+            {item.sub ? (
+              <div className="mt-0.5 text-[10px] text-[#6b7590]">
+                {item.sub}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -1536,7 +1763,8 @@ export const MargenesBoard = ({
             onChange={(event) => {
               if (mode === "drill") setDrillSearch(event.target.value);
               else if (mode === "cliente") setClienteSearch(event.target.value);
-              else if (mode === "vendedor") setVendedorSearch(event.target.value);
+              else if (mode === "vendedor")
+                setVendedorSearch(event.target.value);
               else setFactSearch(event.target.value);
             }}
             placeholder={
@@ -1550,13 +1778,15 @@ export const MargenesBoard = ({
             }
             className="min-w-0 flex-1 rounded-md border border-[#2a2f47] bg-[#232740] px-3 py-1.5 text-xs text-[#dde3f0] outline-none focus:border-[#4f8ef7]"
           />
-          {(mode === "drill"
-            ? drillSearch
-            : mode === "cliente"
-              ? clienteSearch
-              : mode === "vendedor"
-                ? vendedorSearch
-                : factSearch) ? (
+          {(
+            mode === "drill"
+              ? drillSearch
+              : mode === "cliente"
+                ? clienteSearch
+                : mode === "vendedor"
+                  ? vendedorSearch
+                  : factSearch
+          ) ? (
             <button
               type="button"
               className="rounded border border-[#2a2f47] px-2 py-1 text-[11px] text-[#6b7590] hover:text-[#dde3f0]"
@@ -1583,7 +1813,10 @@ export const MargenesBoard = ({
             Inicio
           </button>
           {drillPath.map((step, index) => (
-            <span key={`${step.type}-${index}`} className="flex items-center gap-1">
+            <span
+              key={`${step.type}-${index}`}
+              className="flex items-center gap-1"
+            >
               <span className="text-[#2a2f47]">›</span>
               <button
                 type="button"
@@ -1595,7 +1828,8 @@ export const MargenesBoard = ({
             </span>
           ))}
           <span className="ml-auto rounded-full border border-[#2a2f47] bg-[#232740] px-2 py-0.5 text-[10px] text-[#6b7590]">
-            Nivel: {payload?.levelName ?? DRILL_LEVEL_NAMES[drillPath.length] ?? "—"}
+            Nivel:{" "}
+            {payload?.levelName ?? DRILL_LEVEL_NAMES[drillPath.length] ?? "—"}
           </span>
         </div>
       ) : null}
@@ -1610,7 +1844,10 @@ export const MargenesBoard = ({
             {factTab === "list" ? "Lista de facturas" : "Inicio"}
           </button>
           {factPath.map((step, index) => (
-            <span key={`${step.type}-${index}`} className="flex items-center gap-1">
+            <span
+              key={`${step.type}-${index}`}
+              className="flex items-center gap-1"
+            >
               <span className="text-[#2a2f47]">›</span>
               <button
                 type="button"
@@ -1653,12 +1890,17 @@ export const MargenesBoard = ({
             </span>
           ) : null}
           {clienteFactPath.map((step, index) => (
-            <span key={`${step.type}-${index}`} className="flex items-center gap-1">
+            <span
+              key={`${step.type}-${index}`}
+              className="flex items-center gap-1"
+            >
               <span className="text-[#2a2f47]">›</span>
               <button
                 type="button"
                 className="text-[#4f8ef7] hover:underline"
-                onClick={() => setClienteFactPath(clienteFactPath.slice(0, index + 1))}
+                onClick={() =>
+                  setClienteFactPath(clienteFactPath.slice(0, index + 1))
+                }
               >
                 {formatStepLabel(step)}
               </button>
@@ -1696,12 +1938,17 @@ export const MargenesBoard = ({
             </span>
           ) : null}
           {vendedorFactPath.map((step, index) => (
-            <span key={`${step.type}-${index}`} className="flex items-center gap-1">
+            <span
+              key={`${step.type}-${index}`}
+              className="flex items-center gap-1"
+            >
               <span className="text-[#2a2f47]">›</span>
               <button
                 type="button"
                 className="text-[#4f8ef7] hover:underline"
-                onClick={() => setVendedorFactPath(vendedorFactPath.slice(0, index + 1))}
+                onClick={() =>
+                  setVendedorFactPath(vendedorFactPath.slice(0, index + 1))
+                }
               >
                 {formatStepLabel(step)}
               </button>
@@ -1778,7 +2025,9 @@ export const MargenesBoard = ({
                   <span className="inline-flex items-center gap-0.5">
                     {column.label}
                     {sortKey === column.key ? (
-                      <span className="text-[#4f8ef7]">{mgSortDir === "desc" ? "↓" : "↑"}</span>
+                      <span className="text-[#4f8ef7]">
+                        {mgSortDir === "desc" ? "↓" : "↑"}
+                      </span>
                     ) : null}
                   </span>
                 </th>
@@ -1788,14 +2037,20 @@ export const MargenesBoard = ({
           <tbody>
             {loading && pageRows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-8 text-center text-[#6b7590]">
+                <td
+                  colSpan={columns.length}
+                  className="px-3 py-8 text-center text-[#6b7590]"
+                >
                   <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#4f8ef7]" />
                 </td>
               </tr>
             ) : null}
             {!loading && pageRows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-8 text-center text-[#6b7590]">
+                <td
+                  colSpan={columns.length}
+                  className="px-3 py-8 text-center text-[#6b7590]"
+                >
                   Sin filas para el rango y filtros seleccionados.
                 </td>
               </tr>
@@ -1865,7 +2120,9 @@ export const MargenesBoard = ({
         <button
           type="button"
           disabled={page >= pageCount - 1}
-          onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+          onClick={() =>
+            setPage((current) => Math.min(pageCount - 1, current + 1))
+          }
           className="rounded border border-[#2a2f47] px-2.5 py-1 disabled:opacity-30"
         >
           Sig. ›

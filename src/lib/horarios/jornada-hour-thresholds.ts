@@ -234,3 +234,37 @@ export const isInNineTwentyHoursBucket = (
   totalHours: number,
   workedDate: string | null | undefined,
 ): boolean => totalHours > nineTwentyThresholdHoursForDate(workedDate);
+
+/**
+ * Minutos de la etiqueta operativa 7:xx (sin el margen +10 del bucket `>`).
+ * Legacy 7:20 → 440. Shortened 7:00 → 420.
+ */
+export const twoMarksLabelMinutesForDate = (
+  workedDate: string | null | undefined,
+): number =>
+  usesShortenedTwoMarksThreshold(workedDate) ? 7 * 60 : 7 * 60 + 20;
+
+/**
+ * 2 marcaciones y jornada incompleta (< etiqueta 7:00h / 7:20h).
+ * Casos que no generan incidencia por marcar entrada/salida pero no completar turno.
+ */
+export const isUnderTwoMarksLabelMinutes = (
+  totalMinutes: number,
+  marksCount: number,
+  workedDate: string | null | undefined,
+): boolean =>
+  marksCount === 2 &&
+  Number.isFinite(totalMinutes) &&
+  totalMinutes >= 0 &&
+  totalMinutes < twoMarksLabelMinutesForDate(workedDate);
+
+/**
+ * 4 marcaciones y jornada larga (> etiqueta 9:00h / 9:20h).
+ * Para vigilar extras cuando hay doble entrada/salida.
+ */
+export const isOverNineWithFourMarksMinutes = (
+  totalMinutes: number,
+  marksCount: number,
+  workedDate: string | null | undefined,
+): boolean =>
+  marksCount === 4 && isInNineTwentyMinutesBucket(totalMinutes, workedDate);

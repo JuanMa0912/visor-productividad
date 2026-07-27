@@ -59,6 +59,8 @@ import {
 import {
   isInNineTwentyMinutesBucket,
   isInTwoMarksMinutesBucket,
+  isOverNineWithFourMarksMinutes,
+  isUnderTwoMarksLabelMinutes,
   nineTwentyLabelForRange,
   twoMarksLabelForRange,
 } from "@/lib/horarios/jornada-hour-thresholds";
@@ -189,7 +191,7 @@ export const HourlyAnalysis = ({
   /** Filtro rapido para `estado_asistencia` que contiene "incidente". */
   const [overtimeIncidenceOnly, setOvertimeIncidenceOnly] = useState(false);
   const [overtimeAlertMode, setOvertimeAlertMode] = useState<
-    "920" | "720-2marks"
+    "920" | "720-2marks" | "lt7-2marks" | "gt9-4marks"
   >("920");
   const [overtimeExcludedIds, setOvertimeExcludedIds] = useState<Set<string>>(
     () => new Set(),
@@ -2190,9 +2192,23 @@ export const HourlyAnalysis = ({
               const employeeMinutes = decimalHoursToMinutes(
                 employee.workedHours,
               );
+              const marks = employee.marksCount ?? 0;
               if (overtimeAlertMode === "720-2marks") {
-                const marks = employee.marksCount ?? 0;
                 return isInTwoMarksMinutesBucket(
+                  employeeMinutes,
+                  marks,
+                  employee.workedDate,
+                );
+              }
+              if (overtimeAlertMode === "lt7-2marks") {
+                return isUnderTwoMarksLabelMinutes(
+                  employeeMinutes,
+                  marks,
+                  employee.workedDate,
+                );
+              }
+              if (overtimeAlertMode === "gt9-4marks") {
+                return isOverNineWithFourMarksMinutes(
                   employeeMinutes,
                   marks,
                   employee.workedDate,
@@ -2312,6 +2328,32 @@ export const HourlyAnalysis = ({
       }).length,
     [baseFilteredOvertimeEmployees],
   );
+  const alexAlertCountLt7TwoMarks = useMemo(
+    () =>
+      baseFilteredOvertimeEmployees.filter((employee) => {
+        const minutes = decimalHoursToMinutes(employee.workedHours);
+        const marks = employee.marksCount ?? 0;
+        return isUnderTwoMarksLabelMinutes(
+          minutes,
+          marks,
+          employee.workedDate,
+        );
+      }).length,
+    [baseFilteredOvertimeEmployees],
+  );
+  const alexAlertCountGt9FourMarks = useMemo(
+    () =>
+      baseFilteredOvertimeEmployees.filter((employee) => {
+        const minutes = decimalHoursToMinutes(employee.workedHours);
+        const marks = employee.marksCount ?? 0;
+        return isOverNineWithFourMarksMinutes(
+          minutes,
+          marks,
+          employee.workedDate,
+        );
+      }).length,
+    [baseFilteredOvertimeEmployees],
+  );
   const alexAlertCount920 = useMemo(
     () =>
       baseFilteredOvertimeEmployees.filter((employee) => {
@@ -2344,6 +2386,8 @@ export const HourlyAnalysis = ({
   const displayOddMarksCount = oddMarksCount;
   const displayAlexAlertCount920 = alexAlertCount920;
   const displayAlexAlertCount720 = alexAlertCount720;
+  const displayAlexAlertCountLt7TwoMarks = alexAlertCountLt7TwoMarks;
+  const displayAlexAlertCountGt9FourMarks = alexAlertCountGt9FourMarks;
   const displayIncidenceCount = incidenceCount;
   const twoMarksChipLabel = useMemo(
     () => twoMarksLabelForRange(overtimeDateStart, overtimeDateEnd),
@@ -3183,6 +3227,48 @@ export const HourlyAnalysis = ({
                     }`}
                   >
                     {`>${twoMarksChipLabel} con 2 marcaciones ${displayAlexAlertCount720}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                      setOvertimeAlertMode("lt7-2marks");
+                      setOvertimeAlertOnly((prev) =>
+                        prev && overtimeAlertMode === "lt7-2marks" ? false : true,
+                      );
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeAlertOnly && overtimeAlertMode === "lt7-2marks"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
+                    }`}
+                  >
+                    {`<${twoMarksChipLabel} con 2 marcaciones ${displayAlexAlertCountLt7TwoMarks}`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                      setOvertimeAlertMode("gt9-4marks");
+                      setOvertimeAlertOnly((prev) =>
+                        prev && overtimeAlertMode === "gt9-4marks" ? false : true,
+                      );
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeAlertOnly && overtimeAlertMode === "gt9-4marks"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
+                    }`}
+                  >
+                    {`>${nineTwentyChipLabel} con 4 marcaciones ${displayAlexAlertCountGt9FourMarks}`}
                   </button>
                   {overtimeExcludedIds.size > 0 && (
                     <button

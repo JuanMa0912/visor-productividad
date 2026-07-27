@@ -18,6 +18,8 @@ import {
   TWO_MARKS_UPPER_BOUND_MINUTES_SHORTENED,
   isInNineTwentyMinutesBucket,
   isInTwoMarksMinutesBucket,
+  isOverNineWithFourMarksMinutes,
+  isUnderTwoMarksLabelMinutes,
   nineTwentyLabelForRange,
   nineTwentyThresholdMinutesForDate,
   twoMarksLabelForRange,
@@ -106,6 +108,36 @@ describe("jornada-hour-thresholds", () => {
     assert.equal(
       isInNineTwentyMinutesBucket(541, JORNADA_TWO_MARKS_SHORTENED_FROM),
       true,
+    );
+  });
+
+  it("detecta 2 marcas bajo la etiqueta 7:xx (jornada incompleta)", () => {
+    // Legacy <7:20 (440): 439 entra; 440 no
+    assert.equal(isUnderTwoMarksLabelMinutes(439, 2, "2026-07-15"), true);
+    assert.equal(isUnderTwoMarksLabelMinutes(440, 2, "2026-07-15"), false);
+    // Shortened <7:00 (420)
+    assert.equal(
+      isUnderTwoMarksLabelMinutes(419, 2, JORNADA_TWO_MARKS_SHORTENED_FROM),
+      true,
+    );
+    assert.equal(
+      isUnderTwoMarksLabelMinutes(420, 2, JORNADA_TWO_MARKS_SHORTENED_FROM),
+      false,
+    );
+    assert.equal(isUnderTwoMarksLabelMinutes(300, 3, "2026-07-15"), false);
+  });
+
+  it("detecta 4 marcas sobre 9:xx (extras)", () => {
+    assert.equal(isOverNineWithFourMarksMinutes(561, 4, "2026-07-15"), true);
+    assert.equal(isOverNineWithFourMarksMinutes(561, 2, "2026-07-15"), false);
+    assert.equal(isOverNineWithFourMarksMinutes(560, 4, "2026-07-15"), false);
+    assert.equal(
+      isOverNineWithFourMarksMinutes(541, 4, JORNADA_TWO_MARKS_SHORTENED_FROM),
+      true,
+    );
+    assert.equal(
+      isOverNineWithFourMarksMinutes(540, 4, JORNADA_TWO_MARKS_SHORTENED_FROM),
+      false,
     );
   });
 

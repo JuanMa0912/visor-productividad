@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
@@ -36,7 +43,10 @@ import {
 } from "@/lib/ventas/x-item";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
-import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
+import {
+  TUTORIAL_LOCAL_STORAGE_KEYS,
+  TUTORIAL_STATE_KEYS,
+} from "@/lib/ui/tutorial-keys";
 import { VENTAS_X_ITEM_TOUR_ANCHOR } from "@/lib/ui/portal-tours/ventas-x-item-tour-anchors";
 import { VENTAS_X_ITEM_TOUR_STEPS } from "@/lib/ui/portal-tours/ventas-x-item-tour-steps";
 import "driver.js/dist/driver.css";
@@ -60,7 +70,9 @@ const HEATMAP_COLORS = [
 const ITEM_DROPDOWN_NO_SEARCH_LIMIT = 120;
 const ITEM_DROPDOWN_SEARCH_LIMIT = 250;
 const USE_V2_API = process.env.NEXT_PUBLIC_VENTAS_X_ITEM_USE_V2 === "1";
-const VENTAS_X_ITEM_API_BASE = USE_V2_API ? "/api/ventas-x-item/v2" : "/api/ventas-x-item";
+const VENTAS_X_ITEM_API_BASE = USE_V2_API
+  ? "/api/ventas-x-item/v2"
+  : "/api/ventas-x-item";
 const LOAD_EMPRESA_OPTIONS = Object.keys(EMPRESA_LABELS).sort();
 
 const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
@@ -140,9 +152,9 @@ export default function VentasXItemPage() {
   const [fileName, setFileName] = useState("");
   const [dbMinDate, setDbMinDate] = useState("");
   const [dbMaxDate, setDbMaxDate] = useState("");
-  const [empresasCargaSel, setEmpresasCargaSel] = useState<string[]>(
-    () => [...LOAD_EMPRESA_OPTIONS],
-  );
+  const [empresasCargaSel, setEmpresasCargaSel] = useState<string[]>(() => [
+    ...LOAD_EMPRESA_OPTIONS,
+  ]);
   const [empresasSel, setEmpresasSel] = useState<string[]>([]);
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
@@ -166,7 +178,9 @@ export default function VentasXItemPage() {
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [parityLoading, setParityLoading] = useState(false);
-  const [parityResult, setParityResult] = useState<ParityCheckResult | null>(null);
+  const [parityResult, setParityResult] = useState<ParityCheckResult | null>(
+    null,
+  );
   const itemsDropdownRef = useRef<HTMLDivElement | null>(null);
   /** Evita solapar dos cargas desde BD (botón + carga automática). */
   const dbLoadInflightRef = useRef(false);
@@ -285,7 +299,8 @@ export default function VentasXItemPage() {
     [rows],
   );
   const singleEmpresaLoaded = empresasDisponibles.length === 1;
-  const empresasVisibles = empresasSel.length > 0 ? empresasSel : empresasDisponibles;
+  const empresasVisibles =
+    empresasSel.length > 0 ? empresasSel : empresasDisponibles;
 
   const rowsEmpresa = useMemo(
     () => rows.filter((row) => empresasVisibles.includes(row.empresa_norm)),
@@ -341,7 +356,9 @@ export default function VentasXItemPage() {
       };
     }
 
-    const matched = itemOptions.filter((item) => item.toLowerCase().includes(term));
+    const matched = itemOptions.filter((item) =>
+      item.toLowerCase().includes(term),
+    );
     const selectedMatched = matched.filter((item) => selectedItemSet.has(item));
     const othersMatched = matched
       .filter((item) => !selectedItemSet.has(item))
@@ -350,7 +367,8 @@ export default function VentasXItemPage() {
     return {
       totalMatches: matched.length,
       visibleItems: [...selectedMatched, ...othersMatched],
-      truncated: matched.length - selectedMatched.length > ITEM_DROPDOWN_SEARCH_LIMIT,
+      truncated:
+        matched.length - selectedMatched.length > ITEM_DROPDOWN_SEARCH_LIMIT,
     };
   }, [deferredItemSearch, itemOptions, selectedItemSet]);
 
@@ -389,7 +407,8 @@ export default function VentasXItemPage() {
       const byId = ids.size > 0 && ids.has(String(row.id_item));
       const desc = row.descripcion.toLowerCase();
       const byDesc =
-        descNeedles.length > 0 && descNeedles.some((needle) => desc.includes(needle));
+        descNeedles.length > 0 &&
+        descNeedles.some((needle) => desc.includes(needle));
       return byExactLabel || byId || byDesc;
     };
   }, [itemsSel]);
@@ -433,16 +452,21 @@ export default function VentasXItemPage() {
         params.set("empresa", empresasVisibles.join(","));
         params.set("itemIds", itemIds.join(","));
 
-        const response = await fetch(`${VENTAS_X_ITEM_API_BASE}?${params.toString()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          `${VENTAS_X_ITEM_API_BASE}?${params.toString()}`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          },
+        );
         const payload = (await response.json()) as {
           rows?: VentasXItemRawRow[];
           error?: string;
         };
         if (!response.ok) {
-          throw new Error(payload.error ?? "No se pudo cargar el resumen del ítem.");
+          throw new Error(
+            payload.error ?? "No se pudo cargar el resumen del ítem.",
+          );
         }
         setSummaryRows(prepareDataframe(payload.rows ?? []));
       } catch (err) {
@@ -457,7 +481,6 @@ export default function VentasXItemPage() {
 
     return () => controller.abort();
   }, [activeRangeEnd, activeRangeStart, empresasVisibles, itemsSel]);
-
 
   const tableRows = useMemo<DailyTableRow[]>(() => {
     if (!activeRangeStart || !activeRangeEnd) return [];
@@ -499,7 +522,10 @@ export default function VentasXItemPage() {
       .filter((column) => column !== "T. Dia")
       .map((sede) => ({
         sede,
-        unidades: pivot.rows.reduce((sum, row) => sum + (row.values[sede] ?? 0), 0),
+        unidades: pivot.rows.reduce(
+          (sum, row) => sum + (row.values[sede] ?? 0),
+          0,
+        ),
       }))
       .sort((a, b) => b.unidades - a.unidades);
   }, [pivot]);
@@ -507,7 +533,6 @@ export default function VentasXItemPage() {
     () => Math.max(1, ...sedeSeries.flatMap((series) => series.data)),
     [sedeSeries],
   );
-
 
   const toggleItem = (item: string) => {
     setItemsSel((prev) => {
@@ -532,52 +557,60 @@ export default function VentasXItemPage() {
       { units: 0, sales: 0 },
     );
 
-  const onLoadMeta = useCallback(async (empresasObjetivo: string[] = empresasCargaSel) => {
-    setError(null);
-    try {
-      const params = new URLSearchParams({ mode: "meta" });
-      if (empresasObjetivo.length > 0) {
-        params.set("empresa", empresasObjetivo.join(","));
-      }
-      const response = await fetch(`${VENTAS_X_ITEM_API_BASE}?${params.toString()}`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as {
-        minDate?: string | null;
-        maxDate?: string | null;
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "No se pudo cargar metadatos de fechas.");
-      }
-      const min = payload.minDate ?? "";
-      const max = payload.maxDate ?? "";
-      setDbMinDate(min);
-      setDbMaxDate(max);
-      setDateStart((prev) => {
-        if (!prev) {
-          const rolling = defaultRollingDaysRange(min, max);
-          if (rolling) return rolling.start;
-          return min;
+  const onLoadMeta = useCallback(
+    async (empresasObjetivo: string[] = empresasCargaSel) => {
+      setError(null);
+      try {
+        const params = new URLSearchParams({ mode: "meta" });
+        if (empresasObjetivo.length > 0) {
+          params.set("empresa", empresasObjetivo.join(","));
         }
-        if (min && prev < min) return min;
-        if (max && prev > max) return max;
-        return prev;
-      });
-      setDateEnd((prev) => {
-        if (!prev) {
-          const rolling = defaultRollingDaysRange(min, max);
-          if (rolling) return rolling.end;
-          return max;
+        const response = await fetch(
+          `${VENTAS_X_ITEM_API_BASE}?${params.toString()}`,
+          {
+            cache: "no-store",
+          },
+        );
+        const payload = (await response.json()) as {
+          minDate?: string | null;
+          maxDate?: string | null;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            payload.error ?? "No se pudo cargar metadatos de fechas.",
+          );
         }
-        if (min && prev < min) return min;
-        if (max && prev > max) return max;
-        return prev;
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [empresasCargaSel]);
+        const min = payload.minDate ?? "";
+        const max = payload.maxDate ?? "";
+        setDbMinDate(min);
+        setDbMaxDate(max);
+        setDateStart((prev) => {
+          if (!prev) {
+            const rolling = defaultRollingDaysRange(min, max);
+            if (rolling) return rolling.start;
+            return min;
+          }
+          if (min && prev < min) return min;
+          if (max && prev > max) return max;
+          return prev;
+        });
+        setDateEnd((prev) => {
+          if (!prev) {
+            const rolling = defaultRollingDaysRange(min, max);
+            if (rolling) return rolling.end;
+            return max;
+          }
+          if (min && prev < min) return min;
+          if (max && prev > max) return max;
+          return prev;
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [empresasCargaSel],
+  );
 
   const onLoadFromDb = async () => {
     setError(null);
@@ -594,7 +627,10 @@ export default function VentasXItemPage() {
       setError("La fecha inicio no puede ser mayor que la fecha fin.");
       return;
     }
-    if ((dbMinDate && dateStart < dbMinDate) || (dbMaxDate && dateEnd > dbMaxDate)) {
+    if (
+      (dbMinDate && dateStart < dbMinDate) ||
+      (dbMaxDate && dateEnd > dbMaxDate)
+    ) {
       setError(
         `El rango debe estar entre ${dbMinDate || "la fecha minima disponible"} y ${dbMaxDate || "la fecha maxima disponible"}.`,
       );
@@ -644,7 +680,9 @@ export default function VentasXItemPage() {
             `${payload.error ?? "La fecha solicitada no existe en la base de datos."}${availableRange}`,
           );
         }
-        throw new Error(payload.error ?? "No se pudo cargar datos desde base de datos.");
+        throw new Error(
+          payload.error ?? "No se pudo cargar datos desde base de datos.",
+        );
       }
 
       loadedStart = payload.range?.start ?? loadedStart;
@@ -652,8 +690,11 @@ export default function VentasXItemPage() {
 
       const prepared = prepareDataframe(payload.rows ?? []);
       const hasValidDates = prepared.some((row) => row.fecha !== null);
-      if (!hasValidDates) throw new Error("La base de datos no tiene fechas válidas.");
-      const empresas = Array.from(new Set(prepared.map((row) => row.empresa_norm))).sort();
+      if (!hasValidDates)
+        throw new Error("La base de datos no tiene fechas válidas.");
+      const empresas = Array.from(
+        new Set(prepared.map((row) => row.empresa_norm)),
+      ).sort();
       setRows(prepared);
       setLoadedDateStart(loadedStart);
       setLoadedDateEnd(loadedEnd);
@@ -663,7 +704,9 @@ export default function VentasXItemPage() {
       const empresaLabel = selectedEmpresasLoaded
         .map((empresa) => EMPRESA_LABELS[empresa] ?? empresa.toUpperCase())
         .join(" + ");
-      setFileName(`DB: ventas_item_diario (${loadedStart} a ${loadedEnd}) | ${empresaLabel}`);
+      setFileName(
+        `DB: ventas_item_diario (${loadedStart} a ${loadedEnd}) | ${empresaLabel}`,
+      );
       setEmpresasSel(
         selectedEmpresasLoaded.length > 0 ? selectedEmpresasLoaded : empresas,
       );
@@ -755,7 +798,10 @@ export default function VentasXItemPage() {
     if (!ready) return;
     if (!dateStart || !dateEnd || empresasCargaSel.length === 0) return;
     if (dateStart > dateEnd) return;
-    if ((dbMinDate && dateStart < dbMinDate) || (dbMaxDate && dateEnd > dbMaxDate)) {
+    if (
+      (dbMinDate && dateStart < dbMinDate) ||
+      (dbMaxDate && dateEnd > dbMaxDate)
+    ) {
       return;
     }
 
@@ -773,11 +819,16 @@ export default function VentasXItemPage() {
     const lines = [
       tableColumns.map((col) => escapeCsv(col)).join(","),
       ...tableRows.map((row) =>
-        tableColumns.map((col) => escapeCsv(row[col] as string | number)).join(","),
+        tableColumns
+          .map((col) => escapeCsv(row[col] as string | number))
+          .join(","),
       ),
     ];
     const content = "\ufeff" + lines.join("\n");
-    downloadBlob(new Blob([content], { type: "text/csv;charset=utf-8;" }), "ventas-x-item.csv");
+    downloadBlob(
+      new Blob([content], { type: "text/csv;charset=utf-8;" }),
+      "ventas-x-item.csv",
+    );
   };
 
   const handleDownloadXlsx = async () => {
@@ -917,13 +968,15 @@ export default function VentasXItemPage() {
    */
   const exportFileSlug = useMemo(() => {
     const base = itemsOrder[0] ?? "todos";
-    return base
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "ventas";
+    return (
+      base
+        .toLowerCase()
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60) || "ventas"
+    );
   }, [itemsOrder]);
 
   const handleDownloadJpg = useCallback(async () => {
@@ -931,10 +984,18 @@ export default function VentasXItemPage() {
     setExportingJpg(true);
     try {
       // Cuatro frames para asegurar layout completo del stage off-screen.
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
 
       const node = jpgStageRef.current;
       if (!node) return;
@@ -990,16 +1051,20 @@ export default function VentasXItemPage() {
       });
 
       const pageWidth = doc.internal.pageSize.getWidth();
-      const itemsLabel = itemsOrder.length === 0 ? "Todos" : itemsOrder.join(" | ");
+      const itemsLabel =
+        itemsOrder.length === 0 ? "Todos" : itemsOrder.join(" | ");
       const rangeLabel =
         loadedDateStart && loadedDateEnd
           ? loadedDateStart === loadedDateEnd
             ? loadedDateStart
             : `${loadedDateStart} a ${loadedDateEnd}`
           : "";
-      const empresasLabel = empresasSel.length === 0
-        ? "Todas"
-        : empresasSel.map((e) => EMPRESA_LABELS[e] ?? e.toUpperCase()).join(", ");
+      const empresasLabel =
+        empresasSel.length === 0
+          ? "Todas"
+          : empresasSel
+              .map((e) => EMPRESA_LABELS[e] ?? e.toUpperCase())
+              .join(", ");
 
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, pageWidth, 18, "F");
@@ -1033,7 +1098,9 @@ export default function VentasXItemPage() {
       const body = dataRows.map((row) =>
         tableColumns.map((col) => {
           const val = row[col];
-          return typeof val === "number" ? val.toLocaleString("es-CO") : String(val ?? "");
+          return typeof val === "number"
+            ? val.toLocaleString("es-CO")
+            : String(val ?? "");
         }),
       );
       const foot = totalRow
@@ -1158,9 +1225,12 @@ export default function VentasXItemPage() {
     );
   }
 
-  const rangeLabel = dateStart && dateEnd ? `${dateStart} — ${dateEnd}` : "Sin rango";
+  const rangeLabel =
+    dateStart && dateEnd ? `${dateStart} — ${dateEnd}` : "Sin rango";
   const availableRangeLabel =
-    minDateKey && maxDateKey ? `${minDateKey} a ${maxDateKey}` : "no disponible";
+    minDateKey && maxDateKey
+      ? `${minDateKey} a ${maxDateKey}`
+      : "no disponible";
   const dataLoadedChip = rows.length > 0;
 
   return (
@@ -1171,747 +1241,854 @@ export default function VentasXItemPage() {
         onTourHelp={startVentasXItemTour}
       />
       <div className="px-4 py-8 lg:px-6">
-      <div className="mx-auto w-full max-w-7xl">
-        <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
-        <div className="relative overflow-hidden rounded-3xl border border-blue-200/70 bg-linear-to-br from-blue-100 via-blue-50/40 to-white p-6 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-blue-500">
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(59,130,246,0.32),transparent_60%)]"
-          />
-          <div className="relative flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl" id={VENTAS_X_ITEM_TOUR_ANCHOR.intro}>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-600">
-                Venta
-              </p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-                Ventas por ítem(s) x sedes
-              </h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Consulta el comportamiento diario por empresa, sede e ítem con el mismo estilo visual del portal.
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-700">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  Rango: {rangeLabel}
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/80 px-3 py-1 text-xs font-semibold text-violet-700">
-                  <Building2 className="h-3.5 w-3.5" />
-                  Empresas: {empresasCargaSel.length} cargadas
-                </span>
-                {dataLoadedChip ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                    <Check className="h-3.5 w-3.5" />
-                    Datos cargados
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                    <Loader2
-                      className={`h-3.5 w-3.5 ${loadingDb ? "animate-spin text-blue-600 motion-reduce:animate-none" : "text-slate-400"}`}
-                      aria-hidden
-                    />
-                    {loadingDb ? "Cargando..." : "Sin datos"}
-                  </span>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        <div
-          id={VENTAS_X_ITEM_TOUR_ANCHOR.loadDb}
-          className="mt-6 rounded-2xl border border-slate-200/70 bg-white px-4 py-4 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.18)]"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
-              <Database className="h-3.5 w-3.5 text-blue-500" aria-hidden />
-              Carga desde base de datos
+        <div className="mx-auto w-full max-w-7xl">
+          <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">
+            <div className="relative overflow-hidden rounded-3xl border border-blue-200/70 bg-linear-to-br from-blue-100 via-blue-50/40 to-white p-6 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-blue-500">
               <span
-                className="inline-flex items-center text-slate-400"
-                title="Al entrar se eligen todas las empresas y el rango por defecto es el mes corrido. La carga arranca sola; ajusta y repite con Recargar si lo necesitas."
-              >
-                <Info className="h-3.5 w-3.5" aria-hidden />
-              </span>
-            </p>
-            <p className="text-[11px] font-medium text-slate-500">
-              Rango disponible: <span className="font-semibold text-slate-700">{availableRangeLabel}</span>
-            </p>
-          </div>
-
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_2fr]">
-            <label className="block">
-              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                <CalendarDays className="h-3 w-3 text-blue-500" />
-                Fecha inicio
-              </span>
-              <input
-                type="date"
-                value={dateStart}
-                min={minDateKey || undefined}
-                max={maxDateKey || undefined}
-                onChange={(e) => setDateStart(e.target.value)}
-                disabled={loadingDb}
-                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_130%_100%_at_10%_-20%,rgba(59,130,246,0.32),transparent_60%)]"
               />
-            </label>
-            <label className="block">
-              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                <CalendarDays className="h-3 w-3 text-blue-500" />
-                Fecha fin
-              </span>
-              <input
-                type="date"
-                value={dateEnd}
-                min={minDateKey || undefined}
-                max={maxDateKey || undefined}
-                onChange={(e) => setDateEnd(e.target.value)}
-                disabled={loadingDb}
-                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </label>
-            <div className="block">
-              <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                <Building2 className="h-3 w-3 text-blue-500" />
-                Empresa(s) a cargar
-              </span>
-              <div className="flex h-9 w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
-                {LOAD_EMPRESA_OPTIONS.map((empresa) => {
-                  const selected = empresasCargaSel.includes(empresa);
-                  return (
-                    <button
-                      key={empresa}
-                      type="button"
-                      onClick={() =>
-                        setEmpresasCargaSel((prev) =>
-                          selected
-                            ? prev.filter((value) => value !== empresa)
-                            : [...prev, empresa],
-                        )
-                      }
-                      disabled={loadingDb}
-                      className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                        selected
-                          ? "border-blue-300 bg-blue-50 text-blue-700"
-                          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
-                      }`}
-                    >
-                      {EMPRESA_LABELS[empresa] ?? empresa.toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-            <button
-              type="button"
-              onClick={() => void onLoadFromDb()}
-              disabled={loadingDb || !dateStart || !dateEnd || empresasCargaSel.length === 0}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RefreshCcw className={`h-3.5 w-3.5 ${loadingDb ? "animate-spin motion-reduce:animate-none" : ""}`} aria-hidden />
-              {loadingDb ? "Cargando BD..." : "Recargar datos"}
-            </button>
-            <p className="text-[11px] text-slate-500">
-              {fileName
-                ? `Fuente actual: ${fileName}`
-                : "Ajusta fecha o empresas si quieres otro rango. La carga arranca sola al tener un rango válido."}
-            </p>
-          </div>
-
-          {(lastLoadedAt || (USE_V2_API && rows.length > 0)) && (
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-              {lastLoadedAt && (
-                <span>
-                  Última actualización:{" "}
-                  {new Intl.DateTimeFormat("es-CO", {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  }).format(new Date(lastLoadedAt))}
-                </span>
-              )}
-              {USE_V2_API && rows.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => void onCheckParity()}
-                    disabled={parityLoading || loadingDb}
-                    className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    {parityLoading ? "Validando..." : "Validar paridad con v1"}
-                  </button>
-                  {parityResult && (
-                    <span className={parityResult.ok ? "text-emerald-700" : "text-amber-700"}>
-                      {parityResult.ok
-                        ? `Paridad OK · filas ${parityResult.v2Rows}/${parityResult.v1Rows}`
-                        : `Paridad con diferencias · filas ${parityResult.v2Rows}/${parityResult.v1Rows}`}
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {USE_V2_API && parityResult && (
-            <p className="mt-1 text-[11px] text-slate-500">
-              v2 unidades: {parityResult.v2Units.toFixed(1)} · v1 unidades:{" "}
-              {parityResult.v1Units.toFixed(1)} · v2 venta: {parityResult.v2Sales.toFixed(0)} · v1
-              venta: {parityResult.v1Sales.toFixed(0)}
-              {parityResult.message ? ` · detalle: ${parityResult.message}` : ""}
-            </p>
-          )}
-          {error && (
-            <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </p>
-          )}
-        </div>
-        {rows.length > 0 && (
-          <>
-            <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200/70 bg-slate-50 p-4 md:grid-cols-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                Limite de items
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={itemLimit}
-                  onChange={(e) =>
-                    setItemLimit(Math.max(1, Math.min(10, Number(e.target.value) || 1)))
-                  }
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                />
-              </label>
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  Descargas
-                </span>
-                <div ref={exportMenuRef} id={VENTAS_X_ITEM_TOUR_ANCHOR.export} className="relative self-start">
-                  <button
-                    type="button"
-                    onClick={() => setExportMenuOpen((open) => !open)}
-                    disabled={
-                      tableRows.length === 0 ||
-                      exportingXlsx ||
-                      exportingJpg ||
-                      exportingPdf
-                    }
-                    aria-haspopup="menu"
-                    aria-expanded={exportMenuOpen}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Download className="h-3.5 w-3.5" aria-hidden />
-                    <span>
-                      {exportingXlsx
-                        ? "Generando XLSX..."
-                        : exportingJpg
-                          ? "Generando JPG..."
-                          : exportingPdf
-                            ? "Generando PDF..."
-                            : "Exportar"}
-                    </span>
-                    <ChevronDown
-                      className={`h-3 w-3 transition-transform ${
-                        exportMenuOpen ? "rotate-180" : ""
-                      }`}
-                      aria-hidden
-                    />
-                  </button>
-                  {exportMenuOpen && (
-                    <div
-                      role="menu"
-                      className="absolute left-0 top-full z-30 mt-2 min-w-52 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
-                    >
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setExportMenuOpen(false);
-                          handleDownloadCsv();
-                        }}
-                        disabled={tableRows.length === 0}
-                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
-                      >
-                        <FileType className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
-                        <span>CSV</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setExportMenuOpen(false);
-                          void handleDownloadXlsx();
-                        }}
-                        disabled={tableRows.length === 0 || exportingXlsx}
-                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
-                      >
-                        <FileSpreadsheet className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
-                        <span>Excel (XLSX)</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setExportMenuOpen(false);
-                          void handleDownloadJpg();
-                        }}
-                        disabled={tableRows.length === 0 || exportingJpg}
-                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
-                      >
-                        <FileImage className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
-                        <span>Imagen (JPG)</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setExportMenuOpen(false);
-                          handleDownloadPdf();
-                        }}
-                        disabled={tableRows.length === 0 || exportingPdf}
-                        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
-                      >
-                        <FileText className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600" aria-hidden />
-                        <span>PDF</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Cambia el rango arriba y luego carga desde BD.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-3 rounded-2xl border border-slate-200/70 bg-slate-50 p-4 md:grid-cols-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  Empresas
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {empresasDisponibles.map((empresa) => {
-                    const checked = empresasSel.includes(empresa);
-                    return (
-                      <button
-                        key={empresa}
-                        type="button"
-                        onClick={() =>
-                          setEmpresasSel((prev) =>
-                            checked
-                              ? prev.filter((v) => v !== empresa)
-                              : [...prev, empresa],
-                          )
-                        }
-                        disabled={singleEmpresaLoaded}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                          checked
-                            ? "border-blue-300 bg-blue-100 text-blue-800"
-                            : "border-slate-300 bg-white text-slate-700"
-                        } ${singleEmpresaLoaded ? "cursor-not-allowed opacity-75" : ""}`}
-                      >
-                        {EMPRESA_LABELS[empresa] ?? empresa.toUpperCase()}
-                      </button>
-                    );
-                  })}
-                </div>
-                {singleEmpresaLoaded && (
-                  <p className="mt-2 text-[11px] text-slate-500">
-                    Solo lectura: el rango se cargo para una unica empresa.
+              <div className="relative flex flex-wrap items-start justify-between gap-4">
+                <div className="max-w-3xl" id={VENTAS_X_ITEM_TOUR_ANCHOR.intro}>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-600">
+                    Venta
                   </p>
-                )}
-              </div>
-              <div id={VENTAS_X_ITEM_TOUR_ANCHOR.items}>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  Ítems ({itemsSel.length}/{itemLimit})
-                </p>
-                <div ref={itemsDropdownRef} className="relative mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setItemsDropdownOpen((prev) => !prev)}
-                    className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-800"
-                  >
-                    <span className="truncate">
-                      {itemsSel.length === 0
-                        ? "Selecciona items..."
-                        : `${itemsSel.length} item(s) seleccionado(s)`}
+                  <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+                    Ventas por ítem(s) x sedes
+                  </h1>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Consulta el comportamiento diario por empresa, sede e ítem
+                    con el mismo estilo visual del portal.
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-700">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      Rango: {rangeLabel}
                     </span>
-                    <span className="ml-2 text-xs text-slate-500">
-                      {itemsDropdownOpen ? "▲" : "▼"}
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/80 px-3 py-1 text-xs font-semibold text-violet-700">
+                      <Building2 className="h-3.5 w-3.5" />
+                      Empresas: {empresasCargaSel.length} cargadas
                     </span>
-                  </button>
-                  {itemsDropdownOpen && (
-                    <div className="absolute z-20 mt-1 w-full rounded-xl border border-slate-300 bg-white p-2 shadow-lg">
-                      <input
-                        type="text"
-                        value={itemSearch}
-                        onChange={(e) => setItemSearch(e.target.value)}
-                        placeholder="Buscar por ID o descripcion..."
-                        className="mb-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
-                      />
-                      <div className="mb-2 flex items-center justify-between text-[11px] text-slate-500">
-                        <span>
-                          {itemDropdownState.visibleItems.length} de {itemDropdownState.totalMatches} resultados
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setItemsSel([]);
-                            setItemsOrder([]);
-                          }}
-                          className="font-semibold text-blue-700"
-                        >
-                          Limpiar
-                        </button>
-                      </div>
-                      {itemDropdownState.truncated && (
-                        <p className="mb-2 px-1 text-[11px] text-amber-700">
-                          Mostrando una parte de resultados. Escribe mas para acotar.
-                        </p>
-                      )}
-                      <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 p-1">
-                        {itemDropdownState.visibleItems.map((item) => {
-                          const checked = itemsSel.includes(item);
-                          const disabled = !checked && itemsSel.length >= itemLimit;
-                          return (
-                            <label
-                              key={item}
-                              className={`flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-xs ${
-                                disabled ? "opacity-50" : "hover:bg-slate-50"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={disabled}
-                                onChange={() => toggleItem(item)}
-                                className="mt-0.5"
-                              />
-                              <span className="leading-4 text-slate-700">{item}</span>
-                            </label>
-                          );
-                        })}
-                        {itemDropdownState.totalMatches === 0 && (
-                          <p className="px-2 py-2 text-xs text-slate-500">
-                            Sin resultados para esa busqueda.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                    {dataLoadedChip ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                        <Check className="h-3.5 w-3.5" />
+                        Datos cargados
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                        <Loader2
+                          className={`h-3.5 w-3.5 ${loadingDb ? "animate-spin text-blue-600 motion-reduce:animate-none" : "text-slate-400"}`}
+                          aria-hidden
+                        />
+                        {loadingDb ? "Cargando..." : "Sin datos"}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
             <div
-              id={VENTAS_X_ITEM_TOUR_ANCHOR.results}
-              className="relative mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
+              id={VENTAS_X_ITEM_TOUR_ANCHOR.loadDb}
+              className="mt-6 rounded-2xl border border-slate-200/70 bg-white px-4 py-4 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.18)]"
             >
-              <h2 className="text-base font-bold text-slate-900">{title}</h2>
-              <div
-                className={`relative mt-3 ${
-                  itemsSel.length > 0 && summaryLoading ? "min-h-56 sm:min-h-72" : ""
-                }`}
-              >
-                <div
-                  className={
-                    itemsSel.length > 0 &&
-                    summaryLoading &&
-                    tableRows.length > 0
-                      ? "pointer-events-none blur-[2px] opacity-[0.38] transition-[filter,opacity] duration-200"
-                      : ""
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                  <Database className="h-3.5 w-3.5 text-blue-500" aria-hidden />
+                  Carga desde base de datos
+                  <span
+                    className="inline-flex items-center text-slate-400"
+                    title="Al entrar se eligen todas las empresas y el rango por defecto es el mes corrido. La carga arranca sola; ajusta y repite con Recargar si lo necesitas."
+                  >
+                    <Info className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                </p>
+                <p className="text-[11px] font-medium text-slate-500">
+                  Rango disponible:{" "}
+                  <span className="font-semibold text-slate-700">
+                    {availableRangeLabel}
+                  </span>
+                </p>
+              </div>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_2fr]">
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <CalendarDays className="h-3 w-3 text-blue-500" />
+                    Fecha inicio
+                  </span>
+                  <input
+                    type="date"
+                    value={dateStart}
+                    min={minDateKey || undefined}
+                    max={maxDateKey || undefined}
+                    onChange={(e) => setDateStart(e.target.value)}
+                    disabled={loadingDb}
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <CalendarDays className="h-3 w-3 text-blue-500" />
+                    Fecha fin
+                  </span>
+                  <input
+                    type="date"
+                    value={dateEnd}
+                    min={minDateKey || undefined}
+                    max={maxDateKey || undefined}
+                    onChange={(e) => setDateEnd(e.target.value)}
+                    disabled={loadingDb}
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </label>
+                <div className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <Building2 className="h-3 w-3 text-blue-500" />
+                    Empresa(s) a cargar
+                  </span>
+                  <div className="flex h-9 w-full flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
+                    {LOAD_EMPRESA_OPTIONS.map((empresa) => {
+                      const selected = empresasCargaSel.includes(empresa);
+                      return (
+                        <button
+                          key={empresa}
+                          type="button"
+                          onClick={() =>
+                            setEmpresasCargaSel((prev) =>
+                              selected
+                                ? prev.filter((value) => value !== empresa)
+                                : [...prev, empresa],
+                            )
+                          }
+                          disabled={loadingDb}
+                          className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            selected
+                              ? "border-blue-300 bg-blue-50 text-blue-700"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          {EMPRESA_LABELS[empresa] ?? empresa.toUpperCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                <button
+                  type="button"
+                  onClick={() => void onLoadFromDb()}
+                  disabled={
+                    loadingDb ||
+                    !dateStart ||
+                    !dateEnd ||
+                    empresasCargaSel.length === 0
                   }
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {tableRows.length === 0 && !(itemsSel.length > 0 && summaryLoading) ? (
-                    <p className="text-sm text-slate-600">
-                      Selecciona al menos un ítem y un rango válido para ver resultados.
-                    </p>
-                  ) : null}
-                  {tableRows.length > 0 ? (
-                    <div className="overflow-auto rounded-xl border border-slate-200">
-                      <table className="min-w-full text-xs text-slate-700">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            {tableColumns.map((column) => (
-                              <th key={column} className="border-b border-slate-200 px-2 py-2 text-left font-bold">
-                                {column}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tableRows.map((row, index) => {
-                            const isTotal = index === tableRows.length - 1;
-                            const isSunday =
-                              typeof row["Fecha"] === "string" &&
-                              row["Fecha"].includes("/dom") &&
-                              !isTotal;
-                            return (
-                              <tr
-                                key={`${String(row["Fecha"])}-${index}`}
-                                className={isTotal ? "bg-blue-50 font-bold" : ""}
-                              >
-                                {tableColumns.map((column) => {
-                                  const value = row[column];
-                                  const tDia = column === "T. Dia";
-                                  return (
-                                    <td
-                                      key={column}
-                                      className={`border-b border-slate-100 px-2 py-1.5 ${
-                                        isSunday ? "font-bold text-red-600" : ""
-                                      } ${tDia ? "font-bold" : ""}`}
-                                    >
-                                      {String(value)}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                  <RefreshCcw
+                    className={`h-3.5 w-3.5 ${loadingDb ? "animate-spin motion-reduce:animate-none" : ""}`}
+                    aria-hidden
+                  />
+                  {loadingDb ? "Cargando BD..." : "Recargar datos"}
+                </button>
+                <p className="text-[11px] text-slate-500">
+                  {fileName
+                    ? `Fuente actual: ${fileName}`
+                    : "Ajusta fecha o empresas si quieres otro rango. La carga arranca sola al tener un rango válido."}
+                </p>
+              </div>
+
+              {(lastLoadedAt || (USE_V2_API && rows.length > 0)) && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                  {lastLoadedAt && (
+                    <span>
+                      Última actualización:{" "}
+                      {new Intl.DateTimeFormat("es-CO", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      }).format(new Date(lastLoadedAt))}
+                    </span>
+                  )}
+                  {USE_V2_API && rows.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void onCheckParity()}
+                        disabled={parityLoading || loadingDb}
+                        className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {parityLoading
+                          ? "Validando..."
+                          : "Validar paridad con v1"}
+                      </button>
+                      {parityResult && (
+                        <span
+                          className={
+                            parityResult.ok
+                              ? "text-emerald-700"
+                              : "text-amber-700"
+                          }
+                        >
+                          {parityResult.ok
+                            ? `Paridad OK · filas ${parityResult.v2Rows}/${parityResult.v1Rows}`
+                            : `Paridad con diferencias · filas ${parityResult.v2Rows}/${parityResult.v1Rows}`}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {USE_V2_API && parityResult && (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  v2 unidades: {parityResult.v2Units.toFixed(1)} · v1 unidades:{" "}
+                  {parityResult.v1Units.toFixed(1)} · v2 venta:{" "}
+                  {parityResult.v2Sales.toFixed(0)} · v1 venta:{" "}
+                  {parityResult.v1Sales.toFixed(0)}
+                  {parityResult.message
+                    ? ` · detalle: ${parityResult.message}`
+                    : ""}
+                </p>
+              )}
+              {error && (
+                <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {error}
+                </p>
+              )}
+            </div>
+            {rows.length > 0 && (
+              <>
+                <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200/70 bg-slate-50 p-4 md:grid-cols-2">
+                  <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                    Limite de items
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={itemLimit}
+                      onChange={(e) =>
+                        setItemLimit(
+                          Math.max(
+                            1,
+                            Math.min(10, Number(e.target.value) || 1),
+                          ),
+                        )
+                      }
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                    />
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                      Descargas
+                    </span>
+                    <div
+                      ref={exportMenuRef}
+                      id={VENTAS_X_ITEM_TOUR_ANCHOR.export}
+                      className="relative self-start"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setExportMenuOpen((open) => !open)}
+                        disabled={
+                          tableRows.length === 0 ||
+                          exportingXlsx ||
+                          exportingJpg ||
+                          exportingPdf
+                        }
+                        aria-haspopup="menu"
+                        aria-expanded={exportMenuOpen}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Download className="h-3.5 w-3.5" aria-hidden />
+                        <span>
+                          {exportingXlsx
+                            ? "Generando XLSX..."
+                            : exportingJpg
+                              ? "Generando JPG..."
+                              : exportingPdf
+                                ? "Generando PDF..."
+                                : "Exportar"}
+                        </span>
+                        <ChevronDown
+                          className={`h-3 w-3 transition-transform ${
+                            exportMenuOpen ? "rotate-180" : ""
+                          }`}
+                          aria-hidden
+                        />
+                      </button>
+                      {exportMenuOpen && (
+                        <div
+                          role="menu"
+                          className="absolute left-0 top-full z-30 mt-2 min-w-52 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setExportMenuOpen(false);
+                              handleDownloadCsv();
+                            }}
+                            disabled={tableRows.length === 0}
+                            className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                          >
+                            <FileType
+                              className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600"
+                              aria-hidden
+                            />
+                            <span>CSV</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setExportMenuOpen(false);
+                              void handleDownloadXlsx();
+                            }}
+                            disabled={tableRows.length === 0 || exportingXlsx}
+                            className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                          >
+                            <FileSpreadsheet
+                              className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600"
+                              aria-hidden
+                            />
+                            <span>Excel (XLSX)</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setExportMenuOpen(false);
+                              void handleDownloadJpg();
+                            }}
+                            disabled={tableRows.length === 0 || exportingJpg}
+                            className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                          >
+                            <FileImage
+                              className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600"
+                              aria-hidden
+                            />
+                            <span>Imagen (JPG)</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setExportMenuOpen(false);
+                              handleDownloadPdf();
+                            }}
+                            disabled={tableRows.length === 0 || exportingPdf}
+                            className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+                          >
+                            <FileText
+                              className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-focus:text-blue-600"
+                              aria-hidden
+                            />
+                            <span>PDF</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  ) : null}
+                    <p className="text-[11px] text-slate-500">
+                      Cambia el rango arriba y luego carga desde BD.
+                    </p>
+                  </div>
                 </div>
 
-                {itemsSel.length > 0 && summaryLoading ? (
+                <div className="mt-3 grid gap-3 rounded-2xl border border-slate-200/70 bg-slate-50 p-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                      Empresas
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {empresasDisponibles.map((empresa) => {
+                        const checked = empresasSel.includes(empresa);
+                        return (
+                          <button
+                            key={empresa}
+                            type="button"
+                            onClick={() =>
+                              setEmpresasSel((prev) =>
+                                checked
+                                  ? prev.filter((v) => v !== empresa)
+                                  : [...prev, empresa],
+                              )
+                            }
+                            disabled={singleEmpresaLoaded}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                              checked
+                                ? "border-blue-300 bg-blue-100 text-blue-800"
+                                : "border-slate-300 bg-white text-slate-700"
+                            } ${singleEmpresaLoaded ? "cursor-not-allowed opacity-75" : ""}`}
+                          >
+                            {EMPRESA_LABELS[empresa] ?? empresa.toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {singleEmpresaLoaded && (
+                      <p className="mt-2 text-[11px] text-slate-500">
+                        Solo lectura: el rango se cargo para una unica empresa.
+                      </p>
+                    )}
+                  </div>
+                  <div id={VENTAS_X_ITEM_TOUR_ANCHOR.items}>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                      Ítems ({itemsSel.length}/{itemLimit})
+                    </p>
+                    <div ref={itemsDropdownRef} className="relative mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setItemsDropdownOpen((prev) => !prev)}
+                        className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-800"
+                      >
+                        <span className="truncate">
+                          {itemsSel.length === 0
+                            ? "Selecciona items..."
+                            : `${itemsSel.length} item(s) seleccionado(s)`}
+                        </span>
+                        <span className="ml-2 text-xs text-slate-500">
+                          {itemsDropdownOpen ? "▲" : "▼"}
+                        </span>
+                      </button>
+                      {itemsDropdownOpen && (
+                        <div className="absolute z-20 mt-1 w-full rounded-xl border border-slate-300 bg-white p-2 shadow-lg">
+                          <input
+                            type="text"
+                            value={itemSearch}
+                            onChange={(e) => setItemSearch(e.target.value)}
+                            placeholder="Buscar por ID o descripcion..."
+                            className="mb-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
+                          />
+                          <div className="mb-2 flex items-center justify-between text-[11px] text-slate-500">
+                            <span>
+                              {itemDropdownState.visibleItems.length} de{" "}
+                              {itemDropdownState.totalMatches} resultados
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setItemsSel([]);
+                                setItemsOrder([]);
+                              }}
+                              className="font-semibold text-blue-700"
+                            >
+                              Limpiar
+                            </button>
+                          </div>
+                          {itemDropdownState.truncated && (
+                            <p className="mb-2 px-1 text-[11px] text-amber-700">
+                              Mostrando una parte de resultados. Escribe mas
+                              para acotar.
+                            </p>
+                          )}
+                          <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 p-1">
+                            {itemDropdownState.visibleItems.map((item) => {
+                              const checked = itemsSel.includes(item);
+                              const disabled =
+                                !checked && itemsSel.length >= itemLimit;
+                              return (
+                                <label
+                                  key={item}
+                                  className={`flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 text-xs ${
+                                    disabled
+                                      ? "opacity-50"
+                                      : "hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={() => toggleItem(item)}
+                                    className="mt-0.5"
+                                  />
+                                  <span className="leading-4 text-slate-700">
+                                    {item}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                            {itemDropdownState.totalMatches === 0 && (
+                              <p className="px-2 py-2 text-xs text-slate-500">
+                                Sin resultados para esa busqueda.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  id={VENTAS_X_ITEM_TOUR_ANCHOR.results}
+                  className="relative mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
+                >
+                  <h2 className="text-base font-bold text-slate-900">
+                    {title}
+                  </h2>
                   <div
-                    className="absolute inset-0 z-10 flex cursor-wait items-center justify-center rounded-xl border border-slate-200/60 bg-slate-50/70 shadow-inner backdrop-blur-md"
-                    aria-live="polite"
-                    aria-busy="true"
+                    className={`relative mt-3 ${
+                      itemsSel.length > 0 && summaryLoading
+                        ? "min-h-56 sm:min-h-72"
+                        : ""
+                    }`}
                   >
-                    <div className="mx-4 flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-blue-200/80 bg-white/95 px-10 py-8 text-center shadow-[0_20px_50px_-24px_rgba(30,58,138,0.45)]">
-                      <Loader2
-                        className="h-12 w-12 shrink-0 animate-spin text-blue-600 drop-shadow-sm"
-                        aria-hidden
-                      />
-                      <div>
-                        <p className="text-base font-bold text-slate-900">Cargando tabla</p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Obteniendo ventas por ítem para el rango seleccionado…
+                    <div
+                      className={
+                        itemsSel.length > 0 &&
+                        summaryLoading &&
+                        tableRows.length > 0
+                          ? "pointer-events-none blur-[2px] opacity-[0.38] transition-[filter,opacity] duration-200"
+                          : ""
+                      }
+                    >
+                      {tableRows.length === 0 &&
+                      !(itemsSel.length > 0 && summaryLoading) ? (
+                        <p className="text-sm text-slate-600">
+                          Selecciona al menos un ítem y un rango válido para ver
+                          resultados.
                         </p>
-                        <p className="mt-2 text-[11px] leading-snug text-slate-500">
-                          Si cambiaste ítems o fechas, la tabla difuminada puede mostrar la
-                          selección anterior hasta completar la carga.
+                      ) : null}
+                      {tableRows.length > 0 ? (
+                        <div className="overflow-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full text-xs text-slate-700">
+                            <thead className="bg-slate-100">
+                              <tr>
+                                {tableColumns.map((column) => (
+                                  <th
+                                    key={column}
+                                    className="border-b border-slate-200 px-2 py-2 text-left font-bold"
+                                  >
+                                    {column}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tableRows.map((row, index) => {
+                                const isTotal = index === tableRows.length - 1;
+                                const isSunday =
+                                  typeof row["Fecha"] === "string" &&
+                                  row["Fecha"].includes("/dom") &&
+                                  !isTotal;
+                                return (
+                                  <tr
+                                    key={`${String(row["Fecha"])}-${index}`}
+                                    className={
+                                      isTotal ? "bg-blue-50 font-bold" : ""
+                                    }
+                                  >
+                                    {tableColumns.map((column) => {
+                                      const value = row[column];
+                                      const tDia = column === "T. Dia";
+                                      return (
+                                        <td
+                                          key={column}
+                                          className={`border-b border-slate-100 px-2 py-1.5 ${
+                                            isSunday
+                                              ? "font-bold text-red-600"
+                                              : ""
+                                          } ${tDia ? "font-bold" : ""}`}
+                                        >
+                                          {String(value)}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {itemsSel.length > 0 && summaryLoading ? (
+                      <div
+                        className="absolute inset-0 z-10 flex cursor-wait items-center justify-center rounded-xl border border-slate-200/60 bg-slate-50/70 shadow-inner backdrop-blur-md"
+                        aria-live="polite"
+                        aria-busy="true"
+                      >
+                        <div className="mx-4 flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-blue-200/80 bg-white/95 px-10 py-8 text-center shadow-[0_20px_50px_-24px_rgba(30,58,138,0.45)]">
+                          <Loader2
+                            className="h-12 w-12 shrink-0 animate-spin text-blue-600 drop-shadow-sm"
+                            aria-hidden
+                          />
+                          <div>
+                            <p className="text-base font-bold text-slate-900">
+                              Cargando tabla
+                            </p>
+                            <p className="mt-1 text-sm text-slate-600">
+                              Obteniendo ventas por ítem para el rango
+                              seleccionado…
+                            </p>
+                            <p className="mt-2 text-[11px] leading-snug text-slate-500">
+                              Si cambiaste ítems o fechas, la tabla difuminada
+                              puede mostrar la selección anterior hasta
+                              completar la carga.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {pivot && !summaryLoading && (
+                  <div
+                    id={VENTAS_X_ITEM_TOUR_ANCHOR.charts}
+                    className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
+                  >
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-base font-bold text-slate-900">
+                        Gráficas
+                      </h3>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-xl border border-slate-200 p-3">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">
+                          Total por día (T. Dia)
                         </p>
+                        <LineChart
+                          xAxis={[{ data: lineLabels, scaleType: "point" }]}
+                          series={[{ data: lineData, label: "T. Dia" }]}
+                          height={280}
+                        />
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 p-3">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">
+                          Unidades por sede por día (apilado)
+                        </p>
+                        <BarChart
+                          xAxis={[{ data: lineLabels, scaleType: "band" }]}
+                          series={sedeSeries.map((serie) => ({
+                            data: serie.data,
+                            label: serie.label,
+                            stack: "total",
+                          }))}
+                          height={320}
+                        />
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 p-3">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">
+                          Mapa de calor
+                        </p>
+                        <div className="overflow-auto">
+                          <table className="min-w-full text-xs">
+                            <thead>
+                              <tr>
+                                <th className="px-2 py-1 text-left">Sede</th>
+                                {lineLabels.map((label) => (
+                                  <th
+                                    key={label}
+                                    className="px-1 py-1 text-center"
+                                  >
+                                    {label}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sedeSeries.map((serie) => (
+                                <tr key={serie.label}>
+                                  <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-700">
+                                    {serie.label}
+                                  </td>
+                                  {serie.data.map((value, idx) => {
+                                    const bucket = Math.min(
+                                      HEATMAP_COLORS.length - 1,
+                                      Math.floor(
+                                        (value / heatMax) *
+                                          (HEATMAP_COLORS.length - 1),
+                                      ),
+                                    );
+                                    return (
+                                      <td
+                                        key={`${serie.label}-${idx}`}
+                                        className="px-1 py-1 text-center text-[10px]"
+                                        style={{
+                                          backgroundColor:
+                                            HEATMAP_COLORS[bucket],
+                                        }}
+                                        title={`${serie.label} ${lineLabels[idx]}: ${value}`}
+                                      >
+                                        {value === 0 ? "-" : value.toFixed(1)}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 p-3">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">
+                          Acumulado del rango por sede
+                        </p>
+                        <BarChart
+                          xAxis={[
+                            {
+                              data: acumuladoSede.map((v) => v.sede),
+                              scaleType: "band",
+                            },
+                          ]}
+                          series={[
+                            {
+                              data: acumuladoSede.map((v) => v.unidades),
+                              label: "Unidades",
+                            },
+                          ]}
+                          height={280}
+                        />
                       </div>
                     </div>
                   </div>
-                ) : null}
-              </div>
-            </div>
+                )}
 
-            {pivot && !summaryLoading && (
-              <div
-                id={VENTAS_X_ITEM_TOUR_ANCHOR.charts}
-                className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4"
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-base font-bold text-slate-900">Gráficas</h3>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="mb-2 text-sm font-semibold text-slate-800">Total por día (T. Dia)</p>
-                    <LineChart
-                      xAxis={[{ data: lineLabels, scaleType: "point" }]}
-                      series={[{ data: lineData, label: "T. Dia" }]}
-                      height={280}
-                    />
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="mb-2 text-sm font-semibold text-slate-800">Unidades por sede por día (apilado)</p>
-                    <BarChart
-                      xAxis={[{ data: lineLabels, scaleType: "band" }]}
-                      series={sedeSeries.map((serie) => ({
-                        data: serie.data,
-                        label: serie.label,
-                        stack: "total",
-                      }))}
-                      height={320}
-                    />
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="mb-2 text-sm font-semibold text-slate-800">Mapa de calor</p>
-                    <div className="overflow-auto">
-                      <table className="min-w-full text-xs">
-                        <thead>
-                          <tr>
-                            <th className="px-2 py-1 text-left">Sede</th>
-                            {lineLabels.map((label) => (
-                              <th key={label} className="px-1 py-1 text-center">{label}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sedeSeries.map((serie) => (
-                            <tr key={serie.label}>
-                              <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-700">
-                                {serie.label}
-                              </td>
-                              {serie.data.map((value, idx) => {
-                                const bucket = Math.min(
-                                  HEATMAP_COLORS.length - 1,
-                                  Math.floor((value / heatMax) * (HEATMAP_COLORS.length - 1)),
-                                );
-                                return (
-                                  <td
-                                    key={`${serie.label}-${idx}`}
-                                    className="px-1 py-1 text-center text-[10px]"
-                                    style={{ backgroundColor: HEATMAP_COLORS[bucket] }}
-                                    title={`${serie.label} ${lineLabels[idx]}: ${value}`}
-                                  >
-                                    {value === 0 ? "-" : value.toFixed(1)}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="mb-2 text-sm font-semibold text-slate-800">Acumulado del rango por sede</p>
-                    <BarChart
-                      xAxis={[{ data: acumuladoSede.map((v) => v.sede), scaleType: "band" }]}
-                      series={[{ data: acumuladoSede.map((v) => v.unidades), label: "Unidades" }]}
-                      height={280}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Stage oculto FUERA de pantalla con la versión "look Excel" de
+                {/* Stage oculto FUERA de pantalla con la versión "look Excel" de
                 la tabla, exclusivo para la captura JPG. Mantiene layout real
                 (html-to-image lo necesita) pero no afecta la UI visible.
                 `display: inline-block` hace que el fondo blanco y el padding
                 se ajusten al ancho de la tabla en vez de extenderse. */}
-            {tableRows.length > 0 && (
-              <div
-                ref={jpgStageRef}
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  left: "-10000px",
-                  top: 0,
-                  pointerEvents: "none",
-                  width: "max-content",
-                }}
-                className="bg-white p-4"
-              >
-                <table className="border-collapse text-[11px] text-slate-800">
-                  <thead>
-                    {/* Título + metadatos como una fila de cabecera (colSpan
+                {tableRows.length > 0 && (
+                  <div
+                    ref={jpgStageRef}
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      left: "-10000px",
+                      top: 0,
+                      pointerEvents: "none",
+                      width: "max-content",
+                    }}
+                    className="bg-white p-4"
+                  >
+                    <table className="border-collapse text-[11px] text-slate-800">
+                      <thead>
+                        {/* Título + metadatos como una fila de cabecera (colSpan
                         = total de columnas). Esto evita los problemas de
                         medición de <caption> y queda anclado al ancho real de
                         la tabla, wrappeando texto si es necesario. */}
-                    <tr>
-                      <th
-                        colSpan={tableColumns.length}
-                        className="border-x border-t-2 border-slate-400 bg-white px-2 pt-2 pb-1.5 text-center"
-                      >
-                        {/* `max-w` fuerza el wrap del título en varias líneas
+                        <tr>
+                          <th
+                            colSpan={tableColumns.length}
+                            className="border-x border-t-2 border-slate-400 bg-white px-2 pt-2 pb-1.5 text-center"
+                          >
+                            {/* `max-w` fuerza el wrap del título en varias líneas
                             para que NO sea él quien determine el ancho de la
                             tabla (sólo lo deben hacer las columnas). */}
-                        <span className="mx-auto block max-w-[520px] text-[11px] font-bold leading-tight text-red-600">
-                          {title.toUpperCase()}
-                        </span>
-                        {(loadedDateStart || empresasSel.length > 0) && (
-                          <span className="mx-auto mt-1 block max-w-[520px] text-[9px] font-medium leading-snug text-slate-600">
-                            {loadedDateStart && loadedDateEnd
-                              ? loadedDateStart === loadedDateEnd
-                                ? `Rango: ${loadedDateStart}`
-                                : `Rango: ${loadedDateStart} a ${loadedDateEnd}`
-                              : ""}
-                            {loadedDateStart && empresasSel.length > 0
-                              ? "  ·  "
-                              : ""}
-                            {empresasSel.length > 0
-                              ? `Empresas: ${empresasSel
-                                  .map((e) => EMPRESA_LABELS[e] ?? e.toUpperCase())
-                                  .join(", ")}`
-                              : ""}
-                          </span>
-                        )}
-                      </th>
-                    </tr>
-                    <tr className="bg-slate-100">
-                      {tableColumns.map((column, idx) => {
-                        const isFecha = idx === 0;
-                        const isTDia = column === "T. Dia";
-                        return (
-                          <th
-                            key={column}
-                            className={`border border-slate-400 py-1 text-[10px] font-bold uppercase tracking-tight leading-tight ${
-                              isFecha ? "px-1.5 text-left" : "px-1 text-center"
-                            } ${
-                              isTDia
-                                ? "bg-slate-200 text-slate-900"
-                                : "text-slate-700"
-                            }`}
-                          >
-                            {column}
+                            <span className="mx-auto block max-w-520px text-[11px] font-bold leading-tight text-red-600">
+                              {title.toUpperCase()}
+                            </span>
+                            {(loadedDateStart || empresasSel.length > 0) && (
+                              <span className="mx-auto mt-1 block max-w-520px text-[9px] font-medium leading-snug text-slate-600">
+                                {loadedDateStart && loadedDateEnd
+                                  ? loadedDateStart === loadedDateEnd
+                                    ? `Rango: ${loadedDateStart}`
+                                    : `Rango: ${loadedDateStart} a ${loadedDateEnd}`
+                                  : ""}
+                                {loadedDateStart && empresasSel.length > 0
+                                  ? "  ·  "
+                                  : ""}
+                                {empresasSel.length > 0
+                                  ? `Empresas: ${empresasSel
+                                      .map(
+                                        (e) =>
+                                          EMPRESA_LABELS[e] ?? e.toUpperCase(),
+                                      )
+                                      .join(", ")}`
+                                  : ""}
+                              </span>
+                            )}
                           </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tableRows.map((row, index) => {
-                      const isTotal = index === tableRows.length - 1;
-                      const isSunday =
-                        typeof row["Fecha"] === "string" &&
-                        row["Fecha"].includes("/dom") &&
-                        !isTotal;
-                      const rowBase = isTotal
-                        ? "bg-blue-50 font-bold text-slate-900"
-                        : index % 2 === 1
-                          ? "bg-slate-50"
-                          : "bg-white";
-                      return (
-                        <tr
-                          key={`jpg-${String(row["Fecha"])}-${index}`}
-                          className={rowBase}
-                        >
-                          {tableColumns.map((column, colIdx) => {
-                            const value = row[column];
-                            const tDia = column === "T. Dia";
-                            const isFecha = colIdx === 0;
+                        </tr>
+                        <tr className="bg-slate-100">
+                          {tableColumns.map((column, idx) => {
+                            const isFecha = idx === 0;
+                            const isTDia = column === "T. Dia";
                             return (
-                              <td
+                              <th
                                 key={column}
-                                className={`border border-slate-300 py-0.5 text-[11px] leading-snug tabular-nums ${
-                                  isFecha ? "px-1.5 text-left" : "px-1 text-center"
+                                className={`border border-slate-400 py-1 text-[10px] font-bold uppercase tracking-tight leading-tight ${
+                                  isFecha
+                                    ? "px-1.5 text-left"
+                                    : "px-1 text-center"
                                 } ${
-                                  isSunday ? "font-bold text-red-600" : ""
-                                } ${
-                                  tDia && !isTotal
-                                    ? "bg-slate-50 font-bold text-slate-900"
-                                    : ""
-                                } ${
-                                  isTotal && tDia ? "bg-blue-100 font-bold" : ""
-                                } ${isTotal ? "border-t-2 border-t-blue-400" : ""}`}
+                                  isTDia
+                                    ? "bg-slate-200 text-slate-900"
+                                    : "text-slate-700"
+                                }`}
                               >
-                                {String(value)}
-                              </td>
+                                {column}
+                              </th>
                             );
                           })}
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody>
+                        {tableRows.map((row, index) => {
+                          const isTotal = index === tableRows.length - 1;
+                          const isSunday =
+                            typeof row["Fecha"] === "string" &&
+                            row["Fecha"].includes("/dom") &&
+                            !isTotal;
+                          const rowBase = isTotal
+                            ? "bg-blue-50 font-bold text-slate-900"
+                            : index % 2 === 1
+                              ? "bg-slate-50"
+                              : "bg-white";
+                          return (
+                            <tr
+                              key={`jpg-${String(row["Fecha"])}-${index}`}
+                              className={rowBase}
+                            >
+                              {tableColumns.map((column, colIdx) => {
+                                const value = row[column];
+                                const tDia = column === "T. Dia";
+                                const isFecha = colIdx === 0;
+                                return (
+                                  <td
+                                    key={column}
+                                    className={`border border-slate-300 py-0.5 text-[11px] leading-snug tabular-nums ${
+                                      isFecha
+                                        ? "px-1.5 text-left"
+                                        : "px-1 text-center"
+                                    } ${
+                                      isSunday ? "font-bold text-red-600" : ""
+                                    } ${
+                                      tDia && !isTotal
+                                        ? "bg-slate-50 font-bold text-slate-900"
+                                        : ""
+                                    } ${
+                                      isTotal && tDia
+                                        ? "bg-blue-100 font-bold"
+                                        : ""
+                                    } ${isTotal ? "border-t-2 border-t-blue-400" : ""}`}
+                                  >
+                                    {String(value)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
         </div>
-      </div>
       </div>
     </div>
   );
