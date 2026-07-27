@@ -111,34 +111,23 @@ describe("jornada-hour-thresholds", () => {
     );
   });
 
-  it("detecta 2 marcas bajo la etiqueta 7:xx (jornada incompleta)", () => {
-    // Legacy <7:20 (440): 439 entra; 440 no
-    assert.equal(isUnderTwoMarksLabelMinutes(439, 2, "2026-07-15"), true);
-    assert.equal(isUnderTwoMarksLabelMinutes(440, 2, "2026-07-15"), false);
-    // Shortened <7:00 (420)
+  it("detecta 2 marcas bajo 7h fijas (jornada incompleta)", () => {
+    assert.equal(isUnderTwoMarksLabelMinutes(419, 2), true);
+    assert.equal(isUnderTwoMarksLabelMinutes(420, 2), false);
+    assert.equal(isUnderTwoMarksLabelMinutes(300, 3), false);
+    // No depende de fecha legacy/shortened
+    assert.equal(isUnderTwoMarksLabelMinutes(419, 2, "2026-07-15"), true);
     assert.equal(
       isUnderTwoMarksLabelMinutes(419, 2, JORNADA_TWO_MARKS_SHORTENED_FROM),
       true,
     );
-    assert.equal(
-      isUnderTwoMarksLabelMinutes(420, 2, JORNADA_TWO_MARKS_SHORTENED_FROM),
-      false,
-    );
-    assert.equal(isUnderTwoMarksLabelMinutes(300, 3, "2026-07-15"), false);
   });
 
-  it("detecta 4 marcas sobre 9:xx (extras)", () => {
+  it("detecta 4 marcas sobre 9h fijas (extras)", () => {
+    assert.equal(isOverNineWithFourMarksMinutes(541, 4), true);
+    assert.equal(isOverNineWithFourMarksMinutes(540, 4), false);
+    assert.equal(isOverNineWithFourMarksMinutes(541, 2), false);
     assert.equal(isOverNineWithFourMarksMinutes(561, 4, "2026-07-15"), true);
-    assert.equal(isOverNineWithFourMarksMinutes(561, 2, "2026-07-15"), false);
-    assert.equal(isOverNineWithFourMarksMinutes(560, 4, "2026-07-15"), false);
-    assert.equal(
-      isOverNineWithFourMarksMinutes(541, 4, JORNADA_TWO_MARKS_SHORTENED_FROM),
-      true,
-    );
-    assert.equal(
-      isOverNineWithFourMarksMinutes(540, 4, JORNADA_TWO_MARKS_SHORTENED_FROM),
-      false,
-    );
   });
 
   it("elige etiqueta segun rango", () => {

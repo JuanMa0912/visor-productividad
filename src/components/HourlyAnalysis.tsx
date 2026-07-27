@@ -3108,7 +3108,7 @@ export const HourlyAnalysis = ({
                     Toca uno para enfocar el listado
                   </p>
                 </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -3247,7 +3247,7 @@ export const HourlyAnalysis = ({
                         : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
                     }`}
                   >
-                    {`<${twoMarksChipLabel} con 2 marcaciones ${displayAlexAlertCountLt7TwoMarks}`}
+                    {`<7h con 2 marcaciones ${displayAlexAlertCountLt7TwoMarks}`}
                   </button>
                   <button
                     type="button"
@@ -3268,7 +3268,7 @@ export const HourlyAnalysis = ({
                         : "border border-red-200/70 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100"
                     }`}
                   >
-                    {`>${nineTwentyChipLabel} con 4 marcaciones ${displayAlexAlertCountGt9FourMarks}`}
+                    {`>9h con 4 marcaciones ${displayAlexAlertCountGt9FourMarks}`}
                   </button>
                   {overtimeExcludedIds.size > 0 && (
                     <button
