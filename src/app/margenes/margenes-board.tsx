@@ -23,11 +23,16 @@ import {
 import { DRILL_LEVEL_NAMES } from "@/lib/margenes/drill-path";
 import { MargenesMultiSelect } from "@/app/margenes/margenes-multi-select";
 
-type BoardMode = "drill" | "fact" | "sede" | "cliente";
+type BoardMode = "drill" | "fact" | "sede" | "cliente" | "vendedor";
 type FactTab = "nav" | "list";
 
 type ClienteFocus = {
   idTerc: string;
+  label: string;
+};
+
+type VendedorFocus = {
+  vendCc: string;
   label: string;
 };
 
@@ -67,6 +72,7 @@ type TablePayload = {
   rows: DrillRow[];
   truncated?: boolean;
   totalClientes?: number;
+  totalVendedores?: number;
 };
 
 const PAGE_SIZES = [50, 100, 200];
@@ -157,6 +163,8 @@ type ColsForDrillLevelOptions = {
   showFecha?: boolean;
   /** Oculta columna Cliente (p. ej. al listar facturas de un cliente ya filtrado). */
   hideCliente?: boolean;
+  /** Oculta columna Vendedor (p. ej. al listar facturas de un vendedor ya filtrado). */
+  hideVendedor?: boolean;
 };
 
 const colsForDrillLevel = (
@@ -239,6 +247,31 @@ const colsForDrillLevel = (
       render: (row) => formatDecimals(row.pcu),
     },
   ];
+
+  if (level === -3) {
+    return [
+      {
+        key: "cod",
+        label: "Cód. vendedor",
+        sortValue: (row) => row.cod,
+        render: (row) => (
+          <span className="rounded bg-[#232740] px-1.5 py-0.5 font-mono text-[11px] text-[#6b7590]">
+            {row.cod}
+          </span>
+        ),
+      },
+      {
+        key: "label",
+        label: "Vendedor",
+        drill: true,
+        cellClassName: "min-w-[12rem] max-w-[20rem]",
+        sortValue: (row) => row.label,
+        render: (row) => <span className="truncate">{row.label}</span>,
+      },
+      ...metricsTail,
+      ...base,
+    ];
+  }
 
   if (level === -2) {
     return [
@@ -436,25 +469,27 @@ const colsForDrillLevel = (
         </span>
       ),
     });
-    cols.push({
-      key: "vendedor",
-      label: "Vendedor",
-      cellClassName: "min-w-[10rem] max-w-[16rem]",
-      sortValue: (row) => row.vendCcDesc ?? row.vendCc ?? "",
-      render: (row) =>
-        row.vendCcDesc || row.vendCc ? (
-          <span className="flex flex-col gap-0.5 leading-snug">
-            <span className="truncate text-[#dde3f0]">{row.vendCcDesc ?? "—"}</span>
-            {row.vendCc ? (
-              <span className="font-mono text-[10px] text-[#6b7590]">
-                {row.vendCc}
-              </span>
-            ) : null}
-          </span>
-        ) : (
-          "—"
-        ),
-    });
+    if (!options.hideVendedor) {
+      cols.push({
+        key: "vendedor",
+        label: "Vendedor",
+        cellClassName: "min-w-[10rem] max-w-[16rem]",
+        sortValue: (row) => row.vendCcDesc ?? row.vendCc ?? "",
+        render: (row) =>
+          row.vendCcDesc || row.vendCc ? (
+            <span className="flex flex-col gap-0.5 leading-snug">
+              <span className="truncate text-[#dde3f0]">{row.vendCcDesc ?? "—"}</span>
+              {row.vendCc ? (
+                <span className="font-mono text-[10px] text-[#6b7590]">
+                  {row.vendCc}
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            "—"
+          ),
+      });
+    }
     cols.push({
       key: "documento",
       label: "Documento",
@@ -541,9 +576,12 @@ export const MargenesBoard = ({
   const [factPath, setFactPath] = useState<FactNavStep[]>([]);
   const [clienteFocus, setClienteFocus] = useState<ClienteFocus | null>(null);
   const [clienteFactPath, setClienteFactPath] = useState<FactNavStep[]>([]);
+  const [vendedorFocus, setVendedorFocus] = useState<VendedorFocus | null>(null);
+  const [vendedorFactPath, setVendedorFactPath] = useState<FactNavStep[]>([]);
   const [drillSearch, setDrillSearch] = useState("");
   const [factSearch, setFactSearch] = useState("");
   const [clienteSearch, setClienteSearch] = useState("");
+  const [vendedorSearch, setVendedorSearch] = useState("");
   const [mgSortDir, setMgSortDir] = useState<"asc" | "desc">("desc");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -971,6 +1009,28 @@ export const MargenesBoard = ({
         return;
       }
 
+      if (mode === "vendedor") {
+        let url = "";
+        if (vendedorFocus) {
+          url = `/api/margenes/data?mode=vendedor-facturas&vendCc=${encodeURIComponent(vendedorFocus.vendCc)}&factPath=${encodeURIComponent(JSON.stringify(vendedorFactPath))}&${queryBase}`;
+          if (vendedorSearch.trim()) url += `&search=${encodeURIComponent(vendedorSearch.trim())}`;
+        } else {
+          url = `/api/margenes/data?mode=vendedor&${queryBase}`;
+          if (vendedorSearch.trim()) url += `&search=${encodeURIComponent(vendedorSearch.trim())}`;
+        }
+        if (orderParam) url += `&${orderParam}`;
+        const response = await fetch(url, { cache: "no-store", signal });
+        if (!response.ok) {
+          throw new Error(await readError(response, "Error cargando vendedores."));
+        }
+        const data = (await response.json()) as TablePayload;
+        if (aborted()) return;
+        setPayload(data);
+        setSedeKpi(null);
+        setSedeRows([]);
+        return;
+      }
+
       let url = "";
       if (mode === "drill") {
         url = `/api/margenes/data?mode=drill&drillPath=${encodeURIComponent(JSON.stringify(drillPath))}&${queryBase}`;
@@ -1015,9 +1075,12 @@ export const MargenesBoard = ({
     factPath,
     clienteFocus,
     clienteFactPath,
+    vendedorFocus,
+    vendedorFactPath,
     drillSearch,
     factSearch,
     clienteSearch,
+    vendedorSearch,
     queryBase,
     orderParam,
   ]);
@@ -1040,7 +1103,9 @@ export const MargenesBoard = ({
       (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
       (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura") ||
       (mode === "cliente" &&
-        clienteFactPath.some((step) => step.type === "factura"));
+        clienteFactPath.some((step) => step.type === "factura")) ||
+      (mode === "vendedor" &&
+        vendedorFactPath.some((step) => step.type === "factura"));
     if (!onInvoiceDetail) return;
     if (
       sortKey === "facturas" ||
@@ -1051,7 +1116,7 @@ export const MargenesBoard = ({
     ) {
       setSortKey(null);
     }
-  }, [mode, factPath, drillPath, clienteFactPath, sortKey]);
+  }, [mode, factPath, drillPath, clienteFactPath, vendedorFactPath, sortKey]);
 
   useEffect(() => {
     setPage(0);
@@ -1062,9 +1127,12 @@ export const MargenesBoard = ({
     factPath,
     clienteFocus,
     clienteFactPath,
+    vendedorFocus,
+    vendedorFactPath,
     drillSearch,
     factSearch,
     clienteSearch,
+    vendedorSearch,
     queryBase,
     sortKey,
     mgSortDir,
@@ -1077,7 +1145,7 @@ export const MargenesBoard = ({
     setSedeRows([]);
     setSedeKpi(null);
     setError(null);
-  }, [mode, factTab, drillPath, factPath, clienteFocus, clienteFactPath]);
+  }, [mode, factTab, drillPath, factPath, clienteFocus, clienteFactPath, vendedorFocus, vendedorFactPath]);
 
   useEffect(() => {
     if (!dataCommitted) return;
@@ -1096,13 +1164,16 @@ export const MargenesBoard = ({
     (mode === "fact" && factPath.some((step) => step.type === "factura")) ||
     (mode === "drill" && drillPath[drillPath.length - 1]?.type === "factura") ||
     (mode === "cliente" &&
-      clienteFactPath.some((step) => step.type === "factura"));
+      clienteFactPath.some((step) => step.type === "factura")) ||
+    (mode === "vendedor" &&
+      vendedorFactPath.some((step) => step.type === "factura"));
 
   const showSedeInFacturas = effectiveSedes.length > 1;
 
   const columns = useMemo(() => {
     if (mode === "sede") return colsForDrillLevel(-1);
     if (mode === "cliente" && !clienteFocus) return colsForDrillLevel(-2);
+    if (mode === "vendedor" && !vendedorFocus) return colsForDrillLevel(-3);
     if (viewingInvoiceDetail) return colsForDrillLevel(6);
     const drillFacturaLevel =
       mode === "drill" && (activeLevel === 5 || drillPath.length === 5);
@@ -1110,12 +1181,17 @@ export const MargenesBoard = ({
       drillFacturaLevel ||
       (mode === "fact" && factTab === "nav" && activeLevel === 2) ||
       (mode === "fact" && factTab === "list") ||
-      (mode === "cliente" && Boolean(clienteFocus));
+      (mode === "cliente" && Boolean(clienteFocus)) ||
+      (mode === "vendedor" && Boolean(vendedorFocus));
     if (isFacturaList) {
       return colsForDrillLevel(5, {
         showSede: showSedeInFacturas,
-        showFecha: (mode === "fact" && factTab === "list") || mode === "cliente",
+        showFecha:
+          (mode === "fact" && factTab === "list") ||
+          mode === "cliente" ||
+          mode === "vendedor",
         hideCliente: mode === "cliente",
+        hideVendedor: mode === "vendedor",
       });
     }
     // En drill, preferir el path local si el payload aún no llegó / fallo.
@@ -1131,6 +1207,7 @@ export const MargenesBoard = ({
     viewingInvoiceDetail,
     showSedeInFacturas,
     clienteFocus,
+    vendedorFocus,
     drillPath.length,
   ]);
 
@@ -1198,6 +1275,22 @@ export const MargenesBoard = ({
       return;
     }
 
+    if (mode === "vendedor") {
+      if (!vendedorFocus) {
+        setVendedorFocus({
+          vendCc: row.vendCc ?? "",
+          label: row.label,
+        });
+        setVendedorFactPath([]);
+        setVendedorSearch("");
+        return;
+      }
+      if (vendedorFactPath.length === 0 && row.documento) {
+        setVendedorFactPath([buildFacturaNavStep(row)]);
+      }
+      return;
+    }
+
     if (mode === "drill") {
       if (row.drillStep) {
         setDrillPath((current) => [...current, row.drillStep!]);
@@ -1228,18 +1321,20 @@ export const MargenesBoard = ({
     dataCommitted &&
     ((mode === "drill" && (activeLevel === 4 || drillSearch.trim() !== "")) ||
       (mode === "fact" && !viewingInvoiceDetail) ||
-      (mode === "cliente" && !viewingInvoiceDetail));
+      (mode === "cliente" && !viewingInvoiceDetail) ||
+      (mode === "vendedor" && !viewingInvoiceDetail));
 
   const showSortBar =
     dataCommitted &&
     (mode === "sede" ||
       mode === "cliente" ||
+      mode === "vendedor" ||
       activeLevel >= 5 ||
       mode === "fact" ||
       (mode === "drill" && drillSearch.trim() !== ""));
 
   const sortLabel =
-    mode === "sede" || mode === "cliente"
+    mode === "sede" || mode === "cliente" || mode === "vendedor"
       ? "Ordenar por ventas:"
       : "Ordenar por margen:";
 
@@ -1336,6 +1431,7 @@ export const MargenesBoard = ({
           { id: "drill" as const, label: "📦 Producto" },
           { id: "fact" as const, label: "📋 Por Factura" },
           { id: "cliente" as const, label: "👤 Por Cliente" },
+          { id: "vendedor" as const, label: "🧑‍💼 Por Vendedor" },
           { id: "sede" as const, label: "🏢 Por Sede" },
         ].map((tab) => (
           <button
@@ -1348,6 +1444,9 @@ export const MargenesBoard = ({
                 setClienteFocus(null);
                 setClienteFactPath([]);
                 setClienteSearch("");
+                setVendedorFocus(null);
+                setVendedorFactPath([]);
+                setVendedorSearch("");
                 setSortKey(null);
                 setMgSortDir("desc");
               }}
@@ -1420,7 +1519,9 @@ export const MargenesBoard = ({
               ? "🔍 Buscar ítem:"
               : mode === "cliente" && !clienteFocus
                 ? "🔍 Buscar cliente:"
-                : "🔍 Buscar factura:"}
+                : mode === "vendedor" && !vendedorFocus
+                  ? "🔍 Buscar vendedor:"
+                  : "🔍 Buscar factura:"}
           </span>
           <input
             value={
@@ -1428,11 +1529,14 @@ export const MargenesBoard = ({
                 ? drillSearch
                 : mode === "cliente"
                   ? clienteSearch
-                  : factSearch
+                  : mode === "vendedor"
+                    ? vendedorSearch
+                    : factSearch
             }
             onChange={(event) => {
               if (mode === "drill") setDrillSearch(event.target.value);
               else if (mode === "cliente") setClienteSearch(event.target.value);
+              else if (mode === "vendedor") setVendedorSearch(event.target.value);
               else setFactSearch(event.target.value);
             }}
             placeholder={
@@ -1440,7 +1544,9 @@ export const MargenesBoard = ({
                 ? "Código o nombre de ítem…"
                 : mode === "cliente" && !clienteFocus
                   ? "Nombre o ID de cliente…"
-                  : "Número de factura…"
+                  : mode === "vendedor" && !vendedorFocus
+                    ? "Nombre o código de vendedor…"
+                    : "Número de factura…"
             }
             className="min-w-0 flex-1 rounded-md border border-[#2a2f47] bg-[#232740] px-3 py-1.5 text-xs text-[#dde3f0] outline-none focus:border-[#4f8ef7]"
           />
@@ -1448,13 +1554,16 @@ export const MargenesBoard = ({
             ? drillSearch
             : mode === "cliente"
               ? clienteSearch
-              : factSearch) ? (
+              : mode === "vendedor"
+                ? vendedorSearch
+                : factSearch) ? (
             <button
               type="button"
               className="rounded border border-[#2a2f47] px-2 py-1 text-[11px] text-[#6b7590] hover:text-[#dde3f0]"
               onClick={() => {
                 if (mode === "drill") setDrillSearch("");
                 else if (mode === "cliente") setClienteSearch("");
+                else if (mode === "vendedor") setVendedorSearch("");
                 else setFactSearch("");
               }}
             >
@@ -1557,6 +1666,49 @@ export const MargenesBoard = ({
           ))}
           <span className="ml-auto rounded-full border border-[#2a2f47] bg-[#232740] px-2 py-0.5 text-[10px] text-[#6b7590]">
             Nivel: {payload?.levelName ?? "Cliente"}
+          </span>
+        </div>
+      ) : null}
+
+      {mode === "vendedor" ? (
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#2a2f47] bg-[#141720] px-4 py-1.5 text-xs">
+          <button
+            type="button"
+            className="text-[#4f8ef7] hover:underline"
+            onClick={() => {
+              setVendedorFocus(null);
+              setVendedorFactPath([]);
+              setVendedorSearch("");
+            }}
+          >
+            Vendedores
+          </button>
+          {vendedorFocus ? (
+            <span className="flex items-center gap-1">
+              <span className="text-[#2a2f47]">›</span>
+              <button
+                type="button"
+                className="text-[#4f8ef7] hover:underline"
+                onClick={() => setVendedorFactPath([])}
+              >
+                {vendedorFocus.label}
+              </button>
+            </span>
+          ) : null}
+          {vendedorFactPath.map((step, index) => (
+            <span key={`${step.type}-${index}`} className="flex items-center gap-1">
+              <span className="text-[#2a2f47]">›</span>
+              <button
+                type="button"
+                className="text-[#4f8ef7] hover:underline"
+                onClick={() => setVendedorFactPath(vendedorFactPath.slice(0, index + 1))}
+              >
+                {formatStepLabel(step)}
+              </button>
+            </span>
+          ))}
+          <span className="ml-auto rounded-full border border-[#2a2f47] bg-[#232740] px-2 py-0.5 text-[10px] text-[#6b7590]">
+            Nivel: {payload?.levelName ?? "Vendedor"}
           </span>
         </div>
       ) : null}
@@ -1694,6 +1846,12 @@ export const MargenesBoard = ({
           payload?.truncated &&
           typeof payload.totalClientes === "number"
             ? ` (top ${sortedRows.length} de ${payload.totalClientes.toLocaleString("es-CO")}; usa búsqueda para refinar)`
+            : null}
+          {mode === "vendedor" &&
+          !vendedorFocus &&
+          payload?.truncated &&
+          typeof payload.totalVendedores === "number"
+            ? ` (top ${sortedRows.length} de ${payload.totalVendedores.toLocaleString("es-CO")}; usa búsqueda para refinar)`
             : null}
         </span>
         <button

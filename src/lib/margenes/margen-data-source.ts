@@ -379,6 +379,23 @@ export const nombreTercExpr = (table: MargenDataTable) => {
   return `NULLIF(TRIM(nombre_terc), '')`;
 };
 
+/** Clave de vendedor para GROUP BY / filtros (vacío = sin vendedor identificado). */
+export const vendCcExpr = (table: MargenDataTable) => {
+  if (table === MARGEN_ITEM_DIA_ROLL_TABLE) return `''`;
+  if (isFacturaItemRollTable(table)) {
+    return `COALESCE(NULLIF(vend_cc, ''), '')`;
+  }
+  return `COALESCE(NULLIF(TRIM(vend_cc), ''), '')`;
+};
+
+export const vendCcDescExpr = (table: MargenDataTable) => {
+  if (table === MARGEN_ITEM_DIA_ROLL_TABLE) return `NULL::text`;
+  if (isFacturaItemRollTable(table)) {
+    return `NULLIF(vend_cc_desc, '')`;
+  }
+  return `NULLIF(TRIM(vend_cc_desc), '')`;
+};
+
 /** Expresión de sede para COUNT(DISTINCT ...) en agregaciones. */
 export const sedeDistinctKeySql = (table: MargenDataTable) =>
   isRollTable(table)

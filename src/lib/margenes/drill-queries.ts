@@ -22,6 +22,8 @@ import {
   sedeDistinctKeySql,
   sedeSelectSql,
   shouldSkipMercadoTipoDefault,
+  vendCcDescExpr,
+  vendCcExpr,
   type MargenDataTable,
 } from "@/lib/margenes/margen-data-source";
 import {
@@ -1340,6 +1342,208 @@ export const queryClienteCompare = async (
     rows: allRows.slice(0, 1000),
     truncated,
     totalClientes: allRows.length,
+  };
+};
+
+const SIN_VENDEDOR_LABEL = "Sin vendedor";
+
+/** KPI + filas de vendedores en un solo barrido (evita queryKpi paralelo). */
+export const queryVendedorCompare = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  table: MargenDataTable,
+  search?: string,
+): Promise<{
+  kpi: MargenKpi;
+  rows: DrillRow[];
+  truncated: boolean;
+  totalVendedores: number;
+}> => {
+  const params: unknown[] = [];
+  let where = buildMargenWhereForTable(filters, params, table);
+  const vendCc = vendCcExpr(table);
+  const vendCcDesc = vendCcDescExpr(table);
+  const metrics = boardMetricsSqlFor(table);
+
+  if (search?.trim()) {
+    params.push(`%${search.trim().toLowerCase()}%`);
+    where += ` AND (
+      LOWER(${vendCc}) LIKE $${params.length}
+      OR LOWER(COALESCE(${vendCcDesc}, '')) LIKE $${params.length}
+    )`;
+  }
+
+  const sedeKey = sedeDistinctKeySql(table);
+  const result = await client.query(
+    `
+    SELECT
+      ${vendCc} AS vend_cc,
+      MAX(${vendCcDesc}) AS vend_cc_desc,
+      ${metrics}
+    FROM ${table}
+    WHERE ${where}
+    GROUP BY 1
+    `,
+    params,
+  );
+  const metaResult = await client.query(
+    `
+    SELECT
+      COUNT(DISTINCT fecha_dcto) AS dias,
+      COUNT(DISTINCT ${sedeKey}) AS sedes
+    FROM ${table}
+    WHERE ${where}
+    `,
+    params,
+  );
+
+  const orderBy = filters.orderBy;
+  const orderDir = filters.orderDir === "asc" ? 1 : -1;
+  const allRows = result.rows.map((row) => {
+    const metricsMapped = mapMetrics(row);
+    const code = String(row.vend_cc ?? "").trim();
+    const nombre = cleanText(row.vend_cc_desc);
+    const label = nombre ?? (code ? code : SIN_VENDEDOR_LABEL);
+    return {
+      key: code || "__SIN_VENDEDOR__",
+      cod: code || "—",
+      label,
+      vendCc: code || undefined,
+      vendCcDesc: nombre,
+      drillable: true,
+      ...metricsMapped,
+    } satisfies DrillRow;
+  });
+
+  allRows.sort((a, b) => {
+    if (orderBy) {
+      const av = a[orderBy as keyof DrillRow];
+      const bv = b[orderBy as keyof DrillRow];
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * orderDir;
+      }
+      if (av !== undefined || bv !== undefined) {
+        return String(av ?? "").localeCompare(String(bv ?? ""), "es", {
+          numeric: true,
+        }) * orderDir;
+      }
+    }
+    return (b.ventasNetas - a.ventasNetas) * (filters.orderDir === "asc" ? -1 : 1);
+  });
+
+  let ventasNetas = 0;
+  let costoTotal = 0;
+  let margenPesos = 0;
+  let cantidad = 0;
+  let ventasConIva = 0;
+  let facturas = 0;
+  for (const row of allRows) {
+    ventasNetas += row.ventasNetas;
+    costoTotal += row.costoTotal;
+    margenPesos += row.margenPesos;
+    cantidad += row.cantidad;
+    ventasConIva += row.ventasConIva;
+    facturas += row.facturas;
+  }
+
+  const meta = metaResult.rows[0] ?? {};
+  const kpi = buildKpiPayload({
+    ventas_netas: ventasNetas,
+    costo_total: costoTotal,
+    margen_pesos: margenPesos,
+    cantidad,
+    ventas_con_iva: ventasConIva,
+    facturas,
+    margen_pct: marginPct(ventasNetas, margenPesos),
+    pvu_iva: unitSaleWithTax(ventasConIva, cantidad),
+    pcu: unitCost(costoTotal, cantidad),
+    dias: toNum(meta.dias as string | number | undefined),
+    sedes: toNum(meta.sedes as string | number | undefined),
+  });
+
+  const truncated = allRows.length > 1000;
+  return {
+    kpi,
+    rows: allRows.slice(0, 1000),
+    truncated,
+    totalVendedores: allRows.length,
+  };
+};
+
+/** KPI + facturas de un vendedor; ambas queries usan indice (vend_cc, fecha). */
+export const queryVendedorFacturas = async (
+  client: PoolClient,
+  filters: MargenQueryFilters,
+  table: MargenDataTable,
+  vendCc: string,
+  search?: string,
+): Promise<{ kpi: MargenKpi; rows: DrillRow[] }> => {
+  const buildWhere = () => {
+    const params: unknown[] = [];
+    let where = buildMargenWhereForTable(filters, params, table);
+    const vendCcSql = vendCcExpr(table);
+    params.push(vendCc.trim());
+    where += ` AND ${vendCcSql} = $${params.length}`;
+    if (search?.trim()) {
+      params.push(`%${search.trim().toLowerCase()}%`);
+      where += ` AND LOWER(${documentoExpr(table)}) LIKE $${params.length}`;
+    }
+    where += ` AND ${documentoNotNull(table)}`;
+    return { where, params };
+  };
+
+  const metrics = boardMetricsSqlFor(table);
+  const sedeKey = sedeDistinctKeySql(table);
+  const sedeCols = sedeSelectSql(table);
+  const { where: kpiWhere, params: kpiParams } = buildWhere();
+  const { where: rowWhere, params: rowParams } = buildWhere();
+
+  const kpiResult = await client.query(
+    `
+    SELECT
+      ${metrics},
+      COUNT(DISTINCT fecha_dcto) AS dias,
+      COUNT(DISTINCT ${sedeKey}) AS sedes
+    FROM ${table}
+    WHERE ${kpiWhere}
+    `,
+    kpiParams,
+  );
+  const rowResult = await client.query(
+    `
+    SELECT
+      ${documentoExpr(table)} AS documento,
+      ${tipdocExpr(table)} AS tipdoc,
+      fecha_dcto,
+      ${sedeCols},
+      ${clienteSelectSql(table)},
+      ${metrics}
+    FROM ${table}
+    WHERE ${rowWhere}
+    GROUP BY 1, 2, 3, 4, 5
+    ${buildMargenOrderBy(
+      filters.orderBy,
+      filters.orderDir ?? "desc",
+      "ventas_netas",
+      BOARD_FACTURA_ORDER_ALLOWED,
+    )}
+    LIMIT 1000
+    `,
+    rowParams,
+  );
+
+  const rows = rowResult.rows.map((row) => {
+    const mapped = mapFacturaBoardRow(row);
+    return {
+      ...mapped,
+      key: `${mapped.empresa}|${mapped.idCo}|${mapped.documento}|${mapped.tipdoc}|${String(row.fecha_dcto)}`,
+      fecha: formatDayLabel(String(row.fecha_dcto)),
+    };
+  });
+
+  return {
+    kpi: buildKpiPayload(kpiResult.rows[0] ?? {}),
+    rows,
   };
 };
 

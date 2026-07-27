@@ -4,11 +4,6 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool, testDbConnection } from "@/lib/db";
 import { canAccessPortalSection } from "@/lib/shared/portal-sections";
 import { normalizeKeyCompact } from "@/lib/shared/normalize";
-import { isSamePlanillaSede } from "@/lib/horarios/planilla-sede";
-import {
-  filterMargenSedeCatalogForUser,
-  resolveMargenSedeScope,
-} from "@/lib/margenes/margen-sede-scope";
 import {
   userHasDinastiaAccess,
   userIsDinastiaOnly,
@@ -224,36 +219,25 @@ const filterDailyDataByAllowedLines = (
 const isDinastiaSedeName = (sede: string) =>
   normalizeSedeKey(sede).includes("dinastia");
 
-/** Aplica alcance de sedes/empresas (incluye ocultar Dinastia si no hay permiso). */
-const filterDailyDataBySedeScope = (
+/**
+ * Productividad por linea: todas las sedes del tenant para comparar.
+ * No aplica `allowedSedes` del perfil (eso sigue en margenes, rotacion, etc.).
+ * Solo separa tenant Dinastia vs historico.
+ */
+const filterDailyDataByEmpresaTenant = (
   dailyData: DailyProductivity[],
   sessionUser: {
     role: "admin" | "user";
-    sede: string | null;
-    allowedSedes?: string[] | null;
     allowedEmpresas?: string[] | null;
   },
 ): DailyProductivity[] => {
-  let scoped = dailyData;
-
   if (userIsDinastiaOnly(sessionUser)) {
-    scoped = scoped.filter((item) => isDinastiaSedeName(item.sede));
-  } else if (!userHasDinastiaAccess(sessionUser)) {
-    scoped = scoped.filter((item) => !isDinastiaSedeName(item.sede));
+    return dailyData.filter((item) => isDinastiaSedeName(item.sede));
   }
-
-  const sedeScope = resolveMargenSedeScope(sessionUser);
-  if (!sedeScope.authorized) return [];
-  if (sedeScope.allowedKeys === null) return scoped;
-
-  const allowedLabels = filterMargenSedeCatalogForUser(sessionUser).map(
-    (option) => option.label,
-  );
-  if (allowedLabels.length === 0) return [];
-
-  return scoped.filter((item) =>
-    allowedLabels.some((label) => isSamePlanillaSede(item.sede, label)),
-  );
+  if (!userHasDinastiaAccess(sessionUser)) {
+    return dailyData.filter((item) => !isDinastiaSedeName(item.sede));
+  }
+  return dailyData;
 };
 
 // Mapeo de centro_operacion + empresa_bd a nombre de sede
@@ -679,7 +663,7 @@ export async function GET(request: Request) {
   if (serveFileCache) {
     const cached = await readCache();
     if (cached && cached.length > 0) {
-      const scopedCached = filterDailyDataBySedeScope(
+      const scopedCached = filterDailyDataByEmpresaTenant(
         filterDailyDataByAllowedLines(cached, allowedLineIds),
         session.user,
       );
@@ -690,7 +674,7 @@ export async function GET(request: Request) {
     await testDbConnection();
     /** Consultas + escritura de caché; compartido entre peticiones concurrentes sin caché. */
     const rawDaily = await runColdProductivityLoad();
-    const dailyData = filterDailyDataBySedeScope(
+    const dailyData = filterDailyDataByEmpresaTenant(
       filterDailyDataByAllowedLines(rawDaily, allowedLineIds),
       session.user,
     );

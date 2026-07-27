@@ -42,6 +42,8 @@ import {
   queryInvoiceDetailBoard,
   queryKpi,
   querySedeCompare,
+  queryVendedorCompare,
+  queryVendedorFacturas,
 } from "@/lib/margenes/drill-queries";
 import {
   canAccessPortalSection,
@@ -76,6 +78,8 @@ type DataMode =
   | "fact-list"
   | "cliente"
   | "cliente-facturas"
+  | "vendedor"
+  | "vendedor-facturas"
   | MargenViewMode;
 
 const HEAVY_MODES: DataMode[] = [
@@ -88,6 +92,8 @@ const HEAVY_MODES: DataMode[] = [
   "fact-list",
   "cliente",
   "cliente-facturas",
+  "vendedor",
+  "vendedor-facturas",
   "producto",
   "factura",
   "sede",
@@ -678,6 +684,45 @@ export async function GET(request: Request) {
             parsed,
             dataTable,
             idTerc,
+            search,
+          )),
+          level: 1,
+          levelName: "Factura",
+        };
+      }
+    } else if (mode === "vendedor") {
+      const search = url.searchParams.get("search") ?? undefined;
+      const vendedorPayload = await queryVendedorCompare(
+        client,
+        parsed,
+        dataTable,
+        search,
+      );
+      payload = {
+        ...vendedorPayload,
+        level: 0,
+        levelName: "Vendedor",
+      };
+    } else if (mode === "vendedor-facturas") {
+      const vendCc = url.searchParams.get("vendCc") ?? "";
+      const search = url.searchParams.get("search") ?? undefined;
+      const factPath = parseFactPath(url.searchParams.get("factPath"));
+      const factura = factPath.find((step) => step.type === "factura");
+      if (factura?.type === "factura") {
+        payload = await queryInvoiceDetailBoard(
+          client,
+          parsed,
+          factura,
+          dataTable,
+          3,
+        );
+      } else {
+        payload = {
+          ...(await queryVendedorFacturas(
+            client,
+            parsed,
+            dataTable,
+            vendCc,
             search,
           )),
           level: 1,

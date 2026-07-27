@@ -20,6 +20,8 @@ export const useProductivityData = () => {
       try {
         const response = await fetch("/api/productivity", {
           signal: controller.signal,
+          credentials: "include",
+          cache: "no-store",
         });
 
         const payload = (await response.json()) as ApiResponse;
