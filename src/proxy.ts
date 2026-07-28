@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isExcelDianPublicAccess } from "@/lib/excel-dian/public-export-env";
 import {
+  getLocalPortalCloudUrl,
   isExcelDianApiPath,
-  isExcelDianAuthApiPath,
   isExcelDianPagePath,
   isLocalPortalClosed,
   isLocalPortalExcelDianBypass,
@@ -35,6 +35,9 @@ const isPublicApiPath = (pathname: string) =>
   pathname === "/api/local-portal-migration-notice" ||
   pathname === "/api/health";
 
+const redirectToCloudPortal = () =>
+  NextResponse.redirect(getLocalPortalCloudUrl());
+
 /**
  * Proxy global del portal UAID.
  *
@@ -56,17 +59,19 @@ export function proxy(request: NextRequest) {
   if (restricted) {
     if (pathname.startsWith("/api/")) {
       if (isPublicApiPath(pathname)) return NextResponse.next();
-      if (
-        excelDianBypass &&
-        (isExcelDianApiPath(pathname) || isExcelDianAuthApiPath(pathname))
-      ) {
+      if (excelDianBypass && isExcelDianApiPath(pathname)) {
+        return NextResponse.next();
+      }
+      // ExcelDian sin login: /api/auth/me puede responder 401 sin bloquear la pagina.
+      if (portalClosed && pathname === "/api/auth/me") {
         return NextResponse.next();
       }
       return clearAuthCookies(
         NextResponse.json(
           {
-            error:
-              "Este portal local fue cerrado. Usa /ExcelDian para informes DIAN o ingresa en https://uaid.mercamio.com.co",
+            error: portalClosed
+              ? "Este portal local solo sirve /ExcelDian. Ingresa en https://uaid.mercamio.com.co"
+              : "Este portal local fue cerrado. Usa /ExcelDian para informes DIAN o ingresa en https://uaid.mercamio.com.co",
           },
           { status: 503 },
         ),
@@ -78,10 +83,16 @@ export function proxy(request: NextRequest) {
     }
 
     if (pathname === "/login" || pathname.startsWith("/login/")) {
+      if (portalClosed) {
+        return clearAuthCookies(redirectToCloudPortal());
+      }
       return NextResponse.next();
     }
 
     if (excelDianBypass) {
+      if (portalClosed) {
+        return clearAuthCookies(redirectToCloudPortal());
+      }
       return NextResponse.redirect(new URL("/ExcelDian", request.url));
     }
 

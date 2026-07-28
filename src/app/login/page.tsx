@@ -1,5 +1,10 @@
-﻿import { Suspense } from "react";
+﻿import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { AuthBrandingPanelFallback } from "@/components/portal/auth-branding-panel";
+import {
+  getLocalPortalCloudUrl,
+  isLocalPortalClosed,
+} from "@/lib/shared/local-portal-notices";
 import { LoginPageInner } from "./login-inner";
 
 function LoginPageFallback() {
@@ -14,6 +19,10 @@ function LoginPageFallback() {
 }
 
 export default function LoginPage() {
+  if (isLocalPortalClosed()) {
+    redirect(getLocalPortalCloudUrl());
+  }
+
   return (
     <Suspense fallback={<LoginPageFallback />}>
       <LoginPageInner />

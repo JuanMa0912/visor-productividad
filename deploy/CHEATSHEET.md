@@ -98,9 +98,11 @@ sudo -u visor npm run build:server
 sudo systemctl restart visor
 ```
 
-**Efecto:** el resto del portal responde `503` o redirige a `/ExcelDian`. **`/ExcelDian` y la descarga funcionan sin login** (solo red interna). Siguen activas `/api/excel-dian/*` y las APIs de sesión por si alguien quiere autenticarse. Solo `/api/health` y `/api/local-portal-migration-notice` quedan públicas entre las demás APIs.
+**Efecto:** solo `/ExcelDian` queda activo en el 232 (sin login). Cualquier otra ruta —incluido `/login`— redirige a `https://uaid.mercamio.com.co`. Las demás APIs responden `503` salvo `/api/excel-dian/*`, `/api/health` y `/api/local-portal-migration-notice`.
 
-**Verificar:** abrir `http://192.168.35.232:PUERTO/ExcelDian` sin sesión → descargar Excel.
+**Verificar:**
+- `http://192.168.35.232:PUERTO/ExcelDian` → formulario y descarga sin sesión.
+- `http://192.168.35.232:PUERTO/login` o `/margenes` → redirección a la nube.
 
 ---
 

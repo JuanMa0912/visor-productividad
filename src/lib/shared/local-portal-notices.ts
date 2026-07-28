@@ -47,8 +47,8 @@ const isGcpDeployment = (): boolean =>
 export const DEFAULT_LOCAL_PORTAL_CLOUD_URL = "https://uaid.mercamio.com.co";
 
 /**
- * Cierre del portal local general (resto de modulos). Con esta flag activa,
- * login y `/ExcelDian` siguen operativos (bases DIAN no van a GCP).
+ * Cierre del portal local general (resto de modulos). Solo queda `/ExcelDian`
+ * sin login; `/login` y el resto redirigen al portal en la nube.
  * En GCP usar `VISOR_DEPLOYMENT=gcp` y no definir `LOCAL_PORTAL_CLOSED`.
  */
 export const isLocalPortalClosed = (): boolean => {

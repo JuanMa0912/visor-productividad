@@ -11,6 +11,10 @@ import {
 import { getDbPool } from "@/lib/db";
 import { insertLoginFailureAttempt } from "@/lib/admin/user-admin-audit";
 import {
+  getLocalPortalCloudUrl,
+  isLocalPortalClosed,
+} from "@/lib/shared/local-portal-notices";
+import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
@@ -85,6 +89,17 @@ const clearFailedLoginAttempts = (ipKey: string, userKey: string) => {
 };
 
 export async function POST(req: Request) {
+  if (isLocalPortalClosed()) {
+    const cloudUrl = getLocalPortalCloudUrl();
+    return NextResponse.json(
+      {
+        error: `El portal local ya no tiene inicio de sesion. Ingresa en ${cloudUrl}`,
+        cloudUrl,
+      },
+      { status: 403 },
+    );
+  }
+
   try {
     const body = (await req.json()) as { username?: string; password?: string };
     const username = body.username?.trim();
