@@ -57,7 +57,16 @@ const resolveDbConfig = () => {
     throw new Error("DB_SCHEMA contiene un identificador invalido.");
   }
 
-  const host = process.env.DB_HOST ?? "192.168.35.232";
+  const isGcp =
+    (process.env.VISOR_DEPLOYMENT ?? "").trim().toLowerCase() === "gcp";
+  const hostRaw = process.env.DB_HOST?.trim();
+  // En GCP exigir DB_HOST explicito: el default LAN del 232 no debe usarse en Cloud SQL.
+  if (isGcp && !hostRaw) {
+    throw new Error(
+      "Falta DB_HOST en el entorno GCP (VISOR_DEPLOYMENT=gcp). Define el host de Cloud SQL / proxy antes de iniciar la app.",
+    );
+  }
+  const host = hostRaw && hostRaw.length > 0 ? hostRaw : "192.168.35.232";
 
   const sslEnv = (process.env.DB_SSL ?? "").trim().toLowerCase();
   let ssl: false | { rejectUnauthorized: boolean };

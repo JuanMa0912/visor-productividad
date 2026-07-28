@@ -17,15 +17,18 @@ const parseEnvValue = (raw: string): string => {
   return value;
 };
 
-/** Lee una clave de process.env y, si falta, del `.env.local` en disco (runtime PM2). */
+/**
+ * Lee una clave de process.env y, si falta, del `.env.local` en disco
+ * (runtime PM2 / systemd). process.env gana siempre: un override en la unit
+ * no debe quedar anulado por un valor viejo en el archivo.
+ */
 const resolveEnvValue = (key: string): string | undefined => {
   const fromProcess = process.env[key]?.trim();
-  const envPath = path.join(process.cwd(), ".env.local");
-  if (!existsSync(envPath)) {
-    return fromProcess && fromProcess.length > 0 ? fromProcess : undefined;
-  }
+  if (fromProcess && fromProcess.length > 0) return fromProcess;
 
-  let fromFile: string | undefined;
+  const envPath = path.join(process.cwd(), ".env.local");
+  if (!existsSync(envPath)) return undefined;
+
   for (const line of readFileSync(envPath, "utf-8").split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -33,15 +36,14 @@ const resolveEnvValue = (key: string): string | undefined => {
     if (eq <= 0) continue;
     const envKey = trimmed.slice(0, eq).trim();
     if (envKey !== key) continue;
-    fromFile = parseEnvValue(trimmed.slice(eq + 1));
-    break;
+    const fromFile = parseEnvValue(trimmed.slice(eq + 1));
+    return fromFile && fromFile.length > 0 ? fromFile : undefined;
   }
-
-  if (fromFile && fromFile.length > 0) return fromFile;
-  return fromProcess && fromProcess.length > 0 ? fromProcess : undefined;
+  return undefined;
 };
 
-const isGcpDeployment = (): boolean =>
+/** True cuando VISOR_DEPLOYMENT=gcp (process.env o fallback .env.local). */
+export const isGcpDeployment = (): boolean =>
   resolveEnvValue("VISOR_DEPLOYMENT")?.trim().toLowerCase() === "gcp";
 
 export const DEFAULT_LOCAL_PORTAL_CLOUD_URL = "https://uaid.mercamio.com.co";

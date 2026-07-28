@@ -174,3 +174,17 @@ describe("isLocalPortalExcelDianOnly", () => {
     }
   });
 });
+
+describe("isGcpDeployment / resolveEnvValue precedence", () => {
+  it("respeta VISOR_DEPLOYMENT=gcp desde process.env", async () => {
+    const prevDeployment = process.env.VISOR_DEPLOYMENT;
+    process.env.VISOR_DEPLOYMENT = "gcp";
+    const mod = await import("@/lib/shared/local-portal-notices");
+    assert.equal(mod.isGcpDeployment(), true);
+    if (prevDeployment === undefined) {
+      delete process.env.VISOR_DEPLOYMENT;
+    } else {
+      process.env.VISOR_DEPLOYMENT = prevDeployment;
+    }
+  });
+});

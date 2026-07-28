@@ -196,7 +196,8 @@ empresa:
 
 Por defecto requiere sesion. `EXCEL_DIAN_EXPORT_PUBLIC` o
 `NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC` permiten exponerlo sin sesion en redes
-confiables; tratarlo como excepcion operativa, no como default.
+confiables (solo LAN / 232). Con `VISOR_DEPLOYMENT=gcp` esas flags se ignoran.
+Tratarlo como excepcion operativa, no como default.
 
 ## 6. Operacion local
 
@@ -247,7 +248,8 @@ disponible (`--port 0`).
 | Pool PostgreSQL (opcional) | `DB_POOL_MAX`, `DB_POOL_CONN_TIMEOUT_MS`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_MAX_LIFETIME_SEC`, `DB_STATEMENT_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` (defaults seguros; ver `docs/DEPLOYMENT.md` seccion 11) |
 | Seguridad/sesion | `SESSION_COOKIE_SECURE`, `AUDIT_IP_HMAC_SECRET`, `TRUST_PROXY` |
 | Runtime/build | `PRODUCTIVITY_CACHE_PATH`, `PRODUCTIVITY_SERVE_FILE_CACHE`, `NEXT_ENABLE_REACT_COMPILER`, `NEXT_BUILD_STANDALONE`, `NEXT_BUILD_STRICT`, `NEXT_BUILD_MEMORY_MB`, `NEXT_BUILD_LOG_LIMITS`, `NEXT_BUILD_SKIP_TYPECHECK`, `ALLOWED_DEV_ORIGINS`, `UPGRADE_INSECURE_REQUESTS`, `COOP_DISABLED`, `NEXT_PUBLIC_VENTAS_X_ITEM_USE_V2` |
-| Excel DIAN | `EXCEL_DIAN_MTDO_DB_*`, `EXCEL_DIAN_MIO_DB_*`, `EXCEL_DIAN_BGT_DB_*`, `EXCEL_DIAN_EXPORT_PUBLIC`, `NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC` |
+| Excel DIAN | `EXCEL_DIAN_MTDO_DB_*`, `EXCEL_DIAN_MIO_DB_*`, `EXCEL_DIAN_BGT_DB_*`, `EXCEL_DIAN_EXPORT_PUBLIC`, `NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC` (solo 232; ignoradas en GCP) |
+| Despliegue | `VISOR_DEPLOYMENT=gcp` en la nube; `LOCAL_PORTAL_CLOSED` solo en el 232 |
 | Notion | `NOTION_TOKEN`, `NOTION_CRONOGRAMA_PAGE_ID` |
 | Bootstrap admin | `ADMIN_USERNAME`, `ADMIN_PASSWORD` |
 

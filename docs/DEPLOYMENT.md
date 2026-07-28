@@ -34,6 +34,32 @@ SESSION_COOKIE_SECURE=true
 TRUST_PROXY=true
 ```
 
+### GCP (`https://uaid.mercamio.com.co`)
+
+Obligatorio en la VM de la nube:
+
+```bash
+VISOR_DEPLOYMENT=gcp
+DB_HOST=...          # Cloud SQL / proxy; no usar default LAN
+SESSION_COOKIE_SECURE=true
+TRUST_PROXY=true
+```
+
+No definir en GCP:
+
+- `LOCAL_PORTAL_CLOSED`, `LOCAL_PORTAL_EXCEL_DIAN_ONLY`, `LOCAL_PORTAL_MIGRATION_NOTICE`
+- `EXCEL_DIAN_EXPORT_PUBLIC`, `NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC`
+- `EXCEL_DIAN_*_DB_*` (Excel DIAN vive solo en el server local 232)
+
+Con `VISOR_DEPLOYMENT=gcp`, el codigo ignora flags de portal local y fuerza
+Excel DIAN no-publico. Si falta `DB_HOST`, el pool no arranca (evita caer al
+host LAN `192.168.35.232`).
+
+### Server local 232 (solo Excel DIAN)
+
+Ver `deploy/CHEATSHEET.md` §3b/3c: `LOCAL_PORTAL_CLOSED=true` + bases
+`EXCEL_DIAN_*_DB_*`. No poner `VISOR_DEPLOYMENT=gcp` en el 232.
+
 Variables por capacidad:
 
 | Capacidad | Variables |
@@ -44,8 +70,9 @@ Variables por capacidad:
 | HTTPS/headers | `UPGRADE_INSECURE_REQUESTS`, `COOP_DISABLED`, `ALLOWED_DEV_ORIGINS` |
 | Ventas x item v2 | `NEXT_PUBLIC_VENTAS_X_ITEM_USE_V2=1` |
 | Notion cronograma | `NOTION_TOKEN`, `NOTION_CRONOGRAMA_PAGE_ID` |
-| Excel DIAN | `EXCEL_DIAN_MTDO_DB_*`, `EXCEL_DIAN_MIO_DB_*`, `EXCEL_DIAN_BGT_DB_*` |
-| Excel DIAN publico | `EXCEL_DIAN_EXPORT_PUBLIC`, `NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC` |
+| Despliegue GCP | `VISOR_DEPLOYMENT=gcp` (obligatorio en la nube) |
+| Excel DIAN (solo 232) | `EXCEL_DIAN_MTDO_DB_*`, `EXCEL_DIAN_MIO_DB_*`, `EXCEL_DIAN_BGT_DB_*` |
+| Excel DIAN publico (solo LAN) | `EXCEL_DIAN_EXPORT_PUBLIC`, `NEXT_PUBLIC_EXCEL_DIAN_EXPORT_PUBLIC` (ignoradas si `VISOR_DEPLOYMENT=gcp`) |
 
 Nota: `CSP_UNSAFE_EVAL` puede existir en ambientes antiguos, pero el CSP actual
 incluye `'unsafe-eval'` directamente en `next.config.ts`. No usar esa variable
