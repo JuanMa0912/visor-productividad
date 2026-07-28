@@ -142,6 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    setStatus((prev) => (prev === "authenticated" ? prev : "loading"));
+    setError(null);
     try {
       const result = await loadSessionFromApi(controller.signal);
       if (!controller.signal.aborted) {
@@ -255,10 +257,12 @@ export function useAuth(): AuthContextValue {
 /**
  * Para paginas que requieren sesion activa: cuando el estado pasa a
  * `unauthenticated`, redirige a `/login` (o al `redirectTo` indicado).
+ * No redirige en `error` (fallo de red/API): el overlay
+ * `AuthSessionRecovery` permite reintentar sin perder el contexto.
  * Devuelve el contexto completo para no obligar a llamar `useAuth()` aparte.
  *
  * Las paginas siguen siendo responsables de mostrar un loader mientras
- * `status === 'loading'`.
+ * `status === 'loading'` (o `error` mientras el overlay esta visible).
  */
 export function useRequireAuth(options?: {
   redirectTo?: string;

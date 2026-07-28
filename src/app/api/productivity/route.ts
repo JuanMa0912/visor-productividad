@@ -10,6 +10,7 @@ import {
 } from "@/lib/shared/data-tenant";
 import { promises as fs } from "fs";
 import path from "path";
+import { shouldServeProductivityFileCache } from "@/lib/productivity/file-cache-policy";
 
 const resolveCachePath = () => {
   const defaultPath = "data/productivity-cache.json";
@@ -80,14 +81,24 @@ const checkRateLimit = (request: Request) => {
   return null;
 };
 
-const readCache = async (): Promise<DailyProductivity[] | null> => {
+const readCache = async (): Promise<{
+  dailyData: DailyProductivity[];
+  updatedAt: string | null;
+} | null> => {
   try {
     const raw = await fs.readFile(cacheFilePath, "utf-8");
-    const parsed = JSON.parse(raw) as { dailyData?: DailyProductivity[] };
-    if (!Array.isArray(parsed.dailyData)) {
+    const parsed = JSON.parse(raw) as {
+      dailyData?: DailyProductivity[];
+      updatedAt?: string;
+    };
+    if (!Array.isArray(parsed.dailyData) || parsed.dailyData.length === 0) {
       return null;
     }
-    return parsed.dailyData;
+    const updatedAt =
+      typeof parsed.updatedAt === "string" && parsed.updatedAt.trim()
+        ? parsed.updatedAt.trim()
+        : null;
+    return { dailyData: parsed.dailyData, updatedAt };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return null;
@@ -411,7 +422,14 @@ const fetchAllProductivityData = async (
       `;
 
   try {
-    const lineQueryPromises = lineTables.map(async (line) => {
+    // Un PoolClient de `pg` no admite queries concurrentes en la misma conexion.
+    // Serializamos lecturas (single-flight en runColdProductivityLoad evita
+    // duplicar este trabajo entre peticiones).
+    const lineOutputs: Array<{
+      line: (typeof LINE_TABLES)[number];
+      rows: Record<string, unknown>[];
+    }> = [];
+    for (const line of lineTables) {
       const query = `
           SELECT
             fecha_dcto,
@@ -426,23 +444,23 @@ const fetchAllProductivityData = async (
         `;
       try {
         const result = await client.query(query);
-        return { line, rows: result.rows ?? [] };
+        lineOutputs.push({ line, rows: result.rows ?? [] });
       } catch (error) {
         console.warn(
           `No se pudo consultar la tabla ${line.table}. Se omite.`,
           error,
         );
-        return { line, rows: [] };
+        lineOutputs.push({ line, rows: [] });
       }
-    });
+    }
 
-    const [lineOutputs, hoursQueryResult] = await Promise.all([
-      Promise.all(lineQueryPromises),
-      client.query(hoursQuery).catch((error) => {
-        console.warn("No se pudo consultar la tabla asistencia_horas:", error);
-        return { rows: [] as Record<string, unknown>[] };
-      }),
-    ]);
+    let hoursQueryResult: { rows: Record<string, unknown>[] };
+    try {
+      hoursQueryResult = await client.query(hoursQuery);
+    } catch (error) {
+      console.warn("No se pudo consultar la tabla asistencia_horas:", error);
+      hoursQueryResult = { rows: [] };
+    }
 
   for (const { line, rows } of lineOutputs) {
     for (const row of rows) {
@@ -655,20 +673,21 @@ export async function GET(request: Request) {
       ),
     );
   }
-  // No servir solo desde disco: el JSON en PRODUCTIVITY_CACHE_PATH se actualiza al
-  // cargar desde BD, pero si quedó desactualizado (p. ej. hay filas nuevas del día),
-  // devolverlo bloqueaba ver datos recientes sin tocar el archivo.
-  const serveFileCache =
-    process.env.PRODUCTIVITY_SERVE_FILE_CACHE?.trim() === "true";
-  if (serveFileCache) {
-    const cached = await readCache();
-    if (cached && cached.length > 0) {
-      const scopedCached = filterDailyDataByEmpresaTenant(
-        filterDailyDataByAllowedLines(cached, allowedLineIds),
-        session.user,
-      );
-      return withSession(buildCacheResponse(scopedCached));
-    }
+  // Cache en disco: por defecto se sirve si es reciente (TTL). Forzar rebuild con
+  // ?refresh=1. Desactivar con PRODUCTIVITY_SERVE_FILE_CACHE=false.
+  const refreshParams = new URL(request.url).searchParams;
+  const forceRefresh =
+    refreshParams.get("refresh") === "1" || refreshParams.get("force") === "1";
+  const cachedFile = await readCache();
+  if (
+    cachedFile &&
+    shouldServeProductivityFileCache(cachedFile.updatedAt, forceRefresh)
+  ) {
+    const scopedCached = filterDailyDataByEmpresaTenant(
+      filterDailyDataByAllowedLines(cachedFile.dailyData, allowedLineIds),
+      session.user,
+    );
+    return withSession(buildCacheResponse(scopedCached));
   }
   try {
     await testDbConnection();

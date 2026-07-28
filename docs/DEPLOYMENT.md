@@ -65,7 +65,7 @@ Variables por capacidad:
 | Capacidad | Variables |
 | --- | --- |
 | Pool PostgreSQL | `DB_POOL_MAX`, `DB_POOL_CONN_TIMEOUT_MS`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_MAX_LIFETIME_SEC`, `DB_STATEMENT_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS` (todas opcionales; ver seccion 11) |
-| Productividad cache | `PRODUCTIVITY_CACHE_PATH`, `PRODUCTIVITY_SERVE_FILE_CACHE` |
+| Productividad cache | `PRODUCTIVITY_CACHE_PATH`, `PRODUCTIVITY_SERVE_FILE_CACHE`, `PRODUCTIVITY_CACHE_MAX_AGE_MS` (default 6h; `?refresh=1` fuerza rebuild) |
 | Build | `NEXT_BUILD_MEMORY_MB`, `NEXT_BUILD_LOG_LIMITS`, `NEXT_BUILD_STRICT` |
 | HTTPS/headers | `UPGRADE_INSECURE_REQUESTS`, `COOP_DISABLED`, `ALLOWED_DEV_ORIGINS` |
 | Ventas x item v2 | `NEXT_PUBLIC_VENTAS_X_ITEM_USE_V2=1` |
