@@ -13,6 +13,7 @@ import { insertLoginFailureAttempt } from "@/lib/admin/user-admin-audit";
 import {
   getLocalPortalCloudUrl,
   isLocalPortalClosed,
+  isLocalPortalExcelDianOnly,
 } from "@/lib/shared/local-portal-notices";
 import {
   normalizeAllowedPortalSections,
@@ -89,7 +90,7 @@ const clearFailedLoginAttempts = (ipKey: string, userKey: string) => {
 };
 
 export async function POST(req: Request) {
-  if (isLocalPortalClosed()) {
+  if (isLocalPortalClosed() && !isLocalPortalExcelDianOnly()) {
     return NextResponse.json(
       {
         error: `Este portal local fue cerrado. Ingresa en ${getLocalPortalCloudUrl()}`,

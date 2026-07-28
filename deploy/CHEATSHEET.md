@@ -104,6 +104,60 @@ sudo systemctl restart visor
 
 ---
 
+## 3c. Excel DIAN solo en el 232 (bases DIAN no van a GCP)
+
+El módulo `/ExcelDian` consulta PostgreSQL **en la red local** (`EXCEL_DIAN_*_DB_*`). No debe vivir en GCP.
+
+**En `.env.local` del 232** (`/home/prodapp/visor-productividad` o `/opt/visor-productividad`):
+
+```bash
+# No definir VISOR_DEPLOYMENT=gcp en el 232.
+
+# Si el portal general ya cerró hacia la nube, dejar ambas:
+LOCAL_PORTAL_CLOSED=true
+LOCAL_PORTAL_EXCEL_DIAN_ONLY=true
+LOCAL_PORTAL_CLOUD_URL=https://uaid.mercamio.com.co
+
+# Conexiones DIAN (hosts internos, no Cloud SQL):
+EXCEL_DIAN_MTDO_DB_HOST=192.168.x.x
+EXCEL_DIAN_MTDO_DB_PORT=5432
+EXCEL_DIAN_MTDO_DB_NAME=...
+EXCEL_DIAN_MTDO_DB_USER=...
+EXCEL_DIAN_MTDO_DB_PASSWORD=...
+EXCEL_DIAN_MTDO_DB_SCHEMA=public
+
+EXCEL_DIAN_MIO_DB_HOST=...
+# (mismas claves MIO_DB_*)
+
+# NO usar EXCEL_DIAN_EXPORT_PUBLIC salvo red muy confiable (expone sin login).
+EXCEL_DIAN_EXPORT_PUBLIC=false
+```
+
+**Rebuild y reinicio:**
+
+```bash
+cd /home/prodapp/visor-productividad   # ruta real del 232
+sudo -u prodapp npm run build:server
+sudo systemctl restart visor --no-block
+```
+
+**Uso:** `http://192.168.35.232:PUERTO/login` → usuario con sesión → `/ExcelDian` → descargar Excel (Comercializadora / Mercamio).
+
+**Verificar conexión DIAN** (desde el 232):
+
+```bash
+sudo -u prodapp bash -lc '
+set -a; source .env.local; set +a
+export PGPASSWORD="$EXCEL_DIAN_MTDO_DB_PASSWORD" PGSSLMODE=prefer
+psql -h "$EXCEL_DIAN_MTDO_DB_HOST" -p "${EXCEL_DIAN_MTDO_DB_PORT:-5432}" \
+  -U "$EXCEL_DIAN_MTDO_DB_USER" -d "$EXCEL_DIAN_MTDO_DB_NAME" -c "SELECT 1"
+'
+```
+
+**Efecto de `LOCAL_PORTAL_EXCEL_DIAN_ONLY`:** el resto del portal responde 503 o redirige; solo quedan login, `/ExcelDian` y `/api/excel-dian/export`.
+
+---
+
 **VM**:
 ```bash
 cd /opt/visor-productividad

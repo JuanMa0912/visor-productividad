@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isExcelDianExportPublic } from "@/lib/excel-dian/public-export-env";
-import { isLocalPortalClosed } from "@/lib/shared/local-portal-notices";
+import {
+  isExcelDianApiPath,
+  isExcelDianAuthApiPath,
+  isExcelDianPagePath,
+  isLocalPortalClosed,
+  isLocalPortalExcelDianOnly,
+} from "@/lib/shared/local-portal-notices";
 
 /** Misma cookie que `SESSION_COOKIE` en `@/lib/auth` (no importar auth aqui). */
 const SESSION_COOKIE = "vp_session";
@@ -47,24 +53,57 @@ export function proxy(request: NextRequest) {
   if (pathname.startsWith("/_next")) return NextResponse.next();
   if (pathname.startsWith("/logos/")) return NextResponse.next();
 
-  if (isLocalPortalClosed()) {
+  const excelDianOnly = isLocalPortalExcelDianOnly();
+  const portalClosed = isLocalPortalClosed();
+
+  if (portalClosed || excelDianOnly) {
     if (pathname.startsWith("/api/")) {
       if (isPublicApiPath(pathname)) return NextResponse.next();
+      if (
+        excelDianOnly &&
+        (isExcelDianApiPath(pathname) || isExcelDianAuthApiPath(pathname))
+      ) {
+        return NextResponse.next();
+      }
       return clearAuthCookies(
         NextResponse.json(
           {
-            error:
-              "Este portal local fue cerrado. Ingresa en https://uaid.mercamio.com.co",
+            error: excelDianOnly
+              ? "Este servidor local solo expone Excel DIAN. Usa https://uaid.mercamio.com.co para el resto del portal."
+              : "Este portal local fue cerrado. Ingresa en https://uaid.mercamio.com.co",
           },
           { status: 503 },
         ),
       );
     }
 
-    if (isPublicPagePath(pathname)) {
+    if (excelDianOnly && isExcelDianPagePath(pathname)) {
+      return NextResponse.next();
+    }
+
+    if (pathname === "/login" || pathname.startsWith("/login/")) {
+      if (portalClosed && !excelDianOnly) {
+        const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
+        if (!hasSession) return NextResponse.next();
+        return clearAuthCookies(NextResponse.next());
+      }
+      return NextResponse.next();
+    }
+
+    if (portalClosed && !excelDianOnly && isPublicPagePath(pathname)) {
       const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
       if (!hasSession) return NextResponse.next();
       return clearAuthCookies(NextResponse.next());
+    }
+
+    const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
+    if (excelDianOnly) {
+      if (hasSession) {
+        return NextResponse.redirect(new URL("/ExcelDian", request.url));
+      }
+      const login = new URL("/login", request.url);
+      login.searchParams.set("from", "/ExcelDian");
+      return NextResponse.redirect(login);
     }
 
     const login = new URL("/login", request.url);

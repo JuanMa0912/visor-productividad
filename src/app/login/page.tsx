@@ -6,6 +6,7 @@ import { LocalPortalClosedPanel } from "@/components/portal/local-portal-closed-
 import {
   getLocalPortalCloudUrl,
   isLocalPortalClosed,
+  isLocalPortalExcelDianOnly,
 } from "@/lib/shared/local-portal-notices";
 import { LoginPageInner } from "./login-inner";
 
@@ -21,7 +22,7 @@ function LoginPageFallback() {
 }
 
 export default function LoginPage() {
-  if (isLocalPortalClosed()) {
+  if (isLocalPortalClosed() && !isLocalPortalExcelDianOnly()) {
     return <LocalPortalClosedPanel cloudUrl={getLocalPortalCloudUrl()} />;
   }
 

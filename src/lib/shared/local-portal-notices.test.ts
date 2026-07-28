@@ -105,3 +105,31 @@ describe("isLocalPortalClosed", () => {
     }
   });
 });
+
+describe("isLocalPortalExcelDianOnly", () => {
+  it("activa modo Excel DIAN solo fuera de GCP", async () => {
+    const prev = process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY;
+    const prevDeployment = process.env.VISOR_DEPLOYMENT;
+
+    process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY = "true";
+    delete process.env.VISOR_DEPLOYMENT;
+    const mod = await import("@/lib/shared/local-portal-notices");
+    assert.equal(mod.isLocalPortalExcelDianOnly(), true);
+    assert.equal(mod.isExcelDianPagePath("/ExcelDian"), true);
+    assert.equal(mod.isExcelDianApiPath("/api/excel-dian/export"), true);
+
+    process.env.VISOR_DEPLOYMENT = "gcp";
+    assert.equal(mod.isLocalPortalExcelDianOnly(), false);
+
+    if (prev === undefined) {
+      delete process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY;
+    } else {
+      process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY = prev;
+    }
+    if (prevDeployment === undefined) {
+      delete process.env.VISOR_DEPLOYMENT;
+    } else {
+      process.env.VISOR_DEPLOYMENT = prevDeployment;
+    }
+  });
+});

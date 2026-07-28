@@ -58,6 +58,33 @@ export const isLocalPortalClosed = (): boolean => {
   return !isGcpDeployment();
 };
 
+/**
+ * Modo reducido en el server local (192.168.35.232): solo login + `/ExcelDian`.
+ * Usar cuando el portal general migro a GCP pero las bases DIAN no pueden subirse.
+ * Compatible con `LOCAL_PORTAL_CLOSED=true` (login y export siguen activos).
+ */
+export const isLocalPortalExcelDianOnly = (): boolean => {
+  if (isGcpDeployment()) return false;
+  return isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_EXCEL_DIAN_ONLY"));
+};
+
+export const isExcelDianPagePath = (pathname: string): boolean =>
+  pathname === "/ExcelDian" || pathname.startsWith("/ExcelDian/");
+
+export const isExcelDianApiPath = (pathname: string): boolean =>
+  pathname === "/api/excel-dian/export" ||
+  pathname.startsWith("/api/excel-dian/");
+
+/** APIs minimas para sesion en modo Excel DIAN local. */
+export const isExcelDianAuthApiPath = (pathname: string): boolean =>
+  pathname === "/api/auth/login" ||
+  pathname === "/api/auth/me" ||
+  pathname === "/api/auth/logout" ||
+  pathname === "/api/auth/heartbeat";
+
+export const isLocalPortalRestricted = (): boolean =>
+  isLocalPortalClosed() || isLocalPortalExcelDianOnly();
+
 /** URL del portal en la nube para redirigir desde el entorno local cerrado. */
 export const getLocalPortalCloudUrl = (): string => {
   const raw = resolveEnvValue("LOCAL_PORTAL_CLOUD_URL")?.trim();
@@ -79,7 +106,7 @@ export const getLocalPortalCloudUrl = (): string => {
  * En GCP usar `VISOR_DEPLOYMENT=gcp` y no definir `LOCAL_PORTAL_MIGRATION_NOTICE`.
  */
 export const isLocalPortalMigrationNoticeEnabled = (): boolean => {
-  if (isLocalPortalClosed()) return false;
+  if (isLocalPortalRestricted()) return false;
   if (!isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_MIGRATION_NOTICE"))) {
     return false;
   }
@@ -103,5 +130,15 @@ if (
 ) {
   console.warn(
     "[local-notice] LOCAL_PORTAL_MIGRATION_NOTICE ignorada (VISOR_DEPLOYMENT=gcp).",
+  );
+}
+
+if (
+  typeof process !== "undefined" &&
+  isGcpDeployment() &&
+  isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_EXCEL_DIAN_ONLY"))
+) {
+  console.warn(
+    "[local-notice] LOCAL_PORTAL_EXCEL_DIAN_ONLY ignorada (VISOR_DEPLOYMENT=gcp). Excel DIAN vive solo en el server local.",
   );
 }
