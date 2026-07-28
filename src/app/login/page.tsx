@@ -1,13 +1,5 @@
 ﻿import { Suspense } from "react";
-import {
-  AuthBrandingPanelFallback,
-} from "@/components/portal/auth-branding-panel";
-import { LocalPortalClosedPanel } from "@/components/portal/local-portal-closed-panel";
-import {
-  getLocalPortalCloudUrl,
-  isLocalPortalClosed,
-  isLocalPortalExcelDianOnly,
-} from "@/lib/shared/local-portal-notices";
+import { AuthBrandingPanelFallback } from "@/components/portal/auth-branding-panel";
 import { LoginPageInner } from "./login-inner";
 
 function LoginPageFallback() {
@@ -22,10 +14,6 @@ function LoginPageFallback() {
 }
 
 export default function LoginPage() {
-  if (isLocalPortalClosed() && !isLocalPortalExcelDianOnly()) {
-    return <LocalPortalClosedPanel cloudUrl={getLocalPortalCloudUrl()} />;
-  }
-
   return (
     <Suspense fallback={<LoginPageFallback />}>
       <LoginPageInner />

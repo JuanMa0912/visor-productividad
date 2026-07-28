@@ -17,7 +17,7 @@ import {
   queryMtodoMediosMagneticos,
 } from "@/lib/excel-dian/mtodo-medios-magneticos";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
-import { isExcelDianExportPublic } from "@/lib/excel-dian/public-export-env";
+import { isExcelDianPublicAccess } from "@/lib/excel-dian/public-export-env";
 import {
   EXCEL_DIAN_EMPRESA_OPTIONS,
   isExcelDianEmpresaEnabled,
@@ -370,7 +370,7 @@ const buildWorkbook = async (
 };
 
 export async function GET(request: Request) {
-  const exportPublic = isExcelDianExportPublic();
+  const exportPublic = isExcelDianPublicAccess();
   const session = exportPublic ? null : await requireAuthSession();
   if (!exportPublic && !session) {
     return NextResponse.json(

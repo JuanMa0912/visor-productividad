@@ -11,11 +11,6 @@ import {
 import { getDbPool } from "@/lib/db";
 import { insertLoginFailureAttempt } from "@/lib/admin/user-admin-audit";
 import {
-  getLocalPortalCloudUrl,
-  isLocalPortalClosed,
-  isLocalPortalExcelDianOnly,
-} from "@/lib/shared/local-portal-notices";
-import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
@@ -90,15 +85,6 @@ const clearFailedLoginAttempts = (ipKey: string, userKey: string) => {
 };
 
 export async function POST(req: Request) {
-  if (isLocalPortalClosed() && !isLocalPortalExcelDianOnly()) {
-    return NextResponse.json(
-      {
-        error: `Este portal local fue cerrado. Ingresa en ${getLocalPortalCloudUrl()}`,
-      },
-      { status: 403 },
-    );
-  }
-
   try {
     const body = (await req.json()) as { username?: string; password?: string };
     const username = body.username?.trim();

@@ -98,9 +98,9 @@ sudo -u visor npm run build:server
 sudo systemctl restart visor
 ```
 
-**Efecto:** nadie puede iniciar sesión; quien tenga cookie es redirigido a `/login` con pantalla de cierre y enlace al portal en la nube. Las APIs responden `503` salvo `/api/health` y `/api/local-portal-migration-notice`.
+**Efecto:** el resto del portal responde `503` o redirige a `/ExcelDian`. **`/ExcelDian` y la descarga funcionan sin login** (solo red interna). Siguen activas `/api/excel-dian/*` y las APIs de sesión por si alguien quiere autenticarse. Solo `/api/health` y `/api/local-portal-migration-notice` quedan públicas entre las demás APIs.
 
-**Verificar:** abrir el portal local → solo mensaje «Este portal ya no está disponible» + botón a `uaid.mercamio.com.co`.
+**Verificar:** abrir `http://192.168.35.232:PUERTO/ExcelDian` sin sesión → descargar Excel.
 
 ---
 
@@ -113,10 +113,10 @@ El módulo `/ExcelDian` consulta PostgreSQL **en la red local** (`EXCEL_DIAN_*_D
 ```bash
 # No definir VISOR_DEPLOYMENT=gcp en el 232.
 
-# Si el portal general ya cerró hacia la nube, dejar ambas:
+# Si el portal general ya cerró hacia la nube (Excel DIAN sigue solo con esta flag):
 LOCAL_PORTAL_CLOSED=true
-LOCAL_PORTAL_EXCEL_DIAN_ONLY=true
 LOCAL_PORTAL_CLOUD_URL=https://uaid.mercamio.com.co
+# LOCAL_PORTAL_EXCEL_DIAN_ONLY=true   # opcional; redundante si ya está LOCAL_PORTAL_CLOSED
 
 # Conexiones DIAN (hosts internos, no Cloud SQL):
 EXCEL_DIAN_MTDO_DB_HOST=192.168.x.x
@@ -129,8 +129,8 @@ EXCEL_DIAN_MTDO_DB_SCHEMA=public
 EXCEL_DIAN_MIO_DB_HOST=...
 # (mismas claves MIO_DB_*)
 
-# NO usar EXCEL_DIAN_EXPORT_PUBLIC salvo red muy confiable (expone sin login).
-EXCEL_DIAN_EXPORT_PUBLIC=false
+# NO hace falta EXCEL_DIAN_EXPORT_PUBLIC con LOCAL_PORTAL_CLOSED (acceso sin login automatico).
+# EXCEL_DIAN_EXPORT_PUBLIC=false
 ```
 
 **Rebuild y reinicio:**
@@ -141,7 +141,7 @@ sudo -u prodapp npm run build:server
 sudo systemctl restart visor --no-block
 ```
 
-**Uso:** `http://192.168.35.232:PUERTO/login` → usuario con sesión → `/ExcelDian` → descargar Excel (Comercializadora / Mercamio).
+**Uso:** `http://192.168.35.232:PUERTO/ExcelDian` → descargar Excel (Comercializadora / Mercamio). **No requiere login** si `LOCAL_PORTAL_CLOSED=true` (automático en el 232).
 
 **Verificar conexión DIAN** (desde el 232):
 
@@ -154,7 +154,7 @@ psql -h "$EXCEL_DIAN_MTDO_DB_HOST" -p "${EXCEL_DIAN_MTDO_DB_PORT:-5432}" \
 '
 ```
 
-**Efecto de `LOCAL_PORTAL_EXCEL_DIAN_ONLY`:** el resto del portal responde 503 o redirige; solo quedan login, `/ExcelDian` y `/api/excel-dian/export`.
+**Efecto con `LOCAL_PORTAL_CLOSED`:** el resto del portal responde 503 o redirige; quedan login, `/ExcelDian`, `/api/excel-dian/*` y APIs de sesión. `LOCAL_PORTAL_EXCEL_DIAN_ONLY` hace lo mismo sin cerrar el portal (solo oculta otros módulos).
 
 ---
 

@@ -47,9 +47,9 @@ const isGcpDeployment = (): boolean =>
 export const DEFAULT_LOCAL_PORTAL_CLOUD_URL = "https://uaid.mercamio.com.co";
 
 /**
- * Cierre definitivo del portal local (sin login). Activar en ServPruebas / PC
- * tras migrar usuarios a la nube. En GCP usar `VISOR_DEPLOYMENT=gcp` y no
- * definir `LOCAL_PORTAL_CLOSED`.
+ * Cierre del portal local general (resto de modulos). Con esta flag activa,
+ * login y `/ExcelDian` siguen operativos (bases DIAN no van a GCP).
+ * En GCP usar `VISOR_DEPLOYMENT=gcp` y no definir `LOCAL_PORTAL_CLOSED`.
  */
 export const isLocalPortalClosed = (): boolean => {
   if (!isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_CLOSED"))) {
@@ -60,12 +60,20 @@ export const isLocalPortalClosed = (): boolean => {
 
 /**
  * Modo reducido en el server local (192.168.35.232): solo login + `/ExcelDian`.
- * Usar cuando el portal general migro a GCP pero las bases DIAN no pueden subirse.
- * Compatible con `LOCAL_PORTAL_CLOSED=true` (login y export siguen activos).
+ * Opcional si el portal sigue abierto pero quieres ocultar el resto de modulos.
  */
 export const isLocalPortalExcelDianOnly = (): boolean => {
   if (isGcpDeployment()) return false;
   return isTruthyEnv(resolveEnvValue("LOCAL_PORTAL_EXCEL_DIAN_ONLY"));
+};
+
+/**
+ * Portal restringido pero Excel DIAN sigue operativo (bases DIAN no van a GCP).
+ * Activo con `LOCAL_PORTAL_CLOSED=true` automaticamente, sin flags extra.
+ */
+export const isLocalPortalExcelDianBypass = (): boolean => {
+  if (isGcpDeployment()) return false;
+  return isLocalPortalClosed() || isLocalPortalExcelDianOnly();
 };
 
 export const isExcelDianPagePath = (pathname: string): boolean =>

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { isExcelDianExportPublic } from "@/lib/excel-dian/public-export-env";
+import { isExcelDianPublicAccess } from "@/lib/excel-dian/public-export-env";
 import {
   isExcelDianApiPath,
   isExcelDianAuthApiPath,
   isExcelDianPagePath,
   isLocalPortalClosed,
+  isLocalPortalExcelDianBypass,
   isLocalPortalExcelDianOnly,
 } from "@/lib/shared/local-portal-notices";
 
@@ -22,7 +23,7 @@ const clearAuthCookies = (response: NextResponse) => {
 const isPublicPagePath = (pathname: string) => {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true;
   if (
-    isExcelDianExportPublic() &&
+    isExcelDianPublicAccess() &&
     (pathname === "/ExcelDian" || pathname.startsWith("/ExcelDian/"))
   ) {
     return true;
@@ -40,27 +41,23 @@ const isPublicApiPath = (pathname: string) =>
  * Responsabilidad: proteger paginas privadas redirigiendo a `/login`
  * cuando no hay cookie de sesion. Las rutas `/api/*` se dejan pasar
  * porque cada endpoint tiene su propia validacion server-side.
- *
- * Nota: la `Content-Security-Policy` se sirve estaticamente desde
- * `next.config.ts`. Se intento mover a CSP con nonce dinamico, pero
- * Next.js 16 no esta auto-inyectando el nonce en los scripts framework
- * (rompe la hidratacion en produccion). Se documenta para revisitar.
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Pase libre para rutas internas de Next, APIs y assets.
   if (pathname.startsWith("/_next")) return NextResponse.next();
   if (pathname.startsWith("/logos/")) return NextResponse.next();
 
-  const excelDianOnly = isLocalPortalExcelDianOnly();
   const portalClosed = isLocalPortalClosed();
+  const excelDianOnly = isLocalPortalExcelDianOnly();
+  const excelDianBypass = isLocalPortalExcelDianBypass();
+  const restricted = portalClosed || excelDianOnly;
 
-  if (portalClosed || excelDianOnly) {
+  if (restricted) {
     if (pathname.startsWith("/api/")) {
       if (isPublicApiPath(pathname)) return NextResponse.next();
       if (
-        excelDianOnly &&
+        excelDianBypass &&
         (isExcelDianApiPath(pathname) || isExcelDianAuthApiPath(pathname))
       ) {
         return NextResponse.next();
@@ -68,42 +65,24 @@ export function proxy(request: NextRequest) {
       return clearAuthCookies(
         NextResponse.json(
           {
-            error: excelDianOnly
-              ? "Este servidor local solo expone Excel DIAN. Usa https://uaid.mercamio.com.co para el resto del portal."
-              : "Este portal local fue cerrado. Ingresa en https://uaid.mercamio.com.co",
+            error:
+              "Este portal local fue cerrado. Usa /ExcelDian para informes DIAN o ingresa en https://uaid.mercamio.com.co",
           },
           { status: 503 },
         ),
       );
     }
 
-    if (excelDianOnly && isExcelDianPagePath(pathname)) {
+    if (excelDianBypass && isExcelDianPagePath(pathname)) {
       return NextResponse.next();
     }
 
     if (pathname === "/login" || pathname.startsWith("/login/")) {
-      if (portalClosed && !excelDianOnly) {
-        const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
-        if (!hasSession) return NextResponse.next();
-        return clearAuthCookies(NextResponse.next());
-      }
       return NextResponse.next();
     }
 
-    if (portalClosed && !excelDianOnly && isPublicPagePath(pathname)) {
-      const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
-      if (!hasSession) return NextResponse.next();
-      return clearAuthCookies(NextResponse.next());
-    }
-
-    const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
-    if (excelDianOnly) {
-      if (hasSession) {
-        return NextResponse.redirect(new URL("/ExcelDian", request.url));
-      }
-      const login = new URL("/login", request.url);
-      login.searchParams.set("from", "/ExcelDian");
-      return NextResponse.redirect(login);
+    if (excelDianBypass) {
+      return NextResponse.redirect(new URL("/ExcelDian", request.url));
     }
 
     const login = new URL("/login", request.url);
@@ -112,14 +91,11 @@ export function proxy(request: NextRequest) {
 
   if (pathname.startsWith("/api/")) return NextResponse.next();
 
-  // Pagina publica: dejamos pasar sin chequeo de cookie.
   if (isPublicPagePath(pathname)) return NextResponse.next();
 
-  // Pagina privada sin sesion -> redirect a /login.
   const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
   if (!hasSession) {
     const login = new URL("/login", request.url);
-    // La raiz `/` es un modulo concreto; el destino post-login del portal es `/secciones`.
     const returnPath = pathname === "/" ? "/secciones" : pathname;
     login.searchParams.set("from", returnPath);
     return NextResponse.redirect(login);

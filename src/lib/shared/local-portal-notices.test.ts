@@ -106,6 +106,47 @@ describe("isLocalPortalClosed", () => {
   });
 });
 
+describe("isLocalPortalExcelDianBypass", () => {
+  it("activa bypass con portal cerrado o modo Excel DIAN solo", async () => {
+    const prevClosed = process.env.LOCAL_PORTAL_CLOSED;
+    const prevOnly = process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY;
+    const prevDeployment = process.env.VISOR_DEPLOYMENT;
+
+    delete process.env.VISOR_DEPLOYMENT;
+    delete process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY;
+    process.env.LOCAL_PORTAL_CLOSED = "true";
+    const mod = await import("@/lib/shared/local-portal-notices");
+    assert.equal(mod.isLocalPortalExcelDianBypass(), true);
+
+    delete process.env.LOCAL_PORTAL_CLOSED;
+    process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY = "true";
+    assert.equal(mod.isLocalPortalExcelDianBypass(), true);
+
+    delete process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY;
+    assert.equal(mod.isLocalPortalExcelDianBypass(), false);
+
+    process.env.VISOR_DEPLOYMENT = "gcp";
+    process.env.LOCAL_PORTAL_CLOSED = "true";
+    assert.equal(mod.isLocalPortalExcelDianBypass(), false);
+
+    if (prevClosed === undefined) {
+      delete process.env.LOCAL_PORTAL_CLOSED;
+    } else {
+      process.env.LOCAL_PORTAL_CLOSED = prevClosed;
+    }
+    if (prevOnly === undefined) {
+      delete process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY;
+    } else {
+      process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY = prevOnly;
+    }
+    if (prevDeployment === undefined) {
+      delete process.env.VISOR_DEPLOYMENT;
+    } else {
+      process.env.VISOR_DEPLOYMENT = prevDeployment;
+    }
+  });
+});
+
 describe("isLocalPortalExcelDianOnly", () => {
   it("activa modo Excel DIAN solo fuera de GCP", async () => {
     const prev = process.env.LOCAL_PORTAL_EXCEL_DIAN_ONLY;
