@@ -87,6 +87,7 @@ Codigo compartido sin UI de pagina.
 | `rotacion/` | campos base, dimensiones, fuentes y estados de cero rotacion/restock |
 | `ventas/` | ventas por item y rangos de fechas |
 | `inventario/` | inventario por item y presets |
+| `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
 | `notion/` | cliente Notion y normalizacion del cronograma |
 | `parse-user-agent.ts` | parser simple de User-Agent usado en accesos admin |
@@ -124,6 +125,7 @@ Codigo compartido sin UI de pagina.
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets |
+| `analisis-de-inventario` | días de inventario: `mode=meta|drill|heatmap`; alcance por sedes del usuario |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

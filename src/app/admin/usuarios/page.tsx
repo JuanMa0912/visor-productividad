@@ -250,7 +250,7 @@ const SECTION_OPTIONS = PORTAL_SECTIONS.map((section) => ({
 const SUBSECTION_LABELS: Record<string, string> = {
   "ventas-x-item": "Ventas por item",
   "inventario-x-item": "Inventario x item",
-  "analisis-de-inventario": "Analisis de inventario",
+  "analisis-de-inventario": "Días de inventario",
   "mix-y-linea": "Mix y linea",
   margenes: "Margenes",
   rotacion: "Rotacion",

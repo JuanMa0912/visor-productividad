@@ -13,7 +13,7 @@ const EXACT_PATH_LABELS: Record<string, string> = {
   "/operacion": "Operacion",
   "/ventas-x-item": "Ventas por item",
   "/inventario-x-item": "Inventario por item",
-  "/analisis-de-inventario": "Analisis de inventario",
+  "/analisis-de-inventario": "Días de inventario",
   "/margenes": "Margenes",
   "/informe-variacion": "Informe de variacion",
   "/rotacion": "Rotacion",

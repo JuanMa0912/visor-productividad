@@ -46,10 +46,10 @@ const VENTA_MODULES: HubModuleItem[] = [
   {
     id: "analisis-de-inventario",
     icon: PieChart,
-    badge: "ANALISIS",
-    title: "Análisis de inventario",
+    badge: "DIAS INV.",
+    title: "Días de inventario",
     description:
-      "Profundiza en variaciones, concentracion y lectura analitica del inventario frente a la venta.",
+      "Mide cobertura de inventario por sede con drill a categoría, línea, sublínea e ítem, y mapa de calor.",
     href: "/analisis-de-inventario",
   },
 ];
