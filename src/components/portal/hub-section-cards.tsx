@@ -55,7 +55,7 @@ type HubShellProps = { children: React.ReactNode };
 
 export function PortalHubShell({ children }: HubShellProps) {
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-8 text-foreground lg:px-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 text-foreground lg:px-6">
       {children}
     </div>
   );
