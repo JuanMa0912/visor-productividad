@@ -3226,13 +3226,22 @@ export function RotacionPageInner() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Badge className="border-amber-200 bg-amber-50 text-amber-700">
-                  {daysConsulted} {daysConsulted === 1 ? "dia" : "dias"}{" "}
-                  consultados
-                </Badge>
-                <Badge className="border-slate-200 bg-slate-50 text-slate-700">
-                  {formattedRange}
-                </Badge>
+                {isLoadingLineCatalog && !dateRange.start ? (
+                  <Badge className="inline-flex items-center border-amber-200 bg-amber-50 text-amber-800">
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Cargando periodo…
+                  </Badge>
+                ) : (
+                  <>
+                    <Badge className="border-amber-200 bg-amber-50 text-amber-700">
+                      {daysConsulted} {daysConsulted === 1 ? "dia" : "dias"}{" "}
+                      consultados
+                    </Badge>
+                    <Badge className="border-slate-200 bg-slate-50 text-slate-700">
+                      {formattedRange}
+                    </Badge>
+                  </>
+                )}
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -3245,10 +3254,11 @@ export function RotacionPageInner() {
                     value={dateRange.start}
                     min={availableRange.start || undefined}
                     max={availableRange.end || undefined}
+                    disabled={isLoadingLineCatalog && !dateRange.start}
                     onChange={(event) =>
                       handleStartDateChange(event.target.value)
                     }
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100 disabled:cursor-wait disabled:opacity-70"
                   />
                 </label>
                 <label className="block">
@@ -3260,13 +3270,22 @@ export function RotacionPageInner() {
                     value={dateRange.end}
                     min={availableRange.start || undefined}
                     max={availableRange.end || undefined}
+                    disabled={isLoadingLineCatalog && !dateRange.end}
                     onChange={(event) =>
                       handleEndDateChange(event.target.value)
                     }
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition-all focus:border-amber-300 focus:bg-white focus:ring-4 focus:ring-amber-100 disabled:cursor-wait disabled:opacity-70"
                   />
                 </label>
               </div>
+
+              {isLoadingLineCatalog && !availableRange.start ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
+                  Consultando fechas disponibles en la base de datos. El periodo
+                  por defecto (mes del ultimo dato) aparece en cuanto responde
+                  el servidor.
+                </div>
+              ) : null}
 
               {availableRange.start && availableRange.end && (
                 <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-900">

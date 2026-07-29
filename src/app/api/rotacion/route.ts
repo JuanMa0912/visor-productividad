@@ -204,6 +204,8 @@ const ROTATION_SUCCESS_CACHE_CONTROL =
   "private, max-age=300, stale-while-revalidate=900";
 const LOW_ROTATION_DAYS_THRESHOLD = 45;
 const ROTATION_META_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Bounds cambian 1x/dia con el ETL; cache mas largo evita MIN/MAX en cada visita. */
+const ROTATION_BOUNDS_CACHE_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Vista materializada pre-procesada de `rotacion_base_item_dia_sede`. Vive en
@@ -1094,24 +1096,54 @@ const getAvailableBounds = async () => {
 
   const client = await (await getDbPool()).connect();
   try {
-    const { dateColumn } = await resolveRotacionBaseSqlFields(client);
-    const result = await client.query(
-      `
-      SELECT
-        MIN(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
-        MAX(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
-      FROM ${getRotacionSourceTable()}
-      WHERE ${
-        dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
-          ? `${dateColumn} IS NOT NULL`
-          : `${dateColumn} ~ '^[0-9]{8}$'`
+    // Preferir matview limpia (tiene indice en fecha DESC): MIN/MAX es barato.
+    // La tabla cruda puede tardar decenas de segundos y deja el periodo en blanco.
+    const matviewName = resolveRotacionCleanMatview(sourceTable);
+    let value: AvailableBoundsRow | null = null;
+    try {
+      const matviewExists = await ensureRotacionCleanMatViewProbe(client);
+      if (matviewExists) {
+        const matviewResult = await client.query(
+          `
+          SELECT
+            TO_CHAR(MIN(fecha), 'YYYYMMDD') AS min_date,
+            TO_CHAR(MAX(fecha), 'YYYYMMDD') AS max_date
+          FROM ${matviewName}
+          WHERE fecha IS NOT NULL
+          `,
+        );
+        value =
+          (matviewResult.rows?.[0] as AvailableBoundsRow | undefined) ?? null;
       }
-      `,
-    );
-    const value = (result.rows?.[0] as AvailableBoundsRow | undefined) ?? null;
+    } catch (err) {
+      console.warn(
+        `[rotacion API] bounds via matview fallo, fallback a ${sourceTable}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    if (!value?.min_date || !value?.max_date) {
+      const { dateColumn } = await resolveRotacionBaseSqlFields(client);
+      const result = await client.query(
+        `
+        SELECT
+          MIN(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS min_date,
+          MAX(${dateColumn === "fecha_carga" || dateColumn === "fecha_dia" ? `TO_CHAR(${dateColumn}::date, 'YYYYMMDD')` : dateColumn}) AS max_date
+        FROM ${sourceTable}
+        WHERE ${
+          dateColumn === "fecha_carga" || dateColumn === "fecha_dia"
+            ? `${dateColumn} IS NOT NULL`
+            : `${dateColumn} ~ '^[0-9]{8}$'`
+        }
+        `,
+      );
+      value = (result.rows?.[0] as AvailableBoundsRow | undefined) ?? null;
+    }
+
     availableBoundsCache.set(sourceTable, {
       value,
-      expiresAt: now + ROTATION_META_CACHE_TTL_MS,
+      expiresAt: now + ROTATION_BOUNDS_CACHE_TTL_MS,
     });
     return value;
   } finally {
@@ -3078,8 +3110,12 @@ export async function GET(request: Request) {
 
   return runWithRotacionSourceTableAsync(rotacionSourceTable, async () => {
   try {
-    const bounds = await getAvailableBounds();
-    const abcdConfig = await getRotacionAbcdConfig();
+    // Bounds + meta + ABCD en paralelo: el MIN/MAX ya no bloquea solo al inicio.
+    const [bounds, abcdConfig, periodoStdMeta] = await Promise.all([
+      getAvailableBounds(),
+      getRotacionAbcdConfig(),
+      withPoolClient((client) => getRotacionPeriodoStdMeta(client)),
+    ]);
     const minAvailableDate = compactToIsoDate(bounds?.min_date ?? null);
     const maxAvailableDate = compactToIsoDate(bounds?.max_date ?? null);
 
@@ -3161,9 +3197,6 @@ export async function GET(request: Request) {
 
     // Default = periodo del snapshot (matview/periodo_std): ultimo dato + mes
     // hacia atras (30/31). Asi la carga inicial entra al camino rapido ~1-3 s.
-    const periodoStdMeta = await withPoolClient((client) =>
-      getRotacionPeriodoStdMeta(client),
-    );
     const rollingDefault =
       periodoStdMeta && periodoStdMeta.rowCount > 0
         ? {
