@@ -53,6 +53,8 @@ export type ParticipacionMatrixRow = {
   id: string;
   label: string;
   drillStep: ParticipacionDrillStep;
+  /** Fila residual (líneas fuera del top). */
+  residual?: boolean;
 };
 
 export type ParticipacionMeta = {
@@ -80,4 +82,6 @@ export type ParticipacionMatrixPayload = {
   columns: ParticipacionSedeColumn[];
   cells: ParticipacionMatrixCell[];
   grandTotalSales: number;
+  /** Totales de venta por sede (para pie 100%). */
+  sedeTotals: Array<{ sedeKey: string; sales: number }>;
 };

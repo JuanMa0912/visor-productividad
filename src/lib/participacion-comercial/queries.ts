@@ -460,7 +460,6 @@ export async function queryParticipacionMatrix(
       AND ${sedeFilter}
     GROUP BY ${DIM.lineaId}, ${DIM.empresa}, ${DIM.sedeId}
     ORDER BY SUM(${salesExpr}) DESC NULLS LAST
-    LIMIT 2000
   `;
 
   const result = await withTimeout(client, 30_000, () =>
@@ -518,13 +517,57 @@ export async function queryParticipacionMatrix(
     .map(([id]) => id);
   const topSet = new Set(topIds);
 
+  const visibleCells = cells.filter((cell) => topSet.has(cell.rowId));
+  const visibleSalesBySede = new Map<string, number>();
+  for (const cell of visibleCells) {
+    visibleSalesBySede.set(
+      cell.sedeKey,
+      (visibleSalesBySede.get(cell.sedeKey) ?? 0) + cell.sales,
+    );
+  }
+
+  const residualId = "__otras_lineas__";
+  let hasResidual = false;
+  for (const col of args.columns) {
+    const sedeTotal = sedeTotals.get(col.key) ?? 0;
+    const visible = visibleSalesBySede.get(col.key) ?? 0;
+    const rest = Math.max(0, sedeTotal - visible);
+    if (rest <= 0.009) continue;
+    hasResidual = true;
+    cells.push({
+      rowId: residualId,
+      sedeKey: col.key,
+      sales: rest,
+      units: 0,
+      shareOfSedePct: sharePct(rest, sedeTotal),
+      shareOfTotalPct: sharePct(rest, grandTotal),
+    });
+  }
+
+  const rows: ParticipacionMatrixRow[] = topIds
+    .map((id) => rowMap.get(id))
+    .filter((row): row is ParticipacionMatrixRow => Boolean(row));
+
+  if (hasResidual) {
+    rows.push({
+      id: residualId,
+      label: "Otras líneas",
+      residual: true,
+      drillStep: { type: "linea", id: residualId, label: "Otras líneas" },
+    });
+  }
+
   return {
-    rows: topIds
-      .map((id) => rowMap.get(id))
-      .filter((row): row is ParticipacionMatrixRow => Boolean(row)),
+    rows,
     columns: args.columns,
-    cells: cells.filter((cell) => topSet.has(cell.rowId)),
+    cells: cells.filter(
+      (cell) => topSet.has(cell.rowId) || cell.rowId === residualId,
+    ),
     grandTotalSales: grandTotal,
+    sedeTotals: args.columns.map((col) => ({
+      sedeKey: col.key,
+      sales: sedeTotals.get(col.key) ?? 0,
+    })),
     sourceMode: mode,
   };
 }

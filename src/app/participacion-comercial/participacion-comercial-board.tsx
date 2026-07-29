@@ -43,6 +43,12 @@ const scrollToId = (id: string) => {
   window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 };
 
+/** Prefijo con código de línea N1 cuando aplica (ej. "05 · Bebidas"). */
+const formatLineaDisplay = (id: string, label: string) => {
+  if (!id || id.startsWith("__")) return label;
+  return `${id} · ${label}`;
+};
+
 export function ParticipacionComercialBoard() {
   const [meta, setMeta] = useState<ParticipacionMeta | null>(null);
   const [dateStart, setDateStart] = useState("");
@@ -56,6 +62,9 @@ export function ParticipacionComercialBoard() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showBackToTop, setShowBackToTop] = useState(false);
+  /** null = total de todas las sedes; string = sedeKey de la columna. */
+  const [matrixSortKey, setMatrixSortKey] = useState<string | null>(null);
+  const [matrixSortDir, setMatrixSortDir] = useState<"asc" | "desc">("desc");
 
   const skipNextFetchRef = useRef(false);
   const bootstrappedRef = useRef(false);
@@ -167,6 +176,47 @@ export function ParticipacionComercialBoard() {
     }
     return map;
   }, [matrix]);
+
+  const rowSalesTotal = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const cell of matrix?.cells ?? []) {
+      map.set(cell.rowId, (map.get(cell.rowId) ?? 0) + cell.sales);
+    }
+    return map;
+  }, [matrix]);
+
+  const sortedMatrixRows = useMemo(() => {
+    if (!matrix) return [];
+    const residual = matrix.rows.filter((row) => row.residual);
+    const normal = matrix.rows.filter((row) => !row.residual);
+    const dir = matrixSortDir === "asc" ? 1 : -1;
+    const score = (rowId: string) => {
+      if (matrixSortKey) {
+        return cellByKey.get(`${rowId}::${matrixSortKey}`)?.sales ?? 0;
+      }
+      return rowSalesTotal.get(rowId) ?? 0;
+    };
+    const sorted = [...normal].sort((a, b) => {
+      const diff = (score(a.id) - score(b.id)) * dir;
+      if (diff !== 0) return diff;
+      return a.id.localeCompare(b.id, "es", { numeric: true });
+    });
+    return [...sorted, ...residual];
+  }, [matrix, matrixSortDir, matrixSortKey, cellByKey, rowSalesTotal]);
+
+  const toggleMatrixSort = (key: string | null) => {
+    if (matrixSortKey === key) {
+      setMatrixSortDir((prev) => (prev === "desc" ? "asc" : "desc"));
+      return;
+    }
+    setMatrixSortKey(key);
+    setMatrixSortDir("desc");
+  };
+
+  const matrixSortHint = (key: string | null) => {
+    if (matrixSortKey !== key) return "";
+    return matrixSortDir === "asc" ? " ↑" : " ↓";
+  };
 
   const filteredRows = useMemo(() => {
     const rows = drill?.rows ?? [];
@@ -336,8 +386,8 @@ export function ParticipacionComercialBoard() {
             Matriz · línea × sede (% dentro de cada sede)
           </h2>
           <p className="text-xs text-slate-500">
-            Clic en una línea para abrir el drill “por línea”. Color = participación
-            de esa línea en la sede.
+            Cada columna suma 100%: top líneas + “Otras líneas”. Clic en “Línea” o en
+            una sede para ordenar mayor↔menor. Color = participación en la sede.
           </p>
         </div>
         <div className="max-h-[min(60vh,560px)] overflow-auto">
@@ -350,50 +400,110 @@ export function ParticipacionComercialBoard() {
               <thead className="sticky top-0 z-20">
                 <tr className="bg-slate-50 text-slate-600 shadow-sm">
                   <th className="sticky left-0 z-30 bg-slate-50 px-3 py-2 text-left font-semibold">
-                    Línea
+                    <button
+                      type="button"
+                      onClick={() => toggleMatrixSort(null)}
+                      className="hover:text-slate-900"
+                      title="Ordenar por venta total (todas las sedes)"
+                    >
+                      Línea{matrixSortHint(null)}
+                    </button>
                   </th>
                   {matrix.columns.map((col) => (
                     <th
                       key={col.key}
                       className="px-2 py-2 text-center font-semibold whitespace-nowrap"
                     >
-                      {col.label}
+                      <button
+                        type="button"
+                        onClick={() => toggleMatrixSort(col.key)}
+                        className="hover:text-slate-900"
+                        title={`Ordenar por venta en ${col.label}`}
+                      >
+                        {col.label}
+                        {matrixSortHint(col.key)}
+                      </button>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {matrix.rows.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100">
-                    <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold">
-                      <button
-                        type="button"
-                        onClick={() => openMatrixLine(row.drillStep)}
-                        className="text-left text-blue-700 hover:underline"
-                      >
-                        {row.label}
-                      </button>
-                    </th>
-                    {matrix.columns.map((col) => {
-                      const cell = cellByKey.get(`${row.id}::${col.key}`);
-                      const pct = cell?.shareOfSedePct ?? 0;
-                      const style = matrixCellStyle(pct);
-                      return (
-                        <td key={col.key} className="p-1">
+                {sortedMatrixRows.map((row) => {
+                  const lineLabel = row.residual
+                    ? row.label
+                    : formatLineaDisplay(row.id, row.label);
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`border-t border-slate-100 ${row.residual ? "bg-slate-50/80" : ""}`}
+                    >
+                      <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold">
+                        {row.residual ? (
+                          <span className="text-slate-600">{lineLabel}</span>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => openMatrixCell(col, row.drillStep)}
-                            className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
-                            style={style}
-                            title={`${row.label} · ${col.label}: ${formatSharePct(pct)} · ${formatMoney(cell?.sales ?? 0)}`}
+                            onClick={() => openMatrixLine(row.drillStep)}
+                            className="text-left text-blue-700 hover:underline"
                           >
-                            {cell ? formatSharePct(pct) : "—"}
+                            <span className="tabular-nums text-slate-500">
+                              {row.id}
+                            </span>
+                            <span className="text-slate-400"> · </span>
+                            {row.label}
                           </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                        )}
+                      </th>
+                      {matrix.columns.map((col) => {
+                        const cell = cellByKey.get(`${row.id}::${col.key}`);
+                        const pct = cell?.shareOfSedePct ?? 0;
+                        const style = matrixCellStyle(pct);
+                        return (
+                          <td key={col.key} className="p-1">
+                            {row.residual ? (
+                              <div
+                                className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                style={style}
+                                title={`${lineLabel} · ${col.label}: ${formatSharePct(pct)} · ${formatMoney(cell?.sales ?? 0)}`}
+                              >
+                                {cell ? formatSharePct(pct) : "—"}
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openMatrixCell(col, row.drillStep)}
+                                className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                style={style}
+                                title={`${lineLabel} · ${col.label}: ${formatSharePct(pct)} · ${formatMoney(cell?.sales ?? 0)}`}
+                              >
+                                {cell ? formatSharePct(pct) : "—"}
+                              </button>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                  <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-slate-800">
+                    Total sede
+                  </th>
+                  {matrix.columns.map((col) => {
+                    const sedeTotal =
+                      matrix.sedeTotals?.find((entry) => entry.sedeKey === col.key)
+                        ?.sales ?? 0;
+                    return (
+                      <td
+                        key={col.key}
+                        className="px-2 py-2 text-center text-xs tabular-nums text-slate-800"
+                        title={formatMoney(sedeTotal)}
+                      >
+                        100%
+                      </td>
+                    );
+                  })}
+                </tr>
               </tbody>
             </table>
           )}
@@ -429,7 +539,9 @@ export function ParticipacionComercialBoard() {
                 onClick={() => setPath(path.slice(0, index + 1))}
                 className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
               >
-                {step.label}
+                {step.type === "linea"
+                  ? formatLineaDisplay(step.id, step.label)
+                  : step.label}
               </button>
             ))}
             {path.length > 0 ? (
@@ -511,7 +623,9 @@ export function ParticipacionComercialBoard() {
                           onClick={() => openRow(row.drillStep)}
                           className="text-left font-semibold text-blue-700 hover:underline"
                         >
-                          {row.label}
+                          {row.level === "linea"
+                            ? formatLineaDisplay(row.id, row.label)
+                            : row.label}
                         </button>
                       )}
                     </td>
