@@ -88,6 +88,7 @@ Codigo compartido sin UI de pagina.
 | `ventas/` | ventas por item y rangos de fechas |
 | `inventario/` | inventario por item y presets |
 | `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
+| `participacion-comercial/` | mix/participación sede↔línea por almacén |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
 | `notion/` | cliente Notion y normalizacion del cronograma |
 | `parse-user-agent.ts` | parser simple de User-Agent usado en accesos admin |
@@ -100,7 +101,7 @@ Codigo compartido sin UI de pagina.
 | Grupo | Rutas |
 | --- | --- |
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
-| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario` |
+| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial` |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
@@ -126,6 +127,7 @@ Codigo compartido sin UI de pagina.
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets |
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap`; mes móvil vía `rotacion_*_periodo_std` (mismo fast path que Rotación); cache en memoria 5 min; alcance por sedes del usuario |
+| `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

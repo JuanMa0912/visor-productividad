@@ -3,6 +3,7 @@ export type PortalSubsectionId =
   | "ventas-x-item"
   | "inventario-x-item"
   | "analisis-de-inventario"
+  | "participacion-comercial"
   | "mix-y-linea"
   | "margenes"
   | "rotacion"
@@ -28,7 +29,12 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
     description:
       "Facilita una lectura rapida del desempeno comercial, tendencias y variaciones por sede, linea o producto.",
     href: "/venta",
-    modules: ["Ventas por item", "Inventario x item", "Días de inventario"],
+    modules: [
+      "Ventas por item",
+      "Inventario x item",
+      "Días de inventario",
+      "Participación comercial",
+    ],
   },
   {
     id: "producto",
@@ -54,7 +60,12 @@ export const PORTAL_SUBSECTIONS_BY_SECTION: Record<
   PortalSectionId,
   PortalSubsectionId[]
 > = {
-  venta: ["ventas-x-item", "inventario-x-item", "analisis-de-inventario"],
+  venta: [
+    "ventas-x-item",
+    "inventario-x-item",
+    "analisis-de-inventario",
+    "participacion-comercial",
+  ],
   producto: ["mix-y-linea", "margenes", "rotacion", "informe-variacion"],
   operacion: [
     "consulta-operativa",
@@ -67,6 +78,7 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   venta: "venta",
   "inventario-x-item": "venta",
   "analisis-de-inventario": "venta",
+  "participacion-comercial": "venta",
   "ventas-x-item": "venta",
   producto: "producto",
   productividad: "producto",
@@ -88,6 +100,9 @@ const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
   ventas: "ventas-x-item",
   "inventario-x-item": "inventario-x-item",
   "analisis-de-inventario": "analisis-de-inventario",
+  "participacion-comercial": "participacion-comercial",
+  participacion: "participacion-comercial",
+  "mix-sede-linea": "participacion-comercial",
   "mix-y-linea": "mix-y-linea",
   "productividad-home": "mix-y-linea",
   productividad: "mix-y-linea",

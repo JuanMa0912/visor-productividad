@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Package, PieChart } from "lucide-react";
+import { BarChart3, Package, PieChart, Share2 } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PortalHubHeroCard,
@@ -51,6 +51,15 @@ const VENTA_MODULES: HubModuleItem[] = [
     description:
       "Mide cobertura de inventario por sede con drill a categoría, línea, sublínea e ítem, y mapa de calor.",
     href: "/analisis-de-inventario",
+  },
+  {
+    id: "participacion-comercial",
+    icon: Share2,
+    badge: "MIX",
+    title: "Participación comercial",
+    description:
+      "Cuánto aporta cada línea en una sede (o cada sede en una línea), por almacén, con drill a toda la estructura.",
+    href: "/participacion-comercial",
   },
 ];
 
