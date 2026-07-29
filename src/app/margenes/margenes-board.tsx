@@ -1622,7 +1622,7 @@ export const MargenesBoard = ({
           disabled={categoryScopeLocked}
         />
         <MargenesMultiSelect
-          label={isDinastiaContext ? "Línea producto" : "Línea"}
+          label="Línea"
           values={lineas}
           options={cascadedFilterOptions.lineas}
           onChange={handleLineasChange}
@@ -1652,7 +1652,7 @@ export const MargenesBoard = ({
         />
         {isDinastiaContext ? (
           <MargenesMultiSelect
-            label="Línea"
+            label="Cajas"
             values={cajaAreas}
             options={dinastiaCajaAreaSelectOptions()}
             onChange={(values) =>
@@ -1665,7 +1665,7 @@ export const MargenesBoard = ({
                 ),
               )
             }
-            emptyLabel="Todas las líneas"
+            emptyLabel="Todas las cajas"
           />
         ) : null}
         <button
