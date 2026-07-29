@@ -2,15 +2,24 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUp,
+  ChevronUp,
+  RotateCcw,
+  Search,
+  X,
+} from "lucide-react";
+import {
   DI_BAND_LABELS,
   diHeatmapStyle,
   diPillClassName,
   formatDiDays,
+  NO_SALES_DI_VALUE,
   type DiBand,
 } from "@/lib/analisis-inventario/di";
 import { ANALISIS_INVENTARIO_LEVEL_NAMES } from "@/lib/analisis-inventario/drill-path";
 import type {
   AnalisisInventarioDrillPayload,
+  AnalisisInventarioDrillRow,
   AnalisisInventarioDrillStep,
   AnalisisInventarioHeatmapPayload,
   AnalisisInventarioMeta,
@@ -21,6 +30,15 @@ type BoardProps = {
   username: string;
 };
 
+type DrillSortKey =
+  | "name"
+  | "diUnits"
+  | "diValue"
+  | "inventoryUnits"
+  | "inventoryValue"
+  | "soldUnits"
+  | "childCount";
+
 const LEGEND_BANDS: DiBand[] = [
   "alta",
   "normal",
@@ -28,6 +46,8 @@ const LEGEND_BANDS: DiBand[] = [
   "sobrestock",
   "sin-venta",
 ];
+
+const METRIC_STORAGE_KEY = "analisis-inventario:metric:v1";
 
 const money = (value: number) =>
   value.toLocaleString("es-CO", {
@@ -38,6 +58,16 @@ const money = (value: number) =>
 
 const units = (value: number) =>
   value.toLocaleString("es-CO", { maximumFractionDigits: 1 });
+
+const scrollToId = (id: string) => {
+  const node = document.getElementById(id);
+  if (!node) return;
+  const top = node.getBoundingClientRect().top + window.scrollY - 88;
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+};
+
+const diSortValue = (value: number) =>
+  !Number.isFinite(value) || value >= NO_SALES_DI_VALUE ? Number.POSITIVE_INFINITY : value;
 
 export function AnalisisInventarioBoard(_props: BoardProps) {
   const [meta, setMeta] = useState<AnalisisInventarioMeta | null>(null);
@@ -56,9 +86,38 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   const [loadingBoard, setLoadingBoard] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  /** Evita refetch al hidratar fechas desde la primera respuesta board. */
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [drillQuery, setDrillQuery] = useState("");
+  const [sortKey, setSortKey] = useState<DrillSortKey>("inventoryValue");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
   const skipNextFetchRef = useRef(false);
   const bootstrappedRef = useRef(false);
+  const pendingScrollToDrillRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(METRIC_STORAGE_KEY);
+      if (raw === "units" || raw === "value") setMetric(raw);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(METRIC_STORAGE_KEY, metric);
+    } catch {
+      // ignore
+    }
+  }, [metric]);
+
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 420);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     if (skipNextFetchRef.current) {
@@ -79,7 +138,6 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
       try {
         const params = new URLSearchParams();
         params.set("mode", "board");
-        // Primera carga: sin fechas → API usa mes móvil (periodo_std).
         if (dateStart) params.set("dateStart", dateStart);
         if (dateEnd) params.set("dateEnd", dateEnd);
         if (path.length > 0) params.set("drillPath", JSON.stringify(path));
@@ -117,6 +175,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         setDrill(payload.drill as AnalisisInventarioDrillPayload);
         setHeatmap(payload.heatmap as AnalisisInventarioHeatmapPayload);
         if (typeof payload.message === "string") setMessage(payload.message);
+        setDrillQuery("");
       } catch (err) {
         if (controller.signal.aborted) {
           if (timedOut) {
@@ -140,6 +199,12 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     };
   }, [dateStart, dateEnd, path, heatmapPath]);
 
+  useEffect(() => {
+    if (!pendingScrollToDrillRef.current || loadingBoard) return;
+    pendingScrollToDrillRef.current = false;
+    scrollToId("di-drill");
+  }, [loadingBoard, drill]);
+
   const cellByKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const cell of heatmap?.cells ?? []) {
@@ -148,6 +213,47 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     }
     return map;
   }, [heatmap, metric]);
+
+  const filteredDrillRows = useMemo(() => {
+    const rows = drill?.rows ?? [];
+    const q = drillQuery.trim().toLowerCase();
+    const filtered = q
+      ? rows.filter(
+          (row) =>
+            row.label.toLowerCase().includes(q) ||
+            row.id.toLowerCase().includes(q) ||
+            (row.description ?? "").toLowerCase().includes(q),
+        )
+      : rows;
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const pick = (row: AnalisisInventarioDrillRow) => {
+        switch (sortKey) {
+          case "name":
+            return row.label.toLowerCase();
+          case "diUnits":
+            return diSortValue(row.diUnits);
+          case "diValue":
+            return diSortValue(row.diValue);
+          case "inventoryUnits":
+            return row.inventoryUnits;
+          case "inventoryValue":
+            return row.inventoryValue;
+          case "soldUnits":
+            return row.soldUnits;
+          case "childCount":
+            return row.childCount;
+        }
+      };
+      const av = pick(a);
+      const bv = pick(b);
+      if (typeof av === "string" && typeof bv === "string") {
+        return av.localeCompare(bv, "es") * dir;
+      }
+      return ((av as number) - (bv as number)) * dir;
+    });
+  }, [drill, drillQuery, sortDir, sortKey]);
 
   const openDrillRow = (step: AnalisisInventarioDrillStep) => {
     if (step.type === "item") return;
@@ -173,11 +279,40 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
       empresa: sede.empresa,
       sedeId: sede.sedeId,
     };
-    setPath([sedeStep, ...heatmapPath.filter((s) => s.type !== "sede"), rowStep].filter(
-      (step, index, arr) =>
-        arr.findIndex((other) => other.type === step.type && other.id === step.id) ===
-        index,
-    ));
+    pendingScrollToDrillRef.current = true;
+    setPath(
+      [sedeStep, ...heatmapPath.filter((s) => s.type !== "sede"), rowStep].filter(
+        (step, index, arr) =>
+          arr.findIndex(
+            (other) => other.type === step.type && other.id === step.id,
+          ) === index,
+      ),
+    );
+  };
+
+  const goUpOneLevel = () => {
+    setPath((prev) => prev.slice(0, -1));
+  };
+
+  const resetNavigation = () => {
+    setPath([]);
+    setHeatmapPath([]);
+    setDrillQuery("");
+    scrollToId("di-filters");
+  };
+
+  const toggleSort = (key: DrillSortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir(key === "name" ? "asc" : "desc");
+  };
+
+  const sortHint = (key: DrillSortKey) => {
+    if (sortKey !== key) return "";
+    return sortDir === "asc" ? " ↑" : " ↓";
   };
 
   const levelTitle =
@@ -187,9 +322,19 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         : path.length
     ] ?? "Sede";
 
+  const applyRollingMonth = () => {
+    if (meta?.defaultDateStart && meta.defaultDateEnd) {
+      setDateStart(meta.defaultDateStart);
+      setDateEnd(meta.defaultDateEnd);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] sm:p-5">
+      <section
+        id="di-filters"
+        className="sticky top-2 z-30 rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] backdrop-blur sm:p-5"
+      >
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs font-semibold text-slate-600">
             Desde
@@ -239,23 +384,41 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           </div>
           <button
             type="button"
-            onClick={() => {
-              if (meta?.defaultDateStart && meta.defaultDateEnd) {
-                setDateStart(meta.defaultDateStart);
-                setDateEnd(meta.defaultDateEnd);
-              }
-            }}
+            onClick={applyRollingMonth}
             className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
           >
             Mes móvil
           </button>
+          <button
+            type="button"
+            onClick={resetNavigation}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            title="Volver a sedes / raíz del mapa"
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            Reiniciar vista
+          </button>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => scrollToId("di-heatmap")}
+              className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+            >
+              Ir al mapa
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToId("di-drill")}
+              className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+            >
+              Ir al drill
+            </button>
+          </div>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          Periodo por defecto: 1 mes móvil hasta el último corte (igual que
-          Rotación). DI unidades = inventario × días / unidades vendidas. DI
-          valor = inventario $ × días / costo de venta. Alcance limitado a tus
+          Periodo por defecto: 1 mes móvil (igual que Rotación). Alcance por tus
           sedes.
-          {meta?.fastPath ? " · Lectura rápida (snapshot del periodo)." : ""}
+          {meta?.fastPath ? " · Lectura rápida (snapshot)." : ""}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {LEGEND_BANDS.map((band) => (
@@ -290,7 +453,10 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)]">
+      <section
+        id="di-heatmap"
+        className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)]"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900">
@@ -304,8 +470,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                     : "ítems"}
             </h2>
             <p className="text-xs text-slate-500">
-              Clic en fila para bajar de nivel; clic en celda para abrir el drill
-              de esa sede.
+              Clic en fila para bajar; clic en celda para abrir el drill de esa
+              sede.
             </p>
           </div>
           {heatmapPath.length > 0 ? (
@@ -321,7 +487,9 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                 <button
                   key={`${step.type}-${step.id}`}
                   type="button"
-                  onClick={() => setHeatmapPath(heatmapPath.slice(0, index + 1))}
+                  onClick={() =>
+                    setHeatmapPath(heatmapPath.slice(0, index + 1))
+                  }
                   className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
                 >
                   {step.label}
@@ -330,7 +498,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             </div>
           ) : null}
         </div>
-        <div className="overflow-x-auto">
+        <div className="max-h-[min(70vh,640px)] overflow-auto">
           {loadingBoard ? (
             <p className="px-4 py-8 text-sm text-slate-500">
               Cargando mapa de calor…
@@ -341,9 +509,9 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             </p>
           ) : (
             <table className="min-w-full border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-left text-slate-600">
-                  <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 font-semibold">
+              <thead className="sticky top-0 z-20">
+                <tr className="bg-slate-50 text-left text-slate-600 shadow-sm">
+                  <th className="sticky left-0 z-30 bg-slate-50 px-3 py-2 font-semibold">
                     Dimensión
                   </th>
                   {heatmap.columns.map((col) => (
@@ -379,9 +547,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                         <td key={col.key} className="p-1">
                           <button
                             type="button"
-                            onClick={() =>
-                              openHeatmapCell(col, row.drillStep)
-                            }
+                            onClick={() => openHeatmapCell(col, row.drillStep)}
                             className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
                             style={style}
                             title={`${row.label} · ${col.label}: ${formatDiDays(di)}`}
@@ -399,7 +565,10 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)]">
+      <section
+        id="di-drill"
+        className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)]"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900">
@@ -427,30 +596,91 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                 {step.label}
               </button>
             ))}
+            {path.length > 0 ? (
+              <button
+                type="button"
+                onClick={goUpOneLevel}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                Subir nivel
+              </button>
+            ) : null}
           </div>
         </div>
-        <div className="overflow-x-auto">
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2">
+          <div className="relative min-w-[220px] flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={drillQuery}
+              onChange={(event) => setDrillQuery(event.target.value)}
+              placeholder="Buscar en este nivel…"
+              className="w-full rounded-lg border border-slate-200 py-2 pr-8 pl-8 text-sm text-slate-900"
+            />
+            {drillQuery ? (
+              <button
+                type="button"
+                onClick={() => setDrillQuery("")}
+                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700"
+                aria-label="Limpiar búsqueda"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+          <p className="text-xs text-slate-500">
+            {filteredDrillRows.length}
+            {drill?.rows ? ` / ${drill.rows.length}` : ""} filas
+          </p>
+        </div>
+
+        <div className="max-h-[min(70vh,720px)] overflow-auto">
           {loadingBoard ? (
             <p className="px-4 py-8 text-sm text-slate-500">Cargando drill…</p>
-          ) : !drill || drill.rows.length === 0 ? (
+          ) : filteredDrillRows.length === 0 ? (
             <p className="px-4 py-8 text-sm text-slate-500">
-              Sin filas en este nivel.
+              {drillQuery
+                ? "Ninguna fila coincide con la búsqueda."
+                : "Sin filas en este nivel."}
             </p>
           ) : (
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 shadow-sm">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Nombre</th>
-                  <th className="px-3 py-3 text-right font-semibold">DI und.</th>
-                  <th className="px-3 py-3 text-right font-semibold">DI valor</th>
-                  <th className="px-3 py-3 text-right font-semibold">Inv. und.</th>
-                  <th className="px-3 py-3 text-right font-semibold">Inv. $</th>
-                  <th className="px-3 py-3 text-right font-semibold">Venta und.</th>
-                  <th className="px-4 py-3 text-right font-semibold">Hijos</th>
+                  {(
+                    [
+                      ["name", "Nombre", "left"],
+                      ["diUnits", "DI und.", "right"],
+                      ["diValue", "DI valor", "right"],
+                      ["inventoryUnits", "Inv. und.", "right"],
+                      ["inventoryValue", "Inv. $", "right"],
+                      ["soldUnits", "Venta und.", "right"],
+                      ["childCount", "Hijos", "right"],
+                    ] as Array<[DrillSortKey, string, "left" | "right"]>
+                  ).map(([key, label, align]) => (
+                    <th
+                      key={key}
+                      className={`px-3 py-3 font-semibold ${align === "right" ? "text-right" : "px-4 text-left"}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(key)}
+                        className="hover:text-slate-800"
+                      >
+                        {label}
+                        {sortHint(key)}
+                      </button>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {drill.rows.map((row) => {
+                {filteredDrillRows.map((row) => {
                   const diPrimary =
                     metric === "units" ? row.diUnits : row.diValue;
                   return (
@@ -516,6 +746,18 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           )}
         </div>
       </section>
+
+      {showBackToTop ? (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed right-4 bottom-5 z-40 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-800 shadow-lg hover:bg-slate-50 sm:right-6"
+          aria-label="Volver arriba"
+        >
+          <ArrowUp className="h-4 w-4" aria-hidden />
+          Arriba
+        </button>
+      ) : null}
     </div>
   );
 }
