@@ -23,21 +23,21 @@ export const DINASTIA_CAJA_AREAS: readonly DinastiaCajaAreaDef[] = [
   {
     id: "mayorista",
     label: "Mayorista",
-    fullLabel: "Cajas 1 a 10 · Mayorista",
+    fullLabel: "Cajas 1 a 10 - Mayorista",
     minCaja: 1,
     maxCaja: 10,
   },
   {
     id: "detal",
     label: "Detal",
-    fullLabel: "Cajas 11 a 30 · Detal",
+    fullLabel: "Cajas 11 a 30 - Detal",
     minCaja: 11,
     maxCaja: 30,
   },
   {
     id: "call_center",
     label: "Call Center",
-    fullLabel: "Cajas 31 a 40 · Call Center",
+    fullLabel: "Cajas 31 a 40 - Call Center",
     minCaja: 31,
     maxCaja: 40,
   },
@@ -72,7 +72,6 @@ export const dinastiaCajaAreaSelectOptions = () =>
   DINASTIA_CAJA_AREAS.map((area) => ({
     value: area.id,
     label: area.fullLabel,
-    code: `${area.minCaja}-${area.maxCaja}`,
   }));
 
 /**
