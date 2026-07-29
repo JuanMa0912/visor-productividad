@@ -603,7 +603,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
               >
                 <ChevronUp className="h-3.5 w-3.5" aria-hidden />
-                Subir nivel
+                Regresar
               </button>
             ) : null}
           </div>
@@ -616,11 +616,12 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
               aria-hidden
             />
             <input
-              type="search"
+              type="text"
               value={drillQuery}
               onChange={(event) => setDrillQuery(event.target.value)}
               placeholder="Buscar en este nivel…"
               className="w-full rounded-lg border border-slate-200 py-2 pr-8 pl-8 text-sm text-slate-900"
+              autoComplete="off"
             />
             {drillQuery ? (
               <button
