@@ -125,7 +125,7 @@ Codigo compartido sin UI de pagina.
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets |
-| `analisis-de-inventario` | días de inventario: `mode=meta|drill|heatmap`; alcance por sedes del usuario |
+| `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap`; mes móvil vía `rotacion_*_periodo_std` (mismo fast path que Rotación); cache en memoria 5 min; alcance por sedes del usuario |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { calculateDiMetrics, calendarDaysInclusive } from "@/lib/analisis-inventario/di";
 import {
   nextDrillLevel,
@@ -15,6 +15,13 @@ import type {
   AnalisisInventarioSedeColumn,
 } from "@/lib/analisis-inventario/types";
 import { getRollingMonthBackRange } from "@/lib/rotacion/rolling-month-range";
+import {
+  getRotacionPeriodoStdMeta,
+  matchesRotacionPeriodoStdRange,
+  probeRotacionPeriodoStdReady,
+} from "@/lib/rotacion/periodo-std-server";
+import type { RotacionSourceTable } from "@/lib/rotacion/source-tables";
+import { resolveRotacionPeriodoStdTable } from "@/lib/rotacion/source-tables";
 import { sedeKey } from "@/lib/margenes/margen-final-query";
 
 const toNum = (value: string | number | null | undefined) =>
@@ -46,18 +53,26 @@ type AggDbRow = {
   inventory_value: string | number | null;
   sold_units: string | number | null;
   cost_of_sales: string | number | null;
-  tracked_days: string | number | null;
   child_count: string | number | null;
 };
 
-type HeatCellDbRow = AggDbRow & {
+type HeatCellDbRow = {
   row_id: string;
   row_label: string;
   empresa: string;
   sede_id: string;
+  inventory_units: string | number | null;
+  inventory_value: string | number | null;
+  sold_units: string | number | null;
+  cost_of_sales: string | number | null;
+  child_count: string | number | null;
 };
 
-const DIM_SQL = {
+/** Expresiones de dimensión (mismas columnas en clean y periodo_std). */
+const DIM = {
+  empresa: `empresa`,
+  sedeId: `LPAD(TRIM(sede_id::text), 3, '0')`,
+  sedeIdRaw: `sede_id`,
   categoriaId: `COALESCE(NULLIF(TRIM(categoria_key), ''), '__sin_cat__')`,
   categoriaLabel: `COALESCE(NULLIF(TRIM(nombre_categoria), ''), 'Sin categoría')`,
   lineaId: `COALESCE(NULLIF(TRIM(linea_n1_codigo), ''), '__sin_n1__')`,
@@ -72,6 +87,16 @@ const DIM_SQL = {
   )`,
 } as const;
 
+const BOUNDS_CACHE_TTL_MS = 30 * 60 * 1000;
+const boundsCache = new Map<
+  string,
+  { value: { min: string | null; max: string | null }; expiresAt: number }
+>();
+const matviewExistsCache = new Map<
+  string,
+  { exists: boolean; expiresAt: number }
+>();
+
 const pathFiltersSql = (
   path: AnalisisInventarioDrillStep[],
   params: unknown[],
@@ -79,36 +104,38 @@ const pathFiltersSql = (
   const parts: string[] = [];
   for (const step of path) {
     if (step.type === "sede") {
-      params.push(step.empresa.trim().toLowerCase(), step.sedeId.padStart(3, "0"));
+      params.push(
+        step.empresa.trim().toLowerCase(),
+        step.sedeId.padStart(3, "0"),
+      );
       parts.push(
-        `(LOWER(TRIM(empresa)) = $${params.length - 1} AND LPAD(TRIM(sede_id::text), 3, '0') = $${params.length})`,
+        `(empresa = $${params.length - 1} AND (sede_id = $${params.length} OR LPAD(TRIM(sede_id::text), 3, '0') = $${params.length}))`,
       );
       continue;
     }
     if (step.type === "categoria") {
       params.push(step.id);
-      parts.push(`${DIM_SQL.categoriaId} = $${params.length}`);
+      parts.push(`${DIM.categoriaId} = $${params.length}`);
       continue;
     }
     if (step.type === "linea") {
       params.push(step.id);
-      parts.push(`${DIM_SQL.lineaId} = $${params.length}`);
+      parts.push(`${DIM.lineaId} = $${params.length}`);
       continue;
     }
     if (step.type === "sublinea") {
       params.push(step.id);
-      parts.push(`${DIM_SQL.sublineaId} = $${params.length}`);
+      parts.push(`${DIM.sublineaId} = $${params.length}`);
       continue;
     }
     if (step.type === "item") {
       params.push(step.id);
-      parts.push(`${DIM_SQL.itemId} = $${params.length}`);
+      parts.push(`${DIM.itemId} = $${params.length}`);
     }
   }
   return parts;
 };
 
-/** Filtros de path excluyendo sede (para heatmap multi-sede). */
 const pathFiltersWithoutSedeSql = (
   path: AnalisisInventarioDrillStep[],
   params: unknown[],
@@ -118,39 +145,49 @@ const pathFiltersWithoutSedeSql = (
     params,
   );
 
-const groupExprsForLevel = (
-  level: AnalisisInventarioLevel,
-): { id: string; label: string; child: string } => {
+type LevelGroup = {
+  idExpr: string;
+  labelExpr: string;
+  childExpr: string;
+  groupBy: string[];
+};
+
+const levelGroup = (level: AnalisisInventarioLevel): LevelGroup => {
   switch (level) {
     case "sede":
       return {
-        id: `LOWER(TRIM(empresa)) || '|' || LPAD(TRIM(sede_id::text), 3, '0')`,
-        label: `COALESCE(NULLIF(TRIM(MAX(sede_name)), ''), 'Sin sede')`,
-        child: DIM_SQL.categoriaId,
+        idExpr: `${DIM.empresa} || '|' || ${DIM.sedeId}`,
+        labelExpr: `COALESCE(NULLIF(TRIM(MAX(sede_name)), ''), 'Sin sede')`,
+        childExpr: DIM.categoriaId,
+        groupBy: [DIM.empresa, DIM.sedeId],
       };
     case "categoria":
       return {
-        id: DIM_SQL.categoriaId,
-        label: `MAX(${DIM_SQL.categoriaLabel})`,
-        child: DIM_SQL.lineaId,
+        idExpr: DIM.categoriaId,
+        labelExpr: `MAX(${DIM.categoriaLabel})`,
+        childExpr: DIM.lineaId,
+        groupBy: [DIM.categoriaId],
       };
     case "linea":
       return {
-        id: DIM_SQL.lineaId,
-        label: `MAX(${DIM_SQL.lineaLabel})`,
-        child: DIM_SQL.sublineaId,
+        idExpr: DIM.lineaId,
+        labelExpr: `MAX(${DIM.lineaLabel})`,
+        childExpr: DIM.sublineaId,
+        groupBy: [DIM.lineaId],
       };
     case "sublinea":
       return {
-        id: DIM_SQL.sublineaId,
-        label: `MAX(${DIM_SQL.sublineaLabel})`,
-        child: DIM_SQL.itemId,
+        idExpr: DIM.sublineaId,
+        labelExpr: `MAX(${DIM.sublineaLabel})`,
+        childExpr: DIM.itemId,
+        groupBy: [DIM.sublineaId],
       };
     case "item":
       return {
-        id: DIM_SQL.itemId,
-        label: `MAX(${DIM_SQL.itemLabel})`,
-        child: DIM_SQL.itemId,
+        idExpr: DIM.itemId,
+        labelExpr: `MAX(${DIM.itemLabel})`,
+        childExpr: DIM.itemId,
+        groupBy: [DIM.itemId],
       };
   }
 };
@@ -159,21 +196,13 @@ const mapAgg = (
   row: AggDbRow,
   level: AnalisisInventarioLevel,
   periodDays: number,
-): Omit<AnalisisInventarioDrillRow, "drillStep" | "id" | "label" | "level"> & {
-  id: string;
-  label: string;
-  level: AnalisisInventarioLevel;
-  description?: string | null;
-  empresa?: string;
-  sedeId?: string;
-} => {
-  const trackedDays = periodDays > 0 ? periodDays : toNum(row.tracked_days);
+) => {
   const metrics = calculateDiMetrics({
     inventoryUnits: toNum(row.inventory_units),
     inventoryValue: toNum(row.inventory_value),
     soldUnits: toNum(row.sold_units),
     costOfSales: toNum(row.cost_of_sales),
-    trackedDays,
+    trackedDays: periodDays,
   });
   return {
     id: String(row.group_id ?? ""),
@@ -186,7 +215,7 @@ const mapAgg = (
     inventoryValue: toNum(row.inventory_value),
     soldUnits: toNum(row.sold_units),
     costOfSales: toNum(row.cost_of_sales),
-    trackedDays,
+    trackedDays: periodDays,
     diUnits: metrics.diUnits,
     diValue: metrics.diValue,
     childCount: toNum(row.child_count),
@@ -213,10 +242,34 @@ const toDrillStep = (
   };
 };
 
+async function withStatementTimeout<T>(
+  client: PoolClient,
+  ms: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  await client.query("BEGIN");
+  try {
+    await client.query(`SET LOCAL statement_timeout = ${Math.max(1000, ms)}`);
+    const value = await run();
+    await client.query("COMMIT");
+    return value;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  }
+}
+
 async function probeMatview(
   client: PoolClient,
   matview: string,
 ): Promise<boolean> {
+  const now = Date.now();
+  const cached = matviewExistsCache.get(matview);
+  if (cached && cached.expiresAt > now) return cached.exists;
   const result = await client.query(
     `
     SELECT 1
@@ -226,30 +279,75 @@ async function probeMatview(
     `,
     [matview],
   );
-  return (result.rowCount ?? 0) > 0;
+  const exists = (result.rowCount ?? 0) > 0;
+  matviewExistsCache.set(matview, {
+    exists,
+    expiresAt: now + 5 * 60 * 1000,
+  });
+  return exists;
 }
 
 export async function queryAnalisisInventarioDateBounds(
   client: PoolClient,
   matview: string,
+  sourceTable?: RotacionSourceTable,
 ): Promise<{ min: string | null; max: string | null }> {
+  const now = Date.now();
+  const cached = boundsCache.get(matview);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  // Preferir meta del snapshot rolling para el tope (barato).
+  // El mínimo se abre ~13 meses atrás para permitir rangos custom (live matview).
+  if (sourceTable) {
+    const periodoMeta = await getRotacionPeriodoStdMeta(client, sourceTable);
+    if (periodoMeta?.periodoEnd) {
+      const max = periodoMeta.periodoEnd;
+      const end = new Date(`${max}T12:00:00`);
+      end.setDate(end.getDate() - 400);
+      const y = end.getFullYear();
+      const m = String(end.getMonth() + 1).padStart(2, "0");
+      const d = String(end.getDate()).padStart(2, "0");
+      const value = { min: `${y}-${m}-${d}`, max };
+      boundsCache.set(matview, {
+        value,
+        expiresAt: now + BOUNDS_CACHE_TTL_MS,
+      });
+      return value;
+    }
+  }
+
   const exists = await probeMatview(client, matview);
-  if (!exists) return { min: null, max: null };
+  if (!exists) {
+    const empty = { min: null, max: null };
+    boundsCache.set(matview, {
+      value: empty,
+      expiresAt: now + BOUNDS_CACHE_TTL_MS,
+    });
+    return empty;
+  }
+
+  // Solo MAX (índice fecha); min = max - ~62d como cota práctica de UI.
   const result = await client.query(
     `
-    SELECT
-      TO_CHAR(MIN(fecha), 'YYYY-MM-DD') AS min_date,
-      TO_CHAR(MAX(fecha), 'YYYY-MM-DD') AS max_date
+    SELECT TO_CHAR(MAX(fecha), 'YYYY-MM-DD') AS max_date
     FROM ${matview}
     `,
   );
-  const row = result.rows[0] as
-    | { min_date: string | null; max_date: string | null }
-    | undefined;
-  return {
-    min: toIsoDate(row?.min_date) ,
-    max: toIsoDate(row?.max_date),
-  };
+  const max = toIsoDate(
+    (result.rows[0] as { max_date: string | null } | undefined)?.max_date,
+  );
+  let min = max;
+  if (max) {
+    const end = new Date(`${max}T12:00:00`);
+    end.setDate(end.getDate() - 62);
+    const y = end.getFullYear();
+    const m = String(end.getMonth() + 1).padStart(2, "0");
+    const d = String(end.getDate()).padStart(2, "0");
+    min = `${y}-${m}-${d}`;
+  }
+  const value = { min, max };
+  boundsCache.set(matview, { value, expiresAt: now + BOUNDS_CACHE_TTL_MS });
+  return value;
 }
 
 export function resolveDefaultAnalisisDateRange(
@@ -260,221 +358,339 @@ export function resolveDefaultAnalisisDateRange(
   return getRollingMonthBackRange(min, max, referenceDate);
 }
 
+type SourceMode = "periodo_std" | "matview";
+
+type QueryArgs = {
+  matview: string;
+  periodoStdTable: string;
+  sourceTable: RotacionSourceTable;
+  dateStart: string;
+  dateEnd: string;
+  sedePairs: Array<{ empresa: string; sedeId: string }> | null;
+};
+
+async function resolveSourceMode(
+  client: PoolClient,
+  args: QueryArgs,
+): Promise<SourceMode> {
+  const ready = await probeRotacionPeriodoStdReady(client, args.sourceTable);
+  if (!ready) return "matview";
+  const meta = await getRotacionPeriodoStdMeta(client, args.sourceTable);
+  if (matchesRotacionPeriodoStdRange(meta, args.dateStart, args.dateEnd)) {
+    return "periodo_std";
+  }
+  return "matview";
+}
+
 /**
- * Agrega inventario al último día con dato por (empresa, sede, item),
- * y ventas/costo/días sobre todo el periodo.
+ * Snapshot periodo_std: una sola pasada sobre filas ya agregadas ítem×sede.
  */
-const buildAggCte = (matview: string) => `
-scoped AS (
-  SELECT
-    fecha,
-    LOWER(TRIM(empresa)) AS empresa,
-    LPAD(TRIM(sede_id::text), 3, '0') AS sede_id,
-    MAX(sede_name) AS sede_name,
-    item,
-    MAX(descripcion) AS descripcion,
-    MAX(linea) AS linea,
-    MAX(linea_n1_codigo) AS linea_n1_codigo,
-    MAX(sublinea) AS sublinea,
-    MAX(linea_n2_codigo) AS linea_n2_codigo,
-    MAX(categoria) AS categoria,
-    MAX(nombre_categoria) AS nombre_categoria,
-    MAX(categoria_key) AS categoria_key,
-    SUM(COALESCE(inventory_units_dia, 0))::numeric AS inventory_units_dia,
-    SUM(COALESCE(inventory_value_dia, 0))::numeric AS inventory_value_dia,
-    SUM(COALESCE(unidades_vendidas_dia, 0))::numeric AS unidades_vendidas_dia,
-    SUM(COALESCE(cost_value_dia, 0))::numeric AS cost_value_dia
-  FROM ${matview}
-  WHERE fecha BETWEEN $1::date AND $2::date
-    AND NULLIF(TRIM(item), '') IS NOT NULL
-    AND __SEDE_FILTER__
-    __PATH_FILTERS__
-  GROUP BY 1, 2, 3, 5
-),
-ranked AS (
-  SELECT
-    *,
-    MAX(fecha) OVER (PARTITION BY empresa, sede_id, item) AS latest_fecha
-  FROM scoped
-),
-latest_inv AS (
-  SELECT
-    empresa,
-    sede_id,
-    MAX(sede_name) AS sede_name,
-    item,
-    MAX(descripcion) AS descripcion,
-    MAX(linea) AS linea,
-    MAX(linea_n1_codigo) AS linea_n1_codigo,
-    MAX(sublinea) AS sublinea,
-    MAX(linea_n2_codigo) AS linea_n2_codigo,
-    MAX(categoria) AS categoria,
-    MAX(nombre_categoria) AS nombre_categoria,
-    MAX(categoria_key) AS categoria_key,
-    SUM(CASE WHEN fecha = latest_fecha THEN inventory_units_dia ELSE 0 END)::numeric AS inventory_units,
-    SUM(CASE WHEN fecha = latest_fecha THEN inventory_value_dia ELSE 0 END)::numeric AS inventory_value
-  FROM ranked
-  GROUP BY empresa, sede_id, item
-),
-sales_agg AS (
-  SELECT
-    empresa,
-    sede_id,
-    item,
-    SUM(unidades_vendidas_dia)::numeric AS sold_units,
-    SUM(cost_value_dia)::numeric AS cost_of_sales,
-    COUNT(DISTINCT fecha)::int AS tracked_days
-  FROM scoped
-  GROUP BY empresa, sede_id, item
-),
-base AS (
-  SELECT
-    l.empresa,
-    l.sede_id,
-    l.sede_name,
-    l.item,
-    l.descripcion,
-    l.linea,
-    l.linea_n1_codigo,
-    l.sublinea,
-    l.linea_n2_codigo,
-    l.categoria,
-    l.nombre_categoria,
-    l.categoria_key,
-    l.inventory_units,
-    l.inventory_value,
-    COALESCE(s.sold_units, 0)::numeric AS sold_units,
-    COALESCE(s.cost_of_sales, 0)::numeric AS cost_of_sales,
-    COALESCE(s.tracked_days, 0)::int AS tracked_days
-  FROM latest_inv l
-  LEFT JOIN sales_agg s
-    ON s.empresa = l.empresa
-   AND s.sede_id = l.sede_id
-   AND s.item = l.item
-)
-`;
+const buildPeriodoStdAggSql = (args: {
+  table: string;
+  idExpr: string;
+  labelExpr: string;
+  childExpr: string;
+  groupBy: string[];
+  sedeFilter: string;
+  pathSql: string;
+  invSelectExtras?: string;
+  outerSelectExtras?: string;
+  idAlias?: string;
+  labelAlias?: string;
+  limit: number;
+}) => {
+  const groupBySql = args.groupBy.join(", ");
+  const idAlias = args.idAlias ?? "group_id";
+  const labelAlias = args.labelAlias ?? "group_label";
+  return `
+    SELECT
+      ${args.idExpr} AS ${idAlias},
+      ${args.labelExpr} AS ${labelAlias}
+      ${args.outerSelectExtras ?? args.invSelectExtras ?? ""},
+      SUM(COALESCE(inventory_units, 0))::numeric AS inventory_units,
+      SUM(COALESCE(inventory_value, 0))::numeric AS inventory_value,
+      SUM(COALESCE(total_units, 0))::numeric AS sold_units,
+      SUM(COALESCE(total_cost, 0))::numeric AS cost_of_sales,
+      COUNT(DISTINCT ${args.childExpr})::int AS child_count
+    FROM ${args.table}
+    WHERE NULLIF(TRIM(item), '') IS NOT NULL
+      AND ${args.sedeFilter}
+      ${args.pathSql}
+    GROUP BY ${groupBySql}
+    ORDER BY SUM(COALESCE(inventory_value, 0)) DESC NULLS LAST, 2 ASC
+    LIMIT ${args.limit}
+  `;
+};
+
+/** Live: inventario día fin + ventas del rango (matview diaria). */
+const buildMatviewPairedAggSql = (args: {
+  matview: string;
+  idExpr: string;
+  labelExpr: string;
+  childExpr: string;
+  groupBy: string[];
+  sedeFilter: string;
+  pathSql: string;
+  invSelectExtras?: string;
+  salesSelectExtras?: string;
+  outerSelectExtras?: string;
+  joinExtras?: string;
+  idAlias?: string;
+  labelAlias?: string;
+  limit: number;
+}) => {
+  const groupBySql = args.groupBy.join(", ");
+  const idAlias = args.idAlias ?? "group_id";
+  const labelAlias = args.labelAlias ?? "group_label";
+  return `
+    WITH inv AS (
+      SELECT
+        ${args.idExpr} AS group_id,
+        ${args.labelExpr} AS group_label
+        ${args.invSelectExtras ?? ""},
+        SUM(COALESCE(inventory_units_dia, 0))::numeric AS inventory_units,
+        SUM(COALESCE(inventory_value_dia, 0))::numeric AS inventory_value,
+        COUNT(DISTINCT ${args.childExpr})::int AS child_count
+      FROM ${args.matview}
+      WHERE fecha = $2::date
+        AND NULLIF(TRIM(item), '') IS NOT NULL
+        AND ${args.sedeFilter}
+        ${args.pathSql}
+      GROUP BY ${groupBySql}
+    ),
+    sales AS (
+      SELECT
+        ${args.idExpr} AS group_id
+        ${args.salesSelectExtras ?? ""},
+        SUM(COALESCE(unidades_vendidas_dia, 0))::numeric AS sold_units,
+        SUM(COALESCE(cost_value_dia, 0))::numeric AS cost_of_sales
+      FROM ${args.matview}
+      WHERE fecha BETWEEN $1::date AND $2::date
+        AND NULLIF(TRIM(item), '') IS NOT NULL
+        AND ${args.sedeFilter}
+        ${args.pathSql}
+      GROUP BY ${groupBySql}
+    )
+    SELECT
+      i.group_id AS ${idAlias},
+      i.group_label AS ${labelAlias}
+      ${args.outerSelectExtras ?? ""},
+      i.inventory_units,
+      i.inventory_value,
+      COALESCE(s.sold_units, 0)::numeric AS sold_units,
+      COALESCE(s.cost_of_sales, 0)::numeric AS cost_of_sales,
+      i.child_count
+    FROM inv i
+    LEFT JOIN sales s
+      ON s.group_id = i.group_id
+      ${args.joinExtras ?? ""}
+    ORDER BY i.inventory_value DESC NULLS LAST, i.group_label ASC
+    LIMIT ${args.limit}
+  `;
+};
+
+const buildDrillSql = (
+  mode: SourceMode,
+  level: AnalisisInventarioLevel,
+  table: string,
+  sedeFilter: string,
+  pathSql: string,
+) => {
+  const group = levelGroup(level);
+  const sedeExtras = {
+    invSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+    salesSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+    outerSelectExtras: `, i.empresa, i.sede_id`,
+    joinExtras: `AND s.empresa = i.empresa AND s.sede_id = i.sede_id`,
+  };
+
+  if (mode === "periodo_std") {
+    if (level === "sede") {
+      return buildPeriodoStdAggSql({
+        table,
+        idExpr: `${DIM.empresa} || '|' || ${DIM.sedeId}`,
+        labelExpr: `COALESCE(NULLIF(TRIM(MAX(sede_name)), ''), 'Sin sede')`,
+        childExpr: DIM.categoriaId,
+        groupBy: [DIM.empresa, DIM.sedeId],
+        sedeFilter,
+        pathSql,
+        outerSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+        limit: 100,
+      });
+    }
+    if (level === "item") {
+      return buildPeriodoStdAggSql({
+        table,
+        idExpr: group.idExpr,
+        labelExpr: group.labelExpr,
+        childExpr: group.childExpr,
+        groupBy: group.groupBy,
+        sedeFilter,
+        pathSql,
+        outerSelectExtras: `, MAX(descripcion) AS description`,
+        limit: 400,
+      });
+    }
+    return buildPeriodoStdAggSql({
+      table,
+      idExpr: group.idExpr,
+      labelExpr: group.labelExpr,
+      childExpr: group.childExpr,
+      groupBy: group.groupBy,
+      sedeFilter,
+      pathSql,
+      limit: 300,
+    });
+  }
+
+  if (level === "sede") {
+    return buildMatviewPairedAggSql({
+      matview: table,
+      idExpr: `${DIM.empresa} || '|' || ${DIM.sedeId}`,
+      labelExpr: `COALESCE(NULLIF(TRIM(MAX(sede_name)), ''), 'Sin sede')`,
+      childExpr: DIM.categoriaId,
+      groupBy: [DIM.empresa, DIM.sedeId],
+      sedeFilter,
+      pathSql,
+      ...sedeExtras,
+      limit: 100,
+    });
+  }
+  if (level === "item") {
+    return buildMatviewPairedAggSql({
+      matview: table,
+      idExpr: group.idExpr,
+      labelExpr: group.labelExpr,
+      childExpr: group.childExpr,
+      groupBy: group.groupBy,
+      sedeFilter,
+      pathSql,
+      invSelectExtras: `, MAX(descripcion) AS description`,
+      outerSelectExtras: `, i.description`,
+      limit: 400,
+    });
+  }
+  return buildMatviewPairedAggSql({
+    matview: table,
+    idExpr: group.idExpr,
+    labelExpr: group.labelExpr,
+    childExpr: group.childExpr,
+    groupBy: group.groupBy,
+    sedeFilter,
+    pathSql,
+    limit: 300,
+  });
+};
 
 export async function queryAnalisisInventarioDrill(
   client: PoolClient,
-  args: {
-    matview: string;
-    dateStart: string;
-    dateEnd: string;
-    sedePairs: Array<{ empresa: string; sedeId: string }> | null;
-    path: AnalisisInventarioDrillStep[];
-  },
-): Promise<{ level: AnalisisInventarioLevel; rows: AnalisisInventarioDrillRow[] }> {
-  const exists = await probeMatview(client, args.matview);
-  if (!exists) {
-    return { level: nextDrillLevel(args.path), rows: [] };
+  args: QueryArgs & { path: AnalisisInventarioDrillStep[] },
+): Promise<{
+  level: AnalisisInventarioLevel;
+  rows: AnalisisInventarioDrillRow[];
+  sourceMode: SourceMode;
+}> {
+  const level = nextDrillLevel(args.path);
+  const mode = await resolveSourceMode(client, args);
+
+  if (mode === "matview") {
+    const exists = await probeMatview(client, args.matview);
+    if (!exists) return { level, rows: [], sourceMode: mode };
   }
 
-  const level = nextDrillLevel(args.path);
-  const params: unknown[] = [args.dateStart, args.dateEnd];
+  const params: unknown[] =
+    mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
   const sedeFilter = buildSedePairSqlFilter(params, args.sedePairs);
   const pathParts = pathFiltersSql(args.path, params);
   const pathSql =
-    pathParts.length > 0 ? `AND ${pathParts.join("\n    AND ")}` : "";
+    pathParts.length > 0 ? `AND ${pathParts.join("\n        AND ")}` : "";
 
-  const group = groupExprsForLevel(level);
-  const selectExtra =
-    level === "sede"
-      ? `, MAX(empresa) AS empresa, MAX(sede_id) AS sede_id`
-      : level === "item"
-        ? `, MAX(descripcion) AS description`
-        : ``;
-
-  const groupByExtra =
-    level === "sede" ? `, empresa, sede_id` : ``;
-
-  // For sede level, group id already includes empresa|sede; still group by those.
-  const sql = `
-    WITH ${buildAggCte(args.matview)
-      .replace("__SEDE_FILTER__", sedeFilter)
-      .replace("__PATH_FILTERS__", pathSql)}
-    SELECT
-      ${group.id} AS group_id,
-      ${group.label} AS group_label
-      ${selectExtra},
-      SUM(inventory_units)::numeric AS inventory_units,
-      SUM(inventory_value)::numeric AS inventory_value,
-      SUM(sold_units)::numeric AS sold_units,
-      SUM(cost_of_sales)::numeric AS cost_of_sales,
-      MAX(tracked_days)::int AS tracked_days,
-      COUNT(DISTINCT ${group.child})::int AS child_count
-    FROM base
-    GROUP BY ${group.id}${groupByExtra}
-    ORDER BY SUM(inventory_value) DESC NULLS LAST, group_label ASC
-    LIMIT ${level === "item" ? 500 : 300}
-  `;
+  const table =
+    mode === "periodo_std" ? args.periodoStdTable : args.matview;
+  const sql = buildDrillSql(mode, level, table, sedeFilter, pathSql);
 
   const periodDays = calendarDaysInclusive(args.dateStart, args.dateEnd);
-  const result = await client.query(sql, params);
+  const result = await withStatementTimeout(client, 30_000, () =>
+    client.query(sql, params),
+  );
   const rows = ((result.rows ?? []) as AggDbRow[]).map((row) => {
     const mapped = mapAgg(row, level, periodDays);
-    return {
-      ...mapped,
-      drillStep: toDrillStep(mapped),
-    };
+    return { ...mapped, drillStep: toDrillStep(mapped) };
   });
 
-  return { level, rows };
+  return { level, rows, sourceMode: mode };
 }
 
 export async function queryAnalisisInventarioHeatmap(
   client: PoolClient,
-  args: {
-    matview: string;
-    dateStart: string;
-    dateEnd: string;
-    sedePairs: Array<{ empresa: string; sedeId: string }> | null;
+  args: QueryArgs & {
     path: AnalisisInventarioDrillStep[];
     columns: AnalisisInventarioSedeColumn[];
   },
-): Promise<AnalisisInventarioHeatmapPayload> {
+): Promise<AnalisisInventarioHeatmapPayload & { sourceMode: SourceMode }> {
   const rowLevel = nextHeatmapRowLevel(args.path);
-  const empty: AnalisisInventarioHeatmapPayload = {
+  const empty = {
     rowLevel,
-    rows: [],
+    rows: [] as AnalisisInventarioHeatmapRow[],
     columns: args.columns,
-    cells: [],
+    cells: [] as AnalisisInventarioHeatmapCell[],
     path: args.path,
+    sourceMode: "matview" as SourceMode,
   };
 
-  const exists = await probeMatview(client, args.matview);
-  if (!exists) return empty;
+  const mode = await resolveSourceMode(client, args);
+  if (mode === "matview") {
+    const exists = await probeMatview(client, args.matview);
+    if (!exists) return empty;
+  }
 
-  const params: unknown[] = [args.dateStart, args.dateEnd];
+  const params: unknown[] =
+    mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
   const sedeFilter = buildSedePairSqlFilter(params, args.sedePairs);
   const pathParts = pathFiltersWithoutSedeSql(args.path, params);
   const pathSql =
-    pathParts.length > 0 ? `AND ${pathParts.join("\n    AND ")}` : "";
+    pathParts.length > 0 ? `AND ${pathParts.join("\n        AND ")}` : "";
+  const group = levelGroup(rowLevel);
+  const table =
+    mode === "periodo_std" ? args.periodoStdTable : args.matview;
+  const limit = rowLevel === "item" ? 800 : 600;
 
-  const group = groupExprsForLevel(rowLevel);
-
-  const sql = `
-    WITH ${buildAggCte(args.matview)
-      .replace("__SEDE_FILTER__", sedeFilter)
-      .replace("__PATH_FILTERS__", pathSql)}
-    SELECT
-      ${group.id} AS row_id,
-      ${group.label} AS row_label,
-      empresa,
-      sede_id,
-      SUM(inventory_units)::numeric AS inventory_units,
-      SUM(inventory_value)::numeric AS inventory_value,
-      SUM(sold_units)::numeric AS sold_units,
-      SUM(cost_of_sales)::numeric AS cost_of_sales,
-      MAX(tracked_days)::int AS tracked_days,
-      COUNT(DISTINCT ${group.child})::int AS child_count
-    FROM base
-    GROUP BY ${group.id}, empresa, sede_id
-    ORDER BY SUM(inventory_value) DESC NULLS LAST, row_label ASC
-    LIMIT 2000
-  `;
+  const sql =
+    mode === "periodo_std"
+      ? buildPeriodoStdAggSql({
+          table,
+          idExpr: group.idExpr,
+          labelExpr: group.labelExpr,
+          childExpr: group.childExpr,
+          groupBy: [...group.groupBy, DIM.empresa, DIM.sedeId],
+          sedeFilter,
+          pathSql,
+          outerSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+          idAlias: "row_id",
+          labelAlias: "row_label",
+          limit,
+        })
+      : buildMatviewPairedAggSql({
+          matview: table,
+          idExpr: group.idExpr,
+          labelExpr: group.labelExpr,
+          childExpr: group.childExpr,
+          groupBy: [...group.groupBy, DIM.empresa, DIM.sedeId],
+          sedeFilter,
+          pathSql,
+          invSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+          salesSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+          outerSelectExtras: `, i.empresa, i.sede_id`,
+          joinExtras: `AND s.empresa = i.empresa AND s.sede_id = i.sede_id`,
+          idAlias: "row_id",
+          labelAlias: "row_label",
+          limit,
+        });
 
   const periodDays = calendarDaysInclusive(args.dateStart, args.dateEnd);
-  const result = await client.query(sql, params);
+  const result = await withStatementTimeout(client, 30_000, () =>
+    client.query(sql, params),
+  );
   const dbRows = (result.rows ?? []) as HeatCellDbRow[];
 
   const rowMap = new Map<string, AnalisisInventarioHeatmapRow>();
@@ -491,12 +707,12 @@ export async function queryAnalisisInventarioHeatmap(
     const rowId = String(row.row_id ?? "");
     const label = String(row.row_label ?? rowId);
     if (!rowMap.has(rowId)) {
-      const drillStep: AnalisisInventarioDrillStep = {
-        type: rowLevel,
+      rowMap.set(rowId, {
         id: rowId,
         label,
-      };
-      rowMap.set(rowId, { id: rowId, label, level: rowLevel, drillStep });
+        level: rowLevel,
+        drillStep: { type: rowLevel, id: rowId, label },
+      });
     }
     cells.push({
       rowId,
@@ -512,7 +728,6 @@ export async function queryAnalisisInventarioHeatmap(
     });
   }
 
-  // Limitar filas del heatmap a top 40 por valor de inventario total.
   const rowTotals = new Map<string, number>();
   for (const cell of cells) {
     rowTotals.set(
@@ -522,7 +737,7 @@ export async function queryAnalisisInventarioHeatmap(
   }
   const topRowIds = [...rowTotals.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 40)
+    .slice(0, rowLevel === "item" ? 30 : 40)
     .map(([id]) => id);
   const topSet = new Set(topRowIds);
 
@@ -534,5 +749,44 @@ export async function queryAnalisisInventarioHeatmap(
     columns: args.columns,
     cells: cells.filter((cell) => topSet.has(cell.rowId)),
     path: args.path,
+    sourceMode: mode,
   };
+}
+
+/** Drill + heatmap en paralelo (dos clientes del pool). */
+export async function queryAnalisisInventarioBoard(
+  pool: Pool,
+  args: QueryArgs & {
+    path: AnalisisInventarioDrillStep[];
+    heatmapPath: AnalisisInventarioDrillStep[];
+    columns: AnalisisInventarioSedeColumn[];
+  },
+) {
+  const [drillClient, heatClient] = await Promise.all([
+    pool.connect(),
+    pool.connect(),
+  ]);
+  try {
+    const [drill, heatmap] = await Promise.all([
+      queryAnalisisInventarioDrill(drillClient, {
+        ...args,
+        path: args.path,
+      }),
+      queryAnalisisInventarioHeatmap(heatClient, {
+        ...args,
+        path: args.heatmapPath,
+        columns: args.columns,
+      }),
+    ]);
+    return { drill, heatmap };
+  } finally {
+    drillClient.release();
+    heatClient.release();
+  }
+}
+
+export function resolvePeriodoStdTableName(
+  sourceTable: RotacionSourceTable,
+): string {
+  return resolveRotacionPeriodoStdTable(sourceTable);
 }

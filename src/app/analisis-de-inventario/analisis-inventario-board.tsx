@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DI_BAND_LABELS,
   diHeatmapStyle,
@@ -53,109 +53,92 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   );
   const [heatmap, setHeatmap] =
     useState<AnalisisInventarioHeatmapPayload | null>(null);
-  const [loadingMeta, setLoadingMeta] = useState(true);
-  const [loadingDrill, setLoadingDrill] = useState(false);
-  const [loadingHeatmap, setLoadingHeatmap] = useState(false);
+  const [loadingBoard, setLoadingBoard] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-
-  const loadMeta = useCallback(async () => {
-    setLoadingMeta(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/analisis-de-inventario?mode=meta", {
-        cache: "no-store",
-        credentials: "include",
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo cargar el módulo.");
-      }
-      const nextMeta = payload.meta as AnalisisInventarioMeta & {
-        selectedDateStart?: string;
-        selectedDateEnd?: string;
-      };
-      setMeta(nextMeta);
-      setMessage(
-        typeof payload.message === "string" ? payload.message : null,
-      );
-      setDateStart(nextMeta.defaultDateStart || "");
-      setDateEnd(nextMeta.defaultDateEnd || "");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error de carga.");
-    } finally {
-      setLoadingMeta(false);
-    }
-  }, []);
+  /** Evita refetch al hidratar fechas desde la primera respuesta board. */
+  const skipNextFetchRef = useRef(false);
+  const bootstrappedRef = useRef(false);
 
   useEffect(() => {
-    void loadMeta();
-  }, [loadMeta]);
-
-  const querySuffix = useMemo(() => {
-    const params = new URLSearchParams();
-    if (dateStart) params.set("dateStart", dateStart);
-    if (dateEnd) params.set("dateEnd", dateEnd);
-    return params;
-  }, [dateStart, dateEnd]);
-
-  const loadDrill = useCallback(async () => {
-    if (!dateStart || !dateEnd) return;
-    setLoadingDrill(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams(querySuffix);
-      params.set("mode", "drill");
-      if (path.length > 0) params.set("drillPath", JSON.stringify(path));
-      const response = await fetch(
-        `/api/analisis-de-inventario?${params.toString()}`,
-        { cache: "no-store", credentials: "include" },
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo cargar el drill.");
-      }
-      setDrill(payload.drill as AnalisisInventarioDrillPayload);
-      if (payload.meta) setMeta(payload.meta as AnalisisInventarioMeta);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error de drill.");
-    } finally {
-      setLoadingDrill(false);
+    if (skipNextFetchRef.current) {
+      skipNextFetchRef.current = false;
+      return;
     }
-  }, [dateStart, dateEnd, path, querySuffix]);
 
-  const loadHeatmap = useCallback(async () => {
-    if (!dateStart || !dateEnd) return;
-    setLoadingHeatmap(true);
-    try {
-      const params = new URLSearchParams(querySuffix);
-      params.set("mode", "heatmap");
-      if (heatmapPath.length > 0) {
-        params.set("drillPath", JSON.stringify(heatmapPath));
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 45_000);
+
+    const loadBoard = async () => {
+      setLoadingBoard(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("mode", "board");
+        // Primera carga: sin fechas → API usa mes móvil (periodo_std).
+        if (dateStart) params.set("dateStart", dateStart);
+        if (dateEnd) params.set("dateEnd", dateEnd);
+        if (path.length > 0) params.set("drillPath", JSON.stringify(path));
+        if (heatmapPath.length > 0) {
+          params.set("heatmapPath", JSON.stringify(heatmapPath));
+        }
+        const response = await fetch(
+          `/api/analisis-de-inventario?${params.toString()}`,
+          {
+            cache: "no-store",
+            credentials: "include",
+            signal: controller.signal,
+          },
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "No se pudo cargar el tablero.");
+        }
+        const nextMeta = payload.meta as AnalisisInventarioMeta | undefined;
+        if (nextMeta) {
+          setMeta(nextMeta);
+          if (!bootstrappedRef.current) {
+            bootstrappedRef.current = true;
+            const nextStart =
+              nextMeta.selectedDateStart || nextMeta.defaultDateStart || "";
+            const nextEnd =
+              nextMeta.selectedDateEnd || nextMeta.defaultDateEnd || "";
+            if (nextStart && nextEnd) {
+              skipNextFetchRef.current = true;
+              setDateStart(nextStart);
+              setDateEnd(nextEnd);
+            }
+          }
+        }
+        setDrill(payload.drill as AnalisisInventarioDrillPayload);
+        setHeatmap(payload.heatmap as AnalisisInventarioHeatmapPayload);
+        if (typeof payload.message === "string") setMessage(payload.message);
+      } catch (err) {
+        if (controller.signal.aborted) {
+          if (timedOut) {
+            setError(
+              "La consulta superó el tiempo de espera. Recarga o acota el periodo.",
+            );
+          }
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Error de carga.");
+      } finally {
+        window.clearTimeout(timeoutId);
+        setLoadingBoard(false);
       }
-      const response = await fetch(
-        `/api/analisis-de-inventario?${params.toString()}`,
-        { cache: "no-store", credentials: "include" },
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo cargar el mapa de calor.");
-      }
-      setHeatmap(payload.heatmap as AnalisisInventarioHeatmapPayload);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error de heatmap.");
-    } finally {
-      setLoadingHeatmap(false);
-    }
-  }, [dateStart, dateEnd, heatmapPath, querySuffix]);
+    };
 
-  useEffect(() => {
-    void loadDrill();
-  }, [loadDrill]);
-
-  useEffect(() => {
-    void loadHeatmap();
-  }, [loadHeatmap]);
+    void loadBoard();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [dateStart, dateEnd, path, heatmapPath]);
 
   const cellByKey = useMemo(() => {
     const map = new Map<string, number>();
@@ -272,6 +255,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           Rotación). DI unidades = inventario × días / unidades vendidas. DI
           valor = inventario $ × días / costo de venta. Alcance limitado a tus
           sedes.
+          {meta?.fastPath ? " · Lectura rápida (snapshot del periodo)." : ""}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {LEGEND_BANDS.map((band) => (
@@ -347,7 +331,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           ) : null}
         </div>
         <div className="overflow-x-auto">
-          {loadingMeta || loadingHeatmap ? (
+          {loadingBoard ? (
             <p className="px-4 py-8 text-sm text-slate-500">
               Cargando mapa de calor…
             </p>
@@ -446,7 +430,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           </div>
         </div>
         <div className="overflow-x-auto">
-          {loadingDrill ? (
+          {loadingBoard ? (
             <p className="px-4 py-8 text-sm text-slate-500">Cargando drill…</p>
           ) : !drill || drill.rows.length === 0 ? (
             <p className="px-4 py-8 text-sm text-slate-500">

@@ -60,8 +60,12 @@ export type AnalisisInventarioMeta = {
   availableDateEnd: string;
   defaultDateStart: string;
   defaultDateEnd: string;
+  selectedDateStart?: string;
+  selectedDateEnd?: string;
   sourceTable: string;
   sedes: AnalisisInventarioSedeColumn[];
+  /** true = leyó snapshot rotacion_*_periodo_std (mes móvil). */
+  fastPath?: boolean;
 };
 
 export type AnalisisInventarioDrillPayload = {

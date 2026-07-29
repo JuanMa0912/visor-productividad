@@ -12,6 +12,7 @@ import {
   ROTACION_SOURCE_DINASTIA,
   ROTACION_SOURCE_LEGACY,
   resolveRotacionCleanMatview,
+  resolveRotacionPeriodoStdTable,
   type RotacionSourceTable,
 } from "@/lib/rotacion/source-tables";
 import type { AnalisisInventarioSedeColumn } from "@/lib/analisis-inventario/types";
@@ -23,6 +24,7 @@ export type AnalisisInventarioResolvedScope =
       ok: true;
       sourceTable: RotacionSourceTable;
       matview: string;
+      periodoStdTable: string;
       /** null = sin filtro de sede (solo admin). */
       sedePairs: Array<{ empresa: string; sedeId: string }> | null;
       columns: AnalisisInventarioSedeColumn[];
@@ -66,6 +68,7 @@ export const resolveAnalisisInventarioScope = (
   const sourceTable =
     kind.kind === "dinastia" ? ROTACION_SOURCE_DINASTIA : ROTACION_SOURCE_LEGACY;
   const matview = resolveRotacionCleanMatview(sourceTable);
+  const periodoStdTable = resolveRotacionPeriodoStdTable(sourceTable);
 
   const catalog = filterMargenSedeCatalogForUser(sessionUser).filter((option) =>
     kind.kind === "dinastia"
@@ -93,6 +96,7 @@ export const resolveAnalisisInventarioScope = (
       ok: true,
       sourceTable,
       matview,
+      periodoStdTable,
       sedePairs: columns.map((col) => ({
         empresa: col.empresa,
         sedeId: col.sedeId,
@@ -128,28 +132,48 @@ export const resolveAnalisisInventarioScope = (
     ok: true,
     sourceTable,
     matview,
+    periodoStdTable,
     sedePairs,
-    columns: scopedColumns.length > 0 ? scopedColumns : columns.filter((col) =>
-      sedePairs.some(
-        (pair) => pair.empresa === col.empresa && pair.sedeId === col.sedeId,
-      ),
-    ),
+    columns:
+      scopedColumns.length > 0
+        ? scopedColumns
+        : columns.filter((col) =>
+            sedePairs.some(
+              (pair) =>
+                pair.empresa === col.empresa && pair.sedeId === col.sedeId,
+            ),
+          ),
   };
 };
 
+/**
+ * Filtro index-friendly: igualdad directa en empresa/sede_id.
+ * Los pares ya vienen normalizados (empresa lower, sede padded).
+ */
 export const buildSedePairSqlFilter = (
   params: unknown[],
   sedePairs: Array<{ empresa: string; sedeId: string }> | null,
 ): string => {
   if (!sedePairs) return "TRUE";
   if (sedePairs.length === 0) return "FALSE";
+
+  if (sedePairs.length <= 24) {
+    const parts = sedePairs.map((pair) => {
+      params.push(pair.empresa, pair.sedeId);
+      const empresaParam = params.length - 1;
+      const sedeParam = params.length;
+      return `(empresa = $${empresaParam} AND (sede_id = $${sedeParam} OR LPAD(TRIM(sede_id::text), 3, '0') = $${sedeParam}))`;
+    });
+    return `(${parts.join(" OR ")})`;
+  }
+
   params.push(
     sedePairs.map((pair) => pair.empresa),
     sedePairs.map((pair) => pair.sedeId),
   );
   const empresaParam = params.length - 1;
   const sedeParam = params.length;
-  return `(LOWER(TRIM(empresa)), LPAD(TRIM(sede_id::text), 3, '0')) IN (
+  return `(empresa, LPAD(TRIM(sede_id::text), 3, '0')) IN (
     SELECT * FROM UNNEST($${empresaParam}::text[], $${sedeParam}::text[]) AS t(empresa, sede_id)
   )`;
 };

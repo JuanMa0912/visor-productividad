@@ -3,6 +3,7 @@ import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { parseAnalisisInventarioDrillPath } from "@/lib/analisis-inventario/drill-path";
 import {
+  queryAnalisisInventarioBoard,
   queryAnalisisInventarioDateBounds,
   queryAnalisisInventarioDrill,
   queryAnalisisInventarioHeatmap,
@@ -10,14 +11,143 @@ import {
 } from "@/lib/analisis-inventario/queries";
 import { resolveAnalisisInventarioScope } from "@/lib/analisis-inventario/scope";
 import {
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/margenes/query-cache";
+import {
+  getRotacionPeriodoStdMeta,
+  matchesRotacionPeriodoStdRange,
+} from "@/lib/rotacion/periodo-std-server";
+import type { RotacionSourceTable } from "@/lib/rotacion/source-tables";
+import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
 
 const CACHE_CONTROL = "no-store";
+const BOARD_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const isIsoDate = (value: string | null): value is string =>
   Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+
+const isStatementTimeout = (error: unknown) => {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: string }).code ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return code === "57014" || /statement timeout/i.test(message);
+};
+
+type ResolvedMeta = {
+  availableDateStart: string;
+  availableDateEnd: string;
+  defaultDateStart: string;
+  defaultDateEnd: string;
+  selectedDateStart: string;
+  selectedDateEnd: string;
+  sourceTable: string;
+  sedes: ReturnType<typeof resolveAnalisisInventarioScope> extends {
+    ok: true;
+    columns: infer C;
+  }
+    ? C
+    : never;
+  fastPath: boolean;
+};
+
+async function resolveDatesAndMeta(
+  client: import("pg").PoolClient,
+  scope: Extract<
+    ReturnType<typeof resolveAnalisisInventarioScope>,
+    { ok: true }
+  >,
+  url: URL,
+): Promise<
+  | { ok: true; meta: ResolvedMeta; dateStart: string; dateEnd: string }
+  | { ok: false; payload: Record<string, unknown> }
+> {
+  const periodoMeta = await getRotacionPeriodoStdMeta(
+    client,
+    scope.sourceTable as RotacionSourceTable,
+  );
+  const bounds = await queryAnalisisInventarioDateBounds(
+    client,
+    scope.matview,
+    scope.sourceTable,
+  );
+
+  const availableEnd = bounds.max ?? periodoMeta?.periodoEnd ?? "";
+  const availableStart = bounds.min ?? periodoMeta?.periodoStart ?? availableEnd;
+
+  if (!availableEnd) {
+    return {
+      ok: false,
+      payload: {
+        meta: {
+          availableDateStart: "",
+          availableDateEnd: "",
+          defaultDateStart: "",
+          defaultDateEnd: "",
+          sourceTable: scope.matview,
+          sedes: scope.columns,
+          fastPath: false,
+        },
+        message:
+          "Aún no hay datos de inventario disponibles para este alcance.",
+      },
+    };
+  }
+
+  const rollingDefaults = resolveDefaultAnalisisDateRange(
+    availableStart || availableEnd,
+    availableEnd,
+  );
+  const defaults =
+    periodoMeta && periodoMeta.rowCount > 0
+      ? { start: periodoMeta.periodoStart, end: periodoMeta.periodoEnd }
+      : rollingDefaults;
+
+  let dateStart = isIsoDate(url.searchParams.get("dateStart"))
+    ? (url.searchParams.get("dateStart") as string)
+    : defaults.start;
+  let dateEnd = isIsoDate(url.searchParams.get("dateEnd"))
+    ? (url.searchParams.get("dateEnd") as string)
+    : defaults.end;
+
+  const clampMin = availableStart || dateStart;
+  const clampMax = availableEnd;
+  if (dateStart < clampMin) dateStart = clampMin;
+  if (dateEnd > clampMax) dateEnd = clampMax;
+  if (dateStart > dateEnd) {
+    const tmp = dateStart;
+    dateStart = dateEnd;
+    dateEnd = tmp;
+  }
+
+  const fastPath = matchesRotacionPeriodoStdRange(
+    periodoMeta,
+    dateStart,
+    dateEnd,
+  );
+
+  return {
+    ok: true,
+    dateStart,
+    dateEnd,
+    meta: {
+      availableDateStart: clampMin,
+      availableDateEnd: clampMax,
+      defaultDateStart: defaults.start,
+      defaultDateEnd: defaults.end,
+      selectedDateStart: dateStart,
+      selectedDateEnd: dateEnd,
+      sourceTable: fastPath ? scope.periodoStdTable : scope.matview,
+      sedes: scope.columns,
+      fastPath,
+    },
+  };
+}
 
 export async function GET(request: Request) {
   const session = await requireAuthSession();
@@ -59,69 +189,43 @@ export async function GET(request: Request) {
   const scope = resolveAnalisisInventarioScope(session.user);
   if (!scope.ok) {
     return withSession(
-      NextResponse.json(
-        { error: scope.error },
-        { status: scope.status },
-      ),
+      NextResponse.json({ error: scope.error }, { status: scope.status }),
     );
   }
 
   const url = new URL(request.url);
   const modeRaw = url.searchParams.get("mode");
   const mode =
-    modeRaw === "drill" || modeRaw === "heatmap" || modeRaw === "meta"
+    modeRaw === "drill" ||
+    modeRaw === "heatmap" ||
+    modeRaw === "board" ||
+    modeRaw === "meta"
       ? modeRaw
       : "meta";
 
-  const client = await (await getDbPool()).connect();
+  const cacheKey = `analisis-inv:${session.user.id}:${scope.sourceTable}:${url.search}`;
+  if (mode === "board" || mode === "drill" || mode === "heatmap") {
+    const cached = getCachedQuery(cacheKey);
+    if (cached) {
+      return withSession(NextResponse.json(cached));
+    }
+  }
+
   try {
-    const bounds = await queryAnalisisInventarioDateBounds(
-      client,
-      scope.matview,
-    );
-    if (!bounds.min || !bounds.max) {
-      return withSession(
-        NextResponse.json({
-          mode,
-          meta: {
-            availableDateStart: "",
-            availableDateEnd: "",
-            defaultDateStart: "",
-            defaultDateEnd: "",
-            sourceTable: scope.matview,
-            sedes: scope.columns,
-          },
-          message:
-            "Aún no hay matview de inventario limpia disponible para este alcance.",
-        }),
-      );
+    const pool = await getDbPool();
+    const metaClient = await pool.connect();
+    let resolved: Awaited<ReturnType<typeof resolveDatesAndMeta>>;
+    try {
+      resolved = await resolveDatesAndMeta(metaClient, scope, url);
+    } finally {
+      metaClient.release();
     }
 
-    const defaults = resolveDefaultAnalisisDateRange(bounds.min, bounds.max);
-    let dateStart = isIsoDate(url.searchParams.get("dateStart"))
-      ? (url.searchParams.get("dateStart") as string)
-      : defaults.start;
-    let dateEnd = isIsoDate(url.searchParams.get("dateEnd"))
-      ? (url.searchParams.get("dateEnd") as string)
-      : defaults.end;
-    if (dateStart < bounds.min) dateStart = bounds.min;
-    if (dateEnd > bounds.max) dateEnd = bounds.max;
-    if (dateStart > dateEnd) {
-      const tmp = dateStart;
-      dateStart = dateEnd;
-      dateEnd = tmp;
+    if (!resolved.ok) {
+      return withSession(NextResponse.json({ mode, ...resolved.payload }));
     }
 
-    const meta = {
-      availableDateStart: bounds.min,
-      availableDateEnd: bounds.max,
-      defaultDateStart: defaults.start,
-      defaultDateEnd: defaults.end,
-      selectedDateStart: dateStart,
-      selectedDateEnd: dateEnd,
-      sourceTable: scope.matview,
-      sedes: scope.columns,
-    };
+    const { meta, dateStart, dateEnd } = resolved;
 
     if (mode === "meta") {
       return withSession(NextResponse.json({ mode, meta }));
@@ -130,52 +234,89 @@ export async function GET(request: Request) {
     const path = parseAnalisisInventarioDrillPath(
       url.searchParams.get("drillPath"),
     );
+    const heatmapPath = parseAnalisisInventarioDrillPath(
+      url.searchParams.get("heatmapPath") ??
+        (mode === "heatmap" ? url.searchParams.get("drillPath") : null),
+    );
 
-    if (mode === "drill") {
-      const drill = await queryAnalisisInventarioDrill(client, {
-        matview: scope.matview,
-        dateStart,
-        dateEnd,
-        sedePairs: scope.sedePairs,
-        path,
-      });
-      return withSession(
-        NextResponse.json({
-          mode,
-          meta,
-          drill: {
-            level: drill.level,
-            rows: drill.rows,
-            path,
-          },
-        }),
-      );
-    }
-
-    const heatmap = await queryAnalisisInventarioHeatmap(client, {
+    const queryArgs = {
       matview: scope.matview,
+      periodoStdTable: scope.periodoStdTable,
+      sourceTable: scope.sourceTable,
       dateStart,
       dateEnd,
       sedePairs: scope.sedePairs,
-      path,
-      columns: scope.columns,
-    });
-    return withSession(
-      NextResponse.json({
+    };
+
+    if (mode === "board") {
+      const { drill, heatmap } = await queryAnalisisInventarioBoard(pool, {
+        ...queryArgs,
+        path,
+        heatmapPath,
+        columns: scope.columns,
+      });
+      const payload = {
         mode,
-        meta,
+        meta: {
+          ...meta,
+          sourceTable:
+            drill.sourceMode === "periodo_std"
+              ? scope.periodoStdTable
+              : scope.matview,
+          fastPath: drill.sourceMode === "periodo_std",
+        },
+        drill: { level: drill.level, rows: drill.rows, path },
         heatmap,
-      }),
-    );
+      };
+      setCachedQuery(cacheKey, payload, BOARD_CACHE_TTL_MS);
+      return withSession(NextResponse.json(payload));
+    }
+
+    const single = await pool.connect();
+    try {
+      if (mode === "drill") {
+        const drill = await queryAnalisisInventarioDrill(single, {
+          ...queryArgs,
+          path,
+        });
+        const payload = {
+          mode,
+          meta,
+          drill: { level: drill.level, rows: drill.rows, path },
+        };
+        setCachedQuery(cacheKey, payload, BOARD_CACHE_TTL_MS);
+        return withSession(NextResponse.json(payload));
+      }
+
+      const heatmap = await queryAnalisisInventarioHeatmap(single, {
+        ...queryArgs,
+        path: heatmapPath,
+        columns: scope.columns,
+      });
+      const payload = { mode, meta, heatmap };
+      setCachedQuery(cacheKey, payload, BOARD_CACHE_TTL_MS);
+      return withSession(NextResponse.json(payload));
+    } finally {
+      single.release();
+    }
   } catch (error) {
     console.error("[analisis-de-inventario]", error);
+    if (isStatementTimeout(error)) {
+      return withSession(
+        NextResponse.json(
+          {
+            error:
+              "La consulta tardó demasiado. Prueba un rango más corto o menos sedes.",
+          },
+          { status: 504 },
+        ),
+      );
+    }
     return withSession(
       NextResponse.json(
         { error: "No se pudo consultar el análisis de inventario." },
         { status: 500 },
       ),
     );
-  } finally {
-    client.release();
   }
 }
