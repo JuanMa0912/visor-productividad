@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronUp,
+  Download,
   RotateCcw,
   Search,
   X,
@@ -17,6 +18,7 @@ import {
   type DiBand,
 } from "@/lib/analisis-inventario/di";
 import { ANALISIS_INVENTARIO_LEVEL_NAMES } from "@/lib/analisis-inventario/drill-path";
+import { downloadAnalisisInventarioExcel } from "@/lib/analisis-inventario/export-excel";
 import {
   ANALISIS_INVENTARIO_LINE_FAMILY_LABELS,
   type AnalisisInventarioLineFamily,
@@ -29,6 +31,7 @@ import type {
   AnalisisInventarioMeta,
   AnalisisInventarioMetric,
 } from "@/lib/analisis-inventario/types";
+import { logExportDownload } from "@/lib/client/log-export-download";
 
 type BoardProps = {
   username: string;
@@ -114,6 +117,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   const [drillQuery, setDrillQuery] = useState("");
   const [sortKey, setSortKey] = useState<DrillSortKey>("inventoryValue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const skipNextFetchRef = useRef(false);
   const bootstrappedRef = useRef(false);
@@ -354,6 +358,43 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     setDrillQuery("");
   };
 
+  const exportExcel = async () => {
+    if (!drill || exportingExcel) return;
+    setExportingExcel(true);
+    try {
+      const result = await downloadAnalisisInventarioExcel({
+        dateStart,
+        dateEnd,
+        metric,
+        lineFamily,
+        drill,
+        heatmap,
+        drillPath: path,
+        heatmapPath,
+      });
+      logExportDownload({
+        panelPath: "/analisis-de-inventario",
+        panelLabel: "Días de inventario",
+        exportKind: "dias-inventario-board",
+        format: "xlsx",
+        fileName: result.fileName,
+        dateFrom: dateStart,
+        dateTo: dateEnd,
+        filters: { metric, lineFamily, drillLevel: drill.level },
+        rowCount: result.rowCount,
+        byteSize: result.byteSize,
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo generar el Excel.",
+      );
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   const toggleSort = (key: DrillSortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -479,6 +520,16 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             Reiniciar vista
           </button>
           <div className="ml-auto flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void exportExcel()}
+              disabled={exportingExcel || loadingBoard || !drill}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Descargar Excel del drill y mapa de calor"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              {exportingExcel ? "Generando…" : "Excel"}
+            </button>
             <button
               type="button"
               onClick={() => scrollToId("di-heatmap")}

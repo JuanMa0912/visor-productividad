@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ChevronUp, RotateCcw, Search, X } from "lucide-react";
+import { ArrowUp, ChevronUp, Download, RotateCcw, Search, X } from "lucide-react";
+import { downloadParticipacionExcel } from "@/lib/participacion-comercial/export-excel";
 import {
   formatMoney,
   formatSharePct,
@@ -15,6 +16,7 @@ import type {
   ParticipacionOrientation,
   ParticipacionRow,
 } from "@/lib/participacion-comercial/types";
+import { logExportDownload } from "@/lib/client/log-export-download";
 
 const ORIENTATION_KEY = "participacion-comercial:orientation:v1";
 
@@ -81,6 +83,7 @@ export function ParticipacionComercialBoard() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   /** null = total de todas las sedes; string = sedeKey de la columna. */
   const [matrixSortKey, setMatrixSortKey] = useState<string | null>(null);
   const [matrixSortDir, setMatrixSortDir] = useState<"asc" | "desc">("desc");
@@ -283,6 +286,41 @@ export function ParticipacionComercialBoard() {
     setPath([]);
   };
 
+  const exportExcel = async () => {
+    if (!drill || exportingExcel) return;
+    setExportingExcel(true);
+    try {
+      const result = await downloadParticipacionExcel({
+        dateStart,
+        dateEnd,
+        orientation,
+        drill,
+        matrix,
+        path,
+      });
+      logExportDownload({
+        panelPath: "/participacion-comercial",
+        panelLabel: "Participación comercial",
+        exportKind: "participacion-comercial-board",
+        format: "xlsx",
+        fileName: result.fileName,
+        dateFrom: dateStart,
+        dateTo: dateEnd,
+        filters: { orientation, drillLevel: drill.level },
+        rowCount: result.rowCount,
+        byteSize: result.byteSize,
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo generar el Excel.",
+      );
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   const levelTitle = drill
     ? PARTICIPACION_LEVEL_NAMES[drill.level]
     : orientation === "sede"
@@ -366,6 +404,16 @@ export function ParticipacionComercialBoard() {
             Reiniciar
           </button>
           <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              onClick={() => void exportExcel()}
+              disabled={exportingExcel || loading || !drill}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Descargar Excel del drill y la matriz"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              {exportingExcel ? "Generando…" : "Excel"}
+            </button>
             <button
               type="button"
               onClick={() => scrollToId("pc-matrix")}
