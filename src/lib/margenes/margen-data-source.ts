@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { appendDinastiaCajaAreaSql } from "@/lib/margenes/dinastia-caja-areas";
 import type { MargenQueryFilters } from "@/lib/margenes/margen-final-query";
 import { parseSedeKey } from "@/lib/margenes/margen-final-query";
 import { KPI_MERCADO_TIPO } from "@/lib/margenes/metrics";
@@ -207,6 +208,9 @@ export const fechaDctoCompactSql = (table: MargenDataTable): string => {
 export const shouldSkipMercadoTipoDefault = (table: MargenDataTable): boolean =>
   table === MARGEN_DINASTIA_TABLE || table === MARGEN_DINASTIA_ROLL_TABLE;
 
+export const isDinastiaMargenTable = (table: MargenDataTable): boolean =>
+  table === MARGEN_DINASTIA_TABLE || table === MARGEN_DINASTIA_ROLL_TABLE;
+
 export const buildMargenWhereForTable = (
   filters: MargenQueryFilters,
   params: unknown[],
@@ -267,6 +271,9 @@ export const buildMargenWhereForTable = (
       params.push(filters.items);
       parts.push(`id_item = ANY($${params.length}::text[])`);
     }
+    if (isDinastiaMargenTable(table) && filters.cajaAreas?.length) {
+      appendDinastiaCajaAreaSql(parts, params, filters.cajaAreas, "id_caja");
+    }
 
     return parts.join(" AND ");
   }
@@ -315,6 +322,9 @@ export const buildMargenWhereForTable = (
   if (filters.items.length > 0) {
     params.push(filters.items);
     parts.push(`TRIM(COALESCE(id_item::text, '')) = ANY($${params.length}::text[])`);
+  }
+  if (isDinastiaMargenTable(table) && filters.cajaAreas?.length) {
+    appendDinastiaCajaAreaSql(parts, params, filters.cajaAreas, "id_caja");
   }
 
   return parts.join(" AND ");

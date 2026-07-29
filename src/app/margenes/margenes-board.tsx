@@ -14,12 +14,17 @@ import {
   marginToneClass,
 } from "@/lib/margenes/format";
 import {
+  canonicalizeEmpresaKey,
   empresaLabel,
   filterSedeOptionsByEmpresas,
   parseSedeKey,
   sedeKey,
   sedeLabel,
 } from "@/lib/margenes/margen-final-query";
+import {
+  dinastiaCajaAreaSelectOptions,
+  type DinastiaCajaArea,
+} from "@/lib/margenes/dinastia-caja-areas";
 import { DRILL_LEVEL_NAMES } from "@/lib/margenes/drill-path";
 import { MargenesMultiSelect } from "@/app/margenes/margenes-multi-select";
 
@@ -725,6 +730,7 @@ export const MargenesBoard = ({
   );
   const [sublineas, setSublineas] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>([]);
+  const [cajaAreas, setCajaAreas] = useState<DinastiaCajaArea[]>([]);
   const [itemSearchOptions, setItemSearchOptions] = useState<FilterOption[]>(
     [],
   );
@@ -782,7 +788,29 @@ export const MargenesBoard = ({
     setLineas(lockedLineas?.length ? [...lockedLineas] : []);
     setSublineas([]);
     setItems([]);
+    setCajaAreas([]);
   }, [lockedCategorias, lockedLineas]);
+
+  /** Solo Dinastía: sedes/empresas del tenant (no mezclar histórico). */
+  const isDinastiaContext = useMemo(() => {
+    const sedeKeys = effectiveSedes.length > 0 ? effectiveSedes : selectedSedes;
+    if (
+      sedeKeys.length > 0 &&
+      sedeKeys.every((key) => key.toLowerCase().startsWith("dinastia|"))
+    ) {
+      return true;
+    }
+    if (empresas.length > 0) {
+      return empresas.every(
+        (code) => canonicalizeEmpresaKey(code) === "dinastia",
+      );
+    }
+    return false;
+  }, [effectiveSedes, selectedSedes, empresas]);
+
+  useEffect(() => {
+    if (!isDinastiaContext && cajaAreas.length > 0) setCajaAreas([]);
+  }, [isDinastiaContext, cajaAreas.length]);
 
   const queryBase = useMemo(
     () =>
@@ -796,6 +824,10 @@ export const MargenesBoard = ({
         linea: lineas.join(",") || undefined,
         sublinea: sublineas.join(",") || undefined,
         item: items.join(",") || undefined,
+        cajaArea:
+          isDinastiaContext && cajaAreas.length > 0
+            ? cajaAreas.join(",")
+            : undefined,
       }),
     [
       dateStart,
@@ -807,6 +839,8 @@ export const MargenesBoard = ({
       lineas,
       sublineas,
       items,
+      cajaAreas,
+      isDinastiaContext,
     ],
   );
 
@@ -1616,6 +1650,25 @@ export const MargenesBoard = ({
           searchPlaceholder="Buscar por nombre o código…"
           codeBeforeLabel
         />
+        {isDinastiaContext ? (
+          <MargenesMultiSelect
+            label="Área (cajas)"
+            values={cajaAreas}
+            options={dinastiaCajaAreaSelectOptions()}
+            onChange={(values) =>
+              setCajaAreas(
+                values.filter(
+                  (value): value is DinastiaCajaArea =>
+                    value === "mayorista" ||
+                    value === "detal" ||
+                    value === "call_center",
+                ),
+              )
+            }
+            emptyLabel="Todas las áreas"
+            codeBeforeLabel
+          />
+        ) : null}
         <button
           type="button"
           onClick={resetFilters}

@@ -1,4 +1,8 @@
 import { getCanonicalSedeName } from "@/lib/shared/sede-names";
+import {
+  parseDinastiaCajaAreas,
+  type DinastiaCajaArea,
+} from "@/lib/margenes/dinastia-caja-areas";
 
 export type MargenViewMode = "producto" | "factura" | "sede";
 
@@ -14,6 +18,11 @@ export type MargenQueryFilters = {
   lineas: string[];
   sublineas: string[];
   items: string[];
+  /**
+   * Solo Dinastía: áreas por rango de caja (Mayorista / Detal / Call Center).
+   * Vacío = sin filtro de área.
+   */
+  cajaAreas?: DinastiaCajaArea[];
   orderBy?: string;
   orderDir?: "asc" | "desc";
 };
@@ -154,6 +163,9 @@ export const parseMargenFilters = (
     lineas: parseList(searchParams.get("linea")),
     sublineas: parseList(searchParams.get("sublinea")),
     items: parseList(searchParams.get("item")),
+    cajaAreas: parseDinastiaCajaAreas(
+      searchParams.get("cajaArea") ?? searchParams.get("cajaAreas"),
+    ),
     orderBy: searchParams.get("orderBy") ?? undefined,
     orderDir: searchParams.get("orderDir") === "asc" ? "asc" : searchParams.get("orderDir") === "desc" ? "desc" : undefined,
   };
