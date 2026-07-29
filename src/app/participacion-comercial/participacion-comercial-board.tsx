@@ -20,19 +20,38 @@ const ORIENTATION_KEY = "participacion-comercial:orientation:v1";
 
 const shareBarClass = (pct: number) => {
   if (pct >= 25) return "bg-emerald-500";
-  if (pct >= 10) return "bg-sky-500";
-  if (pct >= 5) return "bg-amber-400";
-  return "bg-slate-300";
+  if (pct >= 10) return "bg-amber-400";
+  if (pct >= 5) return "bg-orange-400";
+  return "bg-rose-400";
 };
 
+/** Mapa de calor verde (alta participación) → rojo (baja). */
 const matrixCellStyle = (pct: number) => {
   if (!Number.isFinite(pct) || pct <= 0) {
     return { background: "#f1f5f9", color: "#94a3b8" };
   }
-  const alpha = Math.min(0.85, (pct / 40) * 0.8 + 0.08);
+  // 0% → rojo, ~15% → ámbar, >=30% → verde
+  const t = Math.max(0, Math.min(1, pct / 30));
+  let r: number;
+  let g: number;
+  let b: number;
+  if (t < 0.5) {
+    const u = t / 0.5;
+    r = Math.round(198 + (234 - 198) * u);
+    g = Math.round(40 + (179 - 40) * u);
+    b = Math.round(56 + (8 - 56) * u);
+  } else {
+    const u = (t - 0.5) / 0.5;
+    r = Math.round(234 + (14 - 234) * u);
+    g = Math.round(179 + (138 - 179) * u);
+    b = Math.round(8 + (77 - 8) * u);
+  }
+  const alpha = Math.min(0.88, 0.22 + Math.max(t, 1 - t) * 0.35);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const blended = luminance * alpha + (1 - alpha);
   return {
-    background: `rgba(14, 165, 233, ${alpha.toFixed(2)})`,
-    color: alpha > 0.45 ? "#fff" : "#0c4a6e",
+    background: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
+    color: blended < 0.62 ? "#fff" : "#1e293b",
   };
 };
 
@@ -387,7 +406,7 @@ export function ParticipacionComercialBoard() {
           </h2>
           <p className="text-xs text-slate-500">
             Cada columna suma 100%: top líneas + “Otras líneas”. Clic en “Línea” o en
-            una sede para ordenar mayor↔menor. Color = participación en la sede.
+            una sede para ordenar mayor↔menor. Color: verde (alta) → rojo (baja).
           </p>
         </div>
         <div className="max-h-[min(60vh,560px)] overflow-auto">
