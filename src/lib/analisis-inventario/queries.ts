@@ -4,6 +4,8 @@ import {
   nextDrillLevel,
   nextHeatmapRowLevel,
 } from "@/lib/analisis-inventario/drill-path";
+import { lineFamilySqlFilter } from "@/lib/analisis-inventario/line-family";
+import type { AnalisisInventarioLineFamily } from "@/lib/analisis-inventario/line-family";
 import { buildSedePairSqlFilter } from "@/lib/analisis-inventario/scope";
 import type {
   AnalisisInventarioDrillRow,
@@ -367,6 +369,8 @@ type QueryArgs = {
   dateStart: string;
   dateEnd: string;
   sedePairs: Array<{ empresa: string; sedeId: string }> | null;
+  /** Filtro perecederos / manufactura (línea N1). */
+  lineFamily?: AnalisisInventarioLineFamily;
 };
 
 async function resolveSourceMode(
@@ -602,8 +606,14 @@ export async function queryAnalisisInventarioDrill(
     mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
   const sedeFilter = buildSedePairSqlFilter(params, args.sedePairs);
   const pathParts = pathFiltersSql(args.path, params);
+  const familySql = lineFamilySqlFilter(
+    args.lineFamily ?? "all",
+    DIM.lineaId,
+  );
   const pathSql =
-    pathParts.length > 0 ? `AND ${pathParts.join("\n        AND ")}` : "";
+    pathParts.length > 0
+      ? `AND ${pathParts.join("\n        AND ")}${familySql ? `\n        ${familySql}` : ""}`
+      : familySql ? `\n        ${familySql}` : "";
 
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
@@ -648,8 +658,14 @@ export async function queryAnalisisInventarioHeatmap(
     mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
   const sedeFilter = buildSedePairSqlFilter(params, args.sedePairs);
   const pathParts = pathFiltersWithoutSedeSql(args.path, params);
+  const familySql = lineFamilySqlFilter(
+    args.lineFamily ?? "all",
+    DIM.lineaId,
+  );
   const pathSql =
-    pathParts.length > 0 ? `AND ${pathParts.join("\n        AND ")}` : "";
+    pathParts.length > 0
+      ? `AND ${pathParts.join("\n        AND ")}${familySql ? `\n        ${familySql}` : ""}`
+      : familySql ? `\n        ${familySql}` : "";
   const group = levelGroup(rowLevel);
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;

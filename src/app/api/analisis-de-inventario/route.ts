@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { parseAnalisisInventarioDrillPath } from "@/lib/analisis-inventario/drill-path";
+import { parseAnalisisInventarioLineFamily } from "@/lib/analisis-inventario/line-family";
 import {
   queryAnalisisInventarioBoard,
   queryAnalisisInventarioDateBounds,
@@ -238,6 +239,9 @@ export async function GET(request: Request) {
       url.searchParams.get("heatmapPath") ??
         (mode === "heatmap" ? url.searchParams.get("drillPath") : null),
     );
+    const lineFamily = parseAnalisisInventarioLineFamily(
+      url.searchParams.get("lineFamily"),
+    );
 
     const queryArgs = {
       matview: scope.matview,
@@ -246,6 +250,7 @@ export async function GET(request: Request) {
       dateStart,
       dateEnd,
       sedePairs: scope.sedePairs,
+      lineFamily,
     };
 
     if (mode === "board") {

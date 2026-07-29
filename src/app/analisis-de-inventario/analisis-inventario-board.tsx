@@ -17,6 +17,10 @@ import {
   type DiBand,
 } from "@/lib/analisis-inventario/di";
 import { ANALISIS_INVENTARIO_LEVEL_NAMES } from "@/lib/analisis-inventario/drill-path";
+import {
+  ANALISIS_INVENTARIO_LINE_FAMILY_LABELS,
+  type AnalisisInventarioLineFamily,
+} from "@/lib/analisis-inventario/line-family";
 import type {
   AnalisisInventarioDrillPayload,
   AnalisisInventarioDrillRow,
@@ -48,6 +52,24 @@ const LEGEND_BANDS: DiBand[] = [
 ];
 
 const METRIC_STORAGE_KEY = "analisis-inventario:metric:v1";
+const LINE_FAMILY_STORAGE_KEY = "analisis-inventario:line-family:v1";
+
+const LINE_FAMILY_OPTIONS: AnalisisInventarioLineFamily[] = [
+  "all",
+  "perecederos",
+  "manufactura",
+];
+
+/** Al cambiar familia, quita pasos de línea/sublínea/ítem del path. */
+const stripLineFamilyPath = (steps: AnalisisInventarioDrillStep[]) => {
+  const cut = steps.findIndex(
+    (step) =>
+      step.type === "linea" ||
+      step.type === "sublinea" ||
+      step.type === "item",
+  );
+  return cut >= 0 ? steps.slice(0, cut) : steps;
+};
 
 const money = (value: number) =>
   value.toLocaleString("es-CO", {
@@ -74,6 +96,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [metric, setMetric] = useState<AnalisisInventarioMetric>("units");
+  const [lineFamily, setLineFamily] =
+    useState<AnalisisInventarioLineFamily>("all");
   const [path, setPath] = useState<AnalisisInventarioDrillStep[]>([]);
   const [heatmapPath, setHeatmapPath] = useState<AnalisisInventarioDrillStep[]>(
     [],
@@ -102,6 +126,18 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     } catch {
       // ignore
     }
+    try {
+      const rawFamily = window.localStorage.getItem(LINE_FAMILY_STORAGE_KEY);
+      if (
+        rawFamily === "all" ||
+        rawFamily === "perecederos" ||
+        rawFamily === "manufactura"
+      ) {
+        setLineFamily(rawFamily);
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   useEffect(() => {
@@ -111,6 +147,14 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
       // ignore
     }
   }, [metric]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LINE_FAMILY_STORAGE_KEY, lineFamily);
+    } catch {
+      // ignore
+    }
+  }, [lineFamily]);
 
   useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > 420);
@@ -140,6 +184,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         params.set("mode", "board");
         if (dateStart) params.set("dateStart", dateStart);
         if (dateEnd) params.set("dateEnd", dateEnd);
+        if (lineFamily !== "all") params.set("lineFamily", lineFamily);
         if (path.length > 0) params.set("drillPath", JSON.stringify(path));
         if (heatmapPath.length > 0) {
           params.set("heatmapPath", JSON.stringify(heatmapPath));
@@ -197,7 +242,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [dateStart, dateEnd, path, heatmapPath]);
+  }, [dateStart, dateEnd, path, heatmapPath, lineFamily]);
 
   useEffect(() => {
     if (!pendingScrollToDrillRef.current || loadingBoard) return;
@@ -301,6 +346,14 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     scrollToId("di-filters");
   };
 
+  const applyLineFamily = (next: AnalisisInventarioLineFamily) => {
+    if (next === lineFamily) return;
+    setLineFamily(next);
+    setPath((prev) => stripLineFamilyPath(prev));
+    setHeatmapPath((prev) => stripLineFamilyPath(prev));
+    setDrillQuery("");
+  };
+
   const toggleSort = (key: DrillSortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -382,6 +435,33 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
               DI valor
             </button>
           </div>
+          <div
+            className="flex rounded-lg border border-slate-200 p-1"
+            role="group"
+            aria-label="Familia de líneas"
+          >
+            {LINE_FAMILY_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => applyLineFamily(option)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  lineFamily === option
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+                title={
+                  option === "perecederos"
+                    ? "Líneas 01, 02, 03, 04 y 12"
+                    : option === "manufactura"
+                      ? "Resto de líneas N1"
+                      : "Todas las líneas"
+                }
+              >
+                {ANALISIS_INVENTARIO_LINE_FAMILY_LABELS[option]}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={applyRollingMonth}
@@ -418,6 +498,11 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         <p className="mt-3 text-xs text-slate-500">
           Periodo por defecto: 1 mes móvil (igual que Rotación). Alcance por tus
           sedes.
+          {lineFamily === "perecederos"
+            ? " · Solo líneas perecederas (01, 02, 03, 04, 12)."
+            : lineFamily === "manufactura"
+              ? " · Solo líneas de manufactura (resto N1)."
+              : ""}
           {meta?.fastPath ? " · Lectura rápida (snapshot)." : ""}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
