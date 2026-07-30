@@ -182,6 +182,9 @@ export async function GET(request: Request) {
     const matrixPath = parseParticipacionDrillPath(
       url.searchParams.get("matrixPath"),
     ).filter((step) => step.type === "linea" || step.type === "sublinea");
+    const matrixItemSearch = (url.searchParams.get("matrixItemSearch") ?? "")
+      .trim()
+      .slice(0, 80);
     const queryArgs = {
       matview: scope.matview,
       periodoStdTable: scope.periodoStdTable,
@@ -197,6 +200,7 @@ export async function GET(request: Request) {
         orientation,
         path,
         matrixPath,
+        matrixItemSearch,
         columns: scope.columns,
       });
       const payload = {
@@ -249,6 +253,7 @@ export async function GET(request: Request) {
         ...queryArgs,
         columns: scope.columns,
         path: matrixPath,
+        itemSearch: matrixItemSearch,
       });
       const payload = { mode, meta, matrix };
       setCachedQuery(cacheKey, payload, CACHE_TTL_MS);

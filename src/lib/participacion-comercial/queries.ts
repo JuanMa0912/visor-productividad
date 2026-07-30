@@ -430,12 +430,17 @@ export async function queryParticipacionMatrix(
   args: QueryArgs & {
     columns: ParticipacionSedeColumn[];
     path?: ParticipacionDrillStep[];
+    itemSearch?: string;
   },
 ): Promise<ParticipacionMatrixPayload & { sourceMode: SourceMode }> {
   const matrixPath = (args.path ?? []).filter(
     (step) => step.type === "linea" || step.type === "sublinea",
   );
-  const rowLevel = nextParticipacionMatrixRowLevel(matrixPath);
+  const itemSearch = (args.itemSearch ?? "").trim();
+  const searchActive = itemSearch.length >= 2;
+  const rowLevel = searchActive
+    ? "item"
+    : nextParticipacionMatrixRowLevel(matrixPath);
   const mode = await resolveSourceMode(client, args);
   const params: unknown[] =
     mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
@@ -457,6 +462,16 @@ export async function queryParticipacionMatrix(
   const dateFilter =
     mode === "periodo_std" ? "" : "AND fecha BETWEEN $1::date AND $2::date";
 
+  let itemSearchSql = "";
+  if (searchActive) {
+    params.push(`%${itemSearch.toLowerCase()}%`);
+    const p = params.length;
+    itemSearchSql = `AND (
+      LOWER(TRIM(COALESCE(item, ''))) LIKE $${p}
+      OR LOWER(TRIM(COALESCE(descripcion, ''))) LIKE $${p}
+    )`;
+  }
+
   const rowDim =
     rowLevel === "linea"
       ? { id: DIM.lineaId, label: DIM.lineaLabel }
@@ -464,7 +479,7 @@ export async function queryParticipacionMatrix(
         ? { id: DIM.sublineaId, label: DIM.sublineaLabel }
         : { id: DIM.itemId, label: DIM.itemLabel };
 
-  const topLimit = rowLevel === "item" ? 60 : 40;
+  const topLimit = searchActive ? 80 : rowLevel === "item" ? 60 : 40;
   const residualLabel =
     rowLevel === "linea"
       ? "Otras líneas"
@@ -486,6 +501,7 @@ export async function queryParticipacionMatrix(
       ${dateFilter}
       AND ${sedeFilter}
       ${pathSql}
+      ${itemSearchSql}
     GROUP BY ${rowDim.id}, ${DIM.empresa}, ${DIM.sedeId}
     ORDER BY SUM(${salesExpr}) DESC NULLS LAST
   `;
@@ -503,19 +519,60 @@ export async function queryParticipacionMatrix(
   };
   const dbRows = (result.rows ?? []) as CellDb[];
 
+  /** Con búsqueda de ítem, % = participación real en la sede (total sin filtro de texto). */
   const sedeTotals = new Map<string, { sales: number; units: number }>();
-  let grandTotal = 0;
-  for (const row of dbRows) {
-    const sales = toNum(row.sales);
-    const units = toNum(row.units);
-    const key = sedeKey(String(row.empresa), String(row.sede_id));
-    const prev = sedeTotals.get(key) ?? { sales: 0, units: 0 };
-    sedeTotals.set(key, {
-      sales: prev.sales + sales,
-      units: prev.units + units,
-    });
-    grandTotal += sales;
+  if (searchActive) {
+    const totParams: unknown[] =
+      mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
+    const totSedeFilter = buildSedePairSqlFilter(totParams, args.sedePairs);
+    const totPathParts = pathFiltersSql(matrixPath, totParams);
+    const totPathSql =
+      totPathParts.length > 0
+        ? `AND ${totPathParts.join("\n      AND ")}`
+        : "";
+    const totSql = `
+      SELECT
+        ${DIM.empresa} AS empresa,
+        ${DIM.sedeId} AS sede_id,
+        SUM(${salesExpr})::numeric AS sales,
+        SUM(${unitsExpr})::numeric AS units
+      FROM ${table}
+      WHERE NULLIF(TRIM(item), '') IS NOT NULL
+        ${dateFilter}
+        AND ${totSedeFilter}
+        ${totPathSql}
+      GROUP BY ${DIM.empresa}, ${DIM.sedeId}
+    `;
+    const totResult = await withTimeout(client, 30_000, () =>
+      client.query(totSql, totParams),
+    );
+    for (const row of (totResult.rows ?? []) as Array<{
+      empresa: string;
+      sede_id: string;
+      sales: string | number | null;
+      units: string | number | null;
+    }>) {
+      const key = sedeKey(String(row.empresa), String(row.sede_id));
+      sedeTotals.set(key, {
+        sales: toNum(row.sales),
+        units: toNum(row.units),
+      });
+    }
+  } else {
+    for (const row of dbRows) {
+      const sales = toNum(row.sales);
+      const units = toNum(row.units);
+      const key = sedeKey(String(row.empresa), String(row.sede_id));
+      const prev = sedeTotals.get(key) ?? { sales: 0, units: 0 };
+      sedeTotals.set(key, {
+        sales: prev.sales + sales,
+        units: prev.units + units,
+      });
+    }
   }
+
+  let grandTotal = 0;
+  for (const tot of sedeTotals.values()) grandTotal += tot.sales;
 
   const rowMap = new Map<string, ParticipacionMatrixRow>();
   const cells: ParticipacionMatrixCell[] = [];
@@ -566,25 +623,27 @@ export async function queryParticipacionMatrix(
   }
 
   let hasResidual = false;
-  for (const col of args.columns) {
-    const sedeTotal = sedeTotals.get(col.key)?.sales ?? 0;
-    const visible = visibleSalesBySede.get(col.key) ?? 0;
-    const rest = Math.max(0, sedeTotal - visible);
-    if (rest <= 0.009) continue;
-    hasResidual = true;
-    const restUnits = Math.max(
-      0,
-      (sedeTotals.get(col.key)?.units ?? 0) -
-        (visibleUnitsBySede.get(col.key) ?? 0),
-    );
-    cells.push({
-      rowId: residualId,
-      sedeKey: col.key,
-      sales: rest,
-      units: restUnits,
-      shareOfSedePct: sharePct(rest, sedeTotal),
-      shareOfTotalPct: sharePct(rest, grandTotal),
-    });
+  if (!searchActive) {
+    for (const col of args.columns) {
+      const sedeTotal = sedeTotals.get(col.key)?.sales ?? 0;
+      const visible = visibleSalesBySede.get(col.key) ?? 0;
+      const rest = Math.max(0, sedeTotal - visible);
+      if (rest <= 0.009) continue;
+      hasResidual = true;
+      const restUnits = Math.max(
+        0,
+        (sedeTotals.get(col.key)?.units ?? 0) -
+          (visibleUnitsBySede.get(col.key) ?? 0),
+      );
+      cells.push({
+        rowId: residualId,
+        sedeKey: col.key,
+        sales: rest,
+        units: restUnits,
+        shareOfSedePct: sharePct(rest, sedeTotal),
+        shareOfTotalPct: sharePct(rest, grandTotal),
+      });
+    }
   }
 
   const rows: ParticipacionMatrixRow[] = topIds
@@ -614,6 +673,7 @@ export async function queryParticipacionMatrix(
     })),
     rowLevel,
     path: matrixPath,
+    itemSearch: searchActive ? itemSearch : undefined,
     sourceMode: mode,
   };
 }
@@ -624,6 +684,7 @@ export async function queryParticipacionBoard(
     orientation: ParticipacionOrientation;
     path: ParticipacionDrillStep[];
     matrixPath?: ParticipacionDrillStep[];
+    matrixItemSearch?: string;
     columns: ParticipacionSedeColumn[];
   },
 ) {
@@ -639,6 +700,7 @@ export async function queryParticipacionBoard(
         ...args,
         columns: args.columns,
         path: args.matrixPath ?? [],
+        itemSearch: args.matrixItemSearch,
       }),
     ]);
     return { drill, matrix };

@@ -83,6 +83,8 @@ export function ParticipacionComercialBoard() {
   const [matrixPath, setMatrixPath] = useState<ParticipacionDrillStep[]>([]);
   const [matrixMetric, setMatrixMetric] =
     useState<ParticipacionMatrixMetric>("share");
+  const [matrixItemInput, setMatrixItemInput] = useState("");
+  const [matrixItemSearch, setMatrixItemSearch] = useState("");
   const [drill, setDrill] = useState<ParticipacionDrillPayload | null>(null);
   const [matrix, setMatrix] = useState<ParticipacionMatrixPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,6 +125,18 @@ export function ParticipacionComercialBoard() {
   }, []);
 
   useEffect(() => {
+    const trimmed = matrixItemInput.trim();
+    if (trimmed.length < 2) {
+      setMatrixItemSearch("");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setMatrixItemSearch(trimmed.slice(0, 80));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [matrixItemInput]);
+
+  useEffect(() => {
     if (skipNextFetchRef.current) {
       skipNextFetchRef.current = false;
       return;
@@ -143,6 +157,9 @@ export function ParticipacionComercialBoard() {
         if (path.length > 0) params.set("drillPath", JSON.stringify(path));
         if (matrixPath.length > 0) {
           params.set("matrixPath", JSON.stringify(matrixPath));
+        }
+        if (matrixItemSearch.length >= 2) {
+          params.set("matrixItemSearch", matrixItemSearch);
         }
         const response = await fetch(
           `/api/participacion-comercial?${params.toString()}`,
@@ -189,7 +206,7 @@ export function ParticipacionComercialBoard() {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [dateStart, dateEnd, orientation, path, matrixPath]);
+  }, [dateStart, dateEnd, orientation, path, matrixPath, matrixItemSearch]);
 
   useEffect(() => {
     if (!pendingScrollDrillRef.current || loading) return;
@@ -318,6 +335,8 @@ export function ParticipacionComercialBoard() {
     setPath([]);
     setMatrixPath([]);
     setMatrixMetric("share");
+    setMatrixItemInput("");
+    setMatrixItemSearch("");
   };
 
   const matrixRowLevelLabel =
@@ -524,8 +543,8 @@ export function ParticipacionComercialBoard() {
                 Matriz · {matrixRowLevelLabel} × sede
               </h2>
               <p className="text-xs text-slate-500">
-                Clic en una fila para profundizar (línea → sublínea → ítem). En
-                ítem, clic en celda o “Unidades” para ver ventas en unidades.
+                Clic en una fila para profundizar (línea → sublínea → ítem), o
+                busca un ítem por código/descripción. En ítem: % / Unidades / $.
                 Color: verde (alta) → rojo (baja).
               </p>
             </div>
@@ -555,11 +574,40 @@ export function ParticipacionComercialBoard() {
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-55 flex-1 sm:max-w-xs">
+              <Search
+                className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                aria-hidden
+              />
+              <input
+                type="text"
+                value={matrixItemInput}
+                onChange={(e) => setMatrixItemInput(e.target.value)}
+                placeholder="Buscar ítem por código o descripción…"
+                className="w-full rounded-lg border border-slate-200 py-1.5 pr-8 pl-8 text-xs"
+                autoComplete="off"
+              />
+              {matrixItemInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMatrixItemInput("");
+                    setMatrixItemSearch("");
+                  }}
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                  aria-label="Limpiar búsqueda de ítem"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={() => {
                 setMatrixPath([]);
                 setMatrixMetric("share");
+                setMatrixItemInput("");
+                setMatrixItemSearch("");
               }}
               className="text-xs font-semibold text-blue-700 hover:underline"
             >
@@ -592,6 +640,12 @@ export function ParticipacionComercialBoard() {
                 <ChevronUp className="h-3.5 w-3.5" aria-hidden />
                 Regresar
               </button>
+            ) : null}
+            {matrixItemSearch.length >= 2 ? (
+              <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-800">
+                Búsqueda ítem: “{matrixItemSearch}” · {matrix?.rows.length ?? 0}{" "}
+                resultado(s)
+              </span>
             ) : null}
           </div>
         </div>

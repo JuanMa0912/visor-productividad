@@ -89,4 +89,6 @@ export type ParticipacionMatrixPayload = {
   /** Nivel de filas de la matriz (linea → sublinea → item). */
   rowLevel: "linea" | "sublinea" | "item";
   path: ParticipacionDrillStep[];
+  /** Búsqueda activa de ítems (código / descripción). */
+  itemSearch?: string;
 };
