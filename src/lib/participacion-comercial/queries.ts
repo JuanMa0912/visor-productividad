@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import {
   nextParticipacionLevel,
+  nextParticipacionMatrixRowLevel,
   sharePct,
 } from "@/lib/participacion-comercial/format";
 import type {
@@ -426,12 +427,22 @@ export async function queryParticipacionDrill(
 
 export async function queryParticipacionMatrix(
   client: PoolClient,
-  args: QueryArgs & { columns: ParticipacionSedeColumn[] },
+  args: QueryArgs & {
+    columns: ParticipacionSedeColumn[];
+    path?: ParticipacionDrillStep[];
+  },
 ): Promise<ParticipacionMatrixPayload & { sourceMode: SourceMode }> {
+  const matrixPath = (args.path ?? []).filter(
+    (step) => step.type === "linea" || step.type === "sublinea",
+  );
+  const rowLevel = nextParticipacionMatrixRowLevel(matrixPath);
   const mode = await resolveSourceMode(client, args);
   const params: unknown[] =
     mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
   const sedeFilter = buildSedePairSqlFilter(params, args.sedePairs);
+  const pathParts = pathFiltersSql(matrixPath, params);
+  const pathSql =
+    pathParts.length > 0 ? `AND ${pathParts.join("\n      AND ")}` : "";
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
 
@@ -446,10 +457,26 @@ export async function queryParticipacionMatrix(
   const dateFilter =
     mode === "periodo_std" ? "" : "AND fecha BETWEEN $1::date AND $2::date";
 
+  const rowDim =
+    rowLevel === "linea"
+      ? { id: DIM.lineaId, label: DIM.lineaLabel }
+      : rowLevel === "sublinea"
+        ? { id: DIM.sublineaId, label: DIM.sublineaLabel }
+        : { id: DIM.itemId, label: DIM.itemLabel };
+
+  const topLimit = rowLevel === "item" ? 60 : 40;
+  const residualLabel =
+    rowLevel === "linea"
+      ? "Otras líneas"
+      : rowLevel === "sublinea"
+        ? "Otras sublíneas"
+        : "Otros ítems";
+  const residualId = `__otras_${rowLevel}__`;
+
   const sql = `
     SELECT
-      ${DIM.lineaId} AS row_id,
-      MAX(${DIM.lineaLabel}) AS row_label,
+      ${rowDim.id} AS row_id,
+      MAX(${rowDim.label}) AS row_label,
       ${DIM.empresa} AS empresa,
       ${DIM.sedeId} AS sede_id,
       SUM(${salesExpr})::numeric AS sales,
@@ -458,7 +485,8 @@ export async function queryParticipacionMatrix(
     WHERE NULLIF(TRIM(item), '') IS NOT NULL
       ${dateFilter}
       AND ${sedeFilter}
-    GROUP BY ${DIM.lineaId}, ${DIM.empresa}, ${DIM.sedeId}
+      ${pathSql}
+    GROUP BY ${rowDim.id}, ${DIM.empresa}, ${DIM.sedeId}
     ORDER BY SUM(${salesExpr}) DESC NULLS LAST
   `;
 
@@ -475,12 +503,17 @@ export async function queryParticipacionMatrix(
   };
   const dbRows = (result.rows ?? []) as CellDb[];
 
-  const sedeTotals = new Map<string, number>();
+  const sedeTotals = new Map<string, { sales: number; units: number }>();
   let grandTotal = 0;
   for (const row of dbRows) {
     const sales = toNum(row.sales);
+    const units = toNum(row.units);
     const key = sedeKey(String(row.empresa), String(row.sede_id));
-    sedeTotals.set(key, (sedeTotals.get(key) ?? 0) + sales);
+    const prev = sedeTotals.get(key) ?? { sales: 0, units: 0 };
+    sedeTotals.set(key, {
+      sales: prev.sales + sales,
+      units: prev.units + units,
+    });
     grandTotal += sales;
   }
 
@@ -497,48 +530,58 @@ export async function queryParticipacionMatrix(
       rowMap.set(rowId, {
         id: rowId,
         label,
-        drillStep: { type: "linea", id: rowId, label },
+        drillStep: { type: rowLevel, id: rowId, label },
       });
     }
     rowTotals.set(rowId, (rowTotals.get(rowId) ?? 0) + sales);
+    const sedeTotal = sedeTotals.get(key)?.sales ?? 0;
     cells.push({
       rowId,
       sedeKey: key,
       sales,
       units: toNum(row.units),
-      shareOfSedePct: sharePct(sales, sedeTotals.get(key) ?? 0),
+      shareOfSedePct: sharePct(sales, sedeTotal),
       shareOfTotalPct: sharePct(sales, grandTotal),
     });
   }
 
   const topIds = [...rowTotals.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 40)
+    .slice(0, topLimit)
     .map(([id]) => id);
   const topSet = new Set(topIds);
 
   const visibleCells = cells.filter((cell) => topSet.has(cell.rowId));
   const visibleSalesBySede = new Map<string, number>();
+  const visibleUnitsBySede = new Map<string, number>();
   for (const cell of visibleCells) {
     visibleSalesBySede.set(
       cell.sedeKey,
       (visibleSalesBySede.get(cell.sedeKey) ?? 0) + cell.sales,
     );
+    visibleUnitsBySede.set(
+      cell.sedeKey,
+      (visibleUnitsBySede.get(cell.sedeKey) ?? 0) + cell.units,
+    );
   }
 
-  const residualId = "__otras_lineas__";
   let hasResidual = false;
   for (const col of args.columns) {
-    const sedeTotal = sedeTotals.get(col.key) ?? 0;
+    const sedeTotal = sedeTotals.get(col.key)?.sales ?? 0;
     const visible = visibleSalesBySede.get(col.key) ?? 0;
     const rest = Math.max(0, sedeTotal - visible);
     if (rest <= 0.009) continue;
     hasResidual = true;
+    const restUnits = Math.max(
+      0,
+      (sedeTotals.get(col.key)?.units ?? 0) -
+        (visibleUnitsBySede.get(col.key) ?? 0),
+    );
     cells.push({
       rowId: residualId,
       sedeKey: col.key,
       sales: rest,
-      units: 0,
+      units: restUnits,
       shareOfSedePct: sharePct(rest, sedeTotal),
       shareOfTotalPct: sharePct(rest, grandTotal),
     });
@@ -551,9 +594,9 @@ export async function queryParticipacionMatrix(
   if (hasResidual) {
     rows.push({
       id: residualId,
-      label: "Otras líneas",
+      label: residualLabel,
       residual: true,
-      drillStep: { type: "linea", id: residualId, label: "Otras líneas" },
+      drillStep: { type: rowLevel, id: residualId, label: residualLabel },
     });
   }
 
@@ -566,8 +609,11 @@ export async function queryParticipacionMatrix(
     grandTotalSales: grandTotal,
     sedeTotals: args.columns.map((col) => ({
       sedeKey: col.key,
-      sales: sedeTotals.get(col.key) ?? 0,
+      sales: sedeTotals.get(col.key)?.sales ?? 0,
+      units: sedeTotals.get(col.key)?.units ?? 0,
     })),
+    rowLevel,
+    path: matrixPath,
     sourceMode: mode,
   };
 }
@@ -577,6 +623,7 @@ export async function queryParticipacionBoard(
   args: QueryArgs & {
     orientation: ParticipacionOrientation;
     path: ParticipacionDrillStep[];
+    matrixPath?: ParticipacionDrillStep[];
     columns: ParticipacionSedeColumn[];
   },
 ) {
@@ -591,6 +638,7 @@ export async function queryParticipacionBoard(
       queryParticipacionMatrix(b, {
         ...args,
         columns: args.columns,
+        path: args.matrixPath ?? [],
       }),
     ]);
     return { drill, matrix };

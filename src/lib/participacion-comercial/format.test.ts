@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   formatSharePct,
   nextParticipacionLevel,
+  nextParticipacionMatrixRowLevel,
   parseParticipacionDrillPath,
   sharePct,
 } from "@/lib/participacion-comercial/format";
@@ -39,6 +40,25 @@ describe("nextParticipacionLevel", () => {
         { type: "linea", id: "05", label: "Bebidas" },
       ]),
       "sede",
+    );
+  });
+});
+
+describe("nextParticipacionMatrixRowLevel", () => {
+  it("profundiza línea → sublínea → ítem", () => {
+    assert.equal(nextParticipacionMatrixRowLevel([]), "linea");
+    assert.equal(
+      nextParticipacionMatrixRowLevel([
+        { type: "linea", id: "05", label: "Bebidas" },
+      ]),
+      "sublinea",
+    );
+    assert.equal(
+      nextParticipacionMatrixRowLevel([
+        { type: "linea", id: "05", label: "Bebidas" },
+        { type: "sublinea", id: "0501", label: "Gaseosas" },
+      ]),
+      "item",
     );
   });
 });

@@ -6,11 +6,14 @@ import { downloadParticipacionExcel } from "@/lib/participacion-comercial/export
 import {
   formatMoney,
   formatSharePct,
+  formatUnits,
   PARTICIPACION_LEVEL_NAMES,
+  sharePct,
 } from "@/lib/participacion-comercial/format";
 import type {
   ParticipacionDrillPayload,
   ParticipacionDrillStep,
+  ParticipacionMatrixMetric,
   ParticipacionMatrixPayload,
   ParticipacionMeta,
   ParticipacionOrientation,
@@ -77,6 +80,9 @@ export function ParticipacionComercialBoard() {
   const [orientation, setOrientation] =
     useState<ParticipacionOrientation>("sede");
   const [path, setPath] = useState<ParticipacionDrillStep[]>([]);
+  const [matrixPath, setMatrixPath] = useState<ParticipacionDrillStep[]>([]);
+  const [matrixMetric, setMatrixMetric] =
+    useState<ParticipacionMatrixMetric>("share");
   const [drill, setDrill] = useState<ParticipacionDrillPayload | null>(null);
   const [matrix, setMatrix] = useState<ParticipacionMatrixPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,6 +141,9 @@ export function ParticipacionComercialBoard() {
         if (dateStart) params.set("dateStart", dateStart);
         if (dateEnd) params.set("dateEnd", dateEnd);
         if (path.length > 0) params.set("drillPath", JSON.stringify(path));
+        if (matrixPath.length > 0) {
+          params.set("matrixPath", JSON.stringify(matrixPath));
+        }
         const response = await fetch(
           `/api/participacion-comercial?${params.toString()}`,
           {
@@ -180,7 +189,7 @@ export function ParticipacionComercialBoard() {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [dateStart, dateEnd, orientation, path]);
+  }, [dateStart, dateEnd, orientation, path, matrixPath]);
 
   useEffect(() => {
     if (!pendingScrollDrillRef.current || loading) return;
@@ -189,10 +198,14 @@ export function ParticipacionComercialBoard() {
   }, [loading, drill]);
 
   const cellByKey = useMemo(() => {
-    const map = new Map<string, { sales: number; shareOfSedePct: number }>();
+    const map = new Map<
+      string,
+      { sales: number; units: number; shareOfSedePct: number }
+    >();
     for (const cell of matrix?.cells ?? []) {
       map.set(`${cell.rowId}::${cell.sedeKey}`, {
         sales: cell.sales,
+        units: cell.units,
         shareOfSedePct: cell.shareOfSedePct,
       });
     }
@@ -207,6 +220,14 @@ export function ParticipacionComercialBoard() {
     return map;
   }, [matrix]);
 
+  const rowUnitsTotal = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const cell of matrix?.cells ?? []) {
+      map.set(cell.rowId, (map.get(cell.rowId) ?? 0) + cell.units);
+    }
+    return map;
+  }, [matrix]);
+
   const sortedMatrixRows = useMemo(() => {
     if (!matrix) return [];
     const residual = matrix.rows.filter((row) => row.residual);
@@ -214,8 +235,11 @@ export function ParticipacionComercialBoard() {
     const dir = matrixSortDir === "asc" ? 1 : -1;
     const score = (rowId: string) => {
       if (matrixSortKey) {
-        return cellByKey.get(`${rowId}::${matrixSortKey}`)?.sales ?? 0;
+        const cell = cellByKey.get(`${rowId}::${matrixSortKey}`);
+        if (matrixMetric === "units") return cell?.units ?? 0;
+        return cell?.sales ?? 0;
       }
+      if (matrixMetric === "units") return rowUnitsTotal.get(rowId) ?? 0;
       return rowSalesTotal.get(rowId) ?? 0;
     };
     const sorted = [...normal].sort((a, b) => {
@@ -224,7 +248,15 @@ export function ParticipacionComercialBoard() {
       return a.id.localeCompare(b.id, "es", { numeric: true });
     });
     return [...sorted, ...residual];
-  }, [matrix, matrixSortDir, matrixSortKey, cellByKey, rowSalesTotal]);
+  }, [
+    matrix,
+    matrixSortDir,
+    matrixSortKey,
+    matrixMetric,
+    cellByKey,
+    rowSalesTotal,
+    rowUnitsTotal,
+  ]);
 
   const toggleMatrixSort = (key: string | null) => {
     if (matrixSortKey === key) {
@@ -257,33 +289,68 @@ export function ParticipacionComercialBoard() {
     setPath((prev) => [...prev, step]);
   };
 
-  const openMatrixLine = (step: ParticipacionDrillStep) => {
-    pendingScrollDrillRef.current = true;
-    setOrientation("linea");
-    setPath([step]);
+  /** Profundiza la matriz: línea → sublínea → ítem. */
+  const openMatrixRow = (step: ParticipacionDrillStep) => {
+    if (step.type !== "linea" && step.type !== "sublinea") return;
+    setMatrixPath((prev) => {
+      const withoutSame = prev.filter((entry) => entry.type !== step.type);
+      return [...withoutSame, step];
+    });
+    setMatrixMetric("share");
+    scrollToId("pc-matrix");
   };
 
   const openMatrixCell = (
-    sede: { key: string; label: string; empresa: string; sedeId: string },
-    lineStep: ParticipacionDrillStep,
+    _sede: { key: string; label: string; empresa: string; sedeId: string },
+    rowStep: ParticipacionDrillStep,
   ) => {
-    pendingScrollDrillRef.current = true;
-    setOrientation("linea");
-    setPath([
-      lineStep,
-      {
-        type: "sede",
-        id: sede.key,
-        label: sede.label,
-        empresa: sede.empresa,
-        sedeId: sede.sedeId,
-      },
-    ]);
+    if (matrix?.rowLevel === "item") {
+      setMatrixMetric((prev) => (prev === "units" ? "share" : "units"));
+      return;
+    }
+    if (rowStep.type === "linea" || rowStep.type === "sublinea") {
+      openMatrixRow(rowStep);
+    }
   };
 
   const changeOrientation = (next: ParticipacionOrientation) => {
     setOrientation(next);
     setPath([]);
+    setMatrixPath([]);
+    setMatrixMetric("share");
+  };
+
+  const matrixRowLevelLabel =
+    matrix?.rowLevel === "sublinea"
+      ? "sublíneas"
+      : matrix?.rowLevel === "item"
+        ? "ítems"
+        : "líneas";
+
+  const formatMatrixCellValue = (cell: {
+    sales: number;
+    units: number;
+    shareOfSedePct: number;
+  }) => {
+    if (matrixMetric === "units") return formatUnits(cell.units);
+    if (matrixMetric === "sales") return formatMoney(cell.sales);
+    return formatSharePct(cell.shareOfSedePct);
+  };
+
+  const matrixHeatPct = (
+    cell:
+      | { sales: number; units: number; shareOfSedePct: number }
+      | undefined,
+    sedeKeyValue: string,
+  ) => {
+    if (!cell) return 0;
+    if (matrixMetric === "share" || matrixMetric === "sales") {
+      return cell.shareOfSedePct;
+    }
+    const sedeUnits =
+      matrix?.sedeTotals?.find((entry) => entry.sedeKey === sedeKeyValue)
+        ?.units ?? 0;
+    return sharePct(cell.units, sedeUnits);
   };
 
   const exportExcel = async () => {
@@ -396,6 +463,8 @@ export function ParticipacionComercialBoard() {
             type="button"
             onClick={() => {
               setPath([]);
+              setMatrixPath([]);
+              setMatrixMetric("share");
               scrollToId("pc-filters");
             }}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -449,13 +518,82 @@ export function ParticipacionComercialBoard() {
         className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)]"
       >
         <div className="border-b border-slate-100 px-4 py-3">
-          <h2 className="text-sm font-bold text-slate-900">
-            Matriz · línea × sede (% dentro de cada sede)
-          </h2>
-          <p className="text-xs text-slate-500">
-            Cada columna suma 100%: top líneas + “Otras líneas”. Clic en “Línea” o en
-            una sede para ordenar mayor↔menor. Color: verde (alta) → rojo (baja).
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">
+                Matriz · {matrixRowLevelLabel} × sede
+              </h2>
+              <p className="text-xs text-slate-500">
+                Clic en una fila para profundizar (línea → sublínea → ítem). En
+                ítem, clic en celda o “Unidades” para ver ventas en unidades.
+                Color: verde (alta) → rojo (baja).
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex rounded-lg border border-slate-200 p-1">
+                {(
+                  [
+                    ["share", "%"],
+                    ["units", "Unidades"],
+                    ["sales", "$"],
+                  ] as Array<[ParticipacionMatrixMetric, string]>
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setMatrixMetric(key)}
+                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${
+                      matrixMetric === key
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMatrixPath([]);
+                setMatrixMetric("share");
+              }}
+              className="text-xs font-semibold text-blue-700 hover:underline"
+            >
+              Todas las líneas
+            </button>
+            {matrixPath.map((step, index) => (
+              <button
+                key={`${step.type}-${step.id}-${index}`}
+                type="button"
+                onClick={() => {
+                  setMatrixPath(matrixPath.slice(0, index + 1));
+                  setMatrixMetric("share");
+                }}
+                className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
+              >
+                {step.type === "linea"
+                  ? formatLineaDisplay(step.id, step.label)
+                  : step.label}
+              </button>
+            ))}
+            {matrixPath.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMatrixPath((prev) => prev.slice(0, -1));
+                  setMatrixMetric("share");
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                Regresar
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="max-h-[min(60vh,560px)] overflow-auto">
           {loading ? (
@@ -471,9 +609,16 @@ export function ParticipacionComercialBoard() {
                       type="button"
                       onClick={() => toggleMatrixSort(null)}
                       className="hover:text-slate-900"
-                      title="Ordenar por venta total (todas las sedes)"
+                      title="Ordenar por total"
                     >
-                      Línea{matrixSortHint(null)}
+                      {PARTICIPACION_LEVEL_NAMES[
+                        matrix.rowLevel === "sublinea"
+                          ? "sublinea"
+                          : matrix.rowLevel === "item"
+                            ? "item"
+                            : "linea"
+                      ]}
+                      {matrixSortHint(null)}
                     </button>
                   </th>
                   {matrix.columns.map((col) => (
@@ -485,7 +630,7 @@ export function ParticipacionComercialBoard() {
                         type="button"
                         onClick={() => toggleMatrixSort(col.key)}
                         className="hover:text-slate-900"
-                        title={`Ordenar por venta en ${col.label}`}
+                        title={`Ordenar por ${col.label}`}
                       >
                         {col.label}
                         {matrixSortHint(col.key)}
@@ -496,9 +641,16 @@ export function ParticipacionComercialBoard() {
               </thead>
               <tbody>
                 {sortedMatrixRows.map((row) => {
-                  const lineLabel = row.residual
-                    ? row.label
-                    : formatLineaDisplay(row.id, row.label);
+                  const rowLabel =
+                    row.residual
+                      ? row.label
+                      : matrix.rowLevel === "linea"
+                        ? formatLineaDisplay(row.id, row.label)
+                        : row.label;
+                  const canDeepen =
+                    !row.residual &&
+                    (row.drillStep.type === "linea" ||
+                      row.drillStep.type === "sublinea");
                   return (
                     <tr
                       key={row.id}
@@ -506,12 +658,32 @@ export function ParticipacionComercialBoard() {
                     >
                       <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold">
                         {row.residual ? (
-                          <span className="text-slate-600">{lineLabel}</span>
+                          <span className="text-slate-600">{rowLabel}</span>
+                        ) : canDeepen ? (
+                          <button
+                            type="button"
+                            onClick={() => openMatrixRow(row.drillStep)}
+                            className="text-left text-blue-700 hover:underline"
+                            title="Ver participación del siguiente nivel"
+                          >
+                            {matrix.rowLevel === "linea" ? (
+                              <>
+                                <span className="tabular-nums text-slate-500">
+                                  {row.id}
+                                </span>
+                                <span className="text-slate-400"> · </span>
+                                {row.label}
+                              </>
+                            ) : (
+                              rowLabel
+                            )}
+                          </button>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => openMatrixLine(row.drillStep)}
-                            className="text-left text-blue-700 hover:underline"
+                            onClick={() => setMatrixMetric("units")}
+                            className="text-left text-slate-800 hover:text-blue-700 hover:underline"
+                            title="Mostrar ventas en unidades"
                           >
                             <span className="tabular-nums text-slate-500">
                               {row.id}
@@ -523,27 +695,33 @@ export function ParticipacionComercialBoard() {
                       </th>
                       {matrix.columns.map((col) => {
                         const cell = cellByKey.get(`${row.id}::${col.key}`);
-                        const pct = cell?.shareOfSedePct ?? 0;
+                        const pct = matrixHeatPct(cell, col.key);
                         const style = matrixCellStyle(pct);
+                        const value = cell ? formatMatrixCellValue(cell) : "—";
+                        const title = cell
+                          ? `${rowLabel} · ${col.label}: ${formatSharePct(cell.shareOfSedePct)} · ${formatUnits(cell.units)} und · ${formatMoney(cell.sales)}`
+                          : "";
                         return (
                           <td key={col.key} className="p-1">
                             {row.residual ? (
                               <div
                                 className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
                                 style={style}
-                                title={`${lineLabel} · ${col.label}: ${formatSharePct(pct)} · ${formatMoney(cell?.sales ?? 0)}`}
+                                title={title}
                               >
-                                {cell ? formatSharePct(pct) : "—"}
+                                {value}
                               </div>
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => openMatrixCell(col, row.drillStep)}
+                                onClick={() =>
+                                  openMatrixCell(col, row.drillStep)
+                                }
                                 className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
                                 style={style}
-                                title={`${lineLabel} · ${col.label}: ${formatSharePct(pct)} · ${formatMoney(cell?.sales ?? 0)}`}
+                                title={title}
                               >
-                                {cell ? formatSharePct(pct) : "—"}
+                                {value}
                               </button>
                             )}
                           </td>
@@ -557,16 +735,22 @@ export function ParticipacionComercialBoard() {
                     Total sede
                   </th>
                   {matrix.columns.map((col) => {
-                    const sedeTotal =
-                      matrix.sedeTotals?.find((entry) => entry.sedeKey === col.key)
-                        ?.sales ?? 0;
+                    const sedeTotal = matrix.sedeTotals?.find(
+                      (entry) => entry.sedeKey === col.key,
+                    );
+                    const footer =
+                      matrixMetric === "units"
+                        ? formatUnits(sedeTotal?.units ?? 0)
+                        : matrixMetric === "sales"
+                          ? formatMoney(sedeTotal?.sales ?? 0)
+                          : "100%";
                     return (
                       <td
                         key={col.key}
                         className="px-2 py-2 text-center text-xs tabular-nums text-slate-800"
-                        title={formatMoney(sedeTotal)}
+                        title={formatMoney(sedeTotal?.sales ?? 0)}
                       >
-                        100%
+                        {footer}
                       </td>
                     );
                   })}

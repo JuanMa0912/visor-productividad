@@ -69,6 +69,16 @@ export const nextParticipacionLevel = (
   return "item";
 };
 
+/** Nivel de filas de la matriz línea×sede (profundiza línea → sublínea → ítem). */
+export const nextParticipacionMatrixRowLevel = (
+  path: ParticipacionDrillStep[],
+): "linea" | "sublinea" | "item" => {
+  const types = new Set(path.map((step) => step.type));
+  if (!types.has("linea")) return "linea";
+  if (!types.has("sublinea")) return "sublinea";
+  return "item";
+};
+
 export const sharePct = (part: number, total: number): number => {
   if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0) return 0;
   return (part / total) * 100;
@@ -87,4 +97,9 @@ export const formatMoney = (value: number): string =>
     style: "currency",
     currency: "COP",
     maximumFractionDigits: 0,
+  });
+
+export const formatUnits = (value: number): string =>
+  value.toLocaleString("es-CO", {
+    maximumFractionDigits: 1,
   });

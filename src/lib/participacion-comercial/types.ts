@@ -57,6 +57,8 @@ export type ParticipacionMatrixRow = {
   residual?: boolean;
 };
 
+export type ParticipacionMatrixMetric = "share" | "units" | "sales";
+
 export type ParticipacionMeta = {
   availableDateStart: string;
   availableDateEnd: string;
@@ -83,5 +85,8 @@ export type ParticipacionMatrixPayload = {
   cells: ParticipacionMatrixCell[];
   grandTotalSales: number;
   /** Totales de venta por sede (para pie 100%). */
-  sedeTotals: Array<{ sedeKey: string; sales: number }>;
+  sedeTotals: Array<{ sedeKey: string; sales: number; units: number }>;
+  /** Nivel de filas de la matriz (linea → sublinea → item). */
+  rowLevel: "linea" | "sublinea" | "item";
+  path: ParticipacionDrillStep[];
 };
