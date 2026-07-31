@@ -1,5 +1,5 @@
 [Unit]
-Description=Visor - ETL diario local -> GCP (sube el dia anterior)
+Description=Visor - ETL diario local -> GCP (ventana movil de 3 dias)
 Documentation=file:///home/prodapp/visor-productividad/scripts/etl/README-sync.md
 After=network-online.target
 Wants=network-online.target
@@ -11,7 +11,19 @@ Group=prodapp
 WorkingDirectory=/home/prodapp/visor-productividad
 # Invocar via bash: los .sh en git van sin +x (100644); systemd exige ejecutable
 # directo y falla con 203/EXEC "Permission denied" tras git pull.
-ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --verify
+#
+# --days 3 (2026-07-30): la ventana era de UN dia (solo "ayer"). Cualquier
+# correccion hecha al local sobre una fecha anterior a ayer NO llegaba nunca a
+# GCP por la via diaria; solo la repescaba el reconcile de los domingos, y si la
+# correccion tardaba mas de 7 dias, nadie. Caso real: el 28-jul de bogota se
+# cargo sin ventas porque el POS no habia cerrado el dia, se re-corrio el ETL a
+# las 11:15, y GCP se quedo con la foto vacia (36.935 und / $306M en cero) hasta
+# que se corrigio a mano. Con 3 dias, una re-corrida dentro de 48h se propaga
+# sola a la mañana siguiente. Costo medido: +1 min por dia extra (el grueso del
+# tiempo son los refresh de matview/snapshot/roll, no el volumen de filas).
+# Se deja SIN --replace: el upsert ya pisa el valor corregido; el borrado de
+# huerfanas sigue siendo trabajo del reconcile semanal.
+ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to-gcp.sh --days 3 --verify
 # Exit 3 = WARNING "sin datos de ayer" (el cierre del local aun no termino).
 # No es un fallo real: lo tratamos como exito para no ensuciar systemctl --failed.
 # La senal queda igual en el journal (lineas WARNING). Revisar con:
