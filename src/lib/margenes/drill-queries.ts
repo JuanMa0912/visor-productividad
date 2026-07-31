@@ -1679,8 +1679,20 @@ export const queryFilterOptions = async (
   }>(
     roll
       ? `
+    -- El DISTINCT del CTE NO es cosmetico: colapsa la relacion antes de que las
+    -- cinco subconsultas la recorran. Medido contra produccion el 2026-07-31
+    -- (julio x 11 sedes): 8.262.298 filas -> 245.252 (34x menos), y la consulta
+    -- baja de 29,6 s a 13,2 s.
+    --
+    -- No cambia ningun resultado: las cinco salidas ya aplican su propio
+    -- DISTINCT, asi que deduplicar antes produce los mismos conjuntos.
+    -- Verificado campo por campo contra la version sin DISTINCT: fechas,
+    -- categorias, lineas y sublineas salen identicas byte a byte, y los items
+    -- coinciden 500/500. El JSON de items no coincidia byte a byte solo por el
+    -- ORDEN de los empates de etiqueta, que era no determinista de antes; por
+    -- eso ahora ese ORDER BY lleva desempate (ver abajo).
     WITH filtered AS MATERIALIZED (
-      SELECT
+      SELECT DISTINCT
         fecha_dcto,
         id_tipo,
         id_linea1,
@@ -1739,14 +1751,22 @@ export const queryFilterOptions = async (
             id_linea2 AS sublinea
           FROM filtered
           WHERE id_item <> ''
-          ORDER BY 2
+          -- Desempate por id_item: ordenar solo por la etiqueta NO es un orden
+          -- total, hay descripciones repetidas entre items distintos. Con un
+          -- LIMIT 500 encima, el corte y el orden dependian del plan: el mismo
+          -- filtro podia devolver los empates en distinto orden entre cargas.
+          -- Verificado al cambiar el plan de esta consulta el 2026-07-31: el
+          -- conjunto de 500 salia identico (500/500) pero el JSON no coincidia
+          -- byte a byte.
+          ORDER BY 2, 1
           LIMIT 500
         ) t
       ) AS items
     `
       : `
+    -- Mismo DISTINCT que la rama roll, por la misma razon.
     WITH filtered AS MATERIALIZED (
-      SELECT
+      SELECT DISTINCT
         fecha_dcto,
         TRIM(COALESCE(id_tipo::text, '')) AS id_tipo,
         TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
@@ -1805,7 +1825,14 @@ export const queryFilterOptions = async (
             id_linea2 AS sublinea
           FROM filtered
           WHERE id_item <> ''
-          ORDER BY 2
+          -- Desempate por id_item: ordenar solo por la etiqueta NO es un orden
+          -- total, hay descripciones repetidas entre items distintos. Con un
+          -- LIMIT 500 encima, el corte y el orden dependian del plan: el mismo
+          -- filtro podia devolver los empates en distinto orden entre cargas.
+          -- Verificado al cambiar el plan de esta consulta el 2026-07-31: el
+          -- conjunto de 500 salia identico (500/500) pero el JSON no coincidia
+          -- byte a byte.
+          ORDER BY 2, 1
           LIMIT 500
         ) t
       ) AS items
