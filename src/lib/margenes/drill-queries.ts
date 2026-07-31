@@ -13,6 +13,9 @@ import {
 import {
   buildMargenWhereForTable,
   clienteSelectSql,
+  MARGEN_ITEM_DIA_ROLL_TABLE,
+  MARGEN_ROLL_TABLE,
+  resolveInformeMargenDataSource,
   facturaSedeSqlFilters,
   fechaDctoCompactSql,
   idTercExpr,
@@ -1653,6 +1656,35 @@ export const queryFilterOptions = async (
   filters: MargenQueryFilters,
   table: MargenDataTable,
 ) => {
+  // Los desplegables solo necesitan DIMENSIONES (fecha, categoría, línea,
+  // sublínea, ítem y sus nombres). Todas viven en margen_item_dia_roll, que es
+  // el mismo dato ya colapsado a día/sede/ítem: para julio son 1.029.776 filas
+  // contra 8.262.298 de margen_final_roll, porque este último repite cada ítem
+  // una vez por factura.
+  //
+  // Medido contra producción el 2026-07-31, alternando A/B para no confundir
+  // caché fría con costo real (la primera lectura de item_dia_roll dio 31,8 s
+  // por venir de disco, y estuve a punto de descartarla por eso):
+  //
+  //            margen_item_dia_roll   margen_final_roll
+  //   ronda 1        5.850 ms             39.179 ms
+  //   ronda 2        3.879 ms             13.094 ms   <- en caliente, 3,4x
+  //   ronda 3        5.769 ms
+  //
+  // Verificado que los cinco desplegables salen idénticos byte a byte desde
+  // ambas tablas (30 fechas, 2 categorías, 51 líneas, 216 sublíneas, 500 ítems).
+  //
+  // Si la tabla no existe o está vacía, `resolveInformeMargenDataSource` cae
+  // sola a la fuente anterior. El riesgo residual es que el refresco del roll
+  // falle un día: los desplegables quedarían sin los ítems nuevos, pero las
+  // cifras del tablero (que salen de `table`) siguen correctas.
+  const resolved =
+    table === MARGEN_ROLL_TABLE
+      ? await resolveInformeMargenDataSource(client)
+      : table;
+  const catalogTable =
+    resolved === MARGEN_ITEM_DIA_ROLL_TABLE ? resolved : table;
+
   const params: unknown[] = [];
   // Conservar `categorias` (asadero → tipo 3) y `lineas` (fruver → N1 01)
   // para que perfiles bloqueados solo vean dimensiones hijas de su alcance.
@@ -1664,11 +1696,11 @@ export const queryFilterOptions = async (
       items: [],
     },
     params,
-    table,
+    catalogTable,
   );
 
   const sedesLocked = filters.sedes.length > 0;
-  const roll = isRollTable(table);
+  const roll = isRollTable(catalogTable);
 
   const result = await client.query<{
     fechas: Array<{ value: string }> | null;
@@ -1701,7 +1733,7 @@ export const queryFilterOptions = async (
         COALESCE(NULLIF(nombre_linea2, ''), id_linea2) AS nombre_linea2,
         id_item,
         COALESCE(NULLIF(item_descripcion, ''), id_item) AS item_label
-      FROM ${table}
+      FROM ${catalogTable}
       WHERE ${where}
     )
     SELECT
@@ -1775,7 +1807,7 @@ export const queryFilterOptions = async (
         COALESCE(NULLIF(TRIM(nombre_linea2), ''), TRIM(COALESCE(id_linea2::text, ''))) AS nombre_linea2,
         TRIM(COALESCE(id_item::text, '')) AS id_item,
         COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS item_label
-      FROM ${table}
+      FROM ${catalogTable}
       WHERE ${where}
     )
     SELECT
