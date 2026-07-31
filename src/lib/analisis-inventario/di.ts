@@ -43,6 +43,62 @@ export const calculateDiMetrics = (input: DiMetricsInput): DiMetrics => {
   return { diUnits, diValue };
 };
 
+export type DiRatesInput = {
+  inventoryUnits: number;
+  inventoryValue: number;
+  /** Σ (unidades_i / dias_activos_i) sobre los ítems del grupo. Lo calcula el SQL. */
+  unitsPerDay: number;
+  /** Σ (costo_venta_i / dias_activos_i) sobre los ítems del grupo. */
+  costPerDay: number;
+};
+
+/**
+ * DI a partir de TASAS DIARIAS ya sumadas por ítem: DI = inventario / (und/día).
+ *
+ * Por qué no basta `inventario × días / vendidas` (lo que hacía `calculateDiMetrics`
+ * con `periodDays`): la tabla base es DENSA, emite una fila por ítem×sede×día
+ * aunque el ítem todavía no exista en esa sede. Verificado en GCP el 2026-07-31:
+ * 15.712 de 15.865 ítems de bogota/001 (99,0%) tienen fila los 30 días. Así que
+ * un ítem que llegó a mitad de mes recibía el divisor del mes completo.
+ *
+ * Caso que lo destapó (005184 MORA COMUN*500g, bogota/001, julio 2026):
+ * llegó el 28-jul, vendió 14 und en 3 días y cerró con 6 en inventario.
+ *   antes:  6 × 30 / 14 = 12,86 d
+ *   ahora:  6 /  (14/3) =  1,29 d   <- se agota en día y medio
+ *
+ * Sumar tasas es además la única forma ADITIVA correcta: cuando todos los ítems
+ * comparten los mismos días, Σ Inv / Σ(V_i/D) = D·ΣInv / ΣV, o sea coincide con
+ * la fórmula vieja. Solo difiere cuando las ventanas de exposición difieren, que
+ * es exactamente el caso que hay que arreglar.
+ *
+ * Efecto medido al agregar (bogota/001, julio 2026): a nivel de ítem cambia
+ * hasta 10x, pero a nivel de línea el movimiento es de -0,5% a -8,3% (el peor,
+ * HIGIENE ORAL: 47,52 -> 43,58) y el total de la sede pasa de 18,95 a 18,77.
+ * Es decir: esto arregla el dato del ítem, no reescribe el tablero.
+ */
+export const calculateDiFromRates = (input: DiRatesInput): DiMetrics => {
+  const inventoryUnits = Math.max(0, Number(input.inventoryUnits) || 0);
+  const inventoryValue = Math.max(0, Number(input.inventoryValue) || 0);
+  const unitsPerDay = Math.max(0, Number(input.unitsPerDay) || 0);
+  const costPerDay = Math.max(0, Number(input.costPerDay) || 0);
+
+  const diUnits =
+    inventoryUnits <= 0
+      ? 0
+      : unitsPerDay <= 0
+        ? NO_SALES_DI_VALUE
+        : inventoryUnits / unitsPerDay;
+
+  const diValue =
+    inventoryValue <= 0
+      ? 0
+      : costPerDay <= 0
+        ? NO_SALES_DI_VALUE
+        : inventoryValue / costPerDay;
+
+  return { diUnits, diValue };
+};
+
 export const formatDiDays = (value: number): string => {
   if (!Number.isFinite(value) || value >= NO_SALES_DI_VALUE) return "Sin venta";
   return `${(Math.round(value * 10) / 10).toLocaleString("es-CO", {
