@@ -1,13 +1,13 @@
 [Unit]
-Description=Visor - timer diario del ETL ventas x item (lunes a viernes 07:20)
+Description=Visor - timer diario del ETL ventas x item (lunes a viernes 07:09)
 Documentation=man:systemd.timer(5)
 
 [Timer]
-# Lunes a viernes 07:20: despues del ETL de margenes (07:15) y ANTES del sync a
-# GCP (07:50), para que lo cargado suba el mismo dia.
+# Lunes a viernes 07:09: despues del ETL de margenes (07:07) y ANTES del sync a
+# GCP (07:35), para que lo cargado suba el mismo dia.
 # Sabados y domingos NO corre este: lo cubre visor-etl-ventas-item-reconcile,
 # que a la misma hora recarga los ultimos 7 dias.
-OnCalendar=Mon..Fri *-*-* 07:20:00
+OnCalendar=Mon..Fri *-*-* 07:09:00
 # Si la VM estaba apagada, ejecutar al arrancar.
 Persistent=true
 Unit=visor-etl-ventas-item.service

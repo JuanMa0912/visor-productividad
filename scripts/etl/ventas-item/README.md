@@ -8,11 +8,22 @@ con tarea programada a las 07:00. Ahora es un pipeline de la 232, igual que
 
 | Unidad | Cuando | Que hace |
 |---|---|---|
-| `visor-etl-ventas-item.timer` | **Lun-Vie 07:20** | carga **ayer** |
-| `visor-etl-ventas-item-reconcile.timer` | **Sab y Dom 07:20** | `--days 7`: recarga los ultimos 7 dias |
+| `visor-etl-ventas-item.timer` | **Lun-Vie 07:09** | carga **ayer** |
+| `visor-etl-ventas-item-reconcile.timer` | **Sab y Dom 07:09** | `--days 7`: recarga los ultimos 7 dias |
 
-Las 07:20 caen despues del ETL de margenes (07:15) y **antes** del sync a GCP
-(07:50), asi lo que se carga sube el mismo dia.
+Las 07:09 caen despues del ETL de margenes (07:07) y **antes** del sync a GCP
+(07:35), asi lo que se carga sube el mismo dia.
+
+Cadena completa de la mañana (2026-07-31):
+
+| hora | proceso | dura |
+|---|---|---|
+| 07:00 | `etl-rotacion@{mercamio,mtodo,bogota}` en paralelo | ~30 min |
+| 07:00 | `ventas-pipeline-daily` | ~6 min |
+| 07:07 | `visor-etl-margen` | ~1 min |
+| 07:09 | **este ETL** | ~1,5 min |
+| 07:35 | `visor-etl-sync` (`--days 3`) | ~31 min |
+| **~08:05** | **informacion lista en GCP** | |
 
 El refresco de fin de semana existe para dos cosas: recuperar dias que quedaron
 `empty` porque el POS llego tarde, y recalcular `und_acum` si algun dia

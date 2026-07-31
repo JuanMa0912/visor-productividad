@@ -1,11 +1,21 @@
 [Unit]
-Description=Visor - timer diario del ETL local -> GCP (todos los dias 07:50)
+Description=Visor - timer diario del ETL local -> GCP (todos los dias 07:35)
 Documentation=man:systemd.timer(5)
 
 [Timer]
-# Todos los dias a las 07:50 (hora del sistema). El cierre del local termina
-# ~07:45; si algun dia se atrasa, el ETL avisa (WARNING) y se re-corre manual.
-OnCalendar=*-*-* 07:50:00
+# Todos los dias a las 07:35 (hora del sistema).
+#
+# Movido de 07:50 a 07:35 (2026-07-31) al paralelizar el ETL de rotacion: en
+# serie tardaba 53 min y terminaba 07:53, DESPUES de que el sync ya habia
+# arrancado -> el 30-jul de bogota no alcanzo a subir. Con las tres empresas en
+# paralelo (etl-rotacion@{mercamio,mtodo,bogota}) el cierre local termina ~07:30.
+#
+# Cadena completa: rotacion 07:00-07:30 | ventas-pipeline 07:00-07:06 |
+# margenes 07:07 | ventas x item 07:09 | sync 07:35-08:05 -> GCP listo ~08:05.
+#
+# Si algun dia el cierre se atrasa, el sync avisa (WARNING) y la ventana de
+# --days 3 lo recupera solo a la mañana siguiente.
+OnCalendar=*-*-* 07:35:00
 # Si la VM estaba apagada en ese momento, ejecutar al arrancar.
 Persistent=true
 Unit=visor-etl-sync.service
