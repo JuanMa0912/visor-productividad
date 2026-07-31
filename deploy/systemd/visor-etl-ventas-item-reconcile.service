@@ -1,0 +1,22 @@
+[Unit]
+Description=Visor - refresco fin de semana ventas x item (ultimos 7 dias) POS(217) -> 232
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/ventas-item/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=prodapp
+Group=prodapp
+WorkingDirectory=/home/prodapp/visor-productividad
+# --days 7 = los 7 dias que terminan AYER. Borra y reescribe cada dia/empresa,
+# asi recupera los dias que quedaron 'empty' porque el POS llego tarde y corrige
+# und_acum si algun dia intermedio cambio.
+ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/ventas-item/etl_ventas_item.py --days 7
+StandardOutput=journal
+StandardError=journal
+# Igual que el diario: exit 3 NO se trata como exito, para que se vea en --failed.
+# Endurecimientos. NO usar ProtectHome: el deploy y el .env.etl viven en /home/prodapp.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true

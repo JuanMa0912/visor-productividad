@@ -1,0 +1,16 @@
+[Unit]
+Description=Visor - timer fin de semana del refresco ventas x item (sab y dom 07:20, 7 dias)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Sabados y domingos 07:20, en el mismo hueco que el diario de lunes a viernes
+# (despues de margenes 07:15, antes del sync a GCP 07:50).
+# Cobertura completa: el sabado recarga [sab-7..vie] y el domingo [dom-7..sab],
+# asi que los dias de fin de semana quedan cubiertos sin necesidad del diario.
+OnCalendar=Sat,Sun *-*-* 07:20:00
+# Si la VM estaba apagada, ejecutar al arrancar.
+Persistent=true
+Unit=visor-etl-ventas-item-reconcile.service
+
+[Install]
+WantedBy=timers.target
