@@ -119,6 +119,96 @@ export const ROLL_METRICS_SQL = `
 `;
 
 /**
+ * SQL de la fila TOTAL (KPI + fila ACUMULADO) SIN agregados DISTINCT.
+ *
+ * Por qué existe: `COUNT(DISTINCT x)` obliga a PostgreSQL a ordenar la relación
+ * completa una vez por cada agregado. Con los 5 conteos de METRICS_SQL sobre los
+ * ~8,2M de filas de un mes x 11 sedes, la fila total tardaba 60 s; calculada
+ * junto a las filas por día en un `GROUP BY GROUPING SETS ((), (fecha_dcto))`
+ * llegaba a 135 s. El proxy corta a los 90 s, así que el tablero mostraba
+ * "Error cargando datos" al seleccionar todas las sedes (504).
+ *
+ * Reformulado como `COUNT(*)` sobre subconsultas `SELECT DISTINCT`, el
+ * planificador usa HashAggregate en vez de Sort. Medido contra producción el
+ * 2026-07-31: la fila total pasó de 60 s a 27 s.
+ *
+ * Nota: subir `work_mem` NO resuelve esto (medido: 256MB -> 1GB solo bajó de
+ * 135 s a 111 s), porque el costo no es el derrame a disco sino la cantidad de
+ * ordenamientos.
+ *
+ * Detalles que SÍ importan para el tiempo (todos medidos, no supuestos):
+ *  - `dias` y `sedes` no se consultan: salen en JS de las filas por día y de los
+ *    filtros. Cada uno costaba una pasada completa sobre la relación.
+ *  - Meter la sede como tipo compuesto `(empresa_norm, id_co_norm)` en el CTE
+ *    dispara el tiempo a 117 s: materializar 8,2M registros compuestos y hacerles
+ *    DISTINCT es carísimo. Ni siquiera como dos columnas planas vale la pena (76 s).
+ *  - Los tres conteos de baja cardinalidad (categoría, línea, sublínea: 1, 48 y
+ *    213 valores) se resuelven en UNA sola pasada vía el CTE `dims`, en vez de
+ *    tres. Cada subconsulta extra sobre `base` cuesta ~10 s.
+ * Resultado con esta forma: 27 s.
+ */
+export const buildTotalMetricsSql = (
+  table: MargenDataTable,
+  whereSql: string,
+): string => {
+  const isRoll =
+    table === "margen_final_roll" || table === "margen_dinastia_roll";
+  const ventas = isRoll ? "ventas_netas" : "COALESCE(vlrtot_bru, 0)";
+  const costo = isRoll ? "costo_total" : "COALESCE(tot_costo, 0)";
+  const margen = isRoll
+    ? "margen_pesos"
+    : "(COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0))";
+  const conIva = isRoll ? "ventas_con_iva" : "COALESCE(ven_totales, 0)";
+  // Misma normalización que METRICS_SQL/ROLL_METRICS_SQL: '' cuenta como NULL y
+  // COUNT ignora NULLs, así que el resultado es idéntico al COUNT(DISTINCT).
+  const dim = (col: string) =>
+    isRoll ? `NULLIF(${col}, '')` : `NULLIF(TRIM(${col}::text), '')`;
+
+  return `
+    WITH base AS (
+      SELECT
+        ${dim("documento_fc")} AS documento_fc,
+        ${dim("id_tipo")}      AS id_tipo,
+        ${dim("id_linea1")}    AS id_linea1,
+        ${dim("id_linea2")}    AS id_linea2,
+        ${dim("id_item")}      AS id_item,
+        ${ventas}              AS ventas_netas,
+        ${costo}               AS costo_total,
+        ${margen}              AS margen_pesos,
+        COALESCE(cantidad, 0)  AS cantidad,
+        ${conIva}              AS ventas_con_iva
+      FROM ${table}
+      WHERE ${whereSql}
+    ),
+    sums AS (
+      SELECT
+        COALESCE(SUM(ventas_netas), 0)   AS ventas_netas,
+        COALESCE(SUM(costo_total), 0)    AS costo_total,
+        COALESCE(SUM(margen_pesos), 0)   AS margen_pesos,
+        COALESCE(SUM(cantidad), 0)       AS cantidad,
+        COALESCE(SUM(ventas_con_iva), 0) AS ventas_con_iva
+      FROM base
+    ),
+    -- Una sola pasada para los tres conteos de baja cardinalidad.
+    dims AS (
+      SELECT DISTINCT id_tipo, id_linea1, id_linea2 FROM base
+    )
+    SELECT
+      sums.ventas_netas,
+      sums.costo_total,
+      sums.margen_pesos,
+      sums.cantidad,
+      sums.ventas_con_iva,
+      (SELECT COUNT(*) FROM (SELECT DISTINCT documento_fc FROM base WHERE documento_fc IS NOT NULL) d) AS facturas,
+      (SELECT COUNT(*) FROM (SELECT DISTINCT id_item      FROM base WHERE id_item      IS NOT NULL) d) AS items,
+      (SELECT COUNT(DISTINCT id_tipo)   FROM dims) AS categorias,
+      (SELECT COUNT(DISTINCT id_linea1) FROM dims) AS lineas,
+      (SELECT COUNT(DISTINCT id_linea2) FROM dims) AS sublineas
+    FROM sums
+  `;
+};
+
+/**
  * Métricas del tablero Por Cliente / facturas de cliente:
  * sin COUNT DISTINCT de categorías/líneas/ítems (no se muestran y son caros).
  */

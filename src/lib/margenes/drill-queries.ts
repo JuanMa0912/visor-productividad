@@ -37,6 +37,7 @@ import {
 } from "@/lib/margenes/fact-path";
 import {
   buildMargenOrderBy,
+  buildTotalMetricsSql,
   boardMetricsSqlFor,
   KPI_MERCADO_TIPO,
   metricsSqlFor,
@@ -362,44 +363,68 @@ const queryDrillLevel0 = async (
   // no AND-ear Mercado: antes dejaba el tablero en cero.
   const levelFilters = withMercadoDefaultCategoria(filters, table);
   const dayWhere = buildWhere(levelFilters, [], params, table, false);
-  const sedeKey = sedeDistinctKeySql(table);
 
-  const result = await client.query(
+  // DOS consultas en vez de un GROUP BY GROUPING SETS ((), (fecha_dcto)).
+  //
+  // El GROUPING SETS parecía barato (una sola pasada) pero PostgreSQL no puede
+  // compartir trabajo entre los grouping sets cuando hay agregados DISTINCT:
+  // resuelve cada COUNT(DISTINCT) con su propio ordenamiento, y la fila total no
+  // puede repartirse por fecha. Medido contra producción el 2026-07-31 con 11
+  // sedes y 30 días (~8,2M filas):
+  //
+  //   GROUPING SETS con todo ...................... 135 s  -> 504 del proxy (90 s)
+  //   solo filas por día .......................... 16 s
+  //   solo total, con COUNT(DISTINCT) ............. 60 s
+  //   solo total, con subconsultas DISTINCT ....... 27 s   <- buildTotalMetricsSql
+  //
+  // Separadas suman ~43 s y cada una entra holgada bajo el timeout del proxy.
+  const dayResult = await client.query(
     `
     SELECT
       fecha_dcto,
-      GROUPING(fecha_dcto) AS is_total,
-      ${metricsSqlFor(table)},
-      COUNT(DISTINCT fecha_dcto) AS dias,
-      COUNT(DISTINCT ${sedeKey}) AS sedes
+      ${metricsSqlFor(table)}
     FROM ${table}
     WHERE ${dayWhere}
-    GROUP BY GROUPING SETS ((), (fecha_dcto))
+    GROUP BY fecha_dcto
     `,
     params,
   );
 
-  let totalRow: Record<string, string | number> | null = null;
-  const dayRows: DrillRow[] = [];
-
-  for (const row of result.rows) {
-    if (Number(row.is_total) === 1) {
-      totalRow = row;
-      continue;
-    }
+  const dayRows: DrillRow[] = dayResult.rows.map((row) => {
     const fecha = String(row.fecha_dcto);
-    const metrics = mapMetrics(row);
-    dayRows.push({
+    return {
       key: fecha,
       cod: fecha,
       label: formatDayLabel(fecha),
       drillable: true,
       drillStep: { type: "day", fecha, label: formatDayLabel(fecha) },
-      ...metrics,
-    });
-  }
+      ...mapMetrics(row),
+    } as DrillRow;
+  });
 
   sortDayRows(dayRows, filters);
+
+  // El total solo se pide si alguien lo va a usar: la fila ACUMULADO (que exige
+  // más de un día) o el KPI de la cabecera.
+  const needsTotal = (dayRows.length > 1 || options?.includeKpi === true) &&
+    dayRows.length > 0;
+  let totalRow: Record<string, string | number> | null = null;
+  if (needsTotal) {
+    const totalResult = await client.query(
+      buildTotalMetricsSql(table, dayWhere),
+      params,
+    );
+    totalRow = (totalResult.rows[0] as Record<string, string | number>) ?? null;
+    if (totalRow) {
+      // Exacto y gratis: cada fila del detalle es una fecha distinta. Evita otro
+      // COUNT(DISTINCT fecha_dcto) sobre la tabla completa.
+      totalRow.dias = dayRows.length;
+      // Las sedes las conoce la petición; consultarlas costaba una pasada más.
+      // En este nivel `sedes` nunca viene vacío: la ruta exige seleccionar sede
+      // antes de consultar (HEAVY_MODES en api/margenes/data/route.ts).
+      totalRow.sedes = levelFilters.sedes.length;
+    }
+  }
 
   const rows = [...dayRows];
   if (rows.length > 1 && totalRow) {
