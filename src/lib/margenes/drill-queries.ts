@@ -36,6 +36,7 @@ import {
   type FactNavStep,
 } from "@/lib/margenes/fact-path";
 import {
+  buildDayMetricsSql,
   buildMargenOrderBy,
   buildTotalMetricsSql,
   boardMetricsSqlFor,
@@ -369,24 +370,21 @@ const queryDrillLevel0 = async (
   // El GROUPING SETS parecía barato (una sola pasada) pero PostgreSQL no puede
   // compartir trabajo entre los grouping sets cuando hay agregados DISTINCT:
   // resuelve cada COUNT(DISTINCT) con su propio ordenamiento, y la fila total no
-  // puede repartirse por fecha. Medido contra producción el 2026-07-31 con 11
-  // sedes y 30 días (~8,2M filas):
+  // puede repartirse por fecha.
   //
-  //   GROUPING SETS con todo ...................... 135 s  -> 504 del proxy (90 s)
-  //   solo filas por día .......................... 16 s
-  //   solo total, con COUNT(DISTINCT) ............. 60 s
-  //   solo total, con subconsultas DISTINCT ....... 27 s   <- buildTotalMetricsSql
+  // Ninguna de las dos usa ya `metricsSqlFor()`: los 5 COUNT(DISTINCT) fuerzan
+  // un Sort de la relación completa. Medido contra producción (Cloud SQL, julio
+  // × 11 sedes = 8,17M filas, `work_mem` 256MB como en esta ruta):
   //
-  // Separadas suman ~43 s y cada una entra holgada bajo el timeout del proxy.
+  //                                    antes      ahora
+  //   filas por día ................   61,7 s     26,5 s   <- buildDayMetricsSql
+  //   fila total ...................   22,2 s     22,2 s   <- buildTotalMetricsSql
+  //   TOTAL de la petición .........   83,9 s     48,7 s
+  //
+  // El proxy corta a los 90 s y `mode=filters` (29,6 s) corre en paralelo
+  // compitiendo por CPU: con 83,9 s el tablero daba 504 al pedir todas las sedes.
   const dayResult = await client.query(
-    `
-    SELECT
-      fecha_dcto,
-      ${metricsSqlFor(table)}
-    FROM ${table}
-    WHERE ${dayWhere}
-    GROUP BY fecha_dcto
-    `,
+    buildDayMetricsSql(table, dayWhere),
     params,
   );
 
@@ -1074,14 +1072,14 @@ export const queryFactNavRows = async (
   const where = buildFactWhere(filters, path, params, table);
 
   if (level === 0) {
+    // Misma forma (y mismo costo) que el nivel 0 del drill: sin los 5
+    // COUNT(DISTINCT) pasa de ~62 s a ~27 s sobre un mes × 11 sedes.
     const result = await client.query(
-      `
-      SELECT fecha_dcto, ${metricsSqlFor(table)}
-      FROM ${table}
-      WHERE ${where}
-      GROUP BY fecha_dcto
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "fecha_dcto DESC")}
-      `,
+      buildDayMetricsSql(
+        table,
+        where,
+        buildMargenOrderBy(filters.orderBy, filters.orderDir, "fecha_dcto DESC"),
+      ),
       params,
     );
     return {
