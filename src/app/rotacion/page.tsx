@@ -4035,11 +4035,14 @@ export function RotacionPageInner() {
                                     ? ROTACION_TOUR_ANCHOR.tableAbcd
                                     : undefined
                                 }
-                                className="grid w-full min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch"
+                                className="grid w-full min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 sm:items-start"
                               >
-                                  <div className="flex h-full min-w-0 flex-col gap-2">
-                                  <div className="flex min-h-0 flex-1 min-w-0 w-full flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
-                                    <div className="mb-2 space-y-0.5">
+                                  <div className="flex min-w-0 flex-col gap-1.5">
+                                  <div
+                                    title="Mantener disponibilidad · surtido y abastecimiento"
+                                    className="flex min-w-0 w-full flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2 shadow-sm ring-1 ring-emerald-100/90"
+                                  >
+                                    <div className="mb-1.5 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-emerald-950">
                                         A·B·C · En rotación
                                       </p>
@@ -4047,7 +4050,7 @@ export function RotacionPageInner() {
                                         Productos que se mueven
                                       </p>
                                     </div>
-                                    <div className="grid w-full grid-cols-3 gap-2 justify-items-center">
+                                    <div className="grid w-full grid-cols-3 gap-1.5 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
                                       {abcdConfig.aUntilPercent.toFixed(0)}%
@@ -4162,7 +4165,7 @@ export function RotacionPageInner() {
                                     </Button>
                                   </div>
                                     </div>
-                                    <div className="mt-2 rounded-lg border border-emerald-200/80 bg-white/80 px-2.5 py-2 shadow-sm">
+                                    <div className="mt-1.5 rounded-lg border border-emerald-200/80 bg-white/80 px-2.5 py-1.5 shadow-sm">
                                       <div className="flex items-center justify-between gap-3">
                                         <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
                                           Total A+B+C
@@ -4173,17 +4176,13 @@ export function RotacionPageInner() {
                                           )}
                                         </span>
                                       </div>
-                                      <p className="mt-1 text-[10px] leading-snug text-emerald-800/70">
+                                      <p className="mt-0.5 text-[10px] leading-snug text-emerald-800/70">
                                         Productos en rotaci&oacute;n
                                       </p>
                                     </div>
-                                    <p className="mt-2 border-l-2 border-emerald-300/80 pl-2 pt-1.5 text-[10px] leading-snug text-emerald-900/75">
-                                      Mantener disponibilidad · surtido y
-                                      abastecimiento
-                                    </p>
                                   </div>
                                   <div
-                                    className={`flex min-h-36 min-w-0 w-full flex-1 flex-col rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
+                                    className={`min-w-0 w-full rounded-xl border px-3 py-2 shadow-sm ring-1 ${
                                       hasAbcSelection
                                         ? "border-emerald-400 bg-emerald-50/90 ring-emerald-200"
                                         : "border-emerald-200/90 bg-emerald-50/40 ring-emerald-100/80"
@@ -4234,9 +4233,12 @@ export function RotacionPageInner() {
                                   </div>
                                   </div>
 
-                                  <div className="flex h-full min-w-0 flex-col gap-2">
-                                  <div className="flex min-h-0 flex-1 min-w-0 w-full flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2.5 shadow-sm ring-1 ring-rose-100/90">
-                                    <div className="mb-2 space-y-0.5">
+                                  <div className="flex min-w-0 flex-col gap-1.5">
+                                  <div
+                                    title="Demanda: descuento, descontinuar, devolver. Abastecimiento: pedido, lead time, ROP."
+                                    className="flex min-w-0 w-full flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2 shadow-sm ring-1 ring-rose-100/90"
+                                  >
+                                    <div className="mb-1.5 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-rose-950">
                                         Críticos · Requieren acción
                                       </p>
@@ -4244,7 +4246,7 @@ export function RotacionPageInner() {
                                         Productos problemáticos
                                       </p>
                                     </div>
-                                    <div className="grid w-full grid-cols-3 gap-2 justify-items-center">
+                                    <div className="grid w-full grid-cols-3 gap-1.5 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-rose-600">
                                       {(100 - abcdConfig.cUntilPercent).toFixed(
@@ -4356,7 +4358,7 @@ export function RotacionPageInner() {
                                     </Button>
                                   </div>
                                     </div>
-                                    <div className="mt-2 rounded-lg border border-rose-200/80 bg-white/80 px-2.5 py-2 shadow-sm">
+                                    <div className="mt-1.5 rounded-lg border border-rose-200/80 bg-white/80 px-2.5 py-1.5 shadow-sm">
                                       <div className="flex items-center justify-between gap-3">
                                         <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-rose-700">
                                           Total D+0+S
@@ -4367,22 +4369,13 @@ export function RotacionPageInner() {
                                           )}
                                         </span>
                                       </div>
-                                      <p className="mt-1 text-[10px] leading-snug text-rose-800/70">
+                                      <p className="mt-0.5 text-[10px] leading-snug text-rose-800/70">
                                         Productos para revisar
-                                      </p>
-                                    </div>
-                                    <div className="mt-1.5 space-y-1 pt-1.5">
-                                      <p className="border-l-2 border-rose-200 pl-2 text-[10px] leading-snug text-rose-900/70">
-                                        Demanda · descuento, descontinuar,
-                                        devolver
-                                      </p>
-                                      <p className="border-l-2 border-cyan-200 pl-2 text-[10px] leading-snug text-cyan-900/75">
-                                        Abastecimiento · pedido, lead time, ROP
                                       </p>
                                     </div>
                                   </div>
                                   <div
-                                    className={`flex min-h-36 min-w-0 w-full flex-1 flex-col rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
+                                    className={`min-w-0 w-full rounded-xl border px-3 py-2 shadow-sm ring-1 ${
                                       hasCriticalSelection
                                         ? "border-rose-400 bg-rose-50/90 ring-rose-200"
                                         : "border-rose-200/90 bg-rose-50/40 ring-rose-100/80"
