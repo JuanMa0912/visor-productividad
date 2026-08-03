@@ -74,7 +74,6 @@ import {
   matchesLineaN1Family,
   toggleAbcdLetterFilter,
   isAbcdLetterFilterActive,
-  formatAbcdCategoryFilterLabel,
   ROTACION_TABLE_COL_WIDTHS,
   ROTACION_ZERO_TABLE_COL_WIDTHS,
   ROTACION_FLOATING_HEADER_TOP_PX,
@@ -3721,44 +3720,6 @@ export function RotacionPageInner() {
                       (acc, row) => acc + row.totalUnits,
                       0,
                     );
-                    const selectedCategoryTotalInv =
-                      categoryFilteredRows.reduce(
-                        (acc, row) => acc + row.inventoryValue,
-                        0,
-                      );
-                    const selectedCategoryTotalInvUnits =
-                      categoryFilteredRows.reduce(
-                        (acc, row) => acc + row.inventoryUnits,
-                        0,
-                      );
-                    const selectedCategoryTotalSales =
-                      categoryFilteredRows.reduce(
-                        (acc, row) => acc + row.totalSales,
-                        0,
-                      );
-                    const selectedCategoryTotalUnits =
-                      categoryFilteredRows.reduce(
-                        (acc, row) => acc + row.totalUnits,
-                        0,
-                      );
-                    const rowsWithCostBasis = categoryFilteredRows.filter(
-                      (row) => row.totalSales > 0 && row.totalCost > 0,
-                    );
-                    const selectedCategoryMarginSales = rowsWithCostBasis.reduce(
-                      (acc, row) => acc + row.totalSales,
-                      0,
-                    );
-                    const selectedCategoryMarginCost = rowsWithCostBasis.reduce(
-                      (acc, row) => acc + row.totalCost,
-                      0,
-                    );
-                    const selectedCategoryMarginPct =
-                      selectedCategoryMarginSales > 0
-                        ? rotationMarginPct(
-                            selectedCategoryMarginSales,
-                            selectedCategoryMarginCost,
-                          )
-                        : null;
                     const infoRowsWithCostBasis = filteredRows.filter(
                       (row) => row.totalSales > 0 && row.totalCost > 0,
                     );
@@ -3780,13 +3741,114 @@ export function RotacionPageInner() {
                         : infoTotalInvUnits > 0
                           ? NO_SALES_DI_VALUE
                           : 0;
-                    const selectedCategorySalesCoverageDays =
-                      selectedCategoryTotalUnits > 0 && daysConsulted > 0
-                        ? (selectedCategoryTotalInvUnits * daysConsulted) /
-                          selectedCategoryTotalUnits
-                        : selectedCategoryTotalInvUnits > 0
-                          ? NO_SALES_DI_VALUE
-                          : 0;
+                    const summarizeRotationMetricRows = (
+                      metricRows: RotationRow[],
+                    ) => {
+                      const totalInv = metricRows.reduce(
+                        (acc, row) => acc + row.inventoryValue,
+                        0,
+                      );
+                      const totalInvUnits = metricRows.reduce(
+                        (acc, row) => acc + row.inventoryUnits,
+                        0,
+                      );
+                      const totalSales = metricRows.reduce(
+                        (acc, row) => acc + row.totalSales,
+                        0,
+                      );
+                      const totalUnits = metricRows.reduce(
+                        (acc, row) => acc + row.totalUnits,
+                        0,
+                      );
+                      const withCost = metricRows.filter(
+                        (row) => row.totalSales > 0 && row.totalCost > 0,
+                      );
+                      const marginSales = withCost.reduce(
+                        (acc, row) => acc + row.totalSales,
+                        0,
+                      );
+                      const marginCost = withCost.reduce(
+                        (acc, row) => acc + row.totalCost,
+                        0,
+                      );
+                      const marginPct =
+                        marginSales > 0
+                          ? rotationMarginPct(marginSales, marginCost)
+                          : null;
+                      const salesCoverageDays =
+                        totalUnits > 0 && daysConsulted > 0
+                          ? (totalInvUnits * daysConsulted) / totalUnits
+                          : totalInvUnits > 0
+                            ? NO_SALES_DI_VALUE
+                            : 0;
+                      return {
+                        totalInv,
+                        totalSales,
+                        salesCoverageDays,
+                        marginPct,
+                      };
+                    };
+                    const abcSelectedLetters = Array.isArray(categoryFilter)
+                      ? categoryFilter.filter(
+                          (letter): letter is "A" | "B" | "C" =>
+                            letter === "A" || letter === "B" || letter === "C",
+                        )
+                      : [];
+                    const hasAbcSelection = abcSelectedLetters.length > 0;
+                    const hasCriticalD =
+                      Array.isArray(categoryFilter) &&
+                      categoryFilter.includes("D");
+                    const hasCritical0 = categoryFilter === "0";
+                    const hasCriticalS =
+                      categoryFilter === "S" ||
+                      categoryFilter === "R" ||
+                      categoryFilter === "N";
+                    const hasCriticalSelection =
+                      hasCriticalD || hasCritical0 || hasCriticalS;
+                    const abcMetricLetters = hasAbcSelection
+                      ? abcSelectedLetters
+                      : (["A", "B", "C"] as const);
+                    const abcMetricRows = filteredRows.filter((row) => {
+                      if (!isAbcdFilterableRow(row)) return false;
+                      const cat = categoryByItem.get(row.item);
+                      return (
+                        cat !== undefined &&
+                        (abcMetricLetters as readonly string[]).includes(cat)
+                      );
+                    });
+                    const criticalMetricRows = filteredRows.filter((row) => {
+                      const isS = isNuevoItemInSelectedRange(row);
+                      const isZero = isCeroRotacionExcludingNuevo(
+                        row,
+                        dateRange,
+                      );
+                      const isD =
+                        isAbcdFilterableRow(row) &&
+                        categoryByItem.get(row.item) === "D";
+                      if (!hasCriticalSelection) {
+                        return isS || isZero || isD;
+                      }
+                      if (hasCriticalS && isS) return true;
+                      if (hasCritical0 && isZero) return true;
+                      if (hasCriticalD && isD) return true;
+                      return false;
+                    });
+                    const abcGroupMetrics =
+                      summarizeRotationMetricRows(abcMetricRows);
+                    const criticalGroupMetrics =
+                      summarizeRotationMetricRows(criticalMetricRows);
+                    const abcGroupLabel = hasAbcSelection
+                      ? abcSelectedLetters.join("+")
+                      : "A+B+C";
+                    const criticalGroupLabel = hasCriticalSelection
+                      ? [
+                          hasCriticalD ? "D" : null,
+                          hasCritical0 ? "0" : null,
+                          hasCriticalS ? "S" : null,
+                        ]
+                          .filter(Boolean)
+                          .join("+")
+                      : "D+0+S";
                     const abcdSummaryRows = buildAbcdSummaryRows(
                       sourceRowsForAbcdFilterable,
                       categoryByItem,
@@ -3817,9 +3879,6 @@ export function RotacionPageInner() {
                             abcdTotalCostForMargin,
                           )
                         : null;
-                    // Siempre mostrar el bloque de métricas; sin filtro ABC usa "total".
-                    const selectedCategoryLabel =
-                      formatAbcdCategoryFilterLabel(categoryFilter) ?? "total";
                     const nuevoItemsCount = group.rows.filter((row) =>
                       isNuevoItemInSelectedRange(row),
                     ).length;
@@ -4273,37 +4332,105 @@ export function RotacionPageInner() {
                             </div>
 
                             <div className="flex w-full flex-col gap-3 text-sm">
-                              <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
-                                <div className="min-w-0 space-y-1">
-                                  <div>
-                                    Total venta:{" "}
-                                    <span className="font-black text-slate-900">
-                                      {formatPriceWithoutSixZeros(
-                                        selectedCategoryTotalSales,
-                                      )}
-                                    </span>
+                              <div className="grid w-full gap-3 sm:grid-cols-2">
+                                <div
+                                  className={`rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
+                                    hasAbcSelection
+                                      ? "border-emerald-400 bg-emerald-50/90 ring-emerald-200"
+                                      : "border-emerald-200/90 bg-emerald-50/40 ring-emerald-100/80"
+                                  }`}
+                                >
+                                  <div className="mb-2 space-y-0.5">
+                                    <p className="text-[11px] font-bold tracking-tight text-emerald-950">
+                                      A·B·C · En rotación
+                                    </p>
+                                    <p className="text-[10px] leading-snug text-emerald-800/85">
+                                      Totales {abcGroupLabel}
+                                    </p>
                                   </div>
-                                  <div>
-                                    Total inventario:{" "}
-                                    <span className="font-black text-slate-900">
-                                      {formatPriceWithoutSixZeros(
-                                        selectedCategoryTotalInv,
-                                      )}
-                                    </span>
+                                  <div className="space-y-1 text-sm text-emerald-950/80">
+                                    <div>
+                                      Total venta:{" "}
+                                      <span className="font-black text-emerald-950">
+                                        {formatPriceWithoutSixZeros(
+                                          abcGroupMetrics.totalSales,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Total inventario:{" "}
+                                      <span className="font-black text-emerald-950">
+                                        {formatPriceWithoutSixZeros(
+                                          abcGroupMetrics.totalInv,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Dias de inventario:{" "}
+                                      <span className="font-black text-emerald-950">
+                                        {formatRotationOneDecimal(
+                                          abcGroupMetrics.salesCoverageDays,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Margen {abcGroupLabel} %:{" "}
+                                      <span className="font-black text-emerald-950">
+                                        {formatPercent(
+                                          abcGroupMetrics.marginPct,
+                                        )}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div>
-                                    Dias de inventario:{" "}
-                                    <span className="font-black text-slate-900">
-                                      {formatRotationOneDecimal(
-                                        selectedCategorySalesCoverageDays,
-                                      )}
-                                    </span>
+                                </div>
+                                <div
+                                  className={`rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
+                                    hasCriticalSelection
+                                      ? "border-rose-400 bg-rose-50/90 ring-rose-200"
+                                      : "border-rose-200/90 bg-rose-50/40 ring-rose-100/80"
+                                  }`}
+                                >
+                                  <div className="mb-2 space-y-0.5">
+                                    <p className="text-[11px] font-bold tracking-tight text-rose-950">
+                                      Críticos · Requieren acción
+                                    </p>
+                                    <p className="text-[10px] leading-snug text-rose-800/85">
+                                      Totales {criticalGroupLabel}
+                                    </p>
                                   </div>
-                                  <div>
-                                    Margen {selectedCategoryLabel} %:{" "}
-                                    <span className="font-black text-slate-900">
-                                      {formatPercent(selectedCategoryMarginPct)}
-                                    </span>
+                                  <div className="space-y-1 text-sm text-rose-950/80">
+                                    <div>
+                                      Total venta:{" "}
+                                      <span className="font-black text-rose-950">
+                                        {formatPriceWithoutSixZeros(
+                                          criticalGroupMetrics.totalSales,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Total inventario:{" "}
+                                      <span className="font-black text-rose-950">
+                                        {formatPriceWithoutSixZeros(
+                                          criticalGroupMetrics.totalInv,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Dias de inventario:{" "}
+                                      <span className="font-black text-rose-950">
+                                        {formatRotationOneDecimal(
+                                          criticalGroupMetrics.salesCoverageDays,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Margen {criticalGroupLabel} %:{" "}
+                                      <span className="font-black text-rose-950">
+                                        {formatPercent(
+                                          criticalGroupMetrics.marginPct,
+                                        )}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
