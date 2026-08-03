@@ -315,28 +315,38 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
       const withoutSame = prev.filter((entry) => entry.type !== step.type);
       return [...withoutSame, step];
     });
+    scrollToId("di-heatmap");
   };
 
+  /** Celda = misma cascada que la fila (todas las sedes), no abre drill por sede. */
   const openHeatmapCell = (
-    sede: { key: string; label: string; empresa: string; sedeId: string },
+    _sede: { key: string; label: string; empresa: string; sedeId: string },
     rowStep: AnalisisInventarioDrillStep,
   ) => {
-    const sedeStep: AnalisisInventarioDrillStep = {
-      type: "sede",
-      id: sede.key,
-      label: sede.label,
-      empresa: sede.empresa,
-      sedeId: sede.sedeId,
-    };
-    pendingScrollToDrillRef.current = true;
-    setPath(
-      [sedeStep, ...heatmapPath.filter((s) => s.type !== "sede"), rowStep].filter(
-        (step, index, arr) =>
-          arr.findIndex(
-            (other) => other.type === step.type && other.id === step.id,
-          ) === index,
-      ),
-    );
+    openHeatmapRow(rowStep);
+  };
+
+  const heatmapRowLevelLabel =
+    heatmap?.rowLevel === "linea"
+      ? "líneas"
+      : heatmap?.rowLevel === "sublinea"
+        ? "sublíneas"
+        : heatmap?.rowLevel === "item"
+          ? "ítems"
+          : "categorías";
+
+  const formatHeatmapRowLabel = (row: {
+    id: string;
+    label: string;
+    level: string;
+  }) => {
+    if (row.level === "linea" && row.id && !row.id.startsWith("__")) {
+      return `${row.id} · ${row.label}`;
+    }
+    if (row.level === "item" && row.id && !row.id.startsWith("__")) {
+      return `${row.id} · ${row.label}`;
+    }
+    return row.label;
   };
 
   const goUpOneLevel = () => {
@@ -593,46 +603,63 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         id="di-heatmap"
         className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)]"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">
-              Mapa de calor · sedes ×{" "}
-              {heatmap?.rowLevel === "categoria"
-                ? "categorías"
-                : heatmap?.rowLevel === "linea"
-                  ? "líneas"
-                  : heatmap?.rowLevel === "sublinea"
-                    ? "sublíneas"
-                    : "ítems"}
-            </h2>
-            <p className="text-xs text-slate-500">
-              Clic en fila para bajar; clic en celda para abrir el drill de esa
-              sede.
-            </p>
+        <div className="border-b border-slate-100 px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">
+                Mapa de calor · {heatmapRowLevelLabel} × sedes
+              </h2>
+              <p className="text-xs text-slate-500">
+                Cascada: categoría → línea → sublínea → ítem. Clic en fila o
+                celda profundiza para todas las sedes. Métrica:{" "}
+                {metric === "units" ? "DI unidades" : "DI valor"}.
+              </p>
+            </div>
           </div>
-          {heatmapPath.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setHeatmapPath([])}
-                className="text-xs font-semibold text-blue-700 hover:underline"
-              >
-                Raíz
-              </button>
-              {heatmapPath.map((step, index) => (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setHeatmapPath([])}
+              className="text-xs font-semibold text-blue-700 hover:underline"
+            >
+              Todas las categorías
+            </button>
+            {heatmapPath
+              .filter((step) => step.type !== "sede")
+              .map((step, index) => (
                 <button
-                  key={`${step.type}-${step.id}`}
+                  key={`${step.type}-${step.id}-${index}`}
                   type="button"
                   onClick={() =>
-                    setHeatmapPath(heatmapPath.slice(0, index + 1))
+                    setHeatmapPath(
+                      heatmapPath
+                        .filter((entry) => entry.type !== "sede")
+                        .slice(0, index + 1),
+                    )
                   }
                   className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
                 >
-                  {step.label}
+                  {step.type === "linea" && step.id && !step.id.startsWith("__")
+                    ? `${step.id} · ${step.label}`
+                    : step.label}
                 </button>
               ))}
-            </div>
-          ) : null}
+            {heatmapPath.filter((step) => step.type !== "sede").length > 0 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setHeatmapPath((prev) => {
+                    const clean = prev.filter((step) => step.type !== "sede");
+                    return clean.slice(0, -1);
+                  })
+                }
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                Regresar
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="max-h-[min(70vh,640px)] overflow-auto">
           {loadingBoard ? (
@@ -648,7 +675,13 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
               <thead className="sticky top-0 z-20">
                 <tr className="bg-slate-50 text-left text-slate-600 shadow-sm">
                   <th className="sticky left-0 z-30 bg-slate-50 px-3 py-2 font-semibold">
-                    Dimensión
+                    {heatmap?.rowLevel === "categoria"
+                      ? "Categoría"
+                      : heatmap?.rowLevel === "linea"
+                        ? "Línea"
+                        : heatmap?.rowLevel === "sublinea"
+                          ? "Sublínea"
+                          : "Ítem"}
                   </th>
                   {heatmap.columns.map((col) => (
                     <th
@@ -661,40 +694,60 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                 </tr>
               </thead>
               <tbody>
-                {heatmap.rows.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100">
-                    <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => openHeatmapRow(row.drillStep)}
-                        className="text-left hover:text-blue-700 hover:underline"
-                        disabled={row.level === "item"}
-                      >
-                        {row.label}
-                      </button>
-                    </th>
-                    {heatmap.columns.map((col) => {
-                      const di =
-                        cellByKey.get(`${row.id}::${col.key}`) ?? Number.NaN;
-                      const style = Number.isFinite(di)
-                        ? diHeatmapStyle(di)
-                        : diHeatmapStyle(999999);
-                      return (
-                        <td key={col.key} className="p-1">
+                {heatmap.rows.map((row) => {
+                  const rowLabel = formatHeatmapRowLabel(row);
+                  const canDeepen = row.level !== "item";
+                  return (
+                    <tr key={row.id} className="border-t border-slate-100">
+                      <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-slate-800">
+                        {canDeepen ? (
                           <button
                             type="button"
-                            onClick={() => openHeatmapCell(col, row.drillStep)}
-                            className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
-                            style={style}
-                            title={`${row.label} · ${col.label}: ${formatDiDays(di)}`}
+                            onClick={() => openHeatmapRow(row.drillStep)}
+                            className="text-left text-blue-700 hover:underline"
+                            title="Ver siguiente nivel en todas las sedes"
                           >
-                            {Number.isFinite(di) ? formatDiDays(di) : "—"}
+                            {rowLabel}
                           </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                        ) : (
+                          <span className="text-slate-800">{rowLabel}</span>
+                        )}
+                      </th>
+                      {heatmap.columns.map((col) => {
+                        const di =
+                          cellByKey.get(`${row.id}::${col.key}`) ?? Number.NaN;
+                        const style = Number.isFinite(di)
+                          ? diHeatmapStyle(di)
+                          : diHeatmapStyle(999999);
+                        return (
+                          <td key={col.key} className="p-1">
+                            {canDeepen ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openHeatmapCell(col, row.drillStep)
+                                }
+                                className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                style={style}
+                                title={`${rowLabel} · ${col.label}: ${formatDiDays(di)} · clic para profundizar`}
+                              >
+                                {Number.isFinite(di) ? formatDiDays(di) : "—"}
+                              </button>
+                            ) : (
+                              <div
+                                className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                style={style}
+                                title={`${rowLabel} · ${col.label}: ${formatDiDays(di)}`}
+                              >
+                                {Number.isFinite(di) ? formatDiDays(di) : "—"}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
