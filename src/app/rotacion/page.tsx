@@ -3979,7 +3979,7 @@ export function RotacionPageInner() {
                               </Badge>
                             </div>
 
-                            <div className="flex flex-wrap items-start gap-4">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                               <div className="flex min-w-44 max-w-sm flex-1 flex-col gap-3">
                                 <CardDescription className="text-sm leading-6 text-slate-600">
                                   {targetSedeSelections.length > 1
@@ -4035,9 +4035,10 @@ export function RotacionPageInner() {
                                     ? ROTACION_TOUR_ANCHOR.tableAbcd
                                     : undefined
                                 }
-                                className="flex w-fit max-w-full shrink-0 flex-wrap gap-2"
+                                className="grid w-full min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch"
                               >
-                                  <div className="flex w-fit flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
+                                  <div className="flex h-full min-w-0 flex-col gap-2">
+                                  <div className="flex min-h-0 flex-1 min-w-0 w-full flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2.5 shadow-sm ring-1 ring-emerald-100/90">
                                     <div className="mb-2 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-emerald-950">
                                         A·B·C · En rotación
@@ -4046,7 +4047,7 @@ export function RotacionPageInner() {
                                         Productos que se mueven
                                       </p>
                                     </div>
-                                    <div className="grid w-fit grid-cols-3 gap-2 justify-items-center">
+                                    <div className="grid w-full grid-cols-3 gap-2 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
                                       {abcdConfig.aUntilPercent.toFixed(0)}%
@@ -4181,8 +4182,60 @@ export function RotacionPageInner() {
                                       abastecimiento
                                     </p>
                                   </div>
+                                  <div
+                                    className={`flex min-h-36 min-w-0 w-full flex-1 flex-col rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
+                                      hasAbcSelection
+                                        ? "border-emerald-400 bg-emerald-50/90 ring-emerald-200"
+                                        : "border-emerald-200/90 bg-emerald-50/40 ring-emerald-100/80"
+                                    }`}
+                                  >
+                                    <div className="mb-2 space-y-0.5">
+                                      <p className="text-[11px] font-bold tracking-tight text-emerald-950">
+                                        A·B·C · En rotación
+                                      </p>
+                                      <p className="text-[10px] leading-snug text-emerald-800/85">
+                                        Totales {abcGroupLabel}
+                                      </p>
+                                    </div>
+                                    <div className="space-y-1 text-sm text-emerald-950/80">
+                                      <div>
+                                        Total venta:{" "}
+                                        <span className="font-black text-emerald-950">
+                                          {formatPriceWithoutSixZeros(
+                                            abcGroupMetrics.totalSales,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Total inventario:{" "}
+                                        <span className="font-black text-emerald-950">
+                                          {formatPriceWithoutSixZeros(
+                                            abcGroupMetrics.totalInv,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Dias de inventario:{" "}
+                                        <span className="font-black text-emerald-950">
+                                          {formatRotationOneDecimal(
+                                            abcGroupMetrics.salesCoverageDays,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Margen {abcGroupLabel} %:{" "}
+                                        <span className="font-black text-emerald-950">
+                                          {formatPercent(
+                                            abcGroupMetrics.marginPct,
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  </div>
 
-                                  <div className="flex w-fit flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2.5 shadow-sm ring-1 ring-rose-100/90">
+                                  <div className="flex h-full min-w-0 flex-col gap-2">
+                                  <div className="flex min-h-0 flex-1 min-w-0 w-full flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2.5 shadow-sm ring-1 ring-rose-100/90">
                                     <div className="mb-2 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-rose-950">
                                         Críticos · Requieren acción
@@ -4191,7 +4244,7 @@ export function RotacionPageInner() {
                                         Productos problemáticos
                                       </p>
                                     </div>
-                                    <div className="grid w-fit grid-cols-3 gap-2 justify-items-center">
+                                    <div className="grid w-full grid-cols-3 gap-2 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-rose-600">
                                       {(100 - abcdConfig.cUntilPercent).toFixed(
@@ -4328,112 +4381,61 @@ export function RotacionPageInner() {
                                       </p>
                                     </div>
                                   </div>
+                                  <div
+                                    className={`flex min-h-36 min-w-0 w-full flex-1 flex-col rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
+                                      hasCriticalSelection
+                                        ? "border-rose-400 bg-rose-50/90 ring-rose-200"
+                                        : "border-rose-200/90 bg-rose-50/40 ring-rose-100/80"
+                                    }`}
+                                  >
+                                    <div className="mb-2 space-y-0.5">
+                                      <p className="text-[11px] font-bold tracking-tight text-rose-950">
+                                        Críticos · Requieren acción
+                                      </p>
+                                      <p className="text-[10px] leading-snug text-rose-800/85">
+                                        Totales {criticalGroupLabel}
+                                      </p>
+                                    </div>
+                                    <div className="space-y-1 text-sm text-rose-950/80">
+                                      <div>
+                                        Total venta:{" "}
+                                        <span className="font-black text-rose-950">
+                                          {formatPriceWithoutSixZeros(
+                                            criticalGroupMetrics.totalSales,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Total inventario:{" "}
+                                        <span className="font-black text-rose-950">
+                                          {formatPriceWithoutSixZeros(
+                                            criticalGroupMetrics.totalInv,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Dias de inventario:{" "}
+                                        <span className="font-black text-rose-950">
+                                          {formatRotationOneDecimal(
+                                            criticalGroupMetrics.salesCoverageDays,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Margen {criticalGroupLabel} %:{" "}
+                                        <span className="font-black text-rose-950">
+                                          {formatPercent(
+                                            criticalGroupMetrics.marginPct,
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  </div>
                               </div>
                             </div>
 
                             <div className="flex w-full flex-col gap-3 text-sm">
-                              <div className="grid w-full gap-3 sm:grid-cols-2">
-                                <div
-                                  className={`rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
-                                    hasAbcSelection
-                                      ? "border-emerald-400 bg-emerald-50/90 ring-emerald-200"
-                                      : "border-emerald-200/90 bg-emerald-50/40 ring-emerald-100/80"
-                                  }`}
-                                >
-                                  <div className="mb-2 space-y-0.5">
-                                    <p className="text-[11px] font-bold tracking-tight text-emerald-950">
-                                      A·B·C · En rotación
-                                    </p>
-                                    <p className="text-[10px] leading-snug text-emerald-800/85">
-                                      Totales {abcGroupLabel}
-                                    </p>
-                                  </div>
-                                  <div className="space-y-1 text-sm text-emerald-950/80">
-                                    <div>
-                                      Total venta:{" "}
-                                      <span className="font-black text-emerald-950">
-                                        {formatPriceWithoutSixZeros(
-                                          abcGroupMetrics.totalSales,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Total inventario:{" "}
-                                      <span className="font-black text-emerald-950">
-                                        {formatPriceWithoutSixZeros(
-                                          abcGroupMetrics.totalInv,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Dias de inventario:{" "}
-                                      <span className="font-black text-emerald-950">
-                                        {formatRotationOneDecimal(
-                                          abcGroupMetrics.salesCoverageDays,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Margen {abcGroupLabel} %:{" "}
-                                      <span className="font-black text-emerald-950">
-                                        {formatPercent(
-                                          abcGroupMetrics.marginPct,
-                                        )}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div
-                                  className={`rounded-xl border px-3 py-2.5 shadow-sm ring-1 ${
-                                    hasCriticalSelection
-                                      ? "border-rose-400 bg-rose-50/90 ring-rose-200"
-                                      : "border-rose-200/90 bg-rose-50/40 ring-rose-100/80"
-                                  }`}
-                                >
-                                  <div className="mb-2 space-y-0.5">
-                                    <p className="text-[11px] font-bold tracking-tight text-rose-950">
-                                      Críticos · Requieren acción
-                                    </p>
-                                    <p className="text-[10px] leading-snug text-rose-800/85">
-                                      Totales {criticalGroupLabel}
-                                    </p>
-                                  </div>
-                                  <div className="space-y-1 text-sm text-rose-950/80">
-                                    <div>
-                                      Total venta:{" "}
-                                      <span className="font-black text-rose-950">
-                                        {formatPriceWithoutSixZeros(
-                                          criticalGroupMetrics.totalSales,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Total inventario:{" "}
-                                      <span className="font-black text-rose-950">
-                                        {formatPriceWithoutSixZeros(
-                                          criticalGroupMetrics.totalInv,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Dias de inventario:{" "}
-                                      <span className="font-black text-rose-950">
-                                        {formatRotationOneDecimal(
-                                          criticalGroupMetrics.salesCoverageDays,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Margen {criticalGroupLabel} %:{" "}
-                                      <span className="font-black text-rose-950">
-                                        {formatPercent(
-                                          criticalGroupMetrics.marginPct,
-                                        )}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
                               {isAdmin ? (
                                 <div className="w-full rounded-xl border border-slate-200 bg-white/90 p-3">
                                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
