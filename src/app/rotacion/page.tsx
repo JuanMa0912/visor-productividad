@@ -4035,12 +4035,12 @@ export function RotacionPageInner() {
                                     ? ROTACION_TOUR_ANCHOR.tableAbcd
                                     : undefined
                                 }
-                                className="grid w-full min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 sm:items-start"
+                                className="grid w-fit max-w-full grid-cols-1 gap-2 sm:grid-cols-2 sm:items-start"
                               >
-                                  <div className="flex min-w-0 flex-col gap-1.5">
+                                  <div className="flex w-[15.5rem] max-w-full flex-col gap-1.5">
                                   <div
                                     title="Mantener disponibilidad · surtido y abastecimiento"
-                                    className="flex min-w-0 w-full flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2 shadow-sm ring-1 ring-emerald-100/90"
+                                    className="flex w-full flex-col rounded-xl border border-emerald-200/90 bg-linear-to-br from-emerald-50/95 via-white to-emerald-50/40 px-3 py-2 shadow-sm ring-1 ring-emerald-100/90"
                                   >
                                     <div className="mb-1.5 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-emerald-950">
@@ -4050,7 +4050,7 @@ export function RotacionPageInner() {
                                         Productos que se mueven
                                       </p>
                                     </div>
-                                    <div className="grid w-full grid-cols-3 gap-1.5 justify-items-center">
+                                    <div className="mx-auto grid w-fit grid-cols-3 gap-1.5 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
                                       {abcdConfig.aUntilPercent.toFixed(0)}%
@@ -4233,10 +4233,10 @@ export function RotacionPageInner() {
                                   </div>
                                   </div>
 
-                                  <div className="flex min-w-0 flex-col gap-1.5">
+                                  <div className="flex w-[15.5rem] max-w-full flex-col gap-1.5">
                                   <div
                                     title="Demanda: descuento, descontinuar, devolver. Abastecimiento: pedido, lead time, ROP."
-                                    className="flex min-w-0 w-full flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2 shadow-sm ring-1 ring-rose-100/90"
+                                    className="flex w-full flex-col rounded-xl border border-rose-200/90 bg-linear-to-br from-rose-50/90 via-white to-rose-50/30 px-3 py-2 shadow-sm ring-1 ring-rose-100/90"
                                   >
                                     <div className="mb-1.5 space-y-0.5">
                                       <p className="text-[11px] font-bold tracking-tight text-rose-950">
@@ -4246,7 +4246,7 @@ export function RotacionPageInner() {
                                         Productos problemáticos
                                       </p>
                                     </div>
-                                    <div className="grid w-full grid-cols-3 gap-1.5 justify-items-center">
+                                    <div className="mx-auto grid w-fit grid-cols-3 gap-1.5 justify-items-center">
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-rose-600">
                                       {(100 - abcdConfig.cUntilPercent).toFixed(
