@@ -2,11 +2,27 @@
 
 Envía cada mañana:
 
-1. **Correo consolidado** (activo) con **todas las sedes** del catálogo de
-   rotación, en tablas comparativas ordenadas como en el portal →
+1. **Correo individual por sede** (activo) → solo el digest de esa sede al
+   correo del mapa en `email-pilot-sedes.ts`.
+2. **Correo consolidado** (todas las sedes) →
    **`aprendizppt@mercamio.com`** (override con `ROTACION_EMAIL_FORCE_TO`).
-2. **Correos individuales por sede** — **desactivados** hasta configurar
-   destinatarios reales (`ROTACION_EMAIL_SEND_INDIVIDUAL=true` para opt-in).
+
+### Mapa actual (cuaderno 2026-08-03)
+
+| Sede | Destinatario |
+| --- | --- |
+| Calle 5ta (5ta) | administradorsta@mercamio.com |
+| La 39 (39) | administrador39@mercamio.com |
+| Plaza Norte | j.cardozo@mercamio.com |
+| Ciudad Jardin | admjardin@mercamio.com |
+| Palmira | subadministrador-pm@mercamio.com |
+| Floresta | admon.floresta@mercamio.com |
+| Floralia | admon.floralia@mercamio.com |
+| Guaduales | c.lopez@mercamio.com |
+| Bogota | administradorcl80@mercamio.com |
+| Chia | administradorchia@mercamio.com |
+
+Sin destinatario aún: **Centro Sur**, **Dinastía 1**, **Dinastía 2** (se omiten).
 
 Incluye **puntuación restock 0–100**: % de ítems marcados `surtido` en contexto
 restock **dentro del rango del correo** que luego tuvieron venta (misma sede)
@@ -53,7 +69,8 @@ month que los individuales). Si el catálogo falla, se usa solo la lista piloto.
 | `ROTACION_EMAIL_FLORESTA_TO` | legacy; el envío piloto fuerza `ROTACION_EMAIL_FORCE_TO` o `aprendizppt@mercamio.com` |
 | `ROTACION_EMAIL_FORCE_TO` | destinatario único (default `aprendizppt@mercamio.com`) |
 | `ROTACION_EMAIL_DRY_RUN` | `true` imprime en consola sin enviar |
-| `ROTACION_EMAIL_SEND_INDIVIDUAL` | `true` activa correos por sede (OFF por defecto) |
+| `ROTACION_EMAIL_SKIP_INDIVIDUAL` | `true` omite correos por sede |
+| `ROTACION_EMAIL_FORCE_INDIVIDUAL_TO` | redirige todos los individuales a un solo correo (pruebas) |
 | `ROTACION_EMAIL_SKIP_CONSOLIDATED` | `true` omite el correo de todas las sedes |
 | `ENV_FILE` | default `/opt/visor-productividad/.env.local` |
 | `LOG_FILE` | default `/var/log/visor-rotacion-email.log` |
@@ -82,8 +99,11 @@ La VM debe tener zona horaria `America/Bogota` (o ajustar `OnCalendar` del timer
 ## Probar en local
 
 ```bash
-# Vista previa del consolidado (sin SMTP; individuales off por defecto)
-ROTACION_EMAIL_DRY_RUN=true npm run rotacion:email
+# Solo consolidado a aprendiz (sin individuales)
+sudo -u visor bash -c 'cd /opt/visor-productividad && ROTACION_EMAIL_SKIP_INDIVIDUAL=true ENV_FILE=/opt/visor-productividad/.env.local npm run rotacion:email'
+
+# Probar individuales redirigidos a aprendiz (sin spamear sedes)
+sudo -u visor bash -c 'cd /opt/visor-productividad && ROTACION_EMAIL_SKIP_CONSOLIDATED=true ROTACION_EMAIL_FORCE_INDIVIDUAL_TO=aprendizppt@mercamio.com ENV_FILE=/opt/visor-productividad/.env.local npm run rotacion:email'
 ```
 
 ## Instalación en VM
