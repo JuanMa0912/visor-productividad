@@ -1,0 +1,17 @@
+[Unit]
+Description=Visor - timer diario ETL rotacion, empresa mercamio (07:00:00)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Las tres empresas arrancan casi a la vez (desfase de 20s solo para no chocar
+# en el CREATE INDEX IF NOT EXISTS de arranque). Duraciones medidas 2026-07-31:
+# mercamio 30 min, mtodo 18 min, bogota 5 min -> en paralelo el total es ~30 min
+# y termina sobre las 07:30, antes del sync de las 07:35.
+# Esta empresa tarda ~30 min.
+OnCalendar=*-*-* 07:00:00
+# Si la VM estaba apagada, ejecutar al arrancar.
+Persistent=true
+Unit=etl-rotacion@mercamio.service
+
+[Install]
+WantedBy=timers.target

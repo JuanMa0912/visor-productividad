@@ -1,0 +1,33 @@
+[Unit]
+# Plantilla: una instancia por empresa. %i = mercamio | mtodo | bogota.
+#
+# Reemplaza a etl-rotacion.service, que procesaba las tres empresas EN SERIE y
+# por eso tardaba 53 minutos (mercamio 30 + mtodo 18 + bogota 5). Corriendolas
+# en paralelo el total baja al de la mas lenta, ~30 min, y el sync a GCP puede
+# adelantarse de 07:50 a 07:35 para que la informacion este lista sobre las 08:05.
+#
+# El 2026-07-31 la version en serie termino 07:53:24 con el sync ya corriendo
+# desde 07:50: bogota (que termina de ultima) no alcanzo a subir y GCP se quedo
+# sin sus 25.693 filas del 30-jul.
+#
+# OJO: el script vive en /opt/etl_rotacion (dueño juanma), NO en este repo.
+# Estos units se versionan aqui solo para no perderles el rastro.
+Description=ETL rotacion diaria por sede - empresa %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=etlrotacion
+Group=etlrotacion
+WorkingDirectory=/opt/etl_rotacion
+EnvironmentFile=/opt/etl_rotacion/config/rotacion.env
+ExecStart=/opt/etl_rotacion/.venv/bin/python /opt/etl_rotacion/etl_rotacion_v3.py --mode daily --empresas %i --log-dir /var/log/etl_rotacion
+# Exit 3 = la guarda de "cargue sin ventas" (POS sin cerrar el dia). NO se
+# declara SuccessExitStatus=3: asi la instancia queda `failed` y se ve en
+# `systemctl --failed` en vez de pasar callada.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/log/etl_rotacion

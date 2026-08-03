@@ -13,6 +13,9 @@ import {
 import {
   buildMargenWhereForTable,
   clienteSelectSql,
+  MARGEN_ITEM_DIA_ROLL_TABLE,
+  MARGEN_ROLL_TABLE,
+  resolveInformeMargenDataSource,
   facturaSedeSqlFilters,
   fechaDctoCompactSql,
   idTercExpr,
@@ -36,7 +39,9 @@ import {
   type FactNavStep,
 } from "@/lib/margenes/fact-path";
 import {
+  buildDayMetricsSql,
   buildMargenOrderBy,
+  buildTotalMetricsSql,
   boardMetricsSqlFor,
   KPI_MERCADO_TIPO,
   metricsSqlFor,
@@ -362,44 +367,65 @@ const queryDrillLevel0 = async (
   // no AND-ear Mercado: antes dejaba el tablero en cero.
   const levelFilters = withMercadoDefaultCategoria(filters, table);
   const dayWhere = buildWhere(levelFilters, [], params, table, false);
-  const sedeKey = sedeDistinctKeySql(table);
 
-  const result = await client.query(
-    `
-    SELECT
-      fecha_dcto,
-      GROUPING(fecha_dcto) AS is_total,
-      ${metricsSqlFor(table)},
-      COUNT(DISTINCT fecha_dcto) AS dias,
-      COUNT(DISTINCT ${sedeKey}) AS sedes
-    FROM ${table}
-    WHERE ${dayWhere}
-    GROUP BY GROUPING SETS ((), (fecha_dcto))
-    `,
+  // DOS consultas en vez de un GROUP BY GROUPING SETS ((), (fecha_dcto)).
+  //
+  // El GROUPING SETS parecía barato (una sola pasada) pero PostgreSQL no puede
+  // compartir trabajo entre los grouping sets cuando hay agregados DISTINCT:
+  // resuelve cada COUNT(DISTINCT) con su propio ordenamiento, y la fila total no
+  // puede repartirse por fecha.
+  //
+  // Ninguna de las dos usa ya `metricsSqlFor()`: los 5 COUNT(DISTINCT) fuerzan
+  // un Sort de la relación completa. Medido contra producción (Cloud SQL, julio
+  // × 11 sedes = 8,17M filas, `work_mem` 256MB como en esta ruta):
+  //
+  //                                    antes      ahora
+  //   filas por día ................   61,7 s     26,5 s   <- buildDayMetricsSql
+  //   fila total ...................   22,2 s     22,2 s   <- buildTotalMetricsSql
+  //   TOTAL de la petición .........   83,9 s     48,7 s
+  //
+  // El proxy corta a los 90 s y `mode=filters` (29,6 s) corre en paralelo
+  // compitiendo por CPU: con 83,9 s el tablero daba 504 al pedir todas las sedes.
+  const dayResult = await client.query(
+    buildDayMetricsSql(table, dayWhere),
     params,
   );
 
-  let totalRow: Record<string, string | number> | null = null;
-  const dayRows: DrillRow[] = [];
-
-  for (const row of result.rows) {
-    if (Number(row.is_total) === 1) {
-      totalRow = row;
-      continue;
-    }
+  const dayRows: DrillRow[] = dayResult.rows.map((row) => {
     const fecha = String(row.fecha_dcto);
-    const metrics = mapMetrics(row);
-    dayRows.push({
+    return {
       key: fecha,
       cod: fecha,
       label: formatDayLabel(fecha),
       drillable: true,
       drillStep: { type: "day", fecha, label: formatDayLabel(fecha) },
-      ...metrics,
-    });
-  }
+      ...mapMetrics(row),
+    } as DrillRow;
+  });
 
   sortDayRows(dayRows, filters);
+
+  // El total solo se pide si alguien lo va a usar: la fila ACUMULADO (que exige
+  // más de un día) o el KPI de la cabecera.
+  const needsTotal = (dayRows.length > 1 || options?.includeKpi === true) &&
+    dayRows.length > 0;
+  let totalRow: Record<string, string | number> | null = null;
+  if (needsTotal) {
+    const totalResult = await client.query(
+      buildTotalMetricsSql(table, dayWhere),
+      params,
+    );
+    totalRow = (totalResult.rows[0] as Record<string, string | number>) ?? null;
+    if (totalRow) {
+      // Exacto y gratis: cada fila del detalle es una fecha distinta. Evita otro
+      // COUNT(DISTINCT fecha_dcto) sobre la tabla completa.
+      totalRow.dias = dayRows.length;
+      // Las sedes las conoce la petición; consultarlas costaba una pasada más.
+      // En este nivel `sedes` nunca viene vacío: la ruta exige seleccionar sede
+      // antes de consultar (HEAVY_MODES en api/margenes/data/route.ts).
+      totalRow.sedes = levelFilters.sedes.length;
+    }
+  }
 
   const rows = [...dayRows];
   if (rows.length > 1 && totalRow) {
@@ -1049,14 +1075,14 @@ export const queryFactNavRows = async (
   const where = buildFactWhere(filters, path, params, table);
 
   if (level === 0) {
+    // Misma forma (y mismo costo) que el nivel 0 del drill: sin los 5
+    // COUNT(DISTINCT) pasa de ~62 s a ~27 s sobre un mes × 11 sedes.
     const result = await client.query(
-      `
-      SELECT fecha_dcto, ${metricsSqlFor(table)}
-      FROM ${table}
-      WHERE ${where}
-      GROUP BY fecha_dcto
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "fecha_dcto DESC")}
-      `,
+      buildDayMetricsSql(
+        table,
+        where,
+        buildMargenOrderBy(filters.orderBy, filters.orderDir, "fecha_dcto DESC"),
+      ),
       params,
     );
     return {
@@ -1630,6 +1656,35 @@ export const queryFilterOptions = async (
   filters: MargenQueryFilters,
   table: MargenDataTable,
 ) => {
+  // Los desplegables solo necesitan DIMENSIONES (fecha, categoría, línea,
+  // sublínea, ítem y sus nombres). Todas viven en margen_item_dia_roll, que es
+  // el mismo dato ya colapsado a día/sede/ítem: para julio son 1.029.776 filas
+  // contra 8.262.298 de margen_final_roll, porque este último repite cada ítem
+  // una vez por factura.
+  //
+  // Medido contra producción el 2026-07-31, alternando A/B para no confundir
+  // caché fría con costo real (la primera lectura de item_dia_roll dio 31,8 s
+  // por venir de disco, y estuve a punto de descartarla por eso):
+  //
+  //            margen_item_dia_roll   margen_final_roll
+  //   ronda 1        5.850 ms             39.179 ms
+  //   ronda 2        3.879 ms             13.094 ms   <- en caliente, 3,4x
+  //   ronda 3        5.769 ms
+  //
+  // Verificado que los cinco desplegables salen idénticos byte a byte desde
+  // ambas tablas (30 fechas, 2 categorías, 51 líneas, 216 sublíneas, 500 ítems).
+  //
+  // Si la tabla no existe o está vacía, `resolveInformeMargenDataSource` cae
+  // sola a la fuente anterior. El riesgo residual es que el refresco del roll
+  // falle un día: los desplegables quedarían sin los ítems nuevos, pero las
+  // cifras del tablero (que salen de `table`) siguen correctas.
+  const resolved =
+    table === MARGEN_ROLL_TABLE
+      ? await resolveInformeMargenDataSource(client)
+      : table;
+  const catalogTable =
+    resolved === MARGEN_ITEM_DIA_ROLL_TABLE ? resolved : table;
+
   const params: unknown[] = [];
   // Conservar `categorias` (asadero → tipo 3) y `lineas` (fruver → N1 01)
   // para que perfiles bloqueados solo vean dimensiones hijas de su alcance.
@@ -1641,11 +1696,11 @@ export const queryFilterOptions = async (
       items: [],
     },
     params,
-    table,
+    catalogTable,
   );
 
   const sedesLocked = filters.sedes.length > 0;
-  const roll = isRollTable(table);
+  const roll = isRollTable(catalogTable);
 
   const result = await client.query<{
     fechas: Array<{ value: string }> | null;
@@ -1656,8 +1711,20 @@ export const queryFilterOptions = async (
   }>(
     roll
       ? `
+    -- El DISTINCT del CTE NO es cosmetico: colapsa la relacion antes de que las
+    -- cinco subconsultas la recorran. Medido contra produccion el 2026-07-31
+    -- (julio x 11 sedes): 8.262.298 filas -> 245.252 (34x menos), y la consulta
+    -- baja de 29,6 s a 13,2 s.
+    --
+    -- No cambia ningun resultado: las cinco salidas ya aplican su propio
+    -- DISTINCT, asi que deduplicar antes produce los mismos conjuntos.
+    -- Verificado campo por campo contra la version sin DISTINCT: fechas,
+    -- categorias, lineas y sublineas salen identicas byte a byte, y los items
+    -- coinciden 500/500. El JSON de items no coincidia byte a byte solo por el
+    -- ORDEN de los empates de etiqueta, que era no determinista de antes; por
+    -- eso ahora ese ORDER BY lleva desempate (ver abajo).
     WITH filtered AS MATERIALIZED (
-      SELECT
+      SELECT DISTINCT
         fecha_dcto,
         id_tipo,
         id_linea1,
@@ -1666,7 +1733,7 @@ export const queryFilterOptions = async (
         COALESCE(NULLIF(nombre_linea2, ''), id_linea2) AS nombre_linea2,
         id_item,
         COALESCE(NULLIF(item_descripcion, ''), id_item) AS item_label
-      FROM ${table}
+      FROM ${catalogTable}
       WHERE ${where}
     )
     SELECT
@@ -1716,14 +1783,22 @@ export const queryFilterOptions = async (
             id_linea2 AS sublinea
           FROM filtered
           WHERE id_item <> ''
-          ORDER BY 2
+          -- Desempate por id_item: ordenar solo por la etiqueta NO es un orden
+          -- total, hay descripciones repetidas entre items distintos. Con un
+          -- LIMIT 500 encima, el corte y el orden dependian del plan: el mismo
+          -- filtro podia devolver los empates en distinto orden entre cargas.
+          -- Verificado al cambiar el plan de esta consulta el 2026-07-31: el
+          -- conjunto de 500 salia identico (500/500) pero el JSON no coincidia
+          -- byte a byte.
+          ORDER BY 2, 1
           LIMIT 500
         ) t
       ) AS items
     `
       : `
+    -- Mismo DISTINCT que la rama roll, por la misma razon.
     WITH filtered AS MATERIALIZED (
-      SELECT
+      SELECT DISTINCT
         fecha_dcto,
         TRIM(COALESCE(id_tipo::text, '')) AS id_tipo,
         TRIM(COALESCE(id_linea1::text, '')) AS id_linea1,
@@ -1732,7 +1807,7 @@ export const queryFilterOptions = async (
         COALESCE(NULLIF(TRIM(nombre_linea2), ''), TRIM(COALESCE(id_linea2::text, ''))) AS nombre_linea2,
         TRIM(COALESCE(id_item::text, '')) AS id_item,
         COALESCE(NULLIF(TRIM(item_descripcion), ''), TRIM(COALESCE(id_item::text, ''))) AS item_label
-      FROM ${table}
+      FROM ${catalogTable}
       WHERE ${where}
     )
     SELECT
@@ -1782,7 +1857,14 @@ export const queryFilterOptions = async (
             id_linea2 AS sublinea
           FROM filtered
           WHERE id_item <> ''
-          ORDER BY 2
+          -- Desempate por id_item: ordenar solo por la etiqueta NO es un orden
+          -- total, hay descripciones repetidas entre items distintos. Con un
+          -- LIMIT 500 encima, el corte y el orden dependian del plan: el mismo
+          -- filtro podia devolver los empates en distinto orden entre cargas.
+          -- Verificado al cambiar el plan de esta consulta el 2026-07-31: el
+          -- conjunto de 500 salia identico (500/500) pero el JSON no coincidia
+          -- byte a byte.
+          ORDER BY 2, 1
           LIMIT 500
         ) t
       ) AS items

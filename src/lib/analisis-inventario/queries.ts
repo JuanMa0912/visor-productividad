@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { calculateDiMetrics, calendarDaysInclusive } from "@/lib/analisis-inventario/di";
+import { calculateDiFromRates, calendarDaysInclusive } from "@/lib/analisis-inventario/di";
 import {
   nextDrillLevel,
   nextHeatmapRowLevel,
@@ -55,6 +55,10 @@ type AggDbRow = {
   inventory_value: string | number | null;
   sold_units: string | number | null;
   cost_of_sales: string | number | null;
+  /** Σ (unidades_i / dias_activos_i): tasa diaria del grupo. Divisor del DI. */
+  units_per_day: string | number | null;
+  /** Σ (costo_i / dias_activos_i). */
+  cost_per_day: string | number | null;
   child_count: string | number | null;
 };
 
@@ -67,6 +71,8 @@ type HeatCellDbRow = {
   inventory_value: string | number | null;
   sold_units: string | number | null;
   cost_of_sales: string | number | null;
+  units_per_day: string | number | null;
+  cost_per_day: string | number | null;
   child_count: string | number | null;
 };
 
@@ -199,12 +205,14 @@ const mapAgg = (
   level: AnalisisInventarioLevel,
   periodDays: number,
 ) => {
-  const metrics = calculateDiMetrics({
+  // DI a partir de tasas diarias por ítem (units_per_day / cost_per_day), no de
+  // `periodDays`: un ítem que llegó a mitad de periodo tenía el divisor del
+  // periodo completo y su DI salía inflado ~10x. Ver calculateDiFromRates.
+  const metrics = calculateDiFromRates({
     inventoryUnits: toNum(row.inventory_units),
     inventoryValue: toNum(row.inventory_value),
-    soldUnits: toNum(row.sold_units),
-    costOfSales: toNum(row.cost_of_sales),
-    trackedDays: periodDays,
+    unitsPerDay: toNum(row.units_per_day),
+    costPerDay: toNum(row.cost_per_day),
   });
   return {
     id: String(row.group_id ?? ""),
@@ -415,6 +423,11 @@ const buildPeriodoStdAggSql = (args: {
       SUM(COALESCE(inventory_value, 0))::numeric AS inventory_value,
       SUM(COALESCE(total_units, 0))::numeric AS sold_units,
       SUM(COALESCE(total_cost, 0))::numeric AS cost_of_sales,
+      -- Tasas diarias por ítem, sumadas: cada ítem se divide por SU ventana de
+      -- exposición (dias_activos), no por los días calendario del periodo.
+      -- Ver calculateDiFromRates y la migración 20260731_rotacion_periodo_std_dias_activos.
+      SUM(COALESCE(total_units, 0) / NULLIF(dias_activos, 0))::numeric AS units_per_day,
+      SUM(COALESCE(total_cost, 0) / NULLIF(dias_activos, 0))::numeric AS cost_per_day,
       COUNT(DISTINCT ${args.childExpr})::int AS child_count
     FROM ${args.table}
     WHERE NULLIF(TRIM(item), '') IS NOT NULL
@@ -437,6 +450,12 @@ const buildMatviewPairedAggSql = (args: {
   pathSql: string;
   invSelectExtras?: string;
   salesSelectExtras?: string;
+  /**
+   * Alias (no expresiones) de las columnas extra de `sales`, para el GROUP BY
+   * del segundo nivel de agregación. Si `salesSelectExtras` trae
+   * `, empresa AS empresa, ... AS sede_id`, aquí va `, empresa, sede_id`.
+   */
+  salesGroupExtras?: string;
   outerSelectExtras?: string;
   joinExtras?: string;
   idAlias?: string;
@@ -462,18 +481,46 @@ const buildMatviewPairedAggSql = (args: {
         ${args.pathSql}
       GROUP BY ${groupBySql}
     ),
-    sales AS (
+    -- Paso intermedio por ÍTEM: aquí se calcula la ventana de exposición de cada
+    -- uno dentro del rango pedido. Es el equivalente en vivo de la columna
+    -- dias_activos del snapshot (migración 20260731). Hace falta porque la
+    -- matview es DENSA: trae fila con ceros aunque el ítem no exista todavía en
+    -- esa sede, así que dividir por los días del rango infla el DI de todo ítem
+    -- que llegó a mitad de periodo.
+    sales_item AS (
       SELECT
         ${args.idExpr} AS group_id
         ${args.salesSelectExtras ?? ""},
-        SUM(COALESCE(unidades_vendidas_dia, 0))::numeric AS sold_units,
-        SUM(COALESCE(cost_value_dia, 0))::numeric AS cost_of_sales
+        ${DIM.itemId} AS di_item,
+        SUM(COALESCE(unidades_vendidas_dia, 0))::numeric AS item_units,
+        SUM(COALESCE(cost_value_dia, 0))::numeric AS item_cost,
+        LEAST(
+          GREATEST(
+            ($2::date - MIN(fecha) FILTER (
+              WHERE COALESCE(unidades_vendidas_dia, 0) > 0
+                 OR COALESCE(inventory_units_dia, 0) > 0
+            )) + 1,
+            1
+          ),
+          ($2::date - $1::date) + 1
+        )::numeric AS item_dias
       FROM ${args.matview}
       WHERE fecha BETWEEN $1::date AND $2::date
         AND NULLIF(TRIM(item), '') IS NOT NULL
         AND ${args.sedeFilter}
         ${args.pathSql}
-      GROUP BY ${groupBySql}
+      GROUP BY ${groupBySql}, ${DIM.itemId}
+    ),
+    sales AS (
+      SELECT
+        group_id
+        ${args.salesGroupExtras ?? ""},
+        SUM(item_units)::numeric AS sold_units,
+        SUM(item_cost)::numeric AS cost_of_sales,
+        SUM(item_units / NULLIF(item_dias, 0))::numeric AS units_per_day,
+        SUM(item_cost / NULLIF(item_dias, 0))::numeric AS cost_per_day
+      FROM sales_item
+      GROUP BY group_id ${args.salesGroupExtras ?? ""}
     )
     SELECT
       i.group_id AS ${idAlias},
@@ -483,6 +530,8 @@ const buildMatviewPairedAggSql = (args: {
       i.inventory_value,
       COALESCE(s.sold_units, 0)::numeric AS sold_units,
       COALESCE(s.cost_of_sales, 0)::numeric AS cost_of_sales,
+      COALESCE(s.units_per_day, 0)::numeric AS units_per_day,
+      COALESCE(s.cost_per_day, 0)::numeric AS cost_per_day,
       i.child_count
     FROM inv i
     LEFT JOIN sales s
@@ -504,6 +553,7 @@ const buildDrillSql = (
   const sedeExtras = {
     invSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
     salesSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+    salesGroupExtras: `, empresa, sede_id`,
     outerSelectExtras: `, i.empresa, i.sede_id`,
     joinExtras: `AND s.empresa = i.empresa AND s.sede_id = i.sede_id`,
   };
@@ -696,6 +746,7 @@ export async function queryAnalisisInventarioHeatmap(
           pathSql,
           invSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
           salesSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+          salesGroupExtras: `, empresa, sede_id`,
           outerSelectExtras: `, i.empresa, i.sede_id`,
           joinExtras: `AND s.empresa = i.empresa AND s.sede_id = i.sede_id`,
           idAlias: "row_id",
@@ -713,12 +764,12 @@ export async function queryAnalisisInventarioHeatmap(
   const cells: AnalisisInventarioHeatmapCell[] = [];
 
   for (const row of dbRows) {
-    const metrics = calculateDiMetrics({
+    // Mismo criterio que el drill: tasas diarias por ítem, no días calendario.
+    const metrics = calculateDiFromRates({
       inventoryUnits: toNum(row.inventory_units),
       inventoryValue: toNum(row.inventory_value),
-      soldUnits: toNum(row.sold_units),
-      costOfSales: toNum(row.cost_of_sales),
-      trackedDays: periodDays,
+      unitsPerDay: toNum(row.units_per_day),
+      costPerDay: toNum(row.cost_per_day),
     });
     const rowId = String(row.row_id ?? "");
     const label = String(row.row_label ?? rowId);
