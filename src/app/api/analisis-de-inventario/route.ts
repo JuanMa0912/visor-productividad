@@ -2,15 +2,22 @@ import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { parseAnalisisInventarioDrillPath } from "@/lib/analisis-inventario/drill-path";
+import {
+  applySedeColumnFilters,
+  columnsToSedePairs,
+  parseAnalisisInventarioDimensionFilters,
+} from "@/lib/analisis-inventario/filters";
 import { parseAnalisisInventarioLineFamily } from "@/lib/analisis-inventario/line-family";
 import {
   queryAnalisisInventarioBoard,
   queryAnalisisInventarioDateBounds,
   queryAnalisisInventarioDrill,
+  queryAnalisisInventarioFilterCatalog,
   queryAnalisisInventarioHeatmap,
   resolveDefaultAnalisisDateRange,
 } from "@/lib/analisis-inventario/queries";
 import { resolveAnalisisInventarioScope } from "@/lib/analisis-inventario/scope";
+import type { AnalisisInventarioSedeColumn } from "@/lib/analisis-inventario/types";
 import {
   getCachedQuery,
   setCachedQuery,
@@ -48,12 +55,7 @@ type ResolvedMeta = {
   selectedDateStart: string;
   selectedDateEnd: string;
   sourceTable: string;
-  sedes: ReturnType<typeof resolveAnalisisInventarioScope> extends {
-    ok: true;
-    columns: infer C;
-  }
-    ? C
-    : never;
+  sedes: AnalisisInventarioSedeColumn[];
   fastPath: boolean;
 };
 
@@ -200,12 +202,18 @@ export async function GET(request: Request) {
     modeRaw === "drill" ||
     modeRaw === "heatmap" ||
     modeRaw === "board" ||
+    modeRaw === "filters" ||
     modeRaw === "meta"
       ? modeRaw
       : "meta";
 
   const cacheKey = `analisis-inv:${session.user.id}:${scope.sourceTable}:${url.search}`;
-  if (mode === "board" || mode === "drill" || mode === "heatmap") {
+  if (
+    mode === "board" ||
+    mode === "drill" ||
+    mode === "heatmap" ||
+    mode === "filters"
+  ) {
     const cached = getCachedQuery(cacheKey);
     if (cached) {
       return withSession(NextResponse.json(cached));
@@ -242,6 +250,11 @@ export async function GET(request: Request) {
     const lineFamily = parseAnalisisInventarioLineFamily(
       url.searchParams.get("lineFamily"),
     );
+    const dimFilters = parseAnalisisInventarioDimensionFilters(url.searchParams);
+    const filteredColumns = applySedeColumnFilters(scope.columns, dimFilters);
+    const activeColumns =
+      filteredColumns.length > 0 ? filteredColumns : scope.columns;
+    const activeSedePairs = columnsToSedePairs(activeColumns);
 
     const queryArgs = {
       matview: scope.matview,
@@ -249,16 +262,37 @@ export async function GET(request: Request) {
       sourceTable: scope.sourceTable,
       dateStart,
       dateEnd,
-      sedePairs: scope.sedePairs,
+      sedePairs: activeSedePairs,
       lineFamily,
+      dimFilters: {
+        lineas: dimFilters.lineas,
+        sublineas: dimFilters.sublineas,
+        items: dimFilters.items,
+        invMinUnits: dimFilters.invMinUnits,
+      },
     };
+
+    if (mode === "filters") {
+      const client = await pool.connect();
+      try {
+        const catalog = await queryAnalisisInventarioFilterCatalog(client, {
+          ...queryArgs,
+          itemQuery: url.searchParams.get("itemQuery") ?? "",
+        });
+        const payload = { mode, meta, filters: catalog };
+        setCachedQuery(cacheKey, payload, BOARD_CACHE_TTL_MS);
+        return withSession(NextResponse.json(payload));
+      } finally {
+        client.release();
+      }
+    }
 
     if (mode === "board") {
       const { drill, heatmap } = await queryAnalisisInventarioBoard(pool, {
         ...queryArgs,
         path,
         heatmapPath,
-        columns: scope.columns,
+        columns: activeColumns,
       });
       const payload = {
         mode,
@@ -269,6 +303,7 @@ export async function GET(request: Request) {
               ? scope.periodoStdTable
               : scope.matview,
           fastPath: drill.sourceMode === "periodo_std",
+          sedes: scope.columns,
         },
         drill: { level: drill.level, rows: drill.rows, path },
         heatmap,
@@ -296,7 +331,7 @@ export async function GET(request: Request) {
       const heatmap = await queryAnalisisInventarioHeatmap(single, {
         ...queryArgs,
         path: heatmapPath,
-        columns: scope.columns,
+        columns: activeColumns,
       });
       const payload = { mode, meta, heatmap };
       setCachedQuery(cacheKey, payload, BOARD_CACHE_TTL_MS);

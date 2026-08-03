@@ -19,6 +19,7 @@ import {
 } from "@/lib/analisis-inventario/di";
 import { ANALISIS_INVENTARIO_LEVEL_NAMES } from "@/lib/analisis-inventario/drill-path";
 import { downloadAnalisisInventarioExcel } from "@/lib/analisis-inventario/export-excel";
+import type { AnalisisInventarioFilterCatalog } from "@/lib/analisis-inventario/filters";
 import {
   ANALISIS_INVENTARIO_LINE_FAMILY_LABELS,
   type AnalisisInventarioLineFamily,
@@ -32,6 +33,8 @@ import type {
   AnalisisInventarioMetric,
 } from "@/lib/analisis-inventario/types";
 import { logExportDownload } from "@/lib/client/log-export-download";
+import { empresaLabel } from "@/lib/margenes/margen-final-query";
+import { DiMultiSelect } from "./di-multi-select";
 
 type BoardProps = {
   username: string;
@@ -94,6 +97,28 @@ const scrollToId = (id: string) => {
 const diSortValue = (value: number) =>
   !Number.isFinite(value) || value >= NO_SALES_DI_VALUE ? Number.POSITIVE_INFINITY : value;
 
+const appendDimensionParams = (
+  params: URLSearchParams,
+  args: {
+    empresas: string[];
+    sedes: string[];
+    lineas: string[];
+    sublineas: string[];
+    items: string[];
+    invMin: number | null;
+  },
+) => {
+  if (args.empresas.length > 0) params.set("empresas", args.empresas.join(","));
+  if (args.sedes.length > 0) params.set("sedes", args.sedes.join(","));
+  if (args.lineas.length > 0) params.set("lineas", args.lineas.join(","));
+  if (args.sublineas.length > 0)
+    params.set("sublineas", args.sublineas.join(","));
+  if (args.items.length > 0) params.set("items", args.items.join(","));
+  if (args.invMin != null && args.invMin > 0) {
+    params.set("invMin", String(args.invMin));
+  }
+};
+
 export function AnalisisInventarioBoard(_props: BoardProps) {
   const [meta, setMeta] = useState<AnalisisInventarioMeta | null>(null);
   const [dateStart, setDateStart] = useState("");
@@ -117,7 +142,22 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   const [drillQuery, setDrillQuery] = useState("");
   const [sortKey, setSortKey] = useState<DrillSortKey>("inventoryValue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  /** Orden de filas del mapa: por código (01→última). Clic en encabezado invierte. */
+  const [heatmapSortDir, setHeatmapSortDir] = useState<"asc" | "desc">("asc");
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
+  const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
+  const [selectedLineas, setSelectedLineas] = useState<string[]>([]);
+  const [selectedSublineas, setSelectedSublineas] = useState<string[]>([]);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [invMinInput, setInvMinInput] = useState("");
+  const [invMinApplied, setInvMinApplied] = useState<number | null>(null);
+  const [filterCatalog, setFilterCatalog] =
+    useState<AnalisisInventarioFilterCatalog | null>(null);
+  const [itemFilterQuery, setItemFilterQuery] = useState("");
+  const [itemFilterOptions, setItemFilterOptions] = useState<
+    AnalisisInventarioFilterCatalog["items"]
+  >([]);
 
   const skipNextFetchRef = useRef(false);
   const bootstrappedRef = useRef(false);
@@ -193,6 +233,14 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         if (heatmapPath.length > 0) {
           params.set("heatmapPath", JSON.stringify(heatmapPath));
         }
+        appendDimensionParams(params, {
+          empresas: selectedEmpresas,
+          sedes: selectedSedes,
+          lineas: selectedLineas,
+          sublineas: selectedSublineas,
+          items: selectedItems,
+          invMin: invMinApplied,
+        });
         const response = await fetch(
           `/api/analisis-de-inventario?${params.toString()}`,
           {
@@ -246,13 +294,131 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [dateStart, dateEnd, path, heatmapPath, lineFamily]);
+  }, [
+    dateStart,
+    dateEnd,
+    path,
+    heatmapPath,
+    lineFamily,
+    selectedEmpresas,
+    selectedSedes,
+    selectedLineas,
+    selectedSublineas,
+    selectedItems,
+    invMinApplied,
+  ]);
+
+  useEffect(() => {
+    if (!dateStart || !dateEnd) return;
+    const controller = new AbortController();
+    const loadFilters = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("mode", "filters");
+        params.set("dateStart", dateStart);
+        params.set("dateEnd", dateEnd);
+        if (lineFamily !== "all") params.set("lineFamily", lineFamily);
+        appendDimensionParams(params, {
+          empresas: selectedEmpresas,
+          sedes: selectedSedes,
+          lineas: selectedLineas,
+          sublineas: [],
+          items: [],
+          invMin: null,
+        });
+        const response = await fetch(
+          `/api/analisis-de-inventario?${params.toString()}`,
+          {
+            cache: "no-store",
+            credentials: "include",
+            signal: controller.signal,
+          },
+        );
+        const payload = await response.json();
+        if (!response.ok) return;
+        setFilterCatalog(
+          (payload.filters as AnalisisInventarioFilterCatalog) ?? null,
+        );
+      } catch {
+        if (controller.signal.aborted) return;
+      }
+    };
+    void loadFilters();
+    return () => controller.abort();
+  }, [
+    dateStart,
+    dateEnd,
+    lineFamily,
+    selectedEmpresas,
+    selectedSedes,
+    selectedLineas,
+  ]);
+
+  useEffect(() => {
+    const q = itemFilterQuery.trim();
+    if (q.length < 2 || !dateStart || !dateEnd) {
+      setItemFilterOptions([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams();
+          params.set("mode", "filters");
+          params.set("dateStart", dateStart);
+          params.set("dateEnd", dateEnd);
+          params.set("itemQuery", q);
+          if (lineFamily !== "all") params.set("lineFamily", lineFamily);
+          appendDimensionParams(params, {
+            empresas: selectedEmpresas,
+            sedes: selectedSedes,
+            lineas: selectedLineas,
+            sublineas: selectedSublineas,
+            items: [],
+            invMin: null,
+          });
+          const response = await fetch(
+            `/api/analisis-de-inventario?${params.toString()}`,
+            {
+              cache: "no-store",
+              credentials: "include",
+              signal: controller.signal,
+            },
+          );
+          const payload = await response.json();
+          if (!response.ok) return;
+          const catalog = payload.filters as AnalisisInventarioFilterCatalog;
+          setItemFilterOptions(catalog?.items ?? []);
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+      })();
+    }, 300);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    itemFilterQuery,
+    dateStart,
+    dateEnd,
+    lineFamily,
+    selectedEmpresas,
+    selectedSedes,
+    selectedLineas,
+    selectedSublineas,
+  ]);
 
   useEffect(() => {
     if (!pendingScrollToDrillRef.current || loadingBoard) return;
     pendingScrollToDrillRef.current = false;
     scrollToId("di-drill");
   }, [loadingBoard, drill]);
+
+  useEffect(() => {
+    setHeatmapSortDir("asc");
+  }, [heatmap?.rowLevel]);
 
   const cellByKey = useMemo(() => {
     const map = new Map<string, number>();
@@ -262,6 +428,73 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     }
     return map;
   }, [heatmap, metric]);
+
+  const sortedHeatmapRows = useMemo(() => {
+    if (!heatmap) return [];
+    const dir = heatmapSortDir === "asc" ? 1 : -1;
+    return [...heatmap.rows].sort(
+      (a, b) => a.id.localeCompare(b.id, "es", { numeric: true }) * dir,
+    );
+  }, [heatmap, heatmapSortDir]);
+
+  const toggleHeatmapSort = () => {
+    setHeatmapSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+  };
+
+  const heatmapSortHint = heatmapSortDir === "asc" ? " ↑" : " ↓";
+
+  const empresaOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+    for (const sede of meta?.sedes ?? []) {
+      const key = sede.empresa.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      opts.push({ value: key, label: empresaLabel(key) });
+    }
+    return opts.sort((a, b) => a.label.localeCompare(b.label, "es"));
+  }, [meta?.sedes]);
+
+  const sedeOptions = useMemo(() => {
+    const sedes = meta?.sedes ?? [];
+    const filtered =
+      selectedEmpresas.length > 0
+        ? sedes.filter((s) =>
+            selectedEmpresas.includes(s.empresa.toLowerCase()),
+          )
+        : sedes;
+    return filtered.map((s) => ({ value: s.key, label: s.label }));
+  }, [meta?.sedes, selectedEmpresas]);
+
+  const lineaOptions = filterCatalog?.lineas ?? [];
+  const sublineaOptions = useMemo(() => {
+    const all = filterCatalog?.sublineas ?? [];
+    if (selectedSublineas.length === 0) return all;
+    const selected = new Set(selectedSublineas);
+    const missing = selectedSublineas
+      .filter((id) => !all.some((o) => o.value === id))
+      .map((id) => ({ value: id, label: id }));
+    return [...all, ...missing];
+  }, [filterCatalog?.sublineas, selectedSublineas]);
+
+  const itemOptions = useMemo(() => {
+    const fromSearch = itemFilterOptions;
+    const selectedMissing = selectedItems
+      .filter((id) => !fromSearch.some((o) => o.value === id))
+      .map((id) => ({ value: id, label: id }));
+    return [...fromSearch, ...selectedMissing];
+  }, [itemFilterOptions, selectedItems]);
+
+  const applyInvMin = () => {
+    const raw = invMinInput.replace(",", ".").trim();
+    if (!raw) {
+      setInvMinApplied(null);
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return;
+    setInvMinApplied(n);
+  };
 
   const filteredDrillRows = useMemo(() => {
     const rows = drill?.rows ?? [];
@@ -357,6 +590,14 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     setPath([]);
     setHeatmapPath([]);
     setDrillQuery("");
+    setSelectedEmpresas([]);
+    setSelectedSedes([]);
+    setSelectedLineas([]);
+    setSelectedSublineas([]);
+    setSelectedItems([]);
+    setInvMinInput("");
+    setInvMinApplied(null);
+    setItemFilterQuery("");
     scrollToId("di-filters");
   };
 
@@ -365,6 +606,9 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     setLineFamily(next);
     setPath((prev) => stripLineFamilyPath(prev));
     setHeatmapPath((prev) => stripLineFamilyPath(prev));
+    setSelectedLineas([]);
+    setSelectedSublineas([]);
+    setSelectedItems([]);
     setDrillQuery("");
   };
 
@@ -556,14 +800,125 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             </button>
           </div>
         </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <DiMultiSelect
+            label="Empresas"
+            values={selectedEmpresas}
+            options={empresaOptions}
+            emptyLabel="Todas"
+            onChange={(next) => {
+              setSelectedEmpresas(next);
+              setSelectedSedes((prev) =>
+                prev.filter((key) => {
+                  const sede = meta?.sedes.find((s) => s.key === key);
+                  return sede
+                    ? next.length === 0 ||
+                        next.includes(sede.empresa.toLowerCase())
+                    : false;
+                }),
+              );
+            }}
+          />
+          <DiMultiSelect
+            label="Sedes"
+            values={selectedSedes}
+            options={sedeOptions}
+            emptyLabel="Todas"
+            searchable
+            onChange={setSelectedSedes}
+          />
+          <DiMultiSelect
+            label="Líneas"
+            values={selectedLineas}
+            options={lineaOptions}
+            emptyLabel="Todas"
+            searchable
+            onChange={(next) => {
+              setSelectedLineas(next);
+              setSelectedSublineas([]);
+              setSelectedItems([]);
+              setPath((prev) => stripLineFamilyPath(prev));
+              setHeatmapPath((prev) => stripLineFamilyPath(prev));
+            }}
+          />
+          <DiMultiSelect
+            label="Sublíneas"
+            values={selectedSublineas}
+            options={sublineaOptions}
+            emptyLabel="Todas"
+            searchable
+            onChange={(next) => {
+              setSelectedSublineas(next);
+              setSelectedItems([]);
+            }}
+          />
+          <div className="min-w-[9.5rem]">
+            <DiMultiSelect
+              label="Ítems"
+              values={selectedItems}
+              options={itemOptions}
+              emptyLabel={
+                itemFilterQuery.trim().length < 2
+                  ? "Escribe ≥2 letras"
+                  : "Sin coincidencias"
+              }
+              onChange={setSelectedItems}
+            />
+            <input
+              type="search"
+              value={itemFilterQuery}
+              onChange={(event) => setItemFilterQuery(event.target.value)}
+              placeholder="Buscar ítem…"
+              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800"
+            />
+          </div>
+          <label className="min-w-[9.5rem] text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Inventario &gt;
+            <div className="mt-1 flex gap-1">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={invMinInput}
+                onChange={(event) => setInvMinInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") applyInvMin();
+                }}
+                placeholder="Unds"
+                className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-medium text-slate-800"
+              />
+              <button
+                type="button"
+                onClick={applyInvMin}
+                className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {invMinApplied != null ? "OK" : "Aplicar"}
+              </button>
+            </div>
+            {invMinApplied != null ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setInvMinApplied(null);
+                  setInvMinInput("");
+                }}
+                className="mt-1 text-[11px] font-semibold text-blue-700 hover:underline"
+              >
+                {`Quitar (> ${invMinApplied.toLocaleString("es-CO")})`}
+              </button>
+            ) : null}
+          </label>
+        </div>
         <p className="mt-3 text-xs text-slate-500">
           Periodo por defecto: 1 mes móvil (igual que Rotación). Alcance por tus
-          sedes.
+          sedes (orden Calle 5ta → … → Bogotá/Chía).
           {lineFamily === "perecederos"
             ? " · Solo líneas perecederas (01, 02, 03, 04, 12)."
             : lineFamily === "manufactura"
               ? " · Solo líneas de manufactura (resto N1)."
               : ""}
+          {invMinApplied != null
+            ? ` · Solo grupos con inventario > ${invMinApplied.toLocaleString("es-CO")} und.`
+            : ""}
           {meta?.fastPath ? " · Lectura rápida (snapshot)." : ""}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -675,13 +1030,25 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
               <thead className="sticky top-0 z-20">
                 <tr className="bg-slate-50 text-left text-slate-600 shadow-sm">
                   <th className="sticky left-0 z-30 bg-slate-50 px-3 py-2 font-semibold">
-                    {heatmap?.rowLevel === "categoria"
-                      ? "Categoría"
-                      : heatmap?.rowLevel === "linea"
-                        ? "Línea"
-                        : heatmap?.rowLevel === "sublinea"
-                          ? "Sublínea"
-                          : "Ítem"}
+                    <button
+                      type="button"
+                      onClick={toggleHeatmapSort}
+                      className="hover:text-slate-900"
+                      title={
+                        heatmapSortDir === "asc"
+                          ? "Orden: código ascendente (01 primero). Clic para invertir."
+                          : "Orden: código descendente (última primero). Clic para invertir."
+                      }
+                    >
+                      {heatmap?.rowLevel === "categoria"
+                        ? "Categoría"
+                        : heatmap?.rowLevel === "linea"
+                          ? "Línea"
+                          : heatmap?.rowLevel === "sublinea"
+                            ? "Sublínea"
+                            : "Ítem"}
+                      {heatmapSortHint}
+                    </button>
                   </th>
                   {heatmap.columns.map((col) => (
                     <th
@@ -694,7 +1061,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                 </tr>
               </thead>
               <tbody>
-                {heatmap.rows.map((row) => {
+                {sortedHeatmapRows.map((row) => {
                   const rowLabel = formatHeatmapRowLabel(row);
                   const canDeepen = row.level !== "item";
                   return (

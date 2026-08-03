@@ -6,6 +6,11 @@ import {
 } from "@/lib/analisis-inventario/drill-path";
 import { lineFamilySqlFilter } from "@/lib/analisis-inventario/line-family";
 import type { AnalisisInventarioLineFamily } from "@/lib/analisis-inventario/line-family";
+import {
+  dimensionPathSql,
+  type AnalisisInventarioDimensionFilters,
+  type AnalisisInventarioFilterCatalog,
+} from "@/lib/analisis-inventario/filters";
 import { buildSedePairSqlFilter } from "@/lib/analisis-inventario/scope";
 import type {
   AnalisisInventarioDrillRow,
@@ -379,6 +384,11 @@ type QueryArgs = {
   sedePairs: Array<{ empresa: string; sedeId: string }> | null;
   /** Filtro perecederos / manufactura (línea N1). */
   lineFamily?: AnalisisInventarioLineFamily;
+  /** Filtros multi-select (línea / sublínea / ítem / inv mín). */
+  dimFilters?: Pick<
+    AnalisisInventarioDimensionFilters,
+    "lineas" | "sublineas" | "items" | "invMinUnits"
+  >;
 };
 
 async function resolveSourceMode(
@@ -407,6 +417,7 @@ const buildPeriodoStdAggSql = (args: {
   pathSql: string;
   invSelectExtras?: string;
   outerSelectExtras?: string;
+  havingSql?: string;
   idAlias?: string;
   labelAlias?: string;
   limit: number;
@@ -434,6 +445,7 @@ const buildPeriodoStdAggSql = (args: {
       AND ${args.sedeFilter}
       ${args.pathSql}
     GROUP BY ${groupBySql}
+    ${args.havingSql ?? ""}
     ORDER BY SUM(COALESCE(inventory_value, 0)) DESC NULLS LAST, 2 ASC
     LIMIT ${args.limit}
   `;
@@ -458,6 +470,8 @@ const buildMatviewPairedAggSql = (args: {
   salesGroupExtras?: string;
   outerSelectExtras?: string;
   joinExtras?: string;
+  /** Filtro post-join (p. ej. inventario mínimo). */
+  outerWhereSql?: string;
   idAlias?: string;
   labelAlias?: string;
   limit: number;
@@ -537,9 +551,56 @@ const buildMatviewPairedAggSql = (args: {
     LEFT JOIN sales s
       ON s.group_id = i.group_id
       ${args.joinExtras ?? ""}
+    WHERE TRUE
+      ${args.outerWhereSql ?? ""}
     ORDER BY i.inventory_value DESC NULLS LAST, i.group_label ASC
     LIMIT ${args.limit}
   `;
+};
+
+const buildDimFilterClauses = (
+  args: QueryArgs,
+  params: unknown[],
+): { dimSql: string; havingSql: string; outerWhereSql: string } => {
+  const dim = args.dimFilters ?? {
+    lineas: [] as string[],
+    sublineas: [] as string[],
+    items: [] as string[],
+    invMinUnits: null as number | null,
+  };
+  const dimSql = dimensionPathSql(
+    dim,
+    {
+      lineaId: DIM.lineaId,
+      sublineaId: DIM.sublineaId,
+      itemId: DIM.itemId,
+    },
+    params,
+  );
+  if (dim.invMinUnits == null) {
+    return { dimSql, havingSql: "", outerWhereSql: "" };
+  }
+  params.push(dim.invMinUnits);
+  const idx = params.length;
+  return {
+    dimSql,
+    havingSql: `HAVING SUM(COALESCE(inventory_units, 0)) > $${idx}`,
+    outerWhereSql: `AND i.inventory_units > $${idx}`,
+  };
+};
+
+const composePathSql = (
+  pathParts: string[],
+  familySql: string,
+  dimSql: string,
+): string => {
+  const base =
+    pathParts.length > 0
+      ? `AND ${pathParts.join("\n        AND ")}${familySql ? `\n        ${familySql}` : ""}`
+      : familySql
+        ? `\n        ${familySql}`
+        : "";
+  return `${base}${dimSql}`;
 };
 
 const buildDrillSql = (
@@ -548,6 +609,8 @@ const buildDrillSql = (
   table: string,
   sedeFilter: string,
   pathSql: string,
+  havingSql = "",
+  outerWhereSql = "",
 ) => {
   const group = levelGroup(level);
   const sedeExtras = {
@@ -569,6 +632,7 @@ const buildDrillSql = (
         sedeFilter,
         pathSql,
         outerSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+        havingSql,
         limit: 100,
       });
     }
@@ -582,6 +646,7 @@ const buildDrillSql = (
         sedeFilter,
         pathSql,
         outerSelectExtras: `, MAX(descripcion) AS description`,
+        havingSql,
         limit: 400,
       });
     }
@@ -593,6 +658,7 @@ const buildDrillSql = (
       groupBy: group.groupBy,
       sedeFilter,
       pathSql,
+      havingSql,
       limit: 300,
     });
   }
@@ -607,6 +673,7 @@ const buildDrillSql = (
       sedeFilter,
       pathSql,
       ...sedeExtras,
+      outerWhereSql,
       limit: 100,
     });
   }
@@ -621,6 +688,7 @@ const buildDrillSql = (
       pathSql,
       invSelectExtras: `, MAX(descripcion) AS description`,
       outerSelectExtras: `, i.description`,
+      outerWhereSql,
       limit: 400,
     });
   }
@@ -632,6 +700,7 @@ const buildDrillSql = (
     groupBy: group.groupBy,
     sedeFilter,
     pathSql,
+    outerWhereSql,
     limit: 300,
   });
 };
@@ -660,14 +729,23 @@ export async function queryAnalisisInventarioDrill(
     args.lineFamily ?? "all",
     DIM.lineaId,
   );
-  const pathSql =
-    pathParts.length > 0
-      ? `AND ${pathParts.join("\n        AND ")}${familySql ? `\n        ${familySql}` : ""}`
-      : familySql ? `\n        ${familySql}` : "";
+  const { dimSql, havingSql, outerWhereSql } = buildDimFilterClauses(
+    args,
+    params,
+  );
+  const pathSql = composePathSql(pathParts, familySql, dimSql);
 
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
-  const sql = buildDrillSql(mode, level, table, sedeFilter, pathSql);
+  const sql = buildDrillSql(
+    mode,
+    level,
+    table,
+    sedeFilter,
+    pathSql,
+    havingSql,
+    outerWhereSql,
+  );
 
   const periodDays = calendarDaysInclusive(args.dateStart, args.dateEnd);
   const result = await withStatementTimeout(client, 30_000, () =>
@@ -712,10 +790,11 @@ export async function queryAnalisisInventarioHeatmap(
     args.lineFamily ?? "all",
     DIM.lineaId,
   );
-  const pathSql =
-    pathParts.length > 0
-      ? `AND ${pathParts.join("\n        AND ")}${familySql ? `\n        ${familySql}` : ""}`
-      : familySql ? `\n        ${familySql}` : "";
+  const { dimSql, havingSql, outerWhereSql } = buildDimFilterClauses(
+    args,
+    params,
+  );
+  const pathSql = composePathSql(pathParts, familySql, dimSql);
   const group = levelGroup(rowLevel);
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
@@ -732,6 +811,7 @@ export async function queryAnalisisInventarioHeatmap(
           sedeFilter,
           pathSql,
           outerSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
+          havingSql,
           idAlias: "row_id",
           labelAlias: "row_label",
           limit,
@@ -749,6 +829,7 @@ export async function queryAnalisisInventarioHeatmap(
           salesGroupExtras: `, empresa, sede_id`,
           outerSelectExtras: `, i.empresa, i.sede_id`,
           joinExtras: `AND s.empresa = i.empresa AND s.sede_id = i.sede_id`,
+          outerWhereSql,
           idAlias: "row_id",
           labelAlias: "row_label",
           limit,
@@ -802,19 +883,27 @@ export async function queryAnalisisInventarioHeatmap(
       (rowTotals.get(cell.rowId) ?? 0) + cell.inventoryValue,
     );
   }
-  const topRowIds = [...rowTotals.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, rowLevel === "item" ? 30 : 40)
-    .map(([id]) => id);
-  const topSet = new Set(topRowIds);
+
+  // Categoría / línea / sublínea: orden numérico de código (01 → última).
+  // Ítem: top por valor de inventario (volumen alto).
+  const orderedRowIds =
+    rowLevel === "item"
+      ? [...rowTotals.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 30)
+          .map(([id]) => id)
+      : [...rowMap.keys()].sort((a, b) =>
+          a.localeCompare(b, "es", { numeric: true }),
+        );
+  const orderedSet = new Set(orderedRowIds);
 
   return {
     rowLevel,
-    rows: topRowIds
+    rows: orderedRowIds
       .map((id) => rowMap.get(id))
       .filter((row): row is AnalisisInventarioHeatmapRow => Boolean(row)),
     columns: args.columns,
-    cells: cells.filter((cell) => topSet.has(cell.rowId)),
+    cells: cells.filter((cell) => orderedSet.has(cell.rowId)),
     path: args.path,
     sourceMode: mode,
   };
@@ -850,6 +939,155 @@ export async function queryAnalisisInventarioBoard(
     drillClient.release();
     heatClient.release();
   }
+}
+
+/** Catálogo para MultiSelect: líneas, sublíneas (cascada) e ítems (búsqueda). */
+export async function queryAnalisisInventarioFilterCatalog(
+  client: PoolClient,
+  args: QueryArgs & {
+    itemQuery?: string;
+  },
+): Promise<AnalisisInventarioFilterCatalog> {
+  const empty: AnalisisInventarioFilterCatalog = {
+    lineas: [],
+    sublineas: [],
+    items: [],
+  };
+  const mode = await resolveSourceMode(client, args);
+  if (mode === "matview") {
+    const exists = await probeMatview(client, args.matview);
+    if (!exists) return empty;
+  }
+
+  const table =
+    mode === "periodo_std" ? args.periodoStdTable : args.matview;
+  const params: unknown[] =
+    mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
+  const sedeFilter = buildSedePairSqlFilter(params, args.sedePairs);
+  const familySql = lineFamilySqlFilter(
+    args.lineFamily ?? "all",
+    DIM.lineaId,
+  );
+  const dim = args.dimFilters ?? {
+    lineas: [] as string[],
+    sublineas: [] as string[],
+    items: [] as string[],
+    invMinUnits: null as number | null,
+  };
+
+  const dateSql =
+    mode === "periodo_std"
+      ? "TRUE"
+      : `fecha = $${2}::date`;
+
+  const lineasResult = await withStatementTimeout(client, 20_000, () =>
+    client.query<{ value: string; label: string }>(
+      `
+      SELECT
+        ${DIM.lineaId} AS value,
+        MAX(${DIM.lineaLabel}) AS label
+      FROM ${table}
+      WHERE NULLIF(TRIM(item), '') IS NOT NULL
+        AND ${dateSql}
+        AND ${sedeFilter}
+        ${familySql}
+      GROUP BY 1
+      ORDER BY 1 ASC
+      LIMIT 120
+      `,
+      params,
+    ),
+  );
+
+  const subParams = [...params];
+  const subDimSql = dimensionPathSql(
+    { lineas: dim.lineas, sublineas: [], items: [] },
+    {
+      lineaId: DIM.lineaId,
+      sublineaId: DIM.sublineaId,
+      itemId: DIM.itemId,
+    },
+    subParams,
+  );
+  const sublineasResult = await withStatementTimeout(client, 20_000, () =>
+    client.query<{ value: string; label: string }>(
+      `
+      SELECT
+        ${DIM.sublineaId} AS value,
+        MAX(${DIM.sublineaLabel}) AS label
+      FROM ${table}
+      WHERE NULLIF(TRIM(item), '') IS NOT NULL
+        AND ${dateSql}
+        AND ${sedeFilter}
+        ${familySql}
+        ${subDimSql}
+      GROUP BY 1
+      ORDER BY 1 ASC
+      LIMIT 300
+      `,
+      subParams,
+    ),
+  );
+
+  const itemQ = (args.itemQuery ?? "").trim();
+  let items: AnalisisInventarioFilterCatalog["items"] = [];
+  if (itemQ.length >= 2) {
+    const itemParams = [...params];
+    const itemDimSql = dimensionPathSql(
+      {
+        lineas: dim.lineas,
+        sublineas: dim.sublineas,
+        items: [],
+      },
+      {
+        lineaId: DIM.lineaId,
+        sublineaId: DIM.sublineaId,
+        itemId: DIM.itemId,
+      },
+      itemParams,
+    );
+    itemParams.push(`%${itemQ.toLowerCase()}%`);
+    const qIdx = itemParams.length;
+    const itemsResult = await withStatementTimeout(client, 20_000, () =>
+      client.query<{ value: string; label: string }>(
+        `
+        SELECT
+          ${DIM.itemId} AS value,
+          MAX(${DIM.itemLabel}) AS label
+        FROM ${table}
+        WHERE NULLIF(TRIM(item), '') IS NOT NULL
+          AND ${dateSql}
+          AND ${sedeFilter}
+          ${familySql}
+          ${itemDimSql}
+          AND (
+            LOWER(${DIM.itemId}) LIKE $${qIdx}
+            OR LOWER(${DIM.itemLabel}) LIKE $${qIdx}
+          )
+        GROUP BY 1
+        ORDER BY 1 ASC
+        LIMIT 80
+        `,
+        itemParams,
+      ),
+    );
+    items = (itemsResult.rows ?? []).map((row) => ({
+      value: String(row.value),
+      label: `${row.value} · ${row.label}`,
+    }));
+  }
+
+  return {
+    lineas: (lineasResult.rows ?? []).map((row) => ({
+      value: String(row.value),
+      label: `${row.value} · ${row.label}`,
+    })),
+    sublineas: (sublineasResult.rows ?? []).map((row) => ({
+      value: String(row.value),
+      label: `${row.value} · ${row.label}`,
+    })),
+    items,
+  };
 }
 
 export function resolvePeriodoStdTableName(

@@ -16,6 +16,7 @@ import {
   type RotacionSourceTable,
 } from "@/lib/rotacion/source-tables";
 import type { AnalisisInventarioSedeColumn } from "@/lib/analisis-inventario/types";
+import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 
 export type AnalisisInventarioSessionUser = MargenSessionSedeScope;
 
@@ -84,12 +85,23 @@ export const resolveAnalisisInventarioScope = (
     };
   }
 
-  const columns: AnalisisInventarioSedeColumn[] = catalog.map((option) => ({
-    key: option.value,
-    label: option.label,
-    empresa: option.empresa,
-    sedeId: option.idCo,
-  }));
+  /** Mismo orden que filtros de sede (Calle 5ta → … → Bogotá/Chía), no A–Z empresa. */
+  const columns: AnalisisInventarioSedeColumn[] = catalog
+    .map((option) => ({
+      key: option.value,
+      label: option.label,
+      empresa: option.empresa,
+      sedeId: option.idCo,
+    }))
+    .sort((a, b) => {
+      const byOrder =
+        getSedeOrderIndexForRawName(a.label) -
+        getSedeOrderIndexForRawName(b.label);
+      if (byOrder !== 0) return byOrder;
+      const empresaCmp = a.empresa.localeCompare(b.empresa, "es");
+      if (empresaCmp !== 0) return empresaCmp;
+      return a.sedeId.localeCompare(b.sedeId, "es");
+    });
 
   if (sessionUser.role === "admin" && sedeScope.allowedKeys === null) {
     return {
