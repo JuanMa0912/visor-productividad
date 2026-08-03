@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS app_users (
   username text NOT NULL UNIQUE,
   password_hash text NOT NULL,
   role text NOT NULL CHECK (role IN ('admin', 'user')),
+  display_name text,
   sede text,
   allowed_lines text[],
   allowed_subdashboards text[],

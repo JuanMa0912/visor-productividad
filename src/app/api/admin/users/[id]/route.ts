@@ -180,6 +180,34 @@ const hasPortalProfileColumn = async (client: {
   return (result.rows?.length ?? 0) > 0;
 };
 
+const hasDisplayNameColumn = async (client: {
+  query: (queryText: string) => Promise<{ rows?: unknown[] }>;
+}) => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'app_users'
+      AND column_name = 'display_name'
+    LIMIT 1
+    `,
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const DISPLAY_NAME_MAX_LEN = 120;
+
+const normalizeDisplayName = (
+  value: unknown,
+): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (!trimmed) return null;
+  return trimmed.slice(0, DISPLAY_NAME_MAX_LEN);
+};
+
 const resolveValidAllowedLines = (value: unknown) => {
   if (value === undefined || value === null) {
     return { ok: true as const, value: null as string[] | null };
@@ -359,6 +387,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const body = (await req.json()) as {
     username?: string;
+    displayName?: string | null;
     role?: "admin" | "user";
     portalProfile?: string;
     sede?: string | null;
@@ -386,6 +415,21 @@ export async function PATCH(req: Request, { params }: Params) {
     const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
     const portalProfileEnabled = await hasPortalProfileColumn(client);
+    const displayNameEnabled = await hasDisplayNameColumn(client);
+    if (
+      !displayNameEnabled &&
+      body.displayName !== undefined &&
+      body.displayName !== null &&
+      String(body.displayName).trim() !== ""
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Falta aplicar migracion display_name en app_users (db/migrations/20260803_app_users_display_name.sql).",
+        },
+        { status: 400 },
+      );
+    }
     if (
       !allowedEmpresasEnabled &&
       body.allowedEmpresas !== undefined &&
@@ -439,7 +483,8 @@ export async function PATCH(req: Request, { params }: Params) {
         to_jsonb(u)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
         to_jsonb(u)->'special_roles' AS "specialRoles",
-        to_jsonb(u)->>'portal_profile' AS "portalProfile"
+        to_jsonb(u)->>'portal_profile' AS "portalProfile",
+        to_jsonb(u)->>'display_name' AS "displayName"
       FROM app_users u
       WHERE id = $1
       LIMIT 1
@@ -455,6 +500,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const currentUser = currentResult.rows[0] as {
       username: string;
+      displayName: string | null;
       role: "admin" | "user";
       is_active: boolean;
       sede: string | null;
@@ -624,6 +670,9 @@ export async function PATCH(req: Request, { params }: Params) {
     if (typeof body.username === "string") {
       addUpdate("username", body.username.trim());
     }
+    if (displayNameEnabled && body.displayName !== undefined) {
+      addUpdate("display_name", normalizeDisplayName(body.displayName) ?? null);
+    }
     if (permissionsTouched) {
       addUpdate("role", nextRole);
       if (portalProfileEnabled) {
@@ -774,7 +823,7 @@ export async function PATCH(req: Request, { params }: Params) {
       UPDATE app_users
       SET ${updates.join(", ")}
       WHERE id = $${idx}
-      RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", to_jsonb(app_users)->'allowed_subdashboards' AS "allowedSubdashboards", to_jsonb(app_users)->'special_roles' AS "specialRoles", to_jsonb(app_users)->>'portal_profile' AS "portalProfile", is_active, created_at, updated_at, last_login_at, last_login_ip
+      RETURNING id, username, role, sede, allowed_sedes AS "allowedSedes", allowed_lines AS "allowedLines", allowed_dashboards AS "allowedDashboards", to_jsonb(app_users)->'allowed_subdashboards' AS "allowedSubdashboards", to_jsonb(app_users)->'special_roles' AS "specialRoles", to_jsonb(app_users)->>'portal_profile' AS "portalProfile", to_jsonb(app_users)->>'display_name' AS "displayName", is_active, created_at, updated_at, last_login_at, last_login_ip
       `,
       values,
     );
@@ -799,6 +848,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (user) {
       const updated = user as {
         username: string;
+        displayName?: string | null;
         role: string;
         portalProfile?: string | null;
         sede?: string | null;
@@ -811,6 +861,7 @@ export async function PATCH(req: Request, { params }: Params) {
       };
       const before = buildUserAuditSnapshot({
         username: currentUser.username,
+        displayName: currentUser.displayName,
         role: currentUser.role,
         portalProfile: currentProfile,
         sede: currentUser.sede,
@@ -823,6 +874,7 @@ export async function PATCH(req: Request, { params }: Params) {
       });
       const after = buildUserAuditSnapshot({
         username: updated.username,
+        displayName: updated.displayName ?? currentUser.displayName,
         role: updated.role,
         portalProfile: updated.portalProfile ?? nextPortalProfile,
         sede: updated.sede ?? null,
@@ -910,7 +962,8 @@ export async function DELETE(_req: Request, { params }: Params) {
         to_jsonb(app_users)->'allowed_dashboards' AS "allowedDashboards",
         to_jsonb(app_users)->'allowed_subdashboards' AS "allowedSubdashboards",
         to_jsonb(app_users)->'special_roles' AS "specialRoles",
-        to_jsonb(app_users)->>'portal_profile' AS "portalProfile"
+        to_jsonb(app_users)->>'portal_profile' AS "portalProfile",
+        to_jsonb(app_users)->>'display_name' AS "displayName"
       FROM app_users
       WHERE id = $1
       LIMIT 1
@@ -920,6 +973,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     const row = existing.rows[0] as
       | {
           username: string;
+          displayName: string | null;
           role: string;
           is_active: boolean;
           sede: string | null;
@@ -940,6 +994,7 @@ export async function DELETE(_req: Request, { params }: Params) {
 
     const before = buildUserAuditSnapshot({
       username: row.username,
+      displayName: row.displayName,
       role: row.role,
       portalProfile: row.portalProfile,
       sede: row.sede,

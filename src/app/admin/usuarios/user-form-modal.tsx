@@ -418,6 +418,32 @@ export function UserFormModal({
 
           <div>
             <label
+              htmlFor="admin-user-display-name"
+              className="text-sm font-medium text-slate-700"
+            >
+              Nombre de la persona
+            </label>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Nota opcional bajo el usuario (quién es el dueño de la cuenta).
+            </p>
+            <input
+              id="admin-user-display-name"
+              value={formState.displayName}
+              onChange={(e) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  displayName: e.target.value,
+                }))
+              }
+              className={cn(INPUT_CLASS, "mt-1.5")}
+              autoComplete="off"
+              maxLength={120}
+              placeholder="Ej. Juan Pérez"
+            />
+          </div>
+
+          <div>
+            <label
               htmlFor="admin-user-password"
               className="text-sm font-medium text-slate-700"
             >
@@ -875,6 +901,10 @@ export function UserFormModal({
       <div className="rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2">
         <dl>
           <SummaryRow label="Usuario" value={formState.username.trim() || "—"} />
+          <SummaryRow
+            label="Nombre"
+            value={formState.displayName.trim() || "—"}
+          />
           <SummaryRow
             label="Perfil"
             value={getPortalProfileLabel(formState.portalProfile)}

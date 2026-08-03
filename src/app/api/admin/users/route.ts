@@ -180,6 +180,35 @@ const hasPortalProfileColumn = async (client: {
   return (result.rows?.length ?? 0) > 0;
 };
 
+const hasDisplayNameColumn = async (client: {
+  query: (queryText: string) => Promise<{ rows?: unknown[] }>;
+}) => {
+  const result = await client.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'app_users'
+      AND column_name = 'display_name'
+    LIMIT 1
+    `,
+  );
+  return (result.rows?.length ?? 0) > 0;
+};
+
+const DISPLAY_NAME_MAX_LEN = 120;
+
+/** undefined = no enviado; null/"" = limpiar. */
+const normalizeDisplayName = (
+  value: unknown,
+): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (!trimmed) return null;
+  return trimmed.slice(0, DISPLAY_NAME_MAX_LEN);
+};
+
 const resolveValidAllowedLines = (value: unknown) => {
   if (value === undefined || value === null) {
     return { ok: true as const, value: null as string[] | null };
@@ -377,6 +406,7 @@ export async function GET(req: Request) {
         to_jsonb(u)->'allowed_subdashboards' AS "allowedSubdashboards",
         to_jsonb(u)->'special_roles' AS "specialRoles",
         to_jsonb(u)->>'portal_profile' AS "portalProfile",
+        to_jsonb(u)->>'display_name' AS "displayName",
         u.is_active,
         u.created_at,
         u.updated_at,
@@ -451,6 +481,7 @@ export async function POST(req: Request) {
   const body = (await req.json()) as {
     username?: string;
     password?: string;
+    displayName?: string | null;
     role?: "admin" | "user";
     portalProfile?: string;
     sede?: string | null;
@@ -557,6 +588,22 @@ export async function POST(req: Request) {
     const allowedSubdashboardsEnabled = await hasAllowedSubdashboardsColumn(client);
     const specialRolesEnabled = await hasSpecialRolesColumn(client);
     const portalProfileEnabled = await hasPortalProfileColumn(client);
+    const displayNameEnabled = await hasDisplayNameColumn(client);
+    const displayName = normalizeDisplayName(body.displayName);
+    if (
+      !displayNameEnabled &&
+      body.displayName !== undefined &&
+      body.displayName !== null &&
+      String(body.displayName).trim() !== ""
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Falta aplicar migracion display_name en app_users (db/migrations/20260803_app_users_display_name.sql).",
+        },
+        { status: 400 },
+      );
+    }
     const allowedEmpresasEnabled = await hasAllowedEmpresasColumn(client);
     if (
       !allowedEmpresasEnabled &&
@@ -681,6 +728,23 @@ export async function POST(req: Request) {
         ],
       );
     }
+    if (
+      displayNameEnabled &&
+      displayName !== undefined &&
+      result.rows?.[0] &&
+      typeof (result.rows[0] as { id?: string }).id === "string"
+    ) {
+      await client.query(
+        `
+        UPDATE app_users
+        SET display_name = $1
+        WHERE id = $2
+        `,
+        [displayName, (result.rows[0] as { id: string }).id],
+      );
+      (result.rows[0] as { displayName?: string | null }).displayName =
+        displayName;
+    }
     const user =
       result.rows && result.rows[0]
         ? {
@@ -714,6 +778,10 @@ export async function POST(req: Request) {
       };
       const after = buildUserAuditSnapshot({
         username: created.username,
+        displayName:
+          (created as { displayName?: string | null }).displayName ??
+          displayName ??
+          null,
         role: created.role,
         portalProfile: created.portalProfile ?? portalProfile,
         sede: created.sede ?? null,

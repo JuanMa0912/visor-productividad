@@ -101,7 +101,7 @@ Orden completo despues de `schema-auth.sql`:
 47. `20260723_dinastia_tenant_tables.sql` (tablas `margen_dinastia` / `rotacion_dinastia` / `ventas_dinastia` + `app_users.allowed_empresas`)
 48. `20260723_rotacion_dinastia_matview.sql` (matview `rotacion_dinastia_item_dia_clean` + snapshot `rotacion_dinastia_item_periodo_std`)
 49. `20260724_margen_dinastia_roll.sql` (rollup factura+item `margen_dinastia_roll` + `refresh_margen_dinastia_roll`)
-50. `20260727_margen_vendedor_perf_indexes.sql` (indices `vend_cc` en roll para pestaña Por Vendedor)
+51. `20260803_app_users_display_name.sql` (`app_users.display_name`: nombre real / nota bajo username en admin)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -143,6 +143,7 @@ Columnas relevantes de `app_users`:
 | Columna | Uso |
 | --- | --- |
 | `username`, `password_hash` | login con bcrypt |
+| `display_name` | nombre real / nota corta (visible bajo username en `/admin/usuarios`) |
 | `role` | `admin` o `user` |
 | `sede` | fallback legacy |
 | `allowed_sedes` | JSONB de sedes visibles |

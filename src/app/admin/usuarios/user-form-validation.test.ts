@@ -10,6 +10,7 @@ import {
 
 const baseState = (): UserFormState => ({
   username: "pipe",
+  displayName: "",
   portalProfile: "gerente",
   role: "user",
   sede: "",

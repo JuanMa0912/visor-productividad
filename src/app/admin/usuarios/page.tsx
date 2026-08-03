@@ -88,6 +88,7 @@ const canonicalizeUserSedeOption = (sede: string): string => {
 type UserRow = {
   id: string;
   username: string;
+  displayName?: string | null;
   role: "admin" | "user";
   portalProfile?: PortalProfileId | null;
   sede: string | null;
@@ -115,6 +116,7 @@ type LogRow = {
 
 const emptyForm: UserFormState = {
   username: "",
+  displayName: "",
   portalProfile: "gerente",
   role: "user",
   sede: "",
@@ -629,7 +631,12 @@ export default function AdminUsuariosPage() {
     let list = sortedUsers;
     const q = searchQuery.trim().toLowerCase();
     if (q) {
-      list = list.filter((u) => u.username.toLowerCase().includes(q));
+      list = list.filter((u) => {
+        const name = u.displayName?.trim().toLowerCase() ?? "";
+        return (
+          u.username.toLowerCase().includes(q) || name.includes(q)
+        );
+      });
     }
     if (roleFilter !== "all") {
       list = list.filter((u) => u.role === roleFilter);
@@ -789,6 +796,7 @@ export default function AdminUsuariosPage() {
     setFormState({
       id: user.id,
       username: user.username,
+      displayName: user.displayName?.trim() ?? "",
       portalProfile,
       sede:
         user.sede && allowedSedes.includes(user.sede)
@@ -852,6 +860,7 @@ export default function AdminUsuariosPage() {
 
       const payload: Record<string, unknown> = {
         username: formState.username.trim(),
+        displayName: formState.displayName.trim() || null,
         portalProfile: formState.portalProfile,
         role: formState.role,
         sede:
@@ -1240,7 +1249,7 @@ export default function AdminUsuariosPage() {
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         <input
                           type="search"
-                          placeholder="Buscar usuario..."
+                          placeholder="Buscar usuario o nombre..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
@@ -1470,8 +1479,17 @@ export default function AdminUsuariosPage() {
                                     <div className="truncate font-semibold text-slate-900">
                                       {user.username}
                                     </div>
-                                    <div className="truncate text-[11px] text-slate-400">
-                                      {user.username}@portal
+                                    <div
+                                      className="truncate text-[11px] text-slate-500"
+                                      title={
+                                        user.displayName?.trim() || undefined
+                                      }
+                                    >
+                                      {user.displayName?.trim() || (
+                                        <span className="text-slate-300">
+                                          Sin nombre
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </div>

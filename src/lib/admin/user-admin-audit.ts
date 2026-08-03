@@ -8,6 +8,7 @@ export type UserAdminAuditAction =
 
 export type UserAuditSnapshot = {
   username: string;
+  displayName: string | null;
   role: string;
   portalProfile: string | null;
   sede: string | null;
@@ -38,6 +39,7 @@ const sameJson = (a: unknown, b: unknown) =>
 
 export const buildUserAuditSnapshot = (input: {
   username: string;
+  displayName?: string | null;
   role: string;
   portalProfile?: string | null;
   sede?: string | null;
@@ -51,6 +53,7 @@ export const buildUserAuditSnapshot = (input: {
 }): UserAuditSnapshot => {
   const snap: UserAuditSnapshot = {
     username: input.username.trim(),
+    displayName: input.displayName?.trim() || null,
     role: input.role,
     portalProfile: input.portalProfile?.trim() || null,
     sede: input.sede?.trim() || null,
@@ -75,6 +78,7 @@ export const diffUserAuditSnapshots = (
 
   const fields: Array<keyof UserAuditSnapshot> = [
     "username",
+    "displayName",
     "role",
     "portalProfile",
     "sede",

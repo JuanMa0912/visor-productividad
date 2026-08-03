@@ -5,6 +5,8 @@ import { portalProfileRequiresAssignedSedes } from "@/lib/shared/portal-profiles
 export type UserFormState = {
   id?: string;
   username: string;
+  /** Nombre real / nota bajo el username (opcional). */
+  displayName: string;
   portalProfile: PortalProfileId;
   role: "admin" | "user";
   sede: string;
@@ -31,6 +33,7 @@ export const serializeUserFormState = (state: UserFormState): string =>
   JSON.stringify({
     id: state.id ?? null,
     username: state.username.trim(),
+    displayName: state.displayName.trim(),
     portalProfile: state.portalProfile,
     allowedSedes: [...state.allowedSedes].sort(),
     allowedEmpresas: [...state.allowedEmpresas].sort(),
