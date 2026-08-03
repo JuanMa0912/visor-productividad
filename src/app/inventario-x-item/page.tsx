@@ -47,6 +47,7 @@ import {
   normalizeItemPresetsFromUnknown,
   type ItemPreset,
 } from "@/lib/inventario/x-item-presets";
+import { DINASTIA_EMPRESA_CODE } from "@/lib/shared/data-tenant";
 import { formatDateLabel } from "@/lib/shared/utils";
 import { logExportDownload } from "@/lib/client/log-export-download";
 import { AppTopBar } from "@/components/portal/app-top-bar";
@@ -469,43 +470,50 @@ export default function InventarioXItemPage() {
           companies: [],
           sedes: [],
         };
-        setFilters({
-          companies: nextFilters.companies.map((company) =>
-            company.trim().toLowerCase(),
-          ),
-          sedes: nextFilters.sedes.map((sede) => ({
+        // Dinastía no aplica en este tablero (ni empresa ni sedes).
+        const catalogCompanies = nextFilters.companies
+          .map((company) => company.trim().toLowerCase())
+          .filter((company) => company !== DINASTIA_EMPRESA_CODE);
+        const catalogSedes = nextFilters.sedes
+          .filter(
+            (sede) =>
+              sede.empresa.trim().toLowerCase() !== DINASTIA_EMPRESA_CODE,
+          )
+          .map((sede) => ({
             ...sede,
             empresa: sede.empresa.trim().toLowerCase(),
-          })),
+          }));
+        setFilters({
+          companies: catalogCompanies,
+          sedes: catalogSedes,
         });
         // Si el catalogo trae empresas nuevas (mtodo/bogota) y la seleccion
         // actual no las incluye, ampliar a todas para no dejar al usuario
         // atrapado solo en Mercamio tras un cache viejo.
         setSelectedCompanyState((current) => {
-          const nextCompanies = nextFilters.companies.map((company) =>
-            company.trim().toLowerCase(),
-          );
-          if (nextCompanies.length === 0) return current;
-          if (current.length === 0) return nextCompanies;
-          const normalizedCurrent = current.map((company) =>
-            company.trim().toLowerCase(),
-          );
+          if (catalogCompanies.length === 0) {
+            return current.filter(
+              (company) =>
+                company.trim().toLowerCase() !== DINASTIA_EMPRESA_CODE,
+            );
+          }
+          if (current.length === 0) return catalogCompanies;
+          const normalizedCurrent = current
+            .map((company) => company.trim().toLowerCase())
+            .filter((company) => company !== DINASTIA_EMPRESA_CODE);
           const expandFromMercamioOnly =
             normalizedCurrent.length === 1 &&
             normalizedCurrent[0] === "mercamio" &&
-            nextCompanies.length > 1;
+            catalogCompanies.length > 1;
           if (expandFromMercamioOnly) {
             queueMicrotask(() => {
               setSelectedSedeState(
-                nextFilters.sedes.map((sede) =>
-                  buildSedeOptionValue(
-                    sede.empresa.trim().toLowerCase(),
-                    sede.sedeId,
-                  ),
+                catalogSedes.map((sede) =>
+                  buildSedeOptionValue(sede.empresa, sede.sedeId),
                 ),
               );
             });
-            return nextCompanies;
+            return catalogCompanies;
           }
           return normalizedCurrent;
         });
@@ -953,8 +961,11 @@ export default function InventarioXItemPage() {
 
   const handleCompanyChange = useCallback(
     (values: string[]) => {
-      setSelectedCompanyState(values);
-      const allowed = new Set(values);
+      const next = values.filter(
+        (company) => company.trim().toLowerCase() !== DINASTIA_EMPRESA_CODE,
+      );
+      setSelectedCompanyState(next);
+      const allowed = new Set(next);
       setSelectedSedeState((current) =>
         current.filter((value) => {
           const parsed = parseSedeOptionValue(value);

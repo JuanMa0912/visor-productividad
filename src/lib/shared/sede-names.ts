@@ -67,7 +67,6 @@ export const INVENTARIO_CANONICAL_EMPRESAS = [
   "mercamio",
   "mtodo",
   "bogota",
-  "dinastia",
 ] as const;
 
 export type InventarioCanonicalEmpresa =

@@ -15,6 +15,10 @@ import {
 } from "@/lib/shared/portal-sections";
 import { getCanonicalSedeName, listCanonicalInventarioFilterSedes } from "@/lib/shared/sede-names";
 import {
+  canonicalizeEmpresaCode,
+  DINASTIA_EMPRESA_CODE,
+} from "@/lib/shared/data-tenant";
+import {
   resolveRotacionBaseSqlFields,
   type RotacionBaseDateColumn,
   type RotacionBaseSqlFields,
@@ -118,6 +122,13 @@ const META_CACHE_TTL_MS = 5 * 60 * 1000;
 const ROTACION_CLEAN_MATVIEW_NAME = "rotacion_item_dia_clean";
 const MATVIEW_PROBE_TTL_MS = 5 * 60 * 1000;
 
+/** Este tablero no incluye Dinastía ni sus sedes. */
+const buildExcludeDinastiaEmpresaClause = (empresaExpr: string) =>
+  `LOWER(TRIM(${empresaExpr})) <> '${DINASTIA_EMPRESA_CODE}'`;
+
+const isDinastiaEmpresa = (empresa: string) =>
+  canonicalizeEmpresaCode(empresa) === DINASTIA_EMPRESA_CODE;
+
 const MATVIEW_DIMENSION_COLUMNS = {
   lineExpr: "linea",
   n1CodeExpr: "linea_n1_codigo",
@@ -125,6 +136,7 @@ const MATVIEW_DIMENSION_COLUMNS = {
   sedeIdExpr: "sede_id",
   itemPresentCondition: "NULLIF(TRIM(item), '') IS NOT NULL",
   hiddenSedeFilter: null as string | null,
+  excludeDinastiaFilter: buildExcludeDinastiaEmpresaClause("empresa"),
 };
 
 const HIDDEN_SEDE_KEYS = new Set([
@@ -173,6 +185,7 @@ type MatrixDimensionColumns = {
   sedeIdExpr: string;
   itemPresentCondition: string;
   hiddenSedeFilter: string | null;
+  excludeDinastiaFilter: string | null;
 };
 
 const matrixDimensionColumnsFromFields = (
@@ -184,6 +197,7 @@ const matrixDimensionColumnsFromFields = (
   sedeIdExpr: fields.sedeIdExpr,
   itemPresentCondition: fields.itemPresentCondition,
   hiddenSedeFilter: buildHiddenSedeWhereClause(fields.sedeNameExpr),
+  excludeDinastiaFilter: buildExcludeDinastiaEmpresaClause(fields.empresaExpr),
 });
 
 async function probeRotacionCleanMatview(
@@ -319,8 +333,8 @@ const getInventoryFilterCatalog = async (
   // (`max`), no sobre el dateEnd del filtro del usuario. Ademas se fusiona
   // con el catalogo canonico (mercamio/mtodo/bogota) para que Comercializadora
   // y Merkmios no desaparezcan del dropdown si el corte diario viene incompleto.
-  // v3: invalida caches de proceso que solo tenian mercamio.
-  const dateKey = `v3:${catalogDateCompact}`;
+  // v4: excluye Dinastía del catálogo (empresa y sedes).
+  const dateKey = `v4:${catalogDateCompact}`;
   if (
     filterCatalogCache &&
     filterCatalogCache.dateKey === dateKey &&
@@ -344,6 +358,7 @@ const getInventoryFilterCatalog = async (
       WHERE ${buildEndDateEqualsSql(dateColumn)}
         AND ${fields.itemPresentCondition}
         AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
+        AND ${buildExcludeDinastiaEmpresaClause(fields.empresaExpr)}
       ORDER BY empresa ASC, sede_name ASC, sede_id ASC
       `,
       [catalogDateCompact],
@@ -369,6 +384,7 @@ const getInventoryFilterCatalog = async (
       const empresa = empresaRaw.trim().toLowerCase();
       const sedeId = sedeIdRaw.trim();
       if (!empresa || !sedeId) return;
+      if (isDinastiaEmpresa(empresa)) return;
       if (HIDDEN_SEDE_KEYS.has(normalizeKey(sedeNameRaw))) return;
       const key = `${empresa}::${sedeId}`;
       const sedeName = getCanonicalSedeName(sedeId, empresa) ?? sedeNameRaw;
@@ -484,6 +500,7 @@ const queryInventoryCatalogRows = async ({
         AND ($2::text[] IS NULL OR ${fields.empresaExpr} = ANY($2::text[]))
         AND ($3::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($3::text[]))
         AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
+        AND ${buildExcludeDinastiaEmpresaClause(fields.empresaExpr)}
       GROUP BY
         ${fields.lineExpr},
         ${fields.n1CodeExpr},
@@ -550,6 +567,7 @@ const queryInventorySummaryRows = async ({
           AND ($3::text[] IS NULL OR ${fields.empresaExpr} = ANY($3::text[]))
           AND ($4::text[] IS NULL OR ${fields.sedeIdExpr} = ANY($4::text[]))
           AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
+          AND ${buildExcludeDinastiaEmpresaClause(fields.empresaExpr)}
       ),
       ranked AS (
         SELECT
@@ -703,6 +721,9 @@ const appendMatrixDimensionFilters = ({
   );
   if (columns.hiddenSedeFilter) {
     whereClauses.push(columns.hiddenSedeFilter);
+  }
+  if (columns.excludeDinastiaFilter) {
+    whereClauses.push(columns.excludeDinastiaFilter);
   }
 
   if (subcategory === "perecederos") {
@@ -1173,8 +1194,8 @@ export async function GET(request: Request) {
       new Set(
         url.searchParams
           .getAll("empresa")
-          .map((value) => value.trim())
-          .filter(Boolean),
+          .map((value) => value.trim().toLowerCase())
+          .filter((value) => value && !isDinastiaEmpresa(value)),
       ),
     );
     const requestedSedes = Array.from(
@@ -1182,7 +1203,14 @@ export async function GET(request: Request) {
         url.searchParams
           .getAll("sede")
           .map((value) => value.trim())
-          .filter(Boolean),
+          .filter((value) => {
+            if (!value) return false;
+            // sede llega como id o a veces con contexto; si el cliente manda
+            // empresa::sede, excluye dinastia por prefijo.
+            const lower = value.toLowerCase();
+            if (lower.startsWith(`${DINASTIA_EMPRESA_CODE}::`)) return false;
+            return true;
+          }),
       ),
     );
     const requestedSubcategory = url.searchParams.get("subcategory");
