@@ -619,10 +619,15 @@ export async function queryParticipacionMatrix(
     });
   }
 
-  const topIds = [...rowTotals.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, topLimit)
-    .map(([id]) => id);
+  const topIds =
+    rowLevel === "linea"
+      ? [...rowMap.keys()].sort((a, b) =>
+          a.localeCompare(b, "es", { numeric: true }),
+        )
+      : [...rowTotals.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, topLimit)
+          .map(([id]) => id);
   const topSet = new Set(topIds);
 
   const visibleCells = cells.filter((cell) => topSet.has(cell.rowId));
@@ -640,7 +645,9 @@ export async function queryParticipacionMatrix(
   }
 
   let hasResidual = false;
-  if (!searchActive) {
+  // En líneas devolvemos el catálogo completo (01 → última); residual solo en
+  // sublínea / ítem cuando hay top-N.
+  if (!searchActive && rowLevel !== "linea") {
     for (const col of args.columns) {
       const sedeTotal = sedeTotals.get(col.key)?.sales ?? 0;
       const visible = visibleSalesBySede.get(col.key) ?? 0;

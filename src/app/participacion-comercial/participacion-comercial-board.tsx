@@ -5,6 +5,7 @@ import { ArrowUp, ChevronUp, Download, RotateCcw, Search, X } from "lucide-react
 import { downloadParticipacionExcel } from "@/lib/participacion-comercial/export-excel";
 import {
   formatMoney,
+  formatMoneyVisualMillions,
   formatSharePct,
   formatUnits,
   PARTICIPACION_LEVEL_NAMES,
@@ -96,7 +97,8 @@ export function ParticipacionComercialBoard() {
   const [exportingExcel, setExportingExcel] = useState(false);
   /** null = total de todas las sedes; string = sedeKey de la columna. */
   const [matrixSortKey, setMatrixSortKey] = useState<string | null>(null);
-  const [matrixSortDir, setMatrixSortDir] = useState<"asc" | "desc">("desc");
+  /** Por defecto: código asc (01 → última) en línea/sublínea. */
+  const [matrixSortDir, setMatrixSortDir] = useState<"asc" | "desc">("asc");
   const [shareDetailRow, setShareDetailRow] =
     useState<ParticipacionMatrixRow | null>(null);
 
@@ -219,6 +221,11 @@ export function ParticipacionComercialBoard() {
     scrollToId("pc-drill");
   }, [loading, drill]);
 
+  useEffect(() => {
+    setMatrixSortKey(null);
+    setMatrixSortDir(matrix?.rowLevel === "item" ? "desc" : "asc");
+  }, [matrix?.rowLevel]);
+
   const cellByKey = useMemo(() => {
     const map = new Map<string, ParticipacionMatrixCell>();
     for (const cell of matrix?.cells ?? []) {
@@ -280,6 +287,9 @@ export function ParticipacionComercialBoard() {
     const residual = matrix.rows.filter((row) => row.residual);
     const normal = matrix.rows.filter((row) => !row.residual);
     const dir = matrixSortDir === "asc" ? 1 : -1;
+    const sortByCode =
+      matrixSortKey == null &&
+      (matrix.rowLevel === "linea" || matrix.rowLevel === "sublinea");
     const score = (rowId: string) => {
       if (matrixSortKey) {
         const cell = cellByKey.get(`${rowId}::${matrixSortKey}`);
@@ -290,6 +300,9 @@ export function ParticipacionComercialBoard() {
       return rowSalesTotal.get(rowId) ?? 0;
     };
     const sorted = [...normal].sort((a, b) => {
+      if (sortByCode) {
+        return a.id.localeCompare(b.id, "es", { numeric: true }) * dir;
+      }
       const diff = (score(a.id) - score(b.id)) * dir;
       if (diff !== 0) return diff;
       return a.id.localeCompare(b.id, "es", { numeric: true });
@@ -311,7 +324,11 @@ export function ParticipacionComercialBoard() {
       return;
     }
     setMatrixSortKey(key);
-    setMatrixSortDir("desc");
+    // Línea/sublínea por código: 01 primero. Ítem o columna sede: mayor primero.
+    const byCode =
+      key == null &&
+      matrix?.rowLevel !== "item";
+    setMatrixSortDir(byCode ? "asc" : "desc");
   };
 
   const matrixSortHint = (key: string | null) => {
@@ -397,6 +414,26 @@ export function ParticipacionComercialBoard() {
     return () => window.removeEventListener("keydown", onKey);
   }, [shareDetailRow]);
 
+  const shareDetailPathLabel = useMemo(() => {
+    if (!shareDetailRow || !matrix) return "";
+    const parts: string[] = [];
+    for (const step of matrixPath) {
+      if (step.type === "linea") {
+        parts.push(formatLineaDisplay(step.id, step.label));
+      } else if (step.type === "sublinea") {
+        parts.push(`${step.id} · ${step.label}`);
+      }
+    }
+    const current =
+      matrix.rowLevel === "linea"
+        ? formatLineaDisplay(shareDetailRow.id, shareDetailRow.label)
+        : `${shareDetailRow.id} · ${shareDetailRow.label}`;
+    // Evita duplicar si el path ya incluye el mismo nodo.
+    const last = parts[parts.length - 1];
+    if (last !== current) parts.push(current);
+    return parts.join(" › ");
+  }, [shareDetailRow, matrix, matrixPath]);
+
   const shareDetailLabels = useMemo(() => {
     if (!matrix) {
       return { inParent: "% grupo", parentInSede: "% padre sede", inSede: "% sede" };
@@ -444,7 +481,7 @@ export function ParticipacionComercialBoard() {
     shareOfSedePct: number;
   }) => {
     if (matrixMetric === "units") return formatUnits(cell.units);
-    if (matrixMetric === "sales") return formatMoney(cell.sales);
+    if (matrixMetric === "sales") return formatMoneyVisualMillions(cell.sales);
     return formatSharePct(cell.shareOfSedePct);
   };
 
@@ -636,7 +673,8 @@ export function ParticipacionComercialBoard() {
               </h2>
               <p className="text-xs text-slate-500">
                 Clic profundiza (línea → sublínea → ítem). Doble clic: % en el
-                grupo padre y % en la sede. En ítem también % / Unidades / $.
+                grupo padre y % en la sede. Modo $ M: muestra ÷1.000.000
+                (solo visual); el valor real queda en el tooltip.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -645,7 +683,7 @@ export function ParticipacionComercialBoard() {
                   [
                     ["share", "%"],
                     ["units", "Unidades"],
-                    ["sales", "$"],
+                    ["sales", "$ M"],
                   ] as Array<[ParticipacionMatrixMetric, string]>
                 ).map(([key, label]) => (
                   <button
@@ -754,7 +792,13 @@ export function ParticipacionComercialBoard() {
                       type="button"
                       onClick={() => toggleMatrixSort(null)}
                       className="hover:text-slate-900"
-                      title="Ordenar por total"
+                      title={
+                        matrix.rowLevel === "item"
+                          ? "Ordenar por total"
+                          : matrixSortDir === "asc"
+                            ? "Orden: código ascendente (01 primero). Clic para invertir."
+                            : "Orden: código descendente. Clic para invertir."
+                      }
                     >
                       {PARTICIPACION_LEVEL_NAMES[
                         matrix.rowLevel === "sublinea"
@@ -890,7 +934,7 @@ export function ParticipacionComercialBoard() {
                       matrixMetric === "units"
                         ? formatUnits(sedeTotal?.units ?? 0)
                         : matrixMetric === "sales"
-                          ? formatMoney(sedeTotal?.sales ?? 0)
+                          ? formatMoneyVisualMillions(sedeTotal?.sales ?? 0)
                           : "100%";
                     return (
                       <td
@@ -922,28 +966,37 @@ export function ParticipacionComercialBoard() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
-              <div>
+              <div className="min-w-0">
                 <h3
                   id="pc-share-detail-title"
                   className="text-sm font-bold text-slate-900"
                 >
-                  Participación por sede ·{" "}
-                  {matrix.rowLevel === "linea"
-                    ? formatLineaDisplay(shareDetailRow.id, shareDetailRow.label)
-                    : `${shareDetailRow.id} · ${shareDetailRow.label}`}
+                  Participación por sede
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p
+                  className="mt-1 text-xs font-semibold leading-relaxed text-slate-800"
+                  title={shareDetailPathLabel}
+                >
+                  {shareDetailPathLabel ||
+                    (matrix.rowLevel === "linea"
+                      ? formatLineaDisplay(
+                          shareDetailRow.id,
+                          shareDetailRow.label,
+                        )
+                      : `${shareDetailRow.id} · ${shareDetailRow.label}`)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
                   {matrix.rowLevel === "linea"
                     ? "En raíz, % en grupo y % en sede coinciden (todas las líneas = 100%)."
                     : matrix.rowLevel === "sublinea"
-                      ? "Dentro de la línea (hermanas = 100%), cuánto pesa la línea en la sede, y cuánto pesa esta sublínea en la sede."
-                      : "Dentro de la sublínea (ítems = 100%), cuánto pesa la sublínea en la sede, y cuánto pesa este ítem en la sede."}
+                      ? "Ruta: línea › sublínea. % en línea (hermanas = 100%), % de la línea en sede y % de la sublínea en sede."
+                      : "Ruta: línea › sublínea › ítem. % en sublínea (ítems = 100%), % de la sublínea en sede y % del ítem en sede."}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShareDetailRow(null)}
-                className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
+                className="shrink-0 rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
                 aria-label="Cerrar"
               >
                 <X className="h-4 w-4" />

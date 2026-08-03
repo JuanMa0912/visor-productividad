@@ -99,6 +99,20 @@ export const formatMoney = (value: number): string =>
     maximumFractionDigits: 0,
   });
 
+/**
+ * Solo visual: divide por 1.000.000 (quita 6 ceros) para matrices densas.
+ * El valor real no cambia; usar formatMoney en tooltips / Excel.
+ */
+export const formatMoneyVisualMillions = (value: number): string => {
+  if (!Number.isFinite(value)) return "—";
+  const millions = value / 1_000_000;
+  return `${millions.toLocaleString("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: millions >= 100 ? 0 : 1,
+  })} M`;
+};
+
 export const formatUnits = (value: number): string =>
   value.toLocaleString("es-CO", {
     maximumFractionDigits: 1,
