@@ -16,7 +16,11 @@ export function DiMultiSelect({
   onChange,
   emptyLabel,
   searchable = false,
+  searchValue,
+  onSearchChange,
+  searchPlaceholder = "Buscar…",
   disabled = false,
+  className = "",
 }: {
   label: string;
   values: string[];
@@ -24,11 +28,18 @@ export function DiMultiSelect({
   onChange: (next: string[]) => void;
   emptyLabel: string;
   searchable?: boolean;
+  /** Búsqueda controlada (p. ej. ítems vía API). */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  searchPlaceholder?: string;
   disabled?: boolean;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const controlled = typeof onSearchChange === "function";
+  const query = controlled ? (searchValue ?? "") : localQuery;
 
   useEffect(() => {
     if (!open) return;
@@ -40,16 +51,18 @@ export function DiMultiSelect({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const filtered = searchable
-    ? options.filter((opt) => {
-        const q = query.trim().toLowerCase();
-        if (!q) return true;
-        return (
-          opt.label.toLowerCase().includes(q) ||
-          opt.value.toLowerCase().includes(q)
-        );
-      })
-    : options;
+  const filtered = controlled
+    ? options
+    : searchable
+      ? options.filter((opt) => {
+          const q = query.trim().toLowerCase();
+          if (!q) return true;
+          return (
+            opt.label.toLowerCase().includes(q) ||
+            opt.value.toLowerCase().includes(q)
+          );
+        })
+      : options;
 
   const summary =
     values.length === 0
@@ -67,7 +80,7 @@ export function DiMultiSelect({
   };
 
   return (
-    <div ref={rootRef} className="relative min-w-[9.5rem]">
+    <div ref={rootRef} className={`relative min-w-0 ${className}`}>
       <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
         {label}
       </span>
@@ -75,26 +88,34 @@ export function DiMultiSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-left text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span className="truncate">{summary}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
       </button>
       {open ? (
-        <div className="absolute z-50 mt-1 max-h-56 w-max min-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-          {searchable ? (
+        <div className="absolute z-50 mt-1 max-h-56 w-full min-w-[12rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+          {searchable || controlled ? (
             <input
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar…"
+              onChange={(event) => {
+                const next = event.target.value;
+                if (controlled) onSearchChange?.(next);
+                else setLocalQuery(next);
+              }}
+              placeholder={searchPlaceholder}
               className="w-full border-b border-slate-100 px-2.5 py-2 text-xs outline-none"
               autoFocus
             />
           ) : null}
           <div className="max-h-44 overflow-auto py-1">
             {filtered.length === 0 ? (
-              <p className="px-2.5 py-2 text-xs text-slate-500">Sin opciones</p>
+              <p className="px-2.5 py-2 text-xs text-slate-500">
+                {controlled && query.trim().length < 2
+                  ? "Escribe ≥2 letras"
+                  : "Sin opciones"}
+              </p>
             ) : (
               filtered.map((opt) => {
                 const selected = values.includes(opt.value);

@@ -642,7 +642,7 @@ const buildDrillSql = (
         pathSql,
         outerSelectExtras: `, MAX(descripcion) AS description`,
         havingSql,
-        limit: 400,
+        limit: 1500,
       });
     }
     return buildPeriodoStdAggSql({
@@ -684,7 +684,7 @@ const buildDrillSql = (
       invSelectExtras: `, MAX(descripcion) AS description`,
       outerSelectExtras: `, i.description`,
       outerWhereSql,
-      limit: 400,
+      limit: 1500,
     });
   }
   return buildMatviewPairedAggSql({
@@ -708,7 +708,9 @@ export async function queryAnalisisInventarioDrill(
   rows: AnalisisInventarioDrillRow[];
   sourceMode: SourceMode;
 }> {
-  const level = nextDrillLevel(args.path);
+  const diMinDays = args.dimFilters?.diMinDays ?? null;
+  // DI > N se evalúa a nivel ítem (en todo el alcance o solo lo filtrado).
+  const level = diMinDays != null ? "item" : nextDrillLevel(args.path);
   const mode = await resolveSourceMode(client, args);
 
   if (mode === "matview") {
@@ -735,7 +737,6 @@ export async function queryAnalisisInventarioDrill(
   const result = await withStatementTimeout(client, 30_000, () =>
     client.query(sql, params),
   );
-  const diMinDays = args.dimFilters?.diMinDays ?? null;
   const metric = args.metric ?? "units";
   const rows = ((result.rows ?? []) as AggDbRow[])
     .map((row) => {
@@ -744,7 +745,13 @@ export async function queryAnalisisInventarioDrill(
     })
     .filter((row) =>
       passesDiMinFilter(row.diUnits, row.diValue, diMinDays, metric),
-    );
+    )
+    .sort((a, b) => {
+      if (diMinDays == null) return 0;
+      const av = metric === "value" ? a.diValue : a.diUnits;
+      const bv = metric === "value" ? b.diValue : b.diUnits;
+      return bv - av;
+    });
 
   return { level, rows, sourceMode: mode };
 }
@@ -756,7 +763,11 @@ export async function queryAnalisisInventarioHeatmap(
     columns: AnalisisInventarioSedeColumn[];
   },
 ): Promise<AnalisisInventarioHeatmapPayload & { sourceMode: SourceMode }> {
-  const rowLevel = nextHeatmapRowLevel(args.path);
+  const diMinDays = args.dimFilters?.diMinDays ?? null;
+  // Con umbral DI: filas = ítems (busca en el alcance de filtros, no en el DI
+  // agregado de categoría/línea, que casi nunca supera 100 d).
+  const rowLevel =
+    diMinDays != null ? "item" : nextHeatmapRowLevel(args.path);
   const empty = {
     rowLevel,
     rows: [] as AnalisisInventarioHeatmapRow[],
@@ -785,7 +796,7 @@ export async function queryAnalisisInventarioHeatmap(
   const group = levelGroup(rowLevel);
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
-  const limit = rowLevel === "item" ? 800 : 600;
+  const limit = diMinDays != null ? 2500 : rowLevel === "item" ? 800 : 600;
 
   const sql =
     mode === "periodo_std"
@@ -827,12 +838,10 @@ export async function queryAnalisisInventarioHeatmap(
   const dbRows = (result.rows ?? []) as HeatCellDbRow[];
 
   const rowMap = new Map<string, AnalisisInventarioHeatmapRow>();
-  const diMinDays = args.dimFilters?.diMinDays ?? null;
   const metric = args.metric ?? "units";
   const cells: AnalisisInventarioHeatmapCell[] = [];
 
   for (const row of dbRows) {
-    // Mismo criterio que el drill: tasas diarias por ítem, no días calendario.
     const metrics = calculateDiFromRates({
       inventoryUnits: toNum(row.inventory_units),
       inventoryValue: toNum(row.inventory_value),
@@ -868,25 +877,34 @@ export async function queryAnalisisInventarioHeatmap(
     });
   }
 
-  const rowTotals = new Map<string, number>();
+  const rowMaxDi = new Map<string, number>();
+  const rowInvValue = new Map<string, number>();
   for (const cell of cells) {
-    rowTotals.set(
+    const di = metric === "value" ? cell.diValue : cell.diUnits;
+    rowMaxDi.set(cell.rowId, Math.max(rowMaxDi.get(cell.rowId) ?? 0, di));
+    rowInvValue.set(
       cell.rowId,
-      (rowTotals.get(cell.rowId) ?? 0) + cell.inventoryValue,
+      (rowInvValue.get(cell.rowId) ?? 0) + cell.inventoryValue,
     );
   }
 
-  // Categoría / línea / sublínea: orden numérico de código (01 → última).
-  // Ítem: top por valor de inventario (volumen alto).
   const orderedRowIds =
-    rowLevel === "item"
-      ? [...rowTotals.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 30)
+    diMinDays != null
+      ? [...rowMaxDi.entries()]
+          .sort(
+            (a, b) =>
+              b[1] - a[1] || a[0].localeCompare(b[0], "es", { numeric: true }),
+          )
+          .slice(0, 200)
           .map(([id]) => id)
-      : [...rowMap.keys()].sort((a, b) =>
-          a.localeCompare(b, "es", { numeric: true }),
-        );
+      : rowLevel === "item"
+        ? [...rowInvValue.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 30)
+            .map(([id]) => id)
+        : [...rowMap.keys()].sort((a, b) =>
+            a.localeCompare(b, "es", { numeric: true }),
+          );
   const orderedSet = new Set(orderedRowIds);
 
   return {
