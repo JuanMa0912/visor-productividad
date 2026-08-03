@@ -59,6 +59,12 @@ const sourceForRows = (
   dateRange: { start: "2026-05-01", end: "2026-06-15" },
   ceroEstadoByKey: estados,
   restockEstadoByKey: restock,
+  restockEffectiveness: {
+    score: 67,
+    markedSurtidoCount: 3,
+    soldAfterCount: 2,
+    unavailable: false,
+  },
   sedeName: "Floresta",
   empresa: "mtodo",
   sedeId: "001",
@@ -193,6 +199,12 @@ describe("buildRotacionCriticalDigest", () => {
           surtidoPct: 0,
         },
       },
+      restockEffectiveness: {
+        score: 67,
+        markedSurtidoCount: 3,
+        soldAfterCount: 2,
+        unavailable: false,
+      },
     };
 
     const subject = buildRotacionCriticalDigestSubject(digest);
@@ -203,11 +215,14 @@ describe("buildRotacionCriticalDigest", () => {
     assert.match(html, /Perecederos/);
     assert.match(html, /Manufactura/);
     assert.match(html, /Total sede D\+0\+S/);
+    assert.match(html, /Puntuación restock/);
+    assert.match(html, />67</);
 
     const text = buildRotacionCriticalDigestText(digest);
     assert.match(text, /PERECEDEROS/);
     assert.match(text, /MANUFACTURA/);
     assert.match(text, /TOTAL SEDE D\+0\+S/);
+    assert.match(text, /PUNTUACIÓN RESTOCK: 67/);
     assert.match(text, /600\.000/);
   });
 });

@@ -8,7 +8,7 @@ import {
   buildRotacionCriticalDigestSubject,
   buildRotacionCriticalDigestText,
 } from "@/lib/rotacion/critical-digest-email";
-import { ROTACION_EMAIL_PILOT_SEDES } from "@/lib/rotacion/email-pilot-sedes";
+import { ROTACION_EMAIL_PILOT_SEDES, ROTACION_EMAIL_PILOT_ONLY_TO } from "@/lib/rotacion/email-pilot-sedes";
 import { loadRotacionCriticalDigestSource } from "@/lib/rotacion/server/load-critical-digest-source";
 
 const parseEnvValue = (raw: string) => {
@@ -166,13 +166,10 @@ const main = async () => {
   let hadError = false;
 
   for (const sede of ROTACION_EMAIL_PILOT_SEDES) {
-    const recipients = parseRecipients(process.env[sede.recipientsEnvKey]);
-    if (recipients.length === 0) {
-      console.warn(
-        `[${sede.sedeName}] Sin destinatarios en ${sede.recipientsEnvKey}; se omite.`,
-      );
-      continue;
-    }
+    // Piloto: un solo destinatario controlado (override opcional vía env).
+    const forceTo =
+      process.env.ROTACION_EMAIL_FORCE_TO?.trim() || ROTACION_EMAIL_PILOT_ONLY_TO;
+    const recipients = [forceTo];
 
     try {
       const source = await loadRotacionCriticalDigestSource({

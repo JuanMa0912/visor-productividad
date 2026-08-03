@@ -5,6 +5,8 @@ import {
   type CeroRotacionEstado,
 } from "@/lib/rotacion/cero-estado";
 import type { RotacionCriticalDigestSource } from "@/lib/rotacion/server/load-critical-digest-source";
+import type { RestockEffectivenessScore } from "@/lib/rotacion/restock-effectiveness";
+import { emptyRestockEffectivenessScore } from "@/lib/rotacion/restock-effectiveness";
 import type { RotationRow, AbcdConfig, DateRange } from "@/app/rotacion/rotacion-preamble";
 import {
   NO_SALES_DI_VALUE,
@@ -56,6 +58,8 @@ export type RotacionCriticalDigest = {
   };
   perecederos: RotacionCriticalDigestSection;
   manufactura: RotacionCriticalDigestSection;
+  /** % de ítems restock marcados surtido en el rango que luego vendieron. */
+  restockEffectiveness: RestockEffectivenessScore;
 };
 
 const isNuevoItemInSelectedRange = (
@@ -271,6 +275,8 @@ export const buildRotacionCriticalDigest = (
     total,
     perecederos,
     manufactura,
+    restockEffectiveness:
+      source.restockEffectiveness ?? emptyRestockEffectivenessScore(),
   };
 };
 

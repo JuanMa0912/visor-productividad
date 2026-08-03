@@ -7,6 +7,12 @@ export type RotacionEmailPilotSede = {
   recipientsEnvKey: string;
 };
 
+/**
+ * Destinatario único de pruebas / piloto controlado.
+ * El script también fuerza este correo si `ROTACION_EMAIL_FORCE_TO` no está definido.
+ */
+export const ROTACION_EMAIL_PILOT_ONLY_TO = "aprendizppt@mercamio.com";
+
 export const ROTACION_EMAIL_PILOT_SEDES: readonly RotacionEmailPilotSede[] = [
   {
     empresa: "mtodo",

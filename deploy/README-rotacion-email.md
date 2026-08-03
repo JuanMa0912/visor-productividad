@@ -1,7 +1,12 @@
 # Timer correo diario rotación
 
 Envía cada mañana un resumen de **Críticos · D+0+S** por sede piloto
-(actualmente Floresta).
+(actualmente Floresta) a **`aprendizppt@mercamio.com`** (override con
+`ROTACION_EMAIL_FORCE_TO`).
+
+Incluye **puntuación restock 0–100**: % de ítems marcados `surtido` en contexto
+restock **dentro del rango del correo** que luego tuvieron venta (misma sede)
+hasta el fin del rango.
 
 El runbook general está en [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
@@ -15,14 +20,13 @@ Por sede, con la misma lógica que `/rotacion`, en **un solo correo** con dos bl
 
 Los conteos **0** y **S** no dependen del ABCD; **D** sí cambia al filtrar familia. Por eso el total sede puede no coincidir con la suma de D de cada bloque, aunque D+0+S por bloque sí debe cuadrar con la UI al aplicar el mismo filtro de familia.
 
-Cada bloque incluye:
+Cada bloque se muestra en **3 columnas** (D | 0 | S) para leer rápido:
 
-| Bloque | Métricas |
+| Columna | Contenido |
 | --- | --- |
-| **Total D+0+S** | cantidad de productos + total inventario (pesos completos, ej. `$ 403.000.000`) |
-| **D · Demanda** | ítems, total inventario, días de inventario |
-| **0 · Cero rotación** | ítems, sin verificar, seguimiento, surtido (% surtidos) |
-| **S · Restock** | ítems, sin verificar, seguimiento, surtido (% surtidos) |
+| **Total D+0+S** (cabecera de familia) | productos + inventario |
+| **D · Demanda** | ítems, inventario, días de inventario |
+| **0 · Cero** / **S · Restock** | ítems + Sin ver / Seg / Surt (%) |
 
 ## Variables
 
@@ -42,7 +46,8 @@ SMTP_PORT=3465
 Webmail: `correo.mercamio.com`. El puerto **3465** usa **SMTPS** (TLS directo,
 como `465`); no usar `587` salvo que sistemas indique lo contrario. **IMAP
 3993** es solo lectura de buzón, no aplica al envío.
-| `ROTACION_EMAIL_FLORESTA_TO` | destinatarios Floresta, separados por coma |
+| `ROTACION_EMAIL_FLORESTA_TO` | legacy; el envío piloto fuerza `ROTACION_EMAIL_FORCE_TO` o `aprendizppt@mercamio.com` |
+| `ROTACION_EMAIL_FORCE_TO` | destinatario único (default `aprendizppt@mercamio.com`) |
 | `ROTACION_EMAIL_DRY_RUN` | `true` imprime en consola sin enviar |
 | `ENV_FILE` | default `/opt/visor-productividad/.env.local` |
 | `LOG_FILE` | default `/var/log/visor-rotacion-email.log` |

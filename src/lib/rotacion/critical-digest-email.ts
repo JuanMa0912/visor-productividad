@@ -1,7 +1,7 @@
 import {
-  CERO_ROTACION_ESTADO_LABELS,
   type RotacionCriticalDigest,
   type RotacionCriticalDigestSection,
+  type SurtidoEstadoBreakdown,
 } from "@/lib/rotacion/critical-digest";
 import {
   formatPrice,
@@ -30,108 +30,100 @@ const formatDiasInventario = (value: number) => {
   return formatRotationOneDecimal(value);
 };
 
-const renderEstadoBlock = (
+/** Estados 0/S en una sola línea corta. */
+const formatEstadoLine = (b: SurtidoEstadoBreakdown) =>
+  `Sin ver ${formatCount(b.sinVerificar)} · Seg ${formatCount(b.seguimiento)} · Surt ${formatCount(b.surtido)} (${formatPctOneDecimal(b.surtidoPct)})`;
+
+const formatScoreLabel = (
+  digest: RotacionCriticalDigest,
+): { value: string; detail: string } => {
+  const eff = digest.restockEffectiveness;
+  if (eff.unavailable) {
+    return { value: "—", detail: "Sin datos de auditoría/ventas" };
+  }
+  if (eff.score == null) {
+    return {
+      value: "—",
+      detail: "Sin marcas a surtido (restock) en el periodo",
+    };
+  }
+  return {
+    value: `${eff.score}`,
+    detail: `${formatCount(eff.soldAfterCount)} de ${formatCount(eff.markedSurtidoCount)} vendieron tras surtido`,
+  };
+};
+
+const tdMetric = (label: string, value: string, align: "left" | "right" = "left") =>
+  `<td style="padding:4px 6px;vertical-align:top;text-align:${align};">
+    <div style="font-size:10px;line-height:1.2;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">${label}</div>
+    <div style="margin-top:2px;font-size:14px;line-height:1.25;font-weight:800;color:#0f172a;">${value}</div>
+  </td>`;
+
+const renderEstadoCell = (
+  code: string,
   title: string,
   accent: string,
-  breakdown: RotacionCriticalDigestSection["ceroRotacion"],
+  breakdown: SurtidoEstadoBreakdown,
 ) => `
-  <tr>
-    <td colspan="2" style="padding:16px 0 8px;font-size:13px;font-weight:700;color:${accent};text-transform:uppercase;letter-spacing:0.08em;">
-      ${title}
-    </td>
-  </tr>
-  <tr>
-    <td style="padding:6px 0;color:#475569;">Ítems</td>
-    <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${formatCount(breakdown.itemCount)}</td>
-  </tr>
-  <tr>
-    <td style="padding:6px 0;color:#475569;">${CERO_ROTACION_ESTADO_LABELS.sin_verificar}</td>
-    <td style="padding:6px 0;text-align:right;font-weight:600;color:#0f172a;">${formatCount(breakdown.sinVerificar)}</td>
-  </tr>
-  <tr>
-    <td style="padding:6px 0;color:#475569;">${CERO_ROTACION_ESTADO_LABELS.seguimiento}</td>
-    <td style="padding:6px 0;text-align:right;font-weight:600;color:#0f172a;">${formatCount(breakdown.seguimiento)}</td>
-  </tr>
-  <tr>
-    <td style="padding:6px 0;color:#475569;">${CERO_ROTACION_ESTADO_LABELS.surtido}</td>
-    <td style="padding:6px 0;text-align:right;font-weight:600;color:#0f172a;">${formatCount(breakdown.surtido)} (${formatPctOneDecimal(breakdown.surtidoPct)})</td>
-  </tr>
+  <td width="33%" valign="top" style="padding:6px;border:1px solid #e2e8f0;border-radius:8px;background:#ffffff;">
+    <div style="font-size:11px;font-weight:800;color:${accent};">${code} · ${title}</div>
+    <div style="margin-top:4px;font-size:18px;font-weight:800;color:#0f172a;line-height:1;">${formatCount(breakdown.itemCount)}</div>
+    <div style="margin-top:4px;font-size:11px;line-height:1.35;color:#475569;">${formatEstadoLine(breakdown)}</div>
+  </td>
 `;
 
 const renderSectionBlock = (
   familyLabel: string,
   accent: string,
+  headerBg: string,
   section: RotacionCriticalDigestSection,
 ) => `
   <tr>
-    <td colspan="2" style="padding:20px 0 10px;border-top:1px solid #e2e8f0;">
-      <div style="font-size:15px;font-weight:800;color:${accent};letter-spacing:0.04em;">
-        ${familyLabel}
-      </div>
-      <div style="margin-top:6px;font-size:12px;color:#64748b;">
-        ${formatCount(section.total.itemCount)} productos · inventario ${formatEmailInventario(section.total.totalInventario)}
-      </div>
+    <td style="padding:10px 0 0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+        <tr>
+          <td style="padding:8px 10px;background:${headerBg};border-bottom:1px solid #e2e8f0;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+              <tr>
+                <td style="font-size:13px;font-weight:800;color:${accent};">${familyLabel}</td>
+                <td style="text-align:right;font-size:12px;color:#475569;">
+                  <strong style="color:#0f172a;">${formatCount(section.total.itemCount)}</strong>
+                  · ${formatEmailInventario(section.total.totalInventario)}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 8px 4px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:4px;">
+              <tr>
+                <td width="33%" valign="top" style="padding:6px;border:1px solid #fecdd3;border-radius:8px;background:#fff1f2;">
+                  <div style="font-size:11px;font-weight:800;color:#be123c;">D · Demanda</div>
+                  <div style="margin-top:4px;font-size:18px;font-weight:800;color:#881337;line-height:1;">${formatCount(section.demandaD.itemCount)}</div>
+                  <div style="margin-top:4px;font-size:11px;line-height:1.35;color:#9f1239;">
+                    ${formatEmailInventario(section.demandaD.totalInventario)}<br/>
+                    DI ${formatDiasInventario(section.demandaD.diasInventario)}
+                  </div>
+                </td>
+                ${renderEstadoCell("0", "Cero", "#475569", section.ceroRotacion)}
+                ${renderEstadoCell("S", "Restock", "#0e7490", section.restockS)}
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </td>
   </tr>
-  <tr>
-    <td colspan="2" style="padding:8px 14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;">D+0+S · ${familyLabel}</div>
-      <div style="margin-top:8px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:12px;color:#64748b;">Productos para revisar</div>
-          <div style="font-size:20px;font-weight:800;color:#0f172a;">${formatCount(section.total.itemCount)}</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:12px;color:#64748b;">Total inventario</div>
-          <div style="font-size:20px;font-weight:800;color:#0f172a;">${formatEmailInventario(section.total.totalInventario)}</div>
-        </div>
-      </div>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" style="padding:16px 0 8px;font-size:13px;font-weight:700;color:#be123c;text-transform:uppercase;letter-spacing:0.08em;">
-      D · Demanda
-    </td>
-  </tr>
-  <tr>
-    <td style="padding:6px 0;color:#475569;">Ítems categoría D</td>
-    <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${formatCount(section.demandaD.itemCount)}</td>
-  </tr>
-  <tr>
-    <td style="padding:6px 0;color:#475569;">Total inventario</td>
-    <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${formatEmailInventario(section.demandaD.totalInventario)}</td>
-  </tr>
-  <tr>
-    <td style="padding:6px 0;color:#475569;">Días de inventario</td>
-    <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${formatDiasInventario(section.demandaD.diasInventario)}</td>
-  </tr>
-  ${renderEstadoBlock("0 · Cero rotación", "#475569", section.ceroRotacion)}
-  ${renderEstadoBlock("S · Restock / en stock", "#0e7490", section.restockS)}
 `;
 
 const renderSectionText = (familyLabel: string, section: RotacionCriticalDigestSection) => {
-  const estadoLines = (label: string, b: RotacionCriticalDigestSection["ceroRotacion"]) =>
-    [
-      `${label}: ${formatCount(b.itemCount)} ítems`,
-      `  ${CERO_ROTACION_ESTADO_LABELS.sin_verificar}: ${formatCount(b.sinVerificar)}`,
-      `  ${CERO_ROTACION_ESTADO_LABELS.seguimiento}: ${formatCount(b.seguimiento)}`,
-      `  ${CERO_ROTACION_ESTADO_LABELS.surtido}: ${formatCount(b.surtido)} (${formatPctOneDecimal(b.surtidoPct)})`,
-    ].join("\n");
-
   return [
     `=== ${familyLabel.toUpperCase()} ===`,
-    `TOTAL D+0+S`,
-    `  Productos: ${formatCount(section.total.itemCount)}`,
-    `  Total inventario: ${formatEmailInventario(section.total.totalInventario)}`,
-    "",
-    `D · DEMANDA`,
-    `  Ítems: ${formatCount(section.demandaD.itemCount)}`,
-    `  Total inventario: ${formatEmailInventario(section.demandaD.totalInventario)}`,
-    `  Días de inventario: ${formatDiasInventario(section.demandaD.diasInventario)}`,
-    "",
-    estadoLines("0 · CERO ROTACIÓN", section.ceroRotacion),
-    "",
-    estadoLines("S · RESTOCK", section.restockS),
+    `Total D+0+S: ${formatCount(section.total.itemCount)} · ${formatEmailInventario(section.total.totalInventario)}`,
+    `D Demanda: ${formatCount(section.demandaD.itemCount)} · ${formatEmailInventario(section.demandaD.totalInventario)} · DI ${formatDiasInventario(section.demandaD.diasInventario)}`,
+    `0 Cero: ${formatCount(section.ceroRotacion.itemCount)} · ${formatEstadoLine(section.ceroRotacion)}`,
+    `S Restock: ${formatCount(section.restockS.itemCount)} · ${formatEstadoLine(section.restockS)}`,
   ].join("\n");
 };
 
@@ -144,6 +136,7 @@ export const buildRotacionCriticalDigestHtml = (
   digest: RotacionCriticalDigest,
 ) => {
   const rangeLabel = formatRangeLabel(digest.dateRange);
+  const score = formatScoreLabel(digest);
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -151,41 +144,59 @@ export const buildRotacionCriticalDigestHtml = (
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Rotación · ${digest.sedeName}</title>
 </head>
-<body style="margin:0;padding:24px;background:#f8fafc;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+<body style="margin:0;padding:12px;background:#f1f5f9;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
     <tr>
-      <td style="padding:24px 24px 12px;background:linear-gradient(180deg,#fff1f2 0%,#ffffff 100%);">
-        <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#be123c;">Críticos · Requieren acción</p>
-        <h1 style="margin:0 0 8px;font-size:24px;line-height:1.2;color:#0f172a;">${digest.sedeName}</h1>
-        <p style="margin:0;font-size:14px;color:#64748b;">Periodo consultado: <strong style="color:#334155;">${rangeLabel}</strong> (${digest.daysConsulted} días)</p>
+      <td style="padding:12px 14px 8px;background:#fff1f2;border-bottom:1px solid #fecdd3;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#be123c;">Críticos · D+0+S</div>
+        <div style="margin-top:2px;font-size:18px;font-weight:800;line-height:1.2;color:#0f172a;">${digest.sedeName}</div>
+        <div style="margin-top:2px;font-size:12px;color:#64748b;">${rangeLabel} · ${digest.daysConsulted} días</div>
       </td>
     </tr>
     <tr>
-      <td style="padding:8px 24px 20px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+      <td style="padding:10px 14px 4px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;">
           <tr>
-            <td colspan="2" style="padding:12px 14px;border-radius:12px;background:#fff1f2;border:1px solid #fecdd3;">
-              <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#be123c;">Total sede D+0+S</div>
-              <div style="margin-top:8px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-                <div>
-                  <div style="font-size:12px;color:#9f1239;">Productos para revisar</div>
-                  <div style="font-size:22px;font-weight:800;color:#881337;">${formatCount(digest.total.itemCount)}</div>
-                </div>
-                <div style="text-align:right;">
-                  <div style="font-size:12px;color:#9f1239;">Total inventario</div>
-                  <div style="font-size:22px;font-weight:800;color:#881337;">${formatEmailInventario(digest.total.totalInventario)}</div>
-                </div>
+            <td style="padding:8px 10px;">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#0e7490;">Puntuación restock (0–100)</div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:4px;">
+                <tr>
+                  <td style="font-size:28px;font-weight:800;line-height:1;color:#155e75;vertical-align:middle;">${score.value}</td>
+                  <td style="text-align:right;font-size:11px;line-height:1.35;color:#0f766e;vertical-align:middle;">${score.detail}</td>
+                </tr>
+              </table>
+              <div style="margin-top:6px;font-size:10px;line-height:1.35;color:#64748b;">
+                % de ítems restock marcados <strong>surtido</strong> en el periodo que luego tuvieron venta.
               </div>
             </td>
           </tr>
-          ${renderSectionBlock(LINEA_N1_FAMILY_LABELS.perecederos, "#047857", digest.perecederos)}
-          ${renderSectionBlock(LINEA_N1_FAMILY_LABELS.manufactura, "#1d4ed8", digest.manufactura)}
         </table>
       </td>
     </tr>
     <tr>
-      <td style="padding:16px 24px 24px;border-top:1px solid #f1f5f9;font-size:12px;line-height:1.5;color:#94a3b8;">
-        Resumen automático del visor de productividad. Perecederos: líneas 01, 02, 03, 04 y 12. Manufactura: resto de líneas N1. Los porcentajes de surtido corresponden al estado S.inventario registrado en rotación.
+      <td style="padding:8px 14px 4px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;">
+          <tr>
+            <td colspan="2" style="padding:6px 10px 2px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#be123c;">Total sede D+0+S</td>
+          </tr>
+          <tr>
+            ${tdMetric("Productos", formatCount(digest.total.itemCount))}
+            ${tdMetric("Inventario", formatEmailInventario(digest.total.totalInventario), "right")}
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0 14px 10px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+          ${renderSectionBlock(LINEA_N1_FAMILY_LABELS.perecederos, "#047857", "#ecfdf5", digest.perecederos)}
+          ${renderSectionBlock(LINEA_N1_FAMILY_LABELS.manufactura, "#1d4ed8", "#eff6ff", digest.manufactura)}
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:8px 14px 12px;border-top:1px solid #f1f5f9;font-size:10px;line-height:1.4;color:#94a3b8;">
+        Automático · Visor. Puntuación restock: primera marca a surtido en el rango + venta en o después. Perecederos: 01–04 y 12. Manufactura: resto.
       </td>
     </tr>
   </table>
@@ -197,14 +208,16 @@ export const buildRotacionCriticalDigestText = (
   digest: RotacionCriticalDigest,
 ) => {
   const rangeLabel = formatRangeLabel(digest.dateRange);
+  const score = formatScoreLabel(digest);
 
   return [
     `Rotación · ${digest.sedeName}`,
     `Periodo: ${rangeLabel} (${digest.daysConsulted} días)`,
     "",
-    `TOTAL SEDE D+0+S`,
-    `  Productos: ${formatCount(digest.total.itemCount)}`,
-    `  Total inventario: ${formatEmailInventario(digest.total.totalInventario)}`,
+    `PUNTUACIÓN RESTOCK: ${score.value}/100`,
+    `  ${score.detail}`,
+    "",
+    `TOTAL SEDE D+0+S: ${formatCount(digest.total.itemCount)} · ${formatEmailInventario(digest.total.totalInventario)}`,
     "",
     renderSectionText(LINEA_N1_FAMILY_LABELS.perecederos, digest.perecederos),
     "",

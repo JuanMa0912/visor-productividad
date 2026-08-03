@@ -15,6 +15,11 @@ import {
 import type { AbcdConfig } from "@/app/rotacion/rotacion-preamble";
 import { loadCeroEstadosForSede } from "@/lib/rotacion/server/load-cero-estados-for-sede";
 import type { CeroRotacionEstado } from "@/lib/rotacion/cero-estado";
+import {
+  emptyRestockEffectivenessScore,
+  queryRestockEffectivenessScore,
+  type RestockEffectivenessScore,
+} from "@/lib/rotacion/restock-effectiveness";
 
 export type RotacionCriticalDigestSource = {
   rows: RotationRow[];
@@ -22,6 +27,7 @@ export type RotacionCriticalDigestSource = {
   dateRange: { start: string; end: string };
   ceroEstadoByKey: Record<string, CeroRotacionEstado>;
   restockEstadoByKey: Record<string, CeroRotacionEstado>;
+  restockEffectiveness: RestockEffectivenessScore;
   sedeName: string;
   empresa: string;
   sedeId: string;
@@ -65,13 +71,32 @@ export async function loadRotacionCriticalDigestSource(
   });
   const boundedRange = limitDateRangeWindow(effectiveRange);
 
-  const [abcdConfig, precomputedFields, periodoStdMeta, estados] =
-    await Promise.all([
-      getRotacionAbcdConfigForScope(input.empresa, input.sedeId),
-      withPoolClient((client) => resolveRotacionBaseSqlFields(client)),
-      withPoolClient((client) => getRotacionPeriodoStdMeta(client)),
-      loadCeroEstadosForSede(input.empresa, input.sedeId),
-    ]);
+  const [
+    abcdConfig,
+    precomputedFields,
+    periodoStdMeta,
+    estados,
+    restockEffectiveness,
+  ] = await Promise.all([
+    getRotacionAbcdConfigForScope(input.empresa, input.sedeId),
+    withPoolClient((client) => resolveRotacionBaseSqlFields(client)),
+    withPoolClient((client) => getRotacionPeriodoStdMeta(client)),
+    loadCeroEstadosForSede(input.empresa, input.sedeId),
+    withPoolClient((client) =>
+      queryRestockEffectivenessScore(client, {
+        empresa: input.empresa,
+        sedeId: input.sedeId,
+        dateStartIso: boundedRange.start,
+        dateEndIso: boundedRange.end,
+      }),
+    ).catch((error) => {
+      console.warn(
+        `[rotacion-digest] score restock no disponible (${input.empresa}|${input.sedeId}):`,
+        error instanceof Error ? error.message : error,
+      );
+      return emptyRestockEffectivenessScore(true);
+    }),
+  ]);
 
   const rows = await queryRotationRows({
     startDate: boundedRange.start,
@@ -91,6 +116,7 @@ export async function loadRotacionCriticalDigestSource(
     dateRange: boundedRange,
     ceroEstadoByKey: estados.ceroEstadoByKey,
     restockEstadoByKey: estados.restockEstadoByKey,
+    restockEffectiveness,
     sedeName: input.sedeName,
     empresa: input.empresa,
     sedeId: input.sedeId,
