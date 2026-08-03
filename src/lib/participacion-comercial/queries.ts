@@ -519,13 +519,17 @@ export async function queryParticipacionMatrix(
   };
   const dbRows = (result.rows ?? []) as CellDb[];
 
-  /** Con búsqueda de ítem, % = participación real en la sede (total sin filtro de texto). */
+  /** Con búsqueda de ítem, % hermanos = participación en el padre (sin filtro de texto). */
   const sedeTotals = new Map<string, { sales: number; units: number }>();
-  if (searchActive) {
+  const fullSedeTotals = new Map<string, { sales: number; units: number }>();
+
+  const loadSedeAgg = async (
+    pathForTotals: ParticipacionDrillStep[],
+  ): Promise<Map<string, { sales: number; units: number }>> => {
     const totParams: unknown[] =
       mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
     const totSedeFilter = buildSedePairSqlFilter(totParams, args.sedePairs);
-    const totPathParts = pathFiltersSql(matrixPath, totParams);
+    const totPathParts = pathFiltersSql(pathForTotals, totParams);
     const totPathSql =
       totPathParts.length > 0
         ? `AND ${totPathParts.join("\n      AND ")}`
@@ -546,6 +550,7 @@ export async function queryParticipacionMatrix(
     const totResult = await withTimeout(client, 30_000, () =>
       client.query(totSql, totParams),
     );
+    const map = new Map<string, { sales: number; units: number }>();
     for (const row of (totResult.rows ?? []) as Array<{
       empresa: string;
       sede_id: string;
@@ -553,11 +558,21 @@ export async function queryParticipacionMatrix(
       units: string | number | null;
     }>) {
       const key = sedeKey(String(row.empresa), String(row.sede_id));
-      sedeTotals.set(key, {
+      map.set(key, {
         sales: toNum(row.sales),
         units: toNum(row.units),
       });
     }
+    return map;
+  };
+
+  // Totales reales de sede (todas las líneas) para % absoluto.
+  const fullMap = await loadSedeAgg([]);
+  for (const [key, value] of fullMap) fullSedeTotals.set(key, value);
+
+  if (searchActive || matrixPath.length > 0) {
+    const scoped = await loadSedeAgg(matrixPath);
+    for (const [key, value] of scoped) sedeTotals.set(key, value);
   } else {
     for (const row of dbRows) {
       const sales = toNum(row.sales);
@@ -592,6 +607,7 @@ export async function queryParticipacionMatrix(
     }
     rowTotals.set(rowId, (rowTotals.get(rowId) ?? 0) + sales);
     const sedeTotal = sedeTotals.get(key)?.sales ?? 0;
+    const fullSedeTotal = fullSedeTotals.get(key)?.sales ?? 0;
     cells.push({
       rowId,
       sedeKey: key,
@@ -599,6 +615,7 @@ export async function queryParticipacionMatrix(
       units: toNum(row.units),
       shareOfSedePct: sharePct(sales, sedeTotal),
       shareOfTotalPct: sharePct(sales, grandTotal),
+      shareOfFullSedePct: sharePct(sales, fullSedeTotal),
     });
   }
 
@@ -642,6 +659,10 @@ export async function queryParticipacionMatrix(
         units: restUnits,
         shareOfSedePct: sharePct(rest, sedeTotal),
         shareOfTotalPct: sharePct(rest, grandTotal),
+        shareOfFullSedePct: sharePct(
+          rest,
+          fullSedeTotals.get(col.key)?.sales ?? 0,
+        ),
       });
     }
   }
@@ -670,6 +691,11 @@ export async function queryParticipacionMatrix(
       sedeKey: col.key,
       sales: sedeTotals.get(col.key)?.sales ?? 0,
       units: sedeTotals.get(col.key)?.units ?? 0,
+    })),
+    fullSedeTotals: args.columns.map((col) => ({
+      sedeKey: col.key,
+      sales: fullSedeTotals.get(col.key)?.sales ?? 0,
+      units: fullSedeTotals.get(col.key)?.units ?? 0,
     })),
     rowLevel,
     path: matrixPath,
