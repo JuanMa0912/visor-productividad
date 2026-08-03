@@ -105,7 +105,8 @@ const appendDimensionParams = (
     lineas: string[];
     sublineas: string[];
     items: string[];
-    invMin: number | null;
+    diMin: number | null;
+    metric?: "units" | "value";
   },
 ) => {
   if (args.empresas.length > 0) params.set("empresas", args.empresas.join(","));
@@ -114,9 +115,10 @@ const appendDimensionParams = (
   if (args.sublineas.length > 0)
     params.set("sublineas", args.sublineas.join(","));
   if (args.items.length > 0) params.set("items", args.items.join(","));
-  if (args.invMin != null && args.invMin > 0) {
-    params.set("invMin", String(args.invMin));
+  if (args.diMin != null && args.diMin > 0) {
+    params.set("diMin", String(args.diMin));
   }
+  if (args.metric) params.set("metric", args.metric);
 };
 
 export function AnalisisInventarioBoard(_props: BoardProps) {
@@ -150,8 +152,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   const [selectedLineas, setSelectedLineas] = useState<string[]>([]);
   const [selectedSublineas, setSelectedSublineas] = useState<string[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [invMinInput, setInvMinInput] = useState("");
-  const [invMinApplied, setInvMinApplied] = useState<number | null>(null);
+  const [diMinInput, setDiMinInput] = useState("");
+  const [diMinApplied, setDiMinApplied] = useState<number | null>(null);
   const [filterCatalog, setFilterCatalog] =
     useState<AnalisisInventarioFilterCatalog | null>(null);
   const [itemFilterQuery, setItemFilterQuery] = useState("");
@@ -239,7 +241,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           lineas: selectedLineas,
           sublineas: selectedSublineas,
           items: selectedItems,
-          invMin: invMinApplied,
+          diMin: diMinApplied,
+          metric,
         });
         const response = await fetch(
           `/api/analisis-de-inventario?${params.toString()}`,
@@ -305,7 +308,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     selectedLineas,
     selectedSublineas,
     selectedItems,
-    invMinApplied,
+    diMinApplied,
+    metric,
   ]);
 
   useEffect(() => {
@@ -324,7 +328,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           lineas: selectedLineas,
           sublineas: [],
           items: [],
-          invMin: null,
+          diMin: null,
         });
         const response = await fetch(
           `/api/analisis-de-inventario?${params.toString()}`,
@@ -376,7 +380,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             lineas: selectedLineas,
             sublineas: selectedSublineas,
             items: [],
-            invMin: null,
+            diMin: null,
           });
           const response = await fetch(
             `/api/analisis-de-inventario?${params.toString()}`,
@@ -485,15 +489,15 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     return [...fromSearch, ...selectedMissing];
   }, [itemFilterOptions, selectedItems]);
 
-  const applyInvMin = () => {
-    const raw = invMinInput.replace(",", ".").trim();
+  const applyDiMin = () => {
+    const raw = diMinInput.replace(",", ".").trim();
     if (!raw) {
-      setInvMinApplied(null);
+      setDiMinApplied(null);
       return;
     }
     const n = Number(raw);
     if (!Number.isFinite(n) || n < 0) return;
-    setInvMinApplied(n);
+    setDiMinApplied(n);
   };
 
   const filteredDrillRows = useMemo(() => {
@@ -595,8 +599,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     setSelectedLineas([]);
     setSelectedSublineas([]);
     setSelectedItems([]);
-    setInvMinInput("");
-    setInvMinApplied(null);
+    setDiMinInput("");
+    setDiMinApplied(null);
     setItemFilterQuery("");
     scrollToId("di-filters");
   };
@@ -873,37 +877,37 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             />
           </div>
           <label className="min-w-[9.5rem] text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Inventario &gt;
+            DI &gt; (días)
             <div className="mt-1 flex gap-1">
               <input
                 type="text"
                 inputMode="decimal"
-                value={invMinInput}
-                onChange={(event) => setInvMinInput(event.target.value)}
+                value={diMinInput}
+                onChange={(event) => setDiMinInput(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") applyInvMin();
+                  if (event.key === "Enter") applyDiMin();
                 }}
-                placeholder="Unds"
+                placeholder="ej. 300"
                 className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-medium text-slate-800"
               />
               <button
                 type="button"
-                onClick={applyInvMin}
+                onClick={applyDiMin}
                 className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
               >
-                {invMinApplied != null ? "OK" : "Aplicar"}
+                {diMinApplied != null ? "OK" : "Aplicar"}
               </button>
             </div>
-            {invMinApplied != null ? (
+            {diMinApplied != null ? (
               <button
                 type="button"
                 onClick={() => {
-                  setInvMinApplied(null);
-                  setInvMinInput("");
+                  setDiMinApplied(null);
+                  setDiMinInput("");
                 }}
                 className="mt-1 text-[11px] font-semibold text-blue-700 hover:underline"
               >
-                {`Quitar (> ${invMinApplied.toLocaleString("es-CO")})`}
+                {`Quitar (> ${diMinApplied.toLocaleString("es-CO")} d)`}
               </button>
             ) : null}
           </label>
@@ -916,8 +920,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             : lineFamily === "manufactura"
               ? " · Solo líneas de manufactura (resto N1)."
               : ""}
-          {invMinApplied != null
-            ? ` · Solo grupos con inventario > ${invMinApplied.toLocaleString("es-CO")} und.`
+          {diMinApplied != null
+            ? ` · Solo celdas/filas con DI ${metric === "value" ? "valor" : "und"} > ${diMinApplied.toLocaleString("es-CO")} d.`
             : ""}
           {meta?.fastPath ? " · Lectura rápida (snapshot)." : ""}
         </p>

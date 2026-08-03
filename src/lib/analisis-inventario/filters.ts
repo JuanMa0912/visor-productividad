@@ -11,8 +11,8 @@ export type AnalisisInventarioDimensionFilters = {
   sublineas: string[];
   /** Códigos ítem. */
   items: string[];
-  /** Inventario unidades mayor a este valor (exclusive). null = sin filtro. */
-  invMinUnits: number | null;
+  /** DI (días) mayor a este valor. null = sin filtro. */
+  diMinDays: number | null;
 };
 
 export type AnalisisInventarioFilterOption = {
@@ -38,7 +38,7 @@ const splitCsv = (raw: string | null): string[] => {
   ];
 };
 
-const parseInvMin = (raw: string | null): number | null => {
+const parseDiMin = (raw: string | null): number | null => {
   if (raw == null || raw.trim() === "") return null;
   const n = Number(String(raw).replace(",", ".").trim());
   if (!Number.isFinite(n) || n < 0) return null;
@@ -55,7 +55,9 @@ export const parseAnalisisInventarioDimensionFilters = (
   lineas: splitCsv(searchParams.get("lineas")),
   sublineas: splitCsv(searchParams.get("sublineas")),
   items: splitCsv(searchParams.get("items")),
-  invMinUnits: parseInvMin(searchParams.get("invMin")),
+  diMinDays: parseDiMin(
+    searchParams.get("diMin") ?? searchParams.get("invMin"),
+  ),
 });
 
 /**
@@ -82,6 +84,18 @@ export const columnsToSedePairs = (
   columns: AnalisisInventarioSedeColumn[],
 ): Array<{ empresa: string; sedeId: string }> =>
   columns.map((col) => ({ empresa: col.empresa, sedeId: col.sedeId }));
+
+/** true si el DI activo supera el umbral (o no hay umbral). */
+export const passesDiMinFilter = (
+  diUnits: number,
+  diValue: number,
+  diMinDays: number | null | undefined,
+  metric: "units" | "value" = "units",
+): boolean => {
+  if (diMinDays == null) return true;
+  const di = metric === "value" ? diValue : diUnits;
+  return Number.isFinite(di) && di > diMinDays;
+};
 
 /** Cláusulas AND para línea / sublínea / ítem (params mutables). */
 export const dimensionPathSql = (

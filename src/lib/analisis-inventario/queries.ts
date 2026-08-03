@@ -8,6 +8,7 @@ import { lineFamilySqlFilter } from "@/lib/analisis-inventario/line-family";
 import type { AnalisisInventarioLineFamily } from "@/lib/analisis-inventario/line-family";
 import {
   dimensionPathSql,
+  passesDiMinFilter,
   type AnalisisInventarioDimensionFilters,
   type AnalisisInventarioFilterCatalog,
 } from "@/lib/analisis-inventario/filters";
@@ -19,6 +20,7 @@ import type {
   AnalisisInventarioHeatmapPayload,
   AnalisisInventarioHeatmapRow,
   AnalisisInventarioLevel,
+  AnalisisInventarioMetric,
   AnalisisInventarioSedeColumn,
 } from "@/lib/analisis-inventario/types";
 import { getRollingMonthBackRange } from "@/lib/rotacion/rolling-month-range";
@@ -384,11 +386,13 @@ type QueryArgs = {
   sedePairs: Array<{ empresa: string; sedeId: string }> | null;
   /** Filtro perecederos / manufactura (línea N1). */
   lineFamily?: AnalisisInventarioLineFamily;
-  /** Filtros multi-select (línea / sublínea / ítem / inv mín). */
+  /** Filtros multi-select (línea / sublínea / ítem / DI mín). */
   dimFilters?: Pick<
     AnalisisInventarioDimensionFilters,
-    "lineas" | "sublineas" | "items" | "invMinUnits"
+    "lineas" | "sublineas" | "items" | "diMinDays"
   >;
+  /** Métrica DI usada por el filtro diMinDays. */
+  metric?: AnalisisInventarioMetric;
 };
 
 async function resolveSourceMode(
@@ -561,12 +565,12 @@ const buildMatviewPairedAggSql = (args: {
 const buildDimFilterClauses = (
   args: QueryArgs,
   params: unknown[],
-): { dimSql: string; havingSql: string; outerWhereSql: string } => {
+): { dimSql: string } => {
   const dim = args.dimFilters ?? {
     lineas: [] as string[],
     sublineas: [] as string[],
     items: [] as string[],
-    invMinUnits: null as number | null,
+    diMinDays: null as number | null,
   };
   const dimSql = dimensionPathSql(
     dim,
@@ -577,16 +581,7 @@ const buildDimFilterClauses = (
     },
     params,
   );
-  if (dim.invMinUnits == null) {
-    return { dimSql, havingSql: "", outerWhereSql: "" };
-  }
-  params.push(dim.invMinUnits);
-  const idx = params.length;
-  return {
-    dimSql,
-    havingSql: `HAVING SUM(COALESCE(inventory_units, 0)) > $${idx}`,
-    outerWhereSql: `AND i.inventory_units > $${idx}`,
-  };
+  return { dimSql };
 };
 
 const composePathSql = (
@@ -729,32 +724,27 @@ export async function queryAnalisisInventarioDrill(
     args.lineFamily ?? "all",
     DIM.lineaId,
   );
-  const { dimSql, havingSql, outerWhereSql } = buildDimFilterClauses(
-    args,
-    params,
-  );
+  const { dimSql } = buildDimFilterClauses(args, params);
   const pathSql = composePathSql(pathParts, familySql, dimSql);
 
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
-  const sql = buildDrillSql(
-    mode,
-    level,
-    table,
-    sedeFilter,
-    pathSql,
-    havingSql,
-    outerWhereSql,
-  );
+  const sql = buildDrillSql(mode, level, table, sedeFilter, pathSql);
 
   const periodDays = calendarDaysInclusive(args.dateStart, args.dateEnd);
   const result = await withStatementTimeout(client, 30_000, () =>
     client.query(sql, params),
   );
-  const rows = ((result.rows ?? []) as AggDbRow[]).map((row) => {
-    const mapped = mapAgg(row, level, periodDays);
-    return { ...mapped, drillStep: toDrillStep(mapped) };
-  });
+  const diMinDays = args.dimFilters?.diMinDays ?? null;
+  const metric = args.metric ?? "units";
+  const rows = ((result.rows ?? []) as AggDbRow[])
+    .map((row) => {
+      const mapped = mapAgg(row, level, periodDays);
+      return { ...mapped, drillStep: toDrillStep(mapped) };
+    })
+    .filter((row) =>
+      passesDiMinFilter(row.diUnits, row.diValue, diMinDays, metric),
+    );
 
   return { level, rows, sourceMode: mode };
 }
@@ -790,10 +780,7 @@ export async function queryAnalisisInventarioHeatmap(
     args.lineFamily ?? "all",
     DIM.lineaId,
   );
-  const { dimSql, havingSql, outerWhereSql } = buildDimFilterClauses(
-    args,
-    params,
-  );
+  const { dimSql } = buildDimFilterClauses(args, params);
   const pathSql = composePathSql(pathParts, familySql, dimSql);
   const group = levelGroup(rowLevel);
   const table =
@@ -811,7 +798,6 @@ export async function queryAnalisisInventarioHeatmap(
           sedeFilter,
           pathSql,
           outerSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
-          havingSql,
           idAlias: "row_id",
           labelAlias: "row_label",
           limit,
@@ -829,7 +815,6 @@ export async function queryAnalisisInventarioHeatmap(
           salesGroupExtras: `, empresa, sede_id`,
           outerSelectExtras: `, i.empresa, i.sede_id`,
           joinExtras: `AND s.empresa = i.empresa AND s.sede_id = i.sede_id`,
-          outerWhereSql,
           idAlias: "row_id",
           labelAlias: "row_label",
           limit,
@@ -842,6 +827,8 @@ export async function queryAnalisisInventarioHeatmap(
   const dbRows = (result.rows ?? []) as HeatCellDbRow[];
 
   const rowMap = new Map<string, AnalisisInventarioHeatmapRow>();
+  const diMinDays = args.dimFilters?.diMinDays ?? null;
+  const metric = args.metric ?? "units";
   const cells: AnalisisInventarioHeatmapCell[] = [];
 
   for (const row of dbRows) {
@@ -852,6 +839,11 @@ export async function queryAnalisisInventarioHeatmap(
       unitsPerDay: toNum(row.units_per_day),
       costPerDay: toNum(row.cost_per_day),
     });
+    if (
+      !passesDiMinFilter(metrics.diUnits, metrics.diValue, diMinDays, metric)
+    ) {
+      continue;
+    }
     const rowId = String(row.row_id ?? "");
     const label = String(row.row_label ?? rowId);
     if (!rowMap.has(rowId)) {
@@ -972,7 +964,7 @@ export async function queryAnalisisInventarioFilterCatalog(
     lineas: [] as string[],
     sublineas: [] as string[],
     items: [] as string[],
-    invMinUnits: null as number | null,
+    diMinDays: null as number | null,
   };
 
   const dateSql =

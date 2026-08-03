@@ -255,6 +255,9 @@ export async function GET(request: Request) {
     const activeColumns =
       filteredColumns.length > 0 ? filteredColumns : scope.columns;
     const activeSedePairs = columnsToSedePairs(activeColumns);
+    const metricRaw = url.searchParams.get("metric");
+    const metric: "units" | "value" =
+      metricRaw === "value" ? "value" : "units";
 
     const queryArgs = {
       matview: scope.matview,
@@ -264,11 +267,12 @@ export async function GET(request: Request) {
       dateEnd,
       sedePairs: activeSedePairs,
       lineFamily,
+      metric,
       dimFilters: {
         lineas: dimFilters.lineas,
         sublineas: dimFilters.sublineas,
         items: dimFilters.items,
-        invMinUnits: dimFilters.invMinUnits,
+        diMinDays: dimFilters.diMinDays,
       },
     };
 
