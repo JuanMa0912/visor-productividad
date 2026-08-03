@@ -2,14 +2,30 @@ import fs from "node:fs";
 import path from "node:path";
 import nodemailer from "nodemailer";
 import { buildSmtpTransportOptions, resolveSmtpPort } from "@/lib/shared/smtp-transport";
-import { buildRotacionCriticalDigest } from "@/lib/rotacion/critical-digest";
+import {
+  buildRotacionCriticalDigest,
+  type RotacionCriticalDigest,
+} from "@/lib/rotacion/critical-digest";
 import {
   buildRotacionCriticalDigestHtml,
   buildRotacionCriticalDigestSubject,
   buildRotacionCriticalDigestText,
 } from "@/lib/rotacion/critical-digest-email";
-import { ROTACION_EMAIL_PILOT_SEDES, ROTACION_EMAIL_PILOT_ONLY_TO } from "@/lib/rotacion/email-pilot-sedes";
+import {
+  buildRotacionCriticalDigestConsolidatedHtml,
+  buildRotacionCriticalDigestConsolidatedSubject,
+  buildRotacionCriticalDigestConsolidatedText,
+} from "@/lib/rotacion/critical-digest-consolidated-email";
+import {
+  ROTACION_EMAIL_PILOT_SEDES,
+  ROTACION_EMAIL_PILOT_ONLY_TO,
+} from "@/lib/rotacion/email-pilot-sedes";
 import { loadRotacionCriticalDigestSource } from "@/lib/rotacion/server/load-critical-digest-source";
+import {
+  mergeRotacionEmailSedes,
+  resolveRotacionEmailSedes,
+  type RotacionEmailSede,
+} from "@/lib/rotacion/server/resolve-email-sedes";
 
 const parseEnvValue = (raw: string) => {
   let value = raw.trim();
@@ -80,12 +96,21 @@ const buildSmtpTransporter = (
     }),
   );
 
+const sedeKey = (sede: Pick<RotacionEmailSede, "empresa" | "sedeId">) =>
+  `${sede.empresa}::${sede.sedeId}`;
+
 const main = async () => {
   const envFile =
     process.env.ENV_FILE ?? path.join(process.cwd(), ".env.local");
   loadEnvFile(envFile);
 
   const dryRun = isTruthy(process.env.ROTACION_EMAIL_DRY_RUN);
+  // Individuales por sede: OFF hasta que se configuren destinatarios reales.
+  // Opt-in: ROTACION_EMAIL_SEND_INDIVIDUAL=true
+  const sendIndividual = isTruthy(process.env.ROTACION_EMAIL_SEND_INDIVIDUAL);
+  const skipConsolidated = isTruthy(
+    process.env.ROTACION_EMAIL_SKIP_CONSOLIDATED,
+  );
   const smtpHost = process.env.SMTP_HOST?.trim();
   const smtpPort = resolveSmtpPort(process.env.SMTP_PORT);
   const smtpUser =
@@ -163,14 +188,47 @@ const main = async () => {
     return;
   }
 
+  const forceTo =
+    process.env.ROTACION_EMAIL_FORCE_TO?.trim() || ROTACION_EMAIL_PILOT_ONLY_TO;
+  const recipients = [forceTo];
+
   let hadError = false;
+  const digestsByKey = new Map<string, RotacionCriticalDigest>();
 
-  for (const sede of ROTACION_EMAIL_PILOT_SEDES) {
-    // Piloto: un solo destinatario controlado (override opcional vía env).
-    const forceTo =
-      process.env.ROTACION_EMAIL_FORCE_TO?.trim() || ROTACION_EMAIL_PILOT_ONLY_TO;
-    const recipients = [forceTo];
+  let catalogSedes: RotacionEmailSede[] = [];
+  try {
+    catalogSedes = await resolveRotacionEmailSedes();
+  } catch (error) {
+    console.error("[catálogo] No se pudieron resolver sedes:", error);
+    hadError = true;
+  }
 
+  const pilotSedes: RotacionEmailSede[] = ROTACION_EMAIL_PILOT_SEDES.map(
+    (sede) => ({
+      empresa: sede.empresa,
+      sedeId: sede.sedeId,
+      sedeName: sede.sedeName,
+    }),
+  );
+
+  const sedesToLoad =
+    catalogSedes.length > 0
+      ? mergeRotacionEmailSedes(catalogSedes, pilotSedes)
+      : pilotSedes;
+
+  if (sedesToLoad.length === 0) {
+    console.error("No hay sedes para cargar digests de rotación.");
+    process.exit(1);
+  }
+
+  console.log(
+    `Cargando digests · ${sedesToLoad.length} sede(s)` +
+      (catalogSedes.length > 0
+        ? ` (catálogo ${catalogSedes.length})`
+        : " (solo piloto)"),
+  );
+
+  for (const sede of sedesToLoad) {
     try {
       const source = await loadRotacionCriticalDigestSource({
         empresa: sede.empresa,
@@ -186,31 +244,107 @@ const main = async () => {
       }
 
       const digest = buildRotacionCriticalDigest(source);
-      const subject = buildRotacionCriticalDigestSubject(digest);
-      const html = buildRotacionCriticalDigestHtml(digest);
-      const text = buildRotacionCriticalDigestText(digest);
-
-      if (dryRun || !transporter) {
-        console.log(`[DRY RUN] ${sede.sedeName} → ${recipients.join(", ")}`);
-        console.log(`Asunto: ${subject}`);
-        console.log(text);
-        continue;
-      }
-
-      await transporter.sendMail({
-        from: smtpFrom,
-        to: recipients.join(", "),
-        subject,
-        text,
-        html,
-      });
+      digestsByKey.set(sedeKey(sede), digest);
       console.log(
-        `[OK] Correo enviado · ${sede.sedeName} → ${recipients.join(", ")}`,
+        `[OK] Digest · ${digest.sedeName} · ${digest.total.itemCount} productos`,
       );
     } catch (error) {
       hadError = true;
-      console.error(`[${sede.sedeName}] Error:`, error);
+      console.error(`[${sede.sedeName}] Error al cargar:`, error);
     }
+  }
+
+  if (sendIndividual) {
+    for (const sede of ROTACION_EMAIL_PILOT_SEDES) {
+      const digest = digestsByKey.get(sedeKey(sede));
+      if (!digest) {
+        console.error(
+          `[${sede.sedeName}] Sin digest para correo individual.`,
+        );
+        hadError = true;
+        continue;
+      }
+
+      try {
+        const subject = buildRotacionCriticalDigestSubject(digest);
+        const html = buildRotacionCriticalDigestHtml(digest);
+        const text = buildRotacionCriticalDigestText(digest);
+
+        if (dryRun || !transporter) {
+          console.log(`[DRY RUN] Individual · ${sede.sedeName} → ${recipients.join(", ")}`);
+          console.log(`Asunto: ${subject}`);
+          console.log(text);
+          continue;
+        }
+
+        await transporter.sendMail({
+          from: smtpFrom,
+          to: recipients.join(", "),
+          subject,
+          text,
+          html,
+        });
+        console.log(
+          `[OK] Correo individual · ${sede.sedeName} → ${recipients.join(", ")}`,
+        );
+      } catch (error) {
+        hadError = true;
+        console.error(`[${sede.sedeName}] Error al enviar individual:`, error);
+      }
+    }
+  } else {
+    console.log(
+      "[skip] Correos individuales (pendiente destinatarios por sede; opt-in ROTACION_EMAIL_SEND_INDIVIDUAL=true).",
+    );
+  }
+
+  if (!skipConsolidated) {
+    const consolidatedDigests =
+      catalogSedes.length > 0
+        ? catalogSedes
+            .map((sede) => digestsByKey.get(sedeKey(sede)))
+            .filter((d): d is RotacionCriticalDigest => Boolean(d))
+        : [...digestsByKey.values()];
+
+    if (consolidatedDigests.length === 0) {
+      console.error("[consolidado] No hay digests para armar el correo cadena.");
+      hadError = true;
+    } else {
+      try {
+        const subject =
+          buildRotacionCriticalDigestConsolidatedSubject(consolidatedDigests);
+        const html =
+          buildRotacionCriticalDigestConsolidatedHtml(consolidatedDigests);
+        const text =
+          buildRotacionCriticalDigestConsolidatedText(consolidatedDigests);
+
+        if (dryRun || !transporter) {
+          console.log(
+            `[DRY RUN] Consolidado · ${consolidatedDigests.length} sedes → ${recipients.join(", ")}`,
+          );
+          console.log(`Asunto: ${subject}`);
+          console.log(text);
+        } else {
+          await transporter.sendMail({
+            from: smtpFrom,
+            to: recipients.join(", "),
+            subject,
+            text,
+            html,
+          });
+          console.log(
+            `[OK] Correo consolidado · ${consolidatedDigests.length} sedes → ${recipients.join(", ")}`,
+          );
+        }
+      } catch (error) {
+        hadError = true;
+        console.error("[consolidado] Error al enviar:", error);
+      }
+    }
+  } else {
+    console.log(
+      "[skip] Correo consolidado (ROTACION_EMAIL_SKIP_CONSOLIDATED).",
+    );
   }
 
   if (hadError) process.exit(1);

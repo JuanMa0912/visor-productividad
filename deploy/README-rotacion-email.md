@@ -1,16 +1,21 @@
 # Timer correo diario rotación
 
-Envía cada mañana un resumen de **Críticos · D+0+S** por sede piloto
-(actualmente Floresta) a **`aprendizppt@mercamio.com`** (override con
-`ROTACION_EMAIL_FORCE_TO`).
+Envía cada mañana:
+
+1. **Correo consolidado** (activo) con **todas las sedes** del catálogo de
+   rotación, en tablas comparativas ordenadas como en el portal →
+   **`aprendizppt@mercamio.com`** (override con `ROTACION_EMAIL_FORCE_TO`).
+2. **Correos individuales por sede** — **desactivados** hasta configurar
+   destinatarios reales (`ROTACION_EMAIL_SEND_INDIVIDUAL=true` para opt-in).
 
 Incluye **puntuación restock 0–100**: % de ítems marcados `surtido` en contexto
 restock **dentro del rango del correo** que luego tuvieron venta (misma sede)
-hasta el fin del rango.
+hasta el fin del rango. En el consolidado, el score de cadena agrega marcas y
+ventas de todas las sedes.
 
 El runbook general está en [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
-## Contenido del correo
+## Contenido del correo individual
 
 Por sede, con la misma lógica que `/rotacion`, en **un solo correo** con dos bloques:
 
@@ -28,29 +33,38 @@ Cada bloque se muestra en **3 columnas** (D | 0 | S) para leer rápido:
 | **D · Demanda** | ítems, inventario, días de inventario |
 | **0 · Cero** / **S · Restock** | ítems + Sin ver / Seg / Surt (%) |
 
+## Contenido del correo consolidado (todas las sedes)
+
+Asunto: `Rotación · Todas las sedes · Críticos D+0+S · {rango}`.
+
+1. **Total cadena**: suma de productos e inventario D+0+S + restock agregado.
+2. **Comparativo por sede** (orden `SEDE_ORDER`): Restock · Productos · Inventario (rojo) · D · 0 · S.
+3. **Desglose por familia**: Perecederos / Manufactura (conteo e inventario).
+
+Las sedes salen del catálogo de rotación del rango por defecto (mismo rolling
+month que los individuales). Si el catálogo falla, se usa solo la lista piloto.
+
 ## Variables
 
 | Variable | Uso |
 | --- | --- |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | servidor SMTP |
 | `SMTP_FROM` | remitente (opcional; default `SMTP_USER`) |
+| `ROTACION_EMAIL_FLORESTA_TO` | legacy; el envío piloto fuerza `ROTACION_EMAIL_FORCE_TO` o `aprendizppt@mercamio.com` |
+| `ROTACION_EMAIL_FORCE_TO` | destinatario único (default `aprendizppt@mercamio.com`) |
+| `ROTACION_EMAIL_DRY_RUN` | `true` imprime en consola sin enviar |
+| `ROTACION_EMAIL_SEND_INDIVIDUAL` | `true` activa correos por sede (OFF por defecto) |
+| `ROTACION_EMAIL_SKIP_CONSOLIDATED` | `true` omite el correo de todas las sedes |
+| `ENV_FILE` | default `/opt/visor-productividad/.env.local` |
+| `LOG_FILE` | default `/var/log/visor-rotacion-email.log` |
 
-**Mercamio (Zimbra):** según sistemas, **SMTP `3465`** e **IMAP `3993`**
-(solo referencia). Envío programático:
+**Mercamio (Zimbra):** SMTP **`3465`** (SMTPS) · IMAP **`3993`** (solo lectura).
+Webmail: `correo.mercamio.com`. No usar `587` salvo indicación de sistemas.
 
 ```env
 SMTP_HOST=smtp.mercamio.com
 SMTP_PORT=3465
 ```
-
-Webmail: `correo.mercamio.com`. El puerto **3465** usa **SMTPS** (TLS directo,
-como `465`); no usar `587` salvo que sistemas indique lo contrario. **IMAP
-3993** es solo lectura de buzón, no aplica al envío.
-| `ROTACION_EMAIL_FLORESTA_TO` | legacy; el envío piloto fuerza `ROTACION_EMAIL_FORCE_TO` o `aprendizppt@mercamio.com` |
-| `ROTACION_EMAIL_FORCE_TO` | destinatario único (default `aprendizppt@mercamio.com`) |
-| `ROTACION_EMAIL_DRY_RUN` | `true` imprime en consola sin enviar |
-| `ENV_FILE` | default `/opt/visor-productividad/.env.local` |
-| `LOG_FILE` | default `/var/log/visor-rotacion-email.log` |
 
 Requiere credenciales de BD (`DB_*`) en `ENV_FILE`.
 
@@ -68,10 +82,8 @@ La VM debe tener zona horaria `America/Bogota` (o ajustar `OnCalendar` del timer
 ## Probar en local
 
 ```bash
-# Solo vista previa (sin SMTP)
-ROTACION_EMAIL_DRY_RUN=true \
-ROTACION_EMAIL_FLORESTA_TO=tu@correo.com \
-npm run rotacion:email
+# Vista previa del consolidado (sin SMTP; individuales off por defecto)
+ROTACION_EMAIL_DRY_RUN=true npm run rotacion:email
 ```
 
 ## Instalación en VM

@@ -53,10 +53,15 @@ const formatScoreLabel = (
   };
 };
 
-const tdMetric = (label: string, value: string, align: "left" | "right" = "left") =>
+const tdMetric = (
+  label: string,
+  value: string,
+  align: "left" | "right" = "left",
+  valueStyle?: { color?: string; fontSize?: string },
+) =>
   `<td style="padding:4px 6px;vertical-align:top;text-align:${align};">
     <div style="font-size:10px;line-height:1.2;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">${label}</div>
-    <div style="margin-top:2px;font-size:14px;line-height:1.25;font-weight:800;color:#0f172a;">${value}</div>
+    <div style="margin-top:2px;font-size:${valueStyle?.fontSize ?? "14px"};line-height:1.25;font-weight:800;color:${valueStyle?.color ?? "#0f172a"};">${value}</div>
   </td>`;
 
 const renderEstadoCell = (
@@ -181,7 +186,12 @@ export const buildRotacionCriticalDigestHtml = (
           </tr>
           <tr>
             ${tdMetric("Productos", formatCount(digest.total.itemCount))}
-            ${tdMetric("Inventario", formatEmailInventario(digest.total.totalInventario), "right")}
+            ${tdMetric(
+              "Inventario",
+              formatEmailInventario(digest.total.totalInventario),
+              "right",
+              { color: "#be123c", fontSize: "20px" },
+            )}
           </tr>
         </table>
       </td>
