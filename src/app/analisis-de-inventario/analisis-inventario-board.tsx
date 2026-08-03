@@ -735,7 +735,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     <div className="space-y-6">
       <section
         id="di-filters"
-        className="sticky top-2 z-30 space-y-3 rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] backdrop-blur sm:p-5"
+        className="sticky top-14 z-40 space-y-3 rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.45)] backdrop-blur-md sm:top-16 sm:p-5"
       >
         {/* 1. Periodo + métrica + familia */}
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 pb-3">
