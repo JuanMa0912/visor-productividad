@@ -76,6 +76,7 @@ export type BuildRotacionExportGroupsInput = {
   abcdFilterByGroup: Readonly<Record<string, GroupAbcdFilter>>;
   ventaHastaCapByGroup: Readonly<Record<string, number | undefined>>;
   invMinCapByGroup: Readonly<Record<string, number | undefined>>;
+  dicMinCapByGroup: Readonly<Record<string, number | undefined>>;
   ceroEstadoFilterByGroup: Readonly<Record<string, unknown>>;
   ceroEstadoByKey: Readonly<Record<string, CeroRotacionEstado>>;
   restockEstadoByKey: Readonly<Record<string, CeroRotacionEstado>>;
@@ -136,11 +137,18 @@ export const buildRotacionExportGroups = (
         input.dateRange,
       );
       const invMinCap = input.invMinCapByGroup[filterGroupKey] ?? null;
-      const quickFilteredRows =
+      const quickFilteredRowsAfterInvMin =
         invMinCap == null
           ? quickFilteredRowsBeforeInvMin
           : quickFilteredRowsBeforeInvMin.filter(
               (row) => row.inventoryUnits >= invMinCap,
+            );
+      const dicMinCap = input.dicMinCapByGroup[filterGroupKey] ?? null;
+      const quickFilteredRows =
+        dicMinCap == null
+          ? quickFilteredRowsAfterInvMin
+          : quickFilteredRowsAfterInvMin.filter(
+              (row) => row.rotation >= dicMinCap,
             );
       const zeroEstadoSet = normalizeGroupZeroEstadoSetFilter(
         input.ceroEstadoFilterByGroup[filterGroupKey],

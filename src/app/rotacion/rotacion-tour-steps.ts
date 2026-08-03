@@ -57,7 +57,7 @@ export const ROTACION_TOUR_STEPS: DriveStep[] = [
     popover: {
       title: "Tabla de rotación",
       description:
-        "Cada bloque muestra venta, inventario, rotación (DIC), DI y DUV. Abajo hay filtros locales sin volver a consultar.",
+        "Cada bloque muestra venta, inventario, rotación (DIC), DI y DUV. Abajo hay filtros locales (Venta ≤, Inv ≥, DIC ≥) sin volver a consultar.",
       side: "top",
       align: "start",
     },

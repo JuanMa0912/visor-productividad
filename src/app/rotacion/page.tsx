@@ -309,6 +309,13 @@ export function RotacionPageInner() {
   const [invMinInputByGroup, setInvMinInputByGroup] = useState<
     Record<string, string>
   >({});
+  /** Piso de DIC (días) al pulsar «DIC ≥» (independiente de venta/inv). */
+  const [dicMinCapByGroup, setDicMinCapByGroup] = useState<
+    Record<string, number | undefined>
+  >({});
+  const [dicMinInputByGroup, setDicMinInputByGroup] = useState<
+    Record<string, string>
+  >({});
   const [abcdFilterByGroup, setAbcdFilterByGroup] = useState<
     Record<string, GroupAbcdFilter>
   >({});
@@ -2139,6 +2146,25 @@ export function RotacionPageInner() {
     setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
   };
 
+  /**
+   * Filtro de piso de DIC (días de inventario/cobertura). Ortogonal a venta e
+   * inventario: sirve para localizar items con rotación lenta (DIC alto).
+   */
+  const applyOrToggleDicMinFilter = (groupKey: string) => {
+    const currentCap = dicMinCapByGroup[groupKey];
+    if (currentCap != null) {
+      setDicMinCapByGroup((prev) => ({ ...prev, [groupKey]: undefined }));
+      setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+      return;
+    }
+    const raw = dicMinInputByGroup[groupKey] ?? "";
+    const parsedRaw = Number(sanitizeNumericInput(raw));
+    if (Number.isNaN(parsedRaw)) return;
+    const parsed = Math.max(0, parsedRaw);
+    setDicMinCapByGroup((prev) => ({ ...prev, [groupKey]: parsed }));
+    setPageByGroupKey((prev) => ({ ...prev, [groupKey]: 1 }));
+  };
+
   const setGroupPage = (
     groupKey: string,
     nextPage: number,
@@ -2216,6 +2242,7 @@ export function RotacionPageInner() {
         abcdFilterByGroup,
         ventaHastaCapByGroup,
         invMinCapByGroup,
+        dicMinCapByGroup,
         ceroEstadoFilterByGroup,
         ceroEstadoByKey: overrides?.ceroEstadoByKey ?? ceroEstadoByKey,
         restockEstadoByKey:
@@ -2233,6 +2260,7 @@ export function RotacionPageInner() {
       ceroEstadoFilterByGroup,
       consolidatedFilterGroupKey,
       dateRange,
+      dicMinCapByGroup,
       invMinCapByGroup,
       isAbcdFilterableRow,
       isNuevoItemInSelectedRange,
@@ -3608,11 +3636,18 @@ export function RotacionPageInner() {
                       dateRange,
                     );
                     const invMinCap = invMinCapByGroup[groupKey] ?? null;
-                    const quickFilteredRows =
+                    const quickFilteredRowsAfterInvMin =
                       invMinCap == null
                         ? quickFilteredRowsBeforeInvMin
                         : quickFilteredRowsBeforeInvMin.filter(
                             (row) => row.inventoryUnits >= invMinCap,
+                          );
+                    const dicMinCap = dicMinCapByGroup[groupKey] ?? null;
+                    const quickFilteredRows =
+                      dicMinCap == null
+                        ? quickFilteredRowsAfterInvMin
+                        : quickFilteredRowsAfterInvMin.filter(
+                            (row) => row.rotation >= dicMinCap,
                           );
                     const zeroEstadoSet = normalizeGroupZeroEstadoSetFilter(
                       ceroEstadoFilterByGroup[groupKey],
@@ -3782,8 +3817,9 @@ export function RotacionPageInner() {
                             abcdTotalCostForMargin,
                           )
                         : null;
+                    // Siempre mostrar el bloque de métricas; sin filtro ABC usa "total".
                     const selectedCategoryLabel =
-                      formatAbcdCategoryFilterLabel(categoryFilter);
+                      formatAbcdCategoryFilterLabel(categoryFilter) ?? "total";
                     const nuevoItemsCount = group.rows.filter((row) =>
                       isNuevoItemInSelectedRange(row),
                     ).length;
@@ -3825,6 +3861,21 @@ export function RotacionPageInner() {
                         ? null
                         : quickFilteredRowsBeforeInvMin.filter(
                             (row) => row.inventoryUnits >= invMinParsedPreview,
+                          ).length;
+                    const dicMinInput = dicMinInputByGroup[groupKey] ?? "";
+                    const dicMinDigits = sanitizeNumericInput(dicMinInput);
+                    const dicMinParsedPreviewRaw = Number(dicMinDigits);
+                    const dicMinParsedPreview = Math.max(
+                      0,
+                      dicMinParsedPreviewRaw,
+                    );
+                    const dicMinAppliedCap = dicMinCapByGroup[groupKey] ?? null;
+                    const dicMinPreviewCount =
+                      dicMinDigits.length === 0 ||
+                      Number.isNaN(dicMinParsedPreviewRaw)
+                        ? null
+                        : quickFilteredRowsAfterInvMin.filter(
+                            (row) => row.rotation >= dicMinParsedPreview,
                           ).length;
                     const ceroRotacionCount = group.rows.filter((row) =>
                       isCeroRotacionExcludingNuevo(row, dateRange),
@@ -4222,45 +4273,40 @@ export function RotacionPageInner() {
                             </div>
 
                             <div className="flex w-full flex-col gap-3 text-sm">
-                            </div>
-                              {selectedCategoryLabel ? (
-                                <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
-                                  <div className="min-w-0 space-y-1">
-                                    <div>
-                                      Total venta:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatPriceWithoutSixZeros(
-                                          selectedCategoryTotalSales,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Total inventario:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatPriceWithoutSixZeros(
-                                          selectedCategoryTotalInv,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Dias de inventario:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatRotationOneDecimal(
-                                          selectedCategorySalesCoverageDays,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Margen {selectedCategoryLabel} %:{" "}
-                                      <span className="font-black text-slate-900">
-                                        {formatPercent(
-                                          selectedCategoryMarginPct,
-                                        )}
-                                      </span>
-                                    </div>
+                              <div className="flex w-full flex-wrap items-start justify-between gap-4 pt-1 text-sm text-slate-600">
+                                <div className="min-w-0 space-y-1">
+                                  <div>
+                                    Total venta:{" "}
+                                    <span className="font-black text-slate-900">
+                                      {formatPriceWithoutSixZeros(
+                                        selectedCategoryTotalSales,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Total inventario:{" "}
+                                    <span className="font-black text-slate-900">
+                                      {formatPriceWithoutSixZeros(
+                                        selectedCategoryTotalInv,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Dias de inventario:{" "}
+                                    <span className="font-black text-slate-900">
+                                      {formatRotationOneDecimal(
+                                        selectedCategorySalesCoverageDays,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Margen {selectedCategoryLabel} %:{" "}
+                                    <span className="font-black text-slate-900">
+                                      {formatPercent(selectedCategoryMarginPct)}
+                                    </span>
                                   </div>
                                 </div>
-                              ) : null}
+                              </div>
                               {isAdmin ? (
                                 <div className="w-full rounded-xl border border-slate-200 bg-white/90 p-3">
                                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -4333,6 +4379,7 @@ export function RotacionPageInner() {
                                   </div>
                                 </div>
                               ) : null}
+                            </div>
                             </div>
 
                             <div
@@ -4568,6 +4615,47 @@ export function RotacionPageInner() {
                                         }))
                                       }
                                       className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-100"
+                                    />
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1">
+                                    <Button
+                                      type="button"
+                                      variant={
+                                        dicMinAppliedCap != null
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      title="Mostrar solo items con DIC (días de inventario) mayores o iguales al valor ingresado"
+                                      className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
+                                        dicMinAppliedCap != null
+                                          ? "bg-violet-700 text-white hover:bg-violet-800"
+                                          : ""
+                                      }`}
+                                      onClick={() =>
+                                        applyOrToggleDicMinFilter(groupKey)
+                                      }
+                                    >
+                                      {dicMinAppliedCap != null
+                                        ? `DIC ≥ ${dicMinAppliedCap.toLocaleString("es-CO", { maximumFractionDigits: 0 })} (${categoryFilteredRows.length})`
+                                        : dicMinPreviewCount != null
+                                          ? `DIC ≥ (${dicMinPreviewCount})`
+                                          : "DIC ≥"}
+                                    </Button>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="días"
+                                      aria-label="Piso de DIC en días para filtrar"
+                                      value={dicMinInput}
+                                      onChange={(e) =>
+                                        setDicMinInputByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]: sanitizeNumericInput(
+                                            e.target.value,
+                                          ),
+                                        }))
+                                      }
+                                      className="h-7 w-22 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-900 outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-100"
                                     />
                                   </div>
                                 </div>
