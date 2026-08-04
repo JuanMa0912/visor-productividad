@@ -733,284 +733,283 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
 
   return (
     <div className="space-y-6">
-      <section
-        id="di-filters"
-        className="sticky top-14 z-40 space-y-3 rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.45)] backdrop-blur-md sm:top-16 sm:p-5"
-      >
-        {/* 1. Periodo + métrica + familia */}
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 pb-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Desde
-              <input
-                type="date"
-                value={dateStart}
-                min={meta?.availableDateStart || undefined}
-                max={meta?.availableDateEnd || undefined}
-                onChange={(event) => setDateStart(event.target.value)}
-                className="mt-1 block h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-900"
-              />
-            </label>
-            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Hasta
-              <input
-                type="date"
-                value={dateEnd}
-                min={meta?.availableDateStart || undefined}
-                max={meta?.availableDateEnd || undefined}
-                onChange={(event) => setDateEnd(event.target.value)}
-                className="mt-1 block h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-900"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={applyRollingMonth}
-              className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Mes móvil
-            </button>
-            <div className="flex h-9 items-center rounded-lg border border-slate-200 p-0.5">
+      <div id="di-filters" className="space-y-3">
+        {/* Barra compacta fija: no tapa el mapa al hacer scroll. */}
+        <section className="sticky top-14 z-40 rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.45)] backdrop-blur-md sm:top-16 sm:px-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Desde
+                <input
+                  type="date"
+                  value={dateStart}
+                  min={meta?.availableDateStart || undefined}
+                  max={meta?.availableDateEnd || undefined}
+                  onChange={(event) => setDateStart(event.target.value)}
+                  className="mt-1 block h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-900"
+                />
+              </label>
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Hasta
+                <input
+                  type="date"
+                  value={dateEnd}
+                  min={meta?.availableDateStart || undefined}
+                  max={meta?.availableDateEnd || undefined}
+                  onChange={(event) => setDateEnd(event.target.value)}
+                  className="mt-1 block h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-900"
+                />
+              </label>
               <button
                 type="button"
-                onClick={() => setMetric("units")}
-                className={`h-full rounded-md px-3 text-xs font-semibold ${
-                  metric === "units"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
+                onClick={applyRollingMonth}
+                className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
-                DI und
+                Mes móvil
               </button>
-              <button
-                type="button"
-                onClick={() => setMetric("value")}
-                className={`h-full rounded-md px-3 text-xs font-semibold ${
-                  metric === "value"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                DI valor
-              </button>
-            </div>
-            <div
-              className="flex h-9 items-center rounded-lg border border-slate-200 p-0.5"
-              role="group"
-              aria-label="Familia de líneas"
-            >
-              {LINE_FAMILY_OPTIONS.map((option) => (
+              <div className="flex h-9 items-center rounded-lg border border-slate-200 p-0.5">
                 <button
-                  key={option}
                   type="button"
-                  onClick={() => applyLineFamily(option)}
-                  className={`h-full rounded-md px-2.5 text-xs font-semibold ${
-                    lineFamily === option
+                  onClick={() => setMetric("units")}
+                  className={`h-full rounded-md px-3 text-xs font-semibold ${
+                    metric === "units"
                       ? "bg-slate-900 text-white"
                       : "text-slate-600 hover:bg-slate-50"
                   }`}
-                  title={
-                    option === "perecederos"
-                      ? "Líneas 01, 02, 03, 04 y 12"
-                      : option === "manufactura"
-                        ? "Resto de líneas N1"
-                        : "Todas las líneas"
-                  }
                 >
-                  {ANALISIS_INVENTARIO_LINE_FAMILY_LABELS[option]}
+                  DI und
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setMetric("value")}
+                  className={`h-full rounded-md px-3 text-xs font-semibold ${
+                    metric === "value"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  DI valor
+                </button>
+              </div>
+              <div
+                className="flex h-9 items-center rounded-lg border border-slate-200 p-0.5"
+                role="group"
+                aria-label="Familia de líneas"
+              >
+                {LINE_FAMILY_OPTIONS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => applyLineFamily(option)}
+                    className={`h-full rounded-md px-2.5 text-xs font-semibold ${
+                      lineFamily === option
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                    title={
+                      option === "perecederos"
+                        ? "Líneas 01, 02, 03, 04 y 12"
+                        : option === "manufactura"
+                          ? "Resto de líneas N1"
+                          : "Todas las líneas"
+                    }
+                  >
+                    {ANALISIS_INVENTARIO_LINE_FAMILY_LABELS[option]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={resetNavigation}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                title="Limpiar filtros y volver a la raíz"
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                Reiniciar
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportExcel()}
+                disabled={exportingExcel || loadingBoard || !drill}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Descargar Excel del drill y mapa de calor"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden />
+                {exportingExcel ? "Generando…" : "Excel"}
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToId("di-heatmap")}
+                className="h-9 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+              >
+                Mapa
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToId("di-drill")}
+                className="h-9 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+              >
+                Drill
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Alcance / umbral / leyenda: scrollean con la página (no tapan sedes). */}
+        <section className="space-y-3 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] sm:p-5">
+          <div>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Alcance
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              <DiMultiSelect
+                label="Empresas"
+                values={selectedEmpresas}
+                options={empresaOptions}
+                emptyLabel="Todas"
+                onChange={(next) => {
+                  setSelectedEmpresas(next);
+                  setSelectedSedes((prev) =>
+                    prev.filter((key) => {
+                      const sede = meta?.sedes.find((s) => s.key === key);
+                      return sede
+                        ? next.length === 0 ||
+                            next.includes(sede.empresa.toLowerCase())
+                        : false;
+                    }),
+                  );
+                }}
+              />
+              <DiMultiSelect
+                label="Sedes"
+                values={selectedSedes}
+                options={sedeOptions}
+                emptyLabel="Todas"
+                searchable
+                onChange={setSelectedSedes}
+              />
+              <DiMultiSelect
+                label="Líneas"
+                values={selectedLineas}
+                options={lineaOptions}
+                emptyLabel="Todas"
+                searchable
+                onChange={(next) => {
+                  setSelectedLineas(next);
+                  setSelectedSublineas([]);
+                  setSelectedItems([]);
+                  setPath((prev) => stripLineFamilyPath(prev));
+                  setHeatmapPath((prev) => stripLineFamilyPath(prev));
+                }}
+              />
+              <DiMultiSelect
+                label="Sublíneas"
+                values={selectedSublineas}
+                options={sublineaOptions}
+                emptyLabel="Todas"
+                searchable
+                onChange={(next) => {
+                  setSelectedSublineas(next);
+                  setSelectedItems([]);
+                }}
+              />
+              <DiMultiSelect
+                label="Ítems"
+                values={selectedItems}
+                options={itemOptions}
+                emptyLabel="Todas"
+                searchable
+                searchValue={itemFilterQuery}
+                onSearchChange={setItemFilterQuery}
+                searchPlaceholder="Código o descripción (≥2)"
+                onChange={setSelectedItems}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                DI &gt; (días)
+                <div className="mt-1 flex gap-1">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={diMinInput}
+                    onChange={(event) => setDiMinInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") applyDiMin();
+                    }}
+                    placeholder="ej. 300"
+                    className="h-9 w-28 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyDiMin}
+                    className="h-9 shrink-0 rounded-lg border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    {diMinApplied != null ? "OK" : "Aplicar"}
+                  </button>
+                </div>
+              </label>
+              {diMinApplied != null ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDiMinApplied(null);
+                    setDiMinInput("");
+                  }}
+                  className="mb-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
+                >
+                  {`Quitar (> ${diMinApplied.toLocaleString("es-CO")} d)`}
+                </button>
+              ) : null}
+              <p className="mb-1.5 max-w-xl text-[11px] leading-snug text-slate-500">
+                {meta?.fastPath ? "Snapshot · " : ""}
+                Sedes en orden Calle 5ta → Bogotá/Chía
+                {lineFamily === "perecederos"
+                  ? " · Perecederos (01–04, 12)"
+                  : lineFamily === "manufactura"
+                    ? " · Manufactura"
+                    : ""}
+                {diMinApplied != null
+                  ? ` · Ítems DI ${metric === "value" ? "valor" : "und"} > ${diMinApplied.toLocaleString("es-CO")} d${
+                      selectedEmpresas.length ||
+                      selectedSedes.length ||
+                      selectedLineas.length ||
+                      selectedSublineas.length ||
+                      selectedItems.length
+                        ? " (selección)"
+                        : " (todo)"
+                    }`
+                  : ""}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {LEGEND_BANDS.map((band) => (
+                <span
+                  key={band}
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${diPillClassName(
+                    band === "alta"
+                      ? 10
+                      : band === "normal"
+                        ? 25
+                        : band === "revisar"
+                          ? 45
+                          : band === "sobrestock"
+                            ? 80
+                            : 999999,
+                  )}`}
+                >
+                  {DI_BAND_LABELS[band]}
+                </span>
               ))}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={resetNavigation}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              title="Limpiar filtros y volver a la raíz"
-            >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-              Reiniciar
-            </button>
-            <button
-              type="button"
-              onClick={() => void exportExcel()}
-              disabled={exportingExcel || loadingBoard || !drill}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-              title="Descargar Excel del drill y mapa de calor"
-            >
-              <Download className="h-3.5 w-3.5" aria-hidden />
-              {exportingExcel ? "Generando…" : "Excel"}
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToId("di-heatmap")}
-              className="h-9 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
-            >
-              Mapa
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToId("di-drill")}
-              className="h-9 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200"
-            >
-              Drill
-            </button>
-          </div>
-        </div>
-
-        {/* 2. Alcance dimensional */}
-        <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            Alcance
-          </p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            <DiMultiSelect
-              label="Empresas"
-              values={selectedEmpresas}
-              options={empresaOptions}
-              emptyLabel="Todas"
-              onChange={(next) => {
-                setSelectedEmpresas(next);
-                setSelectedSedes((prev) =>
-                  prev.filter((key) => {
-                    const sede = meta?.sedes.find((s) => s.key === key);
-                    return sede
-                      ? next.length === 0 ||
-                          next.includes(sede.empresa.toLowerCase())
-                      : false;
-                  }),
-                );
-              }}
-            />
-            <DiMultiSelect
-              label="Sedes"
-              values={selectedSedes}
-              options={sedeOptions}
-              emptyLabel="Todas"
-              searchable
-              onChange={setSelectedSedes}
-            />
-            <DiMultiSelect
-              label="Líneas"
-              values={selectedLineas}
-              options={lineaOptions}
-              emptyLabel="Todas"
-              searchable
-              onChange={(next) => {
-                setSelectedLineas(next);
-                setSelectedSublineas([]);
-                setSelectedItems([]);
-                setPath((prev) => stripLineFamilyPath(prev));
-                setHeatmapPath((prev) => stripLineFamilyPath(prev));
-              }}
-            />
-            <DiMultiSelect
-              label="Sublíneas"
-              values={selectedSublineas}
-              options={sublineaOptions}
-              emptyLabel="Todas"
-              searchable
-              onChange={(next) => {
-                setSelectedSublineas(next);
-                setSelectedItems([]);
-              }}
-            />
-            <DiMultiSelect
-              label="Ítems"
-              values={selectedItems}
-              options={itemOptions}
-              emptyLabel="Todas"
-              searchable
-              searchValue={itemFilterQuery}
-              onSearchChange={setItemFilterQuery}
-              searchPlaceholder="Código o descripción (≥2)"
-              onChange={setSelectedItems}
-            />
-          </div>
-        </div>
-
-        {/* 3. Umbral DI + leyenda */}
-        <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              DI &gt; (días)
-              <div className="mt-1 flex gap-1">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={diMinInput}
-                  onChange={(event) => setDiMinInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") applyDiMin();
-                  }}
-                  placeholder="ej. 300"
-                  className="h-9 w-28 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-800"
-                />
-                <button
-                  type="button"
-                  onClick={applyDiMin}
-                  className="h-9 shrink-0 rounded-lg border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  {diMinApplied != null ? "OK" : "Aplicar"}
-                </button>
-              </div>
-            </label>
-            {diMinApplied != null ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setDiMinApplied(null);
-                  setDiMinInput("");
-                }}
-                className="mb-1.5 text-[11px] font-semibold text-blue-700 hover:underline"
-              >
-                {`Quitar (> ${diMinApplied.toLocaleString("es-CO")} d)`}
-              </button>
-            ) : null}
-            <p className="mb-1.5 max-w-xl text-[11px] leading-snug text-slate-500">
-              {meta?.fastPath ? "Snapshot · " : ""}
-              Sedes en orden Calle 5ta → Bogotá/Chía
-              {lineFamily === "perecederos"
-                ? " · Perecederos (01–04, 12)"
-                : lineFamily === "manufactura"
-                  ? " · Manufactura"
-                  : ""}
-              {diMinApplied != null
-                ? ` · Ítems DI ${metric === "value" ? "valor" : "und"} > ${diMinApplied.toLocaleString("es-CO")} d${
-                    selectedEmpresas.length ||
-                    selectedSedes.length ||
-                    selectedLineas.length ||
-                    selectedSublineas.length ||
-                    selectedItems.length
-                      ? " (selección)"
-                      : " (todo)"
-                  }`
-                : ""}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {LEGEND_BANDS.map((band) => (
-              <span
-                key={band}
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${diPillClassName(
-                  band === "alta"
-                    ? 10
-                    : band === "normal"
-                      ? 25
-                      : band === "revisar"
-                        ? 45
-                        : band === "sobrestock"
-                          ? 80
-                          : 999999,
-                )}`}
-              >
-                {DI_BAND_LABELS[band]}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-
+        </section>
+      </div>
       {error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {error}
