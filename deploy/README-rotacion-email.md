@@ -53,12 +53,16 @@ Cada bloque se muestra en **3 columnas** (D | 0 | S) para leer rápido:
 
 Asunto: `Rotación · Todas las sedes · Críticos D+0+S · {rango}`.
 
-1. **Total cadena**: suma de productos e inventario D+0+S + restock agregado.
-2. **Comparativo por sede** (orden `SEDE_ORDER`): Restock · Productos · Inventario (rojo) · D · 0 · S.
-3. **Desglose por familia**: Perecederos / Manufactura (conteo e inventario).
+Pensado para que gerencia vea si cada sede “funciona” y qué mejorar:
 
-Las sedes salen del catálogo de rotación del rango por defecto (mismo rolling
-month que los individuales). Si el catálogo falla, se usa solo la lista piloto.
+1. **Cómo leer** — guía corta (restock, tamaño del crítico, gestión).
+2. **Total cadena** — productos + inventario D+0+S + restock agregado.
+3. **Comparativo** — Restock · Productos · Inventario · D · 0 · S (mismas cifras del individual).
+4. **Gestión** — Sin ver (ceros) · % surtido 0 · % surtido S · DI Demanda · **Foco** (alertas: restock bajo, ceros sin verificar, poco surtido, DI alto).
+5. **Por familia** — Perecederos / Manufactura.
+
+Las sedes salen del catálogo de rotación del rango por defecto. Sedes sin
+destinatario en el mapa individual igual entran al consolidado.
 
 ## Variables
 

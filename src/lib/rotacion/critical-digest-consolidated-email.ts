@@ -1,8 +1,13 @@
-import type { RotacionCriticalDigest } from "@/lib/rotacion/critical-digest";
+import type {
+  RotacionCriticalDigest,
+  SurtidoEstadoBreakdown,
+} from "@/lib/rotacion/critical-digest";
 import {
   formatPrice,
   formatRangeLabel,
+  formatRotationOneDecimal,
   LINEA_N1_FAMILY_LABELS,
+  NO_SALES_DI_VALUE,
 } from "@/app/rotacion/rotacion-preamble";
 
 /** Monto completo en pesos (igual que el correo individual). */
@@ -10,6 +15,20 @@ const formatInventario = (value: number) => formatPrice(value);
 
 const formatCount = (value: number) =>
   value.toLocaleString("es-CO", { maximumFractionDigits: 0 });
+
+const formatPct = (value: number | null) => {
+  if (value == null) return "—";
+  return `${(Math.round(value * 10) / 10).toLocaleString("es-CO", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  })}%`;
+};
+
+const formatDiasInventario = (value: number | null) => {
+  if (value == null) return "—";
+  if (value >= NO_SALES_DI_VALUE) return "Sin venta";
+  return formatRotationOneDecimal(value);
+};
 
 const escapeHtml = (value: string) =>
   value
@@ -24,16 +43,141 @@ const formatScore = (digest: RotacionCriticalDigest): string => {
   return String(eff.score);
 };
 
+const mergeEstado = (
+  a: SurtidoEstadoBreakdown,
+  b: SurtidoEstadoBreakdown,
+): SurtidoEstadoBreakdown => {
+  const itemCount = a.itemCount + b.itemCount;
+  const surtido = a.surtido + b.surtido;
+  return {
+    itemCount,
+    sinVerificar: a.sinVerificar + b.sinVerificar,
+    seguimiento: a.seguimiento + b.seguimiento,
+    surtido,
+    surtidoPct: itemCount > 0 ? (surtido / itemCount) * 100 : null,
+  };
+};
+
 /** 0 y S no dependen de ABCD; D se deriva para cuadrar con total sede. */
-const sedeCriticalBreakdown = (digest: RotacionCriticalDigest) => {
-  const cero =
-    digest.perecederos.ceroRotacion.itemCount +
-    digest.manufactura.ceroRotacion.itemCount;
-  const restockS =
-    digest.perecederos.restockS.itemCount +
-    digest.manufactura.restockS.itemCount;
-  const demandaD = Math.max(0, digest.total.itemCount - cero - restockS);
-  return { demandaD, cero, restockS };
+export const sedeCriticalBreakdown = (digest: RotacionCriticalDigest) => {
+  const ceroEstado = mergeEstado(
+    digest.perecederos.ceroRotacion,
+    digest.manufactura.ceroRotacion,
+  );
+  const restockEstado = mergeEstado(
+    digest.perecederos.restockS,
+    digest.manufactura.restockS,
+  );
+  const demandaD = Math.max(
+    0,
+    digest.total.itemCount - ceroEstado.itemCount - restockEstado.itemCount,
+  );
+  return {
+    demandaD,
+    cero: ceroEstado.itemCount,
+    restockS: restockEstado.itemCount,
+    ceroEstado,
+    restockEstado,
+  };
+};
+
+/**
+ * DI de Demanda D a nivel sede: promedio ponderado por ítems de cada familia
+ * (misma métrica que el correo individual, agregada).
+ */
+export const sedeDemandaDiasInventario = (
+  digest: RotacionCriticalDigest,
+): number | null => {
+  const parts = [
+    digest.perecederos.demandaD,
+    digest.manufactura.demandaD,
+  ].filter((part) => part.itemCount > 0);
+  if (parts.length === 0) return null;
+  const weight = parts.reduce((acc, part) => acc + part.itemCount, 0);
+  if (weight <= 0) return null;
+  const allSinVenta = parts.every(
+    (part) => part.diasInventario >= NO_SALES_DI_VALUE,
+  );
+  if (allSinVenta) return NO_SALES_DI_VALUE;
+  const usable = parts.filter(
+    (part) => part.diasInventario < NO_SALES_DI_VALUE,
+  );
+  if (usable.length === 0) return NO_SALES_DI_VALUE;
+  const usableWeight = usable.reduce((acc, part) => acc + part.itemCount, 0);
+  return (
+    usable.reduce(
+      (acc, part) => acc + part.diasInventario * part.itemCount,
+      0,
+    ) / usableWeight
+  );
+};
+
+export type SedeManagementSignals = {
+  sinVerificarCero: number;
+  surtidoPctCero: number | null;
+  surtidoPctRestock: number | null;
+  diasInventarioD: number | null;
+  /** Frases cortas de foco para el gerente (máx. 2). */
+  focusHints: string[];
+};
+
+/** Señales para saber si la sede “funciona” y qué mejorar. */
+export const buildSedeManagementSignals = (
+  digest: RotacionCriticalDigest,
+): SedeManagementSignals => {
+  const breakdown = sedeCriticalBreakdown(digest);
+  const diasInventarioD = sedeDemandaDiasInventario(digest);
+  const hints: string[] = [];
+  const score = digest.restockEffectiveness.score;
+  const hasRestockMarks =
+    !digest.restockEffectiveness.unavailable &&
+    digest.restockEffectiveness.markedSurtidoCount > 0;
+
+  if (hasRestockMarks && score != null && score < 40) {
+    hints.push("Restock bajo: revisar que lo marcado surtido sí venda");
+  } else if (
+    breakdown.restockS > 0 &&
+    (breakdown.restockEstado.surtidoPct == null ||
+      breakdown.restockEstado.surtidoPct < 30)
+  ) {
+    hints.push("Restock S poco avanzado a surtido");
+  }
+
+  if (
+    breakdown.cero > 0 &&
+    breakdown.ceroEstado.sinVerificar / breakdown.cero >= 0.45
+  ) {
+    hints.push("Muchos ceros sin verificar");
+  } else if (
+    breakdown.cero > 0 &&
+    (breakdown.ceroEstado.surtidoPct == null ||
+      breakdown.ceroEstado.surtidoPct < 25)
+  ) {
+    hints.push("Ceros con poco % surtido");
+  }
+
+  if (
+    diasInventarioD != null &&
+    (diasInventarioD >= NO_SALES_DI_VALUE || diasInventarioD >= 45)
+  ) {
+    hints.push(
+      diasInventarioD >= NO_SALES_DI_VALUE
+        ? "Demanda D sin venta: priorizar salida"
+        : "DI alto en Demanda D: acelerar rotación",
+    );
+  }
+
+  if (hints.length === 0) {
+    hints.push("Sin alertas fuertes · mantener ritmo");
+  }
+
+  return {
+    sinVerificarCero: breakdown.ceroEstado.sinVerificar,
+    surtidoPctCero: breakdown.ceroEstado.surtidoPct,
+    surtidoPctRestock: breakdown.restockEstado.surtidoPct,
+    diasInventarioD,
+    focusHints: hints.slice(0, 2),
+  };
 };
 
 export type ConsolidatedDigestTotals = {
@@ -94,14 +238,14 @@ const th = (
   accent = "#9f1239",
   border = "#fecdd3",
 ) =>
-  `<th style="padding:8px 8px;border-bottom:2px solid ${border};font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent};text-align:${align};white-space:nowrap;">${label}</th>`;
+  `<th style="padding:7px 6px;border-bottom:2px solid ${border};font-size:9px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${accent};text-align:${align};white-space:nowrap;">${label}</th>`;
 
 const td = (
   content: string,
   align: "left" | "right" | "center" = "left",
   extra = "",
 ) =>
-  `<td style="padding:9px 8px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#0f172a;text-align:${align};vertical-align:middle;${extra}">${content}</td>`;
+  `<td style="padding:8px 6px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0f172a;text-align:${align};vertical-align:middle;${extra}">${content}</td>`;
 
 const buildOverviewRows = (digests: readonly RotacionCriticalDigest[]) =>
   digests
@@ -116,11 +260,30 @@ const buildOverviewRows = (digests: readonly RotacionCriticalDigest[]) =>
         ${td(
           formatInventario(digest.total.totalInventario),
           "right",
-          "font-size:16px;font-weight:800;color:#be123c;font-variant-numeric:tabular-nums;",
+          "font-size:15px;font-weight:800;color:#be123c;font-variant-numeric:tabular-nums;",
         )}
         ${td(formatCount(dCount), "right", "font-variant-numeric:tabular-nums;color:#9f1239;")}
         ${td(formatCount(ceroCount), "right", "font-variant-numeric:tabular-nums;color:#475569;")}
         ${td(formatCount(sCount), "right", "font-variant-numeric:tabular-nums;color:#0e7490;")}
+      </tr>`;
+    })
+    .join("");
+
+const buildManagementRows = (digests: readonly RotacionCriticalDigest[]) =>
+  digests
+    .map((digest, index) => {
+      const bg = index % 2 === 0 ? "#ffffff" : "#f8fafc";
+      const signals = buildSedeManagementSignals(digest);
+      const focusHtml = signals.focusHints
+        .map((hint) => escapeHtml(hint))
+        .join("<br/>");
+      return `<tr style="background:${bg};">
+        ${td(`<strong>${escapeHtml(digest.sedeName)}</strong>`)}
+        ${td(formatCount(signals.sinVerificarCero), "right", "font-variant-numeric:tabular-nums;")}
+        ${td(formatPct(signals.surtidoPctCero), "right", "font-variant-numeric:tabular-nums;")}
+        ${td(formatPct(signals.surtidoPctRestock), "right", "font-variant-numeric:tabular-nums;color:#0e7490;")}
+        ${td(formatDiasInventario(signals.diasInventarioD), "right", "font-variant-numeric:tabular-nums;")}
+        ${td(`<span style="font-size:11px;line-height:1.35;color:#334155;">${focusHtml}</span>`, "left")}
       </tr>`;
     })
     .join("");
@@ -172,9 +335,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
   const days = digests[0]!.daysConsulted;
   const totals = aggregateConsolidatedDigestTotals(digests);
   const scoreLabel =
-    totals.restockScore == null
-      ? "—"
-      : `${totals.restockScore}`;
+    totals.restockScore == null ? "—" : `${totals.restockScore}`;
   const scoreDetail =
     totals.restockMarked > 0
       ? `${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)} vendieron tras surtido`
@@ -188,7 +349,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
   <title>Rotación · Todas las sedes</title>
 </head>
 <body style="margin:0;padding:12px;background:#f1f5f9;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:820px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
     <tr>
       <td style="padding:14px 16px 10px;background:#fff1f2;border-bottom:1px solid #fecdd3;">
         <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#be123c;">Críticos · D+0+S · Cadena</div>
@@ -198,7 +359,22 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
     </tr>
 
     <tr>
-      <td style="padding:12px 16px 6px;">
+      <td style="padding:10px 16px 4px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+          <tr>
+            <td style="padding:10px 12px;font-size:12px;line-height:1.45;color:#334155;">
+              <strong style="color:#0f172a;">Cómo leer (gerente)</strong><br/>
+              <span style="color:#64748b;">· <strong>Restock alto</strong> = lo marcado surtido sí está vendiendo.</span><br/>
+              <span style="color:#64748b;">· <strong>Inventario / D·0·S</strong> = tamaño del problema crítico en la sede.</span><br/>
+              <span style="color:#64748b;">· <strong>Gestión</strong> = qué falta por hacer (sin verificar, % surtido, DI de demanda).</span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr>
+      <td style="padding:10px 16px 6px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fff1f2;border:1px solid #fecdd3;border-radius:10px;">
           <tr>
             <td style="padding:10px 12px;">
@@ -228,14 +404,14 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
 
     <tr>
       <td style="padding:10px 16px 4px;">
-        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:6px;">Comparativo por sede</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Mismas cifras que el correo individual (D+0+S). Inventario en rojo. Orden de sedes del portal.</div>
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">1 · Comparativo (tamaño del crítico)</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Mismas cifras del correo individual por sede. Inventario en rojo.</div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #fecdd3;border-radius:10px;overflow:hidden;">
           <thead>
             <tr style="background:#fff1f2;">
               ${th("Sede")}
               ${th("Restock", "center")}
-              ${th("Productos", "right")}
+              ${th("Prod.", "right")}
               ${th("Inventario", "right")}
               ${th("D", "right")}
               ${th("0", "right")}
@@ -251,7 +427,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
               ${td(
                 `<strong>${formatInventario(totals.totalInventario)}</strong>`,
                 "right",
-                "font-size:16px;font-weight:800;color:#be123c;",
+                "font-size:15px;font-weight:800;color:#be123c;",
               )}
               ${td(`<strong>${formatCount(totals.demandaD)}</strong>`, "right")}
               ${td(`<strong>${formatCount(totals.cero)}</strong>`, "right")}
@@ -263,8 +439,32 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
     </tr>
 
     <tr>
+      <td style="padding:14px 16px 4px;">
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">2 · Gestión (qué mejorar)</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
+          Sin ver = ceros aún sin revisar. % surtido 0/S = avance del admin. DI D = días de inventario en Demanda.
+        </div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+          <thead>
+            <tr style="background:#ecfeff;">
+              ${th("Sede", "left", "#0e7490", "#a5f3fc")}
+              ${th("Sin ver", "right", "#0e7490", "#a5f3fc")}
+              ${th("% surt. 0", "right", "#0e7490", "#a5f3fc")}
+              ${th("% surt. S", "right", "#0e7490", "#a5f3fc")}
+              ${th("DI D", "right", "#0e7490", "#a5f3fc")}
+              ${th("Foco", "left", "#0e7490", "#a5f3fc")}
+            </tr>
+          </thead>
+          <tbody>
+            ${buildManagementRows(digests)}
+          </tbody>
+        </table>
+      </td>
+    </tr>
+
+    <tr>
       <td style="padding:14px 16px 6px;">
-        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:6px;">Desglose por familia</div>
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">3 · Por familia</div>
         <div style="font-size:11px;color:#64748b;margin-bottom:8px;">${LINEA_N1_FAMILY_LABELS.perecederos} (01–04, 12) · ${LINEA_N1_FAMILY_LABELS.manufactura} (resto).</div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
           <thead>
@@ -284,8 +484,9 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
     </tr>
 
     <tr>
-      <td style="padding:10px 16px 14px;border-top:1px solid #f1f5f9;font-size:10px;line-height:1.4;color:#94a3b8;">
-        Automático · Visor. Una fila por sede con la misma lógica D+0+S y restock del correo individual. Restock cadena = suma de marcas surtido / ventas posteriores en todas las sedes.
+      <td style="padding:10px 16px 14px;border-top:1px solid #f1f5f9;font-size:10px;line-height:1.45;color:#94a3b8;">
+        Automático · Visor. Mismas reglas D+0+S y restock que el correo de cada sede.
+        Foco = alertas automáticas (restock &lt; 40, ceros sin verificar, poco % surtido, DI D alto).
       </td>
     </tr>
   </table>
@@ -313,14 +514,20 @@ export const buildRotacionCriticalDigestConsolidatedText = (
     `Restock cadena: ${scoreLabel} (${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)})`,
     `D ${formatCount(totals.demandaD)} · 0 ${formatCount(totals.cero)} · S ${formatCount(totals.restockS)}`,
     "",
-    "SEDE | RESTOCK | PRODUCTOS | INVENTARIO | D | 0 | S",
+    "1. COMPARATIVO | RESTOCK | PROD | INV | D | 0 | S",
     ...digests.map((digest) => {
       const { demandaD: dCount, cero: ceroCount, restockS: sCount } =
         sedeCriticalBreakdown(digest);
       return `${digest.sedeName} | ${formatScore(digest)} | ${formatCount(digest.total.itemCount)} | ${formatInventario(digest.total.totalInventario)} | ${formatCount(dCount)} | ${formatCount(ceroCount)} | ${formatCount(sCount)}`;
     }),
     "",
-    `FAMILIA · ${LINEA_N1_FAMILY_LABELS.perecederos.toUpperCase()} | ${LINEA_N1_FAMILY_LABELS.manufactura.toUpperCase()}`,
+    "2. GESTIÓN | SIN VER | %SURT 0 | %SURT S | DI D | FOCO",
+    ...digests.map((digest) => {
+      const signals = buildSedeManagementSignals(digest);
+      return `${digest.sedeName} | ${formatCount(signals.sinVerificarCero)} | ${formatPct(signals.surtidoPctCero)} | ${formatPct(signals.surtidoPctRestock)} | ${formatDiasInventario(signals.diasInventarioD)} | ${signals.focusHints.join("; ")}`;
+    }),
+    "",
+    `3. FAMILIA · ${LINEA_N1_FAMILY_LABELS.perecederos.toUpperCase()} | ${LINEA_N1_FAMILY_LABELS.manufactura.toUpperCase()}`,
     ...digests.map((digest) => {
       const per = digest.perecederos.total;
       const man = digest.manufactura.total;

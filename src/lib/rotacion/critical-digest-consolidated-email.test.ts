@@ -6,6 +6,7 @@ import {
   buildRotacionCriticalDigestConsolidatedHtml,
   buildRotacionCriticalDigestConsolidatedSubject,
   buildRotacionCriticalDigestConsolidatedText,
+  buildSedeManagementSignals,
 } from "@/lib/rotacion/critical-digest-consolidated-email";
 
 const emptySection = () => ({
@@ -134,17 +135,61 @@ describe("critical-digest-consolidated-email", () => {
     assert.match(subject, /Críticos/);
 
     const html = buildRotacionCriticalDigestConsolidatedHtml(digests);
-    assert.match(html, /Comparativo por sede/);
+    assert.match(html, /Comparativo/);
+    assert.match(html, /Gestión/);
     assert.match(html, /Calle 5ta/);
     assert.match(html, /Floresta/);
-    assert.match(html, /Desglose por familia/);
+    assert.match(html, /Por familia/);
     assert.match(html, /#be123c/);
     assert.match(html, /Total cadena D\+0\+S/);
+    assert.match(html, /Cómo leer/);
 
     const text = buildRotacionCriticalDigestConsolidatedText(digests);
     assert.match(text, /TOTAL CADENA/);
-    assert.match(text, /SEDE \| RESTOCK/);
+    assert.match(text, /GESTIÓN/);
     assert.match(text, /Floresta/);
     assert.match(text, /Calle 5ta/);
+  });
+
+  it("genera focos de gestión cuando hay alertas", () => {
+    const digest = digestFor({
+      sedeName: "Floresta",
+      sedeId: "001",
+      restockEffectiveness: {
+        score: 20,
+        markedSurtidoCount: 5,
+        soldAfterCount: 1,
+        unavailable: false,
+      },
+      perecederos: {
+        ...emptySection(),
+        total: { itemCount: 6, totalInventario: 600_000 },
+        demandaD: {
+          itemCount: 2,
+          totalInventario: 200_000,
+          diasInventario: 60,
+        },
+        ceroRotacion: {
+          itemCount: 4,
+          sinVerificar: 3,
+          seguimiento: 1,
+          surtido: 0,
+          surtidoPct: 0,
+        },
+        restockS: {
+          itemCount: 1,
+          sinVerificar: 1,
+          seguimiento: 0,
+          surtido: 0,
+          surtidoPct: 0,
+        },
+      },
+    });
+    const signals = buildSedeManagementSignals(digest);
+    assert.ok(signals.focusHints.length >= 1);
+    assert.ok(
+      signals.focusHints.some((hint) => /Restock|cero|DI|Demanda/i.test(hint)),
+    );
+    assert.equal(signals.sinVerificarCero, 4); // 3 + 1 from manufactura default? manufactura still has 1 sinVerificar from template
   });
 });
