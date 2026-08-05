@@ -89,3 +89,35 @@ export type ProveedorVisitaRow = {
   /** Minutos entre entrada y salida; null si abierta. */
   duracionMinutos: number | null;
 };
+
+export type ProveedorVisitasMetrics = {
+  totalVisitas: number;
+  abiertas: number;
+  cerradas: number;
+  proveedoresUnicos: number;
+  visitantesUnicos: number;
+  /** Promedio minutos solo visitas cerradas. */
+  duracionPromedioMin: number | null;
+  /** Mediana minutos solo visitas cerradas. */
+  duracionMedianaMin: number | null;
+  bySede: Array<{
+    sedeName: string;
+    visitas: number;
+    abiertas: number;
+    duracionPromedioMin: number | null;
+  }>;
+  byProveedor: Array<{
+    proveedorNombre: string;
+    visitas: number;
+    duracionPromedioMin: number | null;
+  }>;
+  byDay: Array<{
+    date: string;
+    visitas: number;
+    abiertas: number;
+  }>;
+  byHour: Array<{
+    hour: number;
+    visitas: number;
+  }>;
+};

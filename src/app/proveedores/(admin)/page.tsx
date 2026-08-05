@@ -8,7 +8,10 @@ import { PortalBrandingHeader } from "@/components/portal/portal-branding-header
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessProveedoresBoard } from "@/lib/shared/special-role-features";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
-import type { ProveedorVisitaRow } from "@/lib/proveedores/types";
+import type {
+  ProveedorVisitaRow,
+  ProveedorVisitasMetrics,
+} from "@/lib/proveedores/types";
 
 const toISODate = (date: Date) => {
   const y = date.getFullYear();
@@ -35,7 +38,34 @@ const formatWhen = (iso: string | null) => {
   });
 };
 
+const formatMin = (value: number | null | undefined) =>
+  value == null
+    ? "—"
+    : `${value.toLocaleString("es-CO", { maximumFractionDigits: 1 })} min`;
+
 type QrLink = { sedeName: string; url: string; path: string; activo: boolean };
+
+const MetricCard = ({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) => (
+  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+      {label}
+    </div>
+    <div className="mt-1 text-2xl font-black tabular-nums text-slate-900">
+      {value}
+    </div>
+    {hint ? (
+      <div className="mt-1 text-[11px] text-slate-500">{hint}</div>
+    ) : null}
+  </div>
+);
 
 export default function ProveedoresBoardPage() {
   const router = useRouter();
@@ -49,6 +79,7 @@ export default function ProveedoresBoardPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ProveedorVisitaRow[]>([]);
+  const [metrics, setMetrics] = useState<ProveedorVisitasMetrics | null>(null);
   const [qrLinks, setQrLinks] = useState<QrLink[]>([]);
 
   useEffect(() => {
@@ -96,11 +127,14 @@ export default function ProveedoresBoardPage() {
       const data = (await response.json()) as {
         error?: string;
         rows?: ProveedorVisitaRow[];
+        metrics?: ProveedorVisitasMetrics;
       };
       if (!response.ok) throw new Error(data.error || "No se pudo cargar.");
       setRows(data.rows ?? []);
+      setMetrics(data.metrics ?? null);
     } catch (err) {
       setRows([]);
+      setMetrics(null);
       setError(err instanceof Error ? err.message : "Error desconocido.");
     } finally {
       setLoading(false);
@@ -123,6 +157,11 @@ export default function ProveedoresBoardPage() {
     if (q.trim()) params.set("q", q.trim());
     window.open(`/api/proveedores/visitas?${params.toString()}`, "_blank");
   };
+
+  const maxHourVisitas = useMemo(
+    () => Math.max(1, ...(metrics?.byHour.map((h) => h.visitas) ?? [1])),
+    [metrics],
+  );
 
   if (status !== "authenticated" || !user) {
     return (
@@ -162,8 +201,9 @@ export default function ProveedoresBoardPage() {
               Proveedores
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-              Visitas registradas por QR (entrada/salida). El catálogo se toma
-              de <span className="font-mono text-xs">proveedor_pos_catalogo</span>.
+              Visitas por QR (entrada/salida) con métricas del rango filtrado.
+              Catálogo:{" "}
+              <span className="font-mono text-xs">proveedor_pos_catalogo</span>.
             </p>
           </div>
         </div>
@@ -238,7 +278,189 @@ export default function ProveedoresBoardPage() {
           </div>
         ) : null}
 
+        {metrics ? (
+          <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <MetricCard
+              label="Visitas"
+              value={String(metrics.totalVisitas)}
+              hint={`${metrics.cerradas} cerradas`}
+            />
+            <MetricCard
+              label="Abiertas"
+              value={String(metrics.abiertas)}
+              hint="Sin salida aún"
+            />
+            <MetricCard
+              label="Proveedores"
+              value={String(metrics.proveedoresUnicos)}
+              hint="Únicos en el rango"
+            />
+            <MetricCard
+              label="Visitantes"
+              value={String(metrics.visitantesUnicos)}
+              hint="Cédulas únicas"
+            />
+            <MetricCard
+              label="Duración prom."
+              value={formatMin(metrics.duracionPromedioMin)}
+              hint="Solo cerradas"
+            />
+            <MetricCard
+              label="Duración mediana"
+              value={formatMin(metrics.duracionMedianaMin)}
+              hint="Solo cerradas"
+            />
+          </section>
+        ) : null}
+
+        {metrics && metrics.totalVisitas > 0 ? (
+          <section className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
+                Por sede
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Sede</th>
+                      <th className="px-3 py-2 text-right">Visitas</th>
+                      <th className="px-3 py-2 text-right">Abiertas</th>
+                      <th className="px-3 py-2 text-right">Prom. min</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.bySede.map((row) => (
+                      <tr key={row.sedeName} className="border-t border-slate-100">
+                        <td className="px-3 py-2 font-medium text-slate-800">
+                          {row.sedeName}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {row.visitas}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">
+                          {row.abiertas}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                          {formatMin(row.duracionPromedioMin)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
+                Top proveedores
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Proveedor</th>
+                      <th className="px-3 py-2 text-right">Visitas</th>
+                      <th className="px-3 py-2 text-right">Prom. min</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.byProveedor.map((row) => (
+                      <tr
+                        key={row.proveedorNombre}
+                        className="border-t border-slate-100"
+                      >
+                        <td className="px-3 py-2 font-medium text-slate-800">
+                          {row.proveedorNombre}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {row.visitas}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                          {formatMin(row.duracionPromedioMin)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
+                Por día
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Fecha</th>
+                      <th className="px-3 py-2 text-right">Visitas</th>
+                      <th className="px-3 py-2 text-right">Abiertas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.byDay.map((row) => (
+                      <tr key={row.date} className="border-t border-slate-100">
+                        <td className="px-3 py-2 tabular-nums text-slate-800">
+                          {row.date}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {row.visitas}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">
+                          {row.abiertas}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-sm font-bold text-slate-900">
+                Horario de entradas
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Distribución por hora (America/Bogota)
+              </p>
+              <div className="mt-4 flex h-36 items-end gap-1">
+                {Array.from({ length: 24 }, (_, hour) => {
+                  const found = metrics.byHour.find((h) => h.hour === hour);
+                  const visitas = found?.visitas ?? 0;
+                  const heightPct = (visitas / maxHourVisitas) * 100;
+                  return (
+                    <div
+                      key={hour}
+                      className="flex min-w-0 flex-1 flex-col items-center justify-end"
+                      title={`${String(hour).padStart(2, "0")}:00 · ${visitas}`}
+                    >
+                      <div
+                        className="w-full rounded-t bg-sky-500/80"
+                        style={{
+                          height: `${visitas === 0 ? 2 : Math.max(8, heightPct)}%`,
+                        }}
+                      />
+                      {hour % 3 === 0 ? (
+                        <span className="mt-1 text-[9px] tabular-nums text-slate-400">
+                          {hour}
+                        </span>
+                      ) : (
+                        <span className="mt-1 h-3" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
+            Detalle de visitas
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">

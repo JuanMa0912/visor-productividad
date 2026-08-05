@@ -4,7 +4,7 @@ import {
   requireAdminSession,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
-import { listSedeQrTokens, listVisitas } from "@/lib/proveedores/repo";
+import { listSedeQrTokens, listVisitas, computeVisitasMetrics } from "@/lib/proveedores/repo";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import { getLocalPortalCloudUrl } from "@/lib/shared/local-portal-notices";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
@@ -105,11 +105,14 @@ export async function GET(request: Request) {
       );
     }
 
-    const rows = await listVisitas(client, {
+    const filter = {
       dateStart,
       dateEnd,
       sedeName: sede,
       q,
+    };
+    const rows = await listVisitas(client, {
+      ...filter,
       limit: mode === "export" ? 2000 : 500,
     });
 
@@ -151,12 +154,15 @@ export async function GET(request: Request) {
       );
     }
 
+    const metrics = await computeVisitasMetrics(client, filter);
+
     return withSession(
       NextResponse.json({
         dateStart,
         dateEnd,
         sede,
         q,
+        metrics,
         rows,
       }),
     );

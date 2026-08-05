@@ -7,12 +7,44 @@ import {
   type ProveedorCatalogItem,
   type ProveedorVisitaOpen,
   type ProveedorVisitaRow,
+  type ProveedorVisitasMetrics,
 } from "@/lib/proveedores/types";
 
 export type ProveedorSedeQr = {
   sedeName: string;
   token: string;
   activo: boolean;
+};
+
+type VisitasFilterArgs = {
+  dateStart: string;
+  dateEnd: string;
+  sedeName?: string | null;
+  q?: string | null;
+};
+
+const buildVisitasFilter = (args: VisitasFilterArgs) => {
+  const params: unknown[] = [
+    `${args.dateStart}T00:00:00`,
+    `${args.dateEnd}T23:59:59.999`,
+  ];
+  const clauses = [
+    `entrada_at >= $1::timestamptz`,
+    `entrada_at <= $2::timestamptz`,
+  ];
+  if (args.sedeName) {
+    params.push(args.sedeName);
+    clauses.push(`sede_name = $${params.length}`);
+  }
+  const q = (args.q ?? "").trim().slice(0, 80);
+  if (q) {
+    params.push(`%${q.replace(/[%_]/g, "")}%`);
+    const idx = params.length;
+    clauses.push(
+      `(proveedor_nombre ILIKE $${idx} OR visitante_nombre ILIKE $${idx} OR visitante_cedula ILIKE $${idx} OR COALESCE(proveedor_codigo, '') ILIKE $${idx})`,
+    );
+  }
+  return { params, whereSql: clauses.join(" AND ") };
 };
 
 export const resolveSedeByToken = async (
@@ -306,45 +338,169 @@ const mapVisitaRow = (row: Record<string, unknown>): ProveedorVisitaRow => {
 
 export const listVisitas = async (
   client: PoolClient,
-  args: {
-    dateStart: string;
-    dateEnd: string;
-    sedeName?: string | null;
-    q?: string | null;
-    limit?: number;
-  },
+  args: VisitasFilterArgs & { limit?: number },
 ): Promise<ProveedorVisitaRow[]> => {
   const limit = Math.min(Math.max(args.limit ?? 500, 1), 2000);
-  const params: unknown[] = [
-    `${args.dateStart}T00:00:00`,
-    `${args.dateEnd}T23:59:59.999`,
-  ];
-  const clauses = [`entrada_at >= $1::timestamptz`, `entrada_at <= $2::timestamptz`];
-  if (args.sedeName) {
-    params.push(args.sedeName);
-    clauses.push(`sede_name = $${params.length}`);
-  }
-  const q = (args.q ?? "").trim().slice(0, 80);
-  if (q) {
-    params.push(`%${q.replace(/[%_]/g, "")}%`);
-    const idx = params.length;
-    clauses.push(
-      `(proveedor_nombre ILIKE $${idx} OR visitante_nombre ILIKE $${idx} OR visitante_cedula ILIKE $${idx} OR COALESCE(proveedor_codigo, '') ILIKE $${idx})`,
-    );
-  }
-  params.push(limit);
+  const { params, whereSql } = buildVisitasFilter(args);
+  const allParams = [...params, limit];
   const result = await client.query(
     `
     SELECT id, sede_name, proveedor_codigo, proveedor_empresa, proveedor_nombre,
            visitante_nombre, visitante_cedula, entrada_at, salida_at
     FROM proveedor_visitas
-    WHERE ${clauses.join(" AND ")}
+    WHERE ${whereSql}
     ORDER BY entrada_at DESC
-    LIMIT $${params.length}
+    LIMIT $${allParams.length}
+    `,
+    allParams,
+  );
+  return (result.rows ?? []).map((row) => mapVisitaRow(row as Record<string, unknown>));
+};
+
+const round1 = (value: number) => Math.round(value * 10) / 10;
+
+export const computeVisitasMetrics = async (
+  client: PoolClient,
+  args: VisitasFilterArgs,
+): Promise<ProveedorVisitasMetrics> => {
+  const { params, whereSql } = buildVisitasFilter(args);
+
+  const summaryResult = await client.query(
+    `
+    WITH filtered AS (
+      SELECT *
+      FROM proveedor_visitas
+      WHERE ${whereSql}
+    ),
+    closed AS (
+      SELECT EXTRACT(EPOCH FROM (salida_at - entrada_at)) / 60.0 AS mins
+      FROM filtered
+      WHERE salida_at IS NOT NULL
+    )
+    SELECT
+      (SELECT count(*)::int FROM filtered) AS total,
+      (SELECT count(*)::int FROM filtered WHERE salida_at IS NULL) AS abiertas,
+      (SELECT count(*)::int FROM filtered WHERE salida_at IS NOT NULL) AS cerradas,
+      (SELECT count(DISTINCT lower(btrim(proveedor_nombre)))::int FROM filtered) AS proveedores,
+      (SELECT count(DISTINCT visitante_cedula)::int FROM filtered) AS visitantes,
+      (SELECT avg(mins) FROM closed) AS avg_min,
+      (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY mins) FROM closed) AS median_min
     `,
     params,
   );
-  return (result.rows ?? []).map((row) => mapVisitaRow(row as Record<string, unknown>));
+  const s = summaryResult.rows[0] as {
+    total?: number;
+    abiertas?: number;
+    cerradas?: number;
+    proveedores?: number;
+    visitantes?: number;
+    avg_min?: string | number | null;
+    median_min?: string | number | null;
+  };
+
+  const bySedeResult = await client.query(
+    `
+    SELECT
+      sede_name,
+      count(*)::int AS visitas,
+      count(*) FILTER (WHERE salida_at IS NULL)::int AS abiertas,
+      avg(
+        EXTRACT(EPOCH FROM (salida_at - entrada_at)) / 60.0
+      ) FILTER (WHERE salida_at IS NOT NULL) AS avg_min
+    FROM proveedor_visitas
+    WHERE ${whereSql}
+    GROUP BY sede_name
+    ORDER BY visitas DESC, sede_name ASC
+    `,
+    params,
+  );
+
+  const byProveedorResult = await client.query(
+    `
+    SELECT
+      proveedor_nombre,
+      count(*)::int AS visitas,
+      avg(
+        EXTRACT(EPOCH FROM (salida_at - entrada_at)) / 60.0
+      ) FILTER (WHERE salida_at IS NOT NULL) AS avg_min
+    FROM proveedor_visitas
+    WHERE ${whereSql}
+    GROUP BY proveedor_nombre
+    ORDER BY visitas DESC, proveedor_nombre ASC
+    LIMIT 12
+    `,
+    params,
+  );
+
+  const byDayResult = await client.query(
+    `
+    SELECT
+      to_char(timezone('America/Bogota', entrada_at), 'YYYY-MM-DD') AS dia,
+      count(*)::int AS visitas,
+      count(*) FILTER (WHERE salida_at IS NULL)::int AS abiertas
+    FROM proveedor_visitas
+    WHERE ${whereSql}
+    GROUP BY 1
+    ORDER BY 1 ASC
+    `,
+    params,
+  );
+
+  const byHourResult = await client.query(
+    `
+    SELECT
+      EXTRACT(HOUR FROM timezone('America/Bogota', entrada_at))::int AS hora,
+      count(*)::int AS visitas
+    FROM proveedor_visitas
+    WHERE ${whereSql}
+    GROUP BY 1
+    ORDER BY 1 ASC
+    `,
+    params,
+  );
+
+  const avgRaw = s.avg_min == null ? null : Number(s.avg_min);
+  const medianRaw = s.median_min == null ? null : Number(s.median_min);
+
+  return {
+    totalVisitas: Number(s.total ?? 0),
+    abiertas: Number(s.abiertas ?? 0),
+    cerradas: Number(s.cerradas ?? 0),
+    proveedoresUnicos: Number(s.proveedores ?? 0),
+    visitantesUnicos: Number(s.visitantes ?? 0),
+    duracionPromedioMin:
+      avgRaw != null && Number.isFinite(avgRaw) ? round1(avgRaw) : null,
+    duracionMedianaMin:
+      medianRaw != null && Number.isFinite(medianRaw) ? round1(medianRaw) : null,
+    bySede: (bySedeResult.rows ?? []).map((row) => {
+      const avg = row.avg_min == null ? null : Number(row.avg_min);
+      return {
+        sedeName: String(row.sede_name ?? ""),
+        visitas: Number(row.visitas ?? 0),
+        abiertas: Number(row.abiertas ?? 0),
+        duracionPromedioMin:
+          avg != null && Number.isFinite(avg) ? round1(avg) : null,
+      };
+    }),
+    byProveedor: (byProveedorResult.rows ?? []).map((row) => {
+      const avg = row.avg_min == null ? null : Number(row.avg_min);
+      return {
+        proveedorNombre: String(row.proveedor_nombre ?? ""),
+        visitas: Number(row.visitas ?? 0),
+        duracionPromedioMin:
+          avg != null && Number.isFinite(avg) ? round1(avg) : null,
+      };
+    }),
+    byDay: (byDayResult.rows ?? []).map((row) => ({
+      date: String(row.dia ?? ""),
+      visitas: Number(row.visitas ?? 0),
+      abiertas: Number(row.abiertas ?? 0),
+    })),
+    byHour: (byHourResult.rows ?? []).map((row) => ({
+      hour: Number(row.hora ?? 0),
+      visitas: Number(row.visitas ?? 0),
+    })),
+  };
 };
 
 export const listSedeQrTokens = async (
