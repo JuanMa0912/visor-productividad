@@ -31,6 +31,21 @@ const SEDE_CONFIGS = [
 
 const quoteIdentifier = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
+/** Alineado con análisis de cajeros en hourly-analysis. */
+const MAX_RANGE_DAYS = 62;
+
+const getInclusiveDateRangeDays = (
+  dateStart: string,
+  dateEnd: string,
+): number | null => {
+  const startMs = Date.parse(`${dateStart}T12:00:00`);
+  const endMs = Date.parse(`${dateEnd}T12:00:00`);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs > endMs) {
+    return null;
+  }
+  return Math.floor((endMs - startMs) / 86_400_000) + 1;
+};
+
 const normalizeCol = (value: string) => value.trim().toLowerCase();
 
 const parseMinuteOfDay = (raw: unknown): number | null => {
@@ -161,6 +176,17 @@ export async function GET(request: Request) {
       NextResponse.json({ error: "dateStart no puede ser mayor que dateEnd." }, { status: 400 }),
     );
   }
+  const rangeDays = getInclusiveDateRangeDays(dateStart, dateEnd);
+  if (!rangeDays || rangeDays > MAX_RANGE_DAYS) {
+    return withSession(
+      NextResponse.json(
+        {
+          error: `El rango no puede superar ${MAX_RANGE_DAYS} días.`,
+        },
+        { status: 400 },
+      ),
+    );
+  }
   const sede = resolveSede(sedeName);
   if (!sede) {
     return withSession(
@@ -177,7 +203,7 @@ export async function GET(request: Request) {
     if (salesColumns.length === 0) {
       return withSession(
         NextResponse.json(
-          { error: "No existe la tabla ventas_cajas en este entorno." },
+          { error: "No hay datos de ventas disponibles para el experimento." },
           { status: 500 },
         ),
       );
@@ -192,7 +218,7 @@ export async function GET(request: Request) {
     if (!idCol && !nameCol) {
       return withSession(
         NextResponse.json(
-          { error: "No se encontró columna de cajero en ventas_cajas." },
+          { error: "No se pudo identificar cajeros en los datos de ventas." },
           { status: 500 },
         ),
       );
@@ -396,6 +422,7 @@ export async function GET(request: Request) {
         dateStart,
         dateEnd,
         maxGapMinutes,
+        maxRangeDays: MAX_RANGE_DAYS,
         rule: {
           summary:
             "Minutos efectivos = suma de brechas entre facturas consecutivas del mismo día solo si la brecha ≤ maxGapMinutes (ritmo continuo). Huecos largos no cuentan.",
@@ -406,10 +433,12 @@ export async function GET(request: Request) {
       }),
     );
   } catch (error) {
-    const detail =
-      error instanceof Error ? error.message : "No se pudo calcular efectividad.";
+    console.error("[exp/efectividad-cajero]", error);
     return withSession(
-      NextResponse.json({ error: detail }, { status: 500 }),
+      NextResponse.json(
+        { error: "No se pudo calcular efectividad." },
+        { status: 500 },
+      ),
     );
   } finally {
     client.release();

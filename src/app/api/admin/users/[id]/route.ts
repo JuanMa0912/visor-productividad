@@ -16,6 +16,7 @@ import {
 import { ALLOWED_LINE_IDS, BRANCH_LOCATIONS } from "@/lib/shared/constants";
 import { resolveValidAllowedEmpresas } from "@/lib/shared/data-tenant";
 import {
+  isAdminOnlyPortalSubsection,
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
   resolvePortalSectionId,
@@ -300,7 +301,9 @@ const resolveValidAllowedSubdashboards = (value: unknown) => {
     };
   }
 
-  const normalized = normalizeAllowedPortalSubsections(value) ?? [];
+  const normalized = (normalizeAllowedPortalSubsections(value) ?? []).filter(
+    (subId) => !isAdminOnlyPortalSubsection(subId),
+  );
   if (normalized.length === 0) {
     return { ok: true as const, value: null as string[] | null };
   }

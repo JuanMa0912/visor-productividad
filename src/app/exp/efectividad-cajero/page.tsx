@@ -87,6 +87,16 @@ export default function ExpEfectividadCajeroPage() {
       setError("Rango de fechas inválido.");
       return;
     }
+    const startMs = Date.parse(`${dateStart}T12:00:00`);
+    const endMs = Date.parse(`${dateEnd}T12:00:00`);
+    const rangeDays =
+      Number.isFinite(startMs) && Number.isFinite(endMs) && startMs <= endMs
+        ? Math.floor((endMs - startMs) / 86_400_000) + 1
+        : null;
+    if (!rangeDays || rangeDays > 62) {
+      setError("El rango no puede superar 62 días.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

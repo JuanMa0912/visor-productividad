@@ -46,6 +46,7 @@ import {
   PORTAL_SUBSECTIONS_BY_SECTION,
   PORTAL_SECTIONS,
   ensureParentSectionsForSubsections,
+  isAdminOnlyPortalSubsection,
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
 } from "@/lib/shared/portal-sections";
@@ -784,6 +785,7 @@ export function UserFormModal({
                   </p>
                   <CheckboxGrid
                     options={PORTAL_SUBSECTIONS_BY_SECTION[section.id]
+                      .filter((subId) => !isAdminOnlyPortalSubsection(subId))
                       .filter((subId) =>
                         dashboardPermissionsOnly
                           ? lineLockedDashboardOptions.subsections.includes(subId)

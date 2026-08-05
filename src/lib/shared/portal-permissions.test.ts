@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
+  isAdminOnlyPortalSubsection,
   normalizeAllowedPortalSubsections,
 } from "./portal-sections";
 import {
@@ -38,4 +39,9 @@ test("lista vacia de subtableros = todos (incluye rotacion)", () => {
 test("proveedores solo admin en el rollout actual", () => {
   assert.equal(canAccessProveedoresBoard(true), true);
   assert.equal(canAccessProveedoresBoard(false), false);
+});
+
+test("proveedores es subtablero solo-admin (no asignable por checkbox)", () => {
+  assert.equal(isAdminOnlyPortalSubsection("proveedores"), true);
+  assert.equal(isAdminOnlyPortalSubsection("participacion-comercial"), false);
 });

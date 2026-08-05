@@ -201,6 +201,18 @@ export const canAccessPortalSubsection = (
 };
 
 /**
+ * Subtableros que existen en el registro pero no se asignan por checkbox
+ * mientras el acceso real sea solo admin (evita falsa sensación de permiso).
+ */
+export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [
+  "proveedores",
+];
+
+export const isAdminOnlyPortalSubsection = (
+  subsectionId: PortalSubsectionId,
+): boolean => ADMIN_ONLY_PORTAL_SUBSECTIONS.includes(subsectionId);
+
+/**
  * Secciones padre de los subtableros dados.
  * `null` secciones (= todas) se deja igual: ya incluye a los padres.
  * Lista restringida: se fusionan los padres de cada subtablero.

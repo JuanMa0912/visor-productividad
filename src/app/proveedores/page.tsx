@@ -62,8 +62,7 @@ export default function ProveedoresPage() {
               Proveedores
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-              Tablero en construcción. El acceso está limitado a
-              administradores hasta que haya datos y contenido.
+              Tablero en construcción. Acceso limitado a administradores.
             </p>
           </div>
         </div>
@@ -73,8 +72,8 @@ export default function ProveedoresPage() {
             Contenido pendiente
           </p>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-            Aquí irá el tablero de proveedores. La ruta, el hub de Venta y el
-            permiso de subtablero (`proveedores`) ya están registrados.
+            Aquí irá el tablero de proveedores. La ruta y el hub de Venta ya
+            están registrados.
           </p>
         </section>
       </div>
