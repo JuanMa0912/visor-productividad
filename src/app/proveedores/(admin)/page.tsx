@@ -12,6 +12,7 @@ import type {
   ProveedorVisitaRow,
   ProveedorVisitasMetrics,
 } from "@/lib/proveedores/types";
+import { ProveedoresVentasPanel } from "./proveedores-ventas-panel";
 
 const toISODate = (date: Date) => {
   const y = date.getFullYear();
@@ -81,6 +82,7 @@ export default function ProveedoresBoardPage() {
   const [rows, setRows] = useState<ProveedorVisitaRow[]>([]);
   const [metrics, setMetrics] = useState<ProveedorVisitasMetrics | null>(null);
   const [qrLinks, setQrLinks] = useState<QrLink[]>([]);
+  const [tab, setTab] = useState<"visitas" | "ventas">("visitas");
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -201,13 +203,42 @@ export default function ProveedoresBoardPage() {
               Proveedores
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-              Visitas por QR (entrada/salida) con métricas del rango filtrado.
-              Catálogo:{" "}
-              <span className="font-mono text-xs">proveedor_pos_catalogo</span>.
+              Visitas por QR y ventas por proveedor (
+              <span className="font-mono text-xs">ventas_proveedor_dia</span>
+              ).
             </p>
           </div>
         </div>
 
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setTab("visitas")}
+            className={`rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide ${
+              tab === "visitas"
+                ? "bg-sky-700 text-white"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            Visitas QR
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("ventas")}
+            className={`rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide ${
+              tab === "ventas"
+                ? "bg-sky-700 text-white"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            Ventas por proveedor
+          </button>
+        </div>
+
+        {tab === "ventas" ? <ProveedoresVentasPanel /> : null}
+
+        {tab === "visitas" ? (
+          <>
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -561,6 +592,8 @@ export default function ProveedoresBoardPage() {
               ))}
             </ul>
           </section>
+        ) : null}
+          </>
         ) : null}
       </div>
     </div>
