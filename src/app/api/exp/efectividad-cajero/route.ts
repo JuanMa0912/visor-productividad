@@ -8,6 +8,7 @@ import { getDbPool } from "@/lib/db";
 import { computeShiftLaborMinutes } from "@/components/hourly-analysis/cashier-utils";
 import {
   buildCashierEffectivenessRowsFromInvoices,
+  buildCashierEffectivenessSummary,
   DEFAULT_MAX_ACTIVE_GAP_MINUTES,
   type CashierEffectivenessInput,
   type CashierInvoicePoint,
@@ -386,6 +387,7 @@ export async function GET(request: Request) {
       inputs,
       maxGapMinutes,
     );
+    const summary = buildCashierEffectivenessSummary(rows);
 
     return withSession(
       NextResponse.json({
@@ -399,6 +401,7 @@ export async function GET(request: Request) {
             "Minutos efectivos = suma de brechas entre facturas consecutivas del mismo día solo si la brecha ≤ maxGapMinutes (ritmo continuo). Huecos largos no cuentan.",
           maxGapMinutes,
         },
+        summary,
         rows,
       }),
     );
