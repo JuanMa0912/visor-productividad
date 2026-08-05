@@ -156,7 +156,7 @@ export default function VentaHubPage() {
           theme="venta"
           items={visibleModules}
           onNavigate={(href) => router.push(href)}
-          columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+          columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-4"
           tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.modules}
         />
       </PortalHubShell>
