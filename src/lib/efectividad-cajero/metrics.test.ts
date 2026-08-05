@@ -1,75 +1,59 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  buildCashierEffectivenessRows,
+  buildCashierEffectivenessRowsFromInvoices,
+  computeEffectiveMinutesFromInvoiceTimes,
   CAJERO_CONTRACT_WEEKLY_HOURS,
 } from "@/lib/efectividad-cajero/metrics";
-import type { HourlyPersonContribution } from "@/types";
 
-const person = (
-  overrides: Partial<HourlyPersonContribution>,
-): HourlyPersonContribution => ({
-  personKey: "1|Ana",
-  personId: "1234567890",
-  personName: "Ana",
-  hourlySales: [],
-  ...overrides,
-});
-
-describe("efectividad-cajero metrics", () => {
-  it("calcula % como horas con venta / horas marcadas", () => {
-    const rows = buildCashierEffectivenessRows(
-      [
-        person({
-          periodTotalSales: 5_000_000,
-          activeSlotsCount: 6, // 6h si bucket=60
-          attendanceWorkedHours: 8,
-          dailySales: [
-            {
-              date: "2026-08-01",
-              sales: 5_000_000,
-              activeSlotsCount: 6,
-              attendanceShift: {
-                markInMinute: 8 * 60,
-                markOutMinute: 17 * 60,
-                break1Minute: 12 * 60,
-                break2Minute: 13 * 60,
-              },
-            },
-          ],
-        }),
-      ],
-      60,
-    );
-
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0]!.productiveHours, 6);
-    // 8:00–17:00 − 1h almuerzo = 8h
-    assert.equal(rows[0]!.markedHours, 8);
-    assert.equal(rows[0]!.effectivenessPct, 75);
-    assert.equal(rows[0]!.contractWeeklyHours, CAJERO_CONTRACT_WEEKLY_HOURS);
+describe("computeEffectiveMinutesFromInvoiceTimes", () => {
+  it("hora densa cada 3 min ≈ 57 min efectivos", () => {
+    const minutes: number[] = [];
+    for (let m = 7 * 60; m <= 7 * 60 + 57; m += 3) minutes.push(m);
+    const effective = computeEffectiveMinutesFromInvoiceTimes(minutes, 5);
+    assert.equal(effective, 57);
   });
 
-  it("deja % null si no hay marcas", () => {
-    const rows = buildCashierEffectivenessRows(
+  it("2–3 ventas aisladas en una hora no llenan la hora (brechas > 5)", () => {
+    const minutes = [7 * 60, 7 * 60 + 25, 7 * 60 + 50];
+    assert.equal(computeEffectiveMinutesFromInvoiceTimes(minutes, 5), 0);
+  });
+
+  it("ráfaga corta solo suma minutos entre facturas cercanas", () => {
+    const minutes = [7 * 60, 7 * 60 + 3, 7 * 60 + 6, 7 * 60 + 40];
+    // 3+3 = 6; el salto a :40 no cuenta
+    assert.equal(computeEffectiveMinutesFromInvoiceTimes(minutes, 5), 6);
+  });
+
+  it("una sola factura no inventa minutos", () => {
+    assert.equal(computeEffectiveMinutesFromInvoiceTimes([8 * 60], 5), 0);
+  });
+});
+
+describe("buildCashierEffectivenessRowsFromInvoices", () => {
+  it("arma % contra horas marcadas", () => {
+    const dense: number[] = [];
+    for (let m = 8 * 60; m <= 8 * 60 + 57; m += 3) dense.push(m);
+    const rows = buildCashierEffectivenessRowsFromInvoices(
       [
-        person({
-          periodTotalSales: 1_000_000,
-          activeSlotsCount: 4,
-          hourlySales: [
-            {
-              slotStartMinute: 600,
-              slotEndMinute: 660,
-              label: "10-11",
-              sales: 1_000_000,
-            },
-          ],
-        }),
+        {
+          personKey: "1|Ana",
+          personName: "Ana",
+          personId: "123",
+          markedHours: 8,
+          invoices: dense.map((minuteOfDay) => ({
+            minuteOfDay,
+            sales: 100_000,
+            date: "2026-08-01",
+          })),
+        },
       ],
-      60,
+      5,
     );
-    assert.equal(rows[0]!.productiveHours, 4);
-    assert.equal(rows[0]!.markedHours, 0);
-    assert.equal(rows[0]!.effectivenessPct, null);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.productiveHours, 0.95); // 57/60
+    assert.equal(rows[0]!.markedHours, 8);
+    assert.equal(rows[0]!.contractWeeklyHours, CAJERO_CONTRACT_WEEKLY_HOURS);
+    assert.ok((rows[0]!.effectivenessPct ?? 0) > 0);
   });
 });

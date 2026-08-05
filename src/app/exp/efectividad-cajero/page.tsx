@@ -6,21 +6,11 @@ import { FlaskConical } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
-  buildCashierEffectivenessRows,
   CAJERO_CONTRACT_WEEKLY_HOURS,
-  formatMinuteOfDay,
+  DEFAULT_MAX_ACTIVE_GAP_MINUTES,
+  type CashierEffectivenessRow,
 } from "@/lib/efectividad-cajero/metrics";
 import { BRANCH_LOCATIONS } from "@/lib/shared/constants";
-import type { HourlyAnalysisData } from "@/types";
-
-/** Sedes cableadas en análisis horario (sin Dinastía / plantas). */
-const EFECTIVIDAD_SEDES = BRANCH_LOCATIONS.filter(
-  (name) =>
-    ![
-      "Dinastia 1 Santa Elena",
-      "Dinastia 2 CR Primera",
-    ].includes(name),
-);
 
 const money = (value: number) =>
   value.toLocaleString("es-CO", {
@@ -50,6 +40,11 @@ const defaultRange = () => {
   return { start: toISODate(start), end: toISODate(end) };
 };
 
+const EFECTIVIDAD_SEDES = BRANCH_LOCATIONS.filter(
+  (name) =>
+    !["Dinastia 1 Santa Elena", "Dinastia 2 CR Primera"].includes(name),
+);
+
 export default function ExpEfectividadCajeroPage() {
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
@@ -57,12 +52,13 @@ export default function ExpEfectividadCajeroPage() {
   const [dateStart, setDateStart] = useState(initial.start);
   const [dateEnd, setDateEnd] = useState(initial.end);
   const [sede, setSede] = useState(EFECTIVIDAD_SEDES[0] ?? "Floresta");
-  const [bucketMinutes, setBucketMinutes] = useState(60);
+  const [maxGapMinutes, setMaxGapMinutes] = useState(
+    DEFAULT_MAX_ACTIVE_GAP_MINUTES,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [people, setPeople] = useState<HourlyAnalysisData["personContributions"]>(
-    [],
-  );
+  const [rows, setRows] = useState<CashierEffectivenessRow[]>([]);
+  const [ruleSummary, setRuleSummary] = useState<string>("");
 
   const load = useCallback(async () => {
     if (!dateStart || !dateEnd || dateStart > dateEnd) {
@@ -73,42 +69,37 @@ export default function ExpEfectividadCajeroPage() {
     setError(null);
     try {
       const params = new URLSearchParams({
-        date: dateEnd,
-        includePeople: "1",
-        peopleDateStart: dateStart,
-        peopleDateEnd: dateEnd,
-        line: "cajas",
-        bucketMinutes: String(bucketMinutes),
+        dateStart,
+        dateEnd,
         sede,
+        maxGapMinutes: String(maxGapMinutes),
       });
-      const response = await fetch(`/api/hourly-analysis?${params.toString()}`, {
-        credentials: "include",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as HourlyAnalysisData & {
+      const response = await fetch(
+        `/api/exp/efectividad-cajero?${params.toString()}`,
+        { credentials: "include", cache: "no-store" },
+      );
+      const data = (await response.json()) as {
         error?: string;
+        rows?: CashierEffectivenessRow[];
+        rule?: { summary?: string };
       };
       if (!response.ok) {
-        throw new Error(data.error || "No se pudo cargar el análisis.");
+        throw new Error(data.error || "No se pudo cargar el experimento.");
       }
-      setPeople(data.personContributions ?? []);
+      setRows(data.rows ?? []);
+      setRuleSummary(data.rule?.summary ?? "");
     } catch (err) {
-      setPeople([]);
+      setRows([]);
       setError(err instanceof Error ? err.message : "Error desconocido.");
     } finally {
       setLoading(false);
     }
-  }, [bucketMinutes, dateEnd, dateStart, sede]);
+  }, [dateEnd, dateStart, maxGapMinutes, sede]);
 
   useEffect(() => {
     if (status !== "authenticated" || !isAdmin) return;
     void load();
   }, [status, isAdmin, load]);
-
-  const rows = useMemo(
-    () => buildCashierEffectivenessRows(people, bucketMinutes),
-    [people, bucketMinutes],
-  );
 
   if (status !== "authenticated" || !user) {
     return (
@@ -145,8 +136,10 @@ export default function ExpEfectividadCajeroPage() {
           Efectividad de cajero
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-          Compara horas con facturas reales (`hora_final_hora` en ventas cajas)
-          contra horas marcadas en asistencia (entrada / almuerzo / salida).
+          Mide si el cajero estuvo en ritmo continuo de facturación. Si entre
+          facturas pasan ≤ N minutos (ej. cada 2–5 min), esos minutos cuentan.
+          Si hay huecos largos (2–3 ventas aisladas en una hora),{" "}
+          <strong>no</strong> se llena la hora: solo suman las brechas cortas.
           Contrato de referencia: {CAJERO_CONTRACT_WEEKLY_HOURS} h/semana.
         </p>
 
@@ -185,14 +178,17 @@ export default function ExpEfectividadCajeroPage() {
               </select>
             </label>
             <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Franja
+              Brecha máx. continua
               <select
-                value={bucketMinutes}
-                onChange={(e) => setBucketMinutes(Number(e.target.value))}
+                value={maxGapMinutes}
+                onChange={(e) => setMaxGapMinutes(Number(e.target.value))}
                 className="mt-1 block h-9 rounded-lg border border-slate-200 px-3 text-sm"
+                title="Si pasan más minutos entre dos facturas, ese tramo no cuenta"
               >
-                <option value={30}>30 min</option>
-                <option value={60}>60 min</option>
+                <option value={3}>3 min</option>
+                <option value={5}>5 min</option>
+                <option value={7}>7 min</option>
+                <option value={10}>10 min</option>
               </select>
             </label>
             <button
@@ -205,8 +201,8 @@ export default function ExpEfectividadCajeroPage() {
             </button>
           </div>
           <p className="mt-3 text-[11px] leading-snug text-slate-500">
-            % efectividad = horas con venta ÷ horas marcadas. Una franja cuenta
-            si hubo ≥1 factura del cajero en ese intervalo.
+            {ruleSummary ||
+              `% efectividad = horas efectivas (brechas ≤ ${maxGapMinutes} min) ÷ horas marcadas.`}
           </p>
         </section>
 
@@ -223,8 +219,9 @@ export default function ExpEfectividadCajeroPage() {
                 <tr>
                   <th className="px-3 py-2.5">Cajero</th>
                   <th className="px-3 py-2.5 text-right">Venta</th>
+                  <th className="px-3 py-2.5 text-right">Facturas</th>
                   <th className="px-3 py-2.5 text-right">Horas marca</th>
-                  <th className="px-3 py-2.5 text-right">Horas c/venta</th>
+                  <th className="px-3 py-2.5 text-right">Horas efectivas</th>
                   <th className="px-3 py-2.5 text-right">% efect.</th>
                   <th className="px-3 py-2.5 text-right">vs 42h sem</th>
                   <th className="px-3 py-2.5 text-right">1ª / últ. factura</th>
@@ -235,7 +232,7 @@ export default function ExpEfectividadCajeroPage() {
                 {loading && rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-3 py-8 text-center text-slate-500"
                     >
                       Cargando cajeros…
@@ -244,7 +241,7 @@ export default function ExpEfectividadCajeroPage() {
                 ) : rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-3 py-8 text-center text-slate-500"
                     >
                       Sin datos para el rango / sede.
@@ -268,6 +265,9 @@ export default function ExpEfectividadCajeroPage() {
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
                         {money(row.sales)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">
+                        {row.invoiceCount.toLocaleString("es-CO")}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
                         {hoursLabel(row.markedHours)}
@@ -300,8 +300,7 @@ export default function ExpEfectividadCajeroPage() {
                         {row.contractWeeklyHours}h
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">
-                        {formatMinuteOfDay(row.firstSaleMinute)} –{" "}
-                        {formatMinuteOfDay(row.lastSaleMinute)}
+                        {row.firstSaleLabel} – {row.lastSaleLabel}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">
                         {row.daysWithSales}
