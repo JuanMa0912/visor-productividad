@@ -167,7 +167,7 @@ export function PortalHubModuleCard({
   const isDisabled = item.disabled === true;
   const footerLabel = item.footerLabel ?? "Abrir modulo";
 
-  const cardClassName = `group relative flex min-h-[280px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 ${styles.topBorderClass} ${
+  const cardClassName = `group relative flex h-full min-h-[300px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 ${styles.topBorderClass} ${
     isDisabled
       ? "cursor-not-allowed opacity-75 before:bg-slate-300"
       : "hover:-translate-y-1 hover:border-foreground/15 hover:shadow-floating"
@@ -199,10 +199,10 @@ export function PortalHubModuleCard({
         <span className="text-[0.65rem] leading-none opacity-90">•</span>
         {item.badge}
       </p>
-      <span className="relative z-1 mt-3 block text-xl font-black leading-snug tracking-tight text-slate-900 sm:text-2xl">
+      <span className="relative z-1 mt-3 block min-h-[3.5rem] text-xl font-black leading-snug tracking-tight text-slate-900 sm:text-2xl">
         {item.title}
       </span>
-      <span className="relative z-1 mt-3 block text-sm leading-relaxed text-slate-600">
+      <span className="relative z-1 mt-3 line-clamp-4 min-h-[5.5rem] flex-1 text-sm leading-relaxed text-slate-600">
         {item.description}
       </span>
       <div className="relative z-1 mt-auto flex items-center justify-between gap-3 pt-8">
