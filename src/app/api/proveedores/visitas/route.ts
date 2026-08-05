@@ -6,6 +6,7 @@ import {
 import { getDbPool } from "@/lib/db";
 import { listSedeQrTokens, listVisitas } from "@/lib/proveedores/repo";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
+import { getLocalPortalCloudUrl } from "@/lib/shared/local-portal-notices";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -13,6 +14,28 @@ const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 const csvEscape = (value: string) => {
   if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
+};
+
+/** Base pública para QR: nunca localhost aunque el admin abra el tablero en local. */
+const resolveProveedoresPublicOrigin = (requestUrl: URL): string => {
+  const fromEnv = (
+    process.env.PROVEEDORES_PUBLIC_BASE_URL ??
+    process.env.PUBLIC_APP_URL ??
+    ""
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  if (fromEnv) return fromEnv;
+
+  const cloud = getLocalPortalCloudUrl().replace(/\/+$/, "");
+  const host = requestUrl.hostname.toLowerCase();
+  const isLocalHost =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".local");
+  if (isLocalHost) return cloud;
+  return requestUrl.origin;
 };
 
 export async function GET(request: Request) {
@@ -45,10 +68,11 @@ export async function GET(request: Request) {
   try {
     if (mode === "meta") {
       const qr = await listSedeQrTokens(client);
-      const origin = url.origin;
+      const origin = resolveProveedoresPublicOrigin(url);
       return withSession(
         NextResponse.json({
           sedes: [...PROVEEDORES_QR_SEDES],
+          publicOrigin: origin,
           qrLinks: qr.map((row) => ({
             sedeName: row.sedeName,
             activo: row.activo,

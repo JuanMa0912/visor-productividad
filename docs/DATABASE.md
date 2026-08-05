@@ -514,12 +514,15 @@ Migracion: `db/migrations/20260805_proveedores_visitas.sql`.
 
 | Tabla | Uso |
 | --- | --- |
-| `proveedor_catalogo` | maestro fijo (cargar lista después); búsqueda en formulario QR |
+| `proveedor_catalogo` | (opcional / legacy) catálogo propio; el form QR usa POS |
+| `proveedor_pos_catalogo` | maestro real (~3.4k): `empresa`+`id_cricla1`+`nombre`+`nit` |
 | `proveedor_sede_qr` | token opaco por sede → URL pública `/proveedores/ingreso/[token]` |
 | `proveedor_visitas` | entrada/salida; visita abierta = `salida_at IS NULL` (cédula+sede) |
+| `ventas_proveedor_dia` | ventas agregadas por proveedor/día (no es el form de ingreso) |
 
 ```bash
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas_pos_catalog.sql
 ```
 
 Actualizar este documento cuando cambien migraciones, tablas leidas, columnas

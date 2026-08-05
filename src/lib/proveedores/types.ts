@@ -44,8 +44,27 @@ export const normalizeProveedorToken = (raw: unknown): string =>
 export const isValidProveedorToken = (token: string): boolean =>
   /^prv_[a-f0-9]{20,64}$/i.test(token);
 
+/** Clave de selección: empresa|id_cricla1 (maestro POS). */
+export const encodeProveedorPosKey = (empresa: string, codigo: string): string =>
+  `${empresa.trim()}|${codigo.trim()}`;
+
+export const decodeProveedorPosKey = (
+  raw: unknown,
+): { empresa: string; codigo: string } | null => {
+  const value = String(raw ?? "").trim();
+  const sep = value.indexOf("|");
+  if (sep <= 0 || sep === value.length - 1) return null;
+  const empresa = value.slice(0, sep).trim();
+  const codigo = value.slice(sep + 1).trim();
+  if (!empresa || !codigo || codigo.length > 40) return null;
+  return { empresa, codigo };
+};
+
 export type ProveedorCatalogItem = {
-  id: number;
+  /** `empresa|id_cricla1` */
+  id: string;
+  empresa: string;
+  codigo: string;
   nombre: string;
 };
 
@@ -61,7 +80,7 @@ export type ProveedorVisitaOpen = {
 export type ProveedorVisitaRow = {
   id: number;
   sedeName: string;
-  proveedorId: number | null;
+  proveedorId: string | null;
   proveedorNombre: string;
   visitanteNombre: string;
   visitanteCedula: string;

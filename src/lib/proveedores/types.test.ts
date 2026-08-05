@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  decodeProveedorPosKey,
+  encodeProveedorPosKey,
   isValidProveedorToken,
   isValidVisitanteCedula,
   normalizeVisitanteCedula,
@@ -24,5 +26,14 @@ describe("proveedores types", () => {
 
   it("normaliza nombre", () => {
     assert.equal(normalizeVisitanteNombre("  Ana   Pérez  "), "Ana Pérez");
+  });
+
+  it("encode/decode clave POS", () => {
+    const id = encodeProveedorPosKey("mercamio", "0011");
+    assert.equal(id, "mercamio|0011");
+    assert.deepEqual(decodeProveedorPosKey(id), {
+      empresa: "mercamio",
+      codigo: "0011",
+    });
   });
 });

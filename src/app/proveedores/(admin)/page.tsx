@@ -162,8 +162,8 @@ export default function ProveedoresBoardPage() {
               Proveedores
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-              Visitas registradas por QR (entrada/salida). El catálogo de
-              proveedores se cargará cuando envíen la lista fija.
+              Visitas registradas por QR (entrada/salida). El catálogo se toma
+              de <span className="font-mono text-xs">proveedor_pos_catalogo</span>.
             </p>
           </div>
         </div>

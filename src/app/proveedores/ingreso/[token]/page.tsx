@@ -31,7 +31,7 @@ export default function ProveedoresIngresoPage() {
   const [proveedorQuery, setProveedorQuery] = useState("");
   const deferredQuery = useDeferredValue(proveedorQuery);
   const [providers, setProviders] = useState<ProveedorCatalogItem[]>([]);
-  const [proveedorId, setProveedorId] = useState<number | null>(null);
+  const [proveedorId, setProveedorId] = useState<string | null>(null);
   const [openVisit, setOpenVisit] = useState<ProveedorVisitaOpen | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);

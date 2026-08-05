@@ -3,6 +3,7 @@ import { getClientIp } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import {
   closeSalida,
+  countActiveProveedorCatalog,
   findOpenVisit,
   getProveedorById,
   insertEntrada,
@@ -42,10 +43,13 @@ export async function GET(request: Request) {
       return json({ error: "Enlace de sede no válido." }, 404);
     }
     const providers = await searchProveedorCatalog(client, q, 30);
+    const activeCount = q.trim()
+      ? providers.length
+      : await countActiveProveedorCatalog(client);
     return json({
       sedeName: sede.sedeName,
       providers,
-      catalogEmpty: providers.length === 0 && !q.trim(),
+      catalogEmpty: activeCount === 0,
     });
   } catch (error) {
     console.error("[proveedores/ingreso GET]", error);
@@ -60,7 +64,7 @@ type Body = {
   action?: string;
   cedula?: string;
   nombre?: string;
-  proveedorId?: number;
+  proveedorId?: string | number;
   visitId?: number;
 };
 
@@ -130,8 +134,7 @@ export async function POST(request: Request) {
       if (!isValidVisitanteNombre(nombre)) {
         return json({ error: "Nombre inválido (mínimo 3 caracteres)." }, 400);
       }
-      const proveedorId = Number(body.proveedorId);
-      const proveedor = await getProveedorById(client, proveedorId);
+      const proveedor = await getProveedorById(client, body.proveedorId);
       if (!proveedor) {
         return json(
           {
@@ -143,7 +146,8 @@ export async function POST(request: Request) {
       }
       const visit = await insertEntrada(client, {
         sedeName: sede.sedeName,
-        proveedorId: proveedor.id,
+        proveedorCodigo: proveedor.codigo,
+        proveedorEmpresa: proveedor.empresa,
         proveedorNombre: proveedor.nombre,
         visitanteNombre: nombre,
         visitanteCedula: cedula,

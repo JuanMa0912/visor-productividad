@@ -1,5 +1,7 @@
 import type { PoolClient } from "pg";
 import {
+  decodeProveedorPosKey,
+  encodeProveedorPosKey,
   isValidProveedorToken,
   normalizeProveedorToken,
   type ProveedorCatalogItem,
@@ -39,6 +41,21 @@ export const resolveSedeByToken = async (
   };
 };
 
+const mapCatalogRow = (row: {
+  empresa: string;
+  id_cricla1: string;
+  nombre: string;
+}): ProveedorCatalogItem => ({
+  id: encodeProveedorPosKey(row.empresa, row.id_cricla1),
+  empresa: String(row.empresa),
+  codigo: String(row.id_cricla1),
+  nombre: String(row.nombre),
+});
+
+/**
+ * Maestro POS (`proveedor_pos_catalogo`).
+ * Deduplica por nombre (misma razón social en varias empresas) priorizando mercamio.
+ */
 export const searchProveedorCatalog = async (
   client: PoolClient,
   query: string,
@@ -46,56 +63,92 @@ export const searchProveedorCatalog = async (
 ): Promise<ProveedorCatalogItem[]> => {
   const q = query.trim().slice(0, 80);
   const capped = Math.min(Math.max(limit, 1), 50);
-  if (!q) {
+  const safeLike = q.replace(/[%_]/g, "");
+
+  if (!safeLike) {
     const result = await client.query(
       `
-      SELECT id, nombre
-      FROM proveedor_catalogo
-      WHERE activo = true
-      ORDER BY nombre ASC
+      SELECT DISTINCT ON (lower(btrim(nombre)))
+        empresa, id_cricla1, nombre
+      FROM proveedor_pos_catalogo
+      WHERE activo IS TRUE
+        AND btrim(COALESCE(nombre, '')) <> ''
+        AND lower(btrim(nombre)) <> '(sin proveedor)'
+      ORDER BY
+        lower(btrim(nombre)),
+        CASE lower(btrim(empresa))
+          WHEN 'mercamio' THEN 0
+          WHEN 'mtodo' THEN 1
+          WHEN 'bogota' THEN 2
+          ELSE 9
+        END,
+        id_cricla1
       LIMIT $1
       `,
       [capped],
     );
-    return (result.rows ?? []).map((row) => ({
-      id: Number((row as { id: number }).id),
-      nombre: String((row as { nombre: string }).nombre),
-    }));
+    return (result.rows ?? []).map((row) =>
+      mapCatalogRow(row as { empresa: string; id_cricla1: string; nombre: string }),
+    );
   }
+
   const result = await client.query(
     `
-    SELECT id, nombre
-    FROM proveedor_catalogo
-    WHERE activo = true
-      AND nombre ILIKE $1
-    ORDER BY nombre ASC
+    SELECT DISTINCT ON (lower(btrim(nombre)))
+      empresa, id_cricla1, nombre
+    FROM proveedor_pos_catalogo
+    WHERE activo IS TRUE
+      AND btrim(COALESCE(nombre, '')) <> ''
+      AND lower(btrim(nombre)) <> '(sin proveedor)'
+      AND (
+        nombre ILIKE $1
+        OR COALESCE(id_cricla1, '') ILIKE $1
+        OR COALESCE(nit, '') ILIKE $1
+      )
+    ORDER BY
+      lower(btrim(nombre)),
+      CASE lower(btrim(empresa))
+        WHEN 'mercamio' THEN 0
+        WHEN 'mtodo' THEN 1
+        WHEN 'bogota' THEN 2
+        ELSE 9
+      END,
+      id_cricla1
     LIMIT $2
     `,
-    [`%${q.replace(/[%_]/g, "")}%`, capped],
+    [`%${safeLike}%`, capped],
   );
-  return (result.rows ?? []).map((row) => ({
-    id: Number((row as { id: number }).id),
-    nombre: String((row as { nombre: string }).nombre),
-  }));
+  return (result.rows ?? []).map((row) =>
+    mapCatalogRow(row as { empresa: string; id_cricla1: string; nombre: string }),
+  );
 };
 
 export const getProveedorById = async (
   client: PoolClient,
-  id: number,
+  id: unknown,
 ): Promise<ProveedorCatalogItem | null> => {
-  if (!Number.isFinite(id) || id <= 0) return null;
+  const key = decodeProveedorPosKey(id);
+  if (!key) return null;
   const result = await client.query(
     `
-    SELECT id, nombre
-    FROM proveedor_catalogo
-    WHERE id = $1 AND activo = true
+    SELECT empresa, id_cricla1, nombre
+    FROM proveedor_pos_catalogo
+    WHERE empresa = $1
+      AND id_cricla1 = $2
+      AND activo IS TRUE
     LIMIT 1
     `,
-    [id],
+    [key.empresa, key.codigo],
   );
-  const row = result.rows?.[0] as { id?: number; nombre?: string } | undefined;
-  if (!row?.id || !row.nombre) return null;
-  return { id: Number(row.id), nombre: String(row.nombre) };
+  const row = result.rows?.[0] as
+    | { empresa?: string; id_cricla1?: string; nombre?: string }
+    | undefined;
+  if (!row?.empresa || !row.id_cricla1 || !row.nombre) return null;
+  return mapCatalogRow({
+    empresa: row.empresa,
+    id_cricla1: row.id_cricla1,
+    nombre: row.nombre,
+  });
 };
 
 export const findOpenVisit = async (
@@ -139,7 +192,8 @@ export const insertEntrada = async (
   client: PoolClient,
   args: {
     sedeName: string;
-    proveedorId: number;
+    proveedorCodigo: string;
+    proveedorEmpresa: string;
     proveedorNombre: string;
     visitanteNombre: string;
     visitanteCedula: string;
@@ -150,15 +204,16 @@ export const insertEntrada = async (
   const result = await client.query(
     `
     INSERT INTO proveedor_visitas (
-      sede_name, proveedor_id, proveedor_nombre,
+      sede_name, proveedor_codigo, proveedor_empresa, proveedor_nombre,
       visitante_nombre, visitante_cedula, client_ip, user_agent
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     RETURNING id, sede_name, proveedor_nombre, visitante_nombre, visitante_cedula, entrada_at
     `,
     [
       args.sedeName,
-      args.proveedorId,
+      args.proveedorCodigo,
+      args.proveedorEmpresa,
       args.proveedorNombre,
       args.visitanteNombre,
       args.visitanteCedula,
@@ -233,10 +288,13 @@ const mapVisitaRow = (row: Record<string, unknown>): ProveedorVisitaRow => {
       Math.round((salidaAt.getTime() - entradaAt.getTime()) / 60_000),
     );
   }
+  const codigo = row.proveedor_codigo == null ? null : String(row.proveedor_codigo);
+  const empresa = row.proveedor_empresa == null ? null : String(row.proveedor_empresa);
   return {
     id: Number(row.id),
     sedeName: String(row.sede_name ?? ""),
-    proveedorId: row.proveedor_id == null ? null : Number(row.proveedor_id),
+    proveedorId:
+      codigo && empresa ? encodeProveedorPosKey(empresa, codigo) : codigo,
     proveedorNombre: String(row.proveedor_nombre ?? ""),
     visitanteNombre: String(row.visitante_nombre ?? ""),
     visitanteCedula: String(row.visitante_cedula ?? ""),
@@ -271,13 +329,13 @@ export const listVisitas = async (
     params.push(`%${q.replace(/[%_]/g, "")}%`);
     const idx = params.length;
     clauses.push(
-      `(proveedor_nombre ILIKE $${idx} OR visitante_nombre ILIKE $${idx} OR visitante_cedula ILIKE $${idx})`,
+      `(proveedor_nombre ILIKE $${idx} OR visitante_nombre ILIKE $${idx} OR visitante_cedula ILIKE $${idx} OR COALESCE(proveedor_codigo, '') ILIKE $${idx})`,
     );
   }
   params.push(limit);
   const result = await client.query(
     `
-    SELECT id, sede_name, proveedor_id, proveedor_nombre,
+    SELECT id, sede_name, proveedor_codigo, proveedor_empresa, proveedor_nombre,
            visitante_nombre, visitante_cedula, entrada_at, salida_at
     FROM proveedor_visitas
     WHERE ${clauses.join(" AND ")}
@@ -304,4 +362,19 @@ export const listSedeQrTokens = async (
     token: String((row as { token: string }).token),
     activo: Boolean((row as { activo: boolean }).activo),
   }));
+};
+
+export const countActiveProveedorCatalog = async (
+  client: PoolClient,
+): Promise<number> => {
+  const result = await client.query(
+    `
+    SELECT count(*)::int AS n
+    FROM proveedor_pos_catalogo
+    WHERE activo IS TRUE
+      AND btrim(COALESCE(nombre, '')) <> ''
+      AND lower(btrim(nombre)) <> '(sin proveedor)'
+    `,
+  );
+  return Number(result.rows?.[0]?.n ?? 0);
 };
