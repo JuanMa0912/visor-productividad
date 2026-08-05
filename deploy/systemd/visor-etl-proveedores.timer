@@ -1,0 +1,17 @@
+[Unit]
+Description=Visor - timer diario del ETL de proveedores (lunes a viernes 07:12)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Lunes a viernes 07:12. Va DESPUES de visor-etl-ventas-item (07:09, dura ~1,5 min) por dos
+# razones: primero, no compite con el por el POS; segundo, --reconciliar compara contra
+# ventas_item_diario y solo tiene sentido si ese ya cargo el dia.
+# Y va ANTES del sync a GCP (07:35) para que lo cargado suba el mismo dia.
+# Sabados y domingos NO corre este: lo cubre visor-etl-proveedores-reconcile.
+OnCalendar=Mon..Fri *-*-* 07:12:00
+# Si la VM estaba apagada, ejecutar al arrancar.
+Persistent=true
+Unit=visor-etl-proveedores.service
+
+[Install]
+WantedBy=timers.target
