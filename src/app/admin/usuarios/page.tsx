@@ -633,9 +633,7 @@ export default function AdminUsuariosPage() {
     if (q) {
       list = list.filter((u) => {
         const name = u.displayName?.trim().toLowerCase() ?? "";
-        return (
-          u.username.toLowerCase().includes(q) || name.includes(q)
-        );
+        return u.username.toLowerCase().includes(q) || name.includes(q);
       });
     }
     if (roleFilter !== "all") {
