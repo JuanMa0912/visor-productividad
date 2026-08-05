@@ -68,7 +68,7 @@ const VENTA_MODULES: HubModuleItem[] = [
     badge: "PROVEEDORES",
     title: "Proveedores",
     description:
-      "Tablero de proveedores (en construcción). Por ahora solo visible para administradores.",
+      "Registro de visitas por QR (entrada/salida) y listado admin con filtros y export.",
     href: "/proveedores",
   },
 ];

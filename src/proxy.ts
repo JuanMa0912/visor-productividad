@@ -23,6 +23,12 @@ const clearAuthCookies = (response: NextResponse) => {
 const isPublicPagePath = (pathname: string) => {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true;
   if (
+    pathname === "/proveedores/ingreso" ||
+    pathname.startsWith("/proveedores/ingreso/")
+  ) {
+    return true;
+  }
+  if (
     isExcelDianPublicAccess() &&
     (pathname === "/ExcelDian" || pathname.startsWith("/ExcelDian/"))
   ) {

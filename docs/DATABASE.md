@@ -508,5 +508,19 @@ VACUUM (ANALYZE) ventas_item_diario;
 | Store distribuido para rate limit/cache | requerido si se escala a multiples replicas |
 | Retencion historica | confirmar si 7 dias de actividad/login es suficiente para auditoria |
 
+### 4.x Proveedores (visitas QR)
+
+Migracion: `db/migrations/20260805_proveedores_visitas.sql`.
+
+| Tabla | Uso |
+| --- | --- |
+| `proveedor_catalogo` | maestro fijo (cargar lista después); búsqueda en formulario QR |
+| `proveedor_sede_qr` | token opaco por sede → URL pública `/proveedores/ingreso/[token]` |
+| `proveedor_visitas` | entrada/salida; visita abierta = `salida_at IS NULL` (cédula+sede) |
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas.sql
+```
+
 Actualizar este documento cuando cambien migraciones, tablas leidas, columnas
 dinamicas, indices acordados en produccion o bases externas.

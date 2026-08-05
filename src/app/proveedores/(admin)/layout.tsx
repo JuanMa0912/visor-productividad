@@ -4,8 +4,8 @@ import { requireAuthSession } from "@/lib/auth";
 
 type Props = { children: ReactNode };
 
-/** Solo administradores; el gate de cliente es defensa en profundidad. */
-export default async function ProveedoresLayout({ children }: Props) {
+/** Tablero admin; no envuelve /proveedores/ingreso (ruta pública). */
+export default async function ProveedoresAdminLayout({ children }: Props) {
   const session = await requireAuthSession();
   if (!session) {
     redirect("/login");
