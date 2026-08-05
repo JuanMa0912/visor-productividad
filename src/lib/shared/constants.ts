@@ -73,6 +73,15 @@ export const SEDE_ORDER_INDEX_MAP: Map<string, number> = (() => {
   };
   addAlias("CL 5", "Calle 5ta");
   addAlias("CL5", "Calle 5ta");
+  addAlias("La 5", "Calle 5ta");
+  addAlias("C.sur", "Centro Sur");
+  addAlias("C sur", "Centro Sur");
+  addAlias("C. Sur", "Centro Sur");
+  addAlias("Plaza", "Plaza Norte");
+  addAlias("Jardin", "Ciudad Jardin");
+  addAlias("Jardín", "Ciudad Jardin");
+  addAlias("La 80", "Bogota");
+  addAlias("CL 80", "Bogota");
   addAlias("Cra 39", "La 39");
   addAlias("CRA 39", "La 39");
   addAlias("Palmira Nro 1", "Palmira");

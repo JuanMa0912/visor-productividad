@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
+import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import type {
   ProveedorVentasBySede,
@@ -20,6 +21,17 @@ const units = (value: number) =>
   value.toLocaleString("es-CO", {
     maximumFractionDigits: 1,
   });
+
+type SortDir = "asc" | "desc";
+
+type SedeSortKey = "sede" | "proveedores" | "unidades" | "ventaNeta";
+type ProvSortKey =
+  | "proveedor"
+  | "codigo"
+  | "unidades"
+  | "ventaNeta"
+  | "ventaConImpuesto"
+  | "sedesActivas";
 
 const MetricCard = ({
   label,
@@ -41,6 +53,35 @@ const MetricCard = ({
   </div>
 );
 
+const SortTh = ({
+  label,
+  active,
+  dir,
+  align = "left",
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  dir: SortDir;
+  align?: "left" | "right";
+  onClick: () => void;
+}) => (
+  <th className="px-3 py-2">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex w-full items-center gap-1 font-bold uppercase tracking-wide ${
+        align === "right" ? "justify-end" : "justify-start"
+      } ${active ? "text-sky-800" : "text-slate-500 hover:text-slate-800"}`}
+    >
+      {label}
+      <span className="tabular-nums text-[9px] opacity-80" aria-hidden>
+        {active ? (dir === "asc" ? "↑" : "↓") : "↕"}
+      </span>
+    </button>
+  </th>
+);
+
 export function ProveedoresVentasPanel() {
   const [days, setDays] = useState(30);
   const [sede, setSede] = useState("");
@@ -50,6 +91,14 @@ export function ProveedoresVentasPanel() {
   const [metrics, setMetrics] = useState<ProveedorVentasMetrics | null>(null);
   const [rows, setRows] = useState<ProveedorVentasRow[]>([]);
   const [bySede, setBySede] = useState<ProveedorVentasBySede[]>([]);
+  const [sedeSort, setSedeSort] = useState<{ key: SedeSortKey; dir: SortDir }>({
+    key: "sede",
+    dir: "asc",
+  });
+  const [provSort, setProvSort] = useState<{ key: ProvSortKey; dir: SortDir }>({
+    key: "ventaNeta",
+    dir: "desc",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +144,73 @@ export function ProveedoresVentasPanel() {
     if (q.trim()) params.set("q", q.trim());
     window.open(`/api/proveedores/ventas?${params.toString()}`, "_blank");
   };
+
+  const toggleSedeSort = (key: SedeSortKey) => {
+    setSedeSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : {
+            key,
+            dir: key === "sede" ? "asc" : "desc",
+          },
+    );
+  };
+
+  const toggleProvSort = (key: ProvSortKey) => {
+    setProvSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : {
+            key,
+            dir: key === "proveedor" || key === "codigo" ? "asc" : "desc",
+          },
+    );
+  };
+
+  const sortedBySede = useMemo(() => {
+    const list = [...bySede];
+    const mul = sedeSort.dir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      if (sedeSort.key === "sede") {
+        const ia = getSedeOrderIndexForRawName(a.sede);
+        const ib = getSedeOrderIndexForRawName(b.sede);
+        if (ia !== ib) return (ia - ib) * mul;
+        return a.sede.localeCompare(b.sede, "es") * mul;
+      }
+      if (sedeSort.key === "proveedores") {
+        return (a.proveedores - b.proveedores) * mul;
+      }
+      if (sedeSort.key === "unidades") {
+        return (a.unidades - b.unidades) * mul;
+      }
+      return (a.ventaNeta - b.ventaNeta) * mul;
+    });
+    return list;
+  }, [bySede, sedeSort]);
+
+  const sortedRows = useMemo(() => {
+    const list = [...rows];
+    const mul = provSort.dir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      if (provSort.key === "proveedor") {
+        return a.proveedor.localeCompare(b.proveedor, "es") * mul;
+      }
+      if (provSort.key === "codigo") {
+        return (a.codigo ?? "").localeCompare(b.codigo ?? "", "es") * mul;
+      }
+      if (provSort.key === "unidades") {
+        return (a.unidades - b.unidades) * mul;
+      }
+      if (provSort.key === "ventaConImpuesto") {
+        return (a.ventaConImpuesto - b.ventaConImpuesto) * mul;
+      }
+      if (provSort.key === "sedesActivas") {
+        return (a.sedesActivas - b.sedesActivas) * mul;
+      }
+      return (a.ventaNeta - b.ventaNeta) * mul;
+    });
+    return list;
+  }, [provSort, rows]);
 
   return (
     <div className="space-y-4">
@@ -215,23 +331,46 @@ export function ProveedoresVentasPanel() {
         </section>
       ) : null}
 
-      {bySede.length > 0 ? (
+      {sortedBySede.length > 0 ? (
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
             Venta neta por sede
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-[10px]">
                 <tr>
-                  <th className="px-3 py-2">Sede</th>
-                  <th className="px-3 py-2 text-right">Proveedores</th>
-                  <th className="px-3 py-2 text-right">Unidades</th>
-                  <th className="px-3 py-2 text-right">Venta neta</th>
+                  <SortTh
+                    label="Sede"
+                    active={sedeSort.key === "sede"}
+                    dir={sedeSort.dir}
+                    onClick={() => toggleSedeSort("sede")}
+                  />
+                  <SortTh
+                    label="Proveedores"
+                    active={sedeSort.key === "proveedores"}
+                    dir={sedeSort.dir}
+                    align="right"
+                    onClick={() => toggleSedeSort("proveedores")}
+                  />
+                  <SortTh
+                    label="Unidades"
+                    active={sedeSort.key === "unidades"}
+                    dir={sedeSort.dir}
+                    align="right"
+                    onClick={() => toggleSedeSort("unidades")}
+                  />
+                  <SortTh
+                    label="Venta neta"
+                    active={sedeSort.key === "ventaNeta"}
+                    dir={sedeSort.dir}
+                    align="right"
+                    onClick={() => toggleSedeSort("ventaNeta")}
+                  />
                 </tr>
               </thead>
               <tbody>
-                {bySede.map((row) => (
+                {sortedBySede.map((row) => (
                   <tr key={row.sede} className="border-t border-slate-100">
                     <td className="px-3 py-2 font-medium text-slate-800">
                       {row.sede}
@@ -259,18 +398,52 @@ export function ProveedoresVentasPanel() {
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-[10px]">
               <tr>
-                <th className="px-3 py-2.5">Proveedor</th>
-                <th className="px-3 py-2.5">Código</th>
-                <th className="px-3 py-2.5 text-right">Unidades</th>
-                <th className="px-3 py-2.5 text-right">Venta neta</th>
-                <th className="px-3 py-2.5 text-right">Venta + IVA</th>
-                <th className="px-3 py-2.5 text-right">Sedes</th>
+                <SortTh
+                  label="Proveedor"
+                  active={provSort.key === "proveedor"}
+                  dir={provSort.dir}
+                  onClick={() => toggleProvSort("proveedor")}
+                />
+                <SortTh
+                  label="Código"
+                  active={provSort.key === "codigo"}
+                  dir={provSort.dir}
+                  onClick={() => toggleProvSort("codigo")}
+                />
+                <SortTh
+                  label="Unidades"
+                  active={provSort.key === "unidades"}
+                  dir={provSort.dir}
+                  align="right"
+                  onClick={() => toggleProvSort("unidades")}
+                />
+                <SortTh
+                  label="Venta neta"
+                  active={provSort.key === "ventaNeta"}
+                  dir={provSort.dir}
+                  align="right"
+                  onClick={() => toggleProvSort("ventaNeta")}
+                />
+                <SortTh
+                  label="Venta + IVA"
+                  active={provSort.key === "ventaConImpuesto"}
+                  dir={provSort.dir}
+                  align="right"
+                  onClick={() => toggleProvSort("ventaConImpuesto")}
+                />
+                <SortTh
+                  label="Sedes"
+                  active={provSort.key === "sedesActivas"}
+                  dir={provSort.dir}
+                  align="right"
+                  onClick={() => toggleProvSort("sedesActivas")}
+                />
               </tr>
             </thead>
             <tbody>
-              {loading && rows.length === 0 ? (
+              {loading && sortedRows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
@@ -279,7 +452,7 @@ export function ProveedoresVentasPanel() {
                     Cargando ventas…
                   </td>
                 </tr>
-              ) : rows.length === 0 ? (
+              ) : sortedRows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
@@ -289,7 +462,7 @@ export function ProveedoresVentasPanel() {
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                sortedRows.map((row) => (
                   <tr key={row.proveedor} className="border-t border-slate-100">
                     <td className="px-3 py-2.5 font-medium text-slate-800">
                       {row.proveedor}
