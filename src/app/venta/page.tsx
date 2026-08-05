@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Package, PieChart, Share2 } from "lucide-react";
+import { BarChart3, Package, PieChart, Share2, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PortalHubHeroCard,
@@ -14,6 +14,7 @@ import {
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
+import { canAccessProveedoresBoard } from "@/lib/shared/special-role-features";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { PORTAL_HUB_TOUR_CONFIG } from "@/lib/ui/portal-tours/hub-tour-config";
@@ -61,6 +62,15 @@ const VENTA_MODULES: HubModuleItem[] = [
       "Cuánto aporta cada línea en una sede (o cada sede en una línea), por almacén, con drill a toda la estructura.",
     href: "/participacion-comercial",
   },
+  {
+    id: "proveedores",
+    icon: Truck,
+    badge: "PROVEEDORES",
+    title: "Proveedores",
+    description:
+      "Tablero de proveedores (en construcción). Por ahora solo visible para administradores.",
+    href: "/proveedores",
+  },
 ];
 
 const hubTour = PORTAL_HUB_TOUR_CONFIG.venta;
@@ -81,6 +91,9 @@ export default function VentaHubPage() {
   const visibleModules = useMemo(
     () =>
       VENTA_MODULES.filter((module) => {
+        if (module.id === "proveedores") {
+          return canAccessProveedoresBoard(isAdmin);
+        }
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);
         if (!subId) return false;
@@ -143,7 +156,7 @@ export default function VentaHubPage() {
           theme="venta"
           items={visibleModules}
           onNavigate={(href) => router.push(href)}
-          columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          columnsClassName="gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
           tourAnchorId={PORTAL_HUB_TOUR_ANCHOR.modules}
         />
       </PortalHubShell>

@@ -63,6 +63,19 @@ export function canAccessRotacionBoard(
 }
 
 /**
+ * Puede acceder al tablero Proveedores (hub Venta).
+ *
+ * Rollout actual: **solo administradores**.
+ * No usar `canAccessPortalSubsection` aquí: con `allowed_subdashboards`
+ * null/[] (= todos) los perfiles comerciales verían el tablero sin querer.
+ * Cuando se abra a no-admins, exigir inclusión explícita de `proveedores`
+ * (opt-in; null no debe otorgarlo) o alinear con el resto de subtableros.
+ */
+export function canAccessProveedoresBoard(isAdmin = false): boolean {
+  return isAdmin;
+}
+
+/**
  * Puede acceder al informe de variacion MoM/YoY.
  * Requiere seccion producto y subseccion `informe-variacion` (permiso propio;
  * no se hereda de margenes ni rotacion).

@@ -101,7 +101,7 @@ Codigo compartido sin UI de pagina.
 | Grupo | Rutas |
 | --- | --- |
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
-| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial` |
+| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores` |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |

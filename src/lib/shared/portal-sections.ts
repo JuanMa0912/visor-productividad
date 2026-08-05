@@ -4,6 +4,7 @@ export type PortalSubsectionId =
   | "inventario-x-item"
   | "analisis-de-inventario"
   | "participacion-comercial"
+  | "proveedores"
   | "mix-y-linea"
   | "margenes"
   | "rotacion"
@@ -34,6 +35,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
       "Inventario x item",
       "Días de inventario",
       "Participación comercial",
+      "Proveedores",
     ],
   },
   {
@@ -65,6 +67,7 @@ export const PORTAL_SUBSECTIONS_BY_SECTION: Record<
     "inventario-x-item",
     "analisis-de-inventario",
     "participacion-comercial",
+    "proveedores",
   ],
   producto: ["mix-y-linea", "margenes", "rotacion", "informe-variacion"],
   operacion: [
@@ -79,6 +82,7 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   "inventario-x-item": "venta",
   "analisis-de-inventario": "venta",
   "participacion-comercial": "venta",
+  proveedores: "venta",
   "ventas-x-item": "venta",
   producto: "producto",
   productividad: "producto",
@@ -103,6 +107,8 @@ const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
   "participacion-comercial": "participacion-comercial",
   participacion: "participacion-comercial",
   "mix-sede-linea": "participacion-comercial",
+  proveedores: "proveedores",
+  proveedor: "proveedores",
   "mix-y-linea": "mix-y-linea",
   "productividad-home": "mix-y-linea",
   productividad: "mix-y-linea",

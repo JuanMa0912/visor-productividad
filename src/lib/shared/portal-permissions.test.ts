@@ -5,7 +5,10 @@ import {
   canAccessPortalSubsection,
   normalizeAllowedPortalSubsections,
 } from "./portal-sections";
-import { canAccessRotacionBoard } from "./special-role-features";
+import {
+  canAccessProveedoresBoard,
+  canAccessRotacionBoard,
+} from "./special-role-features";
 
 test("empty portal permission lists mean all sections and subdashboards", () => {
   assert.equal(canAccessPortalSection([], "producto"), true);
@@ -30,4 +33,9 @@ test("sin allowedSubdashboards no hay acceso (ya no hay rol especial rotacion)",
 test("lista vacia de subtableros = todos (incluye rotacion)", () => {
   assert.equal(canAccessRotacionBoard(null, false, []), true);
   assert.equal(canAccessRotacionBoard(null, false, null), true);
+});
+
+test("proveedores solo admin en el rollout actual", () => {
+  assert.equal(canAccessProveedoresBoard(true), true);
+  assert.equal(canAccessProveedoresBoard(false), false);
 });
