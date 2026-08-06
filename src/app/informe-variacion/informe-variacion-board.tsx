@@ -15,6 +15,7 @@ import {
   type prepareInformeData,
 } from "@/lib/informe-variacion/aggregate";
 import { usePreparedInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
+import { getUnfilteredBoardWarm } from "@/lib/informe-variacion/board-warm-cache";
 import { formatInformeValue, comparePeriodTriple, formatMargenPct } from "@/lib/informe-variacion/format";
 import {
   buildSedeSummaryExportRows,
@@ -102,23 +103,30 @@ function InformeVariacionBoardReady({
     setMatrixMetric(value);
   }, []);
 
-  const filteredTag = hasActiveInformeFilters(deferredFilters) ? (
+  const filtersActive = hasActiveInformeFilters(deferredFilters);
+  const boardWarm = !filtersActive
+    ? getUnfilteredBoardWarm(prepared.rows)
+    : undefined;
+
+  const filteredTag = filtersActive ? (
     <span className="text-blue-600"> (filtrado)</span>
   ) : null;
 
-  const kpiTotals = useMemo(
-    () => sumFilteredRows(prepared.rows, kpiMetric, pass, prepared.metricCtx),
-    [kpiMetric, pass, prepared.metricCtx, prepared.rows],
-  );
+  const kpiTotals = useMemo(() => {
+    if (boardWarm) return boardWarm.kpi[kpiMetric];
+    return sumFilteredRows(prepared.rows, kpiMetric, pass, prepared.metricCtx);
+  }, [boardWarm, kpiMetric, pass, prepared.metricCtx, prepared.rows]);
 
   const kpiYoyComparable = useMemo(() => {
+    if (boardWarm) return boardWarm.kpiYoy[kpiMetric];
     const indices = filterRowIndices(prepared.rows, pass).filter(
       (index) => prepared.sedeYoy[prepared.rows[index]![0]],
     );
     return sumRowIndices(prepared.rows, indices, kpiMetric, prepared.metricCtx);
-  }, [kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy]);
+  }, [boardWarm, kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy]);
 
   const growthSedes = useMemo(() => {
+    if (boardWarm) return boardWarm.growthSedes[kpiMetric];
     const perSede = aggregateBySede(
       prepared.rows,
       kpiMetric,
@@ -133,7 +141,7 @@ function InformeVariacionBoardReady({
       }
     });
     return count;
-  }, [kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
+  }, [boardWarm, kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
 
   const updateFilter = (patch: Partial<InformeGlobalFilters>) => {
     startTransition(() => {
@@ -437,6 +445,7 @@ function InformeVariacionBoardReady({
           payload={prepared}
           metric={sedeMetric}
           pass={pass}
+          preferWarm={!filtersActive}
           curLabel={curLabel}
           momLabel={momLabel}
           yoyLabel={yoyLabel}
@@ -959,6 +968,7 @@ function SedeSummaryTable({
   payload,
   metric,
   pass,
+  preferWarm,
   curLabel,
   momLabel,
   yoyLabel,
@@ -968,30 +978,36 @@ function SedeSummaryTable({
   payload: Prepared;
   metric: InformeMetric;
   pass: (row: (typeof payload.rows)[number]) => boolean;
+  preferWarm: boolean;
   curLabel: string;
   momLabel: string;
   yoyLabel: string;
   sort: { col: string; dir: number };
   onSort: (col: string) => void;
 }) {
-  const perSede = aggregateBySede(
-    payload.rows,
-    metric,
-    payload.sedes.length,
-    pass,
-    payload.metricCtx,
-    { floorCompletePollosUnd: true },
-  );
-  const perSedeVentas = aggregateVentasBySede(
-    payload.rows,
-    payload.sedes.length,
-    pass,
-  );
-  const perSedeMargin = aggregateMarginBySede(
-    payload.rows,
-    payload.sedes.length,
-    pass,
-  );
+  const boardWarm = preferWarm ? getUnfilteredBoardWarm(payload.rows) : undefined;
+
+  const perSede = useMemo(() => {
+    if (boardWarm) return boardWarm.perSedeSummary[metric];
+    return aggregateBySede(
+      payload.rows,
+      metric,
+      payload.sedes.length,
+      pass,
+      payload.metricCtx,
+      { floorCompletePollosUnd: true },
+    );
+  }, [boardWarm, metric, pass, payload.metricCtx, payload.rows, payload.sedes.length]);
+
+  const perSedeVentas = useMemo(() => {
+    if (boardWarm) return boardWarm.perSedeVentas;
+    return aggregateVentasBySede(payload.rows, payload.sedes.length, pass);
+  }, [boardWarm, pass, payload.rows, payload.sedes.length]);
+
+  const perSedeMargin = useMemo(() => {
+    if (boardWarm) return boardWarm.perSedeMargin;
+    return aggregateMarginBySede(payload.rows, payload.sedes.length, pass);
+  }, [boardWarm, pass, payload.rows, payload.sedes.length]);
   const marginPct = (ventas: PeriodTriple, margin: PeriodTriple, index: 0 | 1 | 2) =>
     formatMargenPct(ventas[index], margin[index]);
 

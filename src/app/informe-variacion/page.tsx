@@ -233,6 +233,10 @@ export default function InformeVariacionPage() {
   const [readyRanges, setReadyRanges] = useState<Set<InformeDayRangeId>>(
     () => new Set(),
   );
+  /** Prepare + matriz + KPI listos: solo entonces el chip permite swap barato. */
+  const [viewReadyRanges, setViewReadyRanges] = useState<Set<InformeDayRangeId>>(
+    () => new Set(),
+  );
 
   const memoryCacheRef = useRef<Map<string, InformeVariacionPayload>>(new Map());
   const inflightRef = useRef<Map<string, Promise<InformeVariacionPayload>>>(
@@ -335,6 +339,15 @@ export default function InformeVariacionPage() {
     });
   }, []);
 
+  const markViewReady = useCallback((rangeId: InformeDayRangeId) => {
+    setViewReadyRanges((current) => {
+      if (current.has(rangeId)) return current;
+      const next = new Set(current);
+      next.add(rangeId);
+      return next;
+    });
+  }, []);
+
   const storePayload = useCallback(
     (
       year: number,
@@ -356,11 +369,14 @@ export default function InformeVariacionPage() {
       }
       markRangeReady(rangeId);
       if (options.warm !== false) {
-        prefetchWarmInformeRange(scoped, { metrics: ["v"] });
+        prefetchWarmInformeRange(scoped, {
+          metrics: ["v"],
+          onDone: () => markViewReady(rangeId),
+        });
       }
       return scoped;
     },
-    [lineCategoryScope, markRangeReady, scopeCacheSuffix, sessionStoragePrefix],
+    [lineCategoryScope, markRangeReady, markViewReady, scopeCacheSuffix, sessionStoragePrefix],
   );
 
   const storeMonthBundle = useCallback(
@@ -398,10 +414,11 @@ export default function InformeVariacionPage() {
         prefetchWarmInformeRange(entry.payload, {
           metrics: ["v"],
           priority: entry.isPrimary,
+          onDone: () => markViewReady(entry.rangeId as InformeDayRangeId),
         });
       }
     },
-    [storePayload],
+    [markViewReady, storePayload],
   );
 
   const readCachedPayload = useCallback(
@@ -414,7 +431,10 @@ export default function InformeVariacionPage() {
       const memoryHit = memoryCacheRef.current.get(key);
       if (memoryHit) {
         markRangeReady(rangeId);
-        prefetchWarmInformeRange(memoryHit, { metrics: ["v"] });
+        prefetchWarmInformeRange(memoryHit, {
+          metrics: ["v"],
+          onDone: () => markViewReady(rangeId),
+        });
         return memoryHit;
       }
       const sessionHit = readSessionInforme(sessionStoragePrefix, key);
@@ -425,7 +445,10 @@ export default function InformeVariacionPage() {
         );
         memoryCacheRef.current.set(key, scoped);
         markRangeReady(rangeId);
-        prefetchWarmInformeRange(scoped, { metrics: ["v"] });
+        prefetchWarmInformeRange(scoped, {
+          metrics: ["v"],
+          onDone: () => markViewReady(rangeId),
+        });
         return scoped;
       }
       return null;
@@ -433,6 +456,7 @@ export default function InformeVariacionPage() {
     [
       lineCategoryScope,
       markRangeReady,
+      markViewReady,
       scopeCacheSuffix,
       sessionStoragePrefix,
     ],
@@ -628,7 +652,8 @@ export default function InformeVariacionPage() {
       if (cached) {
         if (isInformeRangeViewReady(cached, "v")) {
           setRangeSwitchPending(false);
-          setPayload(cached);
+          markViewReady(rangeId);
+          startTransition(() => setPayload(cached));
           return;
         }
         // No llamar prepare/matriz en el click (congela 10–30s). Cola idle.
@@ -638,7 +663,8 @@ export default function InformeVariacionPage() {
           priority: true,
           onDone: () => {
             if (dayRangeIdRef.current !== rangeId) return;
-            setPayload(cached);
+            markViewReady(rangeId);
+            startTransition(() => setPayload(cached));
             setRangeSwitchPending(false);
           },
         });
@@ -659,6 +685,7 @@ export default function InformeVariacionPage() {
             priority: true,
             onDone: () => {
               if (dayRangeIdRef.current !== rangeId) return;
+              markViewReady(rangeId);
               startTransition(() => setPayload(data));
               setRangeSwitchPending(false);
             },
@@ -676,7 +703,7 @@ export default function InformeVariacionPage() {
           );
         });
     },
-    [fetchRangePayload, parsedMonth, readCachedPayload],
+    [fetchRangePayload, markViewReady, parsedMonth, readCachedPayload],
   );
 
   const loadMonthBundle = useCallback(
@@ -719,6 +746,7 @@ export default function InformeVariacionPage() {
         bundleInflightRef.current.delete(buildMonthBundleCacheKey(year, month, scopeCacheSuffix));
         clearSessionInformeMonth(sessionStoragePrefix, year, month);
         setReadyRanges(new Set());
+        setViewReadyRanges(new Set());
       }
 
       const primaryFromState = dayRangeIdRef.current;
@@ -1016,6 +1044,7 @@ export default function InformeVariacionPage() {
   useEffect(() => {
     if (!ready || !canAccess || metaLoading || !monthKey) return;
     setReadyRanges(new Set());
+    setViewReadyRanges(new Set());
     setPrefetchDone(0);
     setPrefetchTotal(0);
     if (availableDayRanges.length === 0) {
@@ -1031,7 +1060,9 @@ export default function InformeVariacionPage() {
   }, [canAccess, metaLoading, monthKey, ready]);
 
   const preloadReady =
-    prefetchTotal > 0 && prefetchDone >= prefetchTotal && !loading;
+    prefetchTotal > 0 &&
+    viewReadyRanges.size >= prefetchTotal &&
+    !loading;
   const periodControlsDisabled = metaLoading || monthLoadLocked;
   const showInitialLoader = metaLoading || (loading && !payload && !error);
   const showBoard = Boolean(payload) && !metaLoading;
@@ -1090,6 +1121,7 @@ export default function InformeVariacionPage() {
                   setDataTenant(next);
                   setPayload(null);
                   setReadyRanges(new Set());
+                  setViewReadyRanges(new Set());
                   setError(null);
                 }}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
@@ -1143,7 +1175,7 @@ export default function InformeVariacionPage() {
                   : preloadReady
                     ? "Todos los rangos listos · cambio instantaneo (vista precargada)"
                     : prefetchTotal > 0
-                      ? `Cargando rangos ${Math.min(readyRanges.size, prefetchTotal)}/${prefetchTotal} · aparecen al quedar listos`
+                      ? `Preparando vistas ${Math.min(viewReadyRanges.size, prefetchTotal)}/${prefetchTotal} · chip habilitado al quedar listo`
                       : "Cortes cerrados + proyección del siguiente acumulado si aplica"}
                 {rangeSwitchPending ? " · sincronizando…" : ""}
               </span>
@@ -1151,31 +1183,49 @@ export default function InformeVariacionPage() {
             <div className="flex flex-wrap gap-2">
               {availableDayRanges
                 .filter((range) => readyRanges.has(range.id))
-                .map((range) => (
+                .map((range) => {
+                  const viewReady = viewReadyRanges.has(range.id);
+                  const selected = dayRangeId === range.id;
+                  const canClick = selected || viewReady;
+                  return (
                   <button
                     key={range.id}
                     type="button"
-                    onClick={() => selectDayRange(range.id)}
+                    disabled={!canClick || periodControlsDisabled}
+                    onClick={() => {
+                      if (!canClick) return;
+                      selectDayRange(range.id);
+                    }}
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
-                      dayRangeId === range.id
+                      selected
                         ? range.projection
                           ? "border-amber-600 bg-amber-600 text-white shadow-sm"
                           : "border-blue-600 bg-blue-600 text-white shadow-sm"
-                        : range.projection
-                          ? "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
+                        : !viewReady
+                          ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
+                          : range.projection
+                            ? "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
                     )}
                     title={
                       range.projection
                         ? `Proyección a día ${range.projection.targetToDay} con datos hasta el ${range.projection.actualToDay}`
-                        : "Listo en memoria · cambio instantaneo"
+                        : viewReady
+                          ? "Vista precargada · cambio instantaneo"
+                          : "Preparando vista en segundo plano…"
                     }
                   >
                     {range.label}
+                    {!viewReady && !selected ? (
+                      <Loader2 className="ml-1.5 inline h-3 w-3 animate-spin opacity-70" />
+                    ) : null}
                   </button>
-                ))}
-              {!preloadReady && readyRanges.size < prefetchTotal ? (
+                  );
+                })}
+              {!preloadReady &&
+              (readyRanges.size < prefetchTotal ||
+                viewReadyRanges.size < prefetchTotal) ? (
                 <span className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-200 px-3 py-1.5 text-xs text-slate-400">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Preparando mas rangos…

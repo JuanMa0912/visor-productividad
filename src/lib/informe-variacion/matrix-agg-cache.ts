@@ -38,6 +38,18 @@ const topItemKeys = (
     })
     .slice(0, limit);
 
+const yieldToMain = (): Promise<void> =>
+  new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      resolve();
+      return;
+    }
+    window.setTimeout(resolve, 0);
+  });
+
+/** Grupos lin/sub por slice al calentar en idle (evita congelar el tab). */
+const MATRIX_WARM_CHUNK = 12;
+
 /** Cat/lin/sub sin items; suficiente para abrir la matriz sin bloquear el hilo principal. */
 export const buildMatrixAggCache = (
   rows: InformeCompactRow[],
@@ -75,6 +87,55 @@ export const buildMatrixAggCache = (
       catLinSub,
       aggregateIndicesBySede(rows, filtered, metric, sedeCount, 3, metricCtx),
     );
+  }
+
+  return { byCat, byLin, bySub };
+};
+
+/** Igual que `buildMatrixAggCache`, cediendo el hilo entre chunks. */
+export const buildMatrixAggCacheChunked = async (
+  rows: InformeCompactRow[],
+  rowIndex: InformeRowIndex,
+  filteredSet: ReadonlySet<number>,
+  filteredIndices: readonly number[],
+  metric: InformeMetric,
+  sedeCount: number,
+  metricCtx: InformeMetricContext,
+): Promise<MatrixAggCache> => {
+  const byCat = aggregateIndicesBySede(
+    rows,
+    filteredIndices,
+    metric,
+    sedeCount,
+    1,
+    metricCtx,
+  );
+  await yieldToMain();
+
+  const byLin = new Map<string, Map<number, PeriodTriple[]>>();
+  let linCount = 0;
+  for (const [catLin, indices] of rowIndex.indicesByCatLin) {
+    const filtered = filterIndexedRowIndices(indices, filteredSet);
+    if (filtered.length === 0) continue;
+    byLin.set(
+      catLin,
+      aggregateIndicesBySede(rows, filtered, metric, sedeCount, 2, metricCtx),
+    );
+    linCount += 1;
+    if (linCount % MATRIX_WARM_CHUNK === 0) await yieldToMain();
+  }
+
+  const bySub = new Map<string, Map<number, PeriodTriple[]>>();
+  let subCount = 0;
+  for (const [catLinSub, indices] of rowIndex.indicesByCatLinSub) {
+    const filtered = filterIndexedRowIndices(indices, filteredSet);
+    if (filtered.length === 0) continue;
+    bySub.set(
+      catLinSub,
+      aggregateIndicesBySede(rows, filtered, metric, sedeCount, 3, metricCtx),
+    );
+    subCount += 1;
+    if (subCount % MATRIX_WARM_CHUNK === 0) await yieldToMain();
   }
 
   return { byCat, byLin, bySub };
@@ -162,5 +223,36 @@ export const warmUnfilteredMatrixAgg = (
     );
   }
   unfilteredMatrixWarmByRows.set(rows, patch);
+  return patch;
+};
+
+/** Prefetch idle: construye matriz por chunks para no congelar el UI. */
+export const warmUnfilteredMatrixAggChunked = async (
+  rows: InformeCompactRow[],
+  rowIndex: InformeRowIndex,
+  sedeCount: number,
+  metricCtx: InformeMetricContext,
+  metrics: readonly InformeMetric[] = ["u", "v"],
+): Promise<PartialDualMatrixAggCache> => {
+  const existing = unfilteredMatrixWarmByRows.get(rows) ?? { u: null, v: null };
+  const missing = metrics.filter((metric) => !existing[metric]);
+  if (missing.length === 0) return existing;
+
+  const filteredIndices = rows.map((_, index) => index);
+  const filteredSet = new Set(filteredIndices);
+  const patch: PartialDualMatrixAggCache = { ...existing };
+  for (const metric of missing) {
+    patch[metric] = await buildMatrixAggCacheChunked(
+      rows,
+      rowIndex,
+      filteredSet,
+      filteredIndices,
+      metric,
+      sedeCount,
+      metricCtx,
+    );
+    unfilteredMatrixWarmByRows.set(rows, { ...patch });
+    await yieldToMain();
+  }
   return patch;
 };

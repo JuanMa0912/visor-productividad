@@ -10,12 +10,16 @@ import {
 } from "react";
 import { filterRowIndices, INFORME_UNIT_SUMMARY_KEY_INDEX, type PeriodTriple } from "@/lib/informe-variacion/aggregate";
 import {
+  getUnfilteredBoardWarm,
+  warmUnfilteredBoard,
+} from "@/lib/informe-variacion/board-warm-cache";
+import {
   buildMatrixAggCache,
   buildSublineItemAgg,
   getUnfilteredMatrixWarm,
   mergeUnfilteredMatrixWarm,
   otherInformeMetric,
-  warmUnfilteredMatrixAgg,
+  warmUnfilteredMatrixAggChunked,
   type MatrixAggCache,
   type PartialDualMatrixAggCache,
   type SublineItemAgg,
@@ -58,6 +62,11 @@ const scheduleIdle = (
   return () => clearTimeout(id);
 };
 
+const yieldToMain = (): Promise<void> =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+
 type WarmJob = {
   payload: InformeVariacionPayload;
   metrics: readonly InformeMetric[];
@@ -67,11 +76,13 @@ type WarmJob = {
 const warmQueue: WarmJob[] = [];
 let warmRunning = false;
 
-const runWarmJob = (job: WarmJob): void => {
+const runWarmJob = async (job: WarmJob): Promise<void> => {
   const prepared = ensurePrepareInformeData(job.payload);
+  await yieldToMain();
+
   const warm = getUnfilteredMatrixWarm(prepared.rows);
   if (!job.metrics.every((metric) => warm?.[metric])) {
-    warmUnfilteredMatrixAgg(
+    await warmUnfilteredMatrixAggChunked(
       prepared.rows,
       prepared.rowIndex,
       prepared.sedes.length,
@@ -79,6 +90,8 @@ const runWarmJob = (job: WarmJob): void => {
       job.metrics,
     );
   }
+  await yieldToMain();
+  warmUnfilteredBoard(prepared);
 };
 
 const pumpWarmQueue = (): void => {
@@ -87,29 +100,32 @@ const pumpWarmQueue = (): void => {
   if (!job) return;
   warmRunning = true;
   scheduleIdle(() => {
-    try {
-      runWarmJob(job);
-      job.onDone?.();
-    } finally {
-      warmRunning = false;
-      // Ceder el hilo entre rangos para que el UI siga respondiendo.
-      window.setTimeout(() => pumpWarmQueue(), 0);
-    }
+    void (async () => {
+      try {
+        await runWarmJob(job);
+        job.onDone?.();
+      } finally {
+        warmRunning = false;
+        // Ceder el hilo entre rangos para que el UI siga respondiendo.
+        window.setTimeout(() => pumpWarmQueue(), 0);
+      }
+    })();
   }, RANGE_WARM_IDLE_TIMEOUT_MS);
 };
 
-/** Vista lista para swap sync: prepare + matriz de la metrica por defecto. */
+/** Vista lista para swap sync: prepare + matriz + KPI/sede de la metrica por defecto. */
 export const isInformeRangeViewReady = (
   payload: InformeVariacionPayload,
   metric: InformeMetric = "v",
 ): boolean => {
   if (!isPrepareInformeDataCached(payload)) return false;
   const prepared = ensurePrepareInformeData(payload);
-  return Boolean(getUnfilteredMatrixWarm(prepared.rows)?.[metric]);
+  if (!getUnfilteredMatrixWarm(prepared.rows)?.[metric]) return false;
+  return Boolean(getUnfilteredBoardWarm(prepared.rows));
 };
 
 /**
- * Encola prepare + matriz (uno a uno en idle). `priority` pone el job al frente
+ * Encola prepare + matriz + board (uno a uno en idle). `priority` pone el job al frente
  * (p. ej. el rango que el usuario acaba de pedir).
  */
 export const prefetchWarmInformeRange = (
@@ -157,6 +173,9 @@ export const useMatrixAggCache = (
   const isUnfiltered = filteredIndices.length === payload.rows.length;
   const warmedDual = isUnfiltered
     ? getUnfilteredMatrixWarm(payload.rows)
+    : undefined;
+  const boardWarm = isUnfiltered
+    ? getUnfilteredBoardWarm(payload.rows)
     : undefined;
 
   const [cacheState, setCacheState] = useState<DualCacheState>({
@@ -373,6 +392,9 @@ export const useMatrixAggCache = (
   );
 
   const totPerByMetric = useMemo(() => {
+    if (boardWarm) {
+      return boardWarm.perSede;
+    }
     const build = (activeMetric: InformeMetric) => {
       const buckets = Array.from(
         { length: payload.sedes.length },
@@ -397,7 +419,7 @@ export const useMatrixAggCache = (
       InformeMetric,
       PeriodTriple[]
     >;
-  }, [filteredIndices, payload.metricCtx, payload.rows, payload.sedes.length]);
+  }, [boardWarm, filteredIndices, payload.metricCtx, payload.rows, payload.sedes.length]);
 
   const totPer = totPerByMetric[metric];
 
