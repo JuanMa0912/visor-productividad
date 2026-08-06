@@ -91,23 +91,51 @@ const isPresaCutText = (text: string): boolean =>
   ) &&
   !/\b(CUARTO|ENTERO|MEDIO|1\s*\/\s*2|MITAD)\b/.test(text);
 
+/**
+ * Cuenta las piezas nombradas en un combo.
+ *
+ * Antes hacia `text.includes(token)` sobre una lista que contenia CONTRAMUSLO,
+ * CONTRA y MUSLO a la vez: como los tres son subcadenas de "CONTRAMUSLO", una
+ * sola presa contaba TRES. Medido: "OFERTA CONTRAMUSLO APANADO" daba 0,375
+ * pollos en vez de 0,125, un 3x. Ademas "ALA" es subcadena de "ENSALADA".
+ *
+ * Ahora se usa limite de palabra y se consume el texto ya emparejado, con las
+ * piezas ordenadas de mas larga a mas corta para que CONTRAMUSLO se lleve su
+ * coincidencia antes de que MUSLO pueda verla.
+ */
 const countComboPresas = (text: string): number => {
-  const tokens = [
-    "CONTRAMUSLO",
-    "CONTRA",
-    "PECHUGA",
-    "MUSLO",
-    "ALA",
-    "PERNIL",
-    "PIERNA",
-    "PRESA",
-    "COSTILLA",
+  const PIECES: RegExp[] = [
+    /\bCONTRA[\s-]?MUSLOS?\b/g,
+    /\bPECHUGAS?\b/g,
+    /\bMUSLOS?\b/g,
+    /\bALAS?\b/g,
+    /\bPERNILES?\b/g,
+    /\bPIERNAS?\b/g,
+    /\bPRESAS?\b/g,
+    /\bCOSTILLAS?\b/g,
   ];
+  let rest = text;
   let count = 0;
-  for (const token of tokens) {
-    if (text.includes(token)) count += 1;
+  for (const piece of PIECES) {
+    const found = rest.match(piece);
+    if (!found) continue;
+    count += found.length;
+    rest = rest.replace(piece, " ");
   }
   return count;
+};
+
+/**
+ * Presas declaradas en la propia descripcion: "POLLO APANADO*11 PRESAS" son 11,
+ * no 1. Sin esto ese item se contaba como una sola presa: medido sobre 90 dias,
+ * 1.308 unidades daban 164 pollos en vez de 1.799 (faltaban 1.635, un 1,24% del
+ * total de asaderos).
+ */
+const explicitPresaCount = (text: string): number | null => {
+  const match = /(\d{1,2})\s*PRESAS?\b/.exec(text);
+  if (!match) return null;
+  const count = Number(match[1]);
+  return Number.isInteger(count) && count >= 1 && count <= 24 ? count : null;
 };
 
 export const resolveAsaderoPollosConversion = (
@@ -129,7 +157,28 @@ export const resolveAsaderoPollosConversion = (
   const unit = normalizeUnitToken(unitId);
   const text = `${itemLabel} ${lineLabel} ${subLabel}`.toUpperCase();
 
-  if (isSideDishText(text)) return { kind: "exclude" };
+  // Contenido de pollo detectable, mirando SOLO la descripcion del item.
+  // Ojo: `text` concatena linea y sublinea, que en esta ruta siempre dicen
+  // "POLLO ASADO" / "POLLO". Si se evaluara sobre `text`, cualquier fila daria
+  // positivo y hasta una ensalada contaria como pollo.
+  const itemText = itemLabel.toUpperCase();
+  const hasChickenContent =
+    /\bPOLLOS?\b/.test(itemText) ||
+    /\bENTERO(S)?\b/.test(itemText) ||
+    /\bMEDIO(S)?\b/.test(itemText) ||
+    /\bCUARTO(S)?\b/.test(itemText) ||
+    isPresaCutText(itemText);
+
+  // Solo se descarta como acompañamiento si NO hay pollo en la descripcion.
+  // Antes bastaba con nombrar un acompañamiento para excluir la fila entera:
+  // "COMBO POLLO ASADO ENTERO + ENSALADA" contaba 0 pollos pese a llevar uno.
+  if (isSideDishText(text) && !hasChickenContent) return { kind: "exclude" };
+
+  // Las presas declaradas en la descripcion mandan sobre cualquier heuristica.
+  const declaredPresas = explicitPresaCount(text);
+  if (declaredPresas !== null) {
+    return { kind: "presa", presaUnits: declaredPresas };
+  }
 
   if (/\bOFERTA\b/.test(text)) {
     const presaUnits = countComboPresas(text);

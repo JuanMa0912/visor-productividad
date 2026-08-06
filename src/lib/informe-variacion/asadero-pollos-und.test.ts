@@ -116,3 +116,80 @@ describe("asadero pollos und", () => {
     assert.equal(combo.presaUnits, 3);
   });
 });
+
+describe("asadero: items fuera de las listas de codigos fijos", () => {
+  const LINE_REAL = "POLLO ASADO";
+  const SUB_REAL = "POLLO";
+
+  it("respeta las presas declaradas en la descripcion (*11 PRESAS)", () => {
+    // Item real 078446. Antes daba presaUnits=1 -> 0,125 pollos/und en vez de
+    // 1,375: sobre 90 dias faltaban 1.635 pollos (1,24% del total de asaderos).
+    const conv = resolveAsaderoPollosConversion(
+      "078446 POLLO APANADO*11 PRESAS",
+      "",
+      LINE_REAL,
+      SUB_REAL,
+    );
+    assert.equal(conv.kind, "presa");
+    assert.equal(conv.presaUnits, 11);
+    assert.equal(
+      convertAsaderoQtyToPollosUnd(8, "078446 POLLO APANADO*11 PRESAS", "", LINE_REAL, SUB_REAL),
+      11,
+    );
+  });
+
+  it("no cuenta CONTRAMUSLO tres veces por solapamiento de subcadenas", () => {
+    // CONTRAMUSLO contiene CONTRA y MUSLO: el conteo por includes() daba 3.
+    const conv = resolveAsaderoPollosConversion(
+      "099001 OFERTA CONTRAMUSLO APANADO",
+      "",
+      LINE_REAL,
+      SUB_REAL,
+    );
+    assert.equal(conv.kind, "presa");
+    assert.equal(conv.presaUnits, 1);
+  });
+
+  it("un combo con pollo entero no se pierde por nombrar un acompanamiento", () => {
+    // Antes `isSideDishText` excluia la fila entera al ver ENSALADA o PAPAS.
+    for (const label of [
+      "099010 COMBO POLLO ASADO ENTERO + ENSALADA",
+      "099011 POLLO ASADO ENTERO CON PAPAS",
+    ]) {
+      assert.equal(
+        convertAsaderoQtyToPollosUnd(1, label, "", LINE_REAL, SUB_REAL),
+        1,
+        label,
+      );
+    }
+  });
+
+  it("las porciones puras siguen excluidas", () => {
+    for (const label of [
+      "099030 PORCION DE PAPAS AMARILLAS",
+      "099031 PORCION DE YUCAS",
+      "099032 ENSALADA DE FRUTAS",
+    ]) {
+      assert.equal(
+        convertAsaderoQtyToPollosUnd(100, label, "", LINE_REAL, SUB_REAL),
+        0,
+        label,
+      );
+    }
+  });
+
+  it("los items reales ya cubiertos por codigo no cambian", () => {
+    const cases: Array<[string, number]> = [
+      ["063019 PECHUGA APANADA (NVO)", 1 / 8],
+      ["063024 POLLO ASADO ENTERO (NVO)", 1],
+      ["063021 POLLO APANADO MEDIO (NVO)", 1 / 2],
+      ["063022 POLLO ASADO CUARTO PECHUGA (NVO)", 1 / 4],
+      ["074690 OFERTA POLLO APANADO MUSLO+ALA+CONTRAMUS", 3 / 8],
+      ["063029 POLLO ASADO ENTERO+CONTENEDOR", 1],
+    ];
+    for (const [label, expected] of cases) {
+      const got = convertAsaderoQtyToPollosUnd(1, label, "", LINE_REAL, SUB_REAL);
+      assert.ok(Math.abs(got - expected) < 1e-9, `${label}: ${got} != ${expected}`);
+    }
+  });
+});
