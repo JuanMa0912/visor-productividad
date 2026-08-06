@@ -38,6 +38,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      # setup-node trae el npm que venga con Node 22 (10.9.x), y esa version no
+      # entiende `min-release-age`, el cooldown que fija el .npmrc del repo: lo
+      # ignoraria con un warning y el CI resolveria sin proteccion. Se fija la
+      # misma version que corre en local y en el servidor 232.
+      - name: Pin npm (min-release-age necesita >= 11.10.0)
+        run: npm install -g npm@11.19.0
+
       # --ignore-scripts es explicito aunque el .npmrc del repo ya lo fija: si
       # alguien borra esa linea, el CI sigue protegido. Los compromisos de npm de
       # 2026 (axios, @asyncapi, keyv/cacheable) ejecutaban su carga desde un hook
