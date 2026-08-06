@@ -105,6 +105,7 @@ Codigo compartido sin UI de pagina.
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
+| Experimental (solo admin, fuera del hub) | `/exp/efectividad-cajero`, `/exp/precios-proveedor` (heatmap PVU/PCU/margen × sede + proveedor) |
 | Otros | `/ExcelDian` (PascalCase historico de URL) |
 
 ### APIs
@@ -128,6 +129,7 @@ Codigo compartido sin UI de pagina.
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets; **sin Dinastía** (empresa/sedes excluidas en catálogo y consultas) |
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`) |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
+| `exp/precios-proveedor` | prototipo admin: heatmap ítem×sede con PVU/PCU/margen % + proveedor (`margen_item_dia_roll` + `proveedor_item`); máx. 14 días |
 | `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede |
 | `proveedores/visitas` | subtablero `proveedores`: listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
 | `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
