@@ -130,7 +130,7 @@ Codigo compartido sin UI de pagina.
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
 | `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede |
 | `proveedores/visitas` | subtablero `proveedores`: listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
-| `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia` |
+| `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

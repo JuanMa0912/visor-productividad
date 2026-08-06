@@ -1,10 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Download } from "lucide-react";
+import { BarChart } from "@mui/x-charts/BarChart";
+import { LineChart } from "@mui/x-charts/LineChart";
+import { PieChart } from "@mui/x-charts/PieChart";
 import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import type {
+  ProveedorVentasByDay,
   ProveedorVentasBySede,
   ProveedorVentasMetrics,
   ProveedorVentasRow,
@@ -22,6 +26,24 @@ const units = (value: number) =>
     maximumFractionDigits: 1,
   });
 
+const compactMoney = (value: number | null) => {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+};
+
+const shortLabel = (value: string, max = 20) =>
+  value.length > max ? `${value.slice(0, max - 1)}…` : value;
+
+const shortDay = (iso: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  return `${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
+};
+
 type SortDir = "asc" | "desc";
 
 type SedeSortKey = "sede" | "proveedores" | "unidades" | "ventaNeta";
@@ -32,6 +54,24 @@ type ProvSortKey =
   | "ventaNeta"
   | "ventaConImpuesto"
   | "sedesActivas";
+
+const ChartCard = ({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="mb-2">
+      <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+      {hint ? <p className="mt-0.5 text-[11px] text-slate-500">{hint}</p> : null}
+    </div>
+    {children}
+  </div>
+);
 
 const MetricCard = ({
   label,
@@ -91,6 +131,7 @@ export function ProveedoresVentasPanel() {
   const [metrics, setMetrics] = useState<ProveedorVentasMetrics | null>(null);
   const [rows, setRows] = useState<ProveedorVentasRow[]>([]);
   const [bySede, setBySede] = useState<ProveedorVentasBySede[]>([]);
+  const [byDay, setByDay] = useState<ProveedorVentasByDay[]>([]);
   const [sedeSort, setSedeSort] = useState<{ key: SedeSortKey; dir: SortDir }>({
     key: "sede",
     dir: "asc",
@@ -116,15 +157,18 @@ export function ProveedoresVentasPanel() {
         metrics?: ProveedorVentasMetrics;
         rows?: ProveedorVentasRow[];
         bySede?: ProveedorVentasBySede[];
+        byDay?: ProveedorVentasByDay[];
       };
       if (!response.ok) throw new Error(data.error || "No se pudo cargar.");
       setMetrics(data.metrics ?? null);
       setRows(data.rows ?? []);
       setBySede(data.bySede ?? []);
+      setByDay(data.byDay ?? []);
     } catch (err) {
       setMetrics(null);
       setRows([]);
       setBySede([]);
+      setByDay([]);
       setError(err instanceof Error ? err.message : "Error desconocido.");
     } finally {
       setLoading(false);
@@ -211,6 +255,40 @@ export function ProveedoresVentasPanel() {
     });
     return list;
   }, [provSort, rows]);
+
+  const chartBySede = useMemo(() => {
+    return [...bySede]
+      .sort((a, b) => b.ventaNeta - a.ventaNeta)
+      .slice(0, 12);
+  }, [bySede]);
+
+  const chartTopProveedores = useMemo(() => {
+    return [...rows]
+      .sort((a, b) => b.ventaNeta - a.ventaNeta)
+      .slice(0, 10);
+  }, [rows]);
+
+  const concentrationPie = useMemo(() => {
+    if (!metrics?.ventaNetaTotal || metrics.top10SharePct == null) return [];
+    const top1Pct = metrics.top1SharePct ?? 0;
+    const top10Pct = metrics.top10SharePct;
+    const midPct = Math.max(0, Math.round((top10Pct - top1Pct) * 10) / 10);
+    const restoPct = Math.max(0, Math.round((100 - top10Pct) * 10) / 10);
+    return [
+      { id: 0, value: top1Pct, label: `Top 1 (${top1Pct}%)` },
+      { id: 1, value: midPct, label: `Top 2–10 (${midPct}%)` },
+      { id: 2, value: restoPct, label: `Resto (${restoPct}%)` },
+    ].filter((slice) => slice.value > 0);
+  }, [metrics]);
+
+  const dayLabels = useMemo(
+    () => byDay.map((d) => shortDay(d.fecha)),
+    [byDay],
+  );
+  const dayVenta = useMemo(
+    () => byDay.map((d) => d.ventaNeta),
+    [byDay],
+  );
 
   return (
     <div className="space-y-4">
@@ -328,6 +406,161 @@ export function ProveedoresVentasPanel() {
                 : `Top 1: ${metrics.top1SharePct}% · Top 10`
             }
           />
+        </section>
+      ) : null}
+
+      {chartBySede.length > 0 ||
+      chartTopProveedores.length > 0 ||
+      concentrationPie.length > 0 ||
+      byDay.length > 0 ? (
+        <section className="grid gap-4 lg:grid-cols-2">
+          {chartBySede.length > 0 ? (
+            <ChartCard
+              title="Venta neta por sede"
+              hint="Barras ordenadas de mayor a menor (venta_base)"
+            >
+              <BarChart
+                layout="horizontal"
+                height={Math.max(280, chartBySede.length * 28)}
+                margin={{ left: 8, right: 16, top: 8, bottom: 8 }}
+                yAxis={[
+                  {
+                    data: chartBySede.map((r) => r.sede),
+                    scaleType: "band",
+                    width: 88,
+                  },
+                ]}
+                series={[
+                  {
+                    data: chartBySede.map((r) => r.ventaNeta),
+                    label: "Venta neta",
+                    color: "#0369a1",
+                    valueFormatter: (v) => compactMoney(v),
+                  },
+                ]}
+                grid={{ vertical: true }}
+              />
+            </ChartCard>
+          ) : null}
+
+          {chartTopProveedores.length > 0 ? (
+            <ChartCard
+              title="Top 10 proveedores"
+              hint="Mayor venta neta en la ventana filtrada"
+            >
+              <BarChart
+                layout="horizontal"
+                height={Math.max(280, chartTopProveedores.length * 28)}
+                margin={{ left: 8, right: 16, top: 8, bottom: 8 }}
+                yAxis={[
+                  {
+                    data: chartTopProveedores.map((r) =>
+                      shortLabel(r.proveedor, 22),
+                    ),
+                    scaleType: "band",
+                    width: 120,
+                  },
+                ]}
+                series={[
+                  {
+                    data: chartTopProveedores.map((r) => r.ventaNeta),
+                    label: "Venta neta",
+                    color: "#0f766e",
+                    valueFormatter: (v) => compactMoney(v),
+                  },
+                ]}
+                grid={{ vertical: true }}
+              />
+            </ChartCard>
+          ) : null}
+
+          {byDay.length > 1 ? (
+            <ChartCard
+              title="Venta neta por día"
+              hint="Evolución diaria en la ventana"
+            >
+              <LineChart
+                height={280}
+                margin={{ left: 8, right: 12, top: 16, bottom: 8 }}
+                xAxis={[
+                  {
+                    data: dayLabels,
+                    scaleType: "point",
+                    tickLabelStyle: { fontSize: 10 },
+                  },
+                ]}
+                series={[
+                  {
+                    data: dayVenta,
+                    label: "Venta neta",
+                    color: "#1d4ed8",
+                    showMark: dayLabels.length <= 14,
+                    valueFormatter: (v) => compactMoney(v),
+                  },
+                ]}
+                grid={{ horizontal: true }}
+              />
+            </ChartCard>
+          ) : null}
+
+          {concentrationPie.length > 0 ? (
+            <ChartCard
+              title="Concentración de venta"
+              hint="Participación Top 1 / Top 10 / resto"
+            >
+              <PieChart
+                height={280}
+                margin={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                series={[
+                  {
+                    data: concentrationPie,
+                    innerRadius: 48,
+                    outerRadius: 90,
+                    paddingAngle: 2,
+                    cornerRadius: 4,
+                    valueFormatter: (item) =>
+                      `${Number(item.value).toLocaleString("es-CO")}%`,
+                  },
+                ]}
+                slotProps={{
+                  legend: {
+                    direction: "horizontal",
+                    position: { vertical: "bottom", horizontal: "center" },
+                  },
+                }}
+              />
+            </ChartCard>
+          ) : null}
+
+          {chartBySede.length > 0 ? (
+            <ChartCard
+              title="Proveedores activos por sede"
+              hint="Cantidad de proveedores con venta en la ventana"
+            >
+              <BarChart
+                height={280}
+                margin={{ left: 8, right: 8, top: 16, bottom: 8 }}
+                xAxis={[
+                  {
+                    data: chartBySede.map((r) => r.sede),
+                    scaleType: "band",
+                    tickLabelStyle: { fontSize: 10, angle: -25 },
+                    height: 56,
+                  },
+                ]}
+                series={[
+                  {
+                    data: chartBySede.map((r) => r.proveedores),
+                    label: "Proveedores",
+                    color: "#475569",
+                    valueFormatter: (v) =>
+                      v == null ? "—" : v.toLocaleString("es-CO"),
+                  },
+                ]}
+                grid={{ horizontal: true }}
+              />
+            </ChartCard>
+          ) : null}
         </section>
       ) : null}
 

@@ -31,6 +31,13 @@ export type ProveedorVentasBySede = {
   proveedores: number;
 };
 
+export type ProveedorVentasByDay = {
+  fecha: string;
+  ventaNeta: number;
+  unidades: number;
+  proveedores: number;
+};
+
 const moneyNum = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -108,6 +115,7 @@ export const listVentasProveedorRolling = async (
   metrics: ProveedorVentasMetrics;
   rows: ProveedorVentasRow[];
   bySede: ProveedorVentasBySede[];
+  byDay: ProveedorVentasByDay[];
 }> => {
   const window = await resolveWindow(client, args.days ?? 30);
   if (!window.fechaFin) {
@@ -126,6 +134,7 @@ export const listVentasProveedorRolling = async (
       },
       rows: [],
       bySede: [],
+      byDay: [],
     };
   }
 
@@ -246,6 +255,21 @@ export const listVentasProveedorRolling = async (
     params,
   );
 
+  const byDayResult = await client.query(
+    `
+    SELECT
+      fecha_dcto AS fecha,
+      COALESCE(sum(venta_base), 0)::numeric AS venta_neta,
+      COALESCE(sum(unidades), 0)::numeric AS unidades,
+      count(DISTINCT proveedor)::int AS proveedores
+    FROM ventas_proveedor_dia
+    WHERE ${whereSql}
+    GROUP BY 1
+    ORDER BY 1 ASC
+    `,
+    params,
+  );
+
   return {
     metrics: {
       fechaInicio: compactToIso(window.fechaInicio),
@@ -267,6 +291,12 @@ export const listVentasProveedorRolling = async (
     rows,
     bySede: (bySedeResult.rows ?? []).map((row) => ({
       sede: String(row.sede ?? ""),
+      ventaNeta: moneyNum(row.venta_neta),
+      unidades: moneyNum(row.unidades),
+      proveedores: Number(row.proveedores ?? 0),
+    })),
+    byDay: (byDayResult.rows ?? []).map((row) => ({
+      fecha: compactToIso(String(row.fecha ?? "")),
       ventaNeta: moneyNum(row.venta_neta),
       unidades: moneyNum(row.unidades),
       proveedores: Number(row.proveedores ?? 0),
