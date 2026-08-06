@@ -938,121 +938,154 @@ export function ParticipacionComercialBoard() {
                         })}
                       </tr>
                       {expanded && shareDetailRow ? (
-                        <tr
-                          ref={shareDetailExpandRef}
-                          className="border-t border-slate-200 bg-slate-50"
-                        >
-                          <td
-                            colSpan={1 + matrix.columns.length}
-                            className="px-3 py-3"
+                        <>
+                          <tr
+                            ref={shareDetailExpandRef}
+                            className="border-t border-slate-200 bg-slate-50/90"
                           >
-                            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                            <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left align-top">
+                              <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-900">
-                                    Participación por sede
+                                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                                    Por sede
                                   </p>
                                   <p
-                                    className="mt-0.5 text-[11px] font-semibold leading-relaxed text-slate-800"
+                                    className="mt-0.5 text-xs font-semibold leading-snug text-slate-800"
                                     title={shareDetailPathLabel}
                                   >
-                                    {shareDetailPathLabel ||
-                                      (matrix.rowLevel === "linea"
-                                        ? formatLineaDisplay(
-                                            shareDetailRow.id,
-                                            shareDetailRow.label,
-                                          )
-                                        : `${shareDetailRow.id} · ${shareDetailRow.label}`)}
-                                  </p>
-                                  <p className="mt-0.5 text-[11px] text-slate-500">
-                                    {matrix.rowLevel === "linea"
-                                      ? "En raíz, % en grupo y % en sede coinciden (todas las líneas = 100%)."
-                                      : matrix.rowLevel === "sublinea"
-                                        ? "Ruta: línea › sublínea. % en línea (hermanas = 100%), % de la línea en sede y % de la sublínea en sede."
-                                        : "Ruta: línea › sublínea › ítem. % en sublínea (ítems = 100%), % de la sublínea en sede y % del ítem en sede."}
+                                    {shareDetailLabels.inParent}
                                   </p>
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => setShareDetailRow(null)}
-                                  className="shrink-0 rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
+                                  className="shrink-0 rounded-md border border-slate-200 p-1 text-slate-500 hover:bg-white"
                                   aria-label="Cerrar"
                                 >
-                                  <X className="h-4 w-4" />
+                                  <X className="h-3.5 w-3.5" />
                                 </button>
                               </div>
-                              <div className="max-h-[min(50vh,420px)] overflow-auto">
-                                <table className="min-w-full border-collapse text-xs">
-                                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
-                                    <tr>
-                                      <th className="px-3 py-2 text-left font-semibold">
-                                        Sede
-                                      </th>
-                                      <th className="px-3 py-2 text-right font-semibold">
-                                        {shareDetailLabels.inParent}
-                                      </th>
-                                      {matrix.rowLevel !== "linea" ? (
-                                        <th className="px-3 py-2 text-right font-semibold">
-                                          {shareDetailLabels.parentInSede}
-                                        </th>
-                                      ) : null}
-                                      {matrix.rowLevel !== "linea" ? (
-                                        <th className="px-3 py-2 text-right font-semibold">
-                                          {shareDetailLabels.inSede}
-                                        </th>
-                                      ) : null}
-                                      <th className="px-3 py-2 text-right font-semibold">
-                                        Unidades
-                                      </th>
-                                      <th className="px-3 py-2 text-right font-semibold">
-                                        Venta $
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {shareDetailRows.map((detail) => (
-                                      <tr
-                                        key={detail.key}
-                                        className="border-t border-slate-100"
-                                      >
-                                        <td className="px-3 py-2 font-medium text-slate-800">
-                                          {detail.label}
-                                        </td>
-                                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                                          {detail.hasData
-                                            ? formatSharePct(detail.shareInParent)
-                                            : "—"}
-                                        </td>
-                                        {matrix.rowLevel !== "linea" ? (
-                                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                                            {formatSharePct(detail.parentInSede)}
-                                          </td>
-                                        ) : null}
-                                        {matrix.rowLevel !== "linea" ? (
-                                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                                            {detail.hasData
-                                              ? formatSharePct(detail.shareInSede)
-                                              : "—"}
-                                          </td>
-                                        ) : null}
-                                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                                          {detail.hasData
-                                            ? formatUnits(detail.units)
-                                            : "—"}
-                                        </td>
-                                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                                          {detail.hasData
-                                            ? formatMoney(detail.sales)
-                                            : "—"}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
+                            </th>
+                            {shareDetailRows.map((detail) => {
+                              const pct = detail.hasData
+                                ? detail.shareInParent
+                                : 0;
+                              const style = matrixCellStyle(pct);
+                              return (
+                                <td key={`in-parent-${detail.key}`} className="p-1">
+                                  <div
+                                    className="rounded-md px-2 py-2 text-center text-xs font-semibold tabular-nums"
+                                    style={style}
+                                    title={`${detail.label}: ${formatSharePct(detail.shareInParent)}`}
+                                  >
+                                    {detail.hasData
+                                      ? formatSharePct(detail.shareInParent)
+                                      : "—"}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                          {matrix.rowLevel !== "linea" ? (
+                            <tr className="border-t border-slate-100 bg-slate-50/90">
+                              <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-semibold text-slate-800">
+                                {shareDetailLabels.parentInSede}
+                              </th>
+                              {shareDetailRows.map((detail) => {
+                                const style = matrixCellStyle(detail.parentInSede);
+                                return (
+                                  <td
+                                    key={`parent-sede-${detail.key}`}
+                                    className="p-1"
+                                  >
+                                    <div
+                                      className="rounded-md px-2 py-2 text-center text-xs font-semibold tabular-nums"
+                                      style={style}
+                                      title={`${detail.label}: ${formatSharePct(detail.parentInSede)}`}
+                                    >
+                                      {formatSharePct(detail.parentInSede)}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ) : null}
+                          {matrix.rowLevel !== "linea" ? (
+                            <tr className="border-t border-slate-100 bg-slate-50/90">
+                              <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-semibold text-slate-800">
+                                {shareDetailLabels.inSede}
+                              </th>
+                              {shareDetailRows.map((detail) => {
+                                const pct = detail.hasData
+                                  ? detail.shareInSede
+                                  : 0;
+                                const style = matrixCellStyle(pct);
+                                return (
+                                  <td
+                                    key={`in-sede-${detail.key}`}
+                                    className="p-1"
+                                  >
+                                    <div
+                                      className="rounded-md px-2 py-2 text-center text-xs font-semibold tabular-nums"
+                                      style={style}
+                                      title={`${detail.label}: ${
+                                        detail.hasData
+                                          ? formatSharePct(detail.shareInSede)
+                                          : "—"
+                                      }`}
+                                    >
+                                      {detail.hasData
+                                        ? formatSharePct(detail.shareInSede)
+                                        : "—"}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ) : null}
+                          <tr className="border-t border-slate-100 bg-slate-50/90">
+                            <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-semibold text-slate-800">
+                              Unidades
+                            </th>
+                            {shareDetailRows.map((detail) => (
+                              <td key={`units-${detail.key}`} className="p-1">
+                                <div
+                                  className="rounded-md bg-slate-100 px-2 py-2 text-center text-xs font-semibold tabular-nums text-slate-700"
+                                  title={
+                                    detail.hasData
+                                      ? formatUnits(detail.units)
+                                      : undefined
+                                  }
+                                >
+                                  {detail.hasData
+                                    ? formatUnits(detail.units)
+                                    : "—"}
+                                </div>
+                              </td>
+                            ))}
+                          </tr>
+                          <tr className="border-t border-slate-100 bg-slate-50/90">
+                            <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-semibold text-slate-800">
+                              Venta $
+                            </th>
+                            {shareDetailRows.map((detail) => (
+                              <td key={`sales-${detail.key}`} className="p-1">
+                                <div
+                                  className="rounded-md bg-slate-100 px-2 py-2 text-center text-xs font-semibold tabular-nums text-slate-700"
+                                  title={
+                                    detail.hasData
+                                      ? formatMoney(detail.sales)
+                                      : undefined
+                                  }
+                                >
+                                  {detail.hasData
+                                    ? formatMoneyVisualMillions(detail.sales)
+                                    : "—"}
+                                </div>
+                              </td>
+                            ))}
+                          </tr>
+                        </>
                       ) : null}
                     </Fragment>
                   );
