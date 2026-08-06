@@ -209,43 +209,23 @@ export const buildTotalMetricsSql = (
 };
 
 /**
- * SQL de las filas POR DÍA sin agregados DISTINCT. Mismo truco que
- * `buildTotalMetricsSql`, aplicado al `GROUP BY fecha_dcto`.
- *
- * Por qué existe: `metricsSqlFor()` trae 5 `COUNT(DISTINCT ...)`. Con esos
- * agregados PostgreSQL descarta HashAggregate y resuelve el GROUP BY con un
- * `Sort` de la relación completa. Medido contra producción el 2026-07-31
- * (margen_final_roll en Cloud SQL, julio × 11 sedes = 8,17M filas):
- *
- *   GroupAggregate + Sort (external merge, 601 MB a disco) ..... 61,7 s
- *   esta forma (HashAggregate sobre CTE materializado) ......... 26,5 s
- *
- * Junto a la fila total (antes ~22 s) la petición `mode=drill` bajaba de ~84 s a
- * ~49 s. Desde 2026-08 el nivel 0 ya no llama `buildTotalMetricsSql`: KPI y
- * ACUMULADO se derivan en JS desde las filas por día (~26 s wall). Esta función
- * sigue disponible para rutas/KPI que necesiten DISTINCT globales exactos.
- *
- * El proxy corta a los 90 s, y `mode=filters` (29,6 s) corre en paralelo
- * compitiendo por CPU: por eso el tablero daba 504 con todas las sedes.
- *
- * Cosas que se midieron y NO sirven, para que nadie las reintente:
- *  - `work_mem` 64MB -> 256MB: 61,6 s -> 61,7 s. Nada. El costo es el número de
- *    ordenamientos, no el derrame a disco.
- *  - `max_parallel_workers_per_gather` 1 -> 4 (el rol `visor` lo tiene en 1):
- *    26,5 s -> 25,6 s. El plan nuevo se apoya en un CTE Scan, que no es
- *    paralelizable, así que la palanca de /api/rotacion aquí no aplica.
- *  - Cambiar el `(empresa_norm, id_co_norm) IN (SELECT * FROM UNNEST(...))` por
- *    un OR de ANDs: EMPEORA (26,5 s -> 61,3 s en el día; 22,2 s -> 29,2 s en el
- *    total). El Hash Semi Join cuesta menos que 22 comparaciones de texto por
- *    fila. El UNNEST se queda.
- *  - Índices: ninguno ayuda. Un mes × 11 sedes es el 99% de las filas de ese
- *    rango (`Rows Removed by Filter: 94297` de 8,26M), así que el plan barre la
- *    partición de fechas entera hágase lo que se haga.
+ * Métricas agrupadas SIN `COUNT(DISTINCT)` en el Aggregate exterior.
+ * Misma estrategia que el antiguo `buildDayMetricsSql` / `buildTotalMetricsSql`:
+ * CTE `base` + HashAggregate. Evita el Sort de `metricsSqlFor()` al perforar
+ * día → categoría → línea (antes ~1 min con 11 sedes).
  */
-export const buildDayMetricsSql = (
+export const buildGroupedMetricsSql = (
   table: MargenDataTable,
   whereSql: string,
+  group: {
+    keySql: string;
+    keyAlias: string;
+    /** Columna/expresión en `base` para MAX → etiqueta (nombre línea, etc.). */
+    labelSourceSql?: string;
+    labelAlias?: string;
+  },
   orderBySql = "",
+  limitSql = "",
 ): string => {
   const isRoll =
     table === "margen_final_roll" || table === "margen_dinastia_roll";
@@ -255,20 +235,30 @@ export const buildDayMetricsSql = (
     ? "margen_pesos"
     : "(COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0))";
   const conIva = isRoll ? "ventas_con_iva" : "COALESCE(ven_totales, 0)";
-  // Misma normalización que METRICS_SQL/ROLL_METRICS_SQL: '' cuenta como NULL y
-  // COUNT ignora NULLs, así que el resultado es idéntico al COUNT(DISTINCT).
   const dim = (col: string) =>
     isRoll ? `NULLIF(${col}, '')` : `NULLIF(TRIM(${col}::text), '')`;
+
+  const labelAlias = group.labelAlias ?? "nombre";
+  const labelInBase = group.labelSourceSql
+    ? `, ${group.labelSourceSql} AS _label_src`
+    : "";
+  const labelInSums = group.labelSourceSql
+    ? `, MAX(_label_src) AS _label_raw`
+    : "";
+  const labelSelect = group.labelSourceSql
+    ? `, COALESCE(NULLIF(s._label_raw, ''), s.${group.keyAlias}::text) AS ${labelAlias}`
+    : "";
 
   return `
     WITH base AS (
       SELECT
-        fecha_dcto,
+        ${group.keySql} AS ${group.keyAlias}
+        ${labelInBase},
         ${dim("documento_fc")} AS documento_fc,
-        ${dim("id_tipo")}      AS id_tipo,
-        ${dim("id_linea1")}    AS id_linea1,
-        ${dim("id_linea2")}    AS id_linea2,
-        ${dim("id_item")}      AS id_item,
+        ${dim("id_tipo")}      AS dim_tipo,
+        ${dim("id_linea1")}    AS dim_linea1,
+        ${dim("id_linea2")}    AS dim_linea2,
+        ${dim("id_item")}      AS dim_item,
         ${ventas}              AS ventas_netas,
         ${costo}               AS costo_total,
         ${margen}              AS margen_pesos,
@@ -279,47 +269,56 @@ export const buildDayMetricsSql = (
     ),
     sums AS (
       SELECT
-        fecha_dcto,
+        ${group.keyAlias}
+        ${labelInSums},
         COALESCE(SUM(ventas_netas), 0)   AS ventas_netas,
         COALESCE(SUM(costo_total), 0)    AS costo_total,
         COALESCE(SUM(margen_pesos), 0)   AS margen_pesos,
         COALESCE(SUM(cantidad), 0)       AS cantidad,
         COALESCE(SUM(ventas_con_iva), 0) AS ventas_con_iva
       FROM base
-      GROUP BY fecha_dcto
+      GROUP BY ${group.keyAlias}
     ),
     fac AS (
-      SELECT fecha_dcto, COUNT(*) AS facturas
-      FROM (SELECT DISTINCT fecha_dcto, documento_fc FROM base WHERE documento_fc IS NOT NULL) d
-      GROUP BY fecha_dcto
+      SELECT ${group.keyAlias}, COUNT(*) AS facturas
+      FROM (
+        SELECT DISTINCT ${group.keyAlias}, documento_fc
+        FROM base
+        WHERE documento_fc IS NOT NULL
+      ) d
+      GROUP BY ${group.keyAlias}
     ),
     itm AS (
-      SELECT fecha_dcto, COUNT(*) AS items
-      FROM (SELECT DISTINCT fecha_dcto, id_item FROM base WHERE id_item IS NOT NULL) d
-      GROUP BY fecha_dcto
+      SELECT ${group.keyAlias}, COUNT(*) AS items
+      FROM (
+        SELECT DISTINCT ${group.keyAlias}, dim_item
+        FROM base
+        WHERE dim_item IS NOT NULL
+      ) d
+      GROUP BY ${group.keyAlias}
     ),
-    -- Una sola pasada para los tres conteos de baja cardinalidad.
     dims AS (
-      SELECT DISTINCT fecha_dcto, id_tipo, id_linea1, id_linea2 FROM base
+      SELECT DISTINCT ${group.keyAlias}, dim_tipo, dim_linea1, dim_linea2 FROM base
     ),
     dimc AS (
       SELECT
-        fecha_dcto,
-        COUNT(DISTINCT id_tipo)   AS categorias,
-        COUNT(DISTINCT id_linea1) AS lineas,
-        COUNT(DISTINCT id_linea2) AS sublineas
+        ${group.keyAlias},
+        COUNT(DISTINCT dim_tipo)   AS categorias,
+        COUNT(DISTINCT dim_linea1) AS lineas,
+        COUNT(DISTINCT dim_linea2) AS sublineas
       FROM dims
-      GROUP BY fecha_dcto
+      GROUP BY ${group.keyAlias}
     )
     SELECT
-      s.fecha_dcto,
+      s.${group.keyAlias}
+      ${labelSelect},
       s.ventas_netas,
       s.costo_total,
       s.margen_pesos,
       s.cantidad,
       s.ventas_con_iva,
-      COALESCE(fac.facturas, 0)   AS facturas,
-      COALESCE(itm.items, 0)      AS items,
+      COALESCE(fac.facturas, 0)    AS facturas,
+      COALESCE(itm.items, 0)       AS items,
       COALESCE(dimc.categorias, 0) AS categorias,
       COALESCE(dimc.lineas, 0)     AS lineas,
       COALESCE(dimc.sublineas, 0)  AS sublineas,
@@ -327,12 +326,29 @@ export const buildDayMetricsSql = (
       CASE WHEN s.cantidad > 0 THEN s.ventas_con_iva / s.cantidad ELSE 0 END AS pvu_iva,
       CASE WHEN s.cantidad > 0 THEN s.costo_total / s.cantidad ELSE 0 END AS pcu
     FROM sums s
-    LEFT JOIN fac  ON fac.fecha_dcto  = s.fecha_dcto
-    LEFT JOIN itm  ON itm.fecha_dcto  = s.fecha_dcto
-    LEFT JOIN dimc ON dimc.fecha_dcto = s.fecha_dcto
+    LEFT JOIN fac  ON fac.${group.keyAlias}  = s.${group.keyAlias}
+    LEFT JOIN itm  ON itm.${group.keyAlias}  = s.${group.keyAlias}
+    LEFT JOIN dimc ON dimc.${group.keyAlias} = s.${group.keyAlias}
     ${orderBySql}
+    ${limitSql}
   `;
 };
+
+/**
+ * Filas POR DÍA (wrapper de `buildGroupedMetricsSql`).
+ * Medido 2026-07-31: Sort+DISTINCT ~62 s → HashAggregate ~26 s (mes × 11 sedes).
+ */
+export const buildDayMetricsSql = (
+  table: MargenDataTable,
+  whereSql: string,
+  orderBySql = "",
+): string =>
+  buildGroupedMetricsSql(
+    table,
+    whereSql,
+    { keySql: "fecha_dcto", keyAlias: "fecha_dcto" },
+    orderBySql,
+  );
 
 /**
  * Métricas del tablero Por Cliente / facturas de cliente:

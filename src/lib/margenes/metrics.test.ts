@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildDayMetricsSql,
+  buildGroupedMetricsSql,
   buildMargenOrderBy,
   shouldApplyMercadoTipoDefault,
 } from "@/lib/margenes/metrics";
@@ -88,4 +90,22 @@ test("shouldApplyMercadoTipoDefault solo sin categorias", () => {
   assert.equal(shouldApplyMercadoTipoDefault(["3"]), false);
   assert.equal(shouldApplyMercadoTipoDefault(["4"]), false);
   assert.equal(shouldApplyMercadoTipoDefault(["3", "4"]), false);
+});
+
+test("buildGroupedMetricsSql agrupa por dimension sin colision de alias", () => {
+  const sql = buildGroupedMetricsSql(
+    "margen_final_roll",
+    "fecha_dcto = $1",
+    { keySql: "id_tipo", keyAlias: "id_tipo" },
+  );
+  assert.match(sql, /AS id_tipo/);
+  assert.match(sql, /AS dim_tipo/);
+  assert.match(sql, /WITH base AS/);
+  assert.doesNotMatch(sql, /COUNT\(DISTINCT NULLIF/);
+});
+
+test("buildDayMetricsSql delega en buildGroupedMetricsSql", () => {
+  const sql = buildDayMetricsSql("margen_final_roll", "TRUE");
+  assert.match(sql, /fecha_dcto/);
+  assert.match(sql, /AS dim_item/);
 });

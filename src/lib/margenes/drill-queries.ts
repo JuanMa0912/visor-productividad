@@ -40,6 +40,7 @@ import {
 } from "@/lib/margenes/fact-path";
 import {
   buildDayMetricsSql,
+  buildGroupedMetricsSql,
   buildMargenOrderBy,
   boardMetricsSqlFor,
   KPI_MERCADO_TIPO,
@@ -884,13 +885,12 @@ export const queryDrillRows = async (
 
   if (level === 1) {
     const result = await client.query(
-      `
-      SELECT ${idTipoExpr(table)} AS id_tipo, ${metricsSqlFor(table)}
-      FROM ${table}
-      WHERE ${where}
-      GROUP BY 1
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "1")}
-      `,
+      buildGroupedMetricsSql(
+        table,
+        where,
+        { keySql: idTipoExpr(table), keyAlias: "id_tipo" },
+        buildMargenOrderBy(filters.orderBy, filters.orderDir, "1"),
+      ),
       params,
     );
     return {
@@ -913,20 +913,21 @@ export const queryDrillRows = async (
   }
 
   if (level === 2) {
-    const nombreLinea = isRollTable(table)
-      ? `COALESCE(NULLIF(MAX(nombre_linea1), ''), ${idLinea1Expr(table)})`
-      : `COALESCE(NULLIF(TRIM(MAX(nombre_linea1)), ''), ${idLinea1Expr(table)})`;
+    const labelSrc = isRollTable(table)
+      ? "NULLIF(nombre_linea1, '')"
+      : "NULLIF(TRIM(nombre_linea1), '')";
     const result = await client.query(
-      `
-      SELECT
-        ${idLinea1Expr(table)} AS id_linea1,
-        ${nombreLinea} AS nombre,
-        ${metricsSqlFor(table)}
-      FROM ${table}
-      WHERE ${where}
-      GROUP BY 1
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "1")}
-      `,
+      buildGroupedMetricsSql(
+        table,
+        where,
+        {
+          keySql: idLinea1Expr(table),
+          keyAlias: "id_linea1",
+          labelSourceSql: labelSrc,
+          labelAlias: "nombre",
+        },
+        buildMargenOrderBy(filters.orderBy, filters.orderDir, "1"),
+      ),
       params,
     );
     return {
@@ -948,20 +949,21 @@ export const queryDrillRows = async (
   }
 
   if (level === 3) {
-    const nombreLinea = isRollTable(table)
-      ? `COALESCE(NULLIF(MAX(nombre_linea2), ''), ${idLinea2Expr(table)})`
-      : `COALESCE(NULLIF(TRIM(MAX(nombre_linea2)), ''), ${idLinea2Expr(table)})`;
+    const labelSrc = isRollTable(table)
+      ? "NULLIF(nombre_linea2, '')"
+      : "NULLIF(TRIM(nombre_linea2), '')";
     const result = await client.query(
-      `
-      SELECT
-        ${idLinea2Expr(table)} AS id_linea2,
-        ${nombreLinea} AS nombre,
-        ${metricsSqlFor(table)}
-      FROM ${table}
-      WHERE ${where}
-      GROUP BY 1
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "1")}
-      `,
+      buildGroupedMetricsSql(
+        table,
+        where,
+        {
+          keySql: idLinea2Expr(table),
+          keyAlias: "id_linea2",
+          labelSourceSql: labelSrc,
+          labelAlias: "nombre",
+        },
+        buildMargenOrderBy(filters.orderBy, filters.orderDir, "1"),
+      ),
       params,
     );
     return {
@@ -995,21 +997,26 @@ export const queryDrillRows = async (
         OR LOWER(${descCol}) LIKE $${params.length}
       )`;
     }
-    const descripcion = isRollTable(table)
-      ? `COALESCE(NULLIF(MAX(item_descripcion), ''), ${idItemExpr(table)})`
-      : `COALESCE(NULLIF(TRIM(MAX(item_descripcion)), ''), ${idItemExpr(table)})`;
+    const labelSrc = isRollTable(table)
+      ? "NULLIF(item_descripcion, '')"
+      : "NULLIF(TRIM(item_descripcion), '')";
     const result = await client.query(
-      `
-      SELECT
-        ${idItemExpr(table)} AS id_item,
-        ${descripcion} AS descripcion,
-        ${metricsSqlFor(table)}
-      FROM ${table}
-      WHERE ${itemWhere}
-      GROUP BY 1
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
-      LIMIT 1000
-      `,
+      buildGroupedMetricsSql(
+        table,
+        itemWhere,
+        {
+          keySql: idItemExpr(table),
+          keyAlias: "id_item",
+          labelSourceSql: labelSrc,
+          labelAlias: "descripcion",
+        },
+        buildMargenOrderBy(
+          filters.orderBy,
+          filters.orderDir,
+          "ventas_netas DESC",
+        ),
+        "LIMIT 1000",
+      ),
       params,
     );
     return {
@@ -1094,8 +1101,8 @@ export const queryDrillBoard = async (
     return queryInvoiceDetailBoard(client, filters, factura, table, 6);
   }
 
-  // Secuencial: mismo PoolClient no soporta queries concurrentes.
-  const kpi = await queryKpi(client, filters, kpiPath, table);
+  // Una sola query de filas (HashAggregate). KPI se deriva en JS: evita el
+  // segundo scan con metricsSqlFor (antes duplicaba el minuto al abrir un día).
   const tableResult = await queryDrillRows(
     client,
     filters,
@@ -1103,6 +1110,23 @@ export const queryDrillBoard = async (
     table,
     search,
   );
+  const totals = aggregateLevel0TotalsFromDayRows(
+    tableResult.rows,
+    filters.sedes.length,
+  );
+  const dias = path.some((step) => step.type === "day")
+    ? 1
+    : Math.max(1, Number(totals.dias) || 1);
+  const kpi = buildKpiPayload({
+    ventas_netas: totals.ventas_netas,
+    costo_total: totals.costo_total,
+    margen_pesos: totals.margen_pesos,
+    cantidad: totals.cantidad,
+    ventas_con_iva: totals.ventas_con_iva,
+    facturas: totals.facturas,
+    dias,
+    sedes: totals.sedes,
+  });
   return { kpi, ...tableResult };
 };
 
@@ -1153,13 +1177,12 @@ export const queryFactNavRows = async (
 
   if (level === 1) {
     const result = await client.query(
-      `
-      SELECT ${idTipoExpr(table)} AS id_tipo, ${metricsSqlFor(table)}
-      FROM ${table}
-      WHERE ${where}
-      GROUP BY 1
-      ORDER BY 1
-      `,
+      buildGroupedMetricsSql(
+        table,
+        where,
+        { keySql: idTipoExpr(table), keyAlias: "id_tipo" },
+        "ORDER BY 1",
+      ),
       params,
     );
     return {
