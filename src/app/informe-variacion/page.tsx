@@ -115,6 +115,21 @@ const writeSessionInforme = (
   }
 };
 
+/** Evita congelar el UI al serializar payloads multi-MB del mes. */
+const writeSessionInformeIdle = (
+  storagePrefix: string,
+  key: string,
+  payload: InformeVariacionPayload,
+) => {
+  if (typeof window === "undefined") return;
+  const run = () => writeSessionInforme(storagePrefix, key, payload);
+  if (typeof requestIdleCallback !== "undefined") {
+    requestIdleCallback(run, { timeout: 8_000 });
+    return;
+  }
+  window.setTimeout(run, 0);
+};
+
 const clearSessionInformeMonth = (
   storagePrefix: string,
   year: number,
@@ -324,15 +339,23 @@ export default function InformeVariacionPage() {
       month: number,
       rangeId: InformeDayRangeId,
       data: InformeVariacionPayload,
+      options: { warm?: boolean; persistSession?: "sync" | "idle" | "none" } = {},
     ): InformeVariacionPayload | null => {
       // No persistir vacios (p.ej. durante TRUNCATE del refresh diario).
       const scoped = filterInformePayloadForLineScope(data, lineCategoryScope);
       if (!scoped.rows?.length) return null;
       const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
       memoryCacheRef.current.set(key, scoped);
-      writeSessionInforme(sessionStoragePrefix, key, scoped);
+      const persist = options.persistSession ?? "idle";
+      if (persist === "sync") {
+        writeSessionInforme(sessionStoragePrefix, key, scoped);
+      } else if (persist === "idle") {
+        writeSessionInformeIdle(sessionStoragePrefix, key, scoped);
+      }
       markRangeReady(rangeId);
-      prefetchWarmInformeRange(scoped);
+      if (options.warm !== false) {
+        prefetchWarmInformeRange(scoped, { metrics: ["v"] });
+      }
       return scoped;
     },
     [lineCategoryScope, markRangeReady, scopeCacheSuffix, sessionStoragePrefix],
@@ -344,8 +367,15 @@ export default function InformeVariacionPage() {
       month: number,
       payloads: Record<string, InformeVariacionPayload>,
     ) => {
+      const primaryId = dayRangeIdRef.current;
       for (const [rangeId, data] of Object.entries(payloads)) {
-        storePayload(year, month, rangeId as InformeDayRangeId, data);
+        const isPrimary = rangeId === primaryId;
+        storePayload(year, month, rangeId as InformeDayRangeId, data, {
+          // Solo el rango visible: calentar matriz + session. El resto queda
+          // en memoria; session/warm diferidos evitan congelar el hilo.
+          warm: isPrimary,
+          persistSession: isPrimary ? "idle" : "none",
+        });
       }
     },
     [storePayload],
@@ -361,7 +391,7 @@ export default function InformeVariacionPage() {
       const memoryHit = memoryCacheRef.current.get(key);
       if (memoryHit) {
         markRangeReady(rangeId);
-        prefetchWarmInformeRange(memoryHit);
+        prefetchWarmInformeRange(memoryHit, { metrics: ["v"] });
         return memoryHit;
       }
       const sessionHit = readSessionInforme(sessionStoragePrefix, key);
@@ -372,7 +402,7 @@ export default function InformeVariacionPage() {
         );
         memoryCacheRef.current.set(key, scoped);
         markRangeReady(rangeId);
-        prefetchWarmInformeRange(scoped);
+        prefetchWarmInformeRange(scoped, { metrics: ["v"] });
         return scoped;
       }
       return null;

@@ -79,6 +79,8 @@ function InformeVariacionBoardReady({
   const [sedeSort, setSedeSort] = useState({ col: "name", dir: 1 });
   const [treeSort, setTreeSort] = useState({ col: "name", dir: 1 });
   const [matrixSort, setMatrixSort] = useState({ col: -1, dir: 1 });
+  /** El explorador es costoso; no montarlo hasta que el usuario lo pida. */
+  const [treeMounted, setTreeMounted] = useState(false);
 
   const filtersPending =
     deferredFilters !== filters && hasActiveInformeFilters(filters);
@@ -513,31 +515,53 @@ function InformeVariacionBoardReady({
 
       <Section
         title="Explorador jerarquico"
-        actions={<MetricToggle value={treeMetric} onChange={setTreeMetric} />}
+        actions={
+          treeMounted ? (
+            <MetricToggle value={treeMetric} onChange={setTreeMetric} />
+          ) : null
+        }
       >
-        <TreeTable
-          payload={prepared}
-          metric={treeMetric}
-          pass={pass}
-          treeOpen={treeOpen}
-          setTreeOpen={setTreeOpen}
-          treeShown={treeShown}
-          setTreeShown={setTreeShown}
-          sort={treeSort}
-          onSort={(col) =>
-            setTreeSort((current) => ({
-              col,
-              dir: current.col === col ? current.dir * -1 : 1,
-            }))
-          }
-          curLabel={curLabel}
-          momLabel={momLabel}
-          yoyLabel={yoyLabel}
-        />
-        <p className="mt-3 text-xs text-slate-500">
-          Participacion % = peso del nodo dentro del total filtrado del periodo actual. «Nuevo» =
-          sin venta en el periodo base.
-        </p>
+        {treeMounted ? (
+          <>
+            <TreeTable
+              payload={prepared}
+              metric={treeMetric}
+              pass={pass}
+              treeOpen={treeOpen}
+              setTreeOpen={setTreeOpen}
+              treeShown={treeShown}
+              setTreeShown={setTreeShown}
+              sort={treeSort}
+              onSort={(col) =>
+                setTreeSort((current) => ({
+                  col,
+                  dir: current.col === col ? current.dir * -1 : 1,
+                }))
+              }
+              curLabel={curLabel}
+              momLabel={momLabel}
+              yoyLabel={yoyLabel}
+            />
+            <p className="mt-3 text-xs text-slate-500">
+              Participacion % = peso del nodo dentro del total filtrado del periodo actual. «Nuevo» =
+              sin venta en el periodo base.
+            </p>
+          </>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+            <p className="text-sm text-slate-600">
+              El explorador carga el detalle completo sede → categoría → ítem y
+              puede ralentizar el navegador. Ábrelo solo si lo necesitas.
+            </p>
+            <button
+              type="button"
+              onClick={() => setTreeMounted(true)}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              Mostrar explorador
+            </button>
+          </div>
+        )}
       </Section>
 
       <footer className="text-xs text-slate-500">

@@ -56,23 +56,25 @@ const scheduleIdle = (
 };
 
 /**
- * Tras guardar un rango en memoria: prepare + matriz u/v sin filtros en idle.
- * El cambio de corte reusa ambos caches y evita "Preparando matriz…".
+ * Tras guardar un rango en memoria: prepare + matriz (por defecto solo `u`) en idle.
+ * Evita calentar u+v para cada rango del mes (congela el tab al llegar el bundle).
  */
 export const prefetchWarmInformeRange = (
   payload: InformeVariacionPayload,
+  options: { metrics?: readonly InformeMetric[] } = {},
 ): void => {
   if (typeof window === "undefined") return;
+  const metrics = options.metrics ?? (["v"] as const);
   scheduleIdle(() => {
     const prepared = ensurePrepareInformeData(payload);
     const warm = getUnfilteredMatrixWarm(prepared.rows);
-    if (warm?.u && warm?.v) return;
+    if (metrics.every((metric) => warm?.[metric])) return;
     warmUnfilteredMatrixAgg(
       prepared.rows,
       prepared.rowIndex,
       prepared.sedes.length,
       prepared.metricCtx,
-      ["u", "v"],
+      metrics,
     );
   }, RANGE_WARM_IDLE_TIMEOUT_MS);
 };

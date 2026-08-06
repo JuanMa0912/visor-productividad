@@ -22,7 +22,8 @@ import {
   setCachedInformePayload,
 } from "@/lib/informe-variacion/informe-cache";
 import {
-  canUseInformePayloadStd,
+  adaptInformePayloadStdBundleForRequest,
+  adaptInformePayloadStdForRequest,
   getInformePayloadStd,
   getInformePayloadStdBundle,
 } from "@/lib/informe-variacion/payload-std-server";
@@ -33,7 +34,6 @@ import {
   userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
-import { stripDinastiaFromInformePayload } from "@/lib/informe-variacion/sede-order";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -234,13 +234,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const useStd =
-      dataKind === "default" &&
-      !forceRefresh &&
-      canUseInformePayloadStd(
-        allowedSedeKeys,
-        lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-      );
+    const useStd = dataKind === "default" && !forceRefresh;
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
       try {
@@ -251,15 +245,11 @@ export async function GET(request: Request) {
           availableRanges.map((range) => range.id),
         );
         if (snapped) {
-          const cleaned = {
-            ...snapped,
-            payloads: Object.fromEntries(
-              Object.entries(snapped.payloads).map(([rangeId, payload]) => [
-                rangeId,
-                stripDinastiaFromInformePayload(payload),
-              ]),
-            ),
-          };
+          const cleaned = adaptInformePayloadStdBundleForRequest(
+            snapped,
+            allowedSedeKeys,
+            lineScope,
+          );
           setCachedInformeMonthBundle(
             bundleKey,
             cleaned,
@@ -420,13 +410,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const useStd =
-    dataKind === "default" &&
-    !forceRefresh &&
-    canUseInformePayloadStd(
-      allowedSedeKeys,
-      lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-    );
+  const useStd = dataKind === "default" && !forceRefresh;
   if (useStd && effectiveRange) {
     const stdClient = await (await getDbPool()).connect();
     try {
@@ -437,7 +421,11 @@ export async function GET(request: Request) {
         effectiveRange.id,
       );
       if (snapped) {
-        const cleaned = stripDinastiaFromInformePayload(snapped);
+        const cleaned = adaptInformePayloadStdForRequest(
+          snapped,
+          allowedSedeKeys,
+          lineScope,
+        );
         setCachedInformePayload(cacheKey, cleaned);
         return withSession(
           NextResponse.json(cleaned, {

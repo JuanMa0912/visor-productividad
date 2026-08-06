@@ -119,7 +119,7 @@ Codigo compartido sin UI de pagina.
 | `productivity` | productividad por linea con cache de archivo opcional |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
-| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`); UI solo muestra rangos de dias ya precargados; sessionStorage namespaced por usuario (`v3`); alcance linea via `line-category-scope` |
+| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); UI monta explorador bajo demanda; sessionStorage solo del rango visible (idle); alcance linea via `line-category-scope` |
 | `rotacion` | rotacion e inventario con baja salida |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |

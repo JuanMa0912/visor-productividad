@@ -1,10 +1,13 @@
 import type { QueryResult, QueryResultRow } from "pg";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
+import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
+import { stripDinastiaFromInformePayload, filterInformeVariacionSedes } from "@/lib/informe-variacion/sede-order";
 import {
   INFORME_PAYLOAD_STD_FULL_SCOPE,
   type InformePayloadStdMeta,
 } from "@/lib/informe-variacion/payload-std";
+import type { UserLineCategoryScope } from "@/lib/shared/line-category-scope";
 
 type Queryable = {
   query: <T extends QueryResultRow = QueryResultRow>(
@@ -16,6 +19,12 @@ type Queryable = {
 const TABLE_MISSING = /informe_variacion_payload_std/i;
 const DOES_NOT_EXIST = /does not exist|no existe/i;
 
+/**
+ * Antes: el snapshot solo servía scope completo (sin sedes/líneas).
+ * Ahora siempre se puede leer el std base `*` y recortar en servidor.
+ * Se conserva por compat de tests/docs: indica si el payload std se puede
+ * devolver sin adaptar.
+ */
 export const canUseInformePayloadStd = (
   allowedSedeKeys: string[] | null,
   forcedMargenTipos?: string[] | null,
@@ -26,6 +35,37 @@ export const canUseInformePayloadStd = (
   (forcedMargenTipos == null || forcedMargenTipos.length === 0) &&
   (forcedMargenLineas == null || forcedMargenLineas.length === 0) &&
   (excludedMargenTipos == null || excludedMargenTipos.length === 0);
+
+/**
+ * Adapta el snapshot full-scope al alcance de la sesión (sedes + línea).
+ * Obligatorio antes de devolver std a usuarios restringidos.
+ */
+export const adaptInformePayloadStdForRequest = (
+  payload: InformeVariacionPayload,
+  allowedSedeKeys: string[] | null,
+  lineScope: UserLineCategoryScope,
+): InformeVariacionPayload => {
+  let next = stripDinastiaFromInformePayload(payload);
+  if (allowedSedeKeys !== null) {
+    const allowed = new Set(allowedSedeKeys);
+    next = filterInformeVariacionSedes(next, (sede) => allowed.has(sede.key));
+  }
+  return filterInformePayloadForLineScope(next, lineScope);
+};
+
+export const adaptInformePayloadStdBundleForRequest = (
+  bundle: InformeVariacionMonthBundle,
+  allowedSedeKeys: string[] | null,
+  lineScope: UserLineCategoryScope,
+): InformeVariacionMonthBundle => ({
+  ...bundle,
+  payloads: Object.fromEntries(
+    Object.entries(bundle.payloads).map(([rangeId, payload]) => [
+      rangeId,
+      adaptInformePayloadStdForRequest(payload, allowedSedeKeys, lineScope),
+    ]),
+  ),
+});
 
 export const getInformePayloadStd = async (
   client: Queryable,
