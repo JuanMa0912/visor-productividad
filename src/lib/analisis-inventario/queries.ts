@@ -971,8 +971,12 @@ export async function queryAnalisisInventarioFilterCatalog(
 
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
-  const params: unknown[] =
-    mode === "periodo_std" ? [] : [args.dateStart, args.dateEnd];
+  // Solo se pasa la fecha FINAL. El catalogo de filtros se arma sobre la foto de
+  // un dia (`fecha = ...`), no sobre el rango, asi que `dateStart` no se usa.
+  // Pasarlo igualmente rompia las tres consultas: si el SQL referencia $2 pero
+  // nunca $1, Postgres no puede inferir el tipo de $1 y aborta con
+  // 42P18 "could not determine data type of parameter $1".
+  const params: unknown[] = mode === "periodo_std" ? [] : [args.dateEnd];
   const sedeFilter = buildSedePairSqlFilter(params, args.sedePairs);
   const familySql = lineFamilySqlFilter(
     args.lineFamily ?? "all",
@@ -985,10 +989,7 @@ export async function queryAnalisisInventarioFilterCatalog(
     diMinDays: null as number | null,
   };
 
-  const dateSql =
-    mode === "periodo_std"
-      ? "TRUE"
-      : `fecha = $${2}::date`;
+  const dateSql = mode === "periodo_std" ? "TRUE" : "fecha = $1::date";
 
   const lineasResult = await withStatementTimeout(client, 20_000, () =>
     client.query<{ value: string; label: string }>(
