@@ -121,20 +121,29 @@ describe("asadero: items fuera de las listas de codigos fijos", () => {
   const LINE_REAL = "POLLO ASADO";
   const SUB_REAL = "POLLO";
 
-  it("respeta las presas declaradas en la descripcion (*11 PRESAS)", () => {
-    // Item real 078446. Antes daba presaUnits=1 -> 0,125 pollos/und en vez de
-    // 1,375: sobre 90 dias faltaban 1.635 pollos (1,24% del total de asaderos).
+  it("un pollo despresado es 1 pollo, no N presas sueltas", () => {
+    // Item real 078446. El precio lo zanja: $26.893/und frente a $22.927 del
+    // pollo apanado entero (1,17x, la prima por despresar). Once presas sueltas
+    // costarian ~$37.000 (pechuga 5.426 + muslo 3.389 + contramuslo 3.378 +
+    // ala 3.214). Antes se contaba como UNA presa (0,125 pollos); tratarlo como
+    // 11 presas (1,375) seria el error contrario.
     const conv = resolveAsaderoPollosConversion(
       "078446 POLLO APANADO*11 PRESAS",
       "",
       LINE_REAL,
       SUB_REAL,
     );
-    assert.equal(conv.kind, "presa");
-    assert.equal(conv.presaUnits, 11);
+    assert.equal(conv.kind, "pollo");
     assert.equal(
-      convertAsaderoQtyToPollosUnd(8, "078446 POLLO APANADO*11 PRESAS", "", LINE_REAL, SUB_REAL),
-      11,
+      convertAsaderoQtyToPollosUnd(10, "078446 POLLO APANADO*11 PRESAS", "", LINE_REAL, SUB_REAL),
+      10,
+    );
+  });
+
+  it("medio pollo despresado sigue siendo medio", () => {
+    assert.equal(
+      convertAsaderoQtyToPollosUnd(2, "099040 MEDIO POLLO APANADO*5 PRESAS", "", LINE_REAL, SUB_REAL),
+      1,
     );
   });
 

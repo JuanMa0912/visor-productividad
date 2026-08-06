@@ -125,17 +125,36 @@ const countComboPresas = (text: string): number => {
   return count;
 };
 
-/**
- * Presas declaradas en la propia descripcion: "POLLO APANADO*11 PRESAS" son 11,
- * no 1. Sin esto ese item se contaba como una sola presa: medido sobre 90 dias,
- * 1.308 unidades daban 164 pollos en vez de 1.799 (faltaban 1.635, un 1,24% del
- * total de asaderos).
- */
-const explicitPresaCount = (text: string): number | null => {
+/** Piezas declaradas en la descripcion: "*11 PRESAS", "* 4 PRESAS". */
+const declaredPieceCount = (text: string): number | null => {
   const match = /(\d{1,2})\s*PRESAS?\b/.exec(text);
   if (!match) return null;
   const count = Number(match[1]);
   return Number.isInteger(count) && count >= 1 && count <= 24 ? count : null;
+};
+
+/**
+ * "POLLO APANADO*11 PRESAS" es un pollo ENTERO despresado en 11 piezas, NO once
+ * presas sueltas. Vale 1 pollo.
+ *
+ * Verificado por precio sobre 90 dias: $26.893 la unidad, frente a $22.927 del
+ * pollo apanado entero (1,17x, la prima por despresar). Once presas sueltas
+ * costarian ~$37.000 sumando pechuga ($5.426), muslo ($3.389), contramuslo
+ * ($3.378) y ala ($3.214). Ademas la familia de nombres lo confirma:
+ * POLLO APANADO ENTERO / POLLO APANADO MEDIO / POLLO APANADO*11 PRESAS.
+ *
+ * Solo aplica cuando la descripcion nombra POLLO. Un "OFERTA 4 PRESAS" sin
+ * pollo se sigue tratando como presas sueltas; no hay hoy ningun item asi, asi
+ * que esa rama no esta respaldada por datos reales.
+ */
+const resolveChickenInPieces = (
+  itemText: string,
+): AsaderoPollosUnitKind | null => {
+  if (!/\bPOLLOS?\b/.test(itemText)) return null;
+  if (declaredPieceCount(itemText) === null) return null;
+  if (/\b(MEDIO(S)?|MITAD(ES)?)\b/.test(itemText)) return "medio";
+  if (/\bCUARTO(S)?\b/.test(itemText)) return "cuarto";
+  return "pollo";
 };
 
 export const resolveAsaderoPollosConversion = (
@@ -174,8 +193,14 @@ export const resolveAsaderoPollosConversion = (
   // "COMBO POLLO ASADO ENTERO + ENSALADA" contaba 0 pollos pese a llevar uno.
   if (isSideDishText(text) && !hasChickenContent) return { kind: "exclude" };
 
-  // Las presas declaradas en la descripcion mandan sobre cualquier heuristica.
-  const declaredPresas = explicitPresaCount(text);
+  // "POLLO ...*N PRESAS" es una presentacion de pollo despresado, no N presas
+  // sueltas. Se resuelve aqui, ANTES del chequeo generico de PRESA de mas abajo,
+  // que si no se llevaria "MEDIO POLLO APANADO*5 PRESAS" como presa suelta.
+  const chickenInPieces = resolveChickenInPieces(itemText);
+  if (chickenInPieces) return { kind: chickenInPieces };
+
+  // Piezas declaradas SIN mencionar pollo: se toman como presas sueltas.
+  const declaredPresas = declaredPieceCount(itemText);
   if (declaredPresas !== null) {
     return { kind: "presa", presaUnits: declaredPresas };
   }
