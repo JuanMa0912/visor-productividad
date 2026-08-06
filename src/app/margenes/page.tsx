@@ -58,6 +58,9 @@ export default function MargenesPage() {
 
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
+  /** Fechas que alimentan el board (debounce / commit del modal). */
+  const [boardDateStart, setBoardDateStart] = useState("");
+  const [boardDateEnd, setBoardDateEnd] = useState("");
   const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
   const [dataCommitted, setDataCommitted] = useState(false);
   const [sedePickerOpen, setSedePickerOpen] = useState(false);
@@ -158,6 +161,8 @@ export default function MargenesPage() {
             if (range) {
               setDateStart(range.start);
               setDateEnd(range.end);
+              setBoardDateStart(range.start);
+              setBoardDateEnd(range.end);
             }
           }
         }
@@ -268,6 +273,8 @@ export default function MargenesPage() {
     const applySelection = () => {
       setSelectedSedes(pendingSedes);
       setBoardSedes(pendingSedes);
+      setBoardDateStart(dateStart);
+      setBoardDateEnd(dateEnd);
       setDataCommitted(true);
       setSedePickerOpen(false);
     };
@@ -291,6 +298,8 @@ export default function MargenesPage() {
             if (range) {
               setDateStart(range.start);
               setDateEnd(range.end);
+              setBoardDateStart(range.start);
+              setBoardDateEnd(range.end);
             }
           }
         }
@@ -300,7 +309,17 @@ export default function MargenesPage() {
         applySelection();
       }
     })();
-  }, [pendingSedes, metaEmpresaParam]);
+  }, [pendingSedes, metaEmpresaParam, dateStart, dateEnd]);
+
+  // Debounce fechas del header: evita un fetch por cada día al arrastrar el date picker.
+  useEffect(() => {
+    if (!dataCommitted) return;
+    const timer = window.setTimeout(() => {
+      setBoardDateStart(dateStart);
+      setBoardDateEnd(dateEnd);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [dateStart, dateEnd, dataCommitted]);
 
   const handleSedeDrill = useCallback((sede: string) => {
     setBoardSedes([sede]);
@@ -415,6 +434,12 @@ export default function MargenesPage() {
                 className="rounded-md border border-[#2a2f47] bg-[#1b1e2e] px-2.5 py-1.5 text-xs text-[#dde3f0] disabled:opacity-50"
               />
             </div>
+            {dataCommitted &&
+            (dateStart !== boardDateStart || dateEnd !== boardDateEnd) ? (
+              <span className="pb-1 text-[10px] text-[#fbbf24]">
+                Aplicando fechas…
+              </span>
+            ) : null}
           </div>
 
           <main
@@ -458,8 +483,8 @@ export default function MargenesPage() {
               </div>
             ) : (
               <MargenesBoard
-                dateStart={dateStart}
-                dateEnd={dateEnd}
+                dateStart={boardDateStart}
+                dateEnd={boardDateEnd}
                 selectedSedes={boardSedes.length > 0 ? boardSedes : selectedSedes}
                 dataCommitted={dataCommitted}
                 onSedeDrill={handleSedeDrill}

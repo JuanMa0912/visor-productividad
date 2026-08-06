@@ -41,7 +41,6 @@ import {
 import {
   buildDayMetricsSql,
   buildMargenOrderBy,
-  buildTotalMetricsSql,
   boardMetricsSqlFor,
   KPI_MERCADO_TIPO,
   metricsSqlFor,
@@ -342,6 +341,71 @@ const sortDayRows = (rows: DrillRow[], filters: MargenQueryFilters) => {
   });
 };
 
+/**
+ * Totales nivel 0 desde filas por día (sin segundo scan SQL).
+ *
+ * Ventas/costo/margen/cantidad son exactos (suma aditiva).
+ * `facturas`/`items`/dims suman conteos diarios: pueden sobrecontar uniques
+ * entre días; se acepta para evitar ~20–25 s de `buildTotalMetricsSql`.
+ */
+export const aggregateLevel0TotalsFromDayRows = (
+  dayRows: ReadonlyArray<
+    Pick<
+      DrillRow,
+      | "ventasNetas"
+      | "costoTotal"
+      | "margenPesos"
+      | "cantidad"
+      | "ventasConIva"
+      | "facturas"
+      | "categorias"
+      | "lineas"
+      | "sublineas"
+      | "items"
+    >
+  >,
+  sedeCount: number,
+): Record<string, string | number> => {
+  let ventasNetas = 0;
+  let costoTotal = 0;
+  let margenPesos = 0;
+  let cantidad = 0;
+  let ventasConIva = 0;
+  let facturas = 0;
+  let items = 0;
+  let categorias = 0;
+  let lineas = 0;
+  let sublineas = 0;
+
+  for (const row of dayRows) {
+    ventasNetas += row.ventasNetas;
+    costoTotal += row.costoTotal;
+    margenPesos += row.margenPesos;
+    cantidad += row.cantidad;
+    ventasConIva += row.ventasConIva;
+    facturas += row.facturas ?? 0;
+    items += row.items ?? 0;
+    categorias += row.categorias ?? 0;
+    lineas += row.lineas ?? 0;
+    sublineas += row.sublineas ?? 0;
+  }
+
+  return {
+    ventas_netas: ventasNetas,
+    costo_total: costoTotal,
+    margen_pesos: margenPesos,
+    cantidad,
+    ventas_con_iva: ventasConIva,
+    facturas,
+    items,
+    categorias,
+    lineas,
+    sublineas,
+    dias: dayRows.length,
+    sedes: sedeCount,
+  };
+};
+
 const withMercadoDefaultCategoria = (
   filters: MargenQueryFilters,
   table: MargenDataTable,
@@ -368,24 +432,13 @@ const queryDrillLevel0 = async (
   const levelFilters = withMercadoDefaultCategoria(filters, table);
   const dayWhere = buildWhere(levelFilters, [], params, table, false);
 
-  // DOS consultas en vez de un GROUP BY GROUPING SETS ((), (fecha_dcto)).
+  // UNA consulta (filas por día). El total/KPI/ACUMULADO se deriva en JS.
   //
-  // El GROUPING SETS parecía barato (una sola pasada) pero PostgreSQL no puede
-  // compartir trabajo entre los grouping sets cuando hay agregados DISTINCT:
-  // resuelve cada COUNT(DISTINCT) con su propio ordenamiento, y la fila total no
-  // puede repartirse por fecha.
-  //
-  // Ninguna de las dos usa ya `metricsSqlFor()`: los 5 COUNT(DISTINCT) fuerzan
-  // un Sort de la relación completa. Medido contra producción (Cloud SQL, julio
-  // × 11 sedes = 8,17M filas, `work_mem` 256MB como en esta ruta):
-  //
-  //                                    antes      ahora
-  //   filas por día ................   61,7 s     26,5 s   <- buildDayMetricsSql
-  //   fila total ...................   22,2 s     22,2 s   <- buildTotalMetricsSql
-  //   TOTAL de la petición .........   83,9 s     48,7 s
-  //
-  // El proxy corta a los 90 s y `mode=filters` (29,6 s) corre en paralelo
-  // compitiendo por CPU: con 83,9 s el tablero daba 504 al pedir todas las sedes.
+  // Antes: day (~26 s) + buildTotalMetricsSql (~22 s) ≈ 49 s en julio × 11 sedes.
+  // El segundo scan solo aportaba COUNT DISTINCT global de facturas/ítems/dims;
+  // ventas/costo/margen ya son aditivos por día. Evitarlo corta ~40% el wall time
+  // del nivel 0 y reduce competencia con `mode=filters` (que antes sumaba ~30 s
+  // en paralelo y empujaba al proxy 90 s → 504).
   const dayResult = await client.query(
     buildDayMetricsSql(table, dayWhere),
     params,
@@ -405,27 +458,11 @@ const queryDrillLevel0 = async (
 
   sortDayRows(dayRows, filters);
 
-  // El total solo se pide si alguien lo va a usar: la fila ACUMULADO (que exige
-  // más de un día) o el KPI de la cabecera.
-  const needsTotal = (dayRows.length > 1 || options?.includeKpi === true) &&
-    dayRows.length > 0;
-  let totalRow: Record<string, string | number> | null = null;
-  if (needsTotal) {
-    const totalResult = await client.query(
-      buildTotalMetricsSql(table, dayWhere),
-      params,
-    );
-    totalRow = (totalResult.rows[0] as Record<string, string | number>) ?? null;
-    if (totalRow) {
-      // Exacto y gratis: cada fila del detalle es una fecha distinta. Evita otro
-      // COUNT(DISTINCT fecha_dcto) sobre la tabla completa.
-      totalRow.dias = dayRows.length;
-      // Las sedes las conoce la petición; consultarlas costaba una pasada más.
-      // En este nivel `sedes` nunca viene vacío: la ruta exige seleccionar sede
-      // antes de consultar (HEAVY_MODES en api/margenes/data/route.ts).
-      totalRow.sedes = levelFilters.sedes.length;
-    }
-  }
+  const needsTotal =
+    (dayRows.length > 1 || options?.includeKpi === true) && dayRows.length > 0;
+  const totalRow = needsTotal
+    ? aggregateLevel0TotalsFromDayRows(dayRows, levelFilters.sedes.length)
+    : null;
 
   const rows = [...dayRows];
   if (rows.length > 1 && totalRow) {
@@ -444,9 +481,20 @@ const queryDrillLevel0 = async (
     });
   }
 
+  // KPI: sin categorias/lineas/items (suma diaria sobrecuenta uniques); el
+  // subtítulo usa cantidad / % margen en vez de "N ítems".
   const kpi =
     options?.includeKpi && totalRow
-      ? buildKpiPayload(totalRow)
+      ? buildKpiPayload({
+          ventas_netas: totalRow.ventas_netas,
+          costo_total: totalRow.costo_total,
+          margen_pesos: totalRow.margen_pesos,
+          cantidad: totalRow.cantidad,
+          ventas_con_iva: totalRow.ventas_con_iva,
+          facturas: totalRow.facturas,
+          dias: totalRow.dias,
+          sedes: totalRow.sedes,
+        })
       : undefined;
 
   return { kpi, level: 0, levelName: "Día", rows };

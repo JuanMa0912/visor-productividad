@@ -220,8 +220,12 @@ export const buildTotalMetricsSql = (
  *   GroupAggregate + Sort (external merge, 601 MB a disco) ..... 61,7 s
  *   esta forma (HashAggregate sobre CTE materializado) ......... 26,5 s
  *
- * Junto a la fila total (22,2 s) la petición `mode=drill` bajaba de ~84 s a
- * ~49 s. El proxy corta a los 90 s, y `mode=filters` (29,6 s) corre en paralelo
+ * Junto a la fila total (antes ~22 s) la petición `mode=drill` bajaba de ~84 s a
+ * ~49 s. Desde 2026-08 el nivel 0 ya no llama `buildTotalMetricsSql`: KPI y
+ * ACUMULADO se derivan en JS desde las filas por día (~26 s wall). Esta función
+ * sigue disponible para rutas/KPI que necesiten DISTINCT globales exactos.
+ *
+ * El proxy corta a los 90 s, y `mode=filters` (29,6 s) corre en paralelo
  * compitiendo por CPU: por eso el tablero daba 504 con todas las sedes.
  *
  * Cosas que se midieron y NO sirven, para que nadie las reintente:

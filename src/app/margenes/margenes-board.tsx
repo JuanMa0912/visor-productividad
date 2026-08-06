@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { DrillPathStep } from "@/lib/margenes/drill-path";
 import type { FactNavStep } from "@/lib/margenes/fact-path";
@@ -716,11 +716,6 @@ export const MargenesBoard = ({
     [selectedSedes],
   );
 
-  // Si el padre cambia sedes (modal / drill Por Sede), no conservar el
-  // override del multi-select local (si no, effectiveSedes queda stale).
-  useEffect(() => {
-    setSedes([]);
-  }, [selectedSedesKey]);
   const [fechas, setFechas] = useState<string[]>([]);
   const [categorias, setCategorias] = useState<string[]>(() =>
     lockedCategorias?.length ? [...lockedCategorias] : [],
@@ -731,6 +726,17 @@ export const MargenesBoard = ({
   const [sublineas, setSublineas] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>([]);
   const [cajaAreas, setCajaAreas] = useState<DinastiaCajaArea[]>([]);
+  /** Filtros enviados al API: solo cambian con «Aplicar filtros» / Limpiar. */
+  const [appliedFilters, setAppliedFilters] = useState({
+    empresas: [] as string[],
+    sedes: [] as string[],
+    fechas: [] as string[],
+    categorias: lockedCategorias?.length ? [...lockedCategorias] : ([] as string[]),
+    lineas: lockedLineas?.length ? [...lockedLineas] : ([] as string[]),
+    sublineas: [] as string[],
+    items: [] as string[],
+    cajaAreas: [] as DinastiaCajaArea[],
+  });
   const [itemSearchOptions, setItemSearchOptions] = useState<FilterOption[]>(
     [],
   );
@@ -747,6 +753,10 @@ export const MargenesBoard = ({
     null,
   );
   const [vendedorFactPath, setVendedorFactPath] = useState<FactNavStep[]>([]);
+  const [drillSearchInput, setDrillSearchInput] = useState("");
+  const [factSearchInput, setFactSearchInput] = useState("");
+  const [clienteSearchInput, setClienteSearchInput] = useState("");
+  const [vendedorSearchInput, setVendedorSearchInput] = useState("");
   const [drillSearch, setDrillSearch] = useState("");
   const [factSearch, setFactSearch] = useState("");
   const [clienteSearch, setClienteSearch] = useState("");
@@ -762,38 +772,167 @@ export const MargenesBoard = ({
   const [loading, setLoading] = useState(false);
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const filtersLoadedKeyRef = useRef<string | null>(null);
+
+  // Si el padre cambia sedes (modal / drill Por Sede), no conservar el
+  // override del multi-select local (si no, effectiveSedes queda stale).
+  useEffect(() => {
+    setSedes([]);
+    setAppliedFilters((current) =>
+      current.sedes.length === 0 ? current : { ...current, sedes: [] },
+    );
+    setFilterOptions(null);
+    filtersLoadedKeyRef.current = null;
+  }, [selectedSedesKey]);
 
   const effectiveSedes = useMemo(
+    () =>
+      appliedFilters.sedes.length > 0 ? appliedFilters.sedes : selectedSedes,
+    [appliedFilters.sedes, selectedSedes],
+  );
+
+  const draftEffectiveSedes = useMemo(
     () => (sedes.length > 0 ? sedes : selectedSedes),
     [sedes, selectedSedes],
   );
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDrillSearch(drillSearchInput), 350);
+    return () => window.clearTimeout(timer);
+  }, [drillSearchInput]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setFactSearch(factSearchInput), 350);
+    return () => window.clearTimeout(timer);
+  }, [factSearchInput]);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setClienteSearch(clienteSearchInput),
+      350,
+    );
+    return () => window.clearTimeout(timer);
+  }, [clienteSearchInput]);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setVendedorSearch(vendedorSearchInput),
+      350,
+    );
+    return () => window.clearTimeout(timer);
+  }, [vendedorSearchInput]);
+
+  useEffect(() => {
     if (!lockedCategorias?.length) return;
     setCategorias([...lockedCategorias]);
+    setAppliedFilters((current) => ({
+      ...current,
+      categorias: [...lockedCategorias],
+    }));
     setFilterOptions(null);
+    filtersLoadedKeyRef.current = null;
   }, [lockedCategorias]);
 
   useEffect(() => {
     if (!lockedLineas?.length) return;
     setLineas([...lockedLineas]);
+    setAppliedFilters((current) => ({
+      ...current,
+      lineas: [...lockedLineas],
+    }));
     setFilterOptions(null);
+    filtersLoadedKeyRef.current = null;
   }, [lockedLineas]);
 
+  const sameStringList = (a: string[], b: string[]) => {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    return sortedA.every((value, index) => value === sortedB[index]);
+  };
+
+  const filtersDirty = useMemo(() => {
+    if (!sameStringList(empresas, appliedFilters.empresas)) return true;
+    if (!sameStringList(sedes, appliedFilters.sedes)) return true;
+    if (!sameStringList(fechas, appliedFilters.fechas)) return true;
+    if (!sameStringList(categorias, appliedFilters.categorias)) return true;
+    if (!sameStringList(lineas, appliedFilters.lineas)) return true;
+    if (!sameStringList(sublineas, appliedFilters.sublineas)) return true;
+    if (!sameStringList(items, appliedFilters.items)) return true;
+    if (!sameStringList(cajaAreas, appliedFilters.cajaAreas)) return true;
+    return false;
+  }, [
+    appliedFilters,
+    cajaAreas,
+    categorias,
+    empresas,
+    fechas,
+    items,
+    lineas,
+    sedes,
+    sublineas,
+  ]);
+
+  const applyFilters = useCallback(() => {
+    setAppliedFilters({
+      empresas: [...empresas],
+      sedes: [...sedes],
+      fechas: [...fechas],
+      categorias: [...categorias],
+      lineas: [...lineas],
+      sublineas: [...sublineas],
+      items: [...items],
+      cajaAreas: [...cajaAreas],
+    });
+    setDrillPath([]);
+    setFactPath([]);
+    setClienteFocus(null);
+    setClienteFactPath([]);
+    setVendedorFocus(null);
+    setVendedorFactPath([]);
+  }, [
+    cajaAreas,
+    categorias,
+    empresas,
+    fechas,
+    items,
+    lineas,
+    sedes,
+    sublineas,
+  ]);
+
   const resetFilters = useCallback(() => {
+    const nextCategorias = lockedCategorias?.length
+      ? [...lockedCategorias]
+      : [];
+    const nextLineas = lockedLineas?.length ? [...lockedLineas] : [];
     setEmpresas([]);
     setSedes([]);
     setFechas([]);
-    setCategorias(lockedCategorias?.length ? [...lockedCategorias] : []);
-    setLineas(lockedLineas?.length ? [...lockedLineas] : []);
+    setCategorias(nextCategorias);
+    setLineas(nextLineas);
     setSublineas([]);
     setItems([]);
     setCajaAreas([]);
+    setAppliedFilters({
+      empresas: [],
+      sedes: [],
+      fechas: [],
+      categorias: nextCategorias,
+      lineas: nextLineas,
+      sublineas: [],
+      items: [],
+      cajaAreas: [],
+    });
+    setDrillPath([]);
+    setFactPath([]);
+    setClienteFocus(null);
+    setClienteFactPath([]);
+    setVendedorFocus(null);
+    setVendedorFactPath([]);
   }, [lockedCategorias, lockedLineas]);
 
   /** Solo Dinastía: sedes/empresas del tenant (no mezclar histórico). */
   const isDinastiaContext = useMemo(() => {
-    const sedeKeys = effectiveSedes.length > 0 ? effectiveSedes : selectedSedes;
+    const sedeKeys =
+      draftEffectiveSedes.length > 0 ? draftEffectiveSedes : selectedSedes;
     if (
       sedeKeys.length > 0 &&
       sedeKeys.every((key) => key.toLowerCase().startsWith("dinastia|"))
@@ -806,7 +945,7 @@ export const MargenesBoard = ({
       );
     }
     return false;
-  }, [effectiveSedes, selectedSedes, empresas]);
+  }, [draftEffectiveSedes, selectedSedes, empresas]);
 
   useEffect(() => {
     if (!isDinastiaContext && cajaAreas.length > 0) setCajaAreas([]);
@@ -818,54 +957,35 @@ export const MargenesBoard = ({
         from: dateStart,
         to: dateEnd,
         sede: effectiveSedes.join(","),
-        empresa: empresas.join(",") || undefined,
-        fecha: fechas.join(",") || undefined,
-        categoria: categorias.join(",") || undefined,
-        linea: lineas.join(",") || undefined,
-        sublinea: sublineas.join(",") || undefined,
-        item: items.join(",") || undefined,
+        empresa: appliedFilters.empresas.join(",") || undefined,
+        fecha: appliedFilters.fechas.join(",") || undefined,
+        categoria: appliedFilters.categorias.join(",") || undefined,
+        linea: appliedFilters.lineas.join(",") || undefined,
+        sublinea: appliedFilters.sublineas.join(",") || undefined,
+        item: appliedFilters.items.join(",") || undefined,
         cajaArea:
-          isDinastiaContext && cajaAreas.length > 0
-            ? cajaAreas.join(",")
+          isDinastiaContext && appliedFilters.cajaAreas.length > 0
+            ? appliedFilters.cajaAreas.join(",")
             : undefined,
       }),
     [
       dateStart,
       dateEnd,
       effectiveSedes,
-      empresas,
-      fechas,
-      categorias,
-      lineas,
-      sublineas,
-      items,
-      cajaAreas,
+      appliedFilters,
       isDinastiaContext,
     ],
   );
 
+  /** Catálogo de filtros: solo rango + sedes del modal (no cada toggle del draft). */
   const filterCatalogQueryBase = useMemo(
     () =>
       buildQuery({
         from: dateStart,
         to: dateEnd,
-        sede: effectiveSedes.join(","),
-        empresa: empresas.join(",") || undefined,
-        fecha: fechas.join(",") || undefined,
-        categoria: categorias.join(",") || undefined,
-        linea: lineas.join(",") || undefined,
-        sublinea: sublineas.join(",") || undefined,
+        sede: selectedSedes.join(","),
       }),
-    [
-      dateStart,
-      dateEnd,
-      effectiveSedes,
-      empresas,
-      fechas,
-      categorias,
-      lineas,
-      sublineas,
-    ],
+    [dateStart, dateEnd, selectedSedes],
   );
 
   const orderParam = useMemo(() => {
@@ -1075,6 +1195,11 @@ export const MargenesBoard = ({
     setItemSearchOptions([]);
   }, [filterCatalogQueryBase]);
 
+  useEffect(() => {
+    setFilterOptions(null);
+    filtersLoadedKeyRef.current = null;
+  }, [filterCatalogQueryBase]);
+
   const handleLineasChange = useCallback(
     (next: string[]) => {
       setLineas(next);
@@ -1124,10 +1249,12 @@ export const MargenesBoard = ({
   );
 
   const loadFilters = useCallback(async () => {
+    const catalogKey = filterCatalogQueryBase;
+    if (filtersLoadedKeyRef.current === catalogKey && filterOptions) return;
     setFiltersLoading(true);
     try {
       const response = await fetch(
-        `/api/margenes/data?mode=filters&${queryBase}`,
+        `/api/margenes/data?mode=filters&${filterCatalogQueryBase}`,
         {
           cache: "no-store",
         },
@@ -1135,15 +1262,27 @@ export const MargenesBoard = ({
       if (!response.ok) return;
       const data = (await response.json()) as MargenFiltersPayload;
       setFilterOptions(data);
+      filtersLoadedKeyRef.current = catalogKey;
     } finally {
       setFiltersLoading(false);
     }
-  }, [queryBase]);
+  }, [filterCatalogQueryBase, filterOptions]);
 
   const ensureFilters = useCallback(() => {
     if (filtersLoading) return;
+    if (
+      filterOptions &&
+      filtersLoadedKeyRef.current === filterCatalogQueryBase
+    ) {
+      return;
+    }
     void loadFilters();
-  }, [filtersLoading, loadFilters]);
+  }, [
+    filterCatalogQueryBase,
+    filterOptions,
+    filtersLoading,
+    loadFilters,
+  ]);
 
   const loadBoard = useCallback(
     async (signal?: AbortSignal) => {
@@ -1502,6 +1641,7 @@ export const MargenesBoard = ({
         });
         setClienteFactPath([]);
         setClienteSearch("");
+        setClienteSearchInput("");
         return;
       }
       if (clienteFactPath.length === 0 && row.documento) {
@@ -1518,6 +1658,7 @@ export const MargenesBoard = ({
         });
         setVendedorFactPath([]);
         setVendedorSearch("");
+        setVendedorSearchInput("");
         return;
       }
       if (vendedorFactPath.length === 0 && row.documento) {
@@ -1584,6 +1725,13 @@ export const MargenesBoard = ({
   return (
     <div className="flex flex-1 flex-col md:min-h-0">
       <div className="flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2">
+        {effectiveSedes.length >= 8 ? (
+          <p className="mb-1 w-full rounded-md border border-[#92400e]/50 bg-[#451a03]/40 px-3 py-1.5 text-[11px] text-[#fbbf24]">
+            Muchas sedes a la vez: la carga puede tardar. Usa «Aplicar filtros»
+            (no cada clic) y acota fechas si puedes. Tras la 1.ª carga, la misma
+            consulta queda en caché ~5 min.
+          </p>
+        ) : null}
         <MargenesMultiSelect
           label="Empresa"
           values={empresas}
@@ -1670,11 +1818,25 @@ export const MargenesBoard = ({
         ) : null}
         <button
           type="button"
+          onClick={applyFilters}
+          disabled={!filtersDirty || loading}
+          className="rounded-md border border-[#4f8ef7]/60 bg-[#1b2a45] px-3 py-1.5 text-xs font-semibold text-[#93c5fd] hover:border-[#4f8ef7] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          title="Los cambios de filtro no recargan hasta aplicar"
+        >
+          Aplicar filtros
+        </button>
+        <button
+          type="button"
           onClick={resetFilters}
           className="rounded-md border border-[#2a2f47] bg-[#1b1e2e] px-3 py-1.5 text-xs text-[#6b7590] hover:border-[#6b7590] hover:text-[#dde3f0]"
         >
           ↺ Limpiar
         </button>
+        {filtersDirty ? (
+          <span className="pb-1 text-[10px] text-[#fbbf24]">
+            Filtros sin aplicar
+          </span>
+        ) : null}
       </div>
 
       <div className="flex shrink-0 border-b border-[#2a2f47] bg-[#141720] px-4">
@@ -1695,9 +1857,15 @@ export const MargenesBoard = ({
               setClienteFocus(null);
               setClienteFactPath([]);
               setClienteSearch("");
+              setClienteSearchInput("");
               setVendedorFocus(null);
               setVendedorFactPath([]);
               setVendedorSearch("");
+              setVendedorSearchInput("");
+              setDrillSearch("");
+              setDrillSearchInput("");
+              setFactSearch("");
+              setFactSearchInput("");
               setSortKey(null);
               setMgSortDir("desc");
             }}
@@ -1805,19 +1973,20 @@ export const MargenesBoard = ({
           <input
             value={
               mode === "drill"
-                ? drillSearch
+                ? drillSearchInput
                 : mode === "cliente"
-                  ? clienteSearch
+                  ? clienteSearchInput
                   : mode === "vendedor"
-                    ? vendedorSearch
-                    : factSearch
+                    ? vendedorSearchInput
+                    : factSearchInput
             }
             onChange={(event) => {
-              if (mode === "drill") setDrillSearch(event.target.value);
-              else if (mode === "cliente") setClienteSearch(event.target.value);
+              if (mode === "drill") setDrillSearchInput(event.target.value);
+              else if (mode === "cliente")
+                setClienteSearchInput(event.target.value);
               else if (mode === "vendedor")
-                setVendedorSearch(event.target.value);
-              else setFactSearch(event.target.value);
+                setVendedorSearchInput(event.target.value);
+              else setFactSearchInput(event.target.value);
             }}
             placeholder={
               mode === "drill"
@@ -1832,21 +2001,30 @@ export const MargenesBoard = ({
           />
           {(
             mode === "drill"
-              ? drillSearch
+              ? drillSearchInput
               : mode === "cliente"
-                ? clienteSearch
+                ? clienteSearchInput
                 : mode === "vendedor"
-                  ? vendedorSearch
-                  : factSearch
+                  ? vendedorSearchInput
+                  : factSearchInput
           ) ? (
             <button
               type="button"
               className="rounded border border-[#2a2f47] px-2 py-1 text-[11px] text-[#6b7590] hover:text-[#dde3f0]"
               onClick={() => {
-                if (mode === "drill") setDrillSearch("");
-                else if (mode === "cliente") setClienteSearch("");
-                else if (mode === "vendedor") setVendedorSearch("");
-                else setFactSearch("");
+                if (mode === "drill") {
+                  setDrillSearchInput("");
+                  setDrillSearch("");
+                } else if (mode === "cliente") {
+                  setClienteSearchInput("");
+                  setClienteSearch("");
+                } else if (mode === "vendedor") {
+                  setVendedorSearchInput("");
+                  setVendedorSearch("");
+                } else {
+                  setFactSearchInput("");
+                  setFactSearch("");
+                }
               }}
             >
               ✕ Limpiar
@@ -1925,6 +2103,7 @@ export const MargenesBoard = ({
               setClienteFocus(null);
               setClienteFactPath([]);
               setClienteSearch("");
+              setClienteSearchInput("");
             }}
           >
             Clientes
@@ -1973,6 +2152,7 @@ export const MargenesBoard = ({
               setVendedorFocus(null);
               setVendedorFactPath([]);
               setVendedorSearch("");
+              setVendedorSearchInput("");
             }}
           >
             Vendedores
