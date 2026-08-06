@@ -38,8 +38,18 @@ jobs:
           node-version: 22
           cache: npm
 
+      # --ignore-scripts es explicito aunque el .npmrc del repo ya lo fija: si
+      # alguien borra esa linea, el CI sigue protegido. Los compromisos de npm de
+      # 2026 (axios, @asyncapi, keyv/cacheable) ejecutaban su carga desde un hook
+      # preinstall, y un runner de CI con credenciales es el objetivo preferido.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
+
+      # Verifica que cada tarball descargado esta firmado por el registro y que la
+      # firma corresponde. Detecta manipulacion en transito o en un espejo.
+      # No sustituye a `npm audit`: comprueba INTEGRIDAD, no vulnerabilidades.
+      - name: Verify registry signatures
+        run: npm audit signatures
 
       - name: Validate
         run: npm run ci

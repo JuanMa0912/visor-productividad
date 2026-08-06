@@ -118,8 +118,35 @@ Cuando se habilite HTTPS, revertir esas excepciones.
 
 ```bash
 cd /opt/visor-productividad
-npm ci
+npm ci --ignore-scripts
 ```
+
+Usar **siempre `npm ci`**, nunca `npm install`, en un servidor: `ci` instala
+exactamente lo que dice `package-lock.json`, mientras que `install` puede
+resolver versiones mas nuevas y reescribir el lock.
+
+`--ignore-scripts` bloquea los scripts `preinstall`/`postinstall` de las
+dependencias. El `.npmrc` del repo ya lo fija, asi que la bandera es
+redundante a proposito: si alguien toca ese archivo, el comando del despliegue
+sigue protegido. Es el vector que usaron los compromisos de npm de 2026
+(axios, `@asyncapi`, `keyv`/`cacheable`): la carga se ejecutaba al instalar,
+sin necesidad de que el codigo llegara a importar el paquete.
+
+Verificar la integridad de lo descargado antes de construir:
+
+```bash
+npm audit signatures   # firma del registro de cada tarball
+npm audit              # vulnerabilidades conocidas
+```
+
+**No** correr `npm audit fix --force` para bajar el contador de avisos: sube
+paquetes a versiones mas recientes, que son justamente las que salen envenenadas
+en estos ataques. Las actualizaciones se revisan una por una (Dependabot abre
+los PRs los lunes).
+
+> **Recordatorio:** si `package.json` cambio, el `npm ci` es **obligatorio**
+> antes del build. El 2026-08-06 el build reventaba con
+> `Module not found: Can't resolve 'qrcode'` justo por saltarse este paso.
 
 ### Validar antes de publicar
 

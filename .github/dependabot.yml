@@ -1,0 +1,49 @@
+# Avisos y PRs de actualizacion de dependencias.
+#
+# OJO: este archivo habilita las ACTUALIZACIONES automaticas. Las ALERTAS de
+# seguridad (Dependabot alerts) son una opcion aparte del repositorio y hoy
+# estan DESACTIVADAS: la API responde
+#   403 "Dependabot alerts are disabled for this repository"
+# Hay que encenderlas a mano en Settings -> Code security -> Dependabot alerts.
+# Sin eso, nadie se entera de un CVE nuevo hasta que alguien corra `npm audit`.
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "America/Bogota"
+    open-pull-requests-limit: 5
+    # Agrupar para no ahogar el repo en PRs de un parche cada uno.
+    groups:
+      dependencias-menores:
+        update-types:
+          - "minor"
+          - "patch"
+    # Los mayores se revisan a mano: Next/React/Tailwind rompen entre mayores.
+    ignore:
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Las acciones de GitHub tambien son cadena de suministro: una accion
+  # comprometida corre dentro del runner con acceso al token del repo.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "America/Bogota"
+    commit-message:
+      prefix: "chore(ci)"
