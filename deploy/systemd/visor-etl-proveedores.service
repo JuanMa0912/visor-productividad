@@ -1,0 +1,23 @@
+[Unit]
+Description=Visor - ETL diario de proveedores POS(217) -> produXdia.ventas_proveedor_dia (232)
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/proveedores/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=prodapp
+Group=prodapp
+WorkingDirectory=/home/prodapp/visor-productividad
+# python3 del sistema (tiene psycopg2-binary). No hay venv. Sin flags = ayer.
+# Cada corrida refresca tambien el catalogo de proveedores (upsert, nunca borra el NIT).
+ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/proveedores/etl_proveedores.py
+StandardOutput=journal
+StandardError=journal
+# OJO: NO se declara SuccessExitStatus=3 a proposito, igual que en visor-etl-ventas-item.
+# Exit 3 = alguna empresa/dia cargo 0 filas (el POS no habia cerrado el dia). Eso NO es
+# exito: dejandolo fuera, systemd marca la unidad failed y se ve en `systemctl --failed`.
+# Endurecimientos. NO usar ProtectHome: el deploy y el .env.etl viven en /home/prodapp.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true

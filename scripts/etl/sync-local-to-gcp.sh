@@ -7,6 +7,7 @@
 # Tablas (allowlist fija; NO toca tablas de estado de la app ni matviews):
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
 #   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario,
+#   ventas_proveedor_dia, proveedor_pos_catalogo (catalogo sin fecha: se sube completo),
 #   margen_final (modo replace por ventana; --margen-full para snapshot completo)
 # (ventas_item_diario y margen_final: sus ETLs de carga al local corren aparte; aqui solo
 #  los replicamos local->GCP. margen_final NO tiene clave natural -> borra ventana en GCP
@@ -168,9 +169,13 @@ fi
 DESDEC="${DESDE//-/}"; HASTAC="${HASTA//-/}"
 
 # --- Configuracion por tabla ----------------------------------------------
-TABLES=(ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
+# OJO CON EL ORDEN: proveedor_pos_catalogo va PRIMERO porque el tablero /proveedores hace
+# join contra el; si subieran antes los hechos, habria una ventana en la que el tablero
+# mostraria proveedores sin nombre.
+TABLES=(proveedor_pos_catalogo proveedor_item
+        ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
         ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario
-        margen_final)
+        ventas_proveedor_dia inventario_proveedor_dia margen_final)
 CANARIES="ventas_cajas rotacion_base_item_dia_sede asistencia_horas"
 
 # --only / --table: filtra la allowlist a un subconjunto (backfill quirurgico).
@@ -211,6 +216,12 @@ KEY[asistencia_horas]="numero,fecha"
 # natural usa COALESCE, asi que el ON CONFLICT va con la expresion (no columnas planas).
 KEY[ventas_item_diario]="fecha_dcto,empresa,empresa_norm,id_co,id_co_norm,id_item,linea"
 CONFLICT[ventas_item_diario]="(fecha_dcto, COALESCE(empresa_norm, empresa), COALESCE(id_co_norm, id_co), id_item, linea)"
+# Proveedores (tablero /proveedores). A diferencia de ventas_item_diario, sus indices unicos
+# usan columnas PLANAS a proposito, asi que el ON CONFLICT default "(KEY)" sirve tal cual.
+KEY[proveedor_pos_catalogo]="empresa,id_cricla1"
+KEY[proveedor_item]="empresa,id_item"
+KEY[ventas_proveedor_dia]="empresa,fecha_dcto,id_co,id_cricla1"
+KEY[inventario_proveedor_dia]="empresa,fecha_dia,id_co,id_cricla1"
 
 for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc ventas_industria; do
   DATECOL[$t]="fecha_dcto"; DATETYPE[$t]="text"; EXCLUDE[$t]=""
@@ -219,6 +230,17 @@ DATECOL[rotacion_base_item_dia_sede]="fecha_dia"; DATETYPE[rotacion_base_item_di
 DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"; MODE[asistencia_horas]="replace"  # replace SIEMPRE: el biometrico re-importa/corrige (a veces con MENOS filas) y el upsert dejaria huerfanas en GCP -> borra-fechas-presentes + reinserta cada sync
 DATECOL[ventas_item_diario]="fecha_dcto"; DATETYPE[ventas_item_diario]="text"; EXCLUDE[ventas_item_diario]="id,source_load_id"
 DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"; MODE[margen_final]="replace"
+DATECOL[ventas_proveedor_dia]="fecha_dcto"; DATETYPE[ventas_proveedor_dia]="text"; EXCLUDE[ventas_proveedor_dia]="id,source_load_id"
+# proveedor_pos_catalogo es un CATALOGO: NO tiene columna de fecha. MODE=full -> build_where
+# devuelve "true" y se sube entero en un unico upsert transaccional. No usa "replace":
+# el upsert nunca borra, y el catalogo tampoco borra filas en el local (los proveedores que
+# salen del POS se marcan activo=false), asi que no puede quedar huerfano.
+# El 232 es la fuente de verdad tambien para el NIT: lo que se edite en GCP se pisa.
+DATECOL[proveedor_pos_catalogo]=""; DATETYPE[proveedor_pos_catalogo]=""; EXCLUDE[proveedor_pos_catalogo]=""; MODE[proveedor_pos_catalogo]="full"
+# proveedor_item: puente item->proveedor, tambien SIN fecha -> MODE=full (~48k filas x empresa).
+DATECOL[proveedor_item]=""; DATETYPE[proveedor_item]=""; EXCLUDE[proveedor_item]=""; MODE[proveedor_item]="full"
+# inventario_proveedor_dia: fecha DATE (viene de rotacion), no text YYYYMMDD como el resto.
+DATECOL[inventario_proveedor_dia]="fecha_dia"; DATETYPE[inventario_proveedor_dia]="date"; EXCLUDE[inventario_proveedor_dia]="id"
 
 process_table_margen_full() {
   local tbl="margen_final" cols tmp cnt drop_stmt _ec
@@ -253,8 +275,12 @@ SQL
 }
 
 build_where() {
-  local tbl="$1" col="${DATECOL[$1]}"
-  if [[ "${DATETYPE[$tbl]}" == "text" ]]; then
+  local tbl="$1" col="${DATECOL[$1]:-}"
+  # Tablas de CATALOGO (sin columna de fecha): no hay ventana que aplicar, se sincronizan
+  # enteras. Devolver "true" deja intacto el resto del flujo (cnt, COPY, upsert).
+  if [[ -z "$col" ]]; then
+    echo "true"
+  elif [[ "${DATETYPE[$tbl]}" == "text" ]]; then
     echo "$col BETWEEN '$DESDEC' AND '$HASTAC'"
   else
     echo "$col BETWEEN '$DESDE'::date AND '$HASTA'::date"
@@ -310,7 +336,13 @@ process_table() {
   cols="$(build_cols "$tbl")"
   [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
   mode="${MODE[$tbl]:-upsert}"
-  [[ "$FORCE_REPLACE" -eq 1 ]] && mode="replace"   # --replace: forzar borra-fechas + reinserta
+  # --replace: forzar borra-fechas + reinserta. NO aplica a tablas sin columna de fecha
+  # (catalogos): ahi "replace" no tiene sentido y abortaria con "replace requiere DATECOL".
+  if [[ "$FORCE_REPLACE" -eq 1 && -n "${DATECOL[$tbl]:-}" ]]; then
+    mode="replace"
+  elif [[ "$FORCE_REPLACE" -eq 1 ]]; then
+    log "[$tbl] --replace ignorado: es un catalogo sin columna de fecha (se sube completo por upsert)"
+  fi
 
   tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
   "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
@@ -448,11 +480,16 @@ refresh_margen_roll() {
 # Expresion de "fecha maxima" (como texto YYYYMMDD) por tabla, para el verify.
 declare -A MAXEXPR
 for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc \
-         ventas_industria ventas_item_diario margen_final; do
+         ventas_industria ventas_item_diario ventas_proveedor_dia margen_final; do
   MAXEXPR[$t]="max(fecha_dcto)"
 done
 MAXEXPR[rotacion_base_item_dia_sede]="to_char(max(fecha_dia),'YYYYMMDD')"
 MAXEXPR[asistencia_horas]="to_char(max(fecha),'YYYYMMDD')"
+# El catalogo no tiene fecha de negocio; se verifica por su ultima actualizacion, que el
+# upsert refresca en cada sync.
+MAXEXPR[proveedor_pos_catalogo]="to_char(max(updated_at),'YYYYMMDD')"
+MAXEXPR[proveedor_item]="to_char(max(updated_at),'YYYYMMDD')"
+MAXEXPR[inventario_proveedor_dia]="to_char(max(fecha_dia),'YYYYMMDD')"
 
 # Chequeo simple: fecha maxima por tabla en GCP vs el objetivo (HASTA).
 # Respeta --only para no referenciar tablas que tal vez no existan aun en GCP.
