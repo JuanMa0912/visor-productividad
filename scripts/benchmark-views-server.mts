@@ -46,7 +46,7 @@ const buildFilters = (fromIso: string, toIso: string, sedes: string[]) => ({
   orderDir: undefined as "asc" | "desc" | undefined,
 });
 
-const timedJson = async <T>(label: string, fn: () => Promise<T>) => {
+const timedJson = async <T,>(label: string, fn: () => Promise<T>) => {
   const t0 = performance.now();
   const data = await fn();
   const sqlMs = performance.now() - t0;

@@ -8,7 +8,7 @@ import {
   ANALISIS_INVENTARIO_LINE_FAMILY_LABELS,
   type AnalisisInventarioLineFamily,
 } from "@/lib/analisis-inventario/line-family";
-import { ANALISIS_INVENTARIO_LEVEL_NAMES } from "@/lib/analisis-inventario/drill-path";
+import { ANALISIS_INVENTARIO_LEVEL_LABELS } from "@/lib/analisis-inventario/drill-path";
 import type {
   AnalisisInventarioDrillPayload,
   AnalisisInventarioDrillStep,
@@ -158,7 +158,7 @@ const writePortadaSheet = (
       "Familia de líneas",
       ANALISIS_INVENTARIO_LINE_FAMILY_LABELS[input.lineFamily],
     ],
-    ["Nivel drill", ANALISIS_INVENTARIO_LEVEL_NAMES[input.drill.level]],
+    ["Nivel drill", ANALISIS_INVENTARIO_LEVEL_LABELS[input.drill.level]],
     ["Ruta drill", pathLabel(input.drillPath)],
     ["Ruta mapa", pathLabel(input.heatmapPath)],
     ["Filas drill", String(input.drill.rows.length)],
@@ -218,7 +218,7 @@ const writeDrillSheet = (
 
   sheet.mergeCells(1, 1, 1, headers.length);
   const banner = sheet.getCell(1, 1);
-  banner.value = `Drill · ${ANALISIS_INVENTARIO_LEVEL_NAMES[input.drill.level]} · ${pathLabel(input.drillPath)}`;
+  banner.value = `Drill · ${ANALISIS_INVENTARIO_LEVEL_LABELS[input.drill.level]} · ${pathLabel(input.drillPath)}`;
   banner.font = { bold: true, size: 11, color: { argb: HEADER_FONT } };
   fill(banner, HEADER_FILL);
   banner.alignment = { vertical: "middle" };
@@ -242,7 +242,7 @@ const writeDrillSheet = (
   sorted.forEach((row, index) => {
     const excelRow = sheet.getRow(index + 3);
     const values: Array<string | number> = [
-      ANALISIS_INVENTARIO_LEVEL_NAMES[row.level],
+      ANALISIS_INVENTARIO_LEVEL_LABELS[row.level],
       sanitizeExportText(row.id),
       sanitizeExportText(row.label),
       diExcelValue(row.diUnits),
@@ -335,7 +335,7 @@ const writeHeatmapSheet = (
 
   const headerRow = sheet.getRow(2);
   const labelHeader = headerRow.getCell(1);
-  labelHeader.value = ANALISIS_INVENTARIO_LEVEL_NAMES[heatmap.rowLevel];
+  labelHeader.value = ANALISIS_INVENTARIO_LEVEL_LABELS[heatmap.rowLevel];
   labelHeader.font = { bold: true, size: 9, color: { argb: HEADER_FONT } };
   fill(labelHeader, HEADER_FILL);
   border(labelHeader);

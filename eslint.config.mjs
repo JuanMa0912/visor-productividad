@@ -19,7 +19,8 @@ const eslintConfig = defineConfig([
   },
   {
     // Utility scripts run in Node/CommonJS outside the app bundle.
-    files: ["scripts/**/*.js"],
+    // `.cjs` es CommonJS por definicion: ahi `require()` no es un olvido, es la forma correcta.
+    files: ["scripts/**/*.js", "scripts/**/*.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },

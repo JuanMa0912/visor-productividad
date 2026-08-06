@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 import {
   MARGEN_ITEM_DIA_ROLL_TABLE,
   resolveInformeMargenDataSource,
@@ -118,7 +118,7 @@ const buildSedeFilterDaily = (
 };
 
 export const queryInformeDailyRows = async (
-  client: PoolClient,
+  client: ClientBase,
   year: number,
   month: number,
   allowedSedeKeys: string[] | null,
@@ -330,7 +330,7 @@ export type InformeMonthBundleLoadResult = {
 };
 
 export const loadInformeVariacionMonthBundle = async (
-  client: PoolClient,
+  client: ClientBase,
   year: number,
   month: number,
   allowedSedeKeys: string[] | null,

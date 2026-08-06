@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 import {
   isRollTable,
   resolveInformeMargenDataSource,
@@ -48,7 +48,7 @@ const buildMetaSedeFilter = (
 };
 
 export const loadInformeVariacionMeta = async (
-  client: PoolClient,
+  client: ClientBase,
   allowedSedeKeys: string[] | null,
   options?: { kind?: "default" | "dinastia" },
 ): Promise<InformeVariacionMeta> => {
