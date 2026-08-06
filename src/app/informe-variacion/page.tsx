@@ -1104,7 +1104,7 @@ export default function InformeVariacionPage() {
                     ? "Todos los rangos listos · cambio instantaneo (vista precargada)"
                     : prefetchTotal > 0
                       ? `Cargando rangos ${Math.min(readyRanges.size, prefetchTotal)}/${prefetchTotal} · aparecen al quedar listos`
-                      : "Solo aparecen periodos ya cerrados en el mes"}
+                      : "Cortes cerrados + proyección del siguiente acumulado si aplica"}
                 {rangeSwitchPending ? " · sincronizando…" : ""}
               </span>
             </div>
@@ -1119,10 +1119,18 @@ export default function InformeVariacionPage() {
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
                       dayRangeId === range.id
-                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
+                        ? range.projection
+                          ? "border-amber-600 bg-amber-600 text-white shadow-sm"
+                          : "border-blue-600 bg-blue-600 text-white shadow-sm"
+                        : range.projection
+                          ? "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
                     )}
-                    title="Listo en memoria · cambio instantaneo"
+                    title={
+                      range.projection
+                        ? `Proyección a día ${range.projection.targetToDay} con datos hasta el ${range.projection.actualToDay}`
+                        : "Listo en memoria · cambio instantaneo"
+                    }
                   >
                     {range.label}
                   </button>
@@ -1134,11 +1142,28 @@ export default function InformeVariacionPage() {
                 </span>
               ) : null}
             </div>
+            {payload?.meta.dayRange?.projection ? (
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                Proyección a{" "}
+                <span className="font-semibold">
+                  día {payload.meta.dayRange.projection.targetToDay}
+                </span>{" "}
+                con corte real hasta el{" "}
+                <span className="font-semibold">
+                  día {payload.meta.dayRange.projection.actualToDay}
+                </span>{" "}
+                (último cargado). Fórmula: (venta 1→
+                {payload.meta.dayRange.projection.actualToDay} /{" "}
+                {payload.meta.dayRange.projection.actualToDay}) ×{" "}
+                {payload.meta.dayRange.projection.targetToDay}. MoM/YoY usan el
+                tramo cerrado comparable.
+              </p>
+            ) : null}
           </div>
         ) : parsedMonth ? (
           <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Este mes aun no tiene rangos de dias disponibles. Elige un mes anterior o espera a
-            que cierre el primer periodo (dia 7).
+            Este mes aun no tiene dias cargados en la fuente de datos. Elige un mes
+            anterior o espera a que suba el primer dia del mes.
           </div>
         ) : null}
 

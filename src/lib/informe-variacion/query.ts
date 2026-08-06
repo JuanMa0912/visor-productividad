@@ -22,6 +22,7 @@ import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
 import { informePayloadHasComparisonData } from "@/lib/informe-variacion/comparison";
 import { sortInformeSedeCatalog } from "@/lib/informe-variacion/sede-order";
 import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
+import { applyInformeDayRangeProjection } from "@/lib/informe-variacion/projection";
 import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
 import type { InformePeriods } from "@/lib/informe-variacion/types";
 import type {
@@ -478,7 +479,12 @@ export const loadInformeVariacionPayload = async (
     ),
   };
   const filtered = filterInformePayloadForLineScope(payload, lineScope);
-  return attachDayRangeMeta(filtered, options.dayRange);
+  return applyInformeDayRangeProjection(
+    attachDayRangeMeta(filtered, options.dayRange),
+    year,
+    month,
+    options.dayRange,
+  );
 };
 
 const attachDayRangeMeta = (
@@ -495,6 +501,15 @@ const attachDayRangeMeta = (
         label: dayRange.label,
         fromDay: dayRange.fromDay,
         toDay: dayRange.toDay,
+        ...(dayRange.projection
+          ? {
+              projection: {
+                actualToDay: dayRange.projection.actualToDay,
+                targetToDay: dayRange.projection.targetToDay,
+                factor: dayRange.projection.factor,
+              },
+            }
+          : {}),
       },
     },
   };

@@ -88,6 +88,7 @@ try {
       month,
       asOf,
       maxCompactDate,
+      { includeProjection: false },
     );
     if (ranges.length === 0) {
       console.log(

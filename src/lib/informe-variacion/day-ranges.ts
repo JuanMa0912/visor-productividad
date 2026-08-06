@@ -9,7 +9,10 @@ export const INFORME_DAY_RANGES = [
   { id: "1-eom", label: "1 al fin", fromDay: 1, toDay: null },
 ] as const;
 
-export type InformeDayRangeId = (typeof INFORME_DAY_RANGES)[number]["id"];
+export type InformeClosedDayRangeId = (typeof INFORME_DAY_RANGES)[number]["id"];
+export type InformeDayRangeId =
+  | InformeClosedDayRangeId
+  | `proj-${InformeClosedDayRangeId}`;
 
 /** Acepta YYYYMMDD o YYYY-MM-DD (fecha_dcto::text en PostgreSQL). */
 export const normalizeInformeCompactDate = (
@@ -23,11 +26,19 @@ export const normalizeInformeCompactDate = (
   return null;
 };
 
+export type InformeDayRangeProjection = {
+  actualToDay: number;
+  targetToDay: number;
+  factor: number;
+  baseId: InformeClosedDayRangeId;
+};
+
 export type InformeDayRangeSpec = {
   id: InformeDayRangeId;
   label: string;
   fromDay: number;
   toDay: number | null;
+  projection?: InformeDayRangeProjection;
 };
 
 const DAY_RANGE_BY_ID = new Map(
@@ -69,24 +80,82 @@ export const resolveInformeReferenceDay = (
   return ref;
 };
 
+export const isProjectedInformeRangeId = (rangeId: string): boolean =>
+  rangeId.startsWith("proj-");
+
 /**
- * Solo los cortes del Excel canonico (semanas 7/14/21/28 + 1 al fin).
- * No inventa acumulados parciales tipo "1 al 15".
+ * Primer acumulado Excel (1→N) aun no cerrado: proyectar N con datos 1→refDay.
+ * Ej.: refDay=5 → proyeccion a 1–7 con factor 7/5.
+ */
+export const buildNextProjectedInformeDayRange = (
+  year: number,
+  month: number,
+  asOf: Date = new Date(),
+  maxCompactDate?: string | null,
+): InformeDayRangeSpec | null => {
+  const refDay = resolveInformeReferenceDay(year, month, asOf, maxCompactDate);
+  if (refDay < 1) return null;
+
+  const monthLast = lastDayOfMonth(year, month);
+  const cumulative = INFORME_DAY_RANGES.filter((range) => range.fromDay === 1);
+
+  for (const range of cumulative) {
+    const targetToDay = range.toDay ?? monthLast;
+    if (refDay >= targetToDay) continue;
+    if (refDay < range.fromDay) continue;
+
+    const actualToDay = refDay;
+    const factor = targetToDay / actualToDay;
+    if (!Number.isFinite(factor) || factor <= 1) continue;
+
+    return {
+      id: `proj-${range.id}`,
+      label: `${range.label} (proyección)`,
+      fromDay: range.fromDay,
+      toDay: targetToDay,
+      projection: {
+        actualToDay,
+        targetToDay,
+        factor,
+        baseId: range.id,
+      },
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Cortes Excel ya cerrados (+ opcional proyeccion del siguiente acumulado).
+ * `includeProjection` default true para UI/API; warm/std usan false.
  */
 export const getAvailableInformeDayRanges = (
   year: number,
   month: number,
   asOf: Date = new Date(),
   maxCompactDate?: string | null,
+  options: { includeProjection?: boolean } = {},
 ): InformeDayRangeSpec[] => {
+  const includeProjection = options.includeProjection !== false;
   const refDay = resolveInformeReferenceDay(year, month, asOf, maxCompactDate);
   if (refDay <= 0) return [];
 
   const monthLast = lastDayOfMonth(year, month);
-  return INFORME_DAY_RANGES.filter((range) => {
+  const closed = INFORME_DAY_RANGES.filter((range) => {
     const endDay = range.toDay ?? monthLast;
     return refDay >= endDay;
-  }).map((range) => ({ ...range }));
+  }).map((range) => ({ ...range }) as InformeDayRangeSpec);
+
+  if (!includeProjection) return closed;
+
+  const projected = buildNextProjectedInformeDayRange(
+    year,
+    month,
+    asOf,
+    maxCompactDate,
+  );
+  if (!projected) return closed;
+  return [...closed, projected];
 };
 
 export const defaultInformeDayRangeId = (
@@ -95,7 +164,9 @@ export const defaultInformeDayRangeId = (
   if (available.length === 0) return null;
   const cumulative = available.filter((range) => range.fromDay === 1);
   const pool = cumulative.length > 0 ? cumulative : available;
-  return pool.reduce((best, range) =>
+  const real = pool.filter((range) => !range.projection);
+  const prefer = real.length > 0 ? real : pool;
+  return prefer.reduce((best, range) =>
     (range.toDay ?? Number.POSITIVE_INFINITY) >
     (best.toDay ?? Number.POSITIVE_INFINITY)
       ? range
@@ -107,7 +178,19 @@ export const parseInformeDayRangeId = (
   value: string | null | undefined,
 ): InformeDayRangeSpec | null => {
   if (!value?.trim()) return null;
-  const found = DAY_RANGE_BY_ID.get(value.trim() as InformeDayRangeId);
+  const raw = value.trim();
+  if (raw.startsWith("proj-")) {
+    const baseId = raw.slice(5) as InformeClosedDayRangeId;
+    const found = DAY_RANGE_BY_ID.get(baseId);
+    if (!found) return null;
+    return {
+      id: raw as InformeDayRangeId,
+      label: `${found.label} (proyección)`,
+      fromDay: found.fromDay,
+      toDay: found.toDay,
+    };
+  }
+  const found = DAY_RANGE_BY_ID.get(raw as InformeClosedDayRangeId);
   return found ? { ...found } : null;
 };
 
@@ -144,6 +227,10 @@ export const payloadMatchesInformeSelection = (
 
   const monthLast = lastDayOfMonth(year, month);
   const expectedFrom = compactDate(year, month, range.fromDay);
-  const expectedTo = compactDate(year, month, range.toDay ?? monthLast);
+  const expectedTo = compactDate(
+    year,
+    month,
+    range.projection?.targetToDay ?? range.toDay ?? monthLast,
+  );
   return from === expectedFrom && to === expectedTo;
 };

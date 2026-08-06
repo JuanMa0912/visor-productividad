@@ -8,9 +8,7 @@ import { loadInformeVariacionMeta } from "@/lib/informe-variacion/meta";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
-  isInformeDayRangeAvailable,
   normalizeInformeCompactDate,
-  parseInformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import {
   buildInformeBundleCacheKey,
@@ -186,6 +184,9 @@ export async function GET(request: Request) {
     asOf,
     maxCompactDate,
   );
+  const hasProjectedRange = availableRanges.some((range) =>
+    Boolean(range.projection),
+  );
   const wantsBundle = url.searchParams.get("bundle") === "month";
   const forceRefresh = url.searchParams.get("force") === "1";
 
@@ -234,7 +235,8 @@ export async function GET(request: Request) {
       }
     }
 
-    const useStd = dataKind === "default" && !forceRefresh;
+    const useStd =
+      dataKind === "default" && !forceRefresh && !hasProjectedRange;
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
       try {
@@ -354,30 +356,28 @@ export async function GET(request: Request) {
     }
   }
 
-  const dayRange = parseInformeDayRangeId(url.searchParams.get("range"));
-  if (url.searchParams.get("range") && !dayRange) {
+  const rangeParam = url.searchParams.get("range")?.trim() || null;
+  if (rangeParam && !availableRanges.some((range) => range.id === rangeParam)) {
     return withSession(
       NextResponse.json(
-        { error: "Parametro range invalido." },
-        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
-      ),
-    );
-  }
-  if (
-    dayRange &&
-    !isInformeDayRangeAvailable(dayRange.id, year, month, asOf, maxCompactDate)
-  ) {
-    return withSession(
-      NextResponse.json(
-        { error: "El rango de dias seleccionado aun no esta disponible para este mes." },
+        {
+          error:
+            "El rango de dias seleccionado aun no esta disponible para este mes.",
+        },
         { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
   }
 
+  const defaultId = defaultInformeDayRangeId(availableRanges);
   const effectiveRange =
-    dayRange ??
-    parseInformeDayRangeId(defaultInformeDayRangeId(availableRanges) ?? undefined);
+    (rangeParam
+      ? availableRanges.find((range) => range.id === rangeParam)
+      : null) ??
+    (defaultId
+      ? availableRanges.find((range) => range.id === defaultId)
+      : null) ??
+    null;
   if (!effectiveRange) {
     return withSession(
       NextResponse.json(
@@ -410,8 +410,11 @@ export async function GET(request: Request) {
     }
   }
 
-  const useStd = dataKind === "default" && !forceRefresh;
-  if (useStd && effectiveRange) {
+  const useStd =
+    dataKind === "default" &&
+    !forceRefresh &&
+    !effectiveRange.projection;
+  if (useStd) {
     const stdClient = await (await getDbPool()).connect();
     try {
       const snapped = await getInformePayloadStd(

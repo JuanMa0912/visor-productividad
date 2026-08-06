@@ -84,7 +84,18 @@ export const computeInformeDailyFetchBounds = (
     ranges.length > 0 ? Math.min(...ranges.map((range) => range.fromDay)) : 1;
   const maxToDay =
     ranges.length > 0
-      ? Math.max(...ranges.map((range) => range.toDay ?? monthLast))
+      ? Math.max(
+          ...ranges.map((range) => {
+            if (range.projection) {
+              // Fetch cur hasta actual; mom/yoy hasta target (cubierto por max global).
+              return Math.max(
+                range.projection.actualToDay,
+                range.projection.targetToDay,
+              );
+            }
+            return range.toDay ?? monthLast;
+          }),
+        )
       : monthLast;
 
   const cur =
@@ -121,17 +132,22 @@ export const computeInformePeriods = (
   }
 
   const fromDay = dayRange?.fromDay ?? 1;
-  const toDay = dayRange?.toDay ?? null;
+  const targetToDay = dayRange?.toDay ?? null;
+  // SQL del periodo actual: solo dias reales cargados cuando hay proyeccion.
+  const currentToDay =
+    dayRange?.projection?.actualToDay ?? targetToDay;
+  const compareToDay =
+    dayRange?.projection?.targetToDay ?? targetToDay;
 
-  const curBounds = monthRangeBounds(year, month, fromDay, toDay);
+  const curBounds = monthRangeBounds(year, month, fromDay, currentToDay);
   if (!curBounds) {
     throw new Error("Rango de dias invalido para el mes seleccionado.");
   }
 
   const momMonth = month === 1 ? 12 : month - 1;
   const momYear = month === 1 ? year - 1 : year;
-  const momBounds = monthRangeBounds(momYear, momMonth, fromDay, toDay);
-  const yoyBounds = monthRangeBounds(year - 1, month, fromDay, toDay);
+  const momBounds = monthRangeBounds(momYear, momMonth, fromDay, compareToDay);
+  const yoyBounds = monthRangeBounds(year - 1, month, fromDay, compareToDay);
 
   const build = (from: string, to: string): InformePeriodRange => ({
     from,

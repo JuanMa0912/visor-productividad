@@ -20,6 +20,7 @@ import {
 } from "@/lib/informe-variacion/query";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
+import { applyInformeDayRangeProjection } from "@/lib/informe-variacion/projection";
 import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
 
 export type InformeDailyDbRow = {
@@ -233,11 +234,17 @@ export const aggregateDailyRowsForRange = (
     if (!period) continue;
 
     const day = Number(row.fecha_dcto.slice(6, 8));
+    const rangeToDay =
+      period === "cur" && dayRange.projection
+        ? dayRange.projection.actualToDay
+        : dayRange.projection && period !== "cur"
+          ? dayRange.projection.targetToDay
+          : dayRange.toDay;
     if (
       !dayInRange(
         day,
         dayRange.fromDay,
-        dayRange.toDay,
+        rangeToDay,
         lastByPeriod[period],
       )
     ) {
@@ -444,9 +451,14 @@ export const loadInformeVariacionMonthBundle = async (
   for (const range of availableRanges) {
     const dbRows = aggregateDailyRowsForRange(dailyRows, year, month, range);
     const periods = computeInformePeriods(year, month, range);
-    const payload = filterInformePayloadForLineScope(
-      buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys, kind),
-      lineScope,
+    const payload = applyInformeDayRangeProjection(
+      filterInformePayloadForLineScope(
+        buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys, kind),
+        lineScope,
+      ),
+      year,
+      month,
+      range,
     );
     payloads[range.id] = {
       ...payload,
@@ -457,6 +469,15 @@ export const loadInformeVariacionMonthBundle = async (
           label: range.label,
           fromDay: range.fromDay,
           toDay: range.toDay,
+          ...(range.projection
+            ? {
+                projection: {
+                  actualToDay: range.projection.actualToDay,
+                  targetToDay: range.projection.targetToDay,
+                  factor: range.projection.factor,
+                },
+              }
+            : {}),
         },
       },
     };

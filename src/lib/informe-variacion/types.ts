@@ -54,6 +54,11 @@ export type InformeVariacionPayload = {
       label: string;
       fromDay: number;
       toDay: number | null;
+      projection?: {
+        actualToDay: number;
+        targetToDay: number;
+        factor: number;
+      };
     };
   };
 };
