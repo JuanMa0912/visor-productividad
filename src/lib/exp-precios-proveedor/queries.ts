@@ -22,6 +22,13 @@ const compactToIso = (compact: string): string | null => {
   return null;
 };
 
+const toIsoLocal = (date: Date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 const unitPrice = (money: number, units: number) =>
   units > 0 ? money / units : 0;
 
@@ -39,6 +46,10 @@ export const prototypeSedeColumns = (): PreciosProveedorSedeColumn[] =>
       idCo: opt.idCo,
     }));
 
+/**
+ * Default = día anterior (calendario).
+ * Si ese día no existe en el roll, cae al MAX disponible (último día con datos).
+ */
 export const resolveDefaultDateRange = async (
   client: PoolClient,
 ): Promise<{ start: string; end: string; min: string | null; max: string | null }> => {
@@ -49,24 +60,18 @@ export const resolveDefaultDateRange = async (
   `);
   const min = compactToIso(String(bounds.rows[0]?.min ?? ""));
   const max = compactToIso(String(bounds.rows[0]?.max ?? ""));
-  if (!max) {
-    const today = new Date();
-    const end = today.toISOString().slice(0, 10);
-    const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - 6);
-    return {
-      start: startDate.toISOString().slice(0, 10),
-      end,
-      min,
-      max,
-    };
+
+  const yesterday = new Date();
+  yesterday.setHours(12, 0, 0, 0);
+  yesterday.setDate(yesterday.getDate() - 1);
+  let day = toIsoLocal(yesterday);
+
+  if (max && day > max) day = max;
+  if (min && day < min) day = min;
+  if (!max && !min) {
+    return { start: day, end: day, min, max };
   }
-  const endDate = new Date(`${max}T12:00:00`);
-  const startDate = new Date(endDate);
-  startDate.setDate(startDate.getDate() - 6);
-  let start = startDate.toISOString().slice(0, 10);
-  if (min && start < min) start = min;
-  return { start, end: max, min, max };
+  return { start: day, end: day, min, max };
 };
 
 export const queryPreciosProveedorMeta = async (
@@ -93,7 +98,7 @@ export const queryPreciosProveedorMeta = async (
       label: `${row.id} · ${row.label}`,
     })),
     note:
-      "Prototipo admin: PVU/PCU = promedio ponderado de venta (margen_item_dia_roll). Proveedor = maestro POS (proveedor_item), no factura de compra. Sin rollup dedicado: acota fechas.",
+      "Carga el día anterior. Un día = precio/costo de ese día; un rango = promedio simple de los precios/costos diarios. Costo = costo unitario de venta (COGS en roll), no factura de compra al proveedor. Proveedor = maestro POS.",
   };
 };
 
@@ -106,9 +111,9 @@ export type PreciosProveedorQueryInput = {
 };
 
 /**
- * Heatmap ítem × sede con proveedor.
- * Fuente: margen_item_dia_roll + LEFT JOIN proveedor_item / proveedor_pos_catalogo.
- * Mercado (id_tipo=4) por defecto, como márgenes.
+ * Heatmap ítem × sede.
+ * 1) Por día: precio venta = ventas/cant, costo = costo/cant.
+ * 2) En rango: AVG de esos precios/costos diarios (no ponderado por volumen del periodo).
  */
 export const queryPreciosProveedorMatrix = async (
   client: PoolClient,
@@ -136,7 +141,6 @@ export const queryPreciosProveedorMatrix = async (
     )`;
   }
 
-  // ¿Existe el puente proveedor?
   const provCheck = await client.query<{ ok: boolean }>(`
     SELECT EXISTS (
       SELECT 1 FROM information_schema.tables
@@ -182,10 +186,14 @@ export const queryPreciosProveedorMatrix = async (
     cantidad: string | number;
     ventas_netas: string | number;
     costo_total: string | number;
+    pvu: string | number;
+    pcu: string | number;
+    dias: string | number;
   }>(
     `
-    WITH agg AS (
+    WITH daily AS (
       SELECT
+        r.fecha_dcto,
         r.empresa_norm,
         r.id_co_norm,
         r.id_item,
@@ -194,7 +202,17 @@ export const queryPreciosProveedorMatrix = async (
         MAX(r.nombre_linea1) AS nombre_linea1,
         SUM(COALESCE(r.cantidad, 0)) AS cantidad,
         SUM(COALESCE(r.ventas_netas, 0)) AS ventas_netas,
-        SUM(COALESCE(r.costo_total, 0)) AS costo_total
+        SUM(COALESCE(r.costo_total, 0)) AS costo_total,
+        CASE
+          WHEN SUM(COALESCE(r.cantidad, 0)) > 0
+          THEN SUM(COALESCE(r.ventas_netas, 0)) / SUM(COALESCE(r.cantidad, 0))
+          ELSE NULL
+        END AS pvu_day,
+        CASE
+          WHEN SUM(COALESCE(r.cantidad, 0)) > 0
+          THEN SUM(COALESCE(r.costo_total, 0)) / SUM(COALESCE(r.cantidad, 0))
+          ELSE NULL
+        END AS pcu_day
       FROM margen_item_dia_roll r
       WHERE r.fecha_dcto >= $1
         AND r.fecha_dcto <= $2
@@ -202,7 +220,24 @@ export const queryPreciosProveedorMatrix = async (
         AND NULLIF(TRIM(r.id_item), '') IS NOT NULL
         ${lineaSql}
         ${searchSql}
-      GROUP BY r.empresa_norm, r.id_co_norm, r.id_item
+      GROUP BY r.fecha_dcto, r.empresa_norm, r.id_co_norm, r.id_item
+    ),
+    agg AS (
+      SELECT
+        empresa_norm,
+        id_co_norm,
+        id_item,
+        MAX(item_descripcion) AS item_descripcion,
+        MAX(id_linea1) AS id_linea1,
+        MAX(nombre_linea1) AS nombre_linea1,
+        SUM(cantidad) AS cantidad,
+        SUM(ventas_netas) AS ventas_netas,
+        SUM(costo_total) AS costo_total,
+        AVG(pvu_day) AS pvu,
+        AVG(pcu_day) AS pcu,
+        COUNT(*) FILTER (WHERE pvu_day IS NOT NULL OR pcu_day IS NOT NULL) AS dias
+      FROM daily
+      GROUP BY empresa_norm, id_co_norm, id_item
     ),
     enriched AS (
       SELECT
@@ -225,7 +260,10 @@ export const queryPreciosProveedorMatrix = async (
     params,
   );
 
-  const rowMap = new Map<string, PreciosProveedorRow>();
+  const rowMap = new Map<
+    string,
+    PreciosProveedorRow & { pvuSum: number; pcuSum: number; priceDays: number }
+  >();
   const cells: PreciosProveedorCell[] = [];
   const sedeKeySet = new Set(sedeKeys);
 
@@ -236,9 +274,9 @@ export const queryPreciosProveedorMatrix = async (
     const units = toNum(row.cantidad);
     const sales = toNum(row.ventas_netas);
     const cost = toNum(row.costo_total);
-    const pvu = unitPrice(sales, units);
-    const pcu = unitPrice(cost, units);
-    const margen = marginPct(sales, cost);
+    const pvu = toNum(row.pvu);
+    const pcu = toNum(row.pcu);
+    const dias = toNum(row.dias);
     const itemId = String(row.id_item);
 
     cells.push({
@@ -249,7 +287,7 @@ export const queryPreciosProveedorMatrix = async (
       cost,
       pvu,
       pcu,
-      margenPct: margen,
+      margenPct: marginPct(sales, cost),
     });
 
     const existing = rowMap.get(itemId);
@@ -257,6 +295,11 @@ export const queryPreciosProveedorMatrix = async (
       existing.units += units;
       existing.sales += sales;
       existing.cost += cost;
+      if (pvu > 0 || pcu > 0) {
+        existing.pvuSum += pvu;
+        existing.pcuSum += pcu;
+        existing.priceDays += 1;
+      }
     } else {
       rowMap.set(itemId, {
         id: itemId,
@@ -271,17 +314,34 @@ export const queryPreciosProveedorMatrix = async (
         pvu: 0,
         pcu: 0,
         margenPct: 0,
+        pvuSum: pvu > 0 || pcu > 0 ? pvu : 0,
+        pcuSum: pvu > 0 || pcu > 0 ? pcu : 0,
+        priceDays: pvu > 0 || pcu > 0 ? 1 : 0,
       });
     }
   }
 
   const rows = [...rowMap.values()]
-    .map((row) => ({
-      ...row,
-      pvu: unitPrice(row.sales, row.units),
-      pcu: unitPrice(row.cost, row.units),
-      margenPct: marginPct(row.sales, row.cost),
-    }))
+    .map((row) => {
+      const pvu =
+        row.priceDays > 0 ? row.pvuSum / row.priceDays : unitPrice(row.sales, row.units);
+      const pcu =
+        row.priceDays > 0 ? row.pcuSum / row.priceDays : unitPrice(row.cost, row.units);
+      return {
+        id: row.id,
+        label: row.label,
+        lineaId: row.lineaId,
+        lineaLabel: row.lineaLabel,
+        proveedorId: row.proveedorId,
+        proveedorLabel: row.proveedorLabel,
+        units: row.units,
+        sales: row.sales,
+        cost: row.cost,
+        pvu,
+        pcu,
+        margenPct: marginPct(row.sales, row.cost),
+      };
+    })
     .sort((a, b) => b.sales - a.sales);
 
   return {

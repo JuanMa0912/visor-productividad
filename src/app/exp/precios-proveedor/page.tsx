@@ -11,11 +11,43 @@ import type {
   PreciosProveedorMetric,
 } from "@/lib/exp-precios-proveedor/types";
 
-const heatStyle = (pct: number) => {
-  if (!Number.isFinite(pct) || pct <= 0) {
+/** Escala 0→verde (bajo), 1→rojo (alto). Para costo/precio. */
+const heatStyleLowGreen = (t01: number) => {
+  if (!Number.isFinite(t01) || t01 < 0) {
     return { background: "#f1f5f9", color: "#94a3b8" };
   }
-  const t = Math.max(0, Math.min(1, pct / 30));
+  const t = Math.max(0, Math.min(1, t01));
+  let r: number;
+  let g: number;
+  let b: number;
+  if (t < 0.5) {
+    // verde → ámbar
+    const u = t / 0.5;
+    r = Math.round(14 + (234 - 14) * u);
+    g = Math.round(138 + (179 - 138) * u);
+    b = Math.round(77 + (8 - 77) * u);
+  } else {
+    // ámbar → rojo
+    const u = (t - 0.5) / 0.5;
+    r = Math.round(234 + (198 - 234) * u);
+    g = Math.round(179 + (40 - 179) * u);
+    b = Math.round(8 + (56 - 8) * u);
+  }
+  const alpha = Math.min(0.88, 0.28 + Math.abs(t - 0.5) * 0.5);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const blended = luminance * alpha + (1 - alpha);
+  return {
+    background: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
+    color: blended < 0.62 ? "#fff" : "#1e293b",
+  };
+};
+
+/** Escala clásica: alto = verde (margen %). */
+const heatStyleHighGreen = (t01: number) => {
+  if (!Number.isFinite(t01) || t01 <= 0) {
+    return { background: "#f1f5f9", color: "#94a3b8" };
+  }
+  const t = Math.max(0, Math.min(1, t01));
   let r: number;
   let g: number;
   let b: number;
@@ -76,7 +108,7 @@ export default function ExpPreciosProveedorPage() {
   const [linea, setLinea] = useState("");
   const [search, setSearch] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
-  const [metric, setMetric] = useState<PreciosProveedorMetric>("margenPct");
+  const [metric, setMetric] = useState<PreciosProveedorMetric>("pcu");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,10 +226,10 @@ export default function ExpPreciosProveedorPage() {
     return pctFmt(cell.margenPct);
   };
 
-  const cellHeatPct = (
+  const cellHeatStyle = (
     cell: PreciosProveedorMatrix["cells"][number] | undefined,
   ) => {
-    if (!cell) return 0;
+    if (!cell) return heatStyleLowGreen(-1);
     const raw =
       metric === "pvu"
         ? cell.pvu
@@ -206,11 +238,20 @@ export default function ExpPreciosProveedorPage() {
           : metric === "units"
             ? cell.units
             : cell.margenPct;
-    if (!(raw > 0)) return 0;
-    if (metric === "margenPct") return Math.max(0, Math.min(40, raw));
+    if (!(raw > 0) && metric !== "margenPct") return heatStyleLowGreen(-1);
+    if (metric === "margenPct") {
+      return heatStyleHighGreen(Math.max(0, Math.min(1, raw / 40)));
+    }
     const span = heatScale.max - heatScale.min || 1;
-    return ((raw - heatScale.min) / span) * 30;
+    const t01 = (raw - heatScale.min) / span;
+    // Costo y precio venta: verde = más bajo, rojo = más alto.
+    if (metric === "pcu" || metric === "pvu") {
+      return heatStyleLowGreen(t01);
+    }
+    return heatStyleHighGreen(t01);
   };
+
+  const isSingleDay = Boolean(dateStart && dateEnd && dateStart === dateEnd);
 
   return (
     <div className="min-h-screen bg-slate-100 text-foreground">
@@ -236,12 +277,12 @@ export default function ExpPreciosProveedorPage() {
         </div>
 
         <h1 className="text-2xl font-black tracking-tight text-slate-900">
-          Precios / costos × sede (con proveedor)
+          Precio de venta y costo × sede
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-          Heatmap de ítems Mercado con PVU, PCU y margen % por sede. El
-          proveedor viene del maestro POS (`proveedor_item`), no de la
-          factura de compra.
+          Por defecto el <strong>día anterior</strong>. Si eliges un rango, se
+          promedian los precios/costos de cada día. En costo (y precio venta):
+          verde = más bajo, rojo = más alto.
         </p>
         {meta?.note ? (
           <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -300,9 +341,9 @@ export default function ExpPreciosProveedorPage() {
           <div className="flex rounded-lg border border-slate-200 p-1">
             {(
               [
+                ["pcu", "Costo"],
+                ["pvu", "Precio venta"],
                 ["margenPct", "Margen %"],
-                ["pvu", "PVU"],
-                ["pcu", "PCU"],
                 ["units", "Unidades"],
               ] as Array<[PreciosProveedorMetric, string]>
             ).map(([key, label]) => (
@@ -320,6 +361,11 @@ export default function ExpPreciosProveedorPage() {
               </button>
             ))}
           </div>
+          <p className="w-full text-[11px] text-slate-500">
+            {isSingleDay
+              ? "Modo 1 día: precio/costo de ese día."
+              : "Modo rango: promedio simple de los precios/costos diarios."}
+          </p>
         </div>
 
         {error ? (
@@ -388,12 +434,12 @@ export default function ExpPreciosProveedorPage() {
                       </th>
                       {matrix.columns.map((col) => {
                         const cell = cellByKey.get(`${row.id}::${col.key}`);
-                        const style = heatStyle(cellHeatPct(cell));
+                        const style = cellHeatStyle(cell);
                         const title = cell
                           ? `${row.label} · ${col.label}
-PVU ${unitMoney(cell.pvu)} · PCU ${unitMoney(cell.pcu)}
+Precio venta ${unitMoney(cell.pvu)} · Costo ${unitMoney(cell.pcu)}
 Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und
-Venta ${money(cell.sales)} · Costo ${money(cell.cost)}`
+Venta ${money(cell.sales)} · Costo tot. ${money(cell.cost)}`
                           : "";
                         return (
                           <td key={col.key} className="p-1">
