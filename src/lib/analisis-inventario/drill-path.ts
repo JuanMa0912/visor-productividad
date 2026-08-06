@@ -1,5 +1,9 @@
-import type { AnalisisInventarioDrillStep } from "@/lib/analisis-inventario/types";
+import type {
+  AnalisisInventarioDrillStep,
+  AnalisisInventarioLevel,
+} from "@/lib/analisis-inventario/types";
 
+/** Nombre visible por PROFUNDIDAD del drill (0..4). Se indexa con un numero. */
 export const ANALISIS_INVENTARIO_LEVEL_NAMES = [
   "Sede",
   "Categoría",
@@ -7,6 +11,25 @@ export const ANALISIS_INVENTARIO_LEVEL_NAMES = [
   "Sublínea",
   "Ítem",
 ] as const;
+
+/**
+ * Nombre visible por IDENTIFICADOR de nivel ("sede", "categoria", ...).
+ *
+ * Existe porque confundirla con `ANALISIS_INVENTARIO_LEVEL_NAMES` es facil y falla
+ * en silencio: aquella es una tupla indexada por numero, asi que indexarla con el
+ * string del nivel devuelve `undefined` sin error en runtime. Ese bug estuvo activo
+ * en el export a Excel (banner, metadatos, columna de nivel y cabecera del mapa).
+ */
+export const ANALISIS_INVENTARIO_LEVEL_LABELS: Record<
+  AnalisisInventarioLevel,
+  string
+> = {
+  sede: "Sede",
+  categoria: "Categoría",
+  linea: "Línea",
+  sublinea: "Sublínea",
+  item: "Ítem",
+};
 
 export const parseAnalisisInventarioDrillPath = (
   raw: string | null,

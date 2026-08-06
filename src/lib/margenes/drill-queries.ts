@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 import type { MargenQueryFilters } from "@/lib/margenes/margen-final-query";
 import {
   compactDateToIso,
@@ -457,7 +457,7 @@ const withMercadoDefaultCategoria = (
 };
 
 const queryDrillLevel0 = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   options?: { includeKpi?: boolean },
@@ -759,7 +759,7 @@ const kpiFromInvoiceLines = (rows: DrillRow[]): MargenKpi => {
 
 /** Líneas de una factura vía lookup indexado (documento + tipdoc + sede + fecha). */
 const queryInvoiceLineRows = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   factura: InvoiceFactRef,
   level: number,
@@ -857,7 +857,7 @@ const queryInvoiceLineRows = async (
 
 /** Detalle de factura: un solo round-trip; KPI se agrega desde las líneas. */
 export const queryInvoiceDetailBoard = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   factura: InvoiceFactRef,
   table: MargenDataTable,
@@ -882,7 +882,7 @@ export const queryInvoiceDetailBoard = async (
 };
 
 export const queryKpi = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   path: DrillPathStep[],
   table: MargenDataTable,
@@ -925,7 +925,7 @@ export const queryKpi = async (
 };
 
 export const queryDrillRows = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   path: DrillPathStep[],
   table: MargenDataTable,
@@ -1134,7 +1134,7 @@ export const queryDrillRows = async (
 
 /** Vista drill con KPI: un solo escaneo en nivel 0. */
 export const queryDrillBoard = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   path: DrillPathStep[],
   table: MargenDataTable,
@@ -1175,7 +1175,7 @@ export const queryDrillBoard = async (
 };
 
 export const queryFactNavRows = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   path: FactNavStep[],
   table: MargenDataTable,
@@ -1305,7 +1305,7 @@ export const queryFactNavRows = async (
 };
 
 export const queryFactListRows = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   search?: string,
@@ -1351,7 +1351,7 @@ export const queryFactListRows = async (
 };
 
 export const querySedeCompare = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
 ) => {
@@ -1418,7 +1418,7 @@ const SIN_CLIENTE_LABEL = "Sin cliente";
 
 /** KPI + filas de clientes en un solo barrido (HashAggregate, sin meta DISTINCT). */
 export const queryClienteCompare = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   search?: string,
@@ -1509,7 +1509,7 @@ const SIN_VENDEDOR_LABEL = "Sin vendedor";
 
 /** KPI + filas de vendedores en un solo barrido (HashAggregate, sin meta DISTINCT). */
 export const queryVendedorCompare = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   search?: string,
@@ -1598,7 +1598,7 @@ export const queryVendedorCompare = async (
 
 /** KPI + facturas de un vendedor; ambas queries usan indice (vend_cc, fecha). */
 export const queryVendedorFacturas = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   vendCc: string,
@@ -1675,7 +1675,7 @@ export const queryVendedorFacturas = async (
 
 /** KPI + facturas de un cliente; ambas queries usan indice (id_terc, fecha). */
 export const queryClienteFacturas = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   idTerc: string,
@@ -1700,7 +1700,7 @@ export const queryClienteFacturas = async (
   const { where: kpiWhere, params: kpiParams } = buildWhere();
   const { where: rowWhere, params: rowParams } = buildWhere();
 
-  // Secuencial: mismo PoolClient no soporta queries concurrentes.
+  // Secuencial: mismo ClientBase no soporta queries concurrentes.
   // KPI sin COUNT(DISTINCT) exterior (HashAgg); sedes del filtro.
   const kpiResult = await client.query(
     buildEntityBoardMetricsSql(
@@ -1753,7 +1753,7 @@ export const queryClienteFacturas = async (
 };
 
 export const queryFilterOptions = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
 ) => {
@@ -2041,7 +2041,7 @@ export const queryFilterOptions = async (
 
 /** Búsqueda de ítems por código o nombre (sin límite fijo de catálogo inicial). */
 export const queryFilterItemSearch = async (
-  client: PoolClient,
+  client: ClientBase,
   filters: MargenQueryFilters,
   table: MargenDataTable,
   search: string,

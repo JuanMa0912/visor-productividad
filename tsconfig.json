@@ -9,6 +9,9 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
+    // Los scripts de scripts/*.mts corren con `tsx` e importan con extension .ts
+    // explicita. Es legal mientras haya noEmit (no se reescriben rutas al emitir).
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",

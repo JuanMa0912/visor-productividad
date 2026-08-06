@@ -483,7 +483,12 @@ export default function InformeVariacionPage() {
         throw new DOMException("Aborted", "AbortError");
       }
 
+      // No convertir a `const`: el `finally` de abajo lee `request`, y en la ruta de
+      // abort el throw es SINCRONO (antes del primer await), asi que ese `finally`
+      // corre mientras el IIFE aun no retorna. Con `const` eso seria un ReferenceError
+      // por TDZ que taparia el AbortError; con `let` simplemente lee `undefined`.
       let request!: Promise<InformeVariacionPayload>;
+      // eslint-disable-next-line prefer-const
       request = (async () => {
         const timeoutController = new AbortController();
         const onAbort = () => timeoutController.abort();
@@ -574,7 +579,9 @@ export default function InformeVariacionPage() {
         throw new DOMException("Aborted", "AbortError");
       }
 
+      // Mismo caso que arriba: `const` romperia por TDZ en la ruta de abort sincrona.
       let request!: Promise<"ok" | "fallback">;
+      // eslint-disable-next-line prefer-const
       request = (async (): Promise<"ok" | "fallback"> => {
         const controller = new AbortController();
         const timeoutId = window.setTimeout(

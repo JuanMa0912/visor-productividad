@@ -407,16 +407,28 @@ export const HourlyAnalysis = ({
     [allowedLineSet, hasLineRestriction, lineOptions],
   );
 
-  const effectiveSelectedLine = resolveLineWithinScope(selectedLine);
-
-  useEffect(() => {
-    setSelectedLine((current) => {
-      if (!hasLineRestriction) return current;
-      if (!current.trim()) return current;
-      if (allowedLineSet.has(current.trim().toLowerCase())) return current;
-      return resolveLineWithinScope(defaultLine ?? "");
-    });
+  /**
+   * El alcance se aplica AQUI, durante el render, no en un efecto.
+   *
+   * Antes habia un `useEffect` que hacia `setSelectedLine(...)` para corregir una
+   * seleccion fuera de alcance. Eso disparaba un render en cascada
+   * (react-hooks/set-state-in-effect) sin ganar nada: nadie lee `selectedLine` crudo
+   * — los request keys, los calculos, el label y el propio `<select>` leen todos este
+   * valor derivado —, asi que la correccion ya quedaba aplicada en cada render.
+   *
+   * Se conserva la preferencia del efecto: si la seleccion queda fuera de alcance se
+   * intenta `defaultLine`, y solo si esa tampoco sirve se cae a la primera permitida.
+   * Al clampear en lectura en vez de pisar el estado, ademas, si el alcance se vuelve
+   * a ampliar la eleccion original del usuario sigue viva.
+   */
+  const effectiveSelectedLine = useMemo(() => {
+    const trimmed = selectedLine.trim();
+    if (!hasLineRestriction) return trimmed;
+    if (!trimmed) return "";
+    if (allowedLineSet.has(trimmed.toLowerCase())) return trimmed;
+    return resolveLineWithinScope(defaultLine ?? "");
   }, [
+    selectedLine,
     allowedLineSet,
     defaultLine,
     hasLineRestriction,

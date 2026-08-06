@@ -248,8 +248,10 @@ try {
   let lineaPath: DrillPathStep[] = [];
   let subPath: DrillPathStep[] = [];
   let itemPath: DrillPathStep[] = [];
+  // `tipdoc` es obligatorio en InvoiceFactRef: sin el, el filtro de drill-path
+  // compara contra vacio y el escenario mide una consulta que no devuelve nada.
   let sampleFactura:
-    | { documento: string; tipdoc?: string; fecha?: string }
+    | { documento: string; tipdoc: string; fecha?: string }
     | null = null;
   let sampleCliente: string | null = null;
   let sampleVend: string | null = null;
@@ -334,8 +336,8 @@ try {
       "drill",
       async () => {
         const board = await queryDrillBoard(client, filters, itemPath, table);
-        const fact = board.rows.find((row) => row.documento);
-        if (fact?.documento) {
+        const fact = board.rows.find((row) => row.documento && row.tipdoc);
+        if (fact?.documento && fact.tipdoc) {
           sampleFactura = {
             documento: fact.documento,
             tipdoc: fact.tipdoc,
@@ -472,15 +474,16 @@ try {
       "Detalle factura (líneas)",
       "factura",
       () =>
+        // Ojo: esto es un InvoiceFactRef, NO un DrillPathStep. Antes se pasaba
+        // {type, id, label, fecha}: sin `documento` y con 4 campos que la funcion
+        // ignora, asi que el escenario media una factura vacia.
         queryInvoiceDetailBoard(
           client,
           filters,
           {
-            type: "factura",
-            id: sampleFactura!.documento,
-            label: sampleFactura!.documento,
+            documento: sampleFactura!.documento,
             tipdoc: sampleFactura!.tipdoc,
-            fecha: sampleFactura!.fecha,
+            fechaDcto: sampleFactura!.fecha,
           },
           table,
           6,

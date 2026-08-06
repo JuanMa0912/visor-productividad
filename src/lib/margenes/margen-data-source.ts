@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 import { appendDinastiaCajaAreaSql } from "@/lib/margenes/dinastia-caja-areas";
 import type { MargenQueryFilters } from "@/lib/margenes/margen-final-query";
 import { parseSedeKey } from "@/lib/margenes/margen-final-query";
@@ -43,7 +43,7 @@ export const MARGEN_ROLL_FACTURA_ATTR_COLUMNS = [
  * Si faltan: hay que aplicar migraciones y refrescar el roll.
  */
 export const assertMargenRollFacturaAttrs = async (
-  client: PoolClient,
+  client: ClientBase,
   tableName: string = "margen_final_roll",
 ): Promise<void> => {
   const result = await client.query<{ column_name: string }>(
@@ -71,7 +71,7 @@ export const assertMargenRollFacturaAttrs = async (
 };
 
 export const resolveMargenDataSource = async (
-  client: PoolClient,
+  client: ClientBase,
   options?: { kind?: "default" | "dinastia" },
 ): Promise<MargenDataTable> => {
   if (options?.kind === "dinastia") {
@@ -149,7 +149,7 @@ export const resolveMargenDataSource = async (
 
 /** Preferido por /informe-variacion: item/dia sin factura (mas pequeño que margen_final_roll). */
 export const resolveInformeMargenDataSource = async (
-  client: PoolClient,
+  client: ClientBase,
   options?: { kind?: "default" | "dinastia" },
 ): Promise<MargenDataTable> => {
   if (options?.kind === "dinastia") {
