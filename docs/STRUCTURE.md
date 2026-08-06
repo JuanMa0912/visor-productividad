@@ -129,8 +129,8 @@ Codigo compartido sin UI de pagina.
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`) |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
 | `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede |
-| `proveedores/visitas` | admin: listado/filtros/CSV + métricas visitas + `mode=meta` con links QR (PNG generado en el cliente, sin terceros) |
-| `proveedores/ventas` | admin: rolling 30d (u otra ventana) desde `ventas_proveedor_dia` |
+| `proveedores/visitas` | subtablero `proveedores`: listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
+| `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia` |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

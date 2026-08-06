@@ -280,6 +280,10 @@ const SPECIAL_ROLE_OPTIONS = [
     id: "crear_horario_predeterminado",
     label: "Crear horario predeterminado",
   },
+  {
+    id: "proveedores_qr",
+    label: "QR proveedores (links)",
+  },
 ];
 
 type PermissionCellSummary = {

@@ -40,7 +40,7 @@ seguimiento operativo.
 | Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | matrices, pivotes y presets por usuario |
 | Días de inventario | `/analisis-de-inventario` | `/api/analisis-de-inventario` | DI und/valor, drill sede→ítem y mapa de calor |
 | Participación comercial | `/participacion-comercial` | `/api/participacion-comercial` | mix sede↔línea por almacén y drill completo |
-| Proveedores | `/proveedores`, `/proveedores/ingreso/[token]` | `/api/proveedores/visitas`, `/api/proveedores/ingreso`, `/api/proveedores/ventas` | QR público por sede; visitas + pestaña ventas 30d (`ventas_proveedor_dia`) |
+| Proveedores | `/proveedores`, `/proveedores/ingreso/[token]` | `/api/proveedores/visitas`, `/api/proveedores/ingreso`, `/api/proveedores/ventas` | Subtablero `proveedores`; QR público por sede; links/QR del tablero con `proveedores_qr`; visitas + ventas 30d |
 | Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, meta/summary/options y XLSX |
 | Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` | consultas operativas, reporte Alex, planillas y comparativos |
 | Cronograma | `/cronograma` | `/api/cronograma` | lectura de bases de datos embebidas en una pagina de Notion |
@@ -53,7 +53,7 @@ La definicion canonica esta en `src/lib/shared/portal-sections.ts`.
 
 | Seccion | Ruta hub | Subtableros principales |
 | --- | --- | --- |
-| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores` (solo admin por ahora) |
+| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores` |
 | `producto` | `/productividad` | `mix-y-linea`, `margenes`, `rotacion` |
 | `operacion` | `/horario` | `consulta-operativa`, `planilla-vs-asistencia`, `registro-de-horarios` |
 
@@ -124,7 +124,7 @@ HTTPS se debe remover esa excepcion o establecer `true`. Ver
 | `allowed_lines` | lineas visibles; `NULL` equivale a todas. Si solo queda `asadero` o `fruver`, margenes/rotacion/variacion se acotan (sedes «Todas» no amplian ese alcance) |
 | `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` equivale a todas |
 | `allowed_subdashboards` | permisos granulares por subtablero; `NULL` equivale a todos |
-| `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `crear_horario_predeterminado` |
+| `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `crear_horario_predeterminado`, `proveedores_qr` |
 | `sede` | campo legacy usado como fallback |
 | `is_active` | bloqueo o habilitacion de acceso |
 
@@ -132,6 +132,7 @@ Reglas notables:
 
 - `src/proxy.ts` solo redirige paginas sin cookie hacia `/login`; no reemplaza la autorizacion por endpoint.
 - `/cronograma` se muestra en UI a usuarios con `special_roles` que incluya `cronograma`.
+- Links/QR de `/proveedores` requieren `special_roles` con `proveedores_qr` (admin siempre; el tablero en sí se otorga con el subtablero `proveedores`).
 - `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
 - Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
 - `/informe-variacion` exige el subtablero `informe-variacion` (no se hereda de `margenes` ni `rotacion`).

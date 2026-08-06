@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   applySessionCookies,
-  requireAdminSession,
+  requireAuthSession,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import {
@@ -9,6 +9,7 @@ import {
   listVentasProveedorRolling,
 } from "@/lib/proveedores/ventas-repo";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
+import { canAccessProveedoresBoard } from "@/lib/shared/special-role-features";
 
 const csvEscape = (value: string) => {
   if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
@@ -16,9 +17,15 @@ const csvEscape = (value: string) => {
 };
 
 export async function GET(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireAuthSession();
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+  const isAdmin = session.user.role === "admin";
+  if (
+    !canAccessProveedoresBoard(isAdmin, session.user.allowedSubdashboards)
+  ) {
+    return NextResponse.json({ error: "Sin permiso." }, { status: 403 });
   }
   const withSession = (response: NextResponse) =>
     applySessionCookies(response, session);

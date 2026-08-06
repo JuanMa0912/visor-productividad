@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Download, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
-import { canAccessProveedoresBoard } from "@/lib/shared/special-role-features";
+import { canAccessProveedoresBoard, canViewProveedoresQrLinks } from "@/lib/shared/special-role-features";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import type {
   ProveedorVisitaRow,
@@ -73,6 +73,12 @@ export default function ProveedoresBoardPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
+  const allowedSubdashboards = user?.allowedSubdashboards ?? null;
+  const canAccessBoard = canAccessProveedoresBoard(
+    isAdmin,
+    allowedSubdashboards,
+  );
+  const canViewQr = canViewProveedoresQrLinks(user?.specialRoles, isAdmin);
   const initial = useMemo(() => defaultRange(), []);
   const [dateStart, setDateStart] = useState(initial.start);
   const [dateEnd, setDateEnd] = useState(initial.end);
@@ -87,12 +93,16 @@ export default function ProveedoresBoardPage() {
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    if (!canAccessProveedoresBoard(isAdmin)) {
+    if (!canAccessBoard) {
       router.replace("/secciones");
     }
-  }, [status, isAdmin, router]);
+  }, [status, canAccessBoard, router]);
 
   const loadMeta = useCallback(async () => {
+    if (!canViewQr) {
+      setQrLinks([]);
+      return;
+    }
     try {
       const response = await fetch("/api/proveedores/visitas?mode=meta", {
         credentials: "include",
@@ -107,7 +117,7 @@ export default function ProveedoresBoardPage() {
     } catch {
       setQrLinks([]);
     }
-  }, []);
+  }, [canViewQr]);
 
   const load = useCallback(async () => {
     if (!dateStart || !dateEnd || dateStart > dateEnd) {
@@ -145,10 +155,10 @@ export default function ProveedoresBoardPage() {
   }, [dateEnd, dateStart, q, sede]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !isAdmin) return;
+    if (status !== "authenticated" || !canAccessBoard) return;
     void loadMeta();
     void load();
-  }, [status, isAdmin, load, loadMeta]);
+  }, [status, canAccessBoard, load, loadMeta]);
 
   const exportCsv = () => {
     const params = new URLSearchParams({
@@ -174,7 +184,7 @@ export default function ProveedoresBoardPage() {
     );
   }
 
-  if (!canAccessProveedoresBoard(isAdmin)) return null;
+  if (!canAccessBoard) return null;
 
   return (
     <div className="min-h-screen bg-slate-100 text-foreground">
@@ -563,7 +573,7 @@ export default function ProveedoresBoardPage() {
           </div>
         </section>
 
-        {qrLinks.length > 0 ? (
+        {canViewQr && qrLinks.length > 0 ? (
           <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-bold text-slate-900">
               QR por sede

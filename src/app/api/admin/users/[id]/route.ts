@@ -52,6 +52,7 @@ const ALLOWED_SPECIAL_ROLE_SET = new Set([
   "abcd",
   "historial_sinventario",
   "crear_horario_predeterminado",
+  "proveedores_qr",
 ]);
 
 const resolveValidSede = (value?: string | null) => {

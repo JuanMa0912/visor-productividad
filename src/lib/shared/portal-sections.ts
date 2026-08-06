@@ -203,10 +203,9 @@ export const canAccessPortalSubsection = (
 /**
  * Subtableros que existen en el registro pero no se asignan por checkbox
  * mientras el acceso real sea solo admin (evita falsa sensación de permiso).
+ * Vacío: todos los subtableros registrados son asignables en gestión de usuarios.
  */
-export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [
-  "proveedores",
-];
+export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [];
 
 export const isAdminOnlyPortalSubsection = (
   subsectionId: PortalSubsectionId,

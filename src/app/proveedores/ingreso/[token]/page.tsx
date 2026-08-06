@@ -415,9 +415,6 @@ export default function ProveedoresIngresoPage() {
             </div>
           ) : null}
         </div>
-        <p className="mt-4 text-center text-[11px] text-slate-400">
-          Solo registro de proveedores · sede fija por QR
-        </p>
       </div>
     </main>
   );

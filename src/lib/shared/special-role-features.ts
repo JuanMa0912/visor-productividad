@@ -21,6 +21,8 @@ export const ROTACION_SINVENTARIO_HISTORIAL_SPECIAL_ROLES = [
 export const CREATE_LUNES_PRESET_SPECIAL_ROLES = [
   "crear_horario_predeterminado",
 ] as const;
+/** Ver y descargar links/QR de ingreso de proveedores en el tablero. */
+export const PROVEEDORES_QR_SPECIAL_ROLES = ["proveedores_qr"] as const;
 
 const LUNES_SYNC_SET = new Set<string>(LUNES_SCHEDULE_SYNC_SPECIAL_ROLES);
 const COMPARAR_HORARIOS_SET = new Set<string>(COMPARAR_HORARIOS_SPECIAL_ROLES);
@@ -31,6 +33,7 @@ const ROTACION_SINVENTARIO_HISTORIAL_SET = new Set<string>(
 const CREATE_LUNES_PRESET_SET = new Set<string>(
   CREATE_LUNES_PRESET_SPECIAL_ROLES,
 );
+const PROVEEDORES_QR_SET = new Set<string>(PROVEEDORES_QR_SPECIAL_ROLES);
 
 /**
  * Puede usar "Mismo horario que lunes" en Ingresar horarios.
@@ -64,15 +67,33 @@ export function canAccessRotacionBoard(
 
 /**
  * Puede acceder al tablero Proveedores (hub Venta).
- *
- * Rollout actual: **solo administradores**.
- * No usar `canAccessPortalSubsection` aquí: con `allowed_subdashboards`
- * null/[] (= todos) los perfiles comerciales verían el tablero sin querer.
- * Cuando se abra a no-admins, exigir inclusión explícita de `proveedores`
- * (opt-in; null no debe otorgarlo) o alinear con el resto de subtableros.
+ * Los administradores lo tienen siempre.
+ * El resto necesita el subtablero `proveedores` en `allowed_subdashboards`
+ * (vacio/null = todos los subtableros).
  */
-export function canAccessProveedoresBoard(isAdmin = false): boolean {
-  return isAdmin;
+export function canAccessProveedoresBoard(
+  isAdmin = false,
+  allowedSubdashboards?: unknown,
+): boolean {
+  if (isAdmin) return true;
+  if (allowedSubdashboards === undefined) return false;
+  return canAccessPortalSubsection(allowedSubdashboards, "proveedores");
+}
+
+/**
+ * Puede ver links/QR de ingreso por sede en el tablero Proveedores.
+ * Los administradores lo tienen siempre; el resto necesita `proveedores_qr`.
+ * Sin permiso: no mostrar el bloque ni devolver tokens en la API.
+ */
+export function canViewProveedoresQrLinks(
+  specialRoles: string[] | null | undefined,
+  isAdmin = false,
+): boolean {
+  if (isAdmin) return true;
+  if (!specialRoles?.length) return false;
+  return specialRoles.some((r) =>
+    PROVEEDORES_QR_SET.has(r.trim().toLowerCase()),
+  );
 }
 
 /**

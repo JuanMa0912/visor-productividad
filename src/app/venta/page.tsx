@@ -68,7 +68,7 @@ const VENTA_MODULES: HubModuleItem[] = [
     badge: "PROVEEDORES",
     title: "Proveedores",
     description:
-      "Registro de visitas por QR (entrada/salida) y listado admin con filtros y export.",
+      "Registro de visitas por QR (entrada/salida), métricas y ventas por proveedor.",
     href: "/proveedores",
   },
 ];
@@ -92,7 +92,7 @@ export default function VentaHubPage() {
     () =>
       VENTA_MODULES.filter((module) => {
         if (module.id === "proveedores") {
-          return canAccessProveedoresBoard(isAdmin);
+          return canAccessProveedoresBoard(isAdmin, allowedSubdashboards);
         }
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);

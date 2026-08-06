@@ -9,6 +9,7 @@ import {
 import {
   canAccessProveedoresBoard,
   canAccessRotacionBoard,
+  canViewProveedoresQrLinks,
 } from "./special-role-features";
 
 test("empty portal permission lists mean all sections and subdashboards", () => {
@@ -36,12 +37,24 @@ test("lista vacia de subtableros = todos (incluye rotacion)", () => {
   assert.equal(canAccessRotacionBoard(null, false, null), true);
 });
 
-test("proveedores solo admin en el rollout actual", () => {
+test("proveedores: admin siempre; resto por subtablero", () => {
   assert.equal(canAccessProveedoresBoard(true), true);
   assert.equal(canAccessProveedoresBoard(false), false);
+  assert.equal(canAccessProveedoresBoard(false, ["proveedores"]), true);
+  assert.equal(canAccessProveedoresBoard(false, ["ventas-x-item"]), false);
+  assert.equal(canAccessProveedoresBoard(false, null), true);
+  assert.equal(canAccessProveedoresBoard(false, []), true);
 });
 
-test("proveedores es subtablero solo-admin (no asignable por checkbox)", () => {
-  assert.equal(isAdminOnlyPortalSubsection("proveedores"), true);
+test("proveedores ya no es subtablero solo-admin", () => {
+  assert.equal(isAdminOnlyPortalSubsection("proveedores"), false);
   assert.equal(isAdminOnlyPortalSubsection("participacion-comercial"), false);
+});
+
+test("QR proveedores: admin siempre; resto necesita proveedores_qr", () => {
+  assert.equal(canViewProveedoresQrLinks(null, true), true);
+  assert.equal(canViewProveedoresQrLinks([], false), false);
+  assert.equal(canViewProveedoresQrLinks(null, false), false);
+  assert.equal(canViewProveedoresQrLinks(["proveedores_qr"], false), true);
+  assert.equal(canViewProveedoresQrLinks(["abcd"], false), false);
 });

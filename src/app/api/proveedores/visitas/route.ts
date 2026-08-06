@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import {
   applySessionCookies,
-  requireAdminSession,
+  requireAuthSession,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { listSedeQrTokens, listVisitas, computeVisitasMetrics } from "@/lib/proveedores/repo";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import { getLocalPortalCloudUrl } from "@/lib/shared/local-portal-notices";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
+import {
+  canAccessProveedoresBoard,
+  canViewProveedoresQrLinks,
+} from "@/lib/shared/special-role-features";
 
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
@@ -39,9 +43,15 @@ const resolveProveedoresPublicOrigin = (requestUrl: URL): string => {
 };
 
 export async function GET(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireAuthSession();
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+  const isAdmin = session.user.role === "admin";
+  if (
+    !canAccessProveedoresBoard(isAdmin, session.user.allowedSubdashboards)
+  ) {
+    return NextResponse.json({ error: "Sin permiso." }, { status: 403 });
   }
   const withSession = (response: NextResponse) =>
     applySessionCookies(response, session);
@@ -67,8 +77,12 @@ export async function GET(request: Request) {
   const client = await (await getDbPool()).connect();
   try {
     if (mode === "meta") {
-      const qr = await listSedeQrTokens(client);
+      const canQr = canViewProveedoresQrLinks(
+        session.user.specialRoles,
+        isAdmin,
+      );
       const origin = resolveProveedoresPublicOrigin(url);
+      const qr = canQr ? await listSedeQrTokens(client) : [];
       return withSession(
         NextResponse.json({
           sedes: [...PROVEEDORES_QR_SEDES],
