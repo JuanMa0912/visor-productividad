@@ -370,10 +370,8 @@ export function ParticipacionComercialBoard() {
     _sede: { key: string; label: string; empresa: string; sedeId: string },
     rowStep: ParticipacionDrillStep,
   ) => {
-    if (matrix?.rowLevel === "item") {
-      setMatrixMetric((prev) => (prev === "units" ? "share" : "units"));
-      return;
-    }
+    // En ítem no hay más profundidad; la métrica solo cambia con %, Unidades, $ M.
+    if (matrix?.rowLevel === "item") return;
     if (rowStep.type === "linea" || rowStep.type === "sublinea") {
       openMatrixRow(rowStep);
     }
@@ -686,9 +684,10 @@ export function ParticipacionComercialBoard() {
                 Matriz · {matrixRowLevelLabel} × sede
               </h2>
               <p className="text-xs text-slate-500">
-                Clic profundiza (línea → sublínea → ítem). Doble clic: % en el
-                grupo padre y % en la sede. Modo $ M: muestra ÷1.000.000
-                (solo visual); el valor real queda en el tooltip.
+                Clic profundiza (línea → sublínea → ítem). Doble clic: detalle %
+                por sede. %, Unidades y $ M solo con los botones de la derecha.
+                Modo $ M: muestra ÷1.000.000 (solo visual); el valor real queda
+                en el tooltip.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -887,10 +886,9 @@ export function ParticipacionComercialBoard() {
                           ) : (
                             <button
                               type="button"
-                              onClick={() => setMatrixMetric("units")}
                               onDoubleClick={() => openShareDetail(row)}
                               className="text-left text-slate-800 hover:text-blue-700 hover:underline"
-                              title="Clic: unidades · Doble clic: ver % por sede"
+                              title="Doble clic: ver % por sede"
                               aria-expanded={expanded}
                             >
                               <span className="tabular-nums text-slate-500">
