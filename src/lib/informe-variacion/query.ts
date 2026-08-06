@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 import {
   listMargenSedeCatalogOptions,
   type MargenSedeCatalogOption,
@@ -249,7 +249,7 @@ const buildInformeThreePeriodSql = (
 };
 
 export const queryInformeVariacionRows = async (
-  client: PoolClient,
+  client: ClientBase,
   periods: InformePeriods,
   allowedSedeKeys: string[] | null,
   forcedMargenTipos: string[] | null = null,
@@ -445,7 +445,7 @@ export type LoadInformeVariacionOptions = {
 };
 
 export const loadInformeVariacionPayload = async (
-  client: PoolClient,
+  client: ClientBase,
   year: number,
   month: number,
   allowedSedeKeys: string[] | null,

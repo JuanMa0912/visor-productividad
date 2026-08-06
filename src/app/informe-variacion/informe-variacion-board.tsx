@@ -164,7 +164,18 @@ function InformeVariacionBoardReady({
     return `${names[month - 1] ?? "??"}-${year}`;
   };
 
-  const curLabel = periodShort(payload.periods.current.from);
+  /**
+   * Alias de `payload.periods.current` con un nombre que NO termina en `current`.
+   *
+   * El React Compiler trata cualquier acceso `.current` con su heuristica de refs. Como
+   * este es un objeto de datos normal (label/from/to), sus dependencias inferidas
+   * (`...current.to`) no cuadraban con las declaradas a mano (`...periods.current`) y
+   * abortaba la optimizacion del componente ENTERO con
+   * "Differences in ref.current access". Leyendo por el alias desaparece el problema.
+   */
+  const periodoActual = payload.periods.current;
+
+  const curLabel = periodShort(periodoActual.from);
   const momLabel = periodShort(payload.periods.mom.from);
   const yoyLabel = periodShort(payload.periods.yoy.from);
 
@@ -193,13 +204,13 @@ function InformeVariacionBoardReady({
   const exportSedeSummary = useCallback(async () => {
     const rows = buildSedeSummaryExportRows(prepared, sedeMetric, pass);
     const filename = sedeSummaryExportFilename(
-      payload.periods.current.label,
+      periodoActual.label,
       sedeMetric,
     );
     await downloadInformeSedeSummaryExcel({
       rows,
       metric: sedeMetric,
-      periodLabel: payload.periods.current.label,
+      periodLabel: periodoActual.label,
       yoyLabel,
       momLabel,
       filename,
@@ -209,12 +220,12 @@ function InformeVariacionBoardReady({
       exportKind: "informe-sede-summary",
       format: "xlsx",
       fileName: filename,
-      dateFrom: payload.periods.current.from,
-      dateTo: payload.periods.current.to,
+      dateFrom: periodoActual.from,
+      dateTo: periodoActual.to,
       filters: { metric: sedeMetric },
       rowCount: rows.length,
     });
-  }, [momLabel, pass, prepared, payload.periods.current, sedeMetric, yoyLabel]);
+  }, [momLabel, pass, prepared, periodoActual, sedeMetric, yoyLabel]);
 
   const matrixExportOptions = useMemo(
     () => ({
@@ -225,7 +236,7 @@ function InformeVariacionBoardReady({
       matrixDisplay,
       matrixOpen,
       matrixSort,
-      periodLabel: payload.periods.current.label,
+      periodLabel: periodoActual.label,
     }),
     [
       matrixDisplay,
@@ -235,13 +246,13 @@ function InformeVariacionBoardReady({
       matrixSort,
       pass,
       prepared,
-      payload.periods.current.label,
+      periodoActual.label,
     ],
   );
 
   const exportMatrixExcel = useCallback(async () => {
     const filename = matrixExportFilename(
-      payload.periods.current.label,
+      periodoActual.label,
       matrixMetric,
       matrixMode,
       matrixDisplay,
@@ -256,8 +267,8 @@ function InformeVariacionBoardReady({
       exportKind: "informe-matriz",
       format: "xlsx",
       fileName: filename,
-      dateFrom: payload.periods.current.from,
-      dateTo: payload.periods.current.to,
+      dateFrom: periodoActual.from,
+      dateTo: periodoActual.to,
       filters: { metric: matrixMetric, mode: matrixMode, display: matrixDisplay },
     });
   }, [
@@ -265,12 +276,12 @@ function InformeVariacionBoardReady({
     matrixExportOptions,
     matrixMetric,
     matrixMode,
-    payload.periods.current,
+    periodoActual,
   ]);
 
   const exportMatrixPdf = useCallback(() => {
     const filename = matrixExportFilename(
-      payload.periods.current.label,
+      periodoActual.label,
       matrixMetric,
       matrixMode,
       matrixDisplay,
@@ -285,8 +296,8 @@ function InformeVariacionBoardReady({
       exportKind: "informe-matriz",
       format: "pdf",
       fileName: filename,
-      dateFrom: payload.periods.current.from,
-      dateTo: payload.periods.current.to,
+      dateFrom: periodoActual.from,
+      dateTo: periodoActual.to,
       filters: { metric: matrixMetric, mode: matrixMode, display: matrixDisplay },
     });
   }, [
@@ -294,7 +305,7 @@ function InformeVariacionBoardReady({
     matrixExportOptions,
     matrixMetric,
     matrixMode,
-    payload.periods.current,
+    periodoActual,
   ]);
 
   return (
@@ -318,7 +329,7 @@ function InformeVariacionBoardReady({
             {dataPending ? (
               <span className="inline-block h-3.5 w-32 animate-pulse rounded bg-slate-200 align-middle" />
             ) : (
-              payload.periods.current.label
+              periodoActual.label
             )}
           </b>
         </span>
