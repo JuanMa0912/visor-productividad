@@ -1725,13 +1725,6 @@ export const MargenesBoard = ({
   return (
     <div className="flex flex-1 flex-col md:min-h-0">
       <div className="flex shrink-0 flex-wrap items-end gap-2.5 border-b border-[#2a2f47] bg-[#141720] px-4 py-2">
-        {effectiveSedes.length >= 8 ? (
-          <p className="mb-1 w-full rounded-md border border-[#92400e]/50 bg-[#451a03]/40 px-3 py-1.5 text-[11px] text-[#fbbf24]">
-            Muchas sedes a la vez: la carga puede tardar. Usa «Aplicar filtros»
-            (no cada clic) y acota fechas si puedes. Tras la 1.ª carga, la misma
-            consulta queda en caché ~5 min.
-          </p>
-        ) : null}
         <MargenesMultiSelect
           label="Empresa"
           values={empresas}
