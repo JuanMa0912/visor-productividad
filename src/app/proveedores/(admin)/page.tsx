@@ -12,6 +12,7 @@ import type {
   ProveedorVisitaRow,
   ProveedorVisitasMetrics,
 } from "@/lib/proveedores/types";
+import { ProveedorSedeQr } from "./proveedor-sede-qr";
 import { ProveedoresVentasPanel } from "./proveedores-ventas-panel";
 
 const toISODate = (date: Date) => {
@@ -565,30 +566,21 @@ export default function ProveedoresBoardPage() {
         {qrLinks.length > 0 ? (
           <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-bold text-slate-900">
-              Enlaces QR por sede
+              QR por sede
             </h2>
             <p className="mt-1 text-[11px] text-slate-500">
-              Cada URL es exclusiva de una sede. Imprimir / generar QR desde
-              estos links.
+              Generados aquí (sin servicios externos). Son estáticos: apuntan a
+              nuestra URL y no caducan. Cada código es exclusivo de una sede.
             </p>
-            <ul className="mt-3 space-y-2 text-xs">
+            <ul className="mt-3 space-y-1 text-xs">
               {qrLinks.map((link) => (
-                <li
+                <ProveedorSedeQr
                   key={link.sedeName}
-                  className="flex flex-wrap items-baseline gap-2 border-t border-slate-100 pt-2 first:border-0 first:pt-0"
-                >
-                  <span className="min-w-28 font-semibold text-slate-800">
-                    {link.sedeName}
-                  </span>
-                  <a
-                    href={link.path}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="break-all font-mono text-blue-700 underline-offset-2 hover:underline"
-                  >
-                    {link.url}
-                  </a>
-                </li>
+                  sedeName={link.sedeName}
+                  url={link.url}
+                  path={link.path}
+                  activo={link.activo}
+                />
               ))}
             </ul>
           </section>
