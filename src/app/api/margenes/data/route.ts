@@ -32,6 +32,7 @@ import {
 import { parseDrillPath } from "@/lib/margenes/drill-path";
 import { parseFactPath } from "@/lib/margenes/fact-path";
 import {
+  kpiFromAggregatedRows,
   queryClienteCompare,
   queryClienteFacturas,
   queryDrillBoard,
@@ -603,9 +604,7 @@ export async function GET(request: Request) {
           3,
         );
       } else {
-        const kpi = await queryKpi(client, parsed, [], dataTable, {
-          mercadoOnly: false,
-        });
+        // Sin queryKpi(mercadoOnly:false): ese path usa COUNT(DISTINCT) ~12–20 s.
         const table = await queryFactNavRows(
           client,
           parsed,
@@ -613,12 +612,17 @@ export async function GET(request: Request) {
           dataTable,
           search,
         );
-        payload = { kpi, ...table };
+        const dias = factPath.some((step) => step.type === "fecha")
+          ? 1
+          : undefined;
+        payload = {
+          kpi: kpiFromAggregatedRows(table.rows, parsed.sedes.length, { dias }),
+          ...table,
+        };
       }
     } else if (mode === "fact-list") {
       const search = url.searchParams.get("search") ?? undefined;
       const factPath = parseFactPath(url.searchParams.get("factPath"));
-      const mercadoOnly = false;
       const factura = factPath.find((step) => step.type === "factura");
       if (factura?.type === "factura") {
         payload = await queryInvoiceDetailBoard(
@@ -629,9 +633,6 @@ export async function GET(request: Request) {
           3,
         );
       } else {
-        const kpi = await queryKpi(client, parsed, [], dataTable, {
-          mercadoOnly,
-        });
         const rows = await queryFactListRows(
           client,
           parsed,
@@ -639,18 +640,18 @@ export async function GET(request: Request) {
           search,
         );
         payload = {
-          kpi,
+          kpi: kpiFromAggregatedRows(rows, parsed.sedes.length),
           level: 0,
           levelName: "Factura",
           rows,
         };
       }
     } else if (mode === "sede") {
-      const kpi = await queryKpi(client, parsed, [], dataTable, {
-        mercadoOnly: false,
-      });
       const rows = await querySedeCompare(client, parsed, dataTable);
-      payload = { kpi, rows };
+      payload = {
+        kpi: kpiFromAggregatedRows(rows, parsed.sedes.length),
+        rows,
+      };
     } else if (mode === "cliente") {
       const search = url.searchParams.get("search") ?? undefined;
       const clientePayload = await queryClienteCompare(

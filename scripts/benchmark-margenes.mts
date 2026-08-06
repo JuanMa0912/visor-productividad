@@ -1,62 +1,56 @@
 /**
- * Benchmark de carga de /margenes (SQL directo + opcional HTTP E2E).
+ * Benchmark exhaustivo de cargas de /margenes (SQL directo).
  *
- * Replica el flujo tras pulsar «Cargar datos»:
- *   1. GET /api/margenes/meta (apertura de página)
- *   2. GET /api/margenes/data?mode=drill&drillPath=[] (vista inicial del tablero)
+ * Cubre todos los modos del tablero: meta, drill L0–L4, fact-nav/list,
+ * sede, cliente, vendedor, filters, filter-items, kpi, summary, detalle factura.
  *
  * Uso:
  *   npm run benchmark:margenes
- *   BENCHMARK_HTTP=1 BENCHMARK_USER=admin BENCHMARK_PASSWORD='...' npm run benchmark:margenes
- *   BENCHMARK_SEDES=mercamio::001,mercamio::002 npm run benchmark:margenes
- *   BENCHMARK_RUNS=3 npm run benchmark:margenes
+ *   BENCHMARK_RUNS=1 BENCHMARK_FULL=1 npm run benchmark:margenes
+ *   BENCHMARK_DAYS=5 BENCHMARK_SEDES=todas npm run benchmark:margenes
+ *   BENCHMARK_JSON=tmp/margenes-bench.json npm run benchmark:margenes
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import pg from "pg";
 import { performance } from "node:perf_hooks";
 import { loadEnvFiles, resolvePgClientConfig } from "./db-client-config.mjs";
 import { defaultMargenDateRange } from "../src/lib/margenes/date-range.ts";
 import { listMargenSedeCatalogOptions } from "../src/lib/margenes/margen-sede-catalog.ts";
 import { resolveMargenDataSource } from "../src/lib/margenes/margen-data-source.ts";
+import type { DrillPathStep } from "../src/lib/margenes/drill-path.ts";
+import type { FactNavStep } from "../src/lib/margenes/fact-path.ts";
 import {
+  kpiFromAggregatedRows,
+  queryClienteCompare,
+  queryClienteFacturas,
   queryDrillBoard,
-  queryDrillRows,
+  queryFactListRows,
+  queryFactNavRows,
+  queryFilterItemSearch,
   queryFilterOptions,
+  queryInvoiceDetailBoard,
   queryKpi,
   querySedeCompare,
+  queryVendedorCompare,
+  queryVendedorFacturas,
 } from "../src/lib/margenes/drill-queries.ts";
 
 loadEnvFiles();
 
-const RUNS = Math.max(1, Number(process.env.BENCHMARK_RUNS ?? 2) || 2);
-const HTTP = process.env.BENCHMARK_HTTP === "1";
-const VERBOSE = process.env.BENCHMARK_VERBOSE === "1";
-const BASE_URL = (process.env.BENCHMARK_BASE_URL ?? "http://127.0.0.1:3000").replace(
-  /\/$/,
-  "",
-);
-const USER = process.env.BENCHMARK_USER?.trim() ?? "";
-const PASSWORD = process.env.BENCHMARK_PASSWORD ?? "";
+const RUNS = Math.max(1, Number(process.env.BENCHMARK_RUNS ?? 1) || 1);
+const FULL = process.env.BENCHMARK_FULL !== "0";
+const DAYS = Math.max(1, Number(process.env.BENCHMARK_DAYS ?? 0) || 0);
+const JSON_OUT = process.env.BENCHMARK_JSON?.trim() || "";
 
 const formatMs = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
-const formatBytes = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-};
 
 const percentile = (arr: number[], p: number) => {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
   const idx = Math.ceil(sorted.length * p) - 1;
   return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
-};
-
-const timed = async <T>(label: string, fn: () => Promise<T>) => {
-  const t0 = performance.now();
-  const result = await fn();
-  const ms = performance.now() - t0;
-  return { result, ms, label };
 };
 
 const isoToCompact = (iso: string) => iso.replace(/-/g, "");
@@ -75,176 +69,71 @@ const buildFilters = (fromIso: string, toIso: string, sedes: string[]) => ({
   orderDir: undefined as "asc" | "desc" | undefined,
 });
 
-const mergeSetCookies = (jar: Map<string, string>, response: Response) => {
-  const lines =
-    typeof response.headers.getSetCookie === "function"
-      ? response.headers.getSetCookie()
-      : [];
-  for (const line of lines) {
-    const [pair] = line.split(";");
-    const eq = pair.indexOf("=");
-    if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
-  }
+type BenchRow = {
+  id: string;
+  label: string;
+  family: string;
+  avg_ms: number;
+  p95_ms: number;
+  runs: number;
+  note?: string;
+  ok: boolean;
+  error?: string;
 };
 
-const cookieHeader = (jar: Map<string, string>) =>
-  [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
-
-const httpRequest = async (jar: Map<string, string>, path: string, init: RequestInit = {}) => {
-  const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
-  const headers = { ...(init.headers as Record<string, string> | undefined) };
-  const cookie = cookieHeader(jar);
-  if (cookie) headers.Cookie = cookie;
-
-  const started = performance.now();
-  const response = await fetch(url, { ...init, headers });
-  mergeSetCookies(jar, response);
-  const buffer = await response.arrayBuffer();
-  const elapsedMs = performance.now() - started;
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    elapsedMs,
-    bytes: buffer.byteLength,
-  };
-};
-
-const loginHttp = async (jar: Map<string, string>) => {
-  if (!USER || !PASSWORD) {
-    throw new Error("BENCHMARK_HTTP=1 requiere BENCHMARK_USER y BENCHMARK_PASSWORD.");
-  }
-  const result = await httpRequest(jar, "/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: USER, password: PASSWORD }),
-  });
-  if (!result.ok) throw new Error(`Login falló (${result.status})`);
-  if (!jar.has("vp_session")) throw new Error("Login OK pero falta vp_session.");
-};
-
-const benchSqlScenario = async (
-  client: pg.PoolClient,
-  name: string,
-  fromIso: string,
-  toIso: string,
-  sedes: string[],
-) => {
-  const filters = buildFilters(fromIso, toIso, sedes);
-  const times: Record<string, number[]> = {
-    drill_load: [],
-    kpi: [],
-    drill_rows: [],
-    filters: [],
-    sede_compare: [],
-  };
-
+const timedRuns = async (
+  id: string,
+  label: string,
+  family: string,
+  fn: () => Promise<unknown>,
+  note?: string,
+): Promise<BenchRow> => {
+  const samples: number[] = [];
+  let lastError: string | undefined;
   for (let run = 0; run < RUNS; run += 1) {
-    await client.query("DISCARD ALL").catch(() => {});
-    const table = await resolveMargenDataSource(client);
-
-    const drillStarted = performance.now();
-    const board = await queryDrillBoard(client, filters, [], table);
-    const drillMs = performance.now() - drillStarted;
-    times.drill_load.push(drillMs);
-
-    if (VERBOSE) {
-      const kpiOnly = await timed("kpi", () =>
-        queryKpi(client, filters, [], table),
-      );
-      times.kpi.push(kpiOnly.ms);
-
-      const rowsOnly = await timed("drill_rows", () =>
-        queryDrillRows(client, filters, [], table),
-      );
-      times.drill_rows.push(rowsOnly.ms);
-
-      const filtersOnly = await timed("filters", () =>
-        queryFilterOptions(client, filters, table),
-      );
-      times.filters.push(filtersOnly.ms);
-
-      const sedeOnly = await timed("sede_compare", () =>
-        querySedeCompare(client, filters, table),
-      );
-      times.sede_compare.push(sedeOnly.ms);
-    }
-
-    if (run === 0) {
-      const rowCount = board.rows.length;
-      const acum = board.rows.find((row) => row.isAcum);
-      console.log(
-        `    tabla: ${table} · filas drill: ${rowCount} (acum: ${acum ? "sí" : "no"}) · kpi ventas ${Math.round(board.kpi.ventasNetas).toLocaleString("es-CO")}`,
-      );
+    const t0 = performance.now();
+    try {
+      await fn();
+      samples.push(performance.now() - t0);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      samples.push(performance.now() - t0);
+      break;
     }
   }
-
-  const avg = (key: keyof typeof times) =>
-    Number((times[key].reduce((a, b) => a + b, 0) / times[key].length).toFixed(0));
-
+  const avg =
+    samples.reduce((a, b) => a + b, 0) / Math.max(1, samples.length);
   return {
-    name,
-    sedeCount: sedes.length,
-    runs: RUNS,
-    drill_avg_ms: avg("drill_load"),
-    drill_p95_ms: Number(percentile(times.drill_load, 0.95).toFixed(0)),
-    kpi_avg_ms: avg("kpi"),
-    drill_rows_avg_ms: avg("drill_rows"),
-    filters_avg_ms: avg("filters"),
-    sede_compare_avg_ms: avg("sede_compare"),
+    id,
+    label,
+    family,
+    avg_ms: Number(avg.toFixed(0)),
+    p95_ms: Number(percentile(samples, 0.95).toFixed(0)),
+    runs: samples.length,
+    note,
+    ok: !lastError,
+    error: lastError,
   };
 };
 
-const benchHttpFlow = async (
-  fromIso: string,
-  toIso: string,
-  sedes: string[],
-) => {
-  const jar = new Map<string, string>();
-  await loginHttp(jar);
-
-  const meta = await httpRequest(jar, "/api/margenes/meta");
-  const sedeParam = encodeURIComponent(sedes.join(","));
-  const drillPath = encodeURIComponent("[]");
-  const drillUrl =
-    `/api/margenes/data?mode=drill&drillPath=${drillPath}` +
-    `&from=${fromIso}&to=${toIso}&sede=${sedeParam}`;
-
-  const drillTimes: number[] = [];
-  let lastBytes = 0;
-  for (let i = 0; i < RUNS; i += 1) {
-    const drill = await httpRequest(jar, drillUrl);
-    drillTimes.push(drill.elapsedMs);
-    lastBytes = drill.bytes;
-    if (!drill.ok) {
-      throw new Error(`drill HTTP ${drill.status}`);
-    }
-  }
-
-  const drillAvg = drillTimes.reduce((a, b) => a + b, 0) / drillTimes.length;
-  return {
-    meta_ms: Number(meta.elapsedMs.toFixed(0)),
-    drill_avg_ms: Number(drillAvg.toFixed(0)),
-    drill_p95_ms: Number(percentile(drillTimes, 0.95).toFixed(0)),
-    total_first_load_ms: Number((meta.elapsedMs + drillTimes[0]).toFixed(0)),
-    total_warm_avg_ms: Number((meta.elapsedMs + drillAvg).toFixed(0)),
-    payload_bytes: lastBytes,
-    sedeCount: sedes.length,
-  };
+const shiftIsoDays = (iso: string, delta: number) => {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + delta);
+  return date.toISOString().slice(0, 10);
 };
 
 const client = new pg.Client(resolvePgClientConfig());
 await client.connect();
 
 try {
-  console.log("=== Márgenes — benchmark de carga ===\n");
+  console.log("=== Márgenes — benchmark exhaustivo ===\n");
 
   const tableCheck = await client.query(`
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'margen_final' LIMIT 1
   `);
   if (!tableCheck.rows.length) {
-    console.error("Tabla margen_final no existe. Aplica la migración antes del benchmark.");
+    console.error("Tabla margen_final no existe.");
     process.exit(1);
   }
 
@@ -264,109 +153,434 @@ try {
   const minCompact = bounds.rows[0]?.min_date ?? null;
   const maxCompact = bounds.rows[0]?.max_date ?? null;
   const rowEstimate = Number(bounds.rows[0]?.row_estimate ?? 0);
-  const range = defaultMargenDateRange(minCompact, maxCompact);
-
-  if (!range) {
-    console.error("Sin fechas válidas en margen_final.");
-    process.exit(1);
-  }
 
   const catalog = listMargenSedeCatalogOptions();
   const allSedes = catalog.map((s) => s.value);
-  const customSedes = process.env.BENCHMARK_SEDES?.split(",").map((s) => s.trim()).filter(Boolean);
-  const oneSede = [customSedes?.[0] ?? allSedes[0] ?? "mercamio::001"];
-  const threeSedes = customSedes?.length
-    ? customSedes.slice(0, 3)
-    : allSedes.slice(0, 3);
+  const customSedes = process.env.BENCHMARK_SEDES?.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const oneSede = [customSedes?.[0] ?? allSedes[0] ?? "mercamio|001"];
+  const threeSedes =
+    customSedes && customSedes.length >= 3
+      ? customSedes.slice(0, 3)
+      : allSedes.slice(0, 3);
+  const targetSedes =
+    process.env.BENCHMARK_SEDES === "todas" || !customSedes?.length
+      ? allSedes
+      : customSedes;
 
-  console.log(`Tabla: margen_final (~${rowEstimate.toLocaleString("es-CO")} filas est.)`);
-  console.log(`Rango default (mes en curso): ${range.start} → ${range.end}`);
-  console.log(`Runs por escenario: ${RUNS}\n`);
+  const table = await resolveMargenDataSource(client);
 
-  const scenarios = [
-    { name: "1 sede", sedes: oneSede },
-    { name: "3 sedes", sedes: threeSedes.length >= 3 ? threeSedes : allSedes.slice(0, 3) },
-    { name: "Todas las sedes catálogo", sedes: allSedes },
-  ];
-
-  console.log("--- SQL directo (paralelo KPI + drill, como /api/margenes/data) ---\n");
-  const sqlResults = [];
-  for (const scenario of scenarios) {
-    console.log(`▸ ${scenario.name} (${scenario.sedes.length} sede(s))`);
-    const row = await benchSqlScenario(
-      client,
-      scenario.name,
-      range.start,
-      range.end,
-      scenario.sedes,
-    );
-    sqlResults.push(row);
-    console.log(
-      `  Cargar datos (drill): avg ${formatMs(row.drill_avg_ms)} · p95 ${formatMs(row.drill_p95_ms)}`,
-    );
-    if (VERBOSE) {
-      console.log(
-        `  Desglose avg: kpi ${formatMs(row.kpi_avg_ms)} · filas ${formatMs(row.drill_rows_avg_ms)} · filtros ${formatMs(row.filters_avg_ms)} · sede ${formatMs(row.sede_compare_avg_ms)}\n`,
-      );
-    } else {
-      console.log("");
-    }
+  // Rango sobre la tabla REAL de consulta (roll puede ir atrasado vs raw).
+  const tableBounds = await client.query<{
+    min_date: string | null;
+    max_date: string | null;
+  }>(`
+    SELECT MIN(fecha_dcto) AS min_date, MAX(fecha_dcto) AS max_date
+    FROM ${table}
+    WHERE fecha_dcto IS NOT NULL
+  `);
+  const dataMin = tableBounds.rows[0]?.min_date ?? minCompact;
+  const dataMax = tableBounds.rows[0]?.max_date ?? maxCompact;
+  let range = defaultMargenDateRange(dataMin, dataMax);
+  if (!range) {
+    console.error(`Sin fechas válidas en ${table}.`);
+    process.exit(1);
+  }
+  if (process.env.BENCHMARK_FROM && process.env.BENCHMARK_TO) {
+    range = {
+      start: process.env.BENCHMARK_FROM,
+      end: process.env.BENCHMARK_TO,
+    };
+  } else if (DAYS > 0) {
+    range = {
+      start: shiftIsoDays(range.end, -(DAYS - 1)),
+      end: range.end,
+    };
   }
 
-  console.log("Resumen SQL (ordenado por drill avg):");
-  const header = VERBOSE
-    ? [
-        "escenario".padEnd(28),
-        "sedes".padStart(5),
-        "drill avg".padStart(10),
-        "drill p95".padStart(10),
-        "filtros".padStart(10),
-      ].join(" ")
-    : [
-        "escenario".padEnd(28),
-        "sedes".padStart(5),
-        "drill avg".padStart(10),
-        "drill p95".padStart(10),
-      ].join(" ");
-  console.log(header);
-  console.log("-".repeat(VERBOSE ? 65 : 55));
-  for (const row of [...sqlResults].sort((a, b) => b.drill_avg_ms - a.drill_avg_ms)) {
-    const cells = VERBOSE
-      ? [
-          row.name.padEnd(28),
-          String(row.sedeCount).padStart(5),
-          formatMs(row.drill_avg_ms).padStart(10),
-          formatMs(row.drill_p95_ms).padStart(10),
-          formatMs(row.filters_avg_ms).padStart(10),
-        ]
-      : [
-          row.name.padEnd(28),
-          String(row.sedeCount).padStart(5),
-          formatMs(row.drill_avg_ms).padStart(10),
-          formatMs(row.drill_p95_ms).padStart(10),
-        ];
-    console.log(cells.join(" "));
-  }
+  console.log(`Tabla datos: ${table}`);
+  console.log(`Estimado margen_final: ~${rowEstimate.toLocaleString("es-CO")} filas`);
+  console.log(`Bounds ${table}: ${dataMin} → ${dataMax}`);
+  console.log(`Rango bench: ${range.start} → ${range.end}`);
+  console.log(`Sedes bajo prueba: ${targetSedes.length} · runs=${RUNS}\n`);
 
-  const primary = sqlResults[0];
-  console.log(
-    `\nTiempo típico «Cargar datos» (1 sede, SQL): ~${formatMs(primary.drill_avg_ms)} (sin contar /meta ni red).`,
+  const filters = buildFilters(range.start, range.end, targetSedes);
+  const filtersOne = buildFilters(range.start, range.end, oneSede);
+  const results: BenchRow[] = [];
+
+  const push = async (
+    id: string,
+    label: string,
+    family: string,
+    fn: () => Promise<unknown>,
+    note?: string,
+  ) => {
+    process.stdout.write(`▸ ${label}… `);
+    await client.query("DISCARD ALL").catch(() => {});
+    const row = await timedRuns(id, label, family, fn, note);
+    results.push(row);
+    const status = row.ok ? formatMs(row.avg_ms) : `ERROR ${row.error}`;
+    console.log(status);
+  };
+
+  // —— Meta / source ——
+  await push("meta_bounds", "Meta: bounds + estimate", "meta", async () => {
+    await client.query(`
+      SELECT
+        (SELECT fecha_dcto FROM margen_final WHERE fecha_dcto IS NOT NULL ORDER BY fecha_dcto DESC LIMIT 1) AS max_date,
+        (SELECT GREATEST(c.reltuples::bigint, 0) FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relname = 'margen_final') AS row_estimate
+    `);
+  });
+
+  await push(
+    "resolve_source",
+    "Resolver tabla roll/raw",
+    "meta",
+    () => resolveMargenDataSource(client),
   );
 
-  if (HTTP) {
-    console.log("\n--- HTTP E2E (meta + drill, con auth y JSON) ---\n");
-    const httpOne = await benchHttpFlow(range.start, range.end, oneSede);
-    console.log(`▸ 1 sede · meta ${formatMs(httpOne.meta_ms)} + drill avg ${formatMs(httpOne.drill_avg_ms)}`);
-    console.log(
-      `  Primera carga (meta + drill frío): ~${formatMs(httpOne.total_first_load_ms)} · payload ${formatBytes(httpOne.payload_bytes)}`,
+  // —— Carga inicial Producto ——
+  let dayPath: DrillPathStep[] = [];
+  let tipoPath: DrillPathStep[] = [];
+  let lineaPath: DrillPathStep[] = [];
+  let subPath: DrillPathStep[] = [];
+  let itemPath: DrillPathStep[] = [];
+  let sampleFactura:
+    | { documento: string; tipdoc?: string; fecha?: string }
+    | null = null;
+  let sampleCliente: string | null = null;
+  let sampleVend: string | null = null;
+
+  await push(
+    "drill_l0_all",
+    "Producto L0 · días (todas sedes)",
+    "drill",
+    async () => {
+      const board = await queryDrillBoard(client, filters, [], table);
+      const day = board.rows.find((row) => !row.isAcum && row.drillStep?.type === "day");
+      if (day?.drillStep) dayPath = [day.drillStep];
+    },
+    "Vista inicial tras Cargar datos",
+  );
+
+  await push(
+    "drill_l0_1sede",
+    "Producto L0 · días (1 sede)",
+    "drill",
+    () => queryDrillBoard(client, filtersOne, [], table),
+    "Referencia angosta",
+  );
+
+  if (FULL && dayPath.length) {
+    await push(
+      "drill_l1_day",
+      "Producto L1 · categorías (clic día)",
+      "drill",
+      async () => {
+        const board = await queryDrillBoard(client, filters, dayPath, table);
+        const tipo = board.rows.find((row) => row.drillStep?.type === "tipo");
+        if (tipo?.drillStep) tipoPath = [...dayPath, tipo.drillStep];
+      },
+      "Queja: ~1 min antes del fix HashAggregate",
     );
-    console.log(
-      `  Carga repetida (meta + drill warm avg): ~${formatMs(httpOne.total_warm_avg_ms)}`,
+  }
+
+  if (FULL && tipoPath.length) {
+    await push(
+      "drill_l2_tipo",
+      "Producto L2 · líneas",
+      "drill",
+      async () => {
+        const board = await queryDrillBoard(client, filters, tipoPath, table);
+        const linea = board.rows.find((row) => row.drillStep?.type === "linea1");
+        if (linea?.drillStep) lineaPath = [...tipoPath, linea.drillStep];
+      },
     );
+  }
+
+  if (FULL && lineaPath.length) {
+    await push(
+      "drill_l3_linea",
+      "Producto L3 · sublíneas",
+      "drill",
+      async () => {
+        const board = await queryDrillBoard(client, filters, lineaPath, table);
+        const sub = board.rows.find((row) => row.drillStep?.type === "linea2");
+        if (sub?.drillStep) subPath = [...lineaPath, sub.drillStep];
+      },
+    );
+  }
+
+  if (FULL && subPath.length) {
+    await push(
+      "drill_l4_sub",
+      "Producto L4 · ítems",
+      "drill",
+      async () => {
+        const board = await queryDrillBoard(client, filters, subPath, table);
+        const item = board.rows.find((row) => row.drillStep?.type === "item");
+        if (item?.drillStep) itemPath = [...subPath, item.drillStep];
+      },
+    );
+  }
+
+  if (FULL && itemPath.length) {
+    await push(
+      "drill_l5_item_facts",
+      "Producto L5 · facturas del ítem",
+      "drill",
+      async () => {
+        const board = await queryDrillBoard(client, filters, itemPath, table);
+        const fact = board.rows.find((row) => row.documento);
+        if (fact?.documento) {
+          sampleFactura = {
+            documento: fact.documento,
+            tipdoc: fact.tipdoc,
+            fecha: fact.fechaDcto,
+          };
+        }
+      },
+      "Aún usa metricsSqlFor + GROUP BY factura",
+    );
+  }
+
+  // —— Filtros ——
+  await push(
+    "filters_catalog",
+    "Catálogo filters (dropdown)",
+    "filters",
+    () => queryFilterOptions(client, filters, table),
+    "mode=filters · item_dia_roll si existe",
+  );
+
+  await push(
+    "filter_items",
+    "Búsqueda ítems (typeahead)",
+    "filters",
+    () => queryFilterItemSearch(client, filters, table, "arroz"),
+    "mode=filter-items LIMIT 150",
+  );
+
+  // —— Por Factura ——
+  await push(
+    "fact_nav_l0",
+    "Por Factura · nav L0 días",
+    "factura",
+    async () => {
+      const tableResult = await queryFactNavRows(client, filters, [], table);
+      kpiFromAggregatedRows(tableResult.rows, filters.sedes.length);
+    },
+    "Filas + KPI derivado (sin queryKpi DISTINCT)",
+  );
+
+  await push(
+    "fact_nav_rows_only",
+    "Por Factura · nav L0 solo filas",
+    "factura",
+    () => queryFactNavRows(client, filters, [], table),
+  );
+
+  if (FULL && dayPath[0]?.type === "day") {
+    const factDayPath: FactNavStep[] = [
+      { type: "fecha", fecha: dayPath[0].fecha, label: dayPath[0].label },
+    ];
+    await push(
+      "fact_nav_l1",
+      "Por Factura · nav L1 categorías",
+      "factura",
+      () => queryFactNavRows(client, filters, factDayPath, table),
+    );
+  }
+
+  await push(
+    "fact_list",
+    "Por Factura · lista completa",
+    "factura",
+    async () => {
+      const rows = await queryFactListRows(client, filters, table);
+      kpiFromAggregatedRows(rows, filters.sedes.length);
+    },
+    "Lista + KPI derivado",
+  );
+
+  // —— Por Sede ——
+  await push(
+    "sede_tab",
+    "Por Sede · compare + KPI derivado",
+    "sede",
+    async () => {
+      const rows = await querySedeCompare(client, filters, table);
+      kpiFromAggregatedRows(rows, filters.sedes.length);
+    },
+    "Una query (boardMetrics) + KPI JS",
+  );
+
+  await push(
+    "sede_compare_only",
+    "Por Sede · solo compare",
+    "sede",
+    () => querySedeCompare(client, filters, table),
+  );
+
+  // —— Cliente / Vendedor ——
+  await push(
+    "cliente_tab",
+    "Por Cliente · ranking",
+    "cliente",
+    async () => {
+      const payload = await queryClienteCompare(client, filters, table);
+      sampleCliente = payload.rows[0]?.idTerc ?? null;
+    },
+    "GROUP BY id_terc + meta DISTINCT",
+  );
+
+  if (FULL && sampleCliente) {
+    await push(
+      "cliente_facts",
+      "Por Cliente · facturas de 1 cliente",
+      "cliente",
+      () => queryClienteFacturas(client, filters, table, sampleCliente!),
+    );
+  }
+
+  await push(
+    "vendedor_tab",
+    "Por Vendedor · ranking",
+    "vendedor",
+    async () => {
+      const payload = await queryVendedorCompare(client, filters, table);
+      sampleVend = payload.rows[0]?.vendCc ?? null;
+    },
+  );
+
+  if (FULL && sampleVend) {
+    await push(
+      "vendedor_facts",
+      "Por Vendedor · facturas de 1 vend.",
+      "vendedor",
+      () => queryVendedorFacturas(client, filters, table, sampleVend!),
+    );
+  }
+
+  // —— Detalle factura ——
+  if (FULL && sampleFactura) {
+    await push(
+      "invoice_detail",
+      "Detalle factura (líneas)",
+      "factura",
+      () =>
+        queryInvoiceDetailBoard(
+          client,
+          filters,
+          {
+            type: "factura",
+            id: sampleFactura!.documento,
+            label: sampleFactura!.documento,
+            tipdoc: sampleFactura!.tipdoc,
+            fecha: sampleFactura!.fecha,
+          },
+          table,
+          6,
+        ),
+      "Índice por documento",
+    );
+  }
+
+  // —— KPI / summary legacy ——
+  await push(
+    "kpi_l0",
+    "mode=kpi L0 (legacy)",
+    "kpi",
+    () => queryKpi(client, filters, [], table),
+    "Hoy reusa drill L0 completo",
+  );
+
+  if (FULL && dayPath.length) {
+    await push(
+      "kpi_l1_path",
+      "mode=kpi con path día",
+      "kpi",
+      () => queryKpi(client, filters, dayPath, table),
+      "Aún metricsSqlFor + COUNT DISTINCT",
+    );
+  }
+
+  await push(
+    "summary_sums",
+    "mode=summary SUM simples",
+    "summary",
+    async () => {
+      const isRoll =
+        table === "margen_final_roll" || table === "margen_dinastia_roll";
+      const ventas = isRoll ? "ventas_netas" : "COALESCE(vlrtot_bru,0)";
+      const costo = isRoll ? "costo_total" : "COALESCE(tot_costo,0)";
+      // Filtro mínimo por fechas compactas (sin sedes UNNEST) para referencia.
+      await client.query(
+        `
+        SELECT COALESCE(SUM(${ventas}),0) AS v, COALESCE(SUM(${costo}),0) AS c, COUNT(*) AS n
+        FROM ${table}
+        WHERE fecha_dcto BETWEEN $1 AND $2
+        `,
+        [isoToCompact(range.start), isoToCompact(range.end)],
+      );
+    },
+    "Referencia: suma cruda por fechas (todas sedes del rango)",
+  );
+
+  // —— Referencia 3 sedes drill ——
+  if (threeSedes.length >= 3 && targetSedes.length > 3) {
+    const filters3 = buildFilters(range.start, range.end, threeSedes);
+    await push(
+      "drill_l0_3sedes",
+      "Producto L0 · 3 sedes",
+      "drill",
+      () => queryDrillBoard(client, filters3, [], table),
+    );
+  }
+
+  console.log("\n=== Resumen (más lento → más rápido) ===\n");
+  const sorted = [...results].sort((a, b) => b.avg_ms - a.avg_ms);
+  console.log(
+    ["familia".padEnd(10), "avg".padStart(8), "p95".padStart(8), "carga"].join(
+      " ",
+    ),
+  );
+  console.log("-".repeat(72));
+  for (const row of sorted) {
+    const mark = row.ok ? "" : " !";
+    console.log(
+      [
+        row.family.padEnd(10),
+        formatMs(row.avg_ms).padStart(8),
+        formatMs(row.p95_ms).padStart(8),
+        `${row.label}${mark}`,
+      ].join(" "),
+    );
+  }
+
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    table,
+    range,
+    sedeCount: targetSedes.length,
+    runs: RUNS,
+    rowEstimate,
+    results: sorted,
+  };
+
+  if (JSON_OUT) {
+    const outPath = path.resolve(JSON_OUT);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(payload, null, 2), "utf8");
+    console.log(`\nJSON: ${outPath}`);
   } else {
-    console.log(
-      "\nTip: BENCHMARK_VERBOSE=1 desglosa kpi/filas/filtros. BENCHMARK_HTTP=1 mide también red + auth.",
-    );
+    const fallback = path.resolve("tmp/margenes-bench.json");
+    fs.mkdirSync(path.dirname(fallback), { recursive: true });
+    fs.writeFileSync(fallback, JSON.stringify(payload, null, 2), "utf8");
+    console.log(`\nJSON: ${fallback}`);
   }
 } finally {
   await client.end();

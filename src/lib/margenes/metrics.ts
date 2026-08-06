@@ -351,6 +351,81 @@ export const buildDayMetricsSql = (
   );
 
 /**
+ * Nivel 0 híbrido: dinero + facturas desde `margen_final_roll` (entity HashAgg)
+ * y conteos de dims desde `margen_item_dia_roll` (~8× menos filas).
+ *
+ * Medido 2026-08-06 (5 días × 13 sedes, Mercado): full `buildDayMetricsSql`
+ * ~5,8 s → híbrido ~4,5 s. Las dims solas en item_dia ~0,4 s.
+ *
+ * `rollWhereSql` / `itemDiaWhereSql` deben usar placeholders continuos del
+ * mismo array de params (primero roll, luego item_dia).
+ */
+export const buildDayMetricsHybridSql = (
+  rollTable: MargenDataTable,
+  rollWhereSql: string,
+  itemDiaWhereSql: string,
+  orderBySql = "",
+): string => `
+  WITH money AS (
+    ${buildEntityBoardMetricsSql(
+      rollTable,
+      rollWhereSql,
+      { keySql: "fecha_dcto", keyAlias: "fecha_dcto" },
+    )}
+  ),
+  base AS (
+    SELECT
+      fecha_dcto,
+      NULLIF(id_tipo, '') AS dim_tipo,
+      NULLIF(id_linea1, '') AS dim_linea1,
+      NULLIF(id_linea2, '') AS dim_linea2,
+      NULLIF(id_item, '') AS dim_item
+    FROM margen_item_dia_roll
+    WHERE ${itemDiaWhereSql}
+  ),
+  itm AS (
+    SELECT fecha_dcto, COUNT(*) AS items
+    FROM (
+      SELECT DISTINCT fecha_dcto, dim_item
+      FROM base
+      WHERE dim_item IS NOT NULL
+    ) d
+    GROUP BY fecha_dcto
+  ),
+  dims AS (
+    SELECT DISTINCT fecha_dcto, dim_tipo, dim_linea1, dim_linea2 FROM base
+  ),
+  dimc AS (
+    SELECT
+      fecha_dcto,
+      COUNT(DISTINCT dim_tipo) AS categorias,
+      COUNT(DISTINCT dim_linea1) AS lineas,
+      COUNT(DISTINCT dim_linea2) AS sublineas
+    FROM dims
+    GROUP BY fecha_dcto
+  )
+  SELECT
+    m.fecha_dcto,
+    m.ventas_netas,
+    m.costo_total,
+    m.margen_pesos,
+    m.cantidad,
+    m.ventas_con_iva,
+    m.facturas,
+    COALESCE(itm.items, 0) AS items,
+    COALESCE(dimc.categorias, 0) AS categorias,
+    COALESCE(dimc.lineas, 0) AS lineas,
+    COALESCE(dimc.sublineas, 0) AS sublineas,
+    m.margen_pct,
+    m.pvu_iva,
+    m.pcu
+  FROM money m
+  LEFT JOIN itm ON itm.fecha_dcto = m.fecha_dcto
+  LEFT JOIN dimc ON dimc.fecha_dcto = m.fecha_dcto
+  ${orderBySql}
+`;
+
+/**
  * Métricas del tablero Por Cliente / facturas de cliente:
  * sin COUNT DISTINCT de categorías/líneas/ítems (no se muestran y son caros).
  */
@@ -381,6 +456,161 @@ export const BOARD_METRICS_SQL = `
   , CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(ven_totales,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pvu_iva
   , CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(tot_costo,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pcu
 `;
+
+/**
+ * Solo SUM (+ ratios). Sin COUNT DISTINCT.
+ * Usar cuando el GROUP BY YA es la factura (o no se muestran conteos de dims).
+ * `facturas` queda en 1 por grupo.
+ */
+export const ROLL_SUM_METRICS_SQL = `
+  COALESCE(SUM(ventas_netas), 0) AS ventas_netas,
+  COALESCE(SUM(costo_total), 0) AS costo_total,
+  COALESCE(SUM(margen_pesos), 0) AS margen_pesos,
+  COALESCE(SUM(cantidad), 0) AS cantidad,
+  COALESCE(SUM(ventas_con_iva), 0) AS ventas_con_iva,
+  1 AS facturas,
+  0 AS categorias,
+  0 AS lineas,
+  0 AS sublineas,
+  0 AS items,
+  CASE WHEN SUM(COALESCE(ventas_netas,0)) > 0 THEN SUM(COALESCE(margen_pesos,0)) / SUM(COALESCE(ventas_netas,0)) ELSE 0 END AS margen_pct,
+  CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(ventas_con_iva,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pvu_iva,
+  CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(costo_total,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pcu
+`;
+
+export const SUM_METRICS_SQL = `
+  COALESCE(SUM(COALESCE(vlrtot_bru, 0)), 0) AS ventas_netas,
+  COALESCE(SUM(COALESCE(tot_costo, 0)), 0) AS costo_total,
+  COALESCE(SUM(COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0)), 0) AS margen_pesos,
+  COALESCE(SUM(COALESCE(cantidad, 0)), 0) AS cantidad,
+  COALESCE(SUM(COALESCE(ven_totales, 0)), 0) AS ventas_con_iva,
+  1 AS facturas,
+  0 AS categorias,
+  0 AS lineas,
+  0 AS sublineas,
+  0 AS items,
+  CASE WHEN SUM(COALESCE(vlrtot_bru,0)) > 0 THEN SUM(COALESCE(vlrtot_bru,0)-COALESCE(tot_costo,0)) / SUM(COALESCE(vlrtot_bru,0)) ELSE 0 END AS margen_pct,
+  CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(ven_totales,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pvu_iva,
+  CASE WHEN SUM(COALESCE(cantidad,0)) > 0 THEN SUM(COALESCE(tot_costo,0)) / SUM(COALESCE(cantidad,0)) ELSE 0 END AS pcu
+`;
+
+export const sumMetricsSqlFor = (table: MargenDataTable) =>
+  table === "margen_final_roll" || table === "margen_dinastia_roll"
+    ? ROLL_SUM_METRICS_SQL
+    : SUM_METRICS_SQL;
+
+/**
+ * Ranking cliente/vendedor/sede: SUM + facturas vía HashAggregate (sin
+ * COUNT(DISTINCT) en el Aggregate exterior). Opcionalmente `dias`.
+ */
+export const buildEntityBoardMetricsSql = (
+  table: MargenDataTable,
+  whereSql: string,
+  group: {
+    keySql: string;
+    keyAlias: string;
+    labelSourceSql?: string;
+    labelAlias?: string;
+    includeDias?: boolean;
+  },
+  orderBySql = "",
+  limitSql = "",
+): string => {
+  const isRoll =
+    table === "margen_final_roll" || table === "margen_dinastia_roll";
+  const ventas = isRoll ? "ventas_netas" : "COALESCE(vlrtot_bru, 0)";
+  const costo = isRoll ? "costo_total" : "COALESCE(tot_costo, 0)";
+  const margen = isRoll
+    ? "margen_pesos"
+    : "(COALESCE(vlrtot_bru, 0) - COALESCE(tot_costo, 0))";
+  const conIva = isRoll ? "ventas_con_iva" : "COALESCE(ven_totales, 0)";
+  const dimDoc = isRoll
+    ? "NULLIF(documento_fc, '')"
+    : "NULLIF(TRIM(documento_fc::text), '')";
+
+  const labelAlias = group.labelAlias ?? "nombre";
+  const labelInBase = group.labelSourceSql
+    ? `, ${group.labelSourceSql} AS _label_src`
+    : "";
+  const labelInSums = group.labelSourceSql
+    ? `, MAX(_label_src) AS _label_raw`
+    : "";
+  const labelSelect = group.labelSourceSql
+    ? `, COALESCE(NULLIF(s._label_raw, ''), s.${group.keyAlias}::text) AS ${labelAlias}`
+    : "";
+  const diasInBase = group.includeDias ? ", fecha_dcto" : "";
+  const diasCte = group.includeDias
+    ? `,
+    dias AS (
+      SELECT ${group.keyAlias}, COUNT(*) AS dias
+      FROM (SELECT DISTINCT ${group.keyAlias}, fecha_dcto FROM base) d
+      GROUP BY ${group.keyAlias}
+    )`
+    : "";
+  const diasJoin = group.includeDias
+    ? `LEFT JOIN dias ON dias.${group.keyAlias} = s.${group.keyAlias}`
+    : "";
+  const diasSelect = group.includeDias
+    ? ", COALESCE(dias.dias, 0) AS dias"
+    : "";
+
+  return `
+    WITH base AS (
+      SELECT
+        ${group.keySql} AS ${group.keyAlias}
+        ${labelInBase}
+        ${diasInBase},
+        ${dimDoc} AS documento_fc,
+        ${ventas} AS ventas_netas,
+        ${costo} AS costo_total,
+        ${margen} AS margen_pesos,
+        COALESCE(cantidad, 0) AS cantidad,
+        ${conIva} AS ventas_con_iva
+      FROM ${table}
+      WHERE ${whereSql}
+    ),
+    sums AS (
+      SELECT
+        ${group.keyAlias}
+        ${labelInSums},
+        COALESCE(SUM(ventas_netas), 0) AS ventas_netas,
+        COALESCE(SUM(costo_total), 0) AS costo_total,
+        COALESCE(SUM(margen_pesos), 0) AS margen_pesos,
+        COALESCE(SUM(cantidad), 0) AS cantidad,
+        COALESCE(SUM(ventas_con_iva), 0) AS ventas_con_iva
+      FROM base
+      GROUP BY ${group.keyAlias}
+    ),
+    fac AS (
+      SELECT ${group.keyAlias}, COUNT(*) AS facturas
+      FROM (
+        SELECT DISTINCT ${group.keyAlias}, documento_fc
+        FROM base
+        WHERE documento_fc IS NOT NULL
+      ) d
+      GROUP BY ${group.keyAlias}
+    )
+    ${diasCte}
+    SELECT
+      s.${group.keyAlias}
+      ${labelSelect},
+      s.ventas_netas,
+      s.costo_total,
+      s.margen_pesos,
+      s.cantidad,
+      s.ventas_con_iva,
+      COALESCE(fac.facturas, 0) AS facturas,
+      CASE WHEN s.ventas_netas > 0 THEN s.margen_pesos / s.ventas_netas ELSE 0 END AS margen_pct,
+      CASE WHEN s.cantidad > 0 THEN s.ventas_con_iva / s.cantidad ELSE 0 END AS pvu_iva,
+      CASE WHEN s.cantidad > 0 THEN s.costo_total / s.cantidad ELSE 0 END AS pcu
+      ${diasSelect}
+    FROM sums s
+    LEFT JOIN fac ON fac.${group.keyAlias} = s.${group.keyAlias}
+    ${diasJoin}
+    ${orderBySql}
+    ${limitSql}
+  `;
+};
 
 export const metricsSqlFor = (table: MargenDataTable) =>
   table === "margen_final_roll" || table === "margen_dinastia_roll"

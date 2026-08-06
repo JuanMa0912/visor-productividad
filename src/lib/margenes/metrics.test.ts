@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildDayMetricsHybridSql,
   buildDayMetricsSql,
   buildGroupedMetricsSql,
   buildMargenOrderBy,
@@ -108,4 +109,19 @@ test("buildDayMetricsSql delega en buildGroupedMetricsSql", () => {
   const sql = buildDayMetricsSql("margen_final_roll", "TRUE");
   assert.match(sql, /fecha_dcto/);
   assert.match(sql, /AS dim_item/);
+});
+
+test("buildDayMetricsHybridSql combina roll + item_dia", () => {
+  const sql = buildDayMetricsHybridSql(
+    "margen_final_roll",
+    "roll_where",
+    "item_where",
+    "ORDER BY m.fecha_dcto DESC",
+  );
+  assert.match(sql, /WITH money AS/);
+  assert.match(sql, /FROM margen_item_dia_roll/);
+  assert.match(sql, /item_where/);
+  assert.match(sql, /roll_where/);
+  assert.match(sql, /COALESCE\(dimc\.categorias/);
+  assert.match(sql, /ORDER BY m\.fecha_dcto DESC/);
 });

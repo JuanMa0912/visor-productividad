@@ -1,0 +1,261 @@
+{
+  "generatedAt": "2026-08-06T17:21:11.081Z",
+  "table": "margen_final_roll",
+  "range": {
+    "start": "2026-07-17",
+    "end": "2026-07-21"
+  },
+  "sedeCount": 13,
+  "runs": 1,
+  "rowEstimate": 61937188,
+  "results": [
+    {
+      "id": "summary_sums",
+      "label": "mode=summary SUM simples",
+      "family": "summary",
+      "avg_ms": 57379,
+      "p95_ms": 57379,
+      "runs": 1,
+      "note": "Referencia: suma cruda por fechas (todas sedes del rango)",
+      "ok": true
+    },
+    {
+      "id": "cliente_facts",
+      "label": "Por Cliente · facturas de 1 cliente",
+      "family": "cliente",
+      "avg_ms": 13626,
+      "p95_ms": 13626,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "fact_list",
+      "label": "Por Factura · lista completa",
+      "family": "factura",
+      "avg_ms": 8846,
+      "p95_ms": 8846,
+      "runs": 1,
+      "note": "Lista + KPI derivado",
+      "ok": true
+    },
+    {
+      "id": "drill_l0_all",
+      "label": "Producto L0 · días (todas sedes)",
+      "family": "drill",
+      "avg_ms": 4932,
+      "p95_ms": 4932,
+      "runs": 1,
+      "note": "Vista inicial tras Cargar datos",
+      "ok": true
+    },
+    {
+      "id": "kpi_l0",
+      "label": "mode=kpi L0 (legacy)",
+      "family": "kpi",
+      "avg_ms": 4676,
+      "p95_ms": 4676,
+      "runs": 1,
+      "note": "Hoy reusa drill L0 completo",
+      "ok": true
+    },
+    {
+      "id": "fact_nav_l0",
+      "label": "Por Factura · nav L0 días",
+      "family": "factura",
+      "avg_ms": 4620,
+      "p95_ms": 4620,
+      "runs": 1,
+      "note": "Filas + KPI derivado (sin queryKpi DISTINCT)",
+      "ok": true
+    },
+    {
+      "id": "fact_nav_rows_only",
+      "label": "Por Factura · nav L0 solo filas",
+      "family": "factura",
+      "avg_ms": 4420,
+      "p95_ms": 4420,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "cliente_tab",
+      "label": "Por Cliente · ranking",
+      "family": "cliente",
+      "avg_ms": 4399,
+      "p95_ms": 4399,
+      "runs": 1,
+      "note": "GROUP BY id_terc + meta DISTINCT",
+      "ok": true
+    },
+    {
+      "id": "sede_tab",
+      "label": "Por Sede · compare + KPI derivado",
+      "family": "sede",
+      "avg_ms": 4326,
+      "p95_ms": 4326,
+      "runs": 1,
+      "note": "Una query (boardMetrics) + KPI JS",
+      "ok": true
+    },
+    {
+      "id": "sede_compare_only",
+      "label": "Por Sede · solo compare",
+      "family": "sede",
+      "avg_ms": 4159,
+      "p95_ms": 4159,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "vendedor_tab",
+      "label": "Por Vendedor · ranking",
+      "family": "vendedor",
+      "avg_ms": 3973,
+      "p95_ms": 3973,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "filter_items",
+      "label": "Búsqueda ítems (typeahead)",
+      "family": "filters",
+      "avg_ms": 3480,
+      "p95_ms": 3480,
+      "runs": 1,
+      "note": "mode=filter-items LIMIT 150",
+      "ok": true
+    },
+    {
+      "id": "vendedor_facts",
+      "label": "Por Vendedor · facturas de 1 vend.",
+      "family": "vendedor",
+      "avg_ms": 2848,
+      "p95_ms": 2848,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "filters_catalog",
+      "label": "Catálogo filters (dropdown)",
+      "family": "filters",
+      "avg_ms": 2056,
+      "p95_ms": 2056,
+      "runs": 1,
+      "note": "mode=filters · item_dia_roll si existe",
+      "ok": true
+    },
+    {
+      "id": "kpi_l1_path",
+      "label": "mode=kpi con path día",
+      "family": "kpi",
+      "avg_ms": 1981,
+      "p95_ms": 1981,
+      "runs": 1,
+      "note": "Aún metricsSqlFor + COUNT DISTINCT",
+      "ok": true
+    },
+    {
+      "id": "fact_nav_l1",
+      "label": "Por Factura · nav L1 categorías",
+      "family": "factura",
+      "avg_ms": 807,
+      "p95_ms": 807,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "drill_l1_day",
+      "label": "Producto L1 · categorías (clic día)",
+      "family": "drill",
+      "avg_ms": 750,
+      "p95_ms": 750,
+      "runs": 1,
+      "note": "Queja: ~1 min antes del fix HashAggregate",
+      "ok": true
+    },
+    {
+      "id": "drill_l0_3sedes",
+      "label": "Producto L0 · 3 sedes",
+      "family": "drill",
+      "avg_ms": 578,
+      "p95_ms": 578,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "drill_l0_1sede",
+      "label": "Producto L0 · días (1 sede)",
+      "family": "drill",
+      "avg_ms": 319,
+      "p95_ms": 319,
+      "runs": 1,
+      "note": "Referencia angosta",
+      "ok": true
+    },
+    {
+      "id": "drill_l2_tipo",
+      "label": "Producto L2 · líneas",
+      "family": "drill",
+      "avg_ms": 28,
+      "p95_ms": 28,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "drill_l4_sub",
+      "label": "Producto L4 · ítems",
+      "family": "drill",
+      "avg_ms": 27,
+      "p95_ms": 27,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "drill_l5_item_facts",
+      "label": "Producto L5 · facturas del ítem",
+      "family": "drill",
+      "avg_ms": 25,
+      "p95_ms": 25,
+      "runs": 1,
+      "note": "Aún usa metricsSqlFor + GROUP BY factura",
+      "ok": true
+    },
+    {
+      "id": "drill_l3_linea",
+      "label": "Producto L3 · sublíneas",
+      "family": "drill",
+      "avg_ms": 16,
+      "p95_ms": 16,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "meta_bounds",
+      "label": "Meta: bounds + estimate",
+      "family": "meta",
+      "avg_ms": 6,
+      "p95_ms": 6,
+      "runs": 1,
+      "ok": true
+    },
+    {
+      "id": "invoice_detail",
+      "label": "Detalle factura (líneas)",
+      "family": "factura",
+      "avg_ms": 6,
+      "p95_ms": 6,
+      "runs": 1,
+      "note": "Índice por documento",
+      "ok": true
+    },
+    {
+      "id": "resolve_source",
+      "label": "Resolver tabla roll/raw",
+      "family": "meta",
+      "avg_ms": 0,
+      "p95_ms": 0,
+      "runs": 1,
+      "ok": true
+    }
+  ]
+}

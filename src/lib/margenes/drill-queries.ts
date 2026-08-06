@@ -19,6 +19,7 @@ import {
   facturaSedeSqlFilters,
   fechaDctoCompactSql,
   idTercExpr,
+  isFacturaItemRollTable,
   isRollTable,
   mercadoTipoSql,
   nombreTercExpr,
@@ -39,14 +40,16 @@ import {
   type FactNavStep,
 } from "@/lib/margenes/fact-path";
 import {
+  buildDayMetricsHybridSql,
   buildDayMetricsSql,
+  buildEntityBoardMetricsSql,
   buildGroupedMetricsSql,
   buildMargenOrderBy,
-  boardMetricsSqlFor,
   KPI_MERCADO_TIPO,
   metricsSqlFor,
   marginPct,
   shouldApplyMercadoTipoDefault,
+  sumMetricsSqlFor,
   toNum,
   unitCost,
   unitSaleWithTax,
@@ -127,6 +130,8 @@ export type DrillRow = {
   pvuIva: number;
   pcu: number;
   facturas: number;
+  /** Días con venta (p. ej. ranking por sede). */
+  dias?: number;
   categorias?: number;
   lineas?: number;
   sublineas?: number;
@@ -407,6 +412,41 @@ export const aggregateLevel0TotalsFromDayRows = (
   };
 };
 
+/** KPI de cabecera a partir de filas ya agregadas (evita queryKpi + COUNT DISTINCT). */
+export const kpiFromAggregatedRows = (
+  rows: ReadonlyArray<
+    Pick<
+      DrillRow,
+      | "ventasNetas"
+      | "costoTotal"
+      | "margenPesos"
+      | "cantidad"
+      | "ventasConIva"
+      | "facturas"
+      | "dias"
+    >
+  >,
+  sedeCount: number,
+  options?: { dias?: number },
+): MargenKpi => {
+  const totals = aggregateLevel0TotalsFromDayRows(rows, sedeCount);
+  const dias =
+    options?.dias ??
+    (rows.length > 0 && rows.every((row) => typeof row.dias === "number")
+      ? Math.max(...rows.map((row) => row.dias ?? 0), 1)
+      : Math.max(1, Number(totals.dias) || 1));
+  return buildKpiPayload({
+    ventas_netas: totals.ventas_netas,
+    costo_total: totals.costo_total,
+    margen_pesos: totals.margen_pesos,
+    cantidad: totals.cantidad,
+    ventas_con_iva: totals.ventas_con_iva,
+    facturas: totals.facturas,
+    dias,
+    sedes: sedeCount,
+  });
+};
+
 const withMercadoDefaultCategoria = (
   filters: MargenQueryFilters,
   table: MargenDataTable,
@@ -431,7 +471,6 @@ const queryDrillLevel0 = async (
   // Sin categoría → Mercado (4). Con categoría explícita (p. ej. asaderos = 3)
   // no AND-ear Mercado: antes dejaba el tablero en cero.
   const levelFilters = withMercadoDefaultCategoria(filters, table);
-  const dayWhere = buildWhere(levelFilters, [], params, table, false);
 
   // UNA consulta (filas por día). El total/KPI/ACUMULADO se deriva en JS.
   //
@@ -440,10 +479,28 @@ const queryDrillLevel0 = async (
   // ventas/costo/margen ya son aditivos por día. Evitarlo corta ~40% el wall time
   // del nivel 0 y reduce competencia con `mode=filters` (que antes sumaba ~30 s
   // en paralelo y empujaba al proxy 90 s → 504).
-  const dayResult = await client.query(
-    buildDayMetricsSql(table, dayWhere),
-    params,
-  );
+  //
+  // Híbrido: dinero+facturas en roll + dims en item_dia (~5,8 s → ~4,5 s con
+  // 5 días × 13 sedes). Si item_dia no está, cae al GROUP BY completo del roll.
+  let daySql: string;
+  if (
+    isFacturaItemRollTable(table) &&
+    (await resolveInformeMargenDataSource(client)) === MARGEN_ITEM_DIA_ROLL_TABLE
+  ) {
+    const rollWhere = buildWhere(levelFilters, [], params, table, false);
+    const itemWhere = buildWhere(
+      levelFilters,
+      [],
+      params,
+      MARGEN_ITEM_DIA_ROLL_TABLE,
+      false,
+    );
+    daySql = buildDayMetricsHybridSql(table, rollWhere, itemWhere);
+  } else {
+    const dayWhere = buildWhere(levelFilters, [], params, table, false);
+    daySql = buildDayMetricsSql(table, dayWhere);
+  }
+  const dayResult = await client.query(daySql, params);
 
   const dayRows: DrillRow[] = dayResult.rows.map((row) => {
     const fecha = String(row.fecha_dcto);
@@ -1110,22 +1167,9 @@ export const queryDrillBoard = async (
     table,
     search,
   );
-  const totals = aggregateLevel0TotalsFromDayRows(
-    tableResult.rows,
-    filters.sedes.length,
-  );
-  const dias = path.some((step) => step.type === "day")
-    ? 1
-    : Math.max(1, Number(totals.dias) || 1);
-  const kpi = buildKpiPayload({
-    ventas_netas: totals.ventas_netas,
-    costo_total: totals.costo_total,
-    margen_pesos: totals.margen_pesos,
-    cantidad: totals.cantidad,
-    ventas_con_iva: totals.ventas_con_iva,
-    facturas: totals.facturas,
+  const dias = path.some((step) => step.type === "day") ? 1 : undefined;
+  const kpi = kpiFromAggregatedRows(tableResult.rows, filters.sedes.length, {
     dias,
-    sedes: totals.sedes,
   });
   return { kpi, ...tableResult };
 };
@@ -1147,16 +1191,30 @@ export const queryFactNavRows = async (
   const where = buildFactWhere(filters, path, params, table);
 
   if (level === 0) {
-    // Misma forma (y mismo costo) que el nivel 0 del drill: sin los 5
-    // COUNT(DISTINCT) pasa de ~62 s a ~27 s sobre un mes × 11 sedes.
-    const result = await client.query(
-      buildDayMetricsSql(
-        table,
-        where,
-        buildMargenOrderBy(filters.orderBy, filters.orderDir, "fecha_dcto DESC"),
-      ),
-      params,
+    // Misma forma (y mismo costo) que el nivel 0 del drill. Híbrido con
+    // item_dia cuando existe (dinero+facturas en roll, dims en item_dia).
+    const orderBy = buildMargenOrderBy(
+      filters.orderBy,
+      filters.orderDir,
+      "fecha_dcto DESC",
     );
+    let daySql: string;
+    if (
+      isFacturaItemRollTable(table) &&
+      (await resolveInformeMargenDataSource(client)) ===
+        MARGEN_ITEM_DIA_ROLL_TABLE
+    ) {
+      const itemWhere = buildFactWhere(
+        filters,
+        path,
+        params,
+        MARGEN_ITEM_DIA_ROLL_TABLE,
+      );
+      daySql = buildDayMetricsHybridSql(table, where, itemWhere, orderBy);
+    } else {
+      daySql = buildDayMetricsSql(table, where, orderBy);
+    }
+    const result = await client.query(daySql, params);
     return {
       level,
       levelName: "Fecha",
@@ -1209,6 +1267,7 @@ export const queryFactNavRows = async (
       params.push(`%${search.trim().toLowerCase()}%`);
       factWhere += ` AND LOWER(${documentoExpr(table)}) LIKE $${params.length}`;
     }
+    // SUM only: el GROUP BY ya es la factura → facturas=1, sin COUNT DISTINCT.
     const result = await client.query(
       `
       SELECT
@@ -1216,12 +1275,17 @@ export const queryFactNavRows = async (
         ${tipdocExpr(table)} AS tipdoc,
         ${sedeSelectSql(table)},
         ${clienteSelectSql(table)},
-        ${metricsSqlFor(table)}
+        ${sumMetricsSqlFor(table)}
       FROM ${table}
       WHERE ${factWhere}
         AND ${documentoNotNull(table)}
       GROUP BY 1, 2, 3, 4
-      ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+      ${buildMargenOrderBy(
+        filters.orderBy,
+        filters.orderDir,
+        "ventas_netas DESC",
+        BOARD_FACTURA_ORDER_ALLOWED,
+      )}
       LIMIT 1000
       `,
       params,
@@ -1261,12 +1325,17 @@ export const queryFactListRows = async (
       fecha_dcto,
       ${sedeCols},
       ${clienteSelectSql(table)},
-      ${metricsSqlFor(table)}
+      ${sumMetricsSqlFor(table)}
     FROM ${table}
     WHERE ${where}
       AND ${documentoNotNull(table)}
     GROUP BY 1, 2, 3, 4, 5
-    ${buildMargenOrderBy(filters.orderBy, filters.orderDir, "ventas_netas DESC")}
+    ${buildMargenOrderBy(
+      filters.orderBy,
+      filters.orderDir,
+      "ventas_netas DESC",
+      BOARD_FACTURA_ORDER_ALLOWED,
+    )}
     LIMIT 1000
     `,
     params,
@@ -1288,37 +1357,66 @@ export const querySedeCompare = async (
 ) => {
   const params: unknown[] = [];
   const where = buildMargenWhereForTable(filters, params, table);
-  const sedeCols = sedeSelectSql(table);
+  const keySql = isRollTable(table)
+    ? `(empresa_norm || '|' || id_co_norm)`
+    : `(LOWER(TRIM(COALESCE(empresa, ''))) || '|' || LPAD(TRIM(COALESCE(id_co, '')), 3, '0'))`;
   const result = await client.query(
-    `
-    SELECT
-      ${sedeCols},
-      COUNT(DISTINCT fecha_dcto) AS dias,
-      ${metricsSqlFor(table)}
-    FROM ${table}
-    WHERE ${where}
-    GROUP BY 1, 2
-    ${buildMargenOrderBy(filters.orderBy, filters.orderDir ?? "desc", "ventas_netas")}
-    `,
+    buildEntityBoardMetricsSql(
+      table,
+      where,
+      {
+        keySql,
+        keyAlias: "sede_key",
+        includeDias: true,
+      },
+      buildMargenOrderBy(
+        filters.orderBy,
+        filters.orderDir ?? "desc",
+        "ventas_netas DESC",
+        BOARD_FACTURA_ORDER_ALLOWED,
+      ),
+    ),
     params,
   );
   return result.rows.map((row) => {
-    const metrics = mapMetrics(row);
+    const mapped = mapMetrics(row);
+    const sedeKey = String(row.sede_key ?? "");
+    const pipe = sedeKey.indexOf("|");
+    const empresa = pipe >= 0 ? sedeKey.slice(0, pipe) : sedeKey;
+    const idCo = pipe >= 0 ? sedeKey.slice(pipe + 1) : "";
     return {
-      key: `${row.empresa}|${row.id_co}`,
-      empresa: empresaLabel(String(row.empresa)),
-      cod: String(row.id_co),
-      sede: sedeLabel(String(row.empresa), String(row.id_co)),
+      key: sedeKey,
+      empresa: empresaLabel(empresa),
+      cod: idCo,
+      sede: sedeLabel(empresa, idCo),
       dias: toNum(row.dias),
       drillable: true,
-      ...metrics,
+      ...mapped,
     };
   });
 };
 
+const diasSpanFromFilters = (filters: MargenQueryFilters): number => {
+  if (filters.fechas.length > 0) return Math.max(1, filters.fechas.length);
+  const from = filters.fromCompact;
+  const to = filters.toCompact;
+  if (!/^\d{8}$/.test(from) || !/^\d{8}$/.test(to)) return 1;
+  const start = Date.UTC(
+    Number(from.slice(0, 4)),
+    Number(from.slice(4, 6)) - 1,
+    Number(from.slice(6, 8)),
+  );
+  const end = Date.UTC(
+    Number(to.slice(0, 4)),
+    Number(to.slice(4, 6)) - 1,
+    Number(to.slice(6, 8)),
+  );
+  return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+};
+
 const SIN_CLIENTE_LABEL = "Sin cliente";
 
-/** KPI + filas de clientes en un solo barrido (evita queryKpi paralelo). */
+/** KPI + filas de clientes en un solo barrido (HashAggregate, sin meta DISTINCT). */
 export const queryClienteCompare = async (
   client: PoolClient,
   filters: MargenQueryFilters,
@@ -1334,7 +1432,6 @@ export const queryClienteCompare = async (
   let where = buildMargenWhereForTable(filters, params, table);
   const idTerc = idTercExpr(table);
   const nombreTerc = nombreTercExpr(table);
-  const metrics = boardMetricsSqlFor(table);
 
   if (search?.trim()) {
     params.push(`%${search.trim().toLowerCase()}%`);
@@ -1344,28 +1441,18 @@ export const queryClienteCompare = async (
     )`;
   }
 
-  const sedeKey = sedeDistinctKeySql(table);
-  // Secuencial: mismo PoolClient no soporta queries concurrentes.
   const result = await client.query(
-    `
-    SELECT
-      ${idTerc} AS id_terc,
-      MAX(${nombreTerc}) AS nombre_terc,
-      ${metrics}
-    FROM ${table}
-    WHERE ${where}
-    GROUP BY 1
-    `,
-    params,
-  );
-  const metaResult = await client.query(
-    `
-    SELECT
-      COUNT(DISTINCT fecha_dcto) AS dias,
-      COUNT(DISTINCT ${sedeKey}) AS sedes
-    FROM ${table}
-    WHERE ${where}
-    `,
+    buildEntityBoardMetricsSql(
+      table,
+      where,
+      {
+        keySql: idTerc,
+        keyAlias: "id_terc",
+        labelSourceSql: nombreTerc,
+        labelAlias: "nombre_terc",
+      },
+      "",
+    ),
     params,
   );
 
@@ -1395,42 +1482,18 @@ export const queryClienteCompare = async (
         return (av - bv) * orderDir;
       }
       if (av !== undefined || bv !== undefined) {
-        return String(av ?? "").localeCompare(String(bv ?? ""), "es", {
-          numeric: true,
-        }) * orderDir;
+        return (
+          String(av ?? "").localeCompare(String(bv ?? ""), "es", {
+            numeric: true,
+          }) * orderDir
+        );
       }
     }
     return (b.ventasNetas - a.ventasNetas) * (filters.orderDir === "asc" ? -1 : 1);
   });
 
-  let ventasNetas = 0;
-  let costoTotal = 0;
-  let margenPesos = 0;
-  let cantidad = 0;
-  let ventasConIva = 0;
-  let facturas = 0;
-  for (const row of allRows) {
-    ventasNetas += row.ventasNetas;
-    costoTotal += row.costoTotal;
-    margenPesos += row.margenPesos;
-    cantidad += row.cantidad;
-    ventasConIva += row.ventasConIva;
-    facturas += row.facturas;
-  }
-
-  const meta = metaResult.rows[0] ?? {};
-  const kpi = buildKpiPayload({
-    ventas_netas: ventasNetas,
-    costo_total: costoTotal,
-    margen_pesos: margenPesos,
-    cantidad,
-    ventas_con_iva: ventasConIva,
-    facturas,
-    margen_pct: marginPct(ventasNetas, margenPesos),
-    pvu_iva: unitSaleWithTax(ventasConIva, cantidad),
-    pcu: unitCost(costoTotal, cantidad),
-    dias: toNum(meta.dias as string | number | undefined),
-    sedes: toNum(meta.sedes as string | number | undefined),
+  const kpi = kpiFromAggregatedRows(allRows, filters.sedes.length, {
+    dias: diasSpanFromFilters(filters),
   });
 
   const truncated = allRows.length > 1000;
@@ -1444,7 +1507,7 @@ export const queryClienteCompare = async (
 
 const SIN_VENDEDOR_LABEL = "Sin vendedor";
 
-/** KPI + filas de vendedores en un solo barrido (evita queryKpi paralelo). */
+/** KPI + filas de vendedores en un solo barrido (HashAggregate, sin meta DISTINCT). */
 export const queryVendedorCompare = async (
   client: PoolClient,
   filters: MargenQueryFilters,
@@ -1460,7 +1523,6 @@ export const queryVendedorCompare = async (
   let where = buildMargenWhereForTable(filters, params, table);
   const vendCc = vendCcExpr(table);
   const vendCcDesc = vendCcDescExpr(table);
-  const metrics = boardMetricsSqlFor(table);
 
   if (search?.trim()) {
     params.push(`%${search.trim().toLowerCase()}%`);
@@ -1470,27 +1532,18 @@ export const queryVendedorCompare = async (
     )`;
   }
 
-  const sedeKey = sedeDistinctKeySql(table);
   const result = await client.query(
-    `
-    SELECT
-      ${vendCc} AS vend_cc,
-      MAX(${vendCcDesc}) AS vend_cc_desc,
-      ${metrics}
-    FROM ${table}
-    WHERE ${where}
-    GROUP BY 1
-    `,
-    params,
-  );
-  const metaResult = await client.query(
-    `
-    SELECT
-      COUNT(DISTINCT fecha_dcto) AS dias,
-      COUNT(DISTINCT ${sedeKey}) AS sedes
-    FROM ${table}
-    WHERE ${where}
-    `,
+    buildEntityBoardMetricsSql(
+      table,
+      where,
+      {
+        keySql: vendCc,
+        keyAlias: "vend_cc",
+        labelSourceSql: vendCcDesc,
+        labelAlias: "vend_cc_desc",
+      },
+      "",
+    ),
     params,
   );
 
@@ -1520,42 +1573,18 @@ export const queryVendedorCompare = async (
         return (av - bv) * orderDir;
       }
       if (av !== undefined || bv !== undefined) {
-        return String(av ?? "").localeCompare(String(bv ?? ""), "es", {
-          numeric: true,
-        }) * orderDir;
+        return (
+          String(av ?? "").localeCompare(String(bv ?? ""), "es", {
+            numeric: true,
+          }) * orderDir
+        );
       }
     }
     return (b.ventasNetas - a.ventasNetas) * (filters.orderDir === "asc" ? -1 : 1);
   });
 
-  let ventasNetas = 0;
-  let costoTotal = 0;
-  let margenPesos = 0;
-  let cantidad = 0;
-  let ventasConIva = 0;
-  let facturas = 0;
-  for (const row of allRows) {
-    ventasNetas += row.ventasNetas;
-    costoTotal += row.costoTotal;
-    margenPesos += row.margenPesos;
-    cantidad += row.cantidad;
-    ventasConIva += row.ventasConIva;
-    facturas += row.facturas;
-  }
-
-  const meta = metaResult.rows[0] ?? {};
-  const kpi = buildKpiPayload({
-    ventas_netas: ventasNetas,
-    costo_total: costoTotal,
-    margen_pesos: margenPesos,
-    cantidad,
-    ventas_con_iva: ventasConIva,
-    facturas,
-    margen_pct: marginPct(ventasNetas, margenPesos),
-    pvu_iva: unitSaleWithTax(ventasConIva, cantidad),
-    pcu: unitCost(costoTotal, cantidad),
-    dias: toNum(meta.dias as string | number | undefined),
-    sedes: toNum(meta.sedes as string | number | undefined),
+  const kpi = kpiFromAggregatedRows(allRows, filters.sedes.length, {
+    dias: diasSpanFromFilters(filters),
   });
 
   const truncated = allRows.length > 1000;
@@ -1589,21 +1618,17 @@ export const queryVendedorFacturas = async (
     return { where, params };
   };
 
-  const metrics = boardMetricsSqlFor(table);
-  const sedeKey = sedeDistinctKeySql(table);
+  const rowMetrics = sumMetricsSqlFor(table);
   const sedeCols = sedeSelectSql(table);
   const { where: kpiWhere, params: kpiParams } = buildWhere();
   const { where: rowWhere, params: rowParams } = buildWhere();
 
   const kpiResult = await client.query(
-    `
-    SELECT
-      ${metrics},
-      COUNT(DISTINCT fecha_dcto) AS dias,
-      COUNT(DISTINCT ${sedeKey}) AS sedes
-    FROM ${table}
-    WHERE ${kpiWhere}
-    `,
+    buildEntityBoardMetricsSql(
+      table,
+      kpiWhere,
+      { keySql: `'all'`, keyAlias: "grp", includeDias: true },
+    ),
     kpiParams,
   );
   const rowResult = await client.query(
@@ -1614,7 +1639,7 @@ export const queryVendedorFacturas = async (
       fecha_dcto,
       ${sedeCols},
       ${clienteSelectSql(table)},
-      ${metrics}
+      ${rowMetrics}
     FROM ${table}
     WHERE ${rowWhere}
     GROUP BY 1, 2, 3, 4, 5
@@ -1638,8 +1663,12 @@ export const queryVendedorFacturas = async (
     };
   });
 
+  const kpiRow = kpiResult.rows[0] ?? {};
   return {
-    kpi: buildKpiPayload(kpiResult.rows[0] ?? {}),
+    kpi: buildKpiPayload({
+      ...kpiRow,
+      sedes: filters.sedes.length,
+    }),
     rows,
   };
 };
@@ -1666,22 +1695,19 @@ export const queryClienteFacturas = async (
     return { where, params };
   };
 
-  const metrics = boardMetricsSqlFor(table);
-  const sedeKey = sedeDistinctKeySql(table);
+  const rowMetrics = sumMetricsSqlFor(table);
   const sedeCols = sedeSelectSql(table);
   const { where: kpiWhere, params: kpiParams } = buildWhere();
   const { where: rowWhere, params: rowParams } = buildWhere();
 
   // Secuencial: mismo PoolClient no soporta queries concurrentes.
+  // KPI sin COUNT(DISTINCT) exterior (HashAgg); sedes del filtro.
   const kpiResult = await client.query(
-    `
-    SELECT
-      ${metrics},
-      COUNT(DISTINCT fecha_dcto) AS dias,
-      COUNT(DISTINCT ${sedeKey}) AS sedes
-    FROM ${table}
-    WHERE ${kpiWhere}
-    `,
+    buildEntityBoardMetricsSql(
+      table,
+      kpiWhere,
+      { keySql: `'all'`, keyAlias: "grp", includeDias: true },
+    ),
     kpiParams,
   );
   const rowResult = await client.query(
@@ -1692,7 +1718,7 @@ export const queryClienteFacturas = async (
       fecha_dcto,
       ${sedeCols},
       ${clienteSelectSql(table)},
-      ${metrics}
+      ${rowMetrics}
     FROM ${table}
     WHERE ${rowWhere}
     GROUP BY 1, 2, 3, 4, 5
@@ -1716,8 +1742,12 @@ export const queryClienteFacturas = async (
     };
   });
 
+  const kpiRow = kpiResult.rows[0] ?? {};
   return {
-    kpi: buildKpiPayload(kpiResult.rows[0] ?? {}),
+    kpi: buildKpiPayload({
+      ...kpiRow,
+      sedes: filters.sedes.length,
+    }),
     rows,
   };
 };
