@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  buildInformeSingleDayRange,
   parseInformeDayRangeId,
   payloadMatchesInformeSelection,
 } from "@/lib/informe-variacion/day-ranges";
@@ -153,6 +154,75 @@ describe("payloadMatchesInformeSelection", () => {
     assert.equal(
       payloadMatchesInformeSelection(payload, 2026, 6, "15-21", ranges),
       false,
+    );
+  });
+});
+
+describe("rango de un solo dia (d-NN)", () => {
+  const asOf = new Date(2026, 7, 6); // 6-ago-2026
+
+  it("no entra en getAvailableInformeDayRanges: el bundle mensual haria una consulta por rango", () => {
+    const available = getAvailableInformeDayRanges(2026, 8, asOf, "20260805");
+    assert.equal(
+      available.some((range) => range.id.startsWith("d-")),
+      false,
+    );
+  });
+
+  it("construye el dia como rango con fromDay === toDay", () => {
+    const spec = buildInformeSingleDayRange(2026, 8, 5, asOf, "20260805");
+    assert.ok(spec);
+    assert.equal(spec.id, "d-05");
+    assert.equal(spec.fromDay, 5);
+    assert.equal(spec.toDay, 5);
+  });
+
+  it("rechaza dias sin datos todavia y dias que no existen en el mes", () => {
+    // el 6 aun no esta cargado (maxDate = 20260805)
+    assert.equal(buildInformeSingleDayRange(2026, 8, 6, asOf, "20260805"), null);
+    // febrero no tiene 31
+    assert.equal(
+      buildInformeSingleDayRange(2026, 2, 31, new Date(2026, 2, 15), "20260228"),
+      null,
+    );
+  });
+
+  it("compara contra el MISMO numero de dia del mes anterior y del año pasado", () => {
+    const spec = buildInformeSingleDayRange(2026, 8, 5, asOf, "20260805");
+    assert.ok(spec);
+    const periods = computeInformePeriods(2026, 8, spec);
+    assert.equal(periods.current.from, "20260805");
+    assert.equal(periods.current.to, "20260805");
+    assert.equal(periods.mom.from, "20260705");
+    assert.equal(periods.mom.to, "20260705");
+    assert.equal(periods.yoy.from, "20250805");
+    assert.equal(periods.yoy.to, "20250805");
+  });
+
+  it("parseInformeDayRangeId reconoce d-NN y descarta basura", () => {
+    assert.equal(parseInformeDayRangeId("d-05")?.fromDay, 5);
+    assert.equal(parseInformeDayRangeId("d-5")?.toDay, 5);
+    assert.equal(parseInformeDayRangeId("d-00"), null);
+    assert.equal(parseInformeDayRangeId("d-32"), null);
+    assert.equal(parseInformeDayRangeId("d-abc"), null);
+  });
+
+  it("payloadMatchesInformeSelection NO da por bueno el payload de otro rango", () => {
+    // Regresion: los dias no estan en availableRanges, y la rama `if (!range) return true`
+    // los daba por validos, mostrando datos de un rango distinto al pedido.
+    const payloadDelMes = {
+      periods: { current: { from: "20260801", to: "20260807" } },
+    };
+    assert.equal(
+      payloadMatchesInformeSelection(payloadDelMes, 2026, 8, "d-05", []),
+      false,
+    );
+    const payloadDelDia = {
+      periods: { current: { from: "20260805", to: "20260805" } },
+    };
+    assert.equal(
+      payloadMatchesInformeSelection(payloadDelDia, 2026, 8, "d-05", []),
+      true,
     );
   });
 });

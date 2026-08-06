@@ -10,9 +10,46 @@ export const INFORME_DAY_RANGES = [
 ] as const;
 
 export type InformeClosedDayRangeId = (typeof INFORME_DAY_RANGES)[number]["id"];
+
+/**
+ * Rango de UN SOLO dia: `d-05` = solo el 5 del mes seleccionado.
+ *
+ * Se modela como un rango normal con `fromDay === toDay`, asi que
+ * `computeInformePeriods` lo resuelve sin logica nueva: el mes anterior y el
+ * año pasado salen como ESE MISMO dia del calendario.
+ *
+ * OJO con la comparacion: el mismo numero de dia cae en dias de semana
+ * distintos (5-ago-2026 es miercoles, 5-jul-2026 fue domingo). En retail eso
+ * mueve mucho la venta, asi que la UI muestra el dia de la semana junto a cada
+ * fecha comparada para que la variacion no se lea como una caida real cuando es
+ * efecto calendario. Decision explicita del usuario (2026-08-06).
+ */
+export type InformeSingleDayRangeId = `d-${string}`;
+
 export type InformeDayRangeId =
   | InformeClosedDayRangeId
-  | `proj-${InformeClosedDayRangeId}`;
+  | `proj-${InformeClosedDayRangeId}`
+  | InformeSingleDayRangeId;
+
+export const SINGLE_DAY_RANGE_PREFIX = "d-";
+
+export const isSingleDayInformeRangeId = (rangeId: string): boolean =>
+  /^d-\d{1,2}$/.test(rangeId.trim());
+
+export const buildSingleDayInformeRangeId = (
+  day: number,
+): InformeSingleDayRangeId =>
+  `${SINGLE_DAY_RANGE_PREFIX}${String(day).padStart(2, "0")}`;
+
+/** Numero de dia de un id `d-NN`, o null si no lo es o cae fuera de 1..31. */
+export const parseSingleDayInformeRangeId = (
+  rangeId: string | null | undefined,
+): number | null => {
+  if (!rangeId || !isSingleDayInformeRangeId(rangeId)) return null;
+  const day = Number(rangeId.trim().slice(SINGLE_DAY_RANGE_PREFIX.length));
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  return day;
+};
 
 /** Acepta YYYYMMDD o YYYY-MM-DD (fecha_dcto::text en PostgreSQL). */
 export const normalizeInformeCompactDate = (
@@ -174,11 +211,62 @@ export const defaultInformeDayRangeId = (
   ).id;
 };
 
+/**
+ * Spec de un dia suelto. Devuelve null si el dia no existe en ese mes (31 de
+ * febrero) o si aun no hay datos: `refDay` marca hasta donde esta cargado el mes.
+ *
+ * A proposito NO entra en `getAvailableInformeDayRanges`: ese listado alimenta el
+ * bundle mensual, y en modo dinastia el bundle lanza UNA CONSULTA POR RANGO de
+ * forma secuencial. Meter 31 dias ahi serian 31 consultas encadenadas. El dia se
+ * resuelve bajo demanda.
+ */
+export const buildInformeSingleDayRange = (
+  year: number,
+  month: number,
+  day: number,
+  asOf: Date = new Date(),
+  maxCompactDate?: string | null,
+): InformeDayRangeSpec | null => {
+  if (!Number.isInteger(day) || day < 1) return null;
+  const monthLast = lastDayOfMonth(year, month);
+  if (day > monthLast) return null;
+
+  const refDay = resolveInformeReferenceDay(year, month, asOf, maxCompactDate);
+  if (refDay < day) return null;
+
+  return {
+    id: buildSingleDayInformeRangeId(day),
+    label: `Dia ${day}`,
+    fromDay: day,
+    toDay: day,
+  };
+};
+
+/** Ultimo dia con datos del mes; null si el mes aun no empieza. Es el dia por defecto. */
+export const latestInformeSingleDay = (
+  year: number,
+  month: number,
+  asOf: Date = new Date(),
+  maxCompactDate?: string | null,
+): number | null => {
+  const refDay = resolveInformeReferenceDay(year, month, asOf, maxCompactDate);
+  return refDay >= 1 ? Math.min(refDay, lastDayOfMonth(year, month)) : null;
+};
+
 export const parseInformeDayRangeId = (
   value: string | null | undefined,
 ): InformeDayRangeSpec | null => {
   if (!value?.trim()) return null;
   const raw = value.trim();
+  const singleDay = parseSingleDayInformeRangeId(raw);
+  if (singleDay !== null) {
+    return {
+      id: raw as InformeDayRangeId,
+      label: `Dia ${singleDay}`,
+      fromDay: singleDay,
+      toDay: singleDay,
+    };
+  }
   if (raw.startsWith("proj-")) {
     const baseId = raw.slice(5) as InformeClosedDayRangeId;
     const found = DAY_RANGE_BY_ID.get(baseId);
@@ -221,6 +309,15 @@ export const payloadMatchesInformeSelection = (
   const payloadMonth = Number(from.slice(4, 6));
   if (payloadYear !== year || payloadMonth !== month) return false;
   if (!dayRangeId) return true;
+
+  // Los dias sueltos no viven en `availableRanges` (ver buildInformeSingleDayRange).
+  // Hay que resolverlos aparte: si cayeran en el `return true` de abajo, un payload
+  // de otro rango se daria por bueno y el tablero mostraria datos que no son.
+  const singleDay = parseSingleDayInformeRangeId(dayRangeId);
+  if (singleDay !== null) {
+    const expected = compactDate(year, month, singleDay);
+    return from === expected && to === expected;
+  }
 
   const range = availableRanges.find((entry) => entry.id === dayRangeId);
   if (!range) return true;
