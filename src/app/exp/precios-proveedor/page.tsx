@@ -106,11 +106,39 @@ export default function ExpPreciosProveedorPage() {
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [linea, setLinea] = useState("");
+  const [sublinea, setSublinea] = useState("");
+  const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
+  const [sedesReady, setSedesReady] = useState(false);
   const [search, setSearch] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
+  const [pcuMin, setPcuMin] = useState("");
+  const [pcuMax, setPcuMax] = useState("");
+  const [pvuMin, setPvuMin] = useState("");
+  const [pvuMax, setPvuMax] = useState("");
+  const [pcuMinApplied, setPcuMinApplied] = useState("");
+  const [pcuMaxApplied, setPcuMaxApplied] = useState("");
+  const [pvuMinApplied, setPvuMinApplied] = useState("");
+  const [pvuMaxApplied, setPvuMaxApplied] = useState("");
   const [metric, setMetric] = useState<PreciosProveedorMetric>("pcu");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const sublineasOptions = useMemo(() => {
+    const all = meta?.sublineas ?? [];
+    if (!linea) return all;
+    return all.filter((opt) => opt.lineaId === linea);
+  }, [meta, linea]);
+
+  const allSedeKeys = useMemo(
+    () => (meta?.sedes ?? []).map((sede) => sede.key),
+    [meta],
+  );
+
+  const toggleSede = (key: string) => {
+    setSelectedSedes((prev) =>
+      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
+    );
+  };
 
   const cellByKey = useMemo(() => {
     const map = new Map<
@@ -153,10 +181,26 @@ export default function ExpPreciosProveedorPage() {
     setMeta(data.meta);
     setDateStart((prev) => prev || data.meta!.defaultStart);
     setDateEnd((prev) => prev || data.meta!.defaultEnd);
+    setSelectedSedes((prev) =>
+      prev.length > 0 ? prev : data.meta!.sedes.map((sede) => sede.key),
+    );
+    setSedesReady(true);
   }, []);
 
   const loadMatrix = useCallback(async () => {
-    if (!dateStart || !dateEnd) return;
+    if (!dateStart || !dateEnd || !sedesReady) return;
+    if (selectedSedes.length === 0) {
+      setMatrix({
+        columns: [],
+        rows: [],
+        cells: [],
+        from: dateStart,
+        to: dateEnd,
+        itemLimit: 40,
+        elapsedMs: 0,
+      });
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -165,9 +209,15 @@ export default function ExpPreciosProveedorPage() {
         from: dateStart,
         to: dateEnd,
         limit: "40",
+        sedes: selectedSedes.join(","),
       });
       if (linea) params.set("linea", linea);
+      if (sublinea) params.set("sublinea", sublinea);
       if (searchApplied.trim()) params.set("search", searchApplied.trim());
+      if (pcuMinApplied.trim()) params.set("pcuMin", pcuMinApplied.trim());
+      if (pcuMaxApplied.trim()) params.set("pcuMax", pcuMaxApplied.trim());
+      if (pvuMinApplied.trim()) params.set("pvuMin", pvuMinApplied.trim());
+      if (pvuMaxApplied.trim()) params.set("pvuMax", pvuMaxApplied.trim());
       const res = await fetch(`/api/exp/precios-proveedor?${params}`, {
         cache: "no-store",
       });
@@ -183,7 +233,19 @@ export default function ExpPreciosProveedorPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateEnd, dateStart, linea, searchApplied]);
+  }, [
+    dateEnd,
+    dateStart,
+    linea,
+    sublinea,
+    selectedSedes,
+    sedesReady,
+    searchApplied,
+    pcuMinApplied,
+    pcuMaxApplied,
+    pvuMinApplied,
+    pvuMaxApplied,
+  ]);
 
   useEffect(() => {
     if (status !== "authenticated" || !isAdmin) return;
@@ -194,9 +256,24 @@ export default function ExpPreciosProveedorPage() {
 
   useEffect(() => {
     if (status !== "authenticated" || !isAdmin) return;
-    if (!dateStart || !dateEnd) return;
+    if (!dateStart || !dateEnd || !sedesReady) return;
     void loadMatrix();
-  }, [status, isAdmin, dateStart, dateEnd, linea, searchApplied, loadMatrix]);
+  }, [
+    status,
+    isAdmin,
+    dateStart,
+    dateEnd,
+    linea,
+    sublinea,
+    selectedSedes,
+    sedesReady,
+    searchApplied,
+    pcuMinApplied,
+    pcuMaxApplied,
+    pvuMinApplied,
+    pvuMaxApplied,
+    loadMatrix,
+  ]);
 
   useEffect(() => {
     const trimmed = search.trim();
@@ -207,6 +284,22 @@ export default function ExpPreciosProveedorPage() {
     const timer = window.setTimeout(() => setSearchApplied(trimmed), 350);
     return () => window.clearTimeout(timer);
   }, [search]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPcuMinApplied(pcuMin.trim());
+      setPcuMaxApplied(pcuMax.trim());
+      setPvuMinApplied(pvuMin.trim());
+      setPvuMaxApplied(pvuMax.trim());
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [pcuMin, pcuMax, pvuMin, pvuMax]);
+
+  useEffect(() => {
+    if (!sublinea) return;
+    const stillValid = sublineasOptions.some((opt) => opt.id === sublinea);
+    if (!stillValid) setSublinea("");
+  }, [linea, sublinea, sublineasOptions]);
 
   if (status !== "authenticated" || !user) {
     return (
@@ -291,6 +384,47 @@ export default function ExpPreciosProveedorPage() {
         ) : null}
 
         <div className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="w-full">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-600">Sedes</span>
+              <button
+                type="button"
+                onClick={() => setSelectedSedes(allSedeKeys)}
+                className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Todas
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedSedes([])}
+                className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Ninguna
+              </button>
+              <span className="text-[10px] text-slate-400">
+                {selectedSedes.length}/{allSedeKeys.length}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(meta?.sedes ?? []).map((sede) => {
+                const active = selectedSedes.includes(sede.key);
+                return (
+                  <button
+                    key={sede.key}
+                    type="button"
+                    onClick={() => toggleSede(sede.key)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                      active
+                        ? "bg-slate-900 text-white"
+                        : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {sede.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <label className="text-xs font-semibold text-slate-600">
             Desde
             <input
@@ -317,11 +451,29 @@ export default function ExpPreciosProveedorPage() {
             Línea
             <select
               value={linea}
-              onChange={(e) => setLinea(e.target.value)}
+              onChange={(e) => {
+                setLinea(e.target.value);
+                setSublinea("");
+              }}
               className="mt-1 block min-w-[12rem] rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
             >
               <option value="">Todas (Mercado)</option>
               {(meta?.lineas ?? []).map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-slate-600">
+            Sublínea
+            <select
+              value={sublinea}
+              onChange={(e) => setSublinea(e.target.value)}
+              className="mt-1 block min-w-[14rem] rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            >
+              <option value="">Todas</option>
+              {sublineasOptions.map((opt) => (
                 <option key={opt.id} value={opt.id}>
                   {opt.label}
                 </option>
@@ -336,6 +488,54 @@ export default function ExpPreciosProveedorPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Código o descripción…"
               className="mt-1 block w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs font-semibold text-slate-600">
+            Costo min
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={pcuMin}
+              onChange={(e) => setPcuMin(e.target.value)}
+              placeholder="—"
+              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs font-semibold text-slate-600">
+            Costo max
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={pcuMax}
+              onChange={(e) => setPcuMax(e.target.value)}
+              placeholder="—"
+              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs font-semibold text-slate-600">
+            Precio min
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={pvuMin}
+              onChange={(e) => setPvuMin(e.target.value)}
+              placeholder="—"
+              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs font-semibold text-slate-600">
+            Precio max
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={pvuMax}
+              onChange={(e) => setPvuMax(e.target.value)}
+              placeholder="—"
+              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
             />
           </label>
           <div className="flex rounded-lg border border-slate-200 p-1">
@@ -364,7 +564,9 @@ export default function ExpPreciosProveedorPage() {
           <p className="w-full text-[11px] text-slate-500">
             {isSingleDay
               ? "Modo 1 día: precio/costo de ese día."
-              : "Modo rango: promedio simple de los precios/costos diarios."}
+              : "Modo rango: promedio simple de los precios/costos diarios."}{" "}
+            Los rangos de costo/precio filtran por el promedio del ítem (sedes
+            seleccionadas).
           </p>
         </div>
 

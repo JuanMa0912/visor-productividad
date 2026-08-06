@@ -88,6 +88,22 @@ export const queryPreciosProveedorMeta = async (
     ORDER BY 1
     LIMIT 80
   `);
+  const sublineas = await client.query<{
+    id: string;
+    label: string;
+    linea_id: string;
+  }>(`
+    SELECT
+      id_linea2 AS id,
+      COALESCE(NULLIF(MAX(nombre_linea2), ''), id_linea2) AS label,
+      MAX(id_linea1) AS linea_id
+    FROM margen_item_dia_roll
+    WHERE NULLIF(id_linea2, '') IS NOT NULL
+      AND TRIM(COALESCE(id_tipo, '')) = '4'
+    GROUP BY id_linea2
+    ORDER BY 1
+    LIMIT 400
+  `);
   return {
     minDate: range.min,
     maxDate: range.max,
@@ -96,6 +112,15 @@ export const queryPreciosProveedorMeta = async (
     lineas: lineas.rows.map((row) => ({
       id: String(row.id),
       label: `${row.id} · ${row.label}`,
+    })),
+    sublineas: sublineas.rows.map((row) => ({
+      id: String(row.id),
+      label: `${row.id} · ${row.label}`,
+      lineaId: String(row.linea_id ?? ""),
+    })),
+    sedes: prototypeSedeColumns().map((col) => ({
+      key: col.key,
+      label: col.label,
     })),
     note:
       "Carga el día anterior. Un día = precio/costo de ese día; un rango = promedio simple de los precios/costos diarios. Costo = costo unitario de venta (COGS en roll), no factura de compra al proveedor. Proveedor = maestro POS.",
@@ -106,7 +131,15 @@ export type PreciosProveedorQueryInput = {
   fromIso: string;
   toIso: string;
   lineaId?: string | null;
+  sublineaId?: string | null;
+  /** Claves `empresa|idCo`. Vacío/null = todas las sedes del prototipo. */
+  sedeKeys?: string[] | null;
   search?: string | null;
+  /** Filtro sobre el promedio del ítem (sedes seleccionadas). */
+  pvuMin?: number | null;
+  pvuMax?: number | null;
+  pcuMin?: number | null;
+  pcuMax?: number | null;
   itemLimit?: number;
 };
 
@@ -123,7 +156,25 @@ export const queryPreciosProveedorMatrix = async (
   const fromCompact = isoToCompact(input.fromIso);
   const toCompact = isoToCompact(input.toIso);
   const itemLimit = Math.min(80, Math.max(10, Number(input.itemLimit) || 40));
-  const columns = prototypeSedeColumns();
+  const allColumns = prototypeSedeColumns();
+  const requestedKeys = (input.sedeKeys ?? [])
+    .map((key) => key.trim())
+    .filter(Boolean);
+  const columns =
+    requestedKeys.length > 0
+      ? allColumns.filter((col) => requestedKeys.includes(col.key))
+      : allColumns;
+  if (columns.length === 0) {
+    return {
+      columns: [],
+      rows: [],
+      cells: [],
+      from: input.fromIso,
+      to: input.toIso,
+      itemLimit,
+      elapsedMs: Math.round(performance.now() - t0),
+    };
+  }
   const sedeKeys = columns.map((col) => col.key);
 
   const params: unknown[] = [fromCompact, toCompact, itemLimit];
@@ -132,6 +183,24 @@ export const queryPreciosProveedorMatrix = async (
     params.push(input.lineaId.trim());
     lineaSql = ` AND r.id_linea1 = $${params.length}`;
   }
+  let sublineaSql = "";
+  if (input.sublineaId?.trim()) {
+    params.push(input.sublineaId.trim());
+    sublineaSql = ` AND r.id_linea2 = $${params.length}`;
+  }
+
+  const sedePairs = columns.map((col) => ({
+    empresa: col.empresa,
+    idCo: col.idCo.padStart(3, "0"),
+  }));
+  const sedeTupleSql = sedePairs
+    .map((pair) => {
+      params.push(pair.empresa, pair.idCo);
+      return `($${params.length - 1}, $${params.length})`;
+    })
+    .join(", ");
+  const sedeSql = ` AND (r.empresa_norm, LPAD(TRIM(r.id_co_norm), 3, '0')) IN (${sedeTupleSql})`;
+
   let searchSql = "";
   if (input.search?.trim()) {
     params.push(`%${input.search.trim().toLowerCase()}%`);
@@ -140,6 +209,35 @@ export const queryPreciosProveedorMatrix = async (
       OR LOWER(COALESCE(r.item_descripcion, '')) LIKE $${params.length}
     )`;
   }
+
+  const parseBound = (value: number | null | undefined) =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const pvuMin = parseBound(input.pvuMin ?? null);
+  const pvuMax = parseBound(input.pvuMax ?? null);
+  const pcuMin = parseBound(input.pcuMin ?? null);
+  const pcuMax = parseBound(input.pcuMax ?? null);
+
+  const priceFilterParts: string[] = [];
+  if (pvuMin != null) {
+    params.push(pvuMin);
+    priceFilterParts.push(`AVG(pvu) FILTER (WHERE pvu IS NOT NULL) >= $${params.length}`);
+  }
+  if (pvuMax != null) {
+    params.push(pvuMax);
+    priceFilterParts.push(`AVG(pvu) FILTER (WHERE pvu IS NOT NULL) <= $${params.length}`);
+  }
+  if (pcuMin != null) {
+    params.push(pcuMin);
+    priceFilterParts.push(`AVG(pcu) FILTER (WHERE pcu IS NOT NULL) >= $${params.length}`);
+  }
+  if (pcuMax != null) {
+    params.push(pcuMax);
+    priceFilterParts.push(`AVG(pcu) FILTER (WHERE pcu IS NOT NULL) <= $${params.length}`);
+  }
+  const priceHavingSql =
+    priceFilterParts.length > 0
+      ? `HAVING ${priceFilterParts.join(" AND ")}`
+      : "";
 
   const provCheck = await client.query<{ ok: boolean }>(`
     SELECT EXISTS (
@@ -181,6 +279,8 @@ export const queryPreciosProveedorMatrix = async (
     item_descripcion: string | null;
     id_linea1: string | null;
     nombre_linea1: string | null;
+    id_linea2: string | null;
+    nombre_linea2: string | null;
     proveedor_id: string;
     proveedor_label: string;
     cantidad: string | number;
@@ -200,6 +300,8 @@ export const queryPreciosProveedorMatrix = async (
         MAX(r.item_descripcion) AS item_descripcion,
         MAX(r.id_linea1) AS id_linea1,
         MAX(r.nombre_linea1) AS nombre_linea1,
+        MAX(r.id_linea2) AS id_linea2,
+        MAX(r.nombre_linea2) AS nombre_linea2,
         SUM(COALESCE(r.cantidad, 0)) AS cantidad,
         SUM(COALESCE(r.ventas_netas, 0)) AS ventas_netas,
         SUM(COALESCE(r.costo_total, 0)) AS costo_total,
@@ -219,6 +321,8 @@ export const queryPreciosProveedorMatrix = async (
         AND TRIM(COALESCE(r.id_tipo, '')) = '4'
         AND NULLIF(TRIM(r.id_item), '') IS NOT NULL
         ${lineaSql}
+        ${sublineaSql}
+        ${sedeSql}
         ${searchSql}
       GROUP BY r.fecha_dcto, r.empresa_norm, r.id_co_norm, r.id_item
     ),
@@ -230,6 +334,8 @@ export const queryPreciosProveedorMatrix = async (
         MAX(item_descripcion) AS item_descripcion,
         MAX(id_linea1) AS id_linea1,
         MAX(nombre_linea1) AS nombre_linea1,
+        MAX(id_linea2) AS id_linea2,
+        MAX(nombre_linea2) AS nombre_linea2,
         SUM(cantidad) AS cantidad,
         SUM(ventas_netas) AS ventas_netas,
         SUM(costo_total) AS costo_total,
@@ -250,6 +356,7 @@ export const queryPreciosProveedorMatrix = async (
       SELECT id_item
       FROM enriched
       GROUP BY id_item
+      ${priceHavingSql}
       ORDER BY SUM(ventas_netas) DESC
       LIMIT $3
     )
@@ -276,7 +383,6 @@ export const queryPreciosProveedorMatrix = async (
     const cost = toNum(row.costo_total);
     const pvu = toNum(row.pvu);
     const pcu = toNum(row.pcu);
-    const dias = toNum(row.dias);
     const itemId = String(row.id_item);
 
     cells.push({
@@ -306,6 +412,8 @@ export const queryPreciosProveedorMatrix = async (
         label: String(row.item_descripcion ?? itemId).trim() || itemId,
         lineaId: String(row.id_linea1 ?? ""),
         lineaLabel: String(row.nombre_linea1 ?? row.id_linea1 ?? ""),
+        sublineaId: String(row.id_linea2 ?? ""),
+        sublineaLabel: String(row.nombre_linea2 ?? row.id_linea2 ?? ""),
         proveedorId: String(row.proveedor_id ?? "@SP"),
         proveedorLabel: String(row.proveedor_label ?? "(Sin proveedor)"),
         units,
@@ -324,14 +432,20 @@ export const queryPreciosProveedorMatrix = async (
   const rows = [...rowMap.values()]
     .map((row) => {
       const pvu =
-        row.priceDays > 0 ? row.pvuSum / row.priceDays : unitPrice(row.sales, row.units);
+        row.priceDays > 0
+          ? row.pvuSum / row.priceDays
+          : unitPrice(row.sales, row.units);
       const pcu =
-        row.priceDays > 0 ? row.pcuSum / row.priceDays : unitPrice(row.cost, row.units);
+        row.priceDays > 0
+          ? row.pcuSum / row.priceDays
+          : unitPrice(row.cost, row.units);
       return {
         id: row.id,
         label: row.label,
         lineaId: row.lineaId,
         lineaLabel: row.lineaLabel,
+        sublineaId: row.sublineaId,
+        sublineaLabel: row.sublineaLabel,
         proveedorId: row.proveedorId,
         proveedorLabel: row.proveedorLabel,
         units: row.units,

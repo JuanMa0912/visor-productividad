@@ -91,11 +91,31 @@ export async function GET(request: Request) {
         );
       }
 
+      const parseNum = (raw: string | null): number | null => {
+        if (raw == null || raw.trim() === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      const sedesRaw = url.searchParams.get("sedes")?.trim() ?? "";
+      const sedeKeys = sedesRaw
+        ? sedesRaw
+            .split(",")
+            .map((key) => key.trim())
+            .filter(Boolean)
+        : null;
+
       const matrix = await queryPreciosProveedorMatrix(client, {
         fromIso: from,
         toIso: to,
         lineaId: url.searchParams.get("linea"),
+        sublineaId: url.searchParams.get("sublinea"),
+        sedeKeys,
         search: url.searchParams.get("search"),
+        pvuMin: parseNum(url.searchParams.get("pvuMin")),
+        pvuMax: parseNum(url.searchParams.get("pvuMax")),
+        pcuMin: parseNum(url.searchParams.get("pcuMin")),
+        pcuMax: parseNum(url.searchParams.get("pcuMax")),
         itemLimit: Number(url.searchParams.get("limit") ?? 40) || 40,
       });
       return withSession(NextResponse.json({ matrix }));

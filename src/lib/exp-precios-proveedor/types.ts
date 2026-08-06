@@ -6,6 +6,8 @@ export type PreciosProveedorMeta = {
   defaultStart: string;
   defaultEnd: string;
   lineas: Array<{ id: string; label: string }>;
+  sublineas: Array<{ id: string; label: string; lineaId: string }>;
+  sedes: Array<{ key: string; label: string }>;
   note: string;
 };
 
@@ -21,6 +23,8 @@ export type PreciosProveedorRow = {
   label: string;
   lineaId: string;
   lineaLabel: string;
+  sublineaId: string;
+  sublineaLabel: string;
   proveedorId: string;
   proveedorLabel: string;
   /** Totales del rango (todas las sedes del resultado). */
