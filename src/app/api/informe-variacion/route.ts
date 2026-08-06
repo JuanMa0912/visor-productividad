@@ -6,9 +6,12 @@ import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
 import { loadInformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import { loadInformeVariacionMeta } from "@/lib/informe-variacion/meta";
 import {
+  buildInformeSingleDayRange,
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  isSingleDayInformeRangeId,
   normalizeInformeCompactDate,
+  parseSingleDayInformeRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import {
   buildInformeBundleCacheKey,
@@ -357,7 +360,42 @@ export async function GET(request: Request) {
   }
 
   const rangeParam = url.searchParams.get("range")?.trim() || null;
-  if (rangeParam && !availableRanges.some((range) => range.id === rangeParam)) {
+
+  // Dia suelto (`d-05`): NO vive en availableRanges a proposito, porque ese listado
+  // alimenta el bundle mensual y en modo dinastia el bundle lanza una consulta por
+  // rango. Se resuelve aqui, bajo demanda. Devuelve null si el dia no existe en el
+  // mes o si todavia no hay datos cargados hasta ahi.
+  const requestedSingleDay = rangeParam
+    ? parseSingleDayInformeRangeId(rangeParam)
+    : null;
+  const singleDayRange =
+    requestedSingleDay !== null
+      ? buildInformeSingleDayRange(
+          year,
+          month,
+          requestedSingleDay,
+          asOf,
+          maxCompactDate,
+        )
+      : null;
+
+  if (rangeParam && isSingleDayInformeRangeId(rangeParam) && !singleDayRange) {
+    return withSession(
+      NextResponse.json(
+        {
+          error:
+            "El dia seleccionado aun no tiene datos cargados o no existe en ese mes.",
+        },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  if (
+    rangeParam &&
+    !singleDayRange &&
+    !availableRanges.some((range) => range.id === rangeParam)
+  ) {
     return withSession(
       NextResponse.json(
         {
@@ -371,6 +409,7 @@ export async function GET(request: Request) {
 
   const defaultId = defaultInformeDayRangeId(availableRanges);
   const effectiveRange =
+    singleDayRange ??
     (rangeParam
       ? availableRanges.find((range) => range.id === rangeParam)
       : null) ??
