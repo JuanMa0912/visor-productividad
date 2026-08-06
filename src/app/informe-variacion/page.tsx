@@ -20,8 +20,10 @@ import {
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse, readInformeBundleApiResponse, isInformeMonthBundleResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
-import { ensurePrepareInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
-import { prefetchWarmInformeRange } from "@/lib/informe-variacion/use-matrix-agg-cache";
+import {
+  isInformeRangeViewReady,
+  prefetchWarmInformeRange,
+} from "@/lib/informe-variacion/use-matrix-agg-cache";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
   filterInformePayloadForLineScope,
@@ -368,13 +370,34 @@ export default function InformeVariacionPage() {
       payloads: Record<string, InformeVariacionPayload>,
     ) => {
       const primaryId = dayRangeIdRef.current;
+      const stored: Array<{
+        rangeId: string;
+        payload: InformeVariacionPayload;
+        isPrimary: boolean;
+      }> = [];
       for (const [rangeId, data] of Object.entries(payloads)) {
         const isPrimary = rangeId === primaryId;
-        storePayload(year, month, rangeId as InformeDayRangeId, data, {
-          // Solo el rango visible: calentar matriz + session. El resto queda
-          // en memoria; session/warm diferidos evitan congelar el hilo.
-          warm: isPrimary,
-          persistSession: isPrimary ? "idle" : "none",
+        const scoped = storePayload(
+          year,
+          month,
+          rangeId as InformeDayRangeId,
+          data,
+          {
+            // Calentar en cola (uno a uno). No sync-warm en el store.
+            warm: false,
+            persistSession: isPrimary ? "idle" : "none",
+          },
+        );
+        if (scoped) {
+          stored.push({ rangeId, payload: scoped, isPrimary });
+        }
+      }
+      // Primero el visible; luego el resto para que el cambio de chip sea hit.
+      stored.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
+      for (const entry of stored) {
+        prefetchWarmInformeRange(entry.payload, {
+          metrics: ["v"],
+          priority: entry.isPrimary,
         });
       }
     },
@@ -590,7 +613,7 @@ export default function InformeVariacionPage() {
     [maxDate, readCachedPayload, router, storeMonthBundle, scopeCacheSuffix, tenantEmpresaParam],
   );
 
-  /** Como rotacion: clic = cambia vista al instante desde cache; red solo de fondo. */
+  /** Clic: swap sync si la vista ya esta caliente; si no, calienta sin congelar el UI. */
   const selectDayRange = useCallback(
     (rangeId: InformeDayRangeId) => {
       if (!parsedMonth) return;
@@ -603,10 +626,22 @@ export default function InformeVariacionPage() {
 
       const cached = readCachedPayload(year, month, rangeId);
       if (cached) {
-        setRangeSwitchPending(false);
-        // Sync: prepare + matriz warm (si idle ya termino) → cambio sin spinner.
-        ensurePrepareInformeData(cached);
-        setPayload(cached);
+        if (isInformeRangeViewReady(cached, "v")) {
+          setRangeSwitchPending(false);
+          setPayload(cached);
+          return;
+        }
+        // No llamar prepare/matriz en el click (congela 10–30s). Cola idle.
+        setRangeSwitchPending(true);
+        prefetchWarmInformeRange(cached, {
+          metrics: ["v"],
+          priority: true,
+          onDone: () => {
+            if (dayRangeIdRef.current !== rangeId) return;
+            setPayload(cached);
+            setRangeSwitchPending(false);
+          },
+        });
         return;
       }
 
@@ -619,10 +654,15 @@ export default function InformeVariacionPage() {
         .then((data) => {
           if (controller.signal.aborted) return;
           if (dayRangeIdRef.current !== rangeId) return;
-          startTransition(() => {
-            setPayload(data);
+          prefetchWarmInformeRange(data, {
+            metrics: ["v"],
+            priority: true,
+            onDone: () => {
+              if (dayRangeIdRef.current !== rangeId) return;
+              startTransition(() => setPayload(data));
+              setRangeSwitchPending(false);
+            },
           });
-          setRangeSwitchPending(false);
         })
         .catch((err) => {
           if (controller.signal.aborted) return;

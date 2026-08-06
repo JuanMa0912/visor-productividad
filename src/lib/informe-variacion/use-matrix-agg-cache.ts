@@ -27,7 +27,10 @@ import type {
   InformeVariacionPayload,
 } from "@/lib/informe-variacion/types";
 import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
-import { ensurePrepareInformeData } from "@/lib/informe-variacion/use-prepared-informe-data";
+import {
+  ensurePrepareInformeData,
+  isPrepareInformeDataCached,
+} from "@/lib/informe-variacion/use-prepared-informe-data";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
 
@@ -55,28 +58,88 @@ const scheduleIdle = (
   return () => clearTimeout(id);
 };
 
-/**
- * Tras guardar un rango en memoria: prepare + matriz (por defecto solo `u`) en idle.
- * Evita calentar u+v para cada rango del mes (congela el tab al llegar el bundle).
- */
-export const prefetchWarmInformeRange = (
-  payload: InformeVariacionPayload,
-  options: { metrics?: readonly InformeMetric[] } = {},
-): void => {
-  if (typeof window === "undefined") return;
-  const metrics = options.metrics ?? (["v"] as const);
-  scheduleIdle(() => {
-    const prepared = ensurePrepareInformeData(payload);
-    const warm = getUnfilteredMatrixWarm(prepared.rows);
-    if (metrics.every((metric) => warm?.[metric])) return;
+type WarmJob = {
+  payload: InformeVariacionPayload;
+  metrics: readonly InformeMetric[];
+  onDone?: () => void;
+};
+
+const warmQueue: WarmJob[] = [];
+let warmRunning = false;
+
+const runWarmJob = (job: WarmJob): void => {
+  const prepared = ensurePrepareInformeData(job.payload);
+  const warm = getUnfilteredMatrixWarm(prepared.rows);
+  if (!job.metrics.every((metric) => warm?.[metric])) {
     warmUnfilteredMatrixAgg(
       prepared.rows,
       prepared.rowIndex,
       prepared.sedes.length,
       prepared.metricCtx,
-      metrics,
+      job.metrics,
     );
+  }
+};
+
+const pumpWarmQueue = (): void => {
+  if (warmRunning) return;
+  const job = warmQueue.shift();
+  if (!job) return;
+  warmRunning = true;
+  scheduleIdle(() => {
+    try {
+      runWarmJob(job);
+      job.onDone?.();
+    } finally {
+      warmRunning = false;
+      // Ceder el hilo entre rangos para que el UI siga respondiendo.
+      window.setTimeout(() => pumpWarmQueue(), 0);
+    }
   }, RANGE_WARM_IDLE_TIMEOUT_MS);
+};
+
+/** Vista lista para swap sync: prepare + matriz de la metrica por defecto. */
+export const isInformeRangeViewReady = (
+  payload: InformeVariacionPayload,
+  metric: InformeMetric = "v",
+): boolean => {
+  if (!isPrepareInformeDataCached(payload)) return false;
+  const prepared = ensurePrepareInformeData(payload);
+  return Boolean(getUnfilteredMatrixWarm(prepared.rows)?.[metric]);
+};
+
+/**
+ * Encola prepare + matriz (uno a uno en idle). `priority` pone el job al frente
+ * (p. ej. el rango que el usuario acaba de pedir).
+ */
+export const prefetchWarmInformeRange = (
+  payload: InformeVariacionPayload,
+  options: {
+    metrics?: readonly InformeMetric[];
+    priority?: boolean;
+    onDone?: () => void;
+  } = {},
+): void => {
+  if (typeof window === "undefined") return;
+  const metrics = options.metrics ?? (["v"] as const);
+
+  if (isInformeRangeViewReady(payload, metrics[0] ?? "v")) {
+    options.onDone?.();
+    return;
+  }
+
+  // Deduplicar por identidad de payload; conservar onDone mas reciente.
+  for (let i = warmQueue.length - 1; i >= 0; i -= 1) {
+    if (warmQueue[i]?.payload === payload) warmQueue.splice(i, 1);
+  }
+  const job: WarmJob = {
+    payload,
+    metrics,
+    onDone: options.onDone,
+  };
+  if (options.priority) warmQueue.unshift(job);
+  else warmQueue.push(job);
+  pumpWarmQueue();
 };
 
 export const useMatrixAggCache = (
