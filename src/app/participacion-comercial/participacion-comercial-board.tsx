@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ChevronUp, Download, RotateCcw, Search, X } from "lucide-react";
 import { downloadParticipacionExcel } from "@/lib/participacion-comercial/export-excel";
 import {
@@ -106,6 +106,7 @@ export function ParticipacionComercialBoard() {
   const bootstrappedRef = useRef(false);
   const pendingScrollDrillRef = useRef(false);
   const matrixClickTimerRef = useRef<number | null>(null);
+  const shareDetailExpandRef = useRef<HTMLTableRowElement | null>(null);
 
   useEffect(() => {
     try {
@@ -356,6 +357,7 @@ export function ParticipacionComercialBoard() {
   /** Profundiza la matriz: línea → sublínea → ítem. */
   const openMatrixRow = (step: ParticipacionDrillStep) => {
     if (step.type !== "linea" && step.type !== "sublinea") return;
+    setShareDetailRow(null);
     setMatrixPath((prev) => {
       const withoutSame = prev.filter((entry) => entry.type !== step.type);
       return [...withoutSame, step];
@@ -398,12 +400,16 @@ export function ParticipacionComercialBoard() {
   const openShareDetail = (row: ParticipacionMatrixRow) => {
     if (row.residual) return;
     clearMatrixClickTimer();
-    setShareDetailRow(row);
+    setShareDetailRow((prev) => (prev?.id === row.id ? null : row));
   };
 
   useEffect(() => {
     return () => clearMatrixClickTimer();
   }, []);
+
+  useEffect(() => {
+    setShareDetailRow(null);
+  }, [matrixPath]);
 
   useEffect(() => {
     if (!shareDetailRow) return;
@@ -412,6 +418,14 @@ export function ParticipacionComercialBoard() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [shareDetailRow]);
+
+  useEffect(() => {
+    if (!shareDetailRow || !shareDetailExpandRef.current) return;
+    shareDetailExpandRef.current.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
   }, [shareDetailRow]);
 
   const shareDetailPathLabel = useMemo(() => {
@@ -840,86 +854,207 @@ export function ParticipacionComercialBoard() {
                     !row.residual &&
                     (row.drillStep.type === "linea" ||
                       row.drillStep.type === "sublinea");
+                  const expanded = shareDetailRow?.id === row.id;
                   return (
-                    <tr
-                      key={row.id}
-                      className={`border-t border-slate-100 ${row.residual ? "bg-slate-50/80" : ""}`}
-                    >
-                      <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold">
-                        {row.residual ? (
-                          <span className="text-slate-600">{rowLabel}</span>
-                        ) : canDeepen ? (
-                          <button
-                            type="button"
-                            onClick={() => scheduleMatrixDeepen(row.drillStep)}
-                            onDoubleClick={() => openShareDetail(row)}
-                            className="text-left text-blue-700 hover:underline"
-                            title="Clic: profundizar · Doble clic: % línea/sede"
+                    <Fragment key={row.id}>
+                      <tr
+                        className={`border-t border-slate-100 ${row.residual ? "bg-slate-50/80" : ""}`}
+                      >
+                        <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold">
+                          {row.residual ? (
+                            <span className="text-slate-600">{rowLabel}</span>
+                          ) : canDeepen ? (
+                            <button
+                              type="button"
+                              onClick={() => scheduleMatrixDeepen(row.drillStep)}
+                              onDoubleClick={() => openShareDetail(row)}
+                              className="text-left text-blue-700 hover:underline"
+                              title="Clic: profundizar · Doble clic: ver % por sede"
+                              aria-expanded={expanded}
+                            >
+                              {matrix.rowLevel === "linea" ? (
+                                <>
+                                  <span className="tabular-nums text-slate-500">
+                                    {row.id}
+                                  </span>
+                                  <span className="text-slate-400"> · </span>
+                                  {row.label}
+                                </>
+                              ) : (
+                                rowLabel
+                              )}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setMatrixMetric("units")}
+                              onDoubleClick={() => openShareDetail(row)}
+                              className="text-left text-slate-800 hover:text-blue-700 hover:underline"
+                              title="Clic: unidades · Doble clic: ver % por sede"
+                              aria-expanded={expanded}
+                            >
+                              <span className="tabular-nums text-slate-500">
+                                {row.id}
+                              </span>
+                              <span className="text-slate-400"> · </span>
+                              {row.label}
+                            </button>
+                          )}
+                        </th>
+                        {matrix.columns.map((col) => {
+                          const cell = cellByKey.get(`${row.id}::${col.key}`);
+                          const pct = matrixHeatPct(cell, col.key);
+                          const style = matrixCellStyle(pct);
+                          const value = cell ? formatMatrixCellValue(cell) : "—";
+                          const title = cell
+                            ? `${rowLabel} · ${col.label}: ${formatSharePct(cell.shareOfSedePct)} en grupo · ${formatSharePct(cell.shareOfFullSedePct)} en sede · ${formatUnits(cell.units)} und · ${formatMoney(cell.sales)}`
+                            : "";
+                          return (
+                            <td key={col.key} className="p-1">
+                              {row.residual ? (
+                                <div
+                                  className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                  style={style}
+                                  title={title}
+                                >
+                                  {value}
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    scheduleMatrixDeepen(row.drillStep)
+                                  }
+                                  onDoubleClick={() => openShareDetail(row)}
+                                  className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                  style={style}
+                                  title={title}
+                                >
+                                  {value}
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      {expanded && shareDetailRow ? (
+                        <tr
+                          ref={shareDetailExpandRef}
+                          className="border-t border-slate-200 bg-slate-50"
+                        >
+                          <td
+                            colSpan={1 + matrix.columns.length}
+                            className="px-3 py-3"
                           >
-                            {matrix.rowLevel === "linea" ? (
-                              <>
-                                <span className="tabular-nums text-slate-500">
-                                  {row.id}
-                                </span>
-                                <span className="text-slate-400"> · </span>
-                                {row.label}
-                              </>
-                            ) : (
-                              rowLabel
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setMatrixMetric("units")}
-                            onDoubleClick={() => openShareDetail(row)}
-                            className="text-left text-slate-800 hover:text-blue-700 hover:underline"
-                            title="Clic: unidades · Doble clic: detalle % por sede"
-                          >
-                            <span className="tabular-nums text-slate-500">
-                              {row.id}
-                            </span>
-                            <span className="text-slate-400"> · </span>
-                            {row.label}
-                          </button>
-                        )}
-                      </th>
-                      {matrix.columns.map((col) => {
-                        const cell = cellByKey.get(`${row.id}::${col.key}`);
-                        const pct = matrixHeatPct(cell, col.key);
-                        const style = matrixCellStyle(pct);
-                        const value = cell ? formatMatrixCellValue(cell) : "—";
-                        const title = cell
-                          ? `${rowLabel} · ${col.label}: ${formatSharePct(cell.shareOfSedePct)} en grupo · ${formatSharePct(cell.shareOfFullSedePct)} en sede · ${formatUnits(cell.units)} und · ${formatMoney(cell.sales)}`
-                          : "";
-                        return (
-                          <td key={col.key} className="p-1">
-                            {row.residual ? (
-                              <div
-                                className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
-                                style={style}
-                                title={title}
-                              >
-                                {value}
+                            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-900">
+                                    Participación por sede
+                                  </p>
+                                  <p
+                                    className="mt-0.5 text-[11px] font-semibold leading-relaxed text-slate-800"
+                                    title={shareDetailPathLabel}
+                                  >
+                                    {shareDetailPathLabel ||
+                                      (matrix.rowLevel === "linea"
+                                        ? formatLineaDisplay(
+                                            shareDetailRow.id,
+                                            shareDetailRow.label,
+                                          )
+                                        : `${shareDetailRow.id} · ${shareDetailRow.label}`)}
+                                  </p>
+                                  <p className="mt-0.5 text-[11px] text-slate-500">
+                                    {matrix.rowLevel === "linea"
+                                      ? "En raíz, % en grupo y % en sede coinciden (todas las líneas = 100%)."
+                                      : matrix.rowLevel === "sublinea"
+                                        ? "Ruta: línea › sublínea. % en línea (hermanas = 100%), % de la línea en sede y % de la sublínea en sede."
+                                        : "Ruta: línea › sublínea › ítem. % en sublínea (ítems = 100%), % de la sublínea en sede y % del ítem en sede."}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShareDetailRow(null)}
+                                  className="shrink-0 rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
+                                  aria-label="Cerrar"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
                               </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  scheduleMatrixDeepen(row.drillStep)
-                                }
-                                onDoubleClick={() => openShareDetail(row)}
-                                className="block w-full rounded-md px-2 py-2 text-center font-semibold tabular-nums"
-                                style={style}
-                                title={title}
-                              >
-                                {value}
-                              </button>
-                            )}
+                              <div className="max-h-[min(50vh,420px)] overflow-auto">
+                                <table className="min-w-full border-collapse text-xs">
+                                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left font-semibold">
+                                        Sede
+                                      </th>
+                                      <th className="px-3 py-2 text-right font-semibold">
+                                        {shareDetailLabels.inParent}
+                                      </th>
+                                      {matrix.rowLevel !== "linea" ? (
+                                        <th className="px-3 py-2 text-right font-semibold">
+                                          {shareDetailLabels.parentInSede}
+                                        </th>
+                                      ) : null}
+                                      {matrix.rowLevel !== "linea" ? (
+                                        <th className="px-3 py-2 text-right font-semibold">
+                                          {shareDetailLabels.inSede}
+                                        </th>
+                                      ) : null}
+                                      <th className="px-3 py-2 text-right font-semibold">
+                                        Unidades
+                                      </th>
+                                      <th className="px-3 py-2 text-right font-semibold">
+                                        Venta $
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {shareDetailRows.map((detail) => (
+                                      <tr
+                                        key={detail.key}
+                                        className="border-t border-slate-100"
+                                      >
+                                        <td className="px-3 py-2 font-medium text-slate-800">
+                                          {detail.label}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                                          {detail.hasData
+                                            ? formatSharePct(detail.shareInParent)
+                                            : "—"}
+                                        </td>
+                                        {matrix.rowLevel !== "linea" ? (
+                                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                                            {formatSharePct(detail.parentInSede)}
+                                          </td>
+                                        ) : null}
+                                        {matrix.rowLevel !== "linea" ? (
+                                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                                            {detail.hasData
+                                              ? formatSharePct(detail.shareInSede)
+                                              : "—"}
+                                          </td>
+                                        ) : null}
+                                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                                          {detail.hasData
+                                            ? formatUnits(detail.units)
+                                            : "—"}
+                                        </td>
+                                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                                          {detail.hasData
+                                            ? formatMoney(detail.sales)
+                                            : "—"}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           </td>
-                        );
-                      })}
-                    </tr>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   );
                 })}
                 <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
@@ -952,115 +1087,6 @@ export function ParticipacionComercialBoard() {
           )}
         </div>
       </section>
-
-      {shareDetailRow && matrix ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="pc-share-detail-title"
-          onClick={() => setShareDetailRow(null)}
-        >
-          <div
-            className="max-h-[min(85vh,720px)] w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
-              <div className="min-w-0">
-                <h3
-                  id="pc-share-detail-title"
-                  className="text-sm font-bold text-slate-900"
-                >
-                  Participación por sede
-                </h3>
-                <p
-                  className="mt-1 text-xs font-semibold leading-relaxed text-slate-800"
-                  title={shareDetailPathLabel}
-                >
-                  {shareDetailPathLabel ||
-                    (matrix.rowLevel === "linea"
-                      ? formatLineaDisplay(
-                          shareDetailRow.id,
-                          shareDetailRow.label,
-                        )
-                      : `${shareDetailRow.id} · ${shareDetailRow.label}`)}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {matrix.rowLevel === "linea"
-                    ? "En raíz, % en grupo y % en sede coinciden (todas las líneas = 100%)."
-                    : matrix.rowLevel === "sublinea"
-                      ? "Ruta: línea › sublínea. % en línea (hermanas = 100%), % de la línea en sede y % de la sublínea en sede."
-                      : "Ruta: línea › sublínea › ítem. % en sublínea (ítems = 100%), % de la sublínea en sede y % del ítem en sede."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShareDetailRow(null)}
-                className="shrink-0 rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
-                aria-label="Cerrar"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="max-h-[min(70vh,600px)] overflow-auto">
-              <table className="min-w-full border-collapse text-xs">
-                <thead className="sticky top-0 bg-slate-50 text-slate-600">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Sede</th>
-                    <th className="px-3 py-2 text-right font-semibold">
-                      {shareDetailLabels.inParent}
-                    </th>
-                    {matrix.rowLevel !== "linea" ? (
-                      <th className="px-3 py-2 text-right font-semibold">
-                        {shareDetailLabels.parentInSede}
-                      </th>
-                    ) : null}
-                    {matrix.rowLevel !== "linea" ? (
-                      <th className="px-3 py-2 text-right font-semibold">
-                        {shareDetailLabels.inSede}
-                      </th>
-                    ) : null}
-                    <th className="px-3 py-2 text-right font-semibold">
-                      Unidades
-                    </th>
-                    <th className="px-3 py-2 text-right font-semibold">
-                      Venta $
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shareDetailRows.map((row) => (
-                    <tr key={row.key} className="border-t border-slate-100">
-                      <td className="px-3 py-2 font-medium text-slate-800">
-                        {row.label}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                        {row.hasData ? formatSharePct(row.shareInParent) : "—"}
-                      </td>
-                      {matrix.rowLevel !== "linea" ? (
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                          {formatSharePct(row.parentInSede)}
-                        </td>
-                      ) : null}
-                      {matrix.rowLevel !== "linea" ? (
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                          {row.hasData ? formatSharePct(row.shareInSede) : "—"}
-                        </td>
-                      ) : null}
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                        {row.hasData ? formatUnits(row.units) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">
-                        {row.hasData ? formatMoney(row.sales) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <section
         id="pc-drill"
