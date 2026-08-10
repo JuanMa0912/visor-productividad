@@ -1,0 +1,98 @@
+# =====================================================
+# CONFIGURACIÓN PIPELINE VENTAS - MERCAMIO
+# =====================================================
+
+# Rutas del sistema
+paths:
+  base_dir: "/opt/ventas_pipeline"
+  etl_dir: "/opt/ventas_pipeline/etl"
+  logs_dir: "/opt/ventas_pipeline/logs"
+  scripts_dir: "/opt/ventas_pipeline/scripts"
+  config_dir: "/opt/ventas_pipeline/config"
+
+# Configuración de logs
+logging:
+  retention_days: 7
+  max_size_mb: 100
+  format: "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# Configuración de ejecución
+execution:
+  # Horario de ejecución diaria (ventas día anterior)
+  daily_hour: 7
+  daily_minute: 0
+  
+  # Horario de validación mensual (cada 2 semanas)
+  validation_hour: 14
+  validation_minute: 0
+  validation_weeks: [1, 3]  # Semanas 1 y 3 de cada mes
+  
+  # Reintentos en caso de fallo
+  max_retries: 3
+  retry_delay_seconds: 60
+  
+  # Timeout por ETL (en segundos)
+  etl_timeout: 1800  # 30 minutos
+
+# ETLs a ejecutar
+etls:
+  # ETLs ligeros (se ejecutan en paralelo)
+  parallel:
+    - name: "fruver"
+      script: "fruver_ventas_rango.py"
+      priority: 1
+      
+    - name: "carnes"
+      script: "carnes_ventas_rango.py"
+      priority: 1
+      
+    - name: "pollo_pesc"
+      script: "pollo_pesc_ventas_rango.py"
+      priority: 2
+      
+    - name: "industria"
+      script: "industria_ventas_rango.py"
+      priority: 2
+      
+    - name: "asadero"
+      script: "asadero_ventas_rango.py"
+      priority: 3
+  
+  # ETL pesado (se ejecuta secuencialmente después)
+  sequential:
+    - name: "cajas"
+      script: "cajas_ventas_rango.py"
+      priority: 10
+
+# Base de datos destino (para validaciones)
+database:
+  host: "__DESDE_ENV_ETL__"
+  port: 5432
+  dbname: "__DESDE_ENV_ETL__"
+  user: "__DESDE_ENV_ETL__"
+  password: "__DESDE_ENV_ETL__"
+  schema: "public"
+
+# Tablas a validar
+tables:
+  - ventas_fruver
+  - ventas_carnes
+  - ventas_pollo_pesc
+  - ventas_industria
+  - ventas_asadero
+  - ventas_cajas
+
+# Umbrales de alerta
+alerts:
+  # Si no hay registros cargados
+  min_records_per_etl: 1
+  
+  # Si tarda más de X minutos
+  max_duration_minutes: 30
+  
+  # Si falla después de reintentos
+  notify_on_failure: true
+
+# Zona horaria
+timezone: "America/Bogota"
