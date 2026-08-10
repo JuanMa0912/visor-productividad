@@ -12,8 +12,11 @@ import {
   yearMonthToInputValue,
 } from "@/lib/informe-variacion/periods";
 import {
+  buildSingleDayInformeRangeId,
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  latestInformeSingleDay,
+  parseSingleDayInformeRangeId,
   payloadMatchesInformeSelection,
   type InformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
@@ -312,6 +315,23 @@ export default function InformeVariacionPage() {
     );
   }, [maxDate, parsedMonth]);
 
+  /** Ultimo dia del mes con datos cargados; null si el mes aun no empieza. */
+  const maxSingleDay = useMemo(() => {
+    if (!parsedMonth) return null;
+    return latestInformeSingleDay(
+      parsedMonth.year,
+      parsedMonth.month,
+      new Date(),
+      maxDate,
+    );
+  }, [maxDate, parsedMonth]);
+
+  /** Dia activo cuando el rango seleccionado es un dia suelto (`d-05`). */
+  const activeSingleDay = useMemo(
+    () => parseSingleDayInformeRangeId(dayRangeId || null),
+    [dayRangeId],
+  );
+
   useEffect(() => {
     if (availableDayRanges.length === 0) {
       setDayRangeId("");
@@ -321,9 +341,17 @@ export default function InformeVariacionPage() {
       if (current && availableDayRanges.some((range) => range.id === current)) {
         return current;
       }
+      // Los dias sueltos NO estan en availableDayRanges (no se precargan, ver
+      // buildInformeSingleDayRange). Sin esta rama, este efecto los borraria al
+      // instante y el modo dia seria inusable: hay que conservarlos mientras el
+      // dia siga existiendo y tenga datos en el mes elegido.
+      const day = parseSingleDayInformeRangeId(current || null);
+      if (day !== null && maxSingleDay !== null && day <= maxSingleDay) {
+        return current;
+      }
       return defaultInformeDayRangeId(availableDayRanges) ?? "";
     });
-  }, [availableDayRanges]);
+  }, [availableDayRanges, maxSingleDay]);
 
   const monthKey = useMemo(() => {
     if (!parsedMonth) return "";
@@ -712,6 +740,46 @@ export default function InformeVariacionPage() {
     },
     [fetchRangePayload, markViewReady, parsedMonth, readCachedPayload],
   );
+
+  /** Selecciona un dia suelto, acotado a [1, ultimo dia con datos]. */
+  const selectSingleDay = useCallback(
+    (day: number) => {
+      if (!maxSingleDay) return;
+      const clamped = Math.min(Math.max(Math.trunc(day), 1), maxSingleDay);
+      selectDayRange(buildSingleDayInformeRangeId(clamped));
+    },
+    [maxSingleDay, selectDayRange],
+  );
+
+  /**
+   * Al ver un dia suelto se compara contra el MISMO NUMERO de dia del mes anterior
+   * y del año pasado. Eso cruza dias de semana distintos y en retail un domingo no
+   * se parece a un miercoles, asi que buena parte de la variacion puede ser efecto
+   * calendario. Se avisa cuando ocurre en vez de dejar que el % se lea como real.
+   */
+  const weekdayComparisonWarning = useMemo(() => {
+    if (!payload || activeSingleDay === null) return null;
+    const NAMES = [
+      "domingo",
+      "lunes",
+      "martes",
+      "miercoles",
+      "jueves",
+      "viernes",
+      "sabado",
+    ];
+    const weekdayOf = (compact: string) =>
+      new Date(
+        Number(compact.slice(0, 4)),
+        Number(compact.slice(4, 6)) - 1,
+        Number(compact.slice(6, 8)),
+      ).getDay();
+    const cur = weekdayOf(payload.periods.current.from);
+    const mom = weekdayOf(payload.periods.mom.from);
+    const yoy = weekdayOf(payload.periods.yoy.from);
+    if (cur === mom && cur === yoy) return null;
+    return `Se compara el mismo numero de dia: este es ${NAMES[cur]}, el del mes anterior cae en ${NAMES[mom]} y el del año pasado en ${NAMES[yoy]}. Parte de la variacion puede ser efecto calendario, no venta.`;
+  }, [activeSingleDay, payload]);
 
   const loadMonthBundle = useCallback(
     async (options: { force?: boolean } = {}) => {
@@ -1255,6 +1323,97 @@ export default function InformeVariacionPage() {
                 {payload.meta.dayRange.projection.targetToDay}. MoM/YoY usan el
                 tramo cerrado comparable.
               </p>
+            ) : null}
+
+            {maxSingleDay ? (
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={periodControlsDisabled}
+                    onClick={() =>
+                      selectSingleDay(activeSingleDay ?? maxSingleDay)
+                    }
+                    className={cn(
+                      "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
+                      activeSingleDay
+                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
+                    )}
+                    title="Ver la venta de un solo dia"
+                  >
+                    Dia
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-label="Dia anterior"
+                    disabled={
+                      periodControlsDisabled ||
+                      (activeSingleDay ?? maxSingleDay) <= 1
+                    }
+                    onClick={() =>
+                      selectSingleDay((activeSingleDay ?? maxSingleDay) - 1)
+                    }
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ‹
+                  </button>
+
+                  <input
+                    type="date"
+                    aria-label="Elegir dia"
+                    disabled={periodControlsDisabled}
+                    value={
+                      parsedMonth
+                        ? `${parsedMonth.year}-${String(parsedMonth.month).padStart(2, "0")}-${String(activeSingleDay ?? maxSingleDay).padStart(2, "0")}`
+                        : ""
+                    }
+                    min={
+                      parsedMonth
+                        ? `${parsedMonth.year}-${String(parsedMonth.month).padStart(2, "0")}-01`
+                        : undefined
+                    }
+                    max={
+                      parsedMonth
+                        ? `${parsedMonth.year}-${String(parsedMonth.month).padStart(2, "0")}-${String(maxSingleDay).padStart(2, "0")}`
+                        : undefined
+                    }
+                    onChange={(event) => {
+                      const day = Number(event.target.value.slice(8, 10));
+                      if (Number.isInteger(day)) selectSingleDay(day);
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 disabled:opacity-50"
+                  />
+
+                  <button
+                    type="button"
+                    aria-label="Dia siguiente"
+                    disabled={
+                      periodControlsDisabled ||
+                      (activeSingleDay ?? maxSingleDay) >= maxSingleDay
+                    }
+                    onClick={() =>
+                      selectSingleDay((activeSingleDay ?? maxSingleDay) + 1)
+                    }
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ›
+                  </button>
+
+                  <span className="text-xs text-slate-400">
+                    {activeSingleDay
+                      ? "Venta de un solo dia"
+                      : `Ultimo dia cargado: ${maxSingleDay}`}
+                  </span>
+                </div>
+
+                {activeSingleDay && weekdayComparisonWarning ? (
+                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    {weekdayComparisonWarning}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : parsedMonth ? (

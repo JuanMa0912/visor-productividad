@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
 # Sube el dia a dia de las tablas de HECHOS desde el Postgres LOCAL a Cloud SQL (GCP).
 #
-# Estrategia: UPSERT por clave natural (INSERT ... ON CONFLICT DO UPDATE). No borra.
-# Las PK/UNIQUE son identicas en local y GCP, asi que es imposible duplicar.
+# Estrategia POR DEFECTO: UPSERT por clave natural (INSERT ... ON CONFLICT DO UPDATE),
+# que no borra. Las PK/UNIQUE son identicas en local y GCP, asi que es imposible duplicar.
+#
+# CUIDADO - DOS TABLAS NO SIGUEN ESA ESTRATEGIA. `asistencia_horas` y `margen_final` van
+# SIEMPRE en modo replace: borran en GCP las fechas presentes en el local y reinsertan,
+# aunque no pases --replace. Consecuencia: para esas dos, lo que quede en el local es
+# exactamente lo que quedara en GCP, asi que un dia que falte en el local DESAPARECE de
+# GCP. Es deliberado (el biometrico re-importa y corrige, a veces con MENOS filas, y un
+# upsert dejaria huerfanas que nadie limpia), pero conviene mirar el local antes de un
+# rango grande. Seguro en un aspecto: si el local esta vacio en la ventana, no borra nada.
 #
 # Tablas (allowlist fija; NO toca tablas de estado de la app ni matviews):
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
-#   ventas_industria, rotacion_base_item_dia_sede, asistencia_horas, ventas_item_diario,
-#   ventas_proveedor_dia, proveedor_pos_catalogo (catalogo sin fecha: se sube completo),
-#   margen_final (modo replace por ventana; --margen-full para snapshot completo)
+#   ventas_industria, rotacion_base_item_dia_sede, ventas_item_diario,
+#   ventas_proveedor_dia, inventario_proveedor_dia,
+#   proveedor_pos_catalogo y proveedor_item (catalogos sin fecha: se suben completos),
+#   asistencia_horas  (modo replace SIEMPRE, ver aviso de arriba)
+#   margen_final      (modo replace SIEMPRE; --margen-full para snapshot completo)
 # (ventas_item_diario y margen_final: sus ETLs de carga al local corren aparte; aqui solo
 #  los replicamos local->GCP. margen_final NO tiene clave natural -> borra ventana en GCP
 #  y reinserta, excluyendo su id serial.)
