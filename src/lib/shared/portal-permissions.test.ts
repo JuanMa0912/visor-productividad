@@ -51,6 +51,10 @@ test("proveedores ya no es subtablero solo-admin", () => {
   assert.equal(isAdminOnlyPortalSubsection("participacion-comercial"), false);
 });
 
+test("checklists es subtablero solo-admin", () => {
+  assert.equal(isAdminOnlyPortalSubsection("checklists"), true);
+});
+
 test("QR proveedores: admin siempre; resto necesita proveedores_qr", () => {
   assert.equal(canViewProveedoresQrLinks(null, true), true);
   assert.equal(canViewProveedoresQrLinks([], false), false);

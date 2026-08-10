@@ -6,7 +6,6 @@ import { useParams, useRouter } from "next/navigation";
 import { BodegaGerencialBoard } from "@/app/checklists/bodega-board";
 import { getChecklistCatalogEntry } from "@/lib/checklists/catalog";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
-import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
 
 export default function ChecklistByIdPage() {
   const params = useParams<{ id: string }>();
@@ -15,12 +14,7 @@ export default function ChecklistByIdPage() {
   const { user, status } = useRequireAuth();
   const { isAdmin } = usePermissions();
   const ready = status === "authenticated" && Boolean(user);
-
-  const allowed = canAccessPortalSubsection(
-    user?.allowedSubdashboards,
-    "checklists",
-  );
-  const canAccess = isAdmin || allowed;
+  const canAccess = isAdmin;
   const entry = getChecklistCatalogEntry(id);
 
   useEffect(() => {

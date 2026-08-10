@@ -12,6 +12,7 @@ import {
 } from "@/components/portal/hub-section-cards";
 import {
   canAccessPortalSubsection,
+  isAdminOnlyPortalSubsection,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
 import { canAccessHorariosCompararBoard } from "@/lib/shared/special-role-features";
@@ -102,6 +103,7 @@ export default function HorarioHubPage() {
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);
         if (!subId) return false;
+        if (isAdminOnlyPortalSubsection(subId)) return false;
         return canAccessPortalSubsection(allowedSubdashboards, subId);
       }),
     [allowedSubdashboards, isAdmin, modules],

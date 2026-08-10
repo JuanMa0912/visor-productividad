@@ -7,19 +7,13 @@ import { ClipboardCheck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { CHECKLIST_CATALOG } from "@/lib/checklists/catalog";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
-import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
 
 export default function ChecklistsHubPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
   const ready = status === "authenticated" && Boolean(user);
-
-  const allowed = canAccessPortalSubsection(
-    user?.allowedSubdashboards,
-    "checklists",
-  );
-  const canAccess = isAdmin || allowed;
+  const canAccess = isAdmin;
 
   useEffect(() => {
     if (ready && !canAccess) {
@@ -66,8 +60,9 @@ export default function ChecklistsHubPage() {
               Checklists
             </h1>
             <p className="mt-1 max-w-xl text-sm text-slate-600">
-              Tableros de auditoría ponderada por sede. Guarde y cargue JSON
-              localmente; aún no hay persistencia en servidor.
+              Tableros de auditoría ponderada por sede (solo administradores).
+              Guarde y cargue JSON localmente; aún no hay persistencia en
+              servidor.
             </p>
           </div>
           <Link
