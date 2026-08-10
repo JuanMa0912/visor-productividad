@@ -1,5 +1,24 @@
 # Timer correo diario rotación
 
+> ## ⛔ RETIRADO — no instalar
+>
+> **Decisión del 2026-08-10: este correo no va.** Las units
+> `visor-rotacion-email.{service,timer}` se eliminaron de `deploy/systemd/`,
+> así que los pasos de instalación de más abajo **ya no se pueden ejecutar**.
+>
+> Nunca llegó a estar instalado en server232 — se comprobó el 2026-08-10 con
+> `systemctl list-unit-files`: no existía en `/etc/systemd/system`. Es decir, este
+> correo jamás se envió; no se está apagando nada que estuviera funcionando.
+>
+> De haberse instalado tal cual, habría fallado: la unit apuntaba a
+> `/opt/visor-productividad` y `User=visor`, mientras el deploy real vive en
+> `/home/prodapp/visor-productividad` y todo lo demás corre como `prodapp`.
+>
+> **El script y esta documentación se conservan a propósito**
+> (`scripts/rotacion-daily-email.{sh,mts}`), porque siguen en desarrollo. Se puede
+> ejecutar a mano. Si algún día se decide activarlo, hay que rehacer las units
+> corrigiendo antes la ruta y el usuario.
+
 Envía cada mañana:
 
 1. **Correo individual por sede** (activo) → solo el digest de esa sede al
