@@ -4,7 +4,7 @@ import {
   classifyProductividadFamilia,
   findTiendaSedeByName,
   normalizeEmpresaBd,
-  productividadFamiliaSql,
+  productividadFamiliaSqlFast,
 } from "@/lib/proveedores/line-family";
 
 describe("proveedores line-family", () => {
@@ -19,12 +19,13 @@ describe("proveedores line-family", () => {
     assert.equal(classifyProductividadFamilia("99", "Pollo asado"), null);
   });
 
-  it("el CASE SQL usa los mismos códigos N1", () => {
-    const sql = productividadFamiliaSql("id_linea1", "nombre_linea1");
+  it("familia SQL rápida usa códigos N1 sin LIKE", () => {
+    const sql = productividadFamiliaSqlFast("id_linea1");
     assert.match(sql, /'01'/);
     assert.match(sql, /'02'/);
     assert.match(sql, /IN \('03', '12'\)/);
     assert.match(sql, /ELSE 'industria'/);
+    assert.doesNotMatch(sql, /LIKE/);
   });
 
   it("resuelve sedes del tablero e aliases de empresa", () => {

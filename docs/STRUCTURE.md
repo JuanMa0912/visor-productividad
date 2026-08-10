@@ -134,7 +134,7 @@ Codigo compartido sin UI de pagina.
 | `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
 | `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
-| `proveedores/productividad` | subtablero `proveedores`: industria=und, fruver/carnes=kg (`margen_item_dia_roll.cantidad` + `proveedor_item`), cajas=tx (`ventas_cajas.consecutivo_doc`); máx. 31 días |
+| `proveedores/productividad` | subtablero `proveedores`: `mode=board` (KPIs/sede/día, cache 45s) + `mode=proveedores` (ranking); industria=und, fruver/carnes=kg, cajas=tx; máx. 31 días |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

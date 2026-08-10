@@ -561,7 +561,7 @@ No hay tabla nueva. `/api/proveedores/productividad` lee:
 | `proveedor_item` + `proveedor_pos_catalogo` | drill por proveedor |
 | `ventas_cajas.consecutivo_doc` | transacciones (cajas) |
 
-Pollo (`03`) y asadero (`12` / `id_tipo=3`) quedan fuera de industria para no mezclar kilos como unidades. Rango máximo 31 días.
+Pollo (`03`) y asadero (`12` / `id_tipo=3`) quedan fuera de industria para no mezclar kilos como unidades. Rango máximo 31 días. La UI pide primero `mode=board` (KPIs + sede + día, cache en memoria 45s) y después `mode=proveedores`.
 
 ```bash
 python3 scripts/etl/proveedores/etl_proveedores.py --desde 20260701 --hasta 20260731

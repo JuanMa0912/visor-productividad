@@ -5,13 +5,22 @@ import {
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { isProveedoresProductividadSede } from "@/lib/proveedores/line-family";
-import { listProductividadProveedores } from "@/lib/proveedores/productividad-repo";
+import {
+  listProductividadProveedores,
+  queryProductividadBoard,
+  queryProductividadProveedores,
+} from "@/lib/proveedores/productividad-repo";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 import { canAccessProveedoresBoard } from "@/lib/shared/special-role-features";
 
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 const MAX_RANGE_DAYS = 31;
+const BOARD_CACHE_TTL_MS = 45_000;
+const BOARD_CACHE_MAX = 40;
+
+type CacheEntry = { expiresAt: number; body: unknown };
+const boardCache = new Map<string, CacheEntry>();
 
 const csvEscape = (value: string) => {
   if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
@@ -25,6 +34,24 @@ const inclusiveDays = (start: string, end: string): number | null => {
     return null;
   }
   return Math.floor((endMs - startMs) / 86_400_000) + 1;
+};
+
+const readBoardCache = (key: string) => {
+  const hit = boardCache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    boardCache.delete(key);
+    return null;
+  }
+  return hit.body;
+};
+
+const writeBoardCache = (key: string, body: unknown) => {
+  if (boardCache.size >= BOARD_CACHE_MAX) {
+    const oldest = boardCache.keys().next().value;
+    if (oldest) boardCache.delete(oldest);
+  }
+  boardCache.set(key, { expiresAt: Date.now() + BOARD_CACHE_TTL_MS, body });
 };
 
 export async function GET(request: Request) {
@@ -43,7 +70,7 @@ export async function GET(request: Request) {
 
   const limitedUntil = checkRateLimit(request, {
     windowMs: 60_000,
-    max: 30,
+    max: 60,
     keyPrefix: "proveedores-productividad",
   });
   if (limitedUntil) {
@@ -53,7 +80,7 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const mode = url.searchParams.get("mode") ?? "list";
+  const mode = url.searchParams.get("mode") ?? "board";
   const dateStart = url.searchParams.get("dateStart")?.trim() ?? "";
   const dateEnd = url.searchParams.get("dateEnd")?.trim() ?? "";
   const sede = url.searchParams.get("sede")?.trim() || null;
@@ -79,14 +106,59 @@ export async function GET(request: Request) {
     );
   }
 
-  const client = await (await getDbPool()).connect();
+  const pool = await getDbPool();
+
   try {
-    const data = await listProductividadProveedores(client, {
+    if (mode === "board") {
+      const cacheKey = `board|${dateStart}|${dateEnd}|${sede ?? ""}`;
+      const cached = readBoardCache(cacheKey);
+      if (cached) {
+        return withSession(
+          NextResponse.json(cached, {
+            headers: { "Cache-Control": "private, max-age=15" },
+          }),
+        );
+      }
+      const board = await queryProductividadBoard(pool, {
+        dateStart,
+        dateEnd,
+        sede,
+      });
+      const body = { dateStart, dateEnd, sede, ...board };
+      writeBoardCache(cacheKey, body);
+      return withSession(
+        NextResponse.json(body, {
+          headers: { "Cache-Control": "private, max-age=15" },
+        }),
+      );
+    }
+
+    if (mode === "proveedores") {
+      const proveedores = await queryProductividadProveedores(pool, {
+        dateStart,
+        dateEnd,
+        sede,
+        q,
+        limit: 100,
+      });
+      return withSession(
+        NextResponse.json({
+          dateStart,
+          dateEnd,
+          sede,
+          q,
+          proveedores,
+          metrics: { proveedores: proveedores.length },
+        }),
+      );
+    }
+
+    const data = await listProductividadProveedores(pool, {
       dateStart,
       dateEnd,
       sede,
       q,
-      proveedorLimit: mode === "export" ? 2000 : 300,
+      proveedorLimit: mode === "export" ? 2000 : 100,
     });
 
     if (mode === "export") {
@@ -143,6 +215,7 @@ export async function GET(request: Request) {
       );
     }
 
+    // mode=list legacy: todo junto
     return withSession(
       NextResponse.json({
         dateStart,
@@ -160,7 +233,5 @@ export async function GET(request: Request) {
         { status: 500 },
       ),
     );
-  } finally {
-    client.release();
   }
 }

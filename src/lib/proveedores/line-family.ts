@@ -70,7 +70,7 @@ export const classifyProductividadFamilia = (
 
 /**
  * CASE SQL alineado con {@link classifyProductividadFamilia}.
- * `lineaIdExpr` / `lineaNombreExpr` deben ser identificadores o columnas ya sanitizadas.
+ * Preferir {@link productividadFamiliaSqlFast} en queries calientes (sin LIKE).
  */
 export const productividadFamiliaSql = (
   lineaIdExpr: string,
@@ -95,6 +95,29 @@ CASE
   WHEN NULLIF(TRIM(COALESCE(${lineaIdExpr}::text, '')), '') IS NULL
    AND NULLIF(TRIM(COALESCE(${lineaNombreExpr}, '')), '') IS NULL
     THEN NULL
+  ELSE 'industria'
+END
+`;
+
+/**
+ * Variante rápida solo por código N1 (sin LIKE sobre nombre).
+ * Tolera `1` / `01`.
+ */
+export const productividadFamiliaSqlFast = (lineaIdExpr: string): string => `
+CASE
+  WHEN NULLIF(TRIM(COALESCE(${lineaIdExpr}::text, '')), '') IS NULL THEN NULL
+  WHEN (
+    TRIM(${lineaIdExpr}::text) ~ '^[0-9]+$'
+    AND LPAD(TRIM(${lineaIdExpr}::text), 2, '0') = '${FRUVER_LINEA_N1}'
+  ) THEN 'fruver'
+  WHEN (
+    TRIM(${lineaIdExpr}::text) ~ '^[0-9]+$'
+    AND LPAD(TRIM(${lineaIdExpr}::text), 2, '0') = '${CARNES_LINEA_N1}'
+  ) THEN 'carnes'
+  WHEN (
+    TRIM(${lineaIdExpr}::text) ~ '^[0-9]+$'
+    AND LPAD(TRIM(${lineaIdExpr}::text), 2, '0') IN ('03', '12')
+  ) THEN NULL
   ELSE 'industria'
 END
 `;
