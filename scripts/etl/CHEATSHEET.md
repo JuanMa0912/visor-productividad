@@ -121,15 +121,94 @@ por defecto). El daily 07:50 es upsert; el reconcile dominical usa `--replace` (
 
 ---
 
+## 3.b Ventas por linea de negocio (`/opt/ventas_pipeline`) — **el otro ETL**
+
+**Hay DOS sistemas de ETL en la 232, no uno.** Este NO esta en el repo y carga
+**6 de las 13 tablas** que el sync sube a GCP:
+
+`ventas_cajas` · `ventas_fruver` · `ventas_carnes` · `ventas_asadero` ·
+`ventas_pollo_pesc` · `ventas_industria`
+
+Vive en `/opt/ventas_pipeline` (codigo de `root`, hace falta `sudo` para editarlo),
+con sus propios timers: `ventas-pipeline-daily` (07:00) y `ventas-pipeline-monthly`
+(14:00, solo dias concretos).
+
+**Backfill de un rango.** El orquestador **no tiene** modo backfill (solo
+`--mode daily|monthly`); hay que llamar a los ETL individuales, que si aceptan rango:
+
+```bash
+cd /opt/ventas_pipeline/etl
+for E in cajas fruver carnes asadero pollo_pesc industria; do
+  python3 ${E}_ventas_rango.py --start-date 20260801 --end-date 20260809
+done
+```
+
+Luego subirlo (fechas CON guiones):
+```bash
+$SYNC --desde 2026-08-01 --hasta 2026-08-09 --replace --no-refresh --verify \
+  --only ventas_cajas,ventas_fruver,ventas_carnes,ventas_asadero,ventas_pollo_pesc,ventas_industria
+```
+> `--no-refresh` es correcto aqui: los matviews dependen de rotacion, no de estas tablas.
+
+**Ojo:** `ventas_asadero` solo opera en **mercamio y mtodo**. Ver bogota en 0 ahi es
+normal, no un hueco.
+
+---
+
+## 3.c Detectar dias incompletos (empresa faltante)
+
+Cuando el POS 217 no ha cerrado el dia, un ETL carga **0 filas para esa empresa**. La
+tabla queda con datos de las otras y **el total no se ve raro a simple vista**. Paso el
+2026-08-10: faltaban mercamio y mtodo del 07 y mercamio del 09 en 12 tablas, durante dias.
+
+**La consulta que lo destapa** (contar empresas por dia, no filas). Ojo: en las 6 tablas
+de la seccion 3.b la columna es `empresa_bd`; en el resto es `empresa`:
+
+```sql
+SELECT fecha_dcto, count(DISTINCT empresa_bd) AS empresas, count(*) AS filas
+FROM ventas_cajas
+WHERE fecha_dcto BETWEEN '20260801' AND '20260809'
+GROUP BY 1 ORDER BY 1;
+```
+
+**Antes de re-correr, comprobar que el POS SI tiene el dato** (si no lo tiene, re-correr
+no sirve de nada):
+
+```sql
+-- en 192.168.35.217, base = nombre de la empresa
+SELECT trim(fecha_dcto), count(*) FROM cmmovimiento_pdv
+WHERE trim(fecha_dcto) BETWEEN '20260801' AND '20260809' GROUP BY 1 ORDER BY 1;
+```
+
+**Orden obligatorio al reparar:** arreglar la LOCAL → verificar cobertura por empresa →
+y solo entonces sincronizar. `margen_final` y `asistencia_horas` suben **siempre en modo
+replace**: subir con la local incompleta **borra en GCP** esas fechas.
+
+---
+
 ## 4. Codigos de salida
 
 `0` OK · `3` WARNING (sin datos de ayer en tablas canary, exit normal del timer) ·
 `1` ERROR · `2` uso invalido (flag/fecha mal escrita).
 
+> Los 6 ETL de la seccion 3.b tambien salen con **exit 3** si falta una empresa que si
+> tenia ventas en los 14 dias previos (agregado 2026-08-10). Antes reportaban
+> `PIPELINE COMPLETADO EXITOSAMENTE` con una empresa entera ausente. Las empresas
+> esperadas se calculan mirando la propia tabla, no una lista fija: por eso
+> `ventas_asadero` no alarma por bogota.
+
 ## 5. Ver estado de los timers / logs
 
+**Lo primero ante cualquier sospecha:**
 ```bash
-systemctl list-timers 'visor-etl-*' 'etl-rotacion*'
+systemctl --failed          # un ETL con exit 3 aparece aqui, y se queda hasta reset-failed
+```
+> Tras reparar, limpiar con `sudo systemctl reset-failed <unidad>`; si no, manana no se
+> distingue un fallo nuevo del viejo.
+
+```bash
+systemctl list-timers 'visor-etl-*' 'etl-rotacion*' 'ventas-pipeline-*'
+journalctl -u ventas-pipeline-daily.service -n 80 --no-pager  # el ETL de la seccion 3.b
 journalctl -u visor-etl-sync.service -n 80 --no-pager        # diario 7:50 (sube todo a GCP)
 journalctl -u visor-etl-reconcile.service -n 80 --no-pager   # domingos 16:00 (--replace)
 journalctl -u visor-etl-margen.service -n 80 --no-pager      # margenes 7:15
@@ -137,6 +216,17 @@ journalctl -u etl-rotacion.service -n 80 --no-pager          # rotacion base loc
 journalctl -u visor-etl-asistencia-gcp.service -n 80 --no-pager  # asistencia mes->GCP 18:30
 ```
 (usa `sudo` si `prodapp` no ve el journal).
+
+> **El log de PostgreSQL NO esta en el journal.** El cluster arranca con
+> `pg_ctlcluster --skip-systemctl-redirect`, asi que `journalctl -u postgresql*` sale
+> **vacio** y buscar ahi da un falso negativo. Esta en
+> `/var/log/postgresql/postgresql-18-main.log` (logrotate ya lo rota semanal, 10 copias).
+> Desde 2026-08-10 registra el DML (`log_statement='mod'`) con `app=` y `host=` en el
+> prefijo — necesario porque pgAdmin y los ETL **se conectan ambos como `postgres`** y
+> el usuario solo no los distingue:
+> ```bash
+> sudo grep -iE "DELETE|UPDATE|TRUNCATE" /var/log/postgresql/postgresql-18-main.log | tail -20
+> ```
 
 > **`visor-etl-asistencia-gcp` (18:30 diario):** sube `asistencia_horas` del **mes-a-la-fecha**
 > a GCP (replace). Rango = primer dia del mes de AYER → AYER (ej. dia 8 → `2026-08-01..2026-08-07`;
