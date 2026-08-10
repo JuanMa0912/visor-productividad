@@ -11,7 +11,8 @@ export type PortalSubsectionId =
   | "informe-variacion"
   | "consulta-operativa"
   | "planilla-vs-asistencia"
-  | "registro-de-horarios";
+  | "registro-de-horarios"
+  | "checklists";
 
 export type PortalSectionDefinition = {
   id: PortalSectionId;
@@ -54,7 +55,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
     description:
       "Mide que tan eficiente es el uso de los recursos (horas, personal y horarios) para generar la venta.",
     href: "/horario",
-    modules: ["Horarios", "Registro de horarios"],
+    modules: ["Horarios", "Registro de horarios", "Checklists"],
   },
 ];
 
@@ -74,6 +75,7 @@ export const PORTAL_SUBSECTIONS_BY_SECTION: Record<
     "consulta-operativa",
     "planilla-vs-asistencia",
     "registro-de-horarios",
+    "checklists",
   ],
 };
 
@@ -97,6 +99,7 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   "jornada-extendida": "operacion",
   "ingresar-horarios": "operacion",
   "horarios-guardados": "operacion",
+  checklists: "operacion",
 };
 
 const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
@@ -123,6 +126,8 @@ const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
   "registro-de-horarios": "registro-de-horarios",
   "ingresar-horarios": "registro-de-horarios",
   "horarios-guardados": "registro-de-horarios",
+  checklists: "checklists",
+  checklist: "checklists",
 };
 
 const normalizePortalSectionToken = (value?: string | null) =>

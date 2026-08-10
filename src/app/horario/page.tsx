@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, Clock, GitCompareArrows } from "lucide-react";
+import { Activity, ClipboardCheck, Clock, GitCompareArrows } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PortalHubHeroCard,
@@ -34,6 +34,15 @@ const BASE_OPERACION_MODULES: HubModuleItem[] = [
     description:
       "Consulta horas trabajadas, novedades y uso del personal por sede y fecha para medir eficiencia operativa.",
     href: "/jornada-extendida",
+  },
+  {
+    id: "checklists",
+    icon: ClipboardCheck,
+    badge: "SEGUIMIENTO",
+    title: "Checklists",
+    description:
+      "Auditorías ponderadas por sede (bodega y próximos formatos) con plan de acción y comparativo.",
+    href: "/checklists",
   },
   {
     id: "ingresar-horarios",
@@ -78,7 +87,12 @@ export default function HorarioHubPage() {
 
   const modules = useMemo(() => {
     if (!canSeeCompararHorarios) return BASE_OPERACION_MODULES;
-    return [BASE_OPERACION_MODULES[0], COMPARAR_MODULE, BASE_OPERACION_MODULES[1]];
+    return [
+      BASE_OPERACION_MODULES[0],
+      COMPARAR_MODULE,
+      BASE_OPERACION_MODULES[1],
+      BASE_OPERACION_MODULES[2],
+    ];
   }, [canSeeCompararHorarios]);
 
   const allowedSubdashboards = user?.allowedSubdashboards ?? null;

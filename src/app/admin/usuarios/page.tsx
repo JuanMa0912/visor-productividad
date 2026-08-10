@@ -262,6 +262,7 @@ const SUBSECTION_LABELS: Record<string, string> = {
   "consulta-operativa": "Consulta operativa",
   "planilla-vs-asistencia": "Planilla vs asistencia",
   "registro-de-horarios": "Registro de horarios",
+  checklists: "Checklists",
 };
 const SPECIAL_ROLE_OPTIONS = [
   { id: "alex", label: "Alex" },

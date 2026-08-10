@@ -21,6 +21,7 @@ const EXACT_PATH_LABELS: Record<string, string> = {
   "/rotacion": "Rotacion",
   "/prediccion-pedidos": "Prediccion de pedidos",
   "/horario": "Horarios",
+  "/checklists": "Checklists",
   "/horarios-comparar": "Planilla vs asistencia",
   "/horarios-guardados": "Horarios guardados",
   "/ingresar-horarios": "Ingresar horarios",
@@ -44,6 +45,7 @@ const PREFIX_LABELS: Array<{ prefix: string; label: string }> = [
   { prefix: "/admin/usuarios", label: "Admin · Usuarios" },
   { prefix: "/admin", label: "Admin" },
   { prefix: "/productividad", label: "Productividad" },
+  { prefix: "/checklists", label: "Checklists" },
   { prefix: "/horario", label: "Horarios" },
 ];
 
