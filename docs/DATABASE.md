@@ -551,6 +551,18 @@ Notas que evitan errores de lectura:
   centinela `'99999999'` (750 de 1093 filas). Cobertura: 341 de 1137 criterios.
 - Devoluciones (`id_tipdoc_fc LIKE 'Z%'`) se excluyen, igual que `ventas_item_diario`.
 
+### 4.z Proveedores (productividad por familia)
+
+No hay tabla nueva. `/api/proveedores/productividad` lee:
+
+| Fuente | Métrica |
+| --- | --- |
+| `margen_item_dia_roll.cantidad` | Industria = unidades (N1 ≠ 01/02/03/12); Fruver = kilos (N1 `01`); Carnes = kilos (N1 `02`) |
+| `proveedor_item` + `proveedor_pos_catalogo` | drill por proveedor |
+| `ventas_cajas.consecutivo_doc` | transacciones (cajas) |
+
+Pollo (`03`) y asadero (`12` / `id_tipo=3`) quedan fuera de industria para no mezclar kilos como unidades. Rango máximo 31 días.
+
 ```bash
 python3 scripts/etl/proveedores/etl_proveedores.py --desde 20260701 --hasta 20260731
 python3 scripts/etl/proveedores/etl_proveedores.py --reconciliar --days 30
