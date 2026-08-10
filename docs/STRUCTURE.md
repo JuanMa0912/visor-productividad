@@ -90,7 +90,7 @@ Codigo compartido sin UI de pagina.
 | `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
 | `participacion-comercial/` | mix/participación sede↔línea por almacén |
 | `proveedores/` | visitas QR, ventas por proveedor y productividad und/kg/tx |
-| `checklists/` | catálogo de auditorías y scoring (bodega gerencial); **solo admin** |
+| `checklists/` | catálogo de auditorías y scoring (bodega gerencial); subtablero `checklists` |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
 | `notion/` | cliente Notion y normalizacion del cronograma |
 | `parse-user-agent.ts` | parser simple de User-Agent usado en accesos admin |
@@ -105,7 +105,7 @@ Codigo compartido sin UI de pagina.
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
 | Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público) |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
-| Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]` (checklists solo admin) |
+| Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
 | Experimental (solo admin, fuera del hub) | `/exp/efectividad-cajero`, `/exp/precios-proveedor` (heatmap PVU/PCU/margen × sede + proveedor) |
 | Otros | `/ExcelDian` (PascalCase historico de URL) |

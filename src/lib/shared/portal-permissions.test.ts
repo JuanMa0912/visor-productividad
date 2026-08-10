@@ -49,10 +49,17 @@ test("proveedores: admin siempre; resto por subtablero", () => {
 test("proveedores ya no es subtablero solo-admin", () => {
   assert.equal(isAdminOnlyPortalSubsection("proveedores"), false);
   assert.equal(isAdminOnlyPortalSubsection("participacion-comercial"), false);
+  assert.equal(isAdminOnlyPortalSubsection("checklists"), false);
 });
 
-test("checklists es subtablero solo-admin", () => {
-  assert.equal(isAdminOnlyPortalSubsection("checklists"), true);
+test("checklists: admin o subtablero checklists", () => {
+  assert.equal(canAccessPortalSubsection(null, "checklists"), true);
+  assert.equal(canAccessPortalSubsection([], "checklists"), true);
+  assert.equal(canAccessPortalSubsection(["checklists"], "checklists"), true);
+  assert.equal(
+    canAccessPortalSubsection(["consulta-operativa"], "checklists"),
+    false,
+  );
 });
 
 test("QR proveedores: admin siempre; resto necesita proveedores_qr", () => {
