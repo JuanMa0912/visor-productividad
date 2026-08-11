@@ -1,0 +1,19 @@
+[Unit]
+Description=Visor - timer fin de semana del refresco de margenes (sab y dom 07:07, 7 dias)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Sabados y domingos a la misma hora que el diario, que pasa a ser Mon..Fri.
+# El reconcile NO se suma al diario: lo SUSTITUYE el fin de semana, igual que
+# visor-etl-ventas-item-reconcile y visor-etl-proveedores-reconcile. Asi no se
+# agrega carga a la cadena de la manana ni hace falta buscar otra franja.
+#
+# Va a las 07:07 (antes de ventas-item 07:09 y proveedores 07:12) y por delante
+# del sync de las 07:35, que corre TODOS los dias: lo que se recupere el sabado
+# sube a GCP ese mismo sabado, sin esperar al reconcile del domingo 16:00.
+OnCalendar=Sat,Sun *-*-* 07:07:00
+Persistent=true
+Unit=visor-etl-margen-reconcile.service
+
+[Install]
+WantedBy=timers.target
