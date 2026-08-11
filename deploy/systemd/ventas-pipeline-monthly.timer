@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer para Pipeline de Ventas - Validación Mensual
+Requires=ventas-pipeline-monthly.service
+
+[Timer]
+OnCalendar=*-*-* 14:00:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
