@@ -3,34 +3,42 @@ import {
   findTiendaSedeByName,
   productividadFamiliaSqlFast,
   PROVEEDORES_TIENDA_SEDES,
+  resolveTiendaSedeFromAsistencia,
+  type ProveedorProductividadKpi,
   type ProveedorTiendaSede,
 } from "@/lib/proveedores/line-family";
+import { resolveDepartamentoLineId } from "@/lib/shared/departamento-line";
 
-export type ProveedorProductividadMetrics = {
+export type ProveedorProductividadFamilyQty = {
+  industria: number;
+  fruver: number;
+  carnes: number;
+  cajas: number;
+};
+
+export type ProveedorProductividadFamilyHours = {
+  industriaHoras: number;
+  fruverHoras: number;
+  carnesHoras: number;
+  cajasHoras: number;
+};
+
+export type ProveedorProductividadFamilyBucket =
+  ProveedorProductividadFamilyQty & ProveedorProductividadFamilyHours;
+
+export type ProveedorProductividadMetrics = ProveedorProductividadFamilyBucket & {
   fechaInicio: string;
   fechaFin: string;
   dias: number;
-  industria: number;
-  fruver: number;
-  carnes: number;
-  cajas: number;
   proveedores: number;
 };
 
-export type ProveedorProductividadBySede = {
+export type ProveedorProductividadBySede = ProveedorProductividadFamilyBucket & {
   sede: string;
-  industria: number;
-  fruver: number;
-  carnes: number;
-  cajas: number;
 };
 
-export type ProveedorProductividadByDay = {
+export type ProveedorProductividadByDay = ProveedorProductividadFamilyBucket & {
   fecha: string;
-  industria: number;
-  fruver: number;
-  carnes: number;
-  cajas: number;
 };
 
 export type ProveedorProductividadProveedorRow = {
@@ -62,7 +70,16 @@ const compactToIso = (compact: string) => {
   return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
 };
 
-const emptyFamily = () => ({ industria: 0, fruver: 0, carnes: 0, cajas: 0 });
+const emptyFamily = (): ProveedorProductividadFamilyBucket => ({
+  industria: 0,
+  fruver: 0,
+  carnes: 0,
+  cajas: 0,
+  industriaHoras: 0,
+  fruverHoras: 0,
+  carnesHoras: 0,
+  cajasHoras: 0,
+});
 
 const emptyMetrics = (
   fechaInicio: string,
@@ -72,12 +89,48 @@ const emptyMetrics = (
   fechaInicio,
   fechaFin,
   dias,
-  industria: 0,
-  fruver: 0,
-  carnes: 0,
-  cajas: 0,
+  ...emptyFamily(),
   proveedores: 0,
 });
+
+/** qty / horas pagadas; 0 si no hay horas. */
+export const qtyPerPaidHour = (qty: number, hours: number): number =>
+  hours > 0 ? qty / hours : 0;
+
+const HOURS_FIELD: Record<
+  ProveedorProductividadKpi,
+  keyof ProveedorProductividadFamilyHours
+> = {
+  industria: "industriaHoras",
+  fruver: "fruverHoras",
+  carnes: "carnesHoras",
+  cajas: "cajasHoras",
+};
+
+const lineIdToFamilia = (
+  lineId: string | undefined,
+): ProveedorProductividadKpi | null => {
+  if (!lineId) return null;
+  if (
+    lineId === "industria" ||
+    lineId === "fruver" ||
+    lineId === "carnes" ||
+    lineId === "cajas"
+  ) {
+    return lineId;
+  }
+  return null;
+};
+
+const toIsoDateFromDb = (value: unknown): string => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  if (/^\d{8}$/.test(raw)) return compactToIso(raw);
+  return raw;
+};
 
 const resolveSedes = (sedeName?: string | null): ProveedorTiendaSede[] => {
   if (sedeName?.trim()) {
@@ -114,9 +167,17 @@ const sedesValuesSql = (sedes: ProveedorTiendaSede[], params: unknown[]) => {
 
 const familiaExpr = productividadFamiliaSqlFast("r.id_linea1");
 
+const addHours = (
+  bucket: ProveedorProductividadFamilyBucket,
+  familia: ProveedorProductividadKpi,
+  hours: number,
+) => {
+  bucket[HOURS_FIELD[familia]] += hours;
+};
+
 /**
  * Tablero rápido: KPIs + sede + día. Sin join a proveedor_item.
- * Roll y cajas en paralelo sobre el pool.
+ * Roll, cajas y horas pagadas en paralelo sobre el pool.
  */
 export const queryProductividadBoard = async (
   db: Db,
@@ -132,12 +193,14 @@ export const queryProductividadBoard = async (
     };
   }
 
+  const sedeNameSet = new Set(sedes.map((s) => s.name));
   const rollParams: unknown[] = [window.fromCompact, window.toCompact];
   const rollSedes = sedesValuesSql(sedes, rollParams);
   const cajasParams: unknown[] = [window.fromCompact, window.toCompact];
   const cajasSedes = sedesValuesSql(sedes, cajasParams);
+  const hoursParams: unknown[] = [window.fechaInicio, window.fechaFin];
 
-  const [rollResult, cajasResult] = await Promise.all([
+  const [rollResult, cajasResult, hoursResult] = await Promise.all([
     db.query<{
       sede: string;
       fecha: string;
@@ -186,11 +249,43 @@ export const queryProductividadBoard = async (
       `,
       cajasParams,
     ),
+    db.query<{
+      fecha: Date | string;
+      sede: string;
+      departamento: string;
+      horas: string | number;
+    }>(
+      `
+      SELECT
+        a.fecha::text AS fecha,
+        a.sede,
+        a.departamento,
+        COALESCE(SUM(a.total_laborado_horas), 0)::float8 AS horas
+      FROM asistencia_horas a
+      WHERE a.fecha >= $1::date
+        AND a.fecha <= $2::date
+        AND a.sede IS NOT NULL
+        AND a.departamento IS NOT NULL
+      GROUP BY a.fecha, a.sede, a.departamento
+      `,
+      hoursParams,
+    ).catch((error) => {
+      console.warn(
+        "[proveedores/productividad] asistencia_horas no disponible:",
+        error,
+      );
+      return { rows: [] as Array<{
+        fecha: Date | string;
+        sede: string;
+        departamento: string;
+        horas: string | number;
+      }> };
+    }),
   ]);
 
-  const bySedeMap = new Map<string, ReturnType<typeof emptyFamily>>();
+  const bySedeMap = new Map<string, ProveedorProductividadFamilyBucket>();
   for (const sede of sedes) bySedeMap.set(sede.name, emptyFamily());
-  const byDayMap = new Map<string, ReturnType<typeof emptyFamily>>();
+  const byDayMap = new Map<string, ProveedorProductividadFamilyBucket>();
   const totals = emptyFamily();
 
   for (const row of rollResult.rows) {
@@ -225,15 +320,32 @@ export const queryProductividadBoard = async (
     byDayMap.set(fecha, dayBucket);
   }
 
+  for (const row of hoursResult.rows) {
+    const familia = lineIdToFamilia(
+      resolveDepartamentoLineId(String(row.departamento ?? "")),
+    );
+    if (!familia) continue;
+    const tienda = resolveTiendaSedeFromAsistencia(String(row.sede ?? ""));
+    if (!tienda || !sedeNameSet.has(tienda.name)) continue;
+    const hours = toNum(row.horas);
+    if (hours <= 0) continue;
+    addHours(totals, familia, hours);
+    const sedeBucket = bySedeMap.get(tienda.name) ?? emptyFamily();
+    addHours(sedeBucket, familia, hours);
+    bySedeMap.set(tienda.name, sedeBucket);
+    const fecha = toIsoDateFromDb(row.fecha);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
+    const dayBucket = byDayMap.get(fecha) ?? emptyFamily();
+    addHours(dayBucket, familia, hours);
+    byDayMap.set(fecha, dayBucket);
+  }
+
   return {
     metrics: {
       fechaInicio: window.fechaInicio,
       fechaFin: window.fechaFin,
       dias: window.dias,
-      industria: totals.industria,
-      fruver: totals.fruver,
-      carnes: totals.carnes,
-      cajas: totals.cajas,
+      ...totals,
       proveedores: 0,
     },
     bySede: sedes.map((sede) => ({

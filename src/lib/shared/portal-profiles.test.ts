@@ -14,6 +14,7 @@ test("materializePortalProfilePermissions aplica preset RRHH", () => {
     "consulta-operativa",
     "planilla-vs-asistencia",
     "registro-de-horarios",
+    "checklists",
   ]);
   assert.deepEqual(permissions.specialRoles, [
     "alex",

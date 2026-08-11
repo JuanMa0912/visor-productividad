@@ -1,5 +1,9 @@
 import type { PoolClient } from "pg";
 import {
+  listQrVisitasTablePairs,
+  resolveQrVisitasTable,
+} from "@/lib/proveedores/qr-tables";
+import {
   decodeProveedorPosKey,
   encodeProveedorPosKey,
   isValidProveedorToken,
@@ -23,6 +27,28 @@ type VisitasFilterArgs = {
   q?: string | null;
 };
 
+const requireQrTable = (sedeName: string): string => {
+  const table = resolveQrVisitasTable(sedeName);
+  if (!table) {
+    throw new Error(`Sede QR no válida: ${sedeName}`);
+  }
+  return table;
+};
+
+/** FROM clause: una tabla o UNION ALL de las 11 (solo whitelist). */
+const visitasFromSql = (sedeName?: string | null): string => {
+  if (sedeName?.trim()) {
+    return requireQrTable(sedeName.trim());
+  }
+  const parts = listQrVisitasTablePairs().map(
+    ({ table }) =>
+      `SELECT id, sede_name, proveedor_codigo, proveedor_empresa, proveedor_nombre,
+              visitante_nombre, visitante_cedula, entrada_at, salida_at
+       FROM ${table}`,
+  );
+  return `(\n${parts.join("\nUNION ALL\n")}\n) AS visitas_all`;
+};
+
 const buildVisitasFilter = (args: VisitasFilterArgs) => {
   const params: unknown[] = [
     `${args.dateStart}T00:00:00`,
@@ -32,10 +58,7 @@ const buildVisitasFilter = (args: VisitasFilterArgs) => {
     `entrada_at >= $1::timestamptz`,
     `entrada_at <= $2::timestamptz`,
   ];
-  if (args.sedeName) {
-    params.push(args.sedeName);
-    clauses.push(`sede_name = $${params.length}`);
-  }
+  // Filtro por sede: la tabla física ya lo implica; no hace falta sede_name = $n.
   const q = (args.q ?? "").trim().slice(0, 80);
   if (q) {
     params.push(`%${q.replace(/[%_]/g, "")}%`);
@@ -187,17 +210,17 @@ export const findOpenVisit = async (
   client: PoolClient,
   args: { sedeName: string; cedula: string },
 ): Promise<ProveedorVisitaOpen | null> => {
+  const table = requireQrTable(args.sedeName);
   const result = await client.query(
     `
     SELECT id, sede_name, proveedor_nombre, visitante_nombre, visitante_cedula, entrada_at
-    FROM proveedor_visitas
-    WHERE sede_name = $1
-      AND visitante_cedula = $2
+    FROM ${table}
+    WHERE visitante_cedula = $1
       AND salida_at IS NULL
     ORDER BY entrada_at DESC
     LIMIT 1
     `,
-    [args.sedeName, args.cedula],
+    [args.cedula],
   );
   const row = result.rows?.[0] as
     | {
@@ -233,9 +256,10 @@ export const insertEntrada = async (
     userAgent: string | null;
   },
 ): Promise<ProveedorVisitaOpen> => {
+  const table = requireQrTable(args.sedeName);
   const result = await client.query(
     `
-    INSERT INTO proveedor_visitas (
+    INSERT INTO ${table} (
       sede_name, proveedor_codigo, proveedor_empresa, proveedor_nombre,
       visitante_nombre, visitante_cedula, client_ip, user_agent
     )
@@ -275,17 +299,17 @@ export const closeSalida = async (
   client: PoolClient,
   args: { visitId: number; sedeName: string; cedula: string },
 ): Promise<ProveedorVisitaOpen | null> => {
+  const table = requireQrTable(args.sedeName);
   const result = await client.query(
     `
-    UPDATE proveedor_visitas
+    UPDATE ${table}
     SET salida_at = now()
     WHERE id = $1
-      AND sede_name = $2
-      AND visitante_cedula = $3
+      AND visitante_cedula = $2
       AND salida_at IS NULL
     RETURNING id, sede_name, proveedor_nombre, visitante_nombre, visitante_cedula, entrada_at, salida_at
     `,
-    [args.visitId, args.sedeName, args.cedula],
+    [args.visitId, args.cedula],
   );
   const row = result.rows?.[0] as
     | {
@@ -342,12 +366,13 @@ export const listVisitas = async (
 ): Promise<ProveedorVisitaRow[]> => {
   const limit = Math.min(Math.max(args.limit ?? 500, 1), 2000);
   const { params, whereSql } = buildVisitasFilter(args);
+  const fromSql = visitasFromSql(args.sedeName);
   const allParams = [...params, limit];
   const result = await client.query(
     `
     SELECT id, sede_name, proveedor_codigo, proveedor_empresa, proveedor_nombre,
            visitante_nombre, visitante_cedula, entrada_at, salida_at
-    FROM proveedor_visitas
+    FROM ${fromSql}
     WHERE ${whereSql}
     ORDER BY entrada_at DESC
     LIMIT $${allParams.length}
@@ -364,12 +389,13 @@ export const computeVisitasMetrics = async (
   args: VisitasFilterArgs,
 ): Promise<ProveedorVisitasMetrics> => {
   const { params, whereSql } = buildVisitasFilter(args);
+  const fromSql = visitasFromSql(args.sedeName);
 
   const summaryResult = await client.query(
     `
     WITH filtered AS (
       SELECT *
-      FROM proveedor_visitas
+      FROM ${fromSql}
       WHERE ${whereSql}
     ),
     closed AS (
@@ -407,7 +433,7 @@ export const computeVisitasMetrics = async (
       avg(
         EXTRACT(EPOCH FROM (salida_at - entrada_at)) / 60.0
       ) FILTER (WHERE salida_at IS NOT NULL) AS avg_min
-    FROM proveedor_visitas
+    FROM ${fromSql}
     WHERE ${whereSql}
     GROUP BY sede_name
     ORDER BY visitas DESC, sede_name ASC
@@ -423,7 +449,7 @@ export const computeVisitasMetrics = async (
       avg(
         EXTRACT(EPOCH FROM (salida_at - entrada_at)) / 60.0
       ) FILTER (WHERE salida_at IS NOT NULL) AS avg_min
-    FROM proveedor_visitas
+    FROM ${fromSql}
     WHERE ${whereSql}
     GROUP BY proveedor_nombre
     ORDER BY visitas DESC, proveedor_nombre ASC
@@ -438,7 +464,7 @@ export const computeVisitasMetrics = async (
       to_char(timezone('America/Bogota', entrada_at), 'YYYY-MM-DD') AS dia,
       count(*)::int AS visitas,
       count(*) FILTER (WHERE salida_at IS NULL)::int AS abiertas
-    FROM proveedor_visitas
+    FROM ${fromSql}
     WHERE ${whereSql}
     GROUP BY 1
     ORDER BY 1 ASC
@@ -451,7 +477,7 @@ export const computeVisitasMetrics = async (
     SELECT
       EXTRACT(HOUR FROM timezone('America/Bogota', entrada_at))::int AS hora,
       count(*)::int AS visitas
-    FROM proveedor_visitas
+    FROM ${fromSql}
     WHERE ${whereSql}
     GROUP BY 1
     ORDER BY 1 ASC

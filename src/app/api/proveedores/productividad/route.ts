@@ -7,6 +7,7 @@ import { getDbPool } from "@/lib/db";
 import { isProveedoresProductividadSede } from "@/lib/proveedores/line-family";
 import {
   listProductividadProveedores,
+  qtyPerPaidHour,
   queryProductividadBoard,
   queryProductividadProveedores,
 } from "@/lib/proveedores/productividad-repo";
@@ -165,9 +166,17 @@ export async function GET(request: Request) {
       const sedeHeader = [
         "sede",
         "industria_und",
+        "industria_por_hora",
         "fruver_kg",
+        "fruver_por_hora",
         "carnes_kg",
+        "carnes_por_hora",
         "cajas_tx",
+        "cajas_por_hora",
+        "industria_horas",
+        "fruver_horas",
+        "carnes_horas",
+        "cajas_horas",
       ];
       const sedeLines = [
         sedeHeader.join(","),
@@ -175,9 +184,17 @@ export async function GET(request: Request) {
           [
             csvEscape(row.sede),
             String(row.industria),
+            String(qtyPerPaidHour(row.industria, row.industriaHoras ?? 0)),
             String(row.fruver),
+            String(qtyPerPaidHour(row.fruver, row.fruverHoras ?? 0)),
             String(row.carnes),
+            String(qtyPerPaidHour(row.carnes, row.carnesHoras ?? 0)),
             String(row.cajas),
+            String(qtyPerPaidHour(row.cajas, row.cajasHoras ?? 0)),
+            String(row.industriaHoras ?? 0),
+            String(row.fruverHoras ?? 0),
+            String(row.carnesHoras ?? 0),
+            String(row.cajasHoras ?? 0),
           ].join(","),
         ),
       ];

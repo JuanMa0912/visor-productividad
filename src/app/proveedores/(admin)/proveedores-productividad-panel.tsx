@@ -11,6 +11,7 @@ import type {
   ProveedorProductividadMetrics,
   ProveedorProductividadProveedorRow,
 } from "@/lib/proveedores/productividad-repo";
+import { qtyPerPaidHour } from "@/lib/proveedores/productividad-repo";
 
 const toISODate = (date: Date) => {
   const y = date.getFullYear();
@@ -40,7 +41,16 @@ const shortDay = (iso: string) => {
 };
 
 type SortDir = "asc" | "desc";
-type SedeSortKey = "sede" | "industria" | "fruver" | "carnes" | "cajas";
+type SedeSortKey =
+  | "sede"
+  | "industria"
+  | "fruver"
+  | "carnes"
+  | "cajas"
+  | "industriaPorHora"
+  | "fruverPorHora"
+  | "carnesPorHora"
+  | "cajasPorHora";
 type ProvSortKey =
   | "proveedor"
   | "codigo"
@@ -49,6 +59,24 @@ type ProvSortKey =
   | "carnes"
   | "sedesActivas";
 type FamiliaFilter = "todas" | "industria" | "fruver" | "carnes";
+
+const sedeRatio = (
+  row: ProveedorProductividadBySede,
+  key: Exclude<SedeSortKey, "sede">,
+): number => {
+  switch (key) {
+    case "industriaPorHora":
+      return qtyPerPaidHour(row.industria, row.industriaHoras ?? 0);
+    case "fruverPorHora":
+      return qtyPerPaidHour(row.fruver, row.fruverHoras ?? 0);
+    case "carnesPorHora":
+      return qtyPerPaidHour(row.carnes, row.carnesHoras ?? 0);
+    case "cajasPorHora":
+      return qtyPerPaidHour(row.cajas, row.cajasHoras ?? 0);
+    default:
+      return row[key] ?? 0;
+  }
+};
 
 const ChartCard = ({
   title,
@@ -287,12 +315,16 @@ export function ProveedoresProductividadPanel() {
 
   const sedeMax = useMemo(() => {
     const maxOf = (key: Exclude<SedeSortKey, "sede">) =>
-      Math.max(0, ...bySede.map((row) => row[key]));
+      Math.max(0, ...bySede.map((row) => sedeRatio(row, key)));
     return {
       industria: maxOf("industria"),
       fruver: maxOf("fruver"),
       carnes: maxOf("carnes"),
       cajas: maxOf("cajas"),
+      industriaPorHora: maxOf("industriaPorHora"),
+      fruverPorHora: maxOf("fruverPorHora"),
+      carnesPorHora: maxOf("carnesPorHora"),
+      cajasPorHora: maxOf("cajasPorHora"),
     };
   }, [bySede]);
 
@@ -302,7 +334,7 @@ export function ProveedoresProductividadPanel() {
     const sign = dir === "asc" ? 1 : -1;
     rows.sort((a, b) => {
       if (key === "sede") return sign * a.sede.localeCompare(b.sede, "es");
-      return sign * (a[key] - b[key]);
+      return sign * (sedeRatio(a, key) - sedeRatio(b, key));
     });
     return rows;
   }, [bySede, sedeSort]);
@@ -430,8 +462,9 @@ export function ProveedoresProductividadPanel() {
         </div>
         <p className="mt-3 text-[11px] text-slate-500">
           Industria en unidades, Fruver y Carnes en kilos, Cajas en
-          transacciones. Máximo 31 días. El tablero carga primero; el ranking
-          por proveedor sigue en segundo plano.
+          transacciones. Productividad = volumen ÷ horas pagadas de asistencia.
+          Máximo 31 días. El tablero carga primero; el ranking por proveedor
+          sigue en segundo plano.
         </p>
       </section>
 
@@ -448,42 +481,77 @@ export function ProveedoresProductividadPanel() {
           ))}
         </div>
       ) : metrics ? (
-        <div
-          className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-5 ${
-            boardLoading ? "opacity-70" : ""
-          }`}
-        >
-          <MetricCard
-            label={`${PRODUCTIVIDAD_FAMILIA_META.industria.label} (${PRODUCTIVIDAD_FAMILIA_META.industria.short})`}
-            value={qty(metrics.industria)}
-            hint="Unidades vendidas"
-          />
-          <MetricCard
-            label={`${PRODUCTIVIDAD_FAMILIA_META.fruver.label} (${PRODUCTIVIDAD_FAMILIA_META.fruver.short})`}
-            value={qty(metrics.fruver)}
-            hint="Kilos vendidos"
-          />
-          <MetricCard
-            label={`${PRODUCTIVIDAD_FAMILIA_META.carnes.label} (${PRODUCTIVIDAD_FAMILIA_META.carnes.short})`}
-            value={qty(metrics.carnes)}
-            hint="Kilos vendidos"
-          />
-          <MetricCard
-            label={`${PRODUCTIVIDAD_FAMILIA_META.cajas.label} (${PRODUCTIVIDAD_FAMILIA_META.cajas.short})`}
-            value={qty(metrics.cajas, 0)}
-            hint="Transacciones"
-          />
-          <MetricCard
-            label="Proveedores"
-            value={provLoading && metrics.proveedores === 0 ? "…" : qty(metrics.proveedores, 0)}
-            hint="Con volumen en el recorte"
-          />
+        <div className={`space-y-3 ${boardLoading ? "opacity-70" : ""}`}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <MetricCard
+              label={`${PRODUCTIVIDAD_FAMILIA_META.industria.label} (${PRODUCTIVIDAD_FAMILIA_META.industria.short})`}
+              value={qty(metrics.industria)}
+              hint="Unidades vendidas"
+            />
+            <MetricCard
+              label={`${PRODUCTIVIDAD_FAMILIA_META.fruver.label} (${PRODUCTIVIDAD_FAMILIA_META.fruver.short})`}
+              value={qty(metrics.fruver)}
+              hint="Kilos vendidos"
+            />
+            <MetricCard
+              label={`${PRODUCTIVIDAD_FAMILIA_META.carnes.label} (${PRODUCTIVIDAD_FAMILIA_META.carnes.short})`}
+              value={qty(metrics.carnes)}
+              hint="Kilos vendidos"
+            />
+            <MetricCard
+              label={`${PRODUCTIVIDAD_FAMILIA_META.cajas.label} (${PRODUCTIVIDAD_FAMILIA_META.cajas.short})`}
+              value={qty(metrics.cajas, 0)}
+              hint="Transacciones"
+            />
+            <MetricCard
+              label="Proveedores"
+              value={
+                provLoading && metrics.proveedores === 0
+                  ? "…"
+                  : qty(metrics.proveedores, 0)
+              }
+              hint="Con volumen en el recorte"
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
+              label="Industria / h"
+              value={qty(
+                qtyPerPaidHour(
+                  metrics.industria,
+                  metrics.industriaHoras ?? 0,
+                ),
+              )}
+              hint={`${qty(metrics.industriaHoras ?? 0)} h pagadas`}
+            />
+            <MetricCard
+              label="Fruver / h"
+              value={qty(
+                qtyPerPaidHour(metrics.fruver, metrics.fruverHoras ?? 0),
+              )}
+              hint={`${qty(metrics.fruverHoras ?? 0)} h pagadas`}
+            />
+            <MetricCard
+              label="Carnes / h"
+              value={qty(
+                qtyPerPaidHour(metrics.carnes, metrics.carnesHoras ?? 0),
+              )}
+              hint={`${qty(metrics.carnesHoras ?? 0)} h pagadas`}
+            />
+            <MetricCard
+              label="Cajas / h"
+              value={qty(
+                qtyPerPaidHour(metrics.cajas, metrics.cajasHoras ?? 0),
+              )}
+              hint={`${qty(metrics.cajasHoras ?? 0)} h pagadas`}
+            />
+          </div>
         </div>
       ) : null}
 
       <ChartCard
         title="Por sede"
-        hint="Heatmap: más intenso = mayor volumen en esa columna."
+        hint="Volumen y productividad (volumen ÷ horas pagadas). Heatmap por columna."
       >
         <div className={`overflow-x-auto ${boardLoading ? "opacity-70" : ""}`}>
           {boardLoading && bySede.length === 0 ? (
@@ -510,11 +578,25 @@ export function ProveedoresProductividadPanel() {
                     onClick={() => toggleSedeSort("industria")}
                   />
                   <SortTh
+                    label="Ind / h"
+                    active={sedeSort.key === "industriaPorHora"}
+                    dir={sedeSort.dir}
+                    align="right"
+                    onClick={() => toggleSedeSort("industriaPorHora")}
+                  />
+                  <SortTh
                     label="Fruver kg"
                     active={sedeSort.key === "fruver"}
                     dir={sedeSort.dir}
                     align="right"
                     onClick={() => toggleSedeSort("fruver")}
+                  />
+                  <SortTh
+                    label="Fru / h"
+                    active={sedeSort.key === "fruverPorHora"}
+                    dir={sedeSort.dir}
+                    align="right"
+                    onClick={() => toggleSedeSort("fruverPorHora")}
                   />
                   <SortTh
                     label="Carnes kg"
@@ -524,62 +606,126 @@ export function ProveedoresProductividadPanel() {
                     onClick={() => toggleSedeSort("carnes")}
                   />
                   <SortTh
+                    label="Car / h"
+                    active={sedeSort.key === "carnesPorHora"}
+                    dir={sedeSort.dir}
+                    align="right"
+                    onClick={() => toggleSedeSort("carnesPorHora")}
+                  />
+                  <SortTh
                     label="Cajas tx"
                     active={sedeSort.key === "cajas"}
                     dir={sedeSort.dir}
                     align="right"
                     onClick={() => toggleSedeSort("cajas")}
                   />
+                  <SortTh
+                    label="Tx / h"
+                    active={sedeSort.key === "cajasPorHora"}
+                    dir={sedeSort.dir}
+                    align="right"
+                    onClick={() => toggleSedeSort("cajasPorHora")}
+                  />
                 </tr>
               </thead>
               <tbody>
-                {sortedSedes.map((row) => (
-                  <tr key={row.sede} className="border-b border-slate-100">
-                    <td className="px-3 py-2 font-semibold text-slate-800">
-                      {row.sede}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums"
-                      style={heatStyle(
-                        row.industria,
-                        sedeMax.industria,
-                        FAMILIA_RGB.industria,
-                      )}
-                    >
-                      {qty(row.industria)}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums"
-                      style={heatStyle(
-                        row.fruver,
-                        sedeMax.fruver,
-                        FAMILIA_RGB.fruver,
-                      )}
-                    >
-                      {qty(row.fruver)}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums"
-                      style={heatStyle(
-                        row.carnes,
-                        sedeMax.carnes,
-                        FAMILIA_RGB.carnes,
-                      )}
-                    >
-                      {qty(row.carnes)}
-                    </td>
-                    <td
-                      className="px-3 py-2 text-right tabular-nums"
-                      style={heatStyle(row.cajas, sedeMax.cajas, FAMILIA_RGB.cajas)}
-                    >
-                      {qty(row.cajas, 0)}
-                    </td>
-                  </tr>
-                ))}
+                {sortedSedes.map((row) => {
+                  const indH = sedeRatio(row, "industriaPorHora");
+                  const fruH = sedeRatio(row, "fruverPorHora");
+                  const carH = sedeRatio(row, "carnesPorHora");
+                  const cajH = sedeRatio(row, "cajasPorHora");
+                  return (
+                    <tr key={row.sede} className="border-b border-slate-100">
+                      <td className="px-3 py-2 font-semibold text-slate-800">
+                        {row.sede}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          row.industria,
+                          sedeMax.industria,
+                          FAMILIA_RGB.industria,
+                        )}
+                      >
+                        {qty(row.industria)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          indH,
+                          sedeMax.industriaPorHora,
+                          FAMILIA_RGB.industria,
+                        )}
+                      >
+                        {qty(indH)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          row.fruver,
+                          sedeMax.fruver,
+                          FAMILIA_RGB.fruver,
+                        )}
+                      >
+                        {qty(row.fruver)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          fruH,
+                          sedeMax.fruverPorHora,
+                          FAMILIA_RGB.fruver,
+                        )}
+                      >
+                        {qty(fruH)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          row.carnes,
+                          sedeMax.carnes,
+                          FAMILIA_RGB.carnes,
+                        )}
+                      >
+                        {qty(row.carnes)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          carH,
+                          sedeMax.carnesPorHora,
+                          FAMILIA_RGB.carnes,
+                        )}
+                      >
+                        {qty(carH)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          row.cajas,
+                          sedeMax.cajas,
+                          FAMILIA_RGB.cajas,
+                        )}
+                      >
+                        {qty(row.cajas, 0)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right tabular-nums"
+                        style={heatStyle(
+                          cajH,
+                          sedeMax.cajasPorHora,
+                          FAMILIA_RGB.cajas,
+                        )}
+                      >
+                        {qty(cajH)}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {showBoardEmpty ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={9}
                       className="px-3 py-6 text-center text-slate-500"
                     >
                       Sin datos en el rango.
@@ -626,6 +772,61 @@ export function ProveedoresProductividadPanel() {
                   id: "cajas",
                   label: "Cajas tx",
                   data: byDay.map((r) => r.cajas),
+                  color: "#b45309",
+                },
+              ]}
+              margin={{ left: 60, right: 16, top: 24, bottom: 32 }}
+            />
+          </div>
+        ) : (
+          <p className="py-8 text-center text-sm text-slate-500">
+            Sin serie diaria.
+          </p>
+        )}
+      </ChartCard>
+
+      <ChartCard
+        title="Productividad diaria (volumen / h)"
+        hint="Unidades, kilos o transacciones por hora pagada."
+      >
+        {boardLoading && byDay.length === 0 ? (
+          <SkeletonBlock className="h-[280px] w-full" />
+        ) : byDay.length > 0 ? (
+          <div className={boardLoading ? "opacity-70" : ""}>
+            <LineChart
+              height={280}
+              xAxis={[{ scaleType: "point", data: dayLabels }]}
+              series={[
+                {
+                  id: "industria_h",
+                  label: "Industria / h",
+                  data: byDay.map((r) =>
+                    qtyPerPaidHour(r.industria, r.industriaHoras ?? 0),
+                  ),
+                  color: "#0e7490",
+                },
+                {
+                  id: "fruver_h",
+                  label: "Fruver / h",
+                  data: byDay.map((r) =>
+                    qtyPerPaidHour(r.fruver, r.fruverHoras ?? 0),
+                  ),
+                  color: "#059669",
+                },
+                {
+                  id: "carnes_h",
+                  label: "Carnes / h",
+                  data: byDay.map((r) =>
+                    qtyPerPaidHour(r.carnes, r.carnesHoras ?? 0),
+                  ),
+                  color: "#be185d",
+                },
+                {
+                  id: "cajas_h",
+                  label: "Cajas / h",
+                  data: byDay.map((r) =>
+                    qtyPerPaidHour(r.cajas, r.cajasHoras ?? 0),
+                  ),
                   color: "#b45309",
                 },
               ]}
@@ -768,5 +969,9 @@ const emptyMetricsFallback = (
   fruver: 0,
   carnes: 0,
   cajas: 0,
+  industriaHoras: 0,
+  fruverHoras: 0,
+  carnesHoras: 0,
+  cajasHoras: 0,
   proveedores: 0,
 });

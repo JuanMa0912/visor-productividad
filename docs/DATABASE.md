@@ -102,6 +102,8 @@ Orden completo despues de `schema-auth.sql`:
 48. `20260723_rotacion_dinastia_matview.sql` (matview `rotacion_dinastia_item_dia_clean` + snapshot `rotacion_dinastia_item_periodo_std`)
 49. `20260724_margen_dinastia_roll.sql` (rollup factura+item `margen_dinastia_roll` + `refresh_margen_dinastia_roll`)
 51. `20260803_app_users_display_name.sql` (`app_users.display_name`: nombre real / nota bajo username en admin)
+52. `20260805_proveedores_visitas.sql` + `20260805_proveedores_visitas_pos_catalog.sql` (QR proveedores)
+53. `20260811_proveedor_visitas_por_sede.sql` (marcaciones QR en tablas físicas `qr_*` por sede; vista `proveedor_visitas`)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -510,19 +512,27 @@ VACUUM (ANALYZE) ventas_item_diario;
 
 ### 4.x Proveedores (visitas QR)
 
-Migracion: `db/migrations/20260805_proveedores_visitas.sql`.
+Migraciones:
+`db/migrations/20260805_proveedores_visitas.sql`,
+`db/migrations/20260805_proveedores_visitas_pos_catalog.sql`,
+`db/migrations/20260811_proveedor_visitas_por_sede.sql`.
 
-| Tabla | Uso |
+| Tabla / vista | Uso |
 | --- | --- |
 | `proveedor_catalogo` | (opcional / legacy) catálogo propio; el form QR usa POS |
 | `proveedor_pos_catalogo` | maestro real (~3.4k): `empresa`+`id_cricla1`+`nombre`+`nit` |
 | `proveedor_sede_qr` | token opaco por sede → URL pública `/proveedores/ingreso/[token]` |
-| `proveedor_visitas` | entrada/salida; visita abierta = `salida_at IS NULL` (cédula+sede) |
+| `qr_calle_5ta` … `qr_chia` | marcaciones físicas por sede (entrada/salida; abierta = `salida_at IS NULL`) |
+| `proveedor_visitas` | **vista** solo lectura = `UNION ALL` de `qr_*` (la app no escribe aquí) |
+| `proveedor_visitas_legacy` | respaldo post-split; no escribir desde la app |
 | `ventas_proveedor_dia` | ventas agregadas por proveedor/día (no es el form de ingreso) |
+
+Mapa sede → tabla en `src/lib/proveedores/qr-tables.ts` (whitelist; no interpolar sede cruda).
 
 ```bash
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas_pos_catalog.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260811_proveedor_visitas_por_sede.sql
 ```
 
 ### 4.y Proveedores (ventas e inventario desde el POS)
@@ -560,8 +570,9 @@ No hay tabla nueva. `/api/proveedores/productividad` lee:
 | `margen_item_dia_roll.cantidad` | Industria = unidades (N1 ≠ 01/02/03/12); Fruver = kilos (N1 `01`); Carnes = kilos (N1 `02`) |
 | `proveedor_item` + `proveedor_pos_catalogo` | drill por proveedor |
 | `ventas_cajas.consecutivo_doc` | transacciones (cajas) |
+| `asistencia_horas.total_laborado_horas` | horas pagadas por familia (depto → línea); productividad = volumen ÷ horas |
 
-Pollo (`03`) y asadero (`12` / `id_tipo=3`) quedan fuera de industria para no mezclar kilos como unidades. Rango máximo 31 días. La UI pide primero `mode=board` (KPIs + sede + día, cache en memoria 45s) y después `mode=proveedores`.
+Pollo (`03`) y asadero (`12` / `id_tipo=3`) quedan fuera de industria para no mezclar kilos como unidades. Las horas de depto pollo/asadero tampoco entran al ratio. Rango máximo 31 días. La UI pide primero `mode=board` (KPIs + sede + día, cache en memoria 45s) y después `mode=proveedores`.
 
 ```bash
 python3 scripts/etl/proveedores/etl_proveedores.py --desde 20260701 --hasta 20260731

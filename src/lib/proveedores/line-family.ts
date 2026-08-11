@@ -1,5 +1,8 @@
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
-import { normalizeKeyCompact } from "@/lib/shared/normalize";
+import {
+  normalizeKeyCompact,
+  normalizeKeySpaced,
+} from "@/lib/shared/normalize";
 
 /** Familias pedidas en el tablero Proveedores (no incluye pollo/asadero). */
 export type ProveedorProductividadFamilia =
@@ -172,6 +175,53 @@ export const findTiendaSedeByName = (
   sedeName: string,
 ): ProveedorTiendaSede | null =>
   SEDE_BY_NAME.get(normalizeKeyCompact(sedeName)) ?? null;
+
+/**
+ * Alias libres de `asistencia_horas.sede` → tienda del tablero.
+ * Misma familia de nombres que hourly-analysis / productividad $.
+ */
+const ASISTENCIA_SEDE_ALIASES: Record<string, string> = {
+  "la 5a": "Calle 5ta",
+  "calle 5a": "Calle 5ta",
+  "calle 5ta": "Calle 5ta",
+  "la 5": "Calle 5ta",
+  "la 39": "La 39",
+  "mio plaza norte": "Plaza Norte",
+  "plaza norte": "Plaza Norte",
+  "ciudad jardin": "Ciudad Jardin",
+  "centro sur": "Centro Sur",
+  "palmira mercamio": "Palmira",
+  palmira: "Palmira",
+  floresta: "Floresta",
+  floralia: "Floralia",
+  "floralia mercatodo": "Floralia",
+  "mercatodo floralia": "Floralia",
+  guaduales: "Guaduales",
+  "merkmios bogota": "Bogota",
+  bogota: "Bogota",
+  "merkmios chia": "Chia",
+  chia: "Chia",
+};
+
+/** Resuelve sede de asistencia al catálogo de tiendas (o null si no aplica). */
+export const resolveTiendaSedeFromAsistencia = (
+  sedeRaw: string,
+): ProveedorTiendaSede | null => {
+  const direct = findTiendaSedeByName(sedeRaw);
+  if (direct) return direct;
+  const key = normalizeKeySpaced(sedeRaw);
+  if (!key) return null;
+  const aliasName = ASISTENCIA_SEDE_ALIASES[key];
+  if (aliasName) return findTiendaSedeByName(aliasName);
+  // Contiene: "merkmios bogota centro" etc.
+  for (const [alias, name] of Object.entries(ASISTENCIA_SEDE_ALIASES)) {
+    if (key.includes(alias) || alias.includes(key)) {
+      const hit = findTiendaSedeByName(name);
+      if (hit) return hit;
+    }
+  }
+  return null;
+};
 
 export const isProveedoresProductividadSede = (sede: string): boolean =>
   findTiendaSedeByName(sede) != null;

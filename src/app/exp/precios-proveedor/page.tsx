@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { FlaskConical } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
@@ -97,14 +97,29 @@ const unitMoney = (value: number) =>
     maximumFractionDigits: 0,
   });
 
+const toIsoLocal = (date: Date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+/** Día anterior (calendario local); la meta del API puede ajustar al último día con datos. */
+const yesterdayIso = () => {
+  const day = new Date();
+  day.setHours(12, 0, 0, 0);
+  day.setDate(day.getDate() - 1);
+  return toIsoLocal(day);
+};
+
 export default function ExpPreciosProveedorPage() {
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
 
   const [meta, setMeta] = useState<PreciosProveedorMeta | null>(null);
   const [matrix, setMatrix] = useState<PreciosProveedorMatrix | null>(null);
-  const [dateStart, setDateStart] = useState("");
-  const [dateEnd, setDateEnd] = useState("");
+  const [dateStart, setDateStart] = useState(yesterdayIso);
+  const [dateEnd, setDateEnd] = useState(yesterdayIso);
   const [linea, setLinea] = useState("");
   const [sublinea, setSublinea] = useState("");
   const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
@@ -122,6 +137,7 @@ export default function ExpPreciosProveedorPage() {
   const [metric, setMetric] = useState<PreciosProveedorMetric>("pcu");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const skipNextMatrixEffect = useRef(false);
 
   const sublineasOptions = useMemo(() => {
     const all = meta?.sublineas ?? [];
@@ -168,7 +184,77 @@ export default function ExpPreciosProveedorPage() {
     };
   }, [matrix, metric]);
 
+  const loadMatrix = useCallback(
+    async (override?: {
+      from?: string;
+      to?: string;
+      sedes?: string[];
+    }) => {
+      const from = override?.from ?? dateStart;
+      const to = override?.to ?? dateEnd;
+      const sedes = override?.sedes ?? selectedSedes;
+      if (!from || !to) return;
+      if (sedes.length === 0) {
+        setMatrix({
+          columns: [],
+          rows: [],
+          cells: [],
+          from,
+          to,
+          itemLimit: 40,
+          elapsedMs: 0,
+        });
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({
+          mode: "matrix",
+          from,
+          to,
+          limit: "40",
+          sedes: sedes.join(","),
+        });
+        if (linea) params.set("linea", linea);
+        if (sublinea) params.set("sublinea", sublinea);
+        if (searchApplied.trim()) params.set("search", searchApplied.trim());
+        if (pcuMinApplied.trim()) params.set("pcuMin", pcuMinApplied.trim());
+        if (pcuMaxApplied.trim()) params.set("pcuMax", pcuMaxApplied.trim());
+        if (pvuMinApplied.trim()) params.set("pvuMin", pvuMinApplied.trim());
+        if (pvuMaxApplied.trim()) params.set("pvuMax", pvuMaxApplied.trim());
+        const res = await fetch(`/api/exp/precios-proveedor?${params}`, {
+          cache: "no-store",
+        });
+        const data = (await res.json()) as {
+          matrix?: PreciosProveedorMatrix;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error ?? "Error matriz");
+        setMatrix(data.matrix ?? null);
+      } catch (err) {
+        setMatrix(null);
+        setError(err instanceof Error ? err.message : "Error cargando");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      dateEnd,
+      dateStart,
+      linea,
+      sublinea,
+      selectedSedes,
+      searchApplied,
+      pcuMinApplied,
+      pcuMaxApplied,
+      pvuMinApplied,
+      pvuMaxApplied,
+    ],
+  );
+
   const loadMeta = useCallback(async () => {
+    setLoading(true);
     const res = await fetch("/api/exp/precios-proveedor?mode=meta", {
       cache: "no-store",
     });
@@ -178,85 +264,36 @@ export default function ExpPreciosProveedorPage() {
     };
     if (!res.ok) throw new Error(data.error ?? "Error meta");
     if (!data.meta) throw new Error("Meta vacía");
+    const start = data.meta.defaultStart;
+    const end = data.meta.defaultEnd;
+    const sedeKeys = data.meta.sedes.map((sede) => sede.key);
     setMeta(data.meta);
-    setDateStart((prev) => prev || data.meta!.defaultStart);
-    setDateEnd((prev) => prev || data.meta!.defaultEnd);
-    setSelectedSedes((prev) =>
-      prev.length > 0 ? prev : data.meta!.sedes.map((sede) => sede.key),
-    );
+    setDateStart(start);
+    setDateEnd(end);
+    setSelectedSedes(sedeKeys);
     setSedesReady(true);
-  }, []);
+    // Carga inmediata del día anterior (no espera otro ciclo ni input del usuario).
+    skipNextMatrixEffect.current = true;
+    await loadMatrix({ from: start, to: end, sedes: sedeKeys });
+  }, [loadMatrix]);
 
-  const loadMatrix = useCallback(async () => {
-    if (!dateStart || !dateEnd || !sedesReady) return;
-    if (selectedSedes.length === 0) {
-      setMatrix({
-        columns: [],
-        rows: [],
-        cells: [],
-        from: dateStart,
-        to: dateEnd,
-        itemLimit: 40,
-        elapsedMs: 0,
-      });
+  useEffect(() => {
+    if (status !== "authenticated" || !isAdmin) return;
+    void loadMeta().catch((err) => {
+      setLoading(false);
+      setError(err instanceof Error ? err.message : "Error meta");
+    });
+    // Solo al autenticar: la recarga por filtros va en el efecto de abajo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/auth gate
+  }, [status, isAdmin]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !isAdmin) return;
+    if (!sedesReady || !dateStart || !dateEnd) return;
+    if (skipNextMatrixEffect.current) {
+      skipNextMatrixEffect.current = false;
       return;
     }
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        mode: "matrix",
-        from: dateStart,
-        to: dateEnd,
-        limit: "40",
-        sedes: selectedSedes.join(","),
-      });
-      if (linea) params.set("linea", linea);
-      if (sublinea) params.set("sublinea", sublinea);
-      if (searchApplied.trim()) params.set("search", searchApplied.trim());
-      if (pcuMinApplied.trim()) params.set("pcuMin", pcuMinApplied.trim());
-      if (pcuMaxApplied.trim()) params.set("pcuMax", pcuMaxApplied.trim());
-      if (pvuMinApplied.trim()) params.set("pvuMin", pvuMinApplied.trim());
-      if (pvuMaxApplied.trim()) params.set("pvuMax", pvuMaxApplied.trim());
-      const res = await fetch(`/api/exp/precios-proveedor?${params}`, {
-        cache: "no-store",
-      });
-      const data = (await res.json()) as {
-        matrix?: PreciosProveedorMatrix;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error ?? "Error matriz");
-      setMatrix(data.matrix ?? null);
-    } catch (err) {
-      setMatrix(null);
-      setError(err instanceof Error ? err.message : "Error cargando");
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    dateEnd,
-    dateStart,
-    linea,
-    sublinea,
-    selectedSedes,
-    sedesReady,
-    searchApplied,
-    pcuMinApplied,
-    pcuMaxApplied,
-    pvuMinApplied,
-    pvuMaxApplied,
-  ]);
-
-  useEffect(() => {
-    if (status !== "authenticated" || !isAdmin) return;
-    void loadMeta().catch((err) =>
-      setError(err instanceof Error ? err.message : "Error meta"),
-    );
-  }, [status, isAdmin, loadMeta]);
-
-  useEffect(() => {
-    if (status !== "authenticated" || !isAdmin) return;
-    if (!dateStart || !dateEnd || !sedesReady) return;
     void loadMatrix();
   }, [
     status,

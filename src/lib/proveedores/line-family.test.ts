@@ -5,6 +5,7 @@ import {
   findTiendaSedeByName,
   normalizeEmpresaBd,
   productividadFamiliaSqlFast,
+  resolveTiendaSedeFromAsistencia,
 } from "@/lib/proveedores/line-family";
 
 describe("proveedores line-family", () => {
@@ -33,5 +34,12 @@ describe("proveedores line-family", () => {
     assert.equal(findTiendaSedeByName("Bogotá")?.empresa, "bogota");
     assert.equal(normalizeEmpresaBd("Mercatodo"), "mtodo");
     assert.equal(normalizeEmpresaBd("merkmios"), "bogota");
+  });
+
+  it("mapea sedes libres de asistencia a tiendas del tablero", () => {
+    assert.equal(resolveTiendaSedeFromAsistencia("LA 5A")?.name, "Calle 5ta");
+    assert.equal(resolveTiendaSedeFromAsistencia("mio plaza norte")?.idCo, "003");
+    assert.equal(resolveTiendaSedeFromAsistencia("merkmios chia")?.name, "Chia");
+    assert.equal(resolveTiendaSedeFromAsistencia("ADM"), null);
   });
 });
