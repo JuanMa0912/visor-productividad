@@ -1,0 +1,23 @@
+[Unit]
+Description=Pipeline de Ventas - Carga Diaria
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/ventas_pipeline/scripts/pipeline_orchestrator.py --mode daily
+WorkingDirectory=/opt/ventas_pipeline
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ventas-pipeline-daily
+
+# Timeouts
+TimeoutStartSec=3600
+TimeoutStopSec=60
+
+# Restart on failure
+Restart=on-failure
+RestartPreventExitStatus=3
+RestartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -65,6 +65,33 @@ previos en la propia tabla destino**. Es deliberado — `ventas_asadero` solo op
 mercamio y mtodo, y una lista fija haria saltar el aviso todos los dias por bogota.
 Un aviso que salta siempre se ignora, y entonces deja de avisar de nada.
 
+## `RestartPreventExitStatus=3` en las unidades — no quitarlo
+
+Las unidades estan en [`deploy/systemd/`](../../../deploy/systemd/):
+`ventas-pipeline-{daily,monthly}.{service,timer}`.
+
+Traen `Restart=on-failure` con `RestartSec=300`. En cuanto los ETL empezaron a salir
+con **exit 3** (empresa faltante), eso provoco un **bucle**: el 2026-08-11 la unidad
+se reinicio sola desde las 07:00 hasta las 09:30, recargando el POS entero cada 5
+minutos. Un dia que el POS no ha cerrado no se arregla reintentando, asi que el
+bucle era puro desperdicio y carga sobre el 217.
+
+`RestartPreventExitStatus=3` resuelve las dos cosas a la vez:
+
+| salida | efecto |
+|---|---|
+| **exit 3** (aviso: falta una empresa) | unidad queda `failed`, sale en `systemctl --failed`, **no se reinicia** |
+| exit 1 / 2 (error real) | se reintenta como antes |
+
+Los ETL de este repo no tienen `Restart=`, por eso alli el exit 3 nunca dio problema.
+
+Tras editar una unidad: `sudo systemctl daemon-reload`, y comprobar que quedo
+cargada de verdad (no basta con el fichero):
+
+```bash
+systemctl show ventas-pipeline-daily -p RestartPreventExitStatus --value
+```
+
 ## Backfill de un rango
 
 El orquestador **no tiene** modo backfill (solo `--mode daily|monthly`); los ETL
