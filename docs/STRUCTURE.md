@@ -89,7 +89,7 @@ Codigo compartido sin UI de pagina.
 | `inventario/` | inventario por item y presets |
 | `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
 | `participacion-comercial/` | mix/participación sede↔línea por almacén |
-| `proveedores/` | visitas QR (`qr_*` por sede), ventas por proveedor y productividad und/kg/tx |
+| `proveedores/` | visitas QR (`qr_*` por sede), ventas, productividad und/kg/tx, OIPV asistencia (admin) |
 | `checklists/` | catálogo de auditorías y scoring (bodega gerencial); subtablero `checklists` |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
 | `notion/` | cliente Notion y normalizacion del cronograma |
@@ -136,6 +136,7 @@ Codigo compartido sin UI de pagina.
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
 | `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
 | `proveedores/productividad` | subtablero `proveedores`: `mode=board` (KPIs/sede/día + volumen÷horas pagadas, cache 45s) + `mode=proveedores` (ranking); industria=und, fruver/carnes=kg, cajas=tx; máx. 31 días |
+| `proveedores/oipv` | **solo admin**: cruce QR asistencia L–D + ventas por código (`/proveedores` tab OIPV) |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

@@ -15,6 +15,7 @@ import type {
 import { ProveedorSedeQr } from "./proveedor-sede-qr";
 import { ProveedoresVentasPanel } from "./proveedores-ventas-panel";
 import { ProveedoresProductividadPanel } from "./proveedores-productividad-panel";
+import { ProveedoresOipvPanel } from "./proveedores-oipv-panel";
 
 const toISODate = (date: Date) => {
   const y = date.getFullYear();
@@ -90,7 +91,9 @@ export default function ProveedoresBoardPage() {
   const [rows, setRows] = useState<ProveedorVisitaRow[]>([]);
   const [metrics, setMetrics] = useState<ProveedorVisitasMetrics | null>(null);
   const [qrLinks, setQrLinks] = useState<QrLink[]>([]);
-  const [tab, setTab] = useState<"visitas" | "ventas" | "productividad">("visitas");
+  const [tab, setTab] = useState<
+    "visitas" | "ventas" | "productividad" | "oipv"
+  >("visitas");
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -256,10 +259,24 @@ export default function ProveedoresBoardPage() {
           >
             Productividad
           </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setTab("oipv")}
+              className={`rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide ${
+                tab === "oipv"
+                  ? "bg-sky-700 text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              OIPV asistencia
+            </button>
+          ) : null}
         </div>
 
         {tab === "ventas" ? <ProveedoresVentasPanel /> : null}
         {tab === "productividad" ? <ProveedoresProductividadPanel /> : null}
+        {tab === "oipv" && isAdmin ? <ProveedoresOipvPanel /> : null}
 
         {tab === "visitas" ? (
           <>
