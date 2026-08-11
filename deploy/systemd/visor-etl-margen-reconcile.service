@@ -1,0 +1,22 @@
+[Unit]
+Description=Visor - refresco fin de semana de margenes POS(217) -> produXdia.margen_final (232), ultimos 7 dias
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/CHEATSHEET.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=prodapp
+WorkingDirectory=/home/prodapp/visor-productividad
+# cargar_margen.py NO acepta --days (solo --desde/--hasta), a diferencia de
+# etl_ventas_item.py y etl_proveedores.py. Por eso las fechas se calculan aqui.
+# Ventana [ayer-6 .. ayer] = 7 dias, igual que los otros reconcile.
+ExecStart=/bin/bash -lc '/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/margen/cargar_margen.py --desde $(date -d "7 days ago" +%%Y%%m%%d) --hasta $(date -d "yesterday" +%%Y%%m%%d)'
+# El exit 3 (aviso: alguna empresa/dia sin datos) NO se declara como exito: asi la
+# unidad queda `failed` y el problema aparece en `systemctl --failed` en vez de
+# pasar callado. Misma convencion que los demas ETL del repo.
+# Sin Restart=: un dia que el POS no ha publicado no se arregla reintentando.
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=multi-user.target

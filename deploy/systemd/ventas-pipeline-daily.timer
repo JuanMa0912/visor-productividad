@@ -3,7 +3,7 @@ Description=Timer para Pipeline de Ventas - Carga Diaria
 Requires=ventas-pipeline-daily.service
 
 [Timer]
-OnCalendar=*-*-* 07:00:00
+OnCalendar=Mon..Fri *-*-* 07:00:00
 Persistent=true
 AccuracySec=1min
 

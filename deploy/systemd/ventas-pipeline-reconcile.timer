@@ -1,0 +1,17 @@
+[Unit]
+Description=Pipeline de Ventas - timer fin de semana del refresco de las 6 tablas (sab y dom 07:00, 7 dias)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Sabados y domingos a la misma hora que el diario, que pasa a ser Mon..Fri.
+# Sustituye al diario el fin de semana, no se suma: sin carga extra sobre el
+# POS 217 ni sobre la 232. Mismo patron que los reconcile ya existentes.
+#
+# Va por delante del sync de las 07:35 (que corre todos los dias), asi que lo
+# recuperado el sabado sube a GCP ese mismo sabado.
+OnCalendar=Sat,Sun *-*-* 07:00:00
+Persistent=true
+Unit=ventas-pipeline-reconcile.service
+
+[Install]
+WantedBy=timers.target

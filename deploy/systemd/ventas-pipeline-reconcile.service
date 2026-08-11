@@ -1,0 +1,25 @@
+[Unit]
+Description=Pipeline de Ventas - refresco fin de semana de las 6 tablas, ultimos 7 dias
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/ventas-pipeline/README-repo.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ventas_pipeline/etl
+# NO se usa pipeline_orchestrator.py: solo admite --mode daily|monthly, no tiene
+# backfill. Los ETL individuales si aceptan --start-date/--end-date, asi que se
+# llaman directamente, uno a uno.
+#
+# `|| true` a proposito: sin el, un exit 3 en la primera tabla (empresa faltante)
+# abortaria las cinco restantes y perderiamos la recuperacion de todas. Cada ETL
+# ya avisa por su cuenta, y el resultado global se evalua abajo.
+ExecStart=/bin/bash -lc 'RC=0; D1=$(date -d "7 days ago" +%%Y%%m%%d); D2=$(date -d "yesterday" +%%Y%%m%%d); for E in cajas fruver carnes asadero pollo_pesc industria; do /usr/bin/python3 /opt/ventas_pipeline/etl/$${E}_ventas_rango.py --start-date $$D1 --end-date $$D2 || RC=3; done; exit $$RC'
+# exit 3 = alguna empresa sin datos. No se declara como exito: la unidad queda
+# `failed` y se ve en `systemctl --failed`.
+# Sin Restart=: reintentar no trae un dia que el POS aun no ha publicado. Es
+# exactamente lo que provoco el bucle del 2026-08-11 en ventas-pipeline-daily.
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=multi-user.target
