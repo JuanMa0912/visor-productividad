@@ -1,0 +1,23 @@
+[Unit]
+Description=Pipeline de Ventas - Validación Mensual
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/ventas_pipeline/scripts/pipeline_orchestrator.py --mode monthly
+WorkingDirectory=/opt/ventas_pipeline
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ventas-pipeline-monthly
+
+# Timeouts más largos para validación mensual
+TimeoutStartSec=7200
+TimeoutStopSec=60
+
+# Restart on failure
+Restart=on-failure
+RestartPreventExitStatus=3
+RestartSec=300
+
+[Install]
+WantedBy=multi-user.target
