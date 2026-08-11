@@ -10,6 +10,11 @@ test("materializePortalProfilePermissions aplica preset RRHH", () => {
   const permissions = materializePortalProfilePermissions("rrhh");
   assert.equal(permissions.role, "user");
   assert.deepEqual(permissions.allowedDashboards, ["operacion"]);
+  // Lista escrita a mano A PROPOSITO: es un centinela de permisos. El preset RRHH
+  // concede OPERACION_SUBSECTIONS entera, asi que cualquier subseccion nueva de
+  // "operacion" se le otorga sola. Que el test falle obliga a decidir de forma
+  // consciente si ese perfil debe verla, en vez de heredarla en silencio.
+  // "checklists" se agrego a operacion el 2026-08-10 (568d0a2).
   assert.deepEqual(permissions.allowedSubdashboards, [
     "consulta-operativa",
     "planilla-vs-asistencia",
