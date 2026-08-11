@@ -194,9 +194,9 @@ export function ProveedoresOipvPanel() {
           </button>
         </div>
         <p className="mt-3 text-[11px] text-slate-500">
-          Cruce de marcaciones QR con ventas por código de proveedor. Días L–D
-          en hora Bogotá. FT / WS / sugerido / costo OIPV aún no tienen fuente
-          en BD.
+          Cruce de marcaciones QR con ventas por código. Costo merc. = COGS del
+          roll de márgenes (igual familia que precios-proveedor), no tarifa
+          OIPV. Días L–D en hora Bogotá.
         </p>
       </section>
 
@@ -208,7 +208,7 @@ export function ProveedoresOipvPanel() {
 
       {board?.metrics ? (
         <div
-          className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${
+            className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-5 ${
             loading ? "opacity-70" : ""
           }`}
         >
@@ -230,6 +230,11 @@ export function ProveedoresOipvPanel() {
             label="Venta neta"
             value={money(board.metrics.ventaNetaTotal)}
           />
+          <MetricCard
+            label="Costo merc."
+            value={money(board.metrics.costoMercanciaTotal ?? 0)}
+            hint="COGS (roll márgenes), no cobro OIPV"
+          />
         </div>
       ) : null}
 
@@ -249,19 +254,20 @@ export function ProveedoresOipvPanel() {
                 ))}
                 <th className="px-3 py-2 text-right">Unidades</th>
                 <th className="px-3 py-2 text-right">Venta $$</th>
+                <th className="px-3 py-2 text-right">Costo merc.</th>
               </tr>
             </thead>
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={13} className="px-3 py-8 text-center text-slate-500">
                     Cargando…
                   </td>
                 </tr>
               ) : null}
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={13} className="px-3 py-8 text-center text-slate-500">
                     Sin filas en el rango.
                   </td>
                 </tr>
@@ -298,6 +304,9 @@ export function ProveedoresOipvPanel() {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {money(row.ventaNeta)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {money(row.costoMercancia ?? 0)}
                   </td>
                 </tr>
               ))}

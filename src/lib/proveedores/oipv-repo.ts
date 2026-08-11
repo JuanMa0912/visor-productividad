@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { findTiendaSedeByName } from "@/lib/proveedores/line-family";
 import { listQrVisitasTablePairs } from "@/lib/proveedores/qr-tables";
 import {
   isProveedoresQrSede,
@@ -31,6 +32,8 @@ export type ProveedorOipvRow = {
   visitas: number;
   unidades: number;
   ventaNeta: number;
+  /** COGS total del periodo (margen_item_dia_roll vía proveedor_item). */
+  costoMercancia: number;
 };
 
 export type ProveedorOipvBoard = {
@@ -45,6 +48,7 @@ export type ProveedorOipvBoard = {
     conVenta: number;
     unidadesTotal: number;
     ventaNetaTotal: number;
+    costoMercanciaTotal: number;
   };
 };
 
@@ -150,6 +154,7 @@ type Acc = {
   visitas: number;
   unidades: number;
   ventaNeta: number;
+  costoMercancia: number;
 };
 
 const ensureAcc = (
@@ -170,6 +175,7 @@ const ensureAcc = (
     visitas: 0,
     unidades: 0,
     ventaNeta: 0,
+    costoMercancia: 0,
   };
   map.set(key, next);
   return next;
@@ -392,6 +398,70 @@ export const listOipvAsistenciaBoard = async (
     }
   }
 
+  // COGS mercancía (misma familia que /exp/precios-proveedor).
+  try {
+    const costoParams: unknown[] = [
+      isoToCompact(dateStart),
+      isoToCompact(dateEnd),
+    ];
+    const costoClauses = [
+      `r.fecha_dcto >= $1`,
+      `r.fecha_dcto <= $2`,
+      `r.fecha_dcto ~ '^[0-9]{8}$'`,
+      `NULLIF(btrim(pi.id_cricla1), '') IS NOT NULL`,
+      `btrim(pi.id_cricla1) <> '@SP'`,
+    ];
+    if (sede) {
+      const tienda = findTiendaSedeByName(sede);
+      if (tienda) {
+        costoParams.push(tienda.empresa, tienda.idCo);
+        costoClauses.push(
+          `r.empresa_norm = $${costoParams.length - 1}`,
+          `LPAD(TRIM(r.id_co_norm), 3, '0') = $${costoParams.length}`,
+        );
+      }
+    }
+    if (q) {
+      costoParams.push(`%${q.replace(/[%_]/g, "")}%`);
+      const idx = costoParams.length;
+      costoClauses.push(
+        `(pi.id_cricla1 ILIKE $${idx} OR COALESCE(pi.descripcion, '') ILIKE $${idx})`,
+      );
+    }
+
+    const costoResult = await client.query<{
+      codigo: string;
+      costo_total: string | number;
+    }>(
+      `
+      SELECT
+        upper(btrim(pi.id_cricla1)) AS codigo,
+        COALESCE(SUM(r.costo_total), 0)::float8 AS costo_total
+      FROM margen_item_dia_roll r
+      INNER JOIN proveedor_item pi
+        ON pi.empresa = r.empresa_norm
+       AND pi.id_item = r.id_item
+      WHERE ${costoClauses.join(" AND ")}
+      GROUP BY upper(btrim(pi.id_cricla1))
+      `,
+      costoParams,
+    );
+
+    for (const row of costoResult.rows ?? []) {
+      const codigo = String(row.codigo ?? "").trim();
+      if (!codigo) continue;
+      const key = oipvRowKey({ codigo });
+      const acc = ensureAcc(map, key, { codigo, rsProveedor: codigo });
+      acc.costoMercancia += toNum(row.costo_total);
+      if (!acc.codigo) acc.codigo = codigo;
+    }
+  } catch (error) {
+    console.warn(
+      "[oipv] costo mercancía no disponible (margen/proveedor_item):",
+      error,
+    );
+  }
+
   const limit = Math.min(Math.max(args.limit ?? 2000, 1), 5000);
   const rows: ProveedorOipvRow[] = [...map.values()]
     .map((acc) => ({
@@ -405,9 +475,10 @@ export const listOipvAsistenciaBoard = async (
       visitas: acc.visitas,
       unidades: acc.unidades,
       ventaNeta: acc.ventaNeta,
+      costoMercancia: acc.costoMercancia,
     }))
     .sort((a, b) => {
-      if (a.asistencia !== b.asistencia) return a.asistencia ? 1 : -1; // sin asistencia primero (OIPV)
+      if (a.asistencia !== b.asistencia) return a.asistencia ? 1 : -1;
       if (b.ventaNeta !== a.ventaNeta) return b.ventaNeta - a.ventaNeta;
       return a.rsProveedor.localeCompare(b.rsProveedor, "es");
     })
@@ -428,6 +499,7 @@ export const listOipvAsistenciaBoard = async (
       conVenta,
       unidadesTotal: rows.reduce((s, r) => s + r.unidades, 0),
       ventaNetaTotal: rows.reduce((s, r) => s + r.ventaNeta, 0),
+      costoMercanciaTotal: rows.reduce((s, r) => s + r.costoMercancia, 0),
     },
   };
 };

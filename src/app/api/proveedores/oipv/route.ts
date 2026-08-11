@@ -94,6 +94,7 @@ export async function GET(request: Request) {
         "visitas",
         "unidades",
         "venta_neta",
+        "costo_mercancia",
       ];
       const lines = [
         header.join(","),
@@ -113,6 +114,7 @@ export async function GET(request: Request) {
             String(row.visitas),
             String(row.unidades),
             String(row.ventaNeta),
+            String(row.costoMercancia ?? 0),
           ].join(","),
         ),
       ];
