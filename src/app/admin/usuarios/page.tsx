@@ -1249,7 +1249,7 @@ export default function AdminUsuariosPage() {
                       </span>
                     </div>
                     <div className="flex flex-1 flex-wrap items-center gap-2 sm:max-w-xl sm:justify-end">
-                      <div className="relative min-w-[200px] flex-1">
+                      <div className="relative min-w-200px flex-1">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         <input
                           type="search"
@@ -1273,7 +1273,7 @@ export default function AdminUsuariosPage() {
                         <Filter className="h-4 w-4" />
                         Filtros
                         {(roleFilter !== "all" || presenceFilter !== "all") && (
-                          <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
+                          <span className="ml-1 inline-flex h-4 min-w-16px items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
                             {(roleFilter !== "all" ? 1 : 0) +
                               (presenceFilter !== "all" ? 1 : 0)}
                           </span>
@@ -1394,7 +1394,7 @@ export default function AdminUsuariosPage() {
                     </div>
                   )}
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
+                    <table className="w-full min-w-860px border-separate border-spacing-0 text-sm">
                       <thead>
                         <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                           <th className="sticky left-0 z-20 border-b border-slate-100 bg-slate-50 px-4 py-3 shadow-[1px_0_0_0_rgba(226,232,240,1)]">
