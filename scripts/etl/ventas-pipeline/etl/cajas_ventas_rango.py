@@ -239,8 +239,15 @@ def main():
 
 
 # ---------------------------------------------------------------------------
-# Deteccion de empresas faltantes  (agregado 2026-08-10)
+# Deteccion de dias incompletos
+#   empresa ausente -> 2026-08-10
+#   empresa presente pero flaca -> 2026-08-12
 # ---------------------------------------------------------------------------
+DIAS_BASE = 14        # ventana para calibrar que es "un dia normal"
+UMBRAL_VOLUMEN = 0.5  # se avisa por debajo del 50% de la mediana
+MIN_MEDIANA = 100     # por debajo de esto la serie es muy chica para juzgar
+
+
 def _empresas_presentes(cur, tabla, d1, d2):
     cur.execute(
         f"SELECT DISTINCT empresa_bd FROM {tabla} WHERE fecha_dcto BETWEEN %s AND %s",
@@ -249,16 +256,55 @@ def _empresas_presentes(cur, tabla, d1, d2):
     return {r[0] for r in cur.fetchall() if r[0]}
 
 
-def verificar_cobertura(fecha_ini, fecha_fin):
-    """Sale con codigo 3 si falta una empresa que normalmente SI tiene datos.
+def _filas_por_empresa_dia(cur, tabla, d1, d2):
+    cur.execute(
+        f"SELECT empresa_bd, fecha_dcto, count(*) FROM {tabla} "
+        f"WHERE fecha_dcto BETWEEN %s AND %s GROUP BY 1, 2",
+        (d1, d2),
+    )
+    return [(r[0], r[1], int(r[2])) for r in cur.fetchall() if r[0]]
 
-    Las empresas esperadas NO se toman de DBS: se calculan mirando los 14 dias
-    anteriores en la propia tabla. `ventas_asadero` solo opera en mercamio y
-    mtodo, asi que una lista fija haria saltar el aviso todos los dias por bogota
-    — y un aviso que salta siempre se ignora, con lo que deja de avisar de nada.
+
+def _mediana_por_empresa(cur, tabla, d1, d2):
+    """Filas/dia tipicas de cada empresa en la ventana de referencia.
+
+    Mediana y no promedio: si en la ventana ya cayo un dia flaco, el promedio se
+    va detras de el y el umbral deja de disparar justo cuando mas falta.
+
+    Los dias con cero filas no aparecen en el GROUP BY, asi que quedan fuera
+    solos, que es lo correcto: un dia que nunca se cargo no es un dia flojo de
+    ventas y meterlo hundiria la referencia.
+    """
+    cur.execute(
+        f"WITH d AS ("
+        f"  SELECT empresa_bd, fecha_dcto, count(*) AS n FROM {tabla}"
+        f"  WHERE fecha_dcto BETWEEN %s AND %s GROUP BY 1, 2"
+        f") "
+        f"SELECT empresa_bd, percentile_cont(0.5) WITHIN GROUP (ORDER BY n) "
+        f"FROM d GROUP BY 1",
+        (d1, d2),
+    )
+    return {r[0]: float(r[1]) for r in cur.fetchall() if r[0] and r[1] is not None}
+
+
+def verificar_cobertura(fecha_ini, fecha_fin):
+    """Sale con codigo 3 si lo cargado no se parece a un dia normal.
+
+    Son DOS comprobaciones y hacen falta las dos:
+
+    1. Empresa AUSENTE. Las esperadas no salen de una lista fija sino de los 14
+       dias previos de la propia tabla: `ventas_asadero` solo opera en mercamio y
+       mtodo, y una lista fija haria saltar el aviso todos los dias por bogota.
+       Un aviso que salta siempre se ignora, con lo que deja de avisar de nada.
+
+    2. Empresa PRESENTE pero FLACA. El 2026-08-07 y el 2026-08-10 mercamio y
+       mtodo cargaron ~30% de sus filas habituales. Las tres empresas estaban
+       presentes, asi que (1) daba "Cobertura OK" y el dia paso por bueno cinco
+       dias hasta que alguien miro el tablero. Contar empresas no basta: hay que
+       contar filas y compararlas con lo que esa empresa suele traer.
 
     Exit 3 sigue la convencion de los ETL del repo (ventas-item, proveedores,
-    rotacion): systemd marca la unidad `failed` y aparece en `systemctl --failed`.
+    rotacion): systemd marca la unidad `failed` y sale en `systemctl --failed`.
     """
     tabla = DEST_DB["schema"] + "." + DEST_DB["table"] if DEST_DB.get("schema") else DEST_DB["table"]
     conn = psycopg2.connect(
@@ -268,10 +314,12 @@ def verificar_cobertura(fecha_ini, fecha_fin):
     try:
         with conn.cursor() as cur:
             ini = datetime.strptime(fecha_ini, "%Y%m%d")
-            ref1 = (ini - timedelta(days=14)).strftime("%Y%m%d")
+            ref1 = (ini - timedelta(days=DIAS_BASE)).strftime("%Y%m%d")
             ref2 = (ini - timedelta(days=1)).strftime("%Y%m%d")
             esperadas = _empresas_presentes(cur, tabla, ref1, ref2)
             presentes = _empresas_presentes(cur, tabla, fecha_ini, fecha_fin)
+            medianas = _mediana_por_empresa(cur, tabla, ref1, ref2)
+            cargado = _filas_por_empresa_dia(cur, tabla, fecha_ini, fecha_fin)
     finally:
         conn.close()
 
@@ -279,16 +327,38 @@ def verificar_cobertura(fecha_ini, fecha_fin):
         print("AVISO: sin historial previo para calibrar; no se verifica cobertura.")
         return
 
+    avisos = []
+
     faltan = sorted(esperadas - presentes)
     if faltan:
-        print(
-            "AVISO: sin datos para " + ", ".join(faltan) +
+        avisos.append(
+            "sin NINGUNA fila para " + ", ".join(faltan) +
             " en " + fecha_ini + ".." + fecha_fin +
-            ". Esas empresas SI tuvieron ventas en los 14 dias previos, asi que el POS"
-            " probablemente no habia cerrado el dia. Exit 3: re-correr este ETL antes"
-            " del sync a GCP."
+            "; esas empresas si tuvieron ventas en los " + str(DIAS_BASE) + " dias previos"
+        )
+
+    for empresa, dia, filas in sorted(cargado):
+        base = medianas.get(empresa)
+        if base is None or base < MIN_MEDIANA:
+            continue
+        if filas < base * UMBRAL_VOLUMEN:
+            avisos.append(
+                empresa + " el " + str(dia) + ": " + format(filas, ",d") + " filas frente a "
+                + format(int(base), ",d") + " tipicas (" + str(round(100.0 * filas / base))
+                + "%)"
+            )
+
+    if avisos:
+        print("AVISO de cobertura en " + tabla + ":")
+        for a in avisos:
+            print("  - " + a)
+        print(
+            "El POS (192.168.35.217) probablemente no habia cerrado el dia. Exit 3.\n"
+            "COMPROBAR PRIMERO que el origen ya tiene el dato: re-correr el ETL no\n"
+            "inventa filas que el POS no tiene. Y hacerlo ANTES del sync a GCP."
         )
         sys.exit(3)
+
     print("Cobertura OK: " + ", ".join(sorted(presentes)))
 
 

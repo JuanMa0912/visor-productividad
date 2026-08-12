@@ -1,6 +1,6 @@
 [Unit]
 Description=Timer para Pipeline de Ventas - Validación Mensual
-Requires=ventas-pipeline-monthly.service
+# Sin Requires=: ver la explicacion en ventas-pipeline-daily.timer.
 
 [Timer]
 OnCalendar=*-*-* 14:00:00
