@@ -4,7 +4,7 @@ import { requireAuthSession } from "@/lib/auth";
 
 type Props = { children: ReactNode };
 
-/** Experimental: solo admin; no aparece en hubs/secciones. */
+/** Experimental: solo admin; visible en hub Venta para administradores. */
 export default async function ExpPreciosProveedorLayout({ children }: Props) {
   const session = await requireAuthSession();
   if (!session) redirect("/login");

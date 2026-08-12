@@ -107,7 +107,7 @@ Codigo compartido sin UI de pagina.
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
-| Experimental (solo admin, fuera del hub) | `/exp/efectividad-cajero`, `/exp/precios-proveedor` (heatmap PVU/PCU/margen × sede + proveedor) |
+| Experimental (solo admin; precios-proveedor también en hub Venta) | `/exp/efectividad-cajero`, `/exp/precios-proveedor` (heatmap PVU/PCU/margen × sede + proveedor) |
 | Otros | `/ExcelDian` (PascalCase historico de URL) |
 
 ### APIs

@@ -53,7 +53,7 @@ La definicion canonica esta en `src/lib/shared/portal-sections.ts`.
 
 | Seccion | Ruta hub | Subtableros principales |
 | --- | --- | --- |
-| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores` |
+| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores` (+ admin: `/exp/precios-proveedor`) |
 | `producto` | `/productividad` | `mix-y-linea`, `margenes`, `rotacion` |
 | `operacion` | `/horario` | `consulta-operativa`, `planilla-vs-asistencia`, `registro-de-horarios` |
 

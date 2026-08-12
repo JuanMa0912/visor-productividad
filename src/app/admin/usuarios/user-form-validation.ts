@@ -1,6 +1,9 @@
 import { validatePasswordPolicy } from "@/lib/auth/password-policy";
 import type { PortalProfileId } from "@/lib/auth/types";
-import { portalProfileRequiresAssignedSedes } from "@/lib/shared/portal-profiles";
+import {
+  portalProfileAllowsDashboardOverrides,
+  portalProfileRequiresAssignedSedes,
+} from "@/lib/shared/portal-profiles";
 
 export type UserFormState = {
   id?: string;
@@ -48,10 +51,8 @@ export const serializeUserFormState = (state: UserFormState): string =>
 export const getWizardSteps = (
   portalProfile: PortalProfileId,
 ): UserFormWizardStep[] => {
-  if (
-    portalProfile === "personalizado" ||
-    portalProfile === "asadero"
-  ) {
+  // Mismo criterio que el modal: personalizado + asadero/fruver (overrides).
+  if (portalProfileAllowsDashboardOverrides(portalProfile)) {
     return ["account", "profile", "permissions", "summary"];
   }
   return ["account", "profile", "summary"];

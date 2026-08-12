@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   inferPortalProfileFromStoredPermissions,
   materializePortalProfilePermissions,
+  mergeAdminPermissionBodyWithCurrent,
+  resolveAdminUserPermissionsFromBody,
   validateSedesForPortalProfile,
 } from "@/lib/shared/portal-profiles";
 
@@ -111,4 +113,73 @@ test("validateSedesForPortalProfile bloquea Todas en gerente", () => {
     "El perfil Gerente no puede usar la sede «Todas»; asigna sedes concretas.",
   );
   assert.equal(validateSedesForPortalProfile("gerente", ["Floresta"]), null);
+});
+
+test("mergeAdminPermissionBodyWithCurrent respeta null explicito en subtableros", () => {
+  const merged = mergeAdminPermissionBodyWithCurrent(
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedSubdashboards: null,
+      allowedDashboards: null,
+    },
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedLines: ["asadero"],
+      allowedDashboards: ["producto"],
+      allowedSubdashboards: ["margenes", "rotacion"],
+      specialRoles: ["alex"],
+    },
+  );
+  assert.equal(merged.allowedSubdashboards, null);
+  assert.equal(merged.allowedDashboards, null);
+  assert.deepEqual(merged.allowedLines, ["asadero"]);
+  assert.deepEqual(merged.specialRoles, ["alex"]);
+});
+
+test("merge + resolve personalizado puede ampliar a todos los subtableros", () => {
+  const merged = mergeAdminPermissionBodyWithCurrent(
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedDashboards: ["producto"],
+      allowedSubdashboards: null,
+    },
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedLines: null,
+      allowedDashboards: ["producto"],
+      allowedSubdashboards: ["margenes"],
+      specialRoles: null,
+    },
+  );
+  const resolved = resolveAdminUserPermissionsFromBody(merged);
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+  assert.equal(resolved.value.allowedSubdashboards, null);
+});
+
+test("merge + resolve personalizado actualiza subconjunto de subtableros", () => {
+  const merged = mergeAdminPermissionBodyWithCurrent(
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedDashboards: ["producto"],
+      allowedSubdashboards: ["rotacion"],
+    },
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedLines: null,
+      allowedDashboards: ["producto"],
+      allowedSubdashboards: ["margenes"],
+      specialRoles: null,
+    },
+  );
+  const resolved = resolveAdminUserPermissionsFromBody(merged);
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+  assert.deepEqual(resolved.value.allowedSubdashboards, ["rotacion"]);
 });

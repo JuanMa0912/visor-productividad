@@ -24,6 +24,7 @@ import {
 } from "@/lib/shared/portal-sections";
 import {
   inferPortalProfileFromStoredPermissions,
+  mergeAdminPermissionBodyWithCurrent,
   resolveAdminUserPermissionsFromBody,
   resolveValidPortalProfile,
 } from "@/lib/shared/portal-profiles";
@@ -547,17 +548,16 @@ export async function PATCH(req: Request, { params }: Params) {
     let nextSpecialRoles = currentUser.specialRoles;
 
     if (permissionsTouched) {
-      const permissionsResult = resolveAdminUserPermissionsFromBody({
-        portalProfile: body.portalProfile ?? currentProfile,
-        role: body.role,
-        allowedSedes: body.allowedSedes ?? currentUser.allowedSedes,
-        allowedLines: body.allowedLines ?? currentUser.allowedLines,
-        allowedDashboards:
-          body.allowedDashboards ?? currentUser.allowedDashboards,
-        allowedSubdashboards:
-          body.allowedSubdashboards ?? currentUser.allowedSubdashboards,
-        specialRoles: body.specialRoles ?? currentUser.specialRoles,
-      });
+      const permissionsResult = resolveAdminUserPermissionsFromBody(
+        mergeAdminPermissionBodyWithCurrent(body, {
+          portalProfile: currentProfile,
+          allowedSedes: currentUser.allowedSedes,
+          allowedLines: currentUser.allowedLines,
+          allowedDashboards: currentUser.allowedDashboards,
+          allowedSubdashboards: currentUser.allowedSubdashboards,
+          specialRoles: currentUser.specialRoles,
+        }),
+      );
       if (!permissionsResult.ok) {
         return NextResponse.json(
           { error: permissionsResult.error },

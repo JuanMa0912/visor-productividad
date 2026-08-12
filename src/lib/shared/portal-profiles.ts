@@ -456,6 +456,40 @@ export type AdminUserPermissionInput = {
   specialRoles?: string[] | null;
 };
 
+/**
+ * En PATCH, `null` en listas de permiso significa “sin restricción / todos”.
+ * No usar `??`: eso trata `null` como ausente y deja el valor anterior.
+ * Solo si el campo viene `undefined` se conserva el actual.
+ */
+export const mergeAdminPermissionBodyWithCurrent = (
+  body: AdminUserPermissionInput,
+  current: {
+    portalProfile: PortalProfileId;
+    allowedSedes: string[] | null;
+    allowedLines: string[] | null;
+    allowedDashboards: string[] | null;
+    allowedSubdashboards: string[] | null;
+    specialRoles: string[] | null;
+  },
+): AdminUserPermissionInput => ({
+  portalProfile: body.portalProfile ?? current.portalProfile,
+  role: body.role,
+  allowedSedes:
+    body.allowedSedes !== undefined ? body.allowedSedes : current.allowedSedes,
+  allowedLines:
+    body.allowedLines !== undefined ? body.allowedLines : current.allowedLines,
+  allowedDashboards:
+    body.allowedDashboards !== undefined
+      ? body.allowedDashboards
+      : current.allowedDashboards,
+  allowedSubdashboards:
+    body.allowedSubdashboards !== undefined
+      ? body.allowedSubdashboards
+      : current.allowedSubdashboards,
+  specialRoles:
+    body.specialRoles !== undefined ? body.specialRoles : current.specialRoles,
+});
+
 export const resolveAdminUserPermissionsFromBody = (
   body: AdminUserPermissionInput,
 ):

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Package, PieChart, Share2, Truck } from "lucide-react";
+import { BarChart3, Package, PieChart, Share2, Tags, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PortalHubHeroCard,
@@ -71,6 +71,15 @@ const VENTA_MODULES: HubModuleItem[] = [
       "Registro de visitas por QR (entrada/salida), métricas y ventas por proveedor.",
     href: "/proveedores",
   },
+  {
+    id: "precios-proveedor",
+    icon: Tags,
+    badge: "EXP · ADMIN",
+    title: "Precios proveedor",
+    description:
+      "Heatmap experimental de precio de venta y costo (COGS) por ítem y sede, con proveedor.",
+    href: "/exp/precios-proveedor",
+  },
 ];
 
 const hubTour = PORTAL_HUB_TOUR_CONFIG.venta;
@@ -91,6 +100,9 @@ export default function VentaHubPage() {
   const visibleModules = useMemo(
     () =>
       VENTA_MODULES.filter((module) => {
+        if (module.id === "precios-proveedor") {
+          return isAdmin;
+        }
         if (module.id === "proveedores") {
           return canAccessProveedoresBoard(isAdmin, allowedSubdashboards);
         }

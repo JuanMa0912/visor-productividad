@@ -25,7 +25,7 @@ const baseState = (): UserFormState => ({
 });
 
 describe("getWizardSteps", () => {
-  it("incluye permisos para personalizado y asadero", () => {
+  it("incluye permisos para perfiles con overrides de tableros", () => {
     assert.deepEqual(getWizardSteps("gerente"), [
       "account",
       "profile",
@@ -38,6 +38,12 @@ describe("getWizardSteps", () => {
       "summary",
     ]);
     assert.deepEqual(getWizardSteps("asadero"), [
+      "account",
+      "profile",
+      "permissions",
+      "summary",
+    ]);
+    assert.deepEqual(getWizardSteps("fruver"), [
       "account",
       "profile",
       "permissions",
