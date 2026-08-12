@@ -119,7 +119,7 @@ Codigo compartido sin UI de pagina.
 | `admin/login-logs`, `admin/login-failures`, `admin/audit`, `admin/exports`, `admin/user-presence`, `admin/uso-tableros` | accesos, fallos de login, auditoría admin, descargas, presencia y uso de tableros |
 | `exports/log` | POST: registra metadatos de una descarga/export (auth; fire-and-forget desde cliente) |
 | `admin/cache/flush` | POST (CSRF): vacía cache en memoria del proceso (informe + márgenes). GET: tamaño actual |
-| `productivity` | productividad por linea con cache de archivo opcional |
+| `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria/disco; views pesadas en dynamic import |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
 | `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el acumulado Excel aún no cierra, ofrece `proj-1-N` (run-rate hasta el corte con datos al `maxDate`); UI monta explorador bajo demanda |

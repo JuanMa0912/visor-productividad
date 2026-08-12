@@ -22,7 +22,6 @@ import {
 } from "@/lib/shared/export-utils";
 import type { Row, Worksheet } from "exceljs";
 import { LineCard } from "@/components/LineCard";
-import { LineComparisonTable } from "@/components/LineComparisonTable";
 import { TopBar } from "@/components/TopBar";
 import { EmptyState } from "@/components/productividad/EmptyState";
 import { LoadingSkeleton } from "@/components/productividad/LoadingSkeleton";
@@ -48,9 +47,62 @@ import {
   buildCompanyOptions,
   resolveSelectedSedeIds,
 } from "@/features/productividad/sede-utils";
-import { ChartVisualization } from "@/features/productividad/chart-visualization";
-import { LineTrends } from "@/features/productividad/line-trends";
-import { M2MetricsSection } from "@/features/productividad/m2-metrics-section";
+
+const ChartVisualization = dynamic(
+  () =>
+    import("@/features/productividad/chart-visualization").then(
+      (mod) => mod.ChartVisualization,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-3xl border border-slate-200/70 bg-white p-6">
+        <p className="text-sm text-slate-600">Cargando gráfico...</p>
+      </div>
+    ),
+  },
+);
+
+const LineTrends = dynamic(
+  () =>
+    import("@/features/productividad/line-trends").then(
+      (mod) => mod.LineTrends,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-3xl border border-slate-200/70 bg-white p-6">
+        <p className="text-sm text-slate-600">Cargando tendencias...</p>
+      </div>
+    ),
+  },
+);
+
+const M2MetricsSection = dynamic(
+  () =>
+    import("@/features/productividad/m2-metrics-section").then(
+      (mod) => mod.M2MetricsSection,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-3xl border border-slate-200/70 bg-white p-6">
+        <p className="text-sm text-slate-600">Cargando métricas m²...</p>
+      </div>
+    ),
+  },
+);
+
+const LineComparisonTable = dynamic(
+  () =>
+    import("@/components/LineComparisonTable").then(
+      (mod) => mod.LineComparisonTable,
+    ),
+  {
+    loading: () => (
+      <div className="rounded-3xl border border-slate-200/70 bg-white p-6">
+        <p className="text-sm text-slate-600">Cargando comparativo...</p>
+      </div>
+    ),
+  },
+);
 
 const HourlyAnalysis = dynamic(
   () => import("@/components/HourlyAnalysis").then((mod) => mod.HourlyAnalysis),
@@ -427,6 +479,7 @@ export default function Home() {
     availableSedes,
     isLoading,
     error,
+    ensureFullHistory,
   } = useProductivityData();
   const dailyDataSet = useMemo(() => {
     if (isAdmin || allowedLineIds.length === 0) return rawDailyDataSet;
@@ -976,12 +1029,16 @@ export default function Home() {
   );
 
   // Handlers
-  const handleStartDateChange = useCallback((value: string) => {
-    setDateRange((prev) => ({
-      start: value,
-      end: value > prev.end ? value : prev.end,
-    }));
-  }, []);
+  const handleStartDateChange = useCallback(
+    (value: string) => {
+      setDateRange((prev) => ({
+        start: value,
+        end: value > prev.end ? value : prev.end,
+      }));
+      void ensureFullHistory();
+    },
+    [ensureFullHistory],
+  );
 
   const handleSedeChange = useCallback((value: string) => {
     setSelectedSede(value);
@@ -1016,14 +1073,19 @@ export default function Home() {
     }
   }, []);
 
-  const handleEndDateChange = useCallback((value: string) => {
-    setDateRange((prev) => ({
-      start: value < prev.start ? value : prev.start,
-      end: value,
-    }));
-  }, []);
+  const handleEndDateChange = useCallback(
+    (value: string) => {
+      setDateRange((prev) => ({
+        start: value < prev.start ? value : prev.start,
+        end: value,
+      }));
+      void ensureFullHistory();
+    },
+    [ensureFullHistory],
+  );
 
   const openExportModal = useCallback(() => {
+    void ensureFullHistory();
     setExportError(null);
     setExportSedeIds(selectedSedeIds);
     setExportDateRange({
@@ -1034,6 +1096,7 @@ export default function Home() {
   }, [
     dateRange.end,
     dateRange.start,
+    ensureFullHistory,
     exportMaxDate,
     exportMinDate,
     selectedSedeIds,
@@ -1077,8 +1140,16 @@ export default function Home() {
         setCashierMonthCompare(false);
         setCashierCompareTransitionLoading(false);
       }
+      if (
+        value === "chart" ||
+        value === "trends" ||
+        value === "m2" ||
+        value === "comparison"
+      ) {
+        void ensureFullHistory();
+      }
     },
-    [],
+    [ensureFullHistory],
   );
 
   const handleCashierViewReady = useCallback(() => {

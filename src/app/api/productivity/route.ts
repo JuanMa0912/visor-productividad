@@ -11,6 +11,15 @@ import {
 import { promises as fs } from "fs";
 import path from "path";
 import { shouldServeProductivityFileCache } from "@/lib/productivity/file-cache-policy";
+import {
+  filterProductivityByDateRange,
+  isProductivityIsoDate,
+  toProductivityCompactDate,
+} from "@/lib/productivity/date-window";
+import {
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/margenes/query-cache";
 
 const resolveCachePath = () => {
   const defaultPath = "data/productivity-cache.json";
@@ -26,6 +35,29 @@ const resolveCachePath = () => {
     return path.resolve(/* turbopackIgnore: true */ process.cwd(), defaultPath);
   }
   return path.resolve(/* turbopackIgnore: true */ process.cwd(), envPath);
+};
+
+const PRODUCTIVITY_MEMORY_CACHE_KEY = "productivity:full-v1";
+const PRODUCTIVITY_MEMORY_TTL_MS = 10 * 60 * 1000;
+
+type ProductivityDateBounds = {
+  fromIso: string | null;
+  toIso: string | null;
+};
+
+const readMemoryProductivityCache = (): DailyProductivity[] | null => {
+  const hit = getCachedQuery(PRODUCTIVITY_MEMORY_CACHE_KEY);
+  if (!Array.isArray(hit) || hit.length === 0) return null;
+  return hit as DailyProductivity[];
+};
+
+const writeMemoryProductivityCache = (dailyData: DailyProductivity[]) => {
+  if (dailyData.length === 0) return;
+  setCachedQuery(
+    PRODUCTIVITY_MEMORY_CACHE_KEY,
+    dailyData,
+    PRODUCTIVITY_MEMORY_TTL_MS,
+  );
 };
 
 const cacheFilePath = resolveCachePath();
@@ -126,17 +158,6 @@ const writeProductivityCacheFile = async (
   }
 };
 
-const buildCacheResponse = (dailyData: DailyProductivity[]) =>
-  NextResponse.json(
-    { dailyData, sedes: buildSedes(dailyData) },
-    {
-      headers: {
-        "Cache-Control": NO_STORE_CACHE_CONTROL,
-        "X-Data-Source": "cache",
-      },
-    },
-  );
-
 const buildFallbackResponse = (message?: string) => {
   void message;
   return NextResponse.json(
@@ -175,6 +196,33 @@ const buildSedes = (dailyData: DailyProductivity[]) =>
       id: sede,
       name: sede,
     }));
+
+/** Reduce payload: quita líneas en cero (el cliente rellena DEFAULT_LINES). */
+const compactDailyDataForTransport = (
+  dailyData: DailyProductivity[],
+): DailyProductivity[] =>
+  dailyData
+    .map((day) => ({
+      ...day,
+      lines: day.lines.filter((line) => line.sales !== 0 || line.hours !== 0),
+    }))
+    .filter((day) => day.lines.length > 0);
+
+const buildDataResponse = (
+  dailyData: DailyProductivity[],
+  source: "cache" | "memory" | "database" | "database-window",
+) => {
+  const compact = compactDailyDataForTransport(dailyData);
+  return NextResponse.json(
+    { dailyData: compact, sedes: buildSedes(compact) },
+    {
+      headers: {
+        "Cache-Control": NO_STORE_CACHE_CONTROL,
+        "X-Data-Source": source,
+      },
+    },
+  );
+};
 
 const LINE_TABLES: Array<{
   id: DailyProductivity["lines"][number]["id"];
@@ -397,15 +445,61 @@ const normalizeSedeAsistencia = (sede: string): string => {
 
 const fetchAllProductivityData = async (
   allowedLineIds: string[] = [],
+  bounds: ProductivityDateBounds = { fromIso: null, toIso: null },
 ): Promise<DailyProductivity[]> => {
   const pool = await getDbPool();
-  const client = await pool.connect();
   const dailyDataMap = new Map<string, DailyProductivity>();
   const allowedSet = new Set(allowedLineIds.map(normalizeLineId));
   const lineTables =
     allowedSet.size > 0
       ? LINE_TABLES.filter((line) => allowedSet.has(normalizeLineId(line.id)))
       : LINE_TABLES;
+
+  const fromCompact =
+    bounds.fromIso && isProductivityIsoDate(bounds.fromIso)
+      ? toProductivityCompactDate(bounds.fromIso)
+      : null;
+  const toCompact =
+    bounds.toIso && isProductivityIsoDate(bounds.toIso)
+      ? toProductivityCompactDate(bounds.toIso)
+      : null;
+  const fromIso =
+    bounds.fromIso && isProductivityIsoDate(bounds.fromIso)
+      ? bounds.fromIso
+      : null;
+  const toIso =
+    bounds.toIso && isProductivityIsoDate(bounds.toIso) ? bounds.toIso : null;
+
+  const ventasWhereParts = [
+    "fecha_dcto IS NOT NULL",
+    "centro_operacion IS NOT NULL",
+  ];
+  const ventasParams: string[] = [];
+  if (fromCompact) {
+    ventasParams.push(fromCompact);
+    ventasWhereParts.push(`fecha_dcto >= $${ventasParams.length}`);
+  }
+  if (toCompact) {
+    ventasParams.push(toCompact);
+    ventasWhereParts.push(`fecha_dcto <= $${ventasParams.length}`);
+  }
+  const ventasWhere = ventasWhereParts.join("\n            AND ");
+
+  const hoursWhereParts = [
+    "fecha IS NOT NULL",
+    "sede IS NOT NULL",
+    "departamento IS NOT NULL",
+  ];
+  const hoursParams: string[] = [];
+  if (fromIso) {
+    hoursParams.push(fromIso);
+    hoursWhereParts.push(`fecha >= $${hoursParams.length}::date`);
+  }
+  if (toIso) {
+    hoursParams.push(toIso);
+    hoursWhereParts.push(`fecha <= $${hoursParams.length}::date`);
+  }
+  const hoursWhere = hoursWhereParts.join("\n          AND ");
 
   const hoursQuery = `
         SELECT
@@ -414,53 +508,50 @@ const fetchAllProductivityData = async (
           departamento,
           COALESCE(SUM(total_laborado_horas), 0) AS total_hours
         FROM asistencia_horas
-        WHERE fecha IS NOT NULL
-          AND sede IS NOT NULL
-          AND departamento IS NOT NULL
+        WHERE ${hoursWhere}
         GROUP BY fecha, sede, departamento
         ORDER BY fecha, sede
       `;
 
-  try {
-    // Un PoolClient de `pg` no admite queries concurrentes en la misma conexion.
-    // Serializamos lecturas (single-flight en runColdProductivityLoad evita
-    // duplicar este trabajo entre peticiones).
-    const lineOutputs: Array<{
-      line: (typeof LINE_TABLES)[number];
-      rows: Record<string, unknown>[];
-    }> = [];
-    for (const line of lineTables) {
-      const query = `
+  // Varias conexiones del pool en paralelo (antes: 1 client serializado).
+  const [lineOutputs, hoursQueryResult] = await Promise.all([
+    Promise.all(
+      lineTables.map(async (line) => {
+        const query = `
           SELECT
             fecha_dcto,
             centro_operacion,
             empresa_bd,
             COALESCE(SUM(total_bruto), 0) AS total_sales
           FROM ${line.table}
-          WHERE fecha_dcto IS NOT NULL
-            AND centro_operacion IS NOT NULL
+          WHERE ${ventasWhere}
           GROUP BY fecha_dcto, centro_operacion, empresa_bd
           ORDER BY fecha_dcto, centro_operacion
         `;
+        try {
+          const result = await pool.query(query, ventasParams);
+          return {
+            line,
+            rows: (result.rows ?? []) as Record<string, unknown>[],
+          };
+        } catch (error) {
+          console.warn(
+            `No se pudo consultar la tabla ${line.table}. Se omite.`,
+            error,
+          );
+          return { line, rows: [] as Record<string, unknown>[] };
+        }
+      }),
+    ),
+    (async () => {
       try {
-        const result = await client.query(query);
-        lineOutputs.push({ line, rows: result.rows ?? [] });
+        return await pool.query(hoursQuery, hoursParams);
       } catch (error) {
-        console.warn(
-          `No se pudo consultar la tabla ${line.table}. Se omite.`,
-          error,
-        );
-        lineOutputs.push({ line, rows: [] });
+        console.warn("No se pudo consultar la tabla asistencia_horas:", error);
+        return { rows: [] as Record<string, unknown>[] };
       }
-    }
-
-    let hoursQueryResult: { rows: Record<string, unknown>[] };
-    try {
-      hoursQueryResult = await client.query(hoursQuery);
-    } catch (error) {
-      console.warn("No se pudo consultar la tabla asistencia_horas:", error);
-      hoursQueryResult = { rows: [] };
-    }
+    })(),
+  ]);
 
   for (const { line, rows } of lineOutputs) {
     for (const row of rows) {
@@ -495,7 +586,7 @@ const fetchAllProductivityData = async (
           name: line.name,
           sales: 0,
           hours: 0,
-          hourlyRate: 50000, // Placeholder: $50,000 COP/hora
+          hourlyRate: 50000,
         };
         dailyData.lines.push(lineMetric);
       }
@@ -504,113 +595,91 @@ const fetchAllProductivityData = async (
     }
   }
 
-  try {
-      const hoursResult = hoursQueryResult;
+  for (const row of hoursQueryResult.rows ?? []) {
+    const typedRow = row as {
+      fecha: string;
+      sede: string;
+      departamento: string;
+      total_hours: string | number;
+    };
 
-      if (hoursResult.rows) {
-        for (const row of hoursResult.rows) {
-          const typedRow = row as {
-            fecha: string;
-            sede: string;
-            departamento: string;
-            total_hours: string | number;
-          };
+    let fecha: string;
+    if (typeof typedRow.fecha === "string") {
+      fecha = typedRow.fecha.slice(0, 10);
+    } else {
+      const fechaObj = new Date(typedRow.fecha);
+      const year = fechaObj.getFullYear();
+      const month = String(fechaObj.getMonth() + 1).padStart(2, "0");
+      const day = String(fechaObj.getDate()).padStart(2, "0");
+      fecha = `${year}-${month}-${day}`;
+    }
+    const sedeName = normalizeSedeAsistencia(typedRow.sede);
+    if (HIDDEN_SEDES.has(normalizeSedeKey(sedeName))) {
+      continue;
+    }
+    const lineId = resolveLineId(typedRow.departamento);
 
-          // Formatear fecha (viene como Date de PostgreSQL o string YYYY-MM-DD)
-          let fecha: string;
-          if (typeof typedRow.fecha === "string") {
-            // Si ya viene como string, usar directamente (puede ser "YYYY-MM-DD")
-            fecha = typedRow.fecha.slice(0, 10);
-          } else {
-            // Si es objeto Date, extraer fecha en zona local para evitar desfase UTC
-            const fechaObj = new Date(typedRow.fecha);
-            const year = fechaObj.getFullYear();
-            const month = String(fechaObj.getMonth() + 1).padStart(2, "0");
-            const day = String(fechaObj.getDate()).padStart(2, "0");
-            fecha = `${year}-${month}-${day}`;
-          }
-          const sedeName = normalizeSedeAsistencia(typedRow.sede);
-          if (HIDDEN_SEDES.has(normalizeSedeKey(sedeName))) {
-            continue;
-          }
-          const lineId = resolveLineId(typedRow.departamento);
-
-          if (!lineId || !sedeName) {
-            continue;
-          }
-          if (allowedSet.size > 0 && !allowedSet.has(normalizeLineId(lineId))) {
-            continue;
-          }
-
-          const key = `${fecha}_${sedeName}`;
-          let dailyData = dailyDataMap.get(key);
-
-          // Si no existe el registro, crearlo (puede haber horas sin ventas)
-          if (!dailyData) {
-            dailyData = {
-              date: fecha,
-              sede: sedeName,
-              lines: [],
-            };
-            dailyDataMap.set(key, dailyData);
-          }
-
-          // Buscar o crear la línea
-          let lineMetric = dailyData.lines.find((l) => l.id === lineId);
-          if (!lineMetric) {
-            const lineInfo = LINE_TABLES.find((l) => l.id === lineId);
-            lineMetric = {
-              id: lineId,
-              name: lineInfo?.name || lineId,
-              sales: 0,
-              hours: 0,
-              hourlyRate: 50000, // Placeholder: $50,000 COP/hora
-            };
-            dailyData.lines.push(lineMetric);
-          }
-
-          const horasValue = Number(typedRow.total_hours) || 0;
-          lineMetric.hours += horasValue;
-        }
-      }
-    } catch (error) {
-      console.warn("No se pudo consultar la tabla asistencia_horas:", error);
+    if (!lineId || !sedeName) {
+      continue;
+    }
+    if (allowedSet.size > 0 && !allowedSet.has(normalizeLineId(lineId))) {
+      continue;
     }
 
-    // Convertir el mapa a array y asegurarse de que cada fecha tenga todas las líneas
-    const result: DailyProductivity[] = [];
-    for (const dailyData of dailyDataMap.values()) {
-      // Asegurar que todas las líneas estén presentes (incluso con ventas 0)
-      for (const line of lineTables) {
-        if (!dailyData.lines.find((l) => l.id === line.id)) {
-          dailyData.lines.push({
-            id: line.id,
-            name: line.name,
-            sales: 0,
-            hours: 0,
-            hourlyRate: 50000, // Placeholder: $50,000 COP/hora
-          });
-        }
-      }
-      result.push(dailyData);
+    const key = `${fecha}_${sedeName}`;
+    let dailyData = dailyDataMap.get(key);
+
+    if (!dailyData) {
+      dailyData = {
+        date: fecha,
+        sede: sedeName,
+        lines: [],
+      };
+      dailyDataMap.set(key, dailyData);
     }
 
-    const sortedResult = result.sort((a, b) => a.date.localeCompare(b.date));
+    let lineMetric = dailyData.lines.find((l) => l.id === lineId);
+    if (!lineMetric) {
+      const lineInfo = LINE_TABLES.find((l) => l.id === lineId);
+      lineMetric = {
+        id: lineId,
+        name: lineInfo?.name || lineId,
+        sales: 0,
+        hours: 0,
+        hourlyRate: 50000,
+      };
+      dailyData.lines.push(lineMetric);
+    }
 
-    return sortedResult;
-  } finally {
-    client.release();
+    lineMetric.hours += Number(typedRow.total_hours) || 0;
   }
+
+  // No rellenar líneas en 0: el cliente ya completa DEFAULT_LINES y el JSON baja mucho.
+  const result: DailyProductivity[] = [];
+  for (const dailyData of dailyDataMap.values()) {
+    dailyData.lines = dailyData.lines.filter(
+      (line) => line.sales !== 0 || line.hours !== 0,
+    );
+    if (dailyData.lines.length === 0) continue;
+    result.push(dailyData);
+  }
+
+  return result.sort((a, b) => a.date.localeCompare(b.date));
 };
 
 /** Una sola pasada en frío si varios GET llegan sin caché (evita consultas duplicadas). */
 let productivityColdInflight: Promise<DailyProductivity[]> | null = null;
+const productivityWindowInflight = new Map<
+  string,
+  Promise<DailyProductivity[]>
+>();
 
 const runColdProductivityLoad = (): Promise<DailyProductivity[]> => {
   if (!productivityColdInflight) {
     productivityColdInflight = (async () => {
       const raw = await fetchAllProductivityData([]);
       if (raw.length > 0) {
+        writeMemoryProductivityCache(raw);
         await writeProductivityCacheFile(raw);
       }
       return raw;
@@ -621,6 +690,51 @@ const runColdProductivityLoad = (): Promise<DailyProductivity[]> => {
   }
   return productivityColdInflight;
 };
+
+const runWindowedProductivityLoad = (
+  bounds: ProductivityDateBounds,
+): Promise<DailyProductivity[]> => {
+  const key = `${bounds.fromIso ?? ""}:${bounds.toIso ?? ""}`;
+  const existing = productivityWindowInflight.get(key);
+  if (existing) return existing;
+  const inflight = fetchAllProductivityData([], bounds);
+  productivityWindowInflight.set(key, inflight);
+  void inflight.finally(() => {
+    productivityWindowInflight.delete(key);
+  });
+  return inflight;
+};
+
+const resolveDateBoundsFromRequest = (
+  searchParams: URLSearchParams,
+): ProductivityDateBounds => {
+  const fromRaw = searchParams.get("from");
+  const toRaw = searchParams.get("to");
+  const fromIso = isProductivityIsoDate(fromRaw) ? fromRaw : null;
+  const toIso = isProductivityIsoDate(toRaw) ? toRaw : null;
+  if (fromIso && toIso && fromIso > toIso) {
+    return { fromIso: toIso, toIso: fromIso };
+  }
+  return { fromIso, toIso };
+};
+
+const scopeDailyDataForSession = (
+  dailyData: DailyProductivity[],
+  allowedLineIds: string[],
+  sessionUser: {
+    role: "admin" | "user";
+    allowedEmpresas?: string[] | null;
+  },
+  bounds: ProductivityDateBounds,
+) =>
+  filterProductivityByDateRange(
+    filterDailyDataByEmpresaTenant(
+      filterDailyDataByAllowedLines(dailyData, allowedLineIds),
+      sessionUser,
+    ),
+    bounds.fromIso,
+    bounds.toIso,
+  );
 
 export async function GET(request: Request) {
   const session = await requireAuthSession();
@@ -673,44 +787,66 @@ export async function GET(request: Request) {
       ),
     );
   }
-  // Cache en disco: por defecto se sirve si es reciente (TTL). Forzar rebuild con
-  // ?refresh=1. Desactivar con PRODUCTIVITY_SERVE_FILE_CACHE=false.
+
   const refreshParams = new URL(request.url).searchParams;
   const forceRefresh =
     refreshParams.get("refresh") === "1" || refreshParams.get("force") === "1";
-  const cachedFile = await readCache();
-  if (
-    cachedFile &&
-    shouldServeProductivityFileCache(cachedFile.updatedAt, forceRefresh)
-  ) {
-    const scopedCached = filterDailyDataByEmpresaTenant(
-      filterDailyDataByAllowedLines(cachedFile.dailyData, allowedLineIds),
-      session.user,
-    );
-    return withSession(buildCacheResponse(scopedCached));
-  }
-  try {
-    await testDbConnection();
-    /** Consultas + escritura de caché; compartido entre peticiones concurrentes sin caché. */
-    const rawDaily = await runColdProductivityLoad();
-    const dailyData = filterDailyDataByEmpresaTenant(
-      filterDailyDataByAllowedLines(rawDaily, allowedLineIds),
-      session.user,
-    );
-    if (dailyData.length > 0) {
-      const dbRes = NextResponse.json(
-        {
-          dailyData,
-          sedes: buildSedes(dailyData),
-        },
-        {
-          headers: {
-            "Cache-Control": NO_STORE_CACHE_CONTROL,
-            "X-Data-Source": "database",
-          },
-        },
+  const bounds = resolveDateBoundsFromRequest(refreshParams);
+  const hasWindow = Boolean(bounds.fromIso || bounds.toIso);
+
+  if (!forceRefresh) {
+    const memoryCached = readMemoryProductivityCache();
+    if (memoryCached) {
+      const scoped = scopeDailyDataForSession(
+        memoryCached,
+        allowedLineIds,
+        session.user,
+        bounds,
       );
-      return withSession(dbRes);
+      return withSession(buildDataResponse(scoped, "memory"));
+    }
+
+    const cachedFile = await readCache();
+    if (
+      cachedFile &&
+      shouldServeProductivityFileCache(cachedFile.updatedAt, forceRefresh)
+    ) {
+      writeMemoryProductivityCache(cachedFile.dailyData);
+      const scopedCached = scopeDailyDataForSession(
+        cachedFile.dailyData,
+        allowedLineIds,
+        session.user,
+        bounds,
+      );
+      return withSession(buildDataResponse(scopedCached, "cache"));
+    }
+  }
+
+  try {
+    // Primera carga con ventana: consulta acotada en paralelo.
+    // El rebuild completo se dispara solo cuando el cliente pide histórico
+    // (sin from/to) o ?refresh=1 — evita saturar la BD en el cold start.
+    if (hasWindow && !forceRefresh) {
+      const windowed = await runWindowedProductivityLoad(bounds);
+      const dailyData = scopeDailyDataForSession(
+        windowed,
+        allowedLineIds,
+        session.user,
+        { fromIso: null, toIso: null },
+      );
+      return withSession(buildDataResponse(dailyData, "database-window"));
+    }
+
+    await testDbConnection();
+    const rawDaily = await runColdProductivityLoad();
+    const dailyData = scopeDailyDataForSession(
+      rawDaily,
+      allowedLineIds,
+      session.user,
+      bounds,
+    );
+    if (dailyData.length > 0 || rawDaily.length > 0) {
+      return withSession(buildDataResponse(dailyData, "database"));
     }
     const emptyRes = NextResponse.json(
       {
@@ -730,7 +866,8 @@ export async function GET(request: Request) {
     console.error("Error en endpoint de productividad:", error);
     return withSession(
       buildFallbackResponse(
-        "Error de conexión: " + (error instanceof Error ? error.message : String(error)),
+        "Error de conexión: " +
+          (error instanceof Error ? error.message : String(error)),
       ),
     );
   }
