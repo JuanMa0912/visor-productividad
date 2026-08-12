@@ -96,13 +96,16 @@ import {
 import {
   canonicalizeSedeValue,
   compareOvertimeText,
+  estadoAsistenciaToneClass,
   getOvertimeDateTimestamp,
   getOvertimeDepartmentValue,
   getOvertimeEstadoValue,
   getOvertimeIncidentValue,
   getOvertimeNominaValue,
   isAbsenceIncident,
+  isIncidenceEstado,
   isPptSede,
+  isRestDayWorkedEstado,
   normalizeEmployeeType,
 } from "@/components/hourly-analysis/overtime-sede-utils";
 import { CashierShiftMarks } from "@/components/hourly-analysis/CashierShiftMarks";
@@ -188,6 +191,12 @@ export const HourlyAnalysis = ({
   const [overtimeOddMarksOnly, setOvertimeOddMarksOnly] = useState(false);
   /** Filtro rapido para `estado_asistencia` que contiene "incidente". */
   const [overtimeIncidenceOnly, setOvertimeIncidenceOnly] = useState(false);
+  /**
+   * Filtro rapido para `estado_asistencia` = "Dia descanso laborado" (alguien que
+   * trabajo en su dia de descanso). Son pocas filas —entre 1 y 9 de ~1.100 en un dia
+   * normal— asi que sin este atajo quedan enterradas en el listado.
+   */
+  const [overtimeRestWorkedOnly, setOvertimeRestWorkedOnly] = useState(false);
   const [overtimeAlertMode, setOvertimeAlertMode] = useState<
     "920" | "720-2marks"
   >("920");
@@ -2176,16 +2185,13 @@ export const HourlyAnalysis = ({
     overtimeRangeMax,
   ]);
   const filteredOvertimeEmployees = useMemo(() => {
-    /** Match laxo: estado contiene "incid" (cubre "Laborado con Incidencia",
-     *  "Incidente", "Incidentes", etc., con/sin acentos). */
-    const hasIncidenceEstado = (employee: OvertimeEmployee) => {
-      const estado = (employee.estadoAsistencia ?? "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
-      return estado.includes("incid");
-    };
-    const filtered = overtimeAbsenceOnly
+    const hasIncidenceEstado = (employee: OvertimeEmployee) =>
+      isIncidenceEstado(employee.estadoAsistencia);
+    const hasRestWorkedEstado = (employee: OvertimeEmployee) =>
+      isRestDayWorkedEstado(employee.estadoAsistencia);
+    const filtered = overtimeRestWorkedOnly
+      ? baseFilteredOvertimeEmployees.filter(hasRestWorkedEstado)
+      : overtimeAbsenceOnly
       ? baseFilteredOvertimeEmployees.filter(
           (employee) =>
             employee.isAbsence || isAbsenceIncident(employee.incident),
@@ -2300,6 +2306,7 @@ export const HourlyAnalysis = ({
     overtimeAlertOnly,
     overtimeAlertMode,
     overtimeIncidenceOnly,
+    overtimeRestWorkedOnly,
     overtimeSortDirection,
     overtimeSortField,
   ]);
@@ -2342,17 +2349,21 @@ export const HourlyAnalysis = ({
   );
   const incidenceCount = useMemo(
     () =>
-      baseFilteredOvertimeEmployees.filter((employee) => {
-        const estado = (employee.estadoAsistencia ?? "")
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLowerCase();
-        return estado.includes("incid");
-      }).length,
+      baseFilteredOvertimeEmployees.filter((employee) =>
+        isIncidenceEstado(employee.estadoAsistencia),
+      ).length,
+    [baseFilteredOvertimeEmployees],
+  );
+  const restWorkedCount = useMemo(
+    () =>
+      baseFilteredOvertimeEmployees.filter((employee) =>
+        isRestDayWorkedEstado(employee.estadoAsistencia),
+      ).length,
     [baseFilteredOvertimeEmployees],
   );
 
   const displayOvertimeAbsenceCount = overtimeAbsenceCount;
+  const displayRestWorkedCount = restWorkedCount;
   const displayOddMarksCount = oddMarksCount;
   const displayAlexAlertCount920 = alexAlertCount920;
   const displayAlexAlertCount720 = alexAlertCount720;
@@ -3084,6 +3095,7 @@ export const HourlyAnalysis = ({
                       setOvertimeOddMarksOnly(false);
                       setOvertimeAlertOnly(false);
                       setOvertimeIncidenceOnly(false);
+                      setOvertimeRestWorkedOnly(false);
                       setOvertimeRangeMin("");
                       setOvertimeRangeMax("");
                     }}
@@ -3092,6 +3104,7 @@ export const HourlyAnalysis = ({
                       !overtimeOddMarksOnly &&
                       !overtimeAlertOnly &&
                       !overtimeIncidenceOnly &&
+                      !overtimeRestWorkedOnly &&
                       !overtimeRangeMin &&
                       !overtimeRangeMax
                         ? "bg-rose-600 text-white shadow-sm"
@@ -3107,6 +3120,7 @@ export const HourlyAnalysis = ({
                       setOvertimeOddMarksOnly(false);
                       setOvertimeAlertOnly(false);
                       setOvertimeIncidenceOnly(false);
+                      setOvertimeRestWorkedOnly(false);
                       setOvertimeRangeMin("");
                       setOvertimeRangeMax("");
                     }}
@@ -3125,6 +3139,7 @@ export const HourlyAnalysis = ({
                       setOvertimeOddMarksOnly((prev) => !prev);
                       setOvertimeAlertOnly(false);
                       setOvertimeIncidenceOnly(false);
+                      setOvertimeRestWorkedOnly(false);
                       setOvertimeRangeMin("");
                       setOvertimeRangeMax("");
                     }}
@@ -3160,6 +3175,7 @@ export const HourlyAnalysis = ({
                       setOvertimeAbsenceOnly(false);
                       setOvertimeOddMarksOnly(false);
                       setOvertimeIncidenceOnly(false);
+                      setOvertimeRestWorkedOnly(false);
                       setOvertimeRangeMin("");
                       setOvertimeRangeMax("");
                       setOvertimeAlertMode("920");
@@ -3181,6 +3197,7 @@ export const HourlyAnalysis = ({
                       setOvertimeAbsenceOnly(false);
                       setOvertimeOddMarksOnly(false);
                       setOvertimeIncidenceOnly(false);
+                      setOvertimeRestWorkedOnly(false);
                       setOvertimeRangeMin("");
                       setOvertimeRangeMax("");
                       setOvertimeAlertMode("720-2marks");
@@ -3195,6 +3212,34 @@ export const HourlyAnalysis = ({
                     }`}
                   >
                     {`>${twoMarksChipLabel} con 2 marcaciones ${displayAlexAlertCount720}`}
+                  </button>
+                  {/* Descanso laborado: indigo a proposito. Los otros chips son
+                      rose/amber/orange/red —todos calidos y vecinos— y a 11px casi
+                      no se distinguen entre si. Un frio lo separa como OTRA
+                      categoria, no como otra alerta: trabajar el dia de descanso no
+                      es una anomalia que corregir, es un hecho que consultar. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOvertimeAbsenceOnly(false);
+                      setOvertimeOddMarksOnly(false);
+                      setOvertimeAlertOnly(false);
+                      setOvertimeIncidenceOnly(false);
+                      setOvertimeRangeMin("");
+                      setOvertimeRangeMax("");
+                      // Ojo: aqui NO se llama antes a setOvertimeRestWorkedOnly(false).
+                      // React encolaria el false y el toggle leeria ese valor pendiente,
+                      // asi que el chip se encenderia siempre y nunca se podria apagar.
+                      setOvertimeRestWorkedOnly((prev) => !prev);
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-all ${
+                      overtimeRestWorkedOnly
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "border border-indigo-200/70 bg-indigo-50 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100"
+                    }`}
+                    title="Personas que trabajaron en su dia de descanso"
+                  >
+                    {`Descanso laborado ${displayRestWorkedCount}`}
                   </button>
                   {overtimeExcludedIds.size > 0 && (
                     <button
@@ -3705,17 +3750,9 @@ export const HourlyAnalysis = ({
                           {employee.incident ?? "-"}
                         </span>
                         <span
-                          className={`text-xs font-semibold leading-tight wrap-break-word ${
-                            (employee.estadoAsistencia ?? "")
-                              .toLowerCase()
-                              .includes("incidente")
-                              ? "text-amber-700"
-                              : (employee.estadoAsistencia ?? "")
-                                    .toLowerCase()
-                                    .includes("laborado")
-                                ? "text-emerald-700"
-                                : "text-slate-700"
-                          }`}
+                          className={`text-xs font-semibold leading-tight wrap-break-word ${estadoAsistenciaToneClass(
+                            employee.estadoAsistencia,
+                          )}`}
                         >
                           {employee.estadoAsistencia ?? "-"}
                         </span>

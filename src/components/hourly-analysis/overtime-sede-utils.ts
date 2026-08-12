@@ -60,6 +60,45 @@ export const normalizeIncidentValue = (value: string | null | undefined) =>
 export const isAbsenceIncident = (value: string | null | undefined) =>
   normalizeIncidentValue(value).includes("inasistencia");
 
+/**
+ * `estado_asistencia` = alguien que trabajo en su dia de descanso.
+ *
+ * El valor real en `asistencia_horas` es "Día descanso laborado", CON tilde. Por eso
+ * se normaliza (NFD + quitar diacriticos) antes de comparar: una comparacion directa
+ * contra "dia descanso" falla.
+ */
+export const isRestDayWorkedEstado = (value: string | null | undefined) =>
+  normalizeIncidentValue(value).includes("descanso");
+
+/**
+ * `estado_asistencia` con incidencia.
+ *
+ * Busca "incid", NO "incidente": el valor real es "Laborado con Incidencia" y no
+ * contiene la palabra "incidente". El color de la columna Estado comparaba contra
+ * "incidente" y por eso nunca acertaba — las 353 filas con incidencia se pintaban
+ * del mismo verde que las 28.736 normales.
+ */
+export const isIncidenceEstado = (value: string | null | undefined) =>
+  normalizeIncidentValue(value).includes("incid");
+
+/**
+ * Clase de color para la columna "Estado".
+ *
+ * El orden importa: "Día descanso laborado" contiene TAMBIEN "laborado", asi que si
+ * se evaluara primero esa rama compartiria el verde de un dia normal y seria
+ * indistinguible a simple vista. Descanso va antes.
+ */
+export const estadoAsistenciaToneClass = (
+  value: string | null | undefined,
+): string => {
+  const normalized = normalizeIncidentValue(value);
+  if (!normalized) return "text-slate-700";
+  if (isRestDayWorkedEstado(value)) return "text-indigo-700";
+  if (isIncidenceEstado(value)) return "text-amber-700";
+  if (normalized.includes("laborado")) return "text-emerald-700";
+  return "text-slate-700";
+};
+
 export const normalizeEmployeeType = (value: string) =>
   value
     .toLowerCase()
