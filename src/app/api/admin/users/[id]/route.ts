@@ -249,7 +249,8 @@ const resolveValidAllowedDashboards = (value: unknown) => {
     (board) => typeof board === "string" && board.trim(),
   );
   if (!hasMeaningfulEntries) {
-    return { ok: true as const, value: null as string[] | null };
+    // [] = ninguna sección (distinto de null = todas).
+    return { ok: true as const, value: [] as string[] };
   }
 
   const invalid = value.filter(
@@ -266,10 +267,6 @@ const resolveValidAllowedDashboards = (value: unknown) => {
   }
 
   const normalized = normalizeAllowedPortalSections(value) ?? [];
-  if (normalized.length === 0) {
-    return { ok: true as const, value: null as string[] | null };
-  }
-
   return { ok: true as const, value: normalized };
 };
 
@@ -287,7 +284,8 @@ const resolveValidAllowedSubdashboards = (value: unknown) => {
     (entry) => typeof entry === "string" && entry.trim(),
   );
   if (!hasMeaningfulEntries) {
-    return { ok: true as const, value: null as string[] | null };
+    // [] = ningún subtablero (distinto de null = todos).
+    return { ok: true as const, value: [] as string[] };
   }
 
   const invalid = value.filter(
@@ -306,10 +304,6 @@ const resolveValidAllowedSubdashboards = (value: unknown) => {
   const normalized = (normalizeAllowedPortalSubsections(value) ?? []).filter(
     (subId) => !isAdminOnlyPortalSubsection(subId),
   );
-  if (normalized.length === 0) {
-    return { ok: true as const, value: null as string[] | null };
-  }
-
   return { ok: true as const, value: normalized };
 };
 

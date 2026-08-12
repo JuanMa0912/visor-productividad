@@ -1,10 +1,14 @@
 import type { AuthRole, PortalProfileId } from "@/lib/auth/types";
-import type { PortalSectionId, PortalSubsectionId } from "@/lib/shared/portal-sections";
 import {
   ensureParentSectionsForSubsections,
+  expandPortalPermissionSelectionForForm,
+  listAssignablePortalSubsectionIds,
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
+  ASSIGNABLE_PORTAL_SECTION_IDS,
   PORTAL_SUBSECTIONS_BY_SECTION,
+  type PortalSectionId,
+  type PortalSubsectionId,
 } from "@/lib/shared/portal-sections";
 import { ASADERO_LINE_ID, FRUVER_LINE_ID } from "@/lib/shared/line-category-scope";
 
@@ -329,11 +333,18 @@ export const materializePortalProfilePermissions = (
   overrides: PortalProfilePermissionOverrides = {},
 ): PortalProfileMaterializedPermissions => {
   if (profileId === "personalizado") {
+    // null = todos; [] = ninguno. No convertir [] → null.
     const allowedSubdashboards = normalizeAllowedPortalSubsections(
-      emptyToNull(overrides.allowedSubdashboards),
+      overrides.allowedSubdashboards === undefined
+        ? null
+        : overrides.allowedSubdashboards,
     );
     const allowedDashboards = ensureParentSectionsForSubsections(
-      normalizeAllowedPortalSections(emptyToNull(overrides.allowedDashboards)),
+      normalizeAllowedPortalSections(
+        overrides.allowedDashboards === undefined
+          ? null
+          : overrides.allowedDashboards,
+      ),
       allowedSubdashboards,
     );
     return {
@@ -435,16 +446,33 @@ export const inferPortalProfileFromStoredPermissions = (user: {
   return "personalizado";
 };
 
-/** Convierte permisos materializados a arrays vacíos para checkboxes del admin. */
+/** Convierte permisos materializados a arrays para checkboxes del admin.
+ * `null` (todos) se expande a todas las opciones visibles del perfil.
+ */
 export const portalPermissionsToFormArrays = (
   permissions: PortalProfileMaterializedPermissions,
-) => ({
-  role: permissions.role,
-  allowedDashboards: permissions.allowedDashboards ?? [],
-  allowedSubdashboards: permissions.allowedSubdashboards ?? [],
-  allowedLines: permissions.allowedLines ?? [],
-  specialRoles: permissions.specialRoles ?? [],
-});
+  options?: {
+    sectionIds?: readonly PortalSectionId[];
+    subsectionIds?: readonly PortalSubsectionId[];
+  },
+) => {
+  const sectionIds = options?.sectionIds ?? ASSIGNABLE_PORTAL_SECTION_IDS;
+  const subsectionIds =
+    options?.subsectionIds ?? listAssignablePortalSubsectionIds();
+  return {
+    role: permissions.role,
+    allowedDashboards: expandPortalPermissionSelectionForForm(
+      permissions.allowedDashboards,
+      sectionIds,
+    ),
+    allowedSubdashboards: expandPortalPermissionSelectionForForm(
+      permissions.allowedSubdashboards,
+      subsectionIds,
+    ),
+    allowedLines: permissions.allowedLines ?? [],
+    specialRoles: permissions.specialRoles ?? [],
+  };
+};
 
 export type AdminUserPermissionInput = {
   portalProfile?: unknown;

@@ -28,9 +28,12 @@ import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useDomInputSync } from "@/hooks/use-dom-input-sync";
 import {
+  ASSIGNABLE_PORTAL_SECTION_IDS,
   PORTAL_SECTION_LABEL_BY_ID,
   PORTAL_SECTIONS,
+  encodePortalPermissionSelection,
   ensureParentSectionsForSubsections,
+  listAssignablePortalSubsectionIds,
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
   resolvePortalSubsectionId,
@@ -38,6 +41,8 @@ import {
 } from "@/lib/shared/portal-sections";
 import type { PortalProfileId } from "@/lib/auth/types";
 import {
+  getAsaderoDashboardOptions,
+  getFruverDashboardOptions,
   getPortalProfileLabel,
   inferPortalProfileFromStoredPermissions,
   materializePortalProfilePermissions,
@@ -130,6 +135,15 @@ const emptyForm: UserFormState = {
   is_active: true,
 };
 
+const resolveDashboardFormOptions = (portalProfile: PortalProfileId) => {
+  if (portalProfile === "asadero") return getAsaderoDashboardOptions();
+  if (portalProfile === "fruver") return getFruverDashboardOptions();
+  return {
+    sections: ASSIGNABLE_PORTAL_SECTION_IDS,
+    subsections: listAssignablePortalSubsectionIds(),
+  };
+};
+
 const applyPortalProfileToForm = (
   prev: UserFormState,
   portalProfile: PortalProfileId,
@@ -137,6 +151,7 @@ const applyPortalProfileToForm = (
   const usesManual = portalProfileUsesManualPermissions(portalProfile);
   const usesDashboardOverrides =
     portalProfileAllowsDashboardOverrides(portalProfile);
+  const formOptions = resolveDashboardFormOptions(portalProfile);
   const materialized = materializePortalProfilePermissions(
     portalProfile,
     usesManual || usesDashboardOverrides
@@ -152,7 +167,10 @@ const applyPortalProfileToForm = (
         }
       : {},
   );
-  const formArrays = portalPermissionsToFormArrays(materialized);
+  const formArrays = portalPermissionsToFormArrays(materialized, {
+    sectionIds: formOptions.sections,
+    subsectionIds: formOptions.subsections,
+  });
   let allowedSedes = prev.allowedSedes;
   if (portalProfile === "admin") {
     allowedSedes = [];
@@ -780,13 +798,15 @@ export default function AdminUsuariosPage() {
           .filter((sede) => USER_SEDE_OPTION_SET.has(sede)),
       ),
     );
+    const formOptions = resolveDashboardFormOptions(portalProfile);
     const materialized = materializePortalProfilePermissions(
       portalProfile,
       portalProfileUsesManualPermissions(portalProfile) ||
         portalProfileAllowsDashboardOverrides(portalProfile)
         ? {
-            allowedDashboards: user.allowedDashboards ?? [],
-            allowedSubdashboards: user.allowedSubdashboards ?? [],
+            // Preservar null (= todos). No convertir a [] (= ninguno).
+            allowedDashboards: user.allowedDashboards,
+            allowedSubdashboards: user.allowedSubdashboards,
             ...(portalProfileUsesManualPermissions(portalProfile)
               ? {
                   allowedLines: user.allowedLines ?? [],
@@ -796,7 +816,10 @@ export default function AdminUsuariosPage() {
           }
         : {},
     );
-    const formArrays = portalPermissionsToFormArrays(materialized);
+    const formArrays = portalPermissionsToFormArrays(materialized, {
+      sectionIds: formOptions.sections,
+      subsectionIds: formOptions.subsections,
+    });
     setFormState({
       id: user.id,
       username: user.username,
@@ -846,20 +869,27 @@ export default function AdminUsuariosPage() {
       if (trimmedPassword.length > 0 && trimmedPassword.length < 8) {
         throw new Error("La contrasena debe tener minimo 8 caracteres.");
       }
+      const formOptions = resolveDashboardFormOptions(formState.portalProfile);
+      const encodedSubdashboards =
+        formState.portalProfile === "admin"
+          ? null
+          : encodePortalPermissionSelection(
+              formState.allowedSubdashboards,
+              formOptions.subsections,
+            );
+      const encodedDashboards =
+        formState.portalProfile === "admin"
+          ? null
+          : encodePortalPermissionSelection(
+              formState.allowedDashboards,
+              formOptions.sections,
+            );
       const syncedDashboards =
         formState.portalProfile === "admin"
           ? null
           : ensureParentSectionsForSubsections(
-              normalizeAllowedPortalSections(
-                formState.allowedDashboards.length > 0
-                  ? formState.allowedDashboards
-                  : null,
-              ),
-              normalizeAllowedPortalSubsections(
-                formState.allowedSubdashboards.length > 0
-                  ? formState.allowedSubdashboards
-                  : null,
-              ),
+              normalizeAllowedPortalSections(encodedDashboards),
+              normalizeAllowedPortalSubsections(encodedSubdashboards),
             );
 
       const payload: Record<string, unknown> = {
@@ -892,11 +922,7 @@ export default function AdminUsuariosPage() {
               : null,
         allowedDashboards: syncedDashboards,
         allowedSubdashboards:
-          formState.portalProfile === "admin"
-            ? null
-            : formState.allowedSubdashboards.length > 0
-              ? formState.allowedSubdashboards
-              : null,
+          formState.portalProfile === "admin" ? null : encodedSubdashboards,
         specialRoles:
           formState.portalProfile === "admin"
             ? null

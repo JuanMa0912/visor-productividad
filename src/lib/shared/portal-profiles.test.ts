@@ -80,13 +80,23 @@ test("materializePortalProfilePermissions personalizado añade seccion padre", (
   assert.deepEqual(permissions.allowedSubdashboards, ["rotacion"]);
 });
 
-test("materializePortalProfilePermissions personalizado no restringe si secciones vacias", () => {
+test("materializePortalProfilePermissions personalizado añade padre si secciones vacías con subtablero", () => {
   const permissions = materializePortalProfilePermissions("personalizado", {
     allowedDashboards: [],
     allowedSubdashboards: ["rotacion"],
   });
-  assert.equal(permissions.allowedDashboards, null);
+  // [] ya no significa "todas"; se conserva vacío y solo se añade el padre del subtablero.
+  assert.deepEqual(permissions.allowedDashboards, ["producto"]);
   assert.deepEqual(permissions.allowedSubdashboards, ["rotacion"]);
+});
+
+test("materializePortalProfilePermissions personalizado [] = sin subtableros", () => {
+  const permissions = materializePortalProfilePermissions("personalizado", {
+    allowedDashboards: ["operacion"],
+    allowedSubdashboards: [],
+  });
+  assert.deepEqual(permissions.allowedDashboards, ["operacion"]);
+  assert.deepEqual(permissions.allowedSubdashboards, []);
 });
 
 test("inferPortalProfileFromStoredPermissions detecta subadmin", () => {
@@ -159,6 +169,29 @@ test("merge + resolve personalizado puede ampliar a todos los subtableros", () =
   assert.equal(resolved.ok, true);
   if (!resolved.ok) return;
   assert.equal(resolved.value.allowedSubdashboards, null);
+});
+
+test("merge + resolve personalizado puede dejar sin subtableros", () => {
+  const merged = mergeAdminPermissionBodyWithCurrent(
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedDashboards: ["operacion"],
+      allowedSubdashboards: [],
+    },
+    {
+      portalProfile: "personalizado",
+      allowedSedes: ["Floresta"],
+      allowedLines: null,
+      allowedDashboards: ["operacion"],
+      allowedSubdashboards: ["checklists"],
+      specialRoles: null,
+    },
+  );
+  const resolved = resolveAdminUserPermissionsFromBody(merged);
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+  assert.deepEqual(resolved.value.allowedSubdashboards, []);
 });
 
 test("merge + resolve personalizado actualiza subconjunto de subtableros", () => {

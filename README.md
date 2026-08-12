@@ -122,8 +122,8 @@ HTTPS se debe remover esa excepcion o establecer `true`. Ver
 | `role` | `admin` o `user`; admin omite restricciones funcionales |
 | `allowed_sedes` | sedes visibles; `NULL` o lista vacia normalizada equivale a todas |
 | `allowed_lines` | lineas visibles; `NULL` equivale a todas. Si solo queda `asadero` o `fruver`, margenes/rotacion/variacion se acotan (sedes «Todas» no amplian ese alcance) |
-| `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` equivale a todas |
-| `allowed_subdashboards` | permisos granulares por subtablero; `NULL` equivale a todos |
+| `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` = todas; `{}` = ninguna |
+| `allowed_subdashboards` | permisos granulares por subtablero; `NULL` = todos; `{}` (array vacío) = ninguno |
 | `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `crear_horario_predeterminado`, `proveedores_qr` |
 | `sede` | campo legacy usado como fallback |
 | `is_active` | bloqueo o habilitacion de acceso |

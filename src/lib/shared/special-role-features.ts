@@ -60,7 +60,7 @@ export function canAccessRotacionBoard(
   allowedSubdashboards?: unknown,
 ): boolean {
   if (isAdmin) return true;
-  // Sin 3er argumento (= undefined): denegar. null/[] = todos los subtableros.
+  // Sin 3er argumento (= undefined): denegar. null = todos; [] = ninguno.
   if (allowedSubdashboards === undefined) return false;
   return canAccessPortalSubsection(allowedSubdashboards, "rotacion");
 }
@@ -69,7 +69,7 @@ export function canAccessRotacionBoard(
  * Puede acceder al tablero Proveedores (hub Venta).
  * Los administradores lo tienen siempre.
  * El resto necesita el subtablero `proveedores` en `allowed_subdashboards`
- * (vacio/null = todos los subtableros).
+ * (null = todos los subtableros; [] = ninguno).
  */
 export function canAccessProveedoresBoard(
   isAdmin = false,

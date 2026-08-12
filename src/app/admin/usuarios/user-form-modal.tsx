@@ -342,15 +342,15 @@ export function UserFormModal({
 
   const permissionsSummary = canEditManualPermissions
     ? [
-        `${formState.allowedDashboards.length || "Todas"} secciones`,
-        `${formState.allowedSubdashboards.length || "Todos"} subtableros`,
+        `${formState.allowedDashboards.length || "Ninguna"} secciones`,
+        `${formState.allowedSubdashboards.length || "Ninguno"} subtableros`,
         `${formState.specialRoles.length || "Ninguno"} roles especiales`,
         `${formState.allowedLines.length || "Todas"} líneas`,
       ].join(" · ")
     : canEditDashboardPermissions
       ? [
-          `${formState.allowedDashboards.length || "Todas"} secciones`,
-          `${formState.allowedSubdashboards.length || "Todos"} subtableros`,
+          `${formState.allowedDashboards.length || "Ninguna"} secciones`,
+          `${formState.allowedSubdashboards.length || "Ninguno"} subtableros`,
           formState.portalProfile === "fruver"
             ? "Línea fija: Fruver"
             : "Línea fija: Asadero",
@@ -729,11 +729,11 @@ export function UserFormModal({
                 ? `Solo tableros del perfil ${
                     formState.portalProfile === "fruver" ? "Fruver" : "Asadero"
                   }`
-                : "Vacío = todas"
+                : "Sin marcas = ninguna; todas marcadas = sin restricción"
             }
             summary={
               formState.allowedDashboards.length === 0
-                ? "Todas las secciones"
+                ? "Ninguna sección"
                 : `${formState.allowedDashboards.length} sección(es)`
             }
             isOpen={permissionsPanels.sections}
@@ -762,10 +762,10 @@ export function UserFormModal({
           <StepperStep
             index={2}
             title="Subtableros permitidos"
-            description="Vacío = todos"
+            description="Sin marcas = ninguno; todos marcados = sin restricción"
             summary={
               formState.allowedSubdashboards.length === 0
-                ? "Todos los subtableros"
+                ? "Ningún subtablero"
                 : `${formState.allowedSubdashboards.length} subtablero(s)`
             }
             isOpen={permissionsPanels.subsections}
@@ -803,11 +803,6 @@ export function UserFormModal({
                               (entry) => entry !== id,
                             )
                           : [...prev.allowedSubdashboards, id];
-                        // Si las secciones ya están restringidas, asegurar el padre.
-                        // Lista vacía = "todas" → no forzar padres (sigue siendo todas).
-                        if (prev.allowedDashboards.length === 0) {
-                          return { ...prev, allowedSubdashboards: nextSubs };
-                        }
                         const parentSections =
                           ensureParentSectionsForSubsections(
                             normalizeAllowedPortalSections(

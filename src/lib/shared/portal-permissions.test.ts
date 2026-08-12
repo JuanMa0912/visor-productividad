@@ -12,10 +12,10 @@ import {
   canViewProveedoresQrLinks,
 } from "./special-role-features";
 
-test("empty portal permission lists mean all sections and subdashboards", () => {
-  assert.equal(canAccessPortalSection([], "producto"), true);
-  assert.equal(canAccessPortalSubsection([], "rotacion"), true);
-  assert.equal(normalizeAllowedPortalSubsections([]), null);
+test("empty portal permission lists mean no sections and subdashboards", () => {
+  assert.equal(canAccessPortalSection([], "producto"), false);
+  assert.equal(canAccessPortalSubsection([], "rotacion"), false);
+  assert.deepEqual(normalizeAllowedPortalSubsections([]), []);
 });
 
 test("explicit subdashboard selection grants rotacion", () => {
@@ -32,8 +32,8 @@ test("sin allowedSubdashboards no hay acceso (ya no hay rol especial rotacion)",
   assert.equal(canAccessRotacionBoard(null, false), false);
 });
 
-test("lista vacia de subtableros = todos (incluye rotacion)", () => {
-  assert.equal(canAccessRotacionBoard(null, false, []), true);
+test("null de subtableros = todos; [] = ninguno", () => {
+  assert.equal(canAccessRotacionBoard(null, false, []), false);
   assert.equal(canAccessRotacionBoard(null, false, null), true);
 });
 
@@ -43,7 +43,7 @@ test("proveedores: admin siempre; resto por subtablero", () => {
   assert.equal(canAccessProveedoresBoard(false, ["proveedores"]), true);
   assert.equal(canAccessProveedoresBoard(false, ["ventas-x-item"]), false);
   assert.equal(canAccessProveedoresBoard(false, null), true);
-  assert.equal(canAccessProveedoresBoard(false, []), true);
+  assert.equal(canAccessProveedoresBoard(false, []), false);
 });
 
 test("proveedores ya no es subtablero solo-admin", () => {
@@ -54,7 +54,7 @@ test("proveedores ya no es subtablero solo-admin", () => {
 
 test("checklists: admin o subtablero checklists", () => {
   assert.equal(canAccessPortalSubsection(null, "checklists"), true);
-  assert.equal(canAccessPortalSubsection([], "checklists"), true);
+  assert.equal(canAccessPortalSubsection([], "checklists"), false);
   assert.equal(canAccessPortalSubsection(["checklists"], "checklists"), true);
   assert.equal(
     canAccessPortalSubsection(["consulta-operativa"], "checklists"),

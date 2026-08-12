@@ -147,6 +147,11 @@ export const resolvePortalSubsectionId = (
 ): PortalSubsectionId | null =>
   PORTAL_SUBSECTION_ALIAS_MAP[normalizePortalSectionToken(value)] ?? null;
 
+/**
+ * `null` / no-array = sin restricción (todas).
+ * `[]` = ninguna (sin acceso).
+ * Lista = whitelist.
+ */
 export const normalizeAllowedPortalSections = (
   value: unknown,
 ): PortalSectionId[] | null => {
@@ -154,7 +159,7 @@ export const normalizeAllowedPortalSections = (
   const entries = value.filter(
     (entry) => typeof entry === "string" && entry.trim(),
   );
-  if (entries.length === 0) return null;
+  if (entries.length === 0) return [];
 
   return Array.from(
     new Set(
@@ -167,6 +172,11 @@ export const normalizeAllowedPortalSections = (
   );
 };
 
+/**
+ * `null` / no-array = sin restricción (todos).
+ * `[]` = ninguno (sin acceso).
+ * Lista = whitelist.
+ */
 export const normalizeAllowedPortalSubsections = (
   value: unknown,
 ): PortalSubsectionId[] | null => {
@@ -174,7 +184,7 @@ export const normalizeAllowedPortalSubsections = (
   const entries = value.filter(
     (entry) => typeof entry === "string" && entry.trim(),
   );
-  if (entries.length === 0) return null;
+  if (entries.length === 0) return [];
 
   return Array.from(
     new Set(
@@ -205,6 +215,37 @@ export const canAccessPortalSubsection = (
   return normalized.includes(requiredSubsection);
 };
 
+export const ASSIGNABLE_PORTAL_SECTION_IDS: PortalSectionId[] = PORTAL_SECTIONS.map(
+  (section) => section.id,
+);
+
+/**
+ * Para el form de admin: `null` (todos) se muestra como todas las opciones
+ * marcadas, para que desmarcar una cree una whitelist real.
+ */
+export const expandPortalPermissionSelectionForForm = <T extends string>(
+  value: T[] | null | undefined,
+  allIds: readonly T[],
+): T[] => {
+  if (value === null || value === undefined) return [...allIds];
+  return [...value];
+};
+
+/**
+ * Al guardar: sin selección = ninguna (`[]`); todas marcadas = sin restricción
+ * (`null`); resto = whitelist.
+ */
+export const encodePortalPermissionSelection = <T extends string>(
+  selected: readonly T[],
+  allIds: readonly T[],
+): T[] | null => {
+  if (selected.length === 0) return [];
+  if (allIds.length === 0) return [...selected];
+  const selectedSet = new Set(selected);
+  if (allIds.every((id) => selectedSet.has(id))) return null;
+  return [...selected];
+};
+
 /**
  * Subtableros que existen en el registro pero no se asignan por checkbox
  * mientras el acceso real sea solo admin (evita falsa sensación de permiso).
@@ -215,6 +256,13 @@ export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [];
 export const isAdminOnlyPortalSubsection = (
   subsectionId: PortalSubsectionId,
 ): boolean => ADMIN_ONLY_PORTAL_SUBSECTIONS.includes(subsectionId);
+
+export const listAssignablePortalSubsectionIds = (): PortalSubsectionId[] =>
+  ASSIGNABLE_PORTAL_SECTION_IDS.flatMap((sectionId) =>
+    PORTAL_SUBSECTIONS_BY_SECTION[sectionId].filter(
+      (subId) => !isAdminOnlyPortalSubsection(subId),
+    ),
+  );
 
 /**
  * Secciones padre de los subtableros dados.

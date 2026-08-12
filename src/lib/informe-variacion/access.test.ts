@@ -48,8 +48,12 @@ describe("canAccessInformeVariacion", () => {
     );
   });
 
-  it("lista vacia de subtableros = todos (incluye informe)", () => {
-    assert.equal(canAccessInformeVariacion("user", ["producto"], []), true);
+  it("lista vacia de subtableros = ninguno (no incluye informe)", () => {
+    assert.equal(canAccessInformeVariacion("user", ["producto"], []), false);
+  });
+
+  it("null de subtableros = todos (incluye informe)", () => {
+    assert.equal(canAccessInformeVariacion("user", ["producto"], null), true);
   });
 
   it("niega sin producto o sin subseccion informe", () => {
