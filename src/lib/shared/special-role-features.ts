@@ -81,6 +81,23 @@ export function canAccessProveedoresBoard(
 }
 
 /**
+ * Puede acceder a Precios proveedor (`/exp/precios-proveedor`).
+ * Admin siempre. El resto necesita sección `venta` y el subtablero
+ * `precios-proveedor` marcado de forma explícita (no se hereda de
+ * `allowed_subdashboards = null`).
+ */
+export function canAccessPreciosProveedor(
+  role: string,
+  allowedDashboards: unknown,
+  allowedSubdashboards?: unknown,
+): boolean {
+  if (role === "admin") return true;
+  if (!canAccessPortalSection(allowedDashboards, "venta")) return false;
+  if (allowedSubdashboards === undefined) return false;
+  return canAccessPortalSubsection(allowedSubdashboards, "precios-proveedor");
+}
+
+/**
  * Puede ver links/QR de ingreso por sede en el tablero Proveedores.
  * Los administradores lo tienen siempre; el resto necesita `proveedores_qr`.
  * Sin permiso: no mostrar el bloque ni devolver tokens en la API.

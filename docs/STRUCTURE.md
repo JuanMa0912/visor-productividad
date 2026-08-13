@@ -103,11 +103,11 @@ Codigo compartido sin UI de pagina.
 | Grupo | Rutas |
 | --- | --- |
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
-| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público) |
+| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público), `/exp/precios-proveedor` (subtablero opt-in) |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
-| Experimental (solo admin; precios-proveedor también en hub Venta) | `/exp/efectividad-cajero`, `/exp/precios-proveedor` (heatmap PVU/PCU/margen × sede + proveedor) |
+| Experimental | `/exp/efectividad-cajero` (solo admin); `/exp/precios-proveedor` vive en hub Venta con subtablero `precios-proveedor` |
 | Otros | `/ExcelDian` (PascalCase historico de URL) |
 
 ### APIs
@@ -131,7 +131,7 @@ Codigo compartido sin UI de pagina.
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets; **sin Dinastía** (empresa/sedes excluidas en catálogo y consultas) |
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`) |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
-| `exp/precios-proveedor` | prototipo admin: heatmap ítem×sede precio venta/costo + proveedor; default día anterior; rango = AVG diario; máx. 14 días |
+| `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in, no hereda de NULL): heatmap ítem×sede precio venta/costo + proveedor; default día anterior; rango = AVG diario; máx. 14 días |
 | `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
 | `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |

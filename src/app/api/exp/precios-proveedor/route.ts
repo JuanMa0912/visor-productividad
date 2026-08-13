@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   applySessionCookies,
-  requireAdminSession,
+  requireAuthSession,
 } from "@/lib/auth";
+import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import { getDbPool } from "@/lib/db";
 import {
   queryPreciosProveedorMatrix,
@@ -24,10 +25,10 @@ const inclusiveDays = (start: string, end: string): number | null => {
 };
 
 export async function GET(request: Request) {
-  const session = await requireAdminSession();
+  const session = await requireAuthSession();
   if (!session) {
     return NextResponse.json(
-      { error: "No autorizado (solo admin)." },
+      { error: "No autorizado." },
       { status: 401, headers: { "Cache-Control": CACHE_CONTROL } },
     );
   }
@@ -38,6 +39,21 @@ export async function GET(request: Request) {
     }
     return applySessionCookies(response, session);
   };
+
+  if (
+    !canAccessPreciosProveedor(
+      session.user.role,
+      session.user.allowedDashboards,
+      session.user.allowedSubdashboards,
+    )
+  ) {
+    return withSession(
+      NextResponse.json(
+        { error: "No tienes permisos para esta seccion." },
+        { status: 403 },
+      ),
+    );
+  }
 
   const limitedUntil = checkRateLimit(request, {
     windowMs: 60_000,

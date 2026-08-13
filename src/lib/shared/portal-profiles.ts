@@ -6,6 +6,7 @@ import {
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
   ASSIGNABLE_PORTAL_SECTION_IDS,
+  OPT_IN_PORTAL_SUBSECTIONS,
   PORTAL_SUBSECTIONS_BY_SECTION,
   type PortalSectionId,
   type PortalSubsectionId,
@@ -468,6 +469,7 @@ export const portalPermissionsToFormArrays = (
     allowedSubdashboards: expandPortalPermissionSelectionForForm(
       permissions.allowedSubdashboards,
       subsectionIds,
+      OPT_IN_PORTAL_SUBSECTIONS,
     ),
     allowedLines: permissions.allowedLines ?? [],
     specialRoles: permissions.specialRoles ?? [],

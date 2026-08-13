@@ -14,7 +14,10 @@ import {
   canAccessPortalSubsection,
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
-import { canAccessProveedoresBoard } from "@/lib/shared/special-role-features";
+import {
+  canAccessPreciosProveedor,
+  canAccessProveedoresBoard,
+} from "@/lib/shared/special-role-features";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { PORTAL_HUB_TOUR_CONFIG } from "@/lib/ui/portal-tours/hub-tour-config";
@@ -74,7 +77,7 @@ const VENTA_MODULES: HubModuleItem[] = [
   {
     id: "precios-proveedor",
     icon: Tags,
-    badge: "EXP · ADMIN",
+    badge: "EXP",
     title: "Precios proveedor",
     description:
       "Heatmap experimental de precio de venta y costo (COGS) por ítem y sede, con proveedor.",
@@ -101,7 +104,11 @@ export default function VentaHubPage() {
     () =>
       VENTA_MODULES.filter((module) => {
         if (module.id === "precios-proveedor") {
-          return isAdmin;
+          return canAccessPreciosProveedor(
+            isAdmin ? "admin" : "user",
+            user?.allowedDashboards ?? null,
+            allowedSubdashboards,
+          );
         }
         if (module.id === "proveedores") {
           return canAccessProveedoresBoard(isAdmin, allowedSubdashboards);
@@ -111,7 +118,7 @@ export default function VentaHubPage() {
         if (!subId) return false;
         return canAccessPortalSubsection(allowedSubdashboards, subId);
       }),
-    [allowedSubdashboards, isAdmin],
+    [allowedSubdashboards, isAdmin, user?.allowedDashboards],
   );
 
   useEffect(() => {

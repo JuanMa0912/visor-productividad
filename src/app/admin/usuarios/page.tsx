@@ -36,6 +36,7 @@ import {
   listAssignablePortalSubsectionIds,
   normalizeAllowedPortalSections,
   normalizeAllowedPortalSubsections,
+  OPT_IN_PORTAL_SUBSECTIONS,
   resolvePortalSubsectionId,
   resolvePortalSectionId,
 } from "@/lib/shared/portal-sections";
@@ -273,6 +274,7 @@ const SUBSECTION_LABELS: Record<string, string> = {
   "analisis-de-inventario": "Días de inventario",
   "participacion-comercial": "Participación comercial",
   proveedores: "Proveedores",
+  "precios-proveedor": "Precios proveedor",
   "mix-y-linea": "Mix y linea",
   margenes: "Margenes",
   rotacion: "Rotacion",
@@ -876,6 +878,7 @@ export default function AdminUsuariosPage() {
           : encodePortalPermissionSelection(
               formState.allowedSubdashboards,
               formOptions.subsections,
+              OPT_IN_PORTAL_SUBSECTIONS,
             );
       const encodedDashboards =
         formState.portalProfile === "admin"

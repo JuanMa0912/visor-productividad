@@ -3,10 +3,15 @@ import test from "node:test";
 import {
   canAccessPortalSection,
   canAccessPortalSubsection,
+  encodePortalPermissionSelection,
+  expandPortalPermissionSelectionForForm,
   isAdminOnlyPortalSubsection,
+  listAssignablePortalSubsectionIds,
   normalizeAllowedPortalSubsections,
+  OPT_IN_PORTAL_SUBSECTIONS,
 } from "./portal-sections";
 import {
+  canAccessPreciosProveedor,
   canAccessProveedoresBoard,
   canAccessRotacionBoard,
   canViewProveedoresQrLinks,
@@ -68,4 +73,59 @@ test("QR proveedores: admin siempre; resto necesita proveedores_qr", () => {
   assert.equal(canViewProveedoresQrLinks(null, false), false);
   assert.equal(canViewProveedoresQrLinks(["proveedores_qr"], false), true);
   assert.equal(canViewProveedoresQrLinks(["abcd"], false), false);
+});
+
+test("precios-proveedor es opt-in: null no lo concede", () => {
+  assert.equal(canAccessPortalSubsection(null, "precios-proveedor"), false);
+  assert.equal(canAccessPortalSubsection([], "precios-proveedor"), false);
+  assert.equal(
+    canAccessPortalSubsection(["proveedores"], "precios-proveedor"),
+    false,
+  );
+  assert.equal(
+    canAccessPortalSubsection(["precios-proveedor"], "precios-proveedor"),
+    true,
+  );
+  assert.equal(canAccessPortalSubsection(null, "proveedores"), true);
+});
+
+test("canAccessPreciosProveedor: admin o venta + subtablero explícito", () => {
+  assert.equal(canAccessPreciosProveedor("admin", [], []), true);
+  assert.equal(canAccessPreciosProveedor("user", null, null), false);
+  assert.equal(canAccessPreciosProveedor("user", ["venta"], null), false);
+  assert.equal(canAccessPreciosProveedor("user", ["venta"], []), false);
+  assert.equal(
+    canAccessPreciosProveedor("user", ["venta"], ["precios-proveedor"]),
+    true,
+  );
+  assert.equal(
+    canAccessPreciosProveedor("user", ["producto"], ["precios-proveedor"]),
+    false,
+  );
+});
+
+test("encode/expand no marca precios-proveedor cuando null = todos", () => {
+  const allIds = listAssignablePortalSubsectionIds();
+  const expanded = expandPortalPermissionSelectionForForm(
+    null,
+    allIds,
+    OPT_IN_PORTAL_SUBSECTIONS,
+  );
+  assert.equal(expanded.includes("precios-proveedor"), false);
+  assert.equal(expanded.includes("proveedores"), true);
+
+  assert.equal(
+    encodePortalPermissionSelection(expanded, allIds, OPT_IN_PORTAL_SUBSECTIONS),
+    null,
+  );
+
+  const withOptIn = [...expanded, "precios-proveedor"] as typeof expanded;
+  const encoded = encodePortalPermissionSelection(
+    withOptIn,
+    allIds,
+    OPT_IN_PORTAL_SUBSECTIONS,
+  );
+  assert.ok(Array.isArray(encoded));
+  assert.equal(encoded?.includes("precios-proveedor"), true);
+  assert.equal(encoded?.includes("proveedores"), true);
 });

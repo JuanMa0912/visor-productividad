@@ -58,6 +58,7 @@ describe("user-admin-audit", () => {
   it("identifica rutas sensibles", () => {
     assert.equal(isAuditSensitivePath("/margenes"), true);
     assert.equal(isAuditSensitivePath("/admin/usuarios"), true);
+    assert.equal(isAuditSensitivePath("/exp/precios-proveedor"), true);
     assert.equal(isAuditSensitivePath("/secciones"), false);
   });
 });

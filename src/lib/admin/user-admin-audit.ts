@@ -218,6 +218,7 @@ export const AUDIT_SENSITIVE_PATH_PREFIXES = [
   "/rotacion",
   "/kardex",
   "/inventario-x-item",
+  "/exp/precios-proveedor",
 ] as const;
 
 export const isAuditSensitivePath = (path: string): boolean => {

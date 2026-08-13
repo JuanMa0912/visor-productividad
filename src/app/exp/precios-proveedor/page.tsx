@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FlaskConical } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
+import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import type {
   PreciosProveedorMatrix,
   PreciosProveedorMeta,
@@ -113,8 +115,14 @@ const yesterdayIso = () => {
 };
 
 export default function ExpPreciosProveedorPage() {
+  const router = useRouter();
   const { user, status } = useRequireAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
+  const canAccess = canAccessPreciosProveedor(
+    user?.role ?? "user",
+    user?.allowedDashboards,
+    user?.allowedSubdashboards,
+  );
 
   const [meta, setMeta] = useState<PreciosProveedorMeta | null>(null);
   const [matrix, setMatrix] = useState<PreciosProveedorMatrix | null>(null);
@@ -278,17 +286,22 @@ export default function ExpPreciosProveedorPage() {
   }, [loadMatrix]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !isAdmin) return;
+    if (status !== "authenticated" || !user) return;
+    if (!canAccess) router.replace("/secciones");
+  }, [status, user, canAccess, router]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !canAccess) return;
     void loadMeta().catch((err) => {
       setLoading(false);
       setError(err instanceof Error ? err.message : "Error meta");
     });
     // Solo al autenticar: la recarga por filtros va en el efecto de abajo.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/auth gate
-  }, [status, isAdmin]);
+  }, [status, canAccess]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !isAdmin) return;
+    if (status !== "authenticated" || !canAccess) return;
     if (!sedesReady || !dateStart || !dateEnd) return;
     if (skipNextMatrixEffect.current) {
       skipNextMatrixEffect.current = false;
@@ -297,7 +310,7 @@ export default function ExpPreciosProveedorPage() {
     void loadMatrix();
   }, [
     status,
-    isAdmin,
+    canAccess,
     dateStart,
     dateEnd,
     linea,
@@ -396,7 +409,7 @@ export default function ExpPreciosProveedorPage() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900">
             <FlaskConical className="h-3.5 w-3.5" aria-hidden />
-            Experimental · solo admin · no está en el menú
+            Experimental
           </span>
           <Link
             href="/secciones"

@@ -5,6 +5,7 @@ export type PortalSubsectionId =
   | "analisis-de-inventario"
   | "participacion-comercial"
   | "proveedores"
+  | "precios-proveedor"
   | "mix-y-linea"
   | "margenes"
   | "rotacion"
@@ -37,6 +38,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
       "Días de inventario",
       "Participación comercial",
       "Proveedores",
+      "Precios proveedor",
     ],
   },
   {
@@ -69,6 +71,7 @@ export const PORTAL_SUBSECTIONS_BY_SECTION: Record<
     "analisis-de-inventario",
     "participacion-comercial",
     "proveedores",
+    "precios-proveedor",
   ],
   producto: ["mix-y-linea", "margenes", "rotacion", "informe-variacion"],
   operacion: [
@@ -85,6 +88,8 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   "analisis-de-inventario": "venta",
   "participacion-comercial": "venta",
   proveedores: "venta",
+  "precios-proveedor": "venta",
+  "exp-precios-proveedor": "venta",
   "ventas-x-item": "venta",
   producto: "producto",
   productividad: "producto",
@@ -112,6 +117,9 @@ const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
   "mix-sede-linea": "participacion-comercial",
   proveedores: "proveedores",
   proveedor: "proveedores",
+  "precios-proveedor": "precios-proveedor",
+  "exp-precios-proveedor": "precios-proveedor",
+  "exp/precios-proveedor": "precios-proveedor",
   "mix-y-linea": "mix-y-linea",
   "productividad-home": "mix-y-linea",
   productividad: "mix-y-linea",
@@ -197,6 +205,18 @@ export const normalizeAllowedPortalSubsections = (
   );
 };
 
+/**
+ * Subtableros asignables que no heredan de `allowed_subdashboards = null`
+ * (“todos”). Hay que marcarlos explícitamente en gestión de usuarios.
+ */
+export const OPT_IN_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [
+  "precios-proveedor",
+];
+
+export const isOptInPortalSubsection = (
+  subsectionId: PortalSubsectionId,
+): boolean => OPT_IN_PORTAL_SUBSECTIONS.includes(subsectionId);
+
 export const canAccessPortalSection = (
   allowedSections: unknown,
   requiredSection: PortalSectionId,
@@ -211,6 +231,10 @@ export const canAccessPortalSubsection = (
   requiredSubsection: PortalSubsectionId,
 ) => {
   const normalized = normalizeAllowedPortalSubsections(allowedSubsections);
+  if (isOptInPortalSubsection(requiredSubsection)) {
+    if (normalized === null) return false;
+    return normalized.includes(requiredSubsection);
+  }
   if (normalized === null) return true;
   return normalized.includes(requiredSubsection);
 };
@@ -222,27 +246,41 @@ export const ASSIGNABLE_PORTAL_SECTION_IDS: PortalSectionId[] = PORTAL_SECTIONS.
 /**
  * Para el form de admin: `null` (todos) se muestra como todas las opciones
  * marcadas, para que desmarcar una cree una whitelist real.
+ * `optInIds` no se marcan cuando el valor es `null` (no heredan de “todos”).
  */
 export const expandPortalPermissionSelectionForForm = <T extends string>(
   value: T[] | null | undefined,
   allIds: readonly T[],
+  optInIds: readonly T[] = [],
 ): T[] => {
-  if (value === null || value === undefined) return [...allIds];
+  if (value === null || value === undefined) {
+    if (optInIds.length === 0) return [...allIds];
+    const optInSet = new Set(optInIds);
+    return allIds.filter((id) => !optInSet.has(id));
+  }
   return [...value];
 };
 
 /**
- * Al guardar: sin selección = ninguna (`[]`); todas marcadas = sin restricción
- * (`null`); resto = whitelist.
+ * Al guardar: sin selección = ninguna (`[]`); todas las regulares marcadas
+ * (sin opt-in) = sin restricción (`null`); resto = whitelist.
+ * Si hay opt-in marcado junto con todas las regulares, se persiste la lista
+ * explícita (no se puede guardar `null` + extras en la misma columna).
  */
 export const encodePortalPermissionSelection = <T extends string>(
   selected: readonly T[],
   allIds: readonly T[],
+  optInIds: readonly T[] = [],
 ): T[] | null => {
   if (selected.length === 0) return [];
   if (allIds.length === 0) return [...selected];
   const selectedSet = new Set(selected);
-  if (allIds.every((id) => selectedSet.has(id))) return null;
+  const optInSet = new Set(optInIds);
+  const regularIds = allIds.filter((id) => !optInSet.has(id));
+  const selectedOptIn = selected.filter((id) => optInSet.has(id));
+  const allRegularSelected =
+    regularIds.length > 0 && regularIds.every((id) => selectedSet.has(id));
+  if (allRegularSelected && selectedOptIn.length === 0) return null;
   return [...selected];
 };
 

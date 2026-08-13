@@ -4,6 +4,7 @@ import {
   inferPortalProfileFromStoredPermissions,
   materializePortalProfilePermissions,
   mergeAdminPermissionBodyWithCurrent,
+  portalPermissionsToFormArrays,
   resolveAdminUserPermissionsFromBody,
   validateSedesForPortalProfile,
 } from "@/lib/shared/portal-profiles";
@@ -123,6 +124,14 @@ test("validateSedesForPortalProfile bloquea Todas en gerente", () => {
     "El perfil Gerente no puede usar la sede «Todas»; asigna sedes concretas.",
   );
   assert.equal(validateSedesForPortalProfile("gerente", ["Floresta"]), null);
+});
+
+test("form de subadmin/gerente no marca precios-proveedor (opt-in)", () => {
+  const permissions = materializePortalProfilePermissions("subadmin");
+  const form = portalPermissionsToFormArrays(permissions);
+  assert.equal(permissions.allowedSubdashboards, null);
+  assert.equal(form.allowedSubdashboards.includes("precios-proveedor"), false);
+  assert.equal(form.allowedSubdashboards.includes("proveedores"), true);
 });
 
 test("mergeAdminPermissionBodyWithCurrent respeta null explicito en subtableros", () => {

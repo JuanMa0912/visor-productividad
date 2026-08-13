@@ -53,7 +53,7 @@ La definicion canonica esta en `src/lib/shared/portal-sections.ts`.
 
 | Seccion | Ruta hub | Subtableros principales |
 | --- | --- | --- |
-| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores` (+ admin: `/exp/precios-proveedor`) |
+| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores`, `precios-proveedor` (`/exp/precios-proveedor`, opt-in) |
 | `producto` | `/productividad` | `mix-y-linea`, `margenes`, `rotacion` |
 | `operacion` | `/horario` | `consulta-operativa`, `planilla-vs-asistencia`, `registro-de-horarios` |
 
@@ -123,7 +123,7 @@ HTTPS se debe remover esa excepcion o establecer `true`. Ver
 | `allowed_sedes` | sedes visibles; `NULL` o lista vacia normalizada equivale a todas |
 | `allowed_lines` | lineas visibles; `NULL` equivale a todas. Si solo queda `asadero` o `fruver`, margenes/rotacion/variacion se acotan (sedes «Todas» no amplian ese alcance) |
 | `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` = todas; `{}` = ninguna |
-| `allowed_subdashboards` | permisos granulares por subtablero; `NULL` = todos; `{}` (array vacío) = ninguno |
+| `allowed_subdashboards` | permisos granulares por subtablero; `NULL` = todos los regulares; `{}` (array vacío) = ninguno. `precios-proveedor` es opt-in: no se hereda de `NULL` |
 | `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `crear_horario_predeterminado`, `proveedores_qr` |
 | `sede` | campo legacy usado como fallback |
 | `is_active` | bloqueo o habilitacion de acceso |
@@ -136,6 +136,7 @@ Reglas notables:
 - `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
 - Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
 - `/informe-variacion` exige el subtablero `informe-variacion` (no se hereda de `margenes` ni `rotacion`).
+- `/exp/precios-proveedor` exige el subtablero `precios-proveedor` marcado de forma explícita (no se hereda de `allowed_subdashboards = NULL`; perfiles gerente/subadmin no lo reciben solos).
 
 ### Headers y rate limiting
 
