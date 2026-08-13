@@ -1,0 +1,13 @@
+[Unit]
+Description=Visor - timer diario del ETL de ordenes de compra (todos los dias 08:00)
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Todos los dias 08:00 (hora del sistema, America/Bogota en la 232).
+# Recarga ayer + OC incompletas/abiertas de la ventana 60d y sube a GCP.
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+Unit=visor-etl-orden-compra.service
+
+[Install]
+WantedBy=timers.target

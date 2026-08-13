@@ -42,13 +42,42 @@ presentes en el local en vez de upsert; limpia huerfanas cuando el local perdio 
 **Tablas validas** (allowlist; otra cosa aborta con error):
 `ventas_cajas` `ventas_fruver` `ventas_carnes` `ventas_asadero` `ventas_pollo_pesc`
 `ventas_industria` `rotacion_base_item_dia_sede` `asistencia_horas`
-`ventas_item_diario` `margen_final`.
+`ventas_item_diario` `ventas_proveedor_dia` `inventario_proveedor_dia`
+`proveedor_pos_catalogo` `proveedor_item` `orden_compra` `margen_final`.
 
 Receta tipica de backfill de UNA tabla (dry-run -> real):
 ```bash
 $SYNC --only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24 --dry-run
 $SYNC --only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24 --no-refresh --verify
 ```
+
+---
+
+## 1.b Ordenes de compra POS -> local -> GCP
+
+Carga `orden_compra` (cabecera OC) en la **local (232)** desde el POS (217). El
+diario 07:50 **no** la toca; la sube el timer 08:00 con `--only orden_compra`
+(upsert por `fecha_dcto`, no recopia todas las tablas). Prefijo:
+```bash
+OC="python3 /home/prodapp/visor-productividad/scripts/etl/orden-compra/etl_orden_compra.py"
+```
+
+| Quiero... | Comando |
+| --- | --- |
+| Incremental (dias nuevos + abiertas) | `$OC` o `$OC --incremental` |
+| Solo refrescar incompletas | `$OC --solo-abiertas` |
+| Incremental sin abiertas | `$OC --no-abiertas` |
+| Solo el mes en curso | `$OC --mes-actual` |
+| Rango fijo | `$OC --desde 20260801 --hasta 20260831` |
+| Ventana N dias (upsert, no borra el resto) | `$OC --dias 30` |
+| Rehacer un rango sucio | `$OC --reemplazar --desde 20260801 --hasta 20260812` |
+| Una empresa | `$OC --empresa mercamio` |
+| Probar sin escribir | `$OC --dry-run` |
+| Subir a GCP (solo OC, tabla local) | `$SYNC --only orden_compra --no-refresh --verify` |
+
+Detalle: [`orden-compra/README.md`](orden-compra/README.md). Timer
+`visor-etl-orden-compra` **todos los dias 08:00** (`run-daily.sh`: incremental + sync GCP).
+El SLA de 7 dias **no** se persiste: el tablero calcula `fecha_dcto + 7`.
 
 ---
 
@@ -242,6 +271,7 @@ journalctl -u ventas-pipeline-daily.service -n 80 --no-pager  # el ETL de la sec
 journalctl -u visor-etl-sync.service -n 80 --no-pager        # diario 7:50 (sube todo a GCP)
 journalctl -u visor-etl-reconcile.service -n 80 --no-pager   # domingos 16:00 (--replace)
 journalctl -u visor-etl-margen.service -n 80 --no-pager      # margenes 7:15
+journalctl -u visor-etl-orden-compra.service -n 80 --no-pager # OC incremental 8:00
 journalctl -u etl-rotacion.service -n 80 --no-pager          # rotacion base local 7:00
 journalctl -u visor-etl-asistencia-gcp.service -n 80 --no-pager  # asistencia mes->GCP 18:30
 ```

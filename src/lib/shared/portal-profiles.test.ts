@@ -132,6 +132,7 @@ test("form de subadmin/gerente no marca precios-proveedor (opt-in)", () => {
   assert.equal(permissions.allowedSubdashboards, null);
   assert.equal(form.allowedSubdashboards.includes("precios-proveedor"), false);
   assert.equal(form.allowedSubdashboards.includes("proveedores"), true);
+  assert.equal(form.allowedSubdashboards.includes("ordenes-compra"), false);
 });
 
 test("mergeAdminPermissionBodyWithCurrent respeta null explicito en subtableros", () => {

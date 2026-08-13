@@ -103,7 +103,7 @@ Codigo compartido sin UI de pagina.
 | Grupo | Rutas |
 | --- | --- |
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
-| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público), `/exp/precios-proveedor` (subtablero opt-in) |
+| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público), `/exp/precios-proveedor` (subtablero opt-in), `/ordenes-compra` (**solo admin**) |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
@@ -132,6 +132,7 @@ Codigo compartido sin UI de pagina.
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`) |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
 | `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in, no hereda de NULL): heatmap ítem×sede precio venta/costo + proveedor; default día anterior; rango = AVG diario; máx. 14 días |
+| `ordenes-compra` | tablero **solo admin**: OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas |
 | `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
 | `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
@@ -222,6 +223,7 @@ Orden completo despues de `schema-auth.sql`:
 | `create-admin.js` | crear/actualizar admin desde `ADMIN_*` |
 | `test-db.js`, `test-db-postgres.js` | pruebas de conexion |
 | `apply-migration-file.mjs` | aplicar un SQL de `db/migrations/` |
+| `etl/orden-compra/etl_orden_compra.py` | OC incremental POS 217 → `orden_compra` (232): dias nuevos + abiertas; GCP via `$SYNC --only orden_compra` (no entra en el diario 07:50) |
 | `apply-activity-log-migration.mjs` | apoyo historico para migracion de actividad |
 | `playwright_smoke.py` | smoke E2E con dev server activo |
 | `cleanup-logs.sh` | limpieza de logs/sesiones para systemd |

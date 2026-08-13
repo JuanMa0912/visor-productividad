@@ -11,6 +11,7 @@ import {
   OPT_IN_PORTAL_SUBSECTIONS,
 } from "./portal-sections";
 import {
+  canAccessOrdenesCompra,
   canAccessPreciosProveedor,
   canAccessProveedoresBoard,
   canAccessRotacionBoard,
@@ -75,6 +76,16 @@ test("QR proveedores: admin siempre; resto necesita proveedores_qr", () => {
   assert.equal(canViewProveedoresQrLinks(["abcd"], false), false);
 });
 
+test("ordenes-compra: solo admin (no se asigna por subtablero)", () => {
+  assert.equal(canAccessOrdenesCompra(true), true);
+  assert.equal(canAccessOrdenesCompra(false), false);
+  assert.equal(isAdminOnlyPortalSubsection("ordenes-compra"), true);
+  assert.equal(
+    listAssignablePortalSubsectionIds().includes("ordenes-compra"),
+    false,
+  );
+});
+
 test("precios-proveedor es opt-in: null no lo concede", () => {
   assert.equal(canAccessPortalSubsection(null, "precios-proveedor"), false);
   assert.equal(canAccessPortalSubsection([], "precios-proveedor"), false);
@@ -113,6 +124,7 @@ test("encode/expand no marca precios-proveedor cuando null = todos", () => {
   );
   assert.equal(expanded.includes("precios-proveedor"), false);
   assert.equal(expanded.includes("proveedores"), true);
+  assert.equal(expanded.includes("ordenes-compra"), false);
 
   assert.equal(
     encodePortalPermissionSelection(expanded, allIds, OPT_IN_PORTAL_SUBSECTIONS),

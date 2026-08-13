@@ -275,6 +275,7 @@ const SUBSECTION_LABELS: Record<string, string> = {
   "participacion-comercial": "Participación comercial",
   proveedores: "Proveedores",
   "precios-proveedor": "Costos",
+  "ordenes-compra": "Órdenes de compra",
   "mix-y-linea": "Mix y linea",
   margenes: "Margenes",
   rotacion: "Rotacion",

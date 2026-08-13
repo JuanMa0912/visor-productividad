@@ -41,6 +41,7 @@ seguimiento operativo.
 | Días de inventario | `/analisis-de-inventario` | `/api/analisis-de-inventario` | DI und/valor, drill sede→ítem y mapa de calor |
 | Participación comercial | `/participacion-comercial` | `/api/participacion-comercial` | mix sede↔línea por almacén y drill completo |
 | Proveedores | `/proveedores`, `/proveedores/ingreso/[token]` | `/api/proveedores/visitas`, `/api/proveedores/ingreso`, `/api/proveedores/ventas`, `/api/proveedores/productividad` | Subtablero `proveedores`; QR público por sede; links/QR del tablero con `proveedores_qr`; visitas + ventas 30d + productividad und/kg/tx y volumen÷horas |
+| Órdenes de compra | `/ordenes-compra` | `/api/ordenes-compra` | Tablero **solo admin**: abiertas/incompletas/vencidas (SLA 7d); recarga diaria 08:00 |
 | Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, meta/summary/options y XLSX |
 | Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` | consultas operativas, reporte Alex, planillas, comparativos y checklists (subtablero `checklists`) |
 | Cronograma | `/cronograma` | `/api/cronograma` | lectura de bases de datos embebidas en una pagina de Notion |
@@ -53,7 +54,7 @@ La definicion canonica esta en `src/lib/shared/portal-sections.ts`.
 
 | Seccion | Ruta hub | Subtableros principales |
 | --- | --- | --- |
-| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores`, `precios-proveedor` (`/exp/precios-proveedor`, opt-in) |
+| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores`, `precios-proveedor` (`/exp/precios-proveedor`, opt-in), `ordenes-compra` (**solo admin**) |
 | `producto` | `/productividad` | `mix-y-linea`, `margenes`, `rotacion` |
 | `operacion` | `/horario` | `consulta-operativa`, `planilla-vs-asistencia`, `registro-de-horarios` |
 
@@ -174,6 +175,7 @@ Dominios principales:
 | Rotacion/inventario/kardex | `rotacion_base_item_dia_sede`, `rotacion_v4`, `rotacion_abcd_config*`, `rotacion_cero_item_estado*` |
 | Horarios | `horario_planillas`, `horario_planilla_detalles` |
 | Inventario presets | `inventario_x_item_user_presets` |
+| Ordenes de compra | `orden_compra` (incremental POS; ETL `scripts/etl/orden-compra`) |
 
 El repo no contiene todo el DDL de tablas ETL como `ventas_*`,
 `asistencia_horas`, `rotacion_base_item_dia_sede` o `margenes_linea_co_dia`.

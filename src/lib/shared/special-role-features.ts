@@ -80,6 +80,11 @@ export function canAccessProveedoresBoard(
   return canAccessPortalSubsection(allowedSubdashboards, "proveedores");
 }
 
+/** Tablero `/ordenes-compra`. Solo administradores. */
+export function canAccessOrdenesCompra(isAdmin = false): boolean {
+  return Boolean(isAdmin);
+}
+
 /**
  * Puede acceder a Costos (`/exp/precios-proveedor`).
  * Admin siempre. El resto necesita sección `venta` y el subtablero

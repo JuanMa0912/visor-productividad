@@ -1,0 +1,18 @@
+[Unit]
+Description=Visor - recarga diaria 08:00 de ordenes de compra POS(217) -> 232 -> GCP
+Documentation=file:///home/prodapp/visor-productividad/scripts/etl/orden-compra/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=prodapp
+Group=prodapp
+WorkingDirectory=/home/prodapp/visor-productividad
+ExecStart=/bin/bash /home/prodapp/visor-productividad/scripts/etl/orden-compra/run-daily.sh
+StandardOutput=journal
+StandardError=journal
+# run-daily.sh ya trata exit 3 del ETL (empresa vacia) como warning y aun asi sincroniza.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true

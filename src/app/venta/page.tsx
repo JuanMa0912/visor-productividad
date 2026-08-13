@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Package, PieChart, Share2, Tags, Truck } from "lucide-react";
+import { BarChart3, ClipboardList, Package, PieChart, Share2, Tags, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PortalHubHeroCard,
@@ -15,6 +15,7 @@ import {
   resolvePortalSubsectionId,
 } from "@/lib/shared/portal-sections";
 import {
+  canAccessOrdenesCompra,
   canAccessPreciosProveedor,
   canAccessProveedoresBoard,
 } from "@/lib/shared/special-role-features";
@@ -83,6 +84,15 @@ const VENTA_MODULES: HubModuleItem[] = [
       "Heatmap experimental de precio de venta y costo (COGS) por ítem y sede, con proveedor.",
     href: "/exp/precios-proveedor",
   },
+  {
+    id: "ordenes-compra",
+    icon: ClipboardList,
+    badge: "ADMIN",
+    title: "Órdenes de compra",
+    description:
+      "Tablero admin: OC abiertas, incompletas y vencidas (SLA 7 días). Recarga diaria 8:00.",
+    href: "/ordenes-compra",
+  },
 ];
 
 const hubTour = PORTAL_HUB_TOUR_CONFIG.venta;
@@ -112,6 +122,9 @@ export default function VentaHubPage() {
         }
         if (module.id === "proveedores") {
           return canAccessProveedoresBoard(isAdmin, allowedSubdashboards);
+        }
+        if (module.id === "ordenes-compra") {
+          return canAccessOrdenesCompra(isAdmin);
         }
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);

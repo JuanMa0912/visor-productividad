@@ -6,6 +6,7 @@ export type PortalSubsectionId =
   | "participacion-comercial"
   | "proveedores"
   | "precios-proveedor"
+  | "ordenes-compra"
   | "mix-y-linea"
   | "margenes"
   | "rotacion"
@@ -39,6 +40,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
       "Participación comercial",
       "Proveedores",
       "Costos",
+      "Órdenes de compra",
     ],
   },
   {
@@ -72,6 +74,7 @@ export const PORTAL_SUBSECTIONS_BY_SECTION: Record<
     "participacion-comercial",
     "proveedores",
     "precios-proveedor",
+    "ordenes-compra",
   ],
   producto: ["mix-y-linea", "margenes", "rotacion", "informe-variacion"],
   operacion: [
@@ -90,6 +93,8 @@ const PORTAL_SECTION_ALIAS_MAP: Record<string, PortalSectionId> = {
   proveedores: "venta",
   "precios-proveedor": "venta",
   "exp-precios-proveedor": "venta",
+  "ordenes-compra": "venta",
+  oc: "venta",
   "ventas-x-item": "venta",
   producto: "producto",
   productividad: "producto",
@@ -120,6 +125,9 @@ const PORTAL_SUBSECTION_ALIAS_MAP: Record<string, PortalSubsectionId> = {
   "precios-proveedor": "precios-proveedor",
   "exp-precios-proveedor": "precios-proveedor",
   "exp/precios-proveedor": "precios-proveedor",
+  "ordenes-compra": "ordenes-compra",
+  oc: "ordenes-compra",
+  "ordenes-de-compra": "ordenes-compra",
   "mix-y-linea": "mix-y-linea",
   "productividad-home": "mix-y-linea",
   productividad: "mix-y-linea",
@@ -289,7 +297,9 @@ export const encodePortalPermissionSelection = <T extends string>(
  * mientras el acceso real sea solo admin (evita falsa sensación de permiso).
  * Vacío: todos los subtableros registrados son asignables en gestión de usuarios.
  */
-export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [];
+export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [
+  "ordenes-compra",
+];
 
 export const isAdminOnlyPortalSubsection = (
   subsectionId: PortalSubsectionId,

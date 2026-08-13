@@ -105,6 +105,7 @@ Orden completo despues de `schema-auth.sql`:
 52. `20260805_proveedores_visitas.sql` + `20260805_proveedores_visitas_pos_catalog.sql` (QR proveedores)
 53. `20260811_proveedor_visitas_por_sede.sql` (marcaciones QR en tablas físicas `qr_*` por sede; vista `proveedor_visitas`)
 54. `20260813_qr_visitas_autorizacion_datos.sql` (`autorizacion_datos_at` en `qr_*`; recrea vista `proveedor_visitas`)
+55. `20260813_orden_compra.sql` (snapshot cabecera OC: POS `cmmovimiento_ocompra` -> `orden_compra`)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -581,6 +582,32 @@ python3 scripts/etl/proveedores/etl_proveedores.py --desde 20260701 --hasta 2026
 python3 scripts/etl/proveedores/etl_proveedores.py --reconciliar --days 30
 bash scripts/etl/sync-local-to-gcp.sh --only proveedor_pos_catalogo --only proveedor_item \
   --only ventas_proveedor_dia --only inventario_proveedor_dia --days 3 --verify
+```
+
+### 4.aa Ordenes de compra (incremental POS)
+
+Migracion: `db/migrations/20260813_orden_compra.sql`.
+ETL: `scripts/etl/orden-compra/etl_orden_compra.py` (ver su
+[README](../scripts/etl/orden-compra/README.md)). Timer `visor-etl-orden-compra` a las **08:00**
+(`run-daily.sh`: `--incremental` dias+abiertas + `$SYNC --only orden_compra --no-refresh`; el diario 07:50 no incluye OC). Tablero `/ordenes-compra`.
+
+| Tabla | Grano | Uso |
+| --- | --- | --- |
+| `orden_compra` | empresa + id_co + tipdoc + documento_oc | cabecera OC: estado, confirmacion POS, cantidades pedidas/recibidas |
+
+Notas:
+
+- Origen: `cmmovimiento_ocompra` en 217 (`OC` comercial, `FR` fruver, `OM` mercaderista, `OS` SAC).
+- Diario: dias de `fecha_dcto` que faltan hasta ayer + refresh de OC abiertas (`ind_estado <> 2`) ya en dest. No toca las cumplidas.
+- Primera carga: `--mes-actual` / `--desde`. Backfill sucio: `--reemplazar --desde/--hasta`.
+- Confirmacion del sistema: `usuario_conf` / `fecha_conf` / `hora_conf`. Recepcion: `cantidad` vs `cantidad_ent`.
+- El SLA de 7 dias **no** se persiste. El tablero calcula `fecha_dcto + 7`; `fecha_entrega` es la promesa POS.
+- Sync GCP: solo via `--only orden_compra` (upsert de toda la tabla local). El diario 07:50 / reconcile no la tocan.
+
+```bash
+python3 scripts/etl/orden-compra/etl_orden_compra.py --dry-run
+python3 scripts/etl/orden-compra/etl_orden_compra.py
+bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --verify
 ```
 
 Actualizar este documento cuando cambien migraciones, tablas leidas, columnas

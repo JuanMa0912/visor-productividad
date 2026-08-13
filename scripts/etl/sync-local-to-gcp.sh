@@ -17,6 +17,8 @@
 #   ventas_industria, rotacion_base_item_dia_sede, ventas_item_diario,
 #   ventas_proveedor_dia, inventario_proveedor_dia,
 #   proveedor_pos_catalogo y proveedor_item (catalogos sin fecha: se suben completos),
+#   orden_compra      (NO va en el diario 07:50; la sube visor-etl-orden-compra 08:00
+#                      con --only; upsert de toda la tabla local, sin borrar GCP),
 #   asistencia_horas  (modo replace SIEMPRE, ver aviso de arriba)
 #   margen_final      (modo replace SIEMPRE; --margen-full para snapshot completo)
 # (ventas_item_diario y margen_final: sus ETLs de carga al local corren aparte; aqui solo
@@ -185,7 +187,7 @@ DESDEC="${DESDE//-/}"; HASTAC="${HASTA//-/}"
 TABLES=(proveedor_pos_catalogo proveedor_item
         ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
         ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario
-        ventas_proveedor_dia inventario_proveedor_dia margen_final)
+        ventas_proveedor_dia inventario_proveedor_dia orden_compra margen_final)
 CANARIES="ventas_cajas rotacion_base_item_dia_sede asistencia_horas"
 
 # --only / --table: filtra la allowlist a un subconjunto (backfill quirurgico).
@@ -205,11 +207,29 @@ table_selected() {  # 0 si la tabla esta seleccionada (o si no hay filtro)
   return 1
 }
 
+# Tablas con timer propio. El diario/reconcile SIN --only no las toca.
+# Siguen en la allowlist para `$SYNC --only orden_compra`.
+SKIP_IN_DEFAULT_SYNC=(orden_compra)
+in_default_skip() {
+  local t="$1" s
+  for s in "${SKIP_IN_DEFAULT_SYNC[@]}"; do [[ "$s" == "$t" ]] && return 0; done
+  return 1
+}
+should_process() {
+  local t="$1"
+  table_selected "$t" || return 1
+  if [[ -z "${ONLY_TABLES// /}" ]] && in_default_skip "$t"; then
+    return 1
+  fi
+  return 0
+}
+
 # KEY      = columnas de identidad (no se actualizan en el upsert).
 # CONFLICT = target del ON CONFLICT; default "(KEY)". Override cuando el indice unico
 #            usa expresiones (p.ej. COALESCE) en vez de columnas planas.
 # EXCLUDE  = columnas que NO se insertan (serial id, FKs); lista separada por comas.
-# MODE     = "upsert" (default) o "replace" (borra-fechas-presentes-en-local + reinserta).
+# MODE     = "upsert" (default), "replace" (borra-fechas-presentes-en-local + reinserta)
+#            o "snapshot" (borra TODA la tabla en GCP + reinserta; no usar en el diario).
 #            replace fijo: margen_final (sin clave natural) y asistencia_horas (el biometrico
 #            re-importa con menos filas -> el upsert dejaria huerfanas). El resto: upsert.
 declare -A KEY DATECOL DATETYPE EXCLUDE CONFLICT MODE
@@ -232,6 +252,7 @@ KEY[proveedor_pos_catalogo]="empresa,id_cricla1"
 KEY[proveedor_item]="empresa,id_item"
 KEY[ventas_proveedor_dia]="empresa,fecha_dcto,id_co,id_cricla1"
 KEY[inventario_proveedor_dia]="empresa,fecha_dia,id_co,id_cricla1"
+KEY[orden_compra]="empresa,id_co,tipdoc,documento_oc"
 
 for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc ventas_industria; do
   DATECOL[$t]="fecha_dcto"; DATETYPE[$t]="text"; EXCLUDE[$t]=""
@@ -251,6 +272,10 @@ DATECOL[proveedor_pos_catalogo]=""; DATETYPE[proveedor_pos_catalogo]=""; EXCLUDE
 DATECOL[proveedor_item]=""; DATETYPE[proveedor_item]=""; EXCLUDE[proveedor_item]=""; MODE[proveedor_item]="full"
 # inventario_proveedor_dia: fecha DATE (viene de rotacion), no text YYYYMMDD como el resto.
 DATECOL[inventario_proveedor_dia]="fecha_dia"; DATETYPE[inventario_proveedor_dia]="date"; EXCLUDE[inventario_proveedor_dia]="id"
+# orden_compra: el diario 07:50 NO la toca. La sube visor-etl-orden-compra 08:00
+# con --only. MODE=full (sin ventana): hay que subir tambien incompletas viejas
+# cuyo fecha_dcto no es "ayer". UPSERT, no borra GCP.
+DATECOL[orden_compra]=""; DATETYPE[orden_compra]=""; EXCLUDE[orden_compra]="id"; MODE[orden_compra]="full"
 
 process_table_margen_full() {
   local tbl="margen_final" cols tmp cnt drop_stmt _ec
@@ -350,6 +375,8 @@ process_table() {
   # (catalogos): ahi "replace" no tiene sentido y abortaria con "replace requiere DATECOL".
   if [[ "$FORCE_REPLACE" -eq 1 && -n "${DATECOL[$tbl]:-}" ]]; then
     mode="replace"
+  elif [[ "$FORCE_REPLACE" -eq 1 && "$mode" == "snapshot" ]]; then
+    log "[$tbl] --replace ignorado: ya va en MODE=snapshot (reemplazo completo)"
   elif [[ "$FORCE_REPLACE" -eq 1 ]]; then
     log "[$tbl] --replace ignorado: es un catalogo sin columna de fecha (se sube completo por upsert)"
   fi
@@ -360,6 +387,25 @@ process_table() {
   # Modo "replace": reemplaza en GCP SOLO las fechas presentes en el local (via staging), no toda
   # la ventana -> nunca borra dias que el local no tenga (seguro para corridas parciales/automaticas).
   # La guarda cnt==0 de arriba ya evita tocar GCP si el local no tiene filas en la ventana.
+  if [[ "$mode" == "snapshot" ]]; then
+    drop_stmt=""
+    for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
+    "${GCP_PSQL[@]}" <<SQL
+\set ON_ERROR_STOP on
+BEGIN;
+SET statement_timeout = 0;
+CREATE TEMP TABLE _stg (LIKE public.$tbl INCLUDING DEFAULTS) ON COMMIT DROP;
+$drop_stmt
+\copy _stg ($cols) FROM '$tmp' WITH (FORMAT csv)
+DELETE FROM public.$tbl;
+INSERT INTO public.$tbl ($cols) SELECT $cols FROM _stg;
+COMMIT;
+SQL
+    rm -f "$tmp"
+    log "[$tbl] snapshot OK ($cnt filas; reemplazo completo en GCP)"
+    return 0
+  fi
+
   if [[ "$mode" == "replace" ]]; then
     datecol="${DATECOL[$tbl]}"
     [[ -n "$datecol" ]] || { log "[$tbl] ERROR: replace requiere DATECOL definido"; return 1; }
@@ -500,6 +546,8 @@ MAXEXPR[asistencia_horas]="to_char(max(fecha),'YYYYMMDD')"
 MAXEXPR[proveedor_pos_catalogo]="to_char(max(updated_at),'YYYYMMDD')"
 MAXEXPR[proveedor_item]="to_char(max(updated_at),'YYYYMMDD')"
 MAXEXPR[inventario_proveedor_dia]="to_char(max(fecha_dia),'YYYYMMDD')"
+# OC: fecha_dcto puede ser futura; loaded_at dice si el incremental de 08:00 corrio.
+MAXEXPR[orden_compra]="to_char(max(loaded_at),'YYYYMMDD')"
 
 # Chequeo simple: fecha maxima por tabla en GCP vs el objetivo (HASTA).
 # Respeta --only para no referenciar tablas que tal vez no existan aun en GCP.
@@ -507,7 +555,7 @@ verify_freshness() {
   log "Verificando frescura en GCP (objetivo $HASTA)..."
   local cte="" t
   for t in "${TABLES[@]}"; do
-    table_selected "$t" || continue
+    should_process "$t" || continue
     if [[ -z "$cte" ]]; then
       cte="SELECT '$t' t, ${MAXEXPR[$t]} d FROM $t"
     else
@@ -529,6 +577,10 @@ log "Config: $ETL_ENV_FILE"
 log "Origen(local): $DB_HOST_LOCAL/$DB_NAME_LOCAL  ->  Destino(GCP): $DB_HOST_GCP/$DB_NAME_GCP (ssl=$GCP_SSL)"
 
 for t in "${TABLES[@]}"; do
+  if [[ -z "${ONLY_TABLES// /}" ]] && in_default_skip "$t"; then
+    log "[$t] omitida: la sube su timer propio. Use --only $t para forzar."
+    continue
+  fi
   table_selected "$t" || continue
   if [[ "$t" == "margen_final" && "$MARGEN_FULL" -eq 1 ]]; then
     continue

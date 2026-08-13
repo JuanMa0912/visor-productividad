@@ -8,7 +8,12 @@ Sube el dia a dia de las tablas de **hechos** desde el Postgres **local**
 - **Tablas (allowlist):** `ventas_cajas`, `ventas_fruver`, `ventas_carnes`,
   `ventas_asadero`, `ventas_pollo_pesc`, `ventas_industria`,
   `rotacion_base_item_dia_sede`, `asistencia_horas`, `ventas_item_diario`,
-  `margen_final`.
+  `ventas_proveedor_dia`, `inventario_proveedor_dia`, `proveedor_pos_catalogo`,
+  `proveedor_item`, `orden_compra`, `margen_final`.
+- **`orden_compra`:** **no** entra en el diario 07:50 ni en el reconcile. La
+  carga POS→232 (dias nuevos + abiertas) y el upsert a GCP los hace
+  `visor-etl-orden-compra` (08:00) con `--only orden_compra` (tabla local
+  completa, sin borrar GCP). Si el local esta vacio, no toca GCP.
 - **No toca:** tablas de estado de la app (usuarios, sesiones, `rotacion_cero_*`,
   `rotacion_abcd_*`, horarios, presets), matviews, `margenes_linea_co_dia` (legacy).
 - **`margen_final`:** no tiene clave natural unica; se replica con **DELETE del
@@ -79,8 +84,9 @@ sudo -u prodapp bash /home/prodapp/visor-productividad/scripts/etl/sync-local-to
 ## 3. Programacion (systemd timers)
 
 Units en `deploy/systemd/`:
-- `visor-etl-sync.{service,timer}` -> **todos los dias 07:50**, sube ayer.
-- `visor-etl-reconcile.{service,timer}` -> **domingos 16:00**, re-sube los ultimos 7 dias.
+- `visor-etl-sync.{service,timer}` -> **todos los dias 07:50**, sube ayer (todas las tablas **excepto** `orden_compra`).
+- `visor-etl-reconcile.{service,timer}` -> **domingos 16:00**, re-sube los ultimos 7 dias (tampoco toca OC).
+- `visor-etl-orden-compra.{service,timer}` -> **todos los dias 08:00**, POS→232 incremental + `$SYNC --only orden_compra`.
 
 Instalar (como root):
 ```bash
@@ -116,7 +122,8 @@ Notas:
   limpia **huerfanas**: filas que quedaron en GCP cuando el local perdio filas (el upsert
   nunca borra). Es seguro — no toca fechas que el local no tenga, y si el local esta vacio
   en la ventana no borra nada. El daily (07:50) sigue en upsert (rapido); la limpieza va
-  en el reconcile semanal.
+  en el reconcile semanal. Ninguno de los dos toca `orden_compra`
+  (timer `visor-etl-orden-compra` a las 08:00, siempre con `--only`).
 
 ## 4. Corridas MANUALES (cuando falla, avisa o aun no hay datos)
 
