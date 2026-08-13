@@ -254,6 +254,7 @@ export const insertEntrada = async (
     visitanteCedula: string;
     clientIp: string | null;
     userAgent: string | null;
+    autorizacionDatosAt: Date;
   },
 ): Promise<ProveedorVisitaOpen> => {
   const table = requireQrTable(args.sedeName);
@@ -261,9 +262,10 @@ export const insertEntrada = async (
     `
     INSERT INTO ${table} (
       sede_name, proveedor_codigo, proveedor_empresa, proveedor_nombre,
-      visitante_nombre, visitante_cedula, client_ip, user_agent
+      visitante_nombre, visitante_cedula, client_ip, user_agent,
+      autorizacion_datos_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING id, sede_name, proveedor_nombre, visitante_nombre, visitante_cedula, entrada_at
     `,
     [
@@ -275,6 +277,7 @@ export const insertEntrada = async (
       args.visitanteCedula,
       args.clientIp,
       args.userAgent,
+      args.autorizacionDatosAt.toISOString(),
     ],
   );
   const row = result.rows[0] as {

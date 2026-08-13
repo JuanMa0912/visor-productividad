@@ -8,9 +8,10 @@ import {
   useState,
 } from "react";
 import { useParams } from "next/navigation";
-import type {
-  ProveedorCatalogItem,
-  ProveedorVisitaOpen,
+import {
+  PROVEEDORES_INGRESO_DATOS_AVISO,
+  type ProveedorCatalogItem,
+  type ProveedorVisitaOpen,
 } from "@/lib/proveedores/types";
 
 type Step = "cedula" | "entrada" | "salida" | "done";
@@ -36,6 +37,7 @@ export default function ProveedoresIngresoPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autorizacionDatos, setAutorizacionDatos] = useState(false);
 
   const loadMeta = useCallback(
     async (q = "") => {
@@ -143,6 +145,12 @@ export default function ProveedoresIngresoPage() {
       setError("Seleccione un proveedor de la lista.");
       return;
     }
+    if (!autorizacionDatos) {
+      setError(
+        "Debe autorizar el tratamiento de datos personales para registrar la entrada.",
+      );
+      return;
+    }
     setBusy(true);
     try {
       const response = await fetch("/api/proveedores/ingreso", {
@@ -154,6 +162,7 @@ export default function ProveedoresIngresoPage() {
           cedula,
           nombre,
           proveedorId,
+          autorizacionDatos: true,
         }),
       });
       const data = (await response.json()) as {
@@ -214,6 +223,7 @@ export default function ProveedoresIngresoPage() {
     setOpenVisit(null);
     setMessage(null);
     setError(null);
+    setAutorizacionDatos(false);
     setStep("cedula");
   };
 
@@ -249,6 +259,9 @@ export default function ProveedoresIngresoPage() {
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
             La sede ya quedó fijada por este código QR. Ingrese su cédula: si
             tiene visita abierta se registra la salida; si no, la entrada.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            {PROVEEDORES_INGRESO_DATOS_AVISO}
           </p>
 
           {error ? (
@@ -354,9 +367,28 @@ export default function ProveedoresIngresoPage() {
                   </span>
                 </p>
               ) : null}
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={autorizacionDatos}
+                  onChange={(e) => setAutorizacionDatos(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-sky-700 focus:ring-sky-200"
+                />
+                <span className="leading-relaxed">
+                  Autorizo el tratamiento de mis datos personales (nombre y
+                  cédula) para el control de ingreso a esta sede, según la Ley
+                  1581 de 2012.
+                </span>
+              </label>
               <button
                 type="button"
-                disabled={busy || catalogEmpty || !proveedorId || nombre.trim().length < 3}
+                disabled={
+                  busy ||
+                  catalogEmpty ||
+                  !proveedorId ||
+                  nombre.trim().length < 3 ||
+                  !autorizacionDatos
+                }
                 onClick={() => void onEntrada()}
                 className="h-11 w-full rounded-xl bg-sky-700 text-sm font-semibold text-white disabled:opacity-50"
               >

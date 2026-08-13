@@ -11,6 +11,7 @@ import {
   searchProveedorCatalog,
 } from "@/lib/proveedores/repo";
 import {
+  isAcceptedDatosAutorizacion,
   isValidVisitanteCedula,
   isValidVisitanteNombre,
   normalizeVisitanteCedula,
@@ -66,6 +67,7 @@ type Body = {
   nombre?: string;
   proveedorId?: string | number;
   visitId?: number;
+  autorizacionDatos?: unknown;
 };
 
 /**
@@ -130,6 +132,15 @@ export async function POST(request: Request) {
           409,
         );
       }
+      if (!isAcceptedDatosAutorizacion(body.autorizacionDatos)) {
+        return json(
+          {
+            error:
+              "Debe autorizar el tratamiento de datos personales para registrar la entrada.",
+          },
+          400,
+        );
+      }
       const nombre = normalizeVisitanteNombre(body.nombre);
       if (!isValidVisitanteNombre(nombre)) {
         return json({ error: "Nombre inválido (mínimo 3 caracteres)." }, 400);
@@ -153,6 +164,7 @@ export async function POST(request: Request) {
         visitanteCedula: cedula,
         clientIp: getClientIp(request),
         userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
+        autorizacionDatosAt: new Date(),
       });
       return json({ status: "open", visit, message: "Entrada registrada." });
     }

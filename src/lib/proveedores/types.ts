@@ -36,6 +36,14 @@ export const normalizeVisitanteNombre = (raw: unknown): string =>
 export const isValidVisitanteNombre = (nombre: string): boolean =>
   nombre.length >= 3 && nombre.length <= 120;
 
+/** Aviso Ley 1581 en el formulario público QR. */
+export const PROVEEDORES_INGRESO_DATOS_AVISO =
+  "Sus datos (nombre y cédula) se usan solo para el control de ingreso de proveedores a esta sede. No se usan con fines comerciales. Puede solicitar consulta, corrección o supresión ante administración UAID (Ley 1581 de 2012).";
+
+/** True solo si el visitante marcó explícitamente la autorización. */
+export const isAcceptedDatosAutorizacion = (raw: unknown): boolean =>
+  raw === true || raw === 1 || raw === "1" || raw === "true";
+
 export const normalizeProveedorToken = (raw: unknown): string =>
   String(raw ?? "")
     .trim()

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   decodeProveedorPosKey,
   encodeProveedorPosKey,
+  isAcceptedDatosAutorizacion,
   isValidProveedorToken,
   isValidVisitanteCedula,
   normalizeVisitanteCedula,
@@ -26,6 +27,14 @@ describe("proveedores types", () => {
 
   it("normaliza nombre", () => {
     assert.equal(normalizeVisitanteNombre("  Ana   Pérez  "), "Ana Pérez");
+  });
+
+  it("solo acepta autorización explícita", () => {
+    assert.equal(isAcceptedDatosAutorizacion(true), true);
+    assert.equal(isAcceptedDatosAutorizacion("true"), true);
+    assert.equal(isAcceptedDatosAutorizacion(false), false);
+    assert.equal(isAcceptedDatosAutorizacion("on"), false);
+    assert.equal(isAcceptedDatosAutorizacion(undefined), false);
   });
 
   it("encode/decode clave POS", () => {

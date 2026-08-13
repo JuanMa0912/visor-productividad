@@ -132,7 +132,7 @@ Codigo compartido sin UI de pagina.
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`) |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
 | `exp/precios-proveedor` | prototipo admin: heatmap ítem×sede precio venta/costo + proveedor; default día anterior; rango = AVG diario; máx. 14 días |
-| `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede |
+| `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
 | `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
 | `proveedores/productividad` | subtablero `proveedores`: `mode=board` (KPIs/sede/día + volumen÷horas pagadas, cache 45s) + `mode=proveedores` (ranking); industria=und, fruver/carnes=kg, cajas=tx; máx. 31 días |

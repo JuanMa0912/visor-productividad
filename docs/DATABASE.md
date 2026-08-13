@@ -104,6 +104,7 @@ Orden completo despues de `schema-auth.sql`:
 51. `20260803_app_users_display_name.sql` (`app_users.display_name`: nombre real / nota bajo username en admin)
 52. `20260805_proveedores_visitas.sql` + `20260805_proveedores_visitas_pos_catalog.sql` (QR proveedores)
 53. `20260811_proveedor_visitas_por_sede.sql` (marcaciones QR en tablas físicas `qr_*` por sede; vista `proveedor_visitas`)
+54. `20260813_qr_visitas_autorizacion_datos.sql` (`autorizacion_datos_at` en `qr_*`; recrea vista `proveedor_visitas`)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -522,7 +523,7 @@ Migraciones:
 | `proveedor_catalogo` | (opcional / legacy) catálogo propio; el form QR usa POS |
 | `proveedor_pos_catalogo` | maestro real (~3.4k): `empresa`+`id_cricla1`+`nombre`+`nit` |
 | `proveedor_sede_qr` | token opaco por sede → URL pública `/proveedores/ingreso/[token]` |
-| `qr_calle_5ta` … `qr_chia` | marcaciones físicas por sede (entrada/salida; abierta = `salida_at IS NULL`) |
+| `qr_calle_5ta` … `qr_chia` | marcaciones físicas por sede (entrada/salida; abierta = `salida_at IS NULL`; `autorizacion_datos_at` = habeas data al entrar) |
 | `proveedor_visitas` | **vista** solo lectura = `UNION ALL` de `qr_*` (la app no escribe aquí) |
 | `proveedor_visitas_legacy` | respaldo post-split; no escribir desde la app |
 | `ventas_proveedor_dia` | ventas agregadas por proveedor/día (no es el form de ingreso) |
@@ -533,6 +534,7 @@ Mapa sede → tabla en `src/lib/proveedores/qr-tables.ts` (whitelist; no interpo
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas_pos_catalog.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260811_proveedor_visitas_por_sede.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260813_qr_visitas_autorizacion_datos.sql
 ```
 
 ### 4.y Proveedores (ventas e inventario desde el POS)
