@@ -6,14 +6,17 @@ import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   Download,
-  LayoutGrid,
   Loader2,
   RefreshCw,
   Search,
   X,
 } from "lucide-react";
-import { AppTopBar } from "@/components/portal/app-top-bar";
 import { Button } from "@/components/ui/button";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  adminUsuariosPillClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 import type {
   AdminExportDownloadListResponse,
   AdminExportDownloadRow,
@@ -42,8 +45,8 @@ const FORMAT_BADGE: Record<string, string> = {
   xlsx: "bg-emerald-100 text-emerald-800",
   pdf: "bg-rose-100 text-rose-800",
   csv: "bg-sky-100 text-sky-800",
-  png: "bg-violet-100 text-violet-800",
-  jpeg: "bg-violet-100 text-violet-800",
+  png: "bg-sky-100 text-sky-800",
+  jpeg: "bg-sky-100 text-sky-800",
   other: "bg-slate-100 text-slate-700",
 };
 
@@ -216,33 +219,22 @@ export default function AdminExportDownloadsPage() {
   const hasActiveFilters = Object.values(applied).some((v) => v.trim());
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <AppTopBar backHref="/admin/usuarios" backLabel="Volver a usuarios" />
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <Link
-              href="/admin/usuarios"
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 hover:text-slate-800"
-            >
-              <LayoutGrid className="h-3 w-3" />
-              Admin · Usuarios
-            </Link>
-            <h1 className="mt-1 flex items-center gap-2 text-3xl font-bold tracking-tight text-slate-900">
-              <Download className="h-7 w-7 text-emerald-600" />
-              Descargas
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Quién exportó qué, desde qué panel y con qué filtros. Sin archivo
-              adjunto · retención 9 meses.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+    <AdminUsuariosShell
+      backHref="/admin/usuarios"
+      backLabel="Volver a usuarios"
+      maxWidthClassName="max-w-7xl"
+    >
+        <AdminUsuariosPageHeader
+          icon={Download}
+          title="Descargas"
+          description="Quién exportó qué, desde qué panel y con qué filtros. Sin archivo adjunto · retención 9 meses."
+          actions={
+            <>
             {csvHref ? (
               <a
                 href={csvHref}
                 download={`descargas_${new Date().toISOString().slice(0, 10)}.csv`}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className={adminUsuariosPillClass}
               >
                 <Download className="h-4 w-4" />
                 CSV
@@ -262,8 +254,9 @@ export default function AdminExportDownloadsPage() {
               )}
               Actualizar
             </Button>
-          </div>
-        </header>
+            </>
+          }
+        />
 
         <div className="mb-4 grid grid-cols-3 gap-3">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -461,8 +454,7 @@ export default function AdminExportDownloadsPage() {
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
+    </AdminUsuariosShell>
   );
 }
 
@@ -502,7 +494,7 @@ function FragmentRow({
           {row.userId ? (
             <Link
               href={`/admin/usuarios/${row.userId}/metricas`}
-              className="hover:text-indigo-700 hover:underline"
+              className="hover:text-sky-700 hover:underline"
             >
               {row.username}
             </Link>

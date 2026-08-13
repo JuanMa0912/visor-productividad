@@ -13,10 +13,14 @@ import {
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { getPortalProfileLabel } from "@/lib/shared/portal-profiles";
 import { getPathLabel } from "@/lib/shared/path-labels";
-import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  adminUsuariosPillClass,
+  adminUsuariosSoftLinkClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 import type { OnlineSessionRow } from "@/app/api/admin/online-sessions/route";
 
-const APP_VERSION_LABEL = "UAID V4.0";
 const PRESENCE_ACTIVE_MS = 10 * 60_000;
 const REFRESH_MS = 20_000;
 
@@ -132,11 +136,11 @@ export default function AdminUsuariosAccesosEnLineaPage() {
   const renderRow = (row: OnlineSessionRow, live: boolean) => {
     const pathLabel = getPathLabel(row.lastPath);
     return (
-      <tr key={row.userId} className="transition hover:bg-indigo-50/40">
+      <tr key={row.userId} className="transition hover:bg-sky-50/40">
         <td className="px-4 py-3">
           <Link
             href={`/admin/usuarios/${row.userId}/metricas`}
-            className="font-semibold text-indigo-700 hover:underline"
+            className="font-semibold text-sky-700 hover:underline"
           >
             {row.username}
           </Link>
@@ -191,54 +195,41 @@ export default function AdminUsuariosAccesosEnLineaPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
-      <AppTopBar backHref="/admin/usuarios/accesos" backLabel="Volver a accesos" />
-      <div className="px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-[min(100%,80rem)] flex-col gap-6">
-          <header className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-emerald-600 to-teal-700 text-white shadow-lg shadow-emerald-600/25">
-                <Radio className="h-6 w-6" strokeWidth={2} />
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Administración <span className="text-slate-400">●</span>{" "}
-                  {APP_VERSION_LABEL}
-                </p>
-                <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                  Quién está en línea
-                </h1>
-                <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-                  Sesiones abiertas en el portal. «Activo» = actividad en los
-                  últimos 10 minutos (heartbeat).
-                </p>
-                <Link
-                  href="/admin/usuarios/accesos"
-                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
-                >
-                  <ChevronLeft className="h-4 w-4" aria-hidden />
-                  Volver a accesos
-                </Link>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+    <AdminUsuariosShell
+      backHref="/admin/usuarios/accesos"
+      backLabel="Volver a accesos"
+      maxWidthClassName="max-w-[min(100%,80rem)]"
+    >
+          <AdminUsuariosPageHeader
+            icon={Radio}
+            title="Quién está en línea"
+            description="Sesiones abiertas en el portal. «Activo» = actividad en los últimos 10 minutos (heartbeat)."
+            nav={
               <Link
-                href="/secciones"
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                href="/admin/usuarios/accesos"
+                className={adminUsuariosSoftLinkClass}
               >
-                <LayoutGrid className="h-4 w-4 text-slate-500" />
-                Ir a secciones
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+                Volver a accesos
               </Link>
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
-              >
-                <LogOut className="h-4 w-4" />
-                Cerrar sesión
-              </button>
-            </div>
-          </header>
+            }
+            actions={
+              <>
+                <Link href="/secciones" className={adminUsuariosPillClass}>
+                  <LayoutGrid className="h-4 w-4 text-slate-500" />
+                  Ir a secciones
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  className="inline-flex h-9 items-center gap-2 rounded-full px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Cerrar sesión
+                </button>
+              </>
+            }
+          />
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-4">
@@ -262,7 +253,7 @@ export default function AdminUsuariosAccesosEnLineaPage() {
                 Actualización
               </p>
               <p className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-slate-700">
-                <Activity className="h-4 w-4 text-indigo-600" />
+                <Activity className="h-4 w-4 text-sky-600" />
                 Cada {REFRESH_MS / 1000}s
               </p>
             </div>
@@ -346,8 +337,6 @@ export default function AdminUsuariosAccesosEnLineaPage() {
               </div>
             </section>
           ) : null}
-        </div>
-      </div>
-    </div>
+    </AdminUsuariosShell>
   );
 }

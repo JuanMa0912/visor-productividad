@@ -85,7 +85,7 @@ export function LoginLogDetailPanel({ logId }: { logId: number }) {
   }
 
   return (
-    <div className="grid gap-3 border-t border-indigo-100 bg-indigo-50/30 px-4 py-4 text-sm sm:grid-cols-2">
+    <div className="grid gap-3 border-t border-sky-100 bg-sky-50/30 px-4 py-4 text-sm sm:grid-cols-2">
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
           Ventana de actividad

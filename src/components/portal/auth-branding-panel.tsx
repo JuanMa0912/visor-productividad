@@ -1,3 +1,5 @@
+import { PORTAL_APP_VERSION } from "@/lib/shared/uaid-brand";
+
 type AuthBrandingPanelProps = {
   className?: string;
 };
@@ -31,7 +33,7 @@ export function AuthBrandingPanel({ className = "" }: AuthBrandingPanelProps) {
       <div className="absolute right-8 bottom-8 left-8 z-10 flex items-center justify-between text-xs text-blue-200/60 lg:right-16 lg:bottom-12 lg:left-16">
         <p>© 2026 Mercamio · Todos los derechos reservados</p>
         <p className="rounded-full bg-white/10 px-2.5 py-0.5 font-mono text-[10px]">
-          v4.0
+          {PORTAL_APP_VERSION}
         </p>
       </div>
     </aside>

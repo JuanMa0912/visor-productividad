@@ -27,7 +27,6 @@ import {
   LogOut,
   Radio,
   Search,
-  Sparkles,
   Trash2,
   LayoutGrid,
   X,
@@ -48,10 +47,14 @@ import {
 } from "@/lib/admin/login-logs-utils";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { getPathLabel } from "@/lib/shared/path-labels";
-import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  adminUsuariosPillClass,
+  adminUsuariosSoftLinkClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 import { LoginLogDetailPanel } from "@/app/admin/usuarios/accesos/login-log-detail-panel";
 
-const APP_VERSION_LABEL = "UAID V4.0";
 const PAGE_SIZE = 15;
 const PRESENCE_REFRESH_MS = 20_000;
 const PRESENCE_ACTIVE_MAX_MS = 10 * 60_000;
@@ -331,9 +334,9 @@ export default function AdminUsuariosAccesosPage() {
       );
     }
     return order === "asc" ? (
-      <ArrowUp className="ml-1 inline h-3.5 w-3.5 text-indigo-600" aria-hidden />
+      <ArrowUp className="ml-1 inline h-3.5 w-3.5 text-sky-600" aria-hidden />
     ) : (
-      <ArrowDown className="ml-1 inline h-3.5 w-3.5 text-indigo-600" aria-hidden />
+      <ArrowDown className="ml-1 inline h-3.5 w-3.5 text-sky-600" aria-hidden />
     );
   };
 
@@ -465,76 +468,61 @@ export default function AdminUsuariosAccesosPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
-      <AppTopBar backHref="/admin/usuarios" backLabel="Volver a usuarios" />
-      <div className="px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-[min(100%,72rem)] flex-col gap-6">
-        <header className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-600/25">
-              <Sparkles className="h-6 w-6" strokeWidth={2} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Administración <span className="text-slate-400">●</span>{" "}
-                {APP_VERSION_LABEL}
-              </p>
-              <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                Registro de accesos
-              </h1>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-                Inicios de sesión en el portal.                 Filtra por rango de fechas y por usuario (se aplican al
-                instante), ordena y navega por páginas.
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                <Link
-                  href="/admin/usuarios"
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-sky-200/80 bg-sky-50/70 px-3.5 text-sm font-semibold text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40"
-                >
-                  <ChevronLeft className="h-4 w-4" aria-hidden />
-                  Volver a usuarios
-                </Link>
-                <Link
-                  href="/admin/usuarios/accesos/en-linea"
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 to-teal-50/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:from-emerald-100 hover:to-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
-                >
-                  <Radio className="h-4 w-4" aria-hidden />
-                  Quién está en línea
-                </Link>
-                <Link
-                  href="/admin/usuarios/accesos/pormes"
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 to-emerald-100/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:from-emerald-100 hover:to-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
-                >
-                  Ver accesos por mes
-                  <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-                </Link>
-                <Link
-                  href="/admin/usuarios/uso-tableros"
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-violet-200/80 bg-linear-to-r from-violet-50 to-indigo-50/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-violet-800 shadow-sm transition hover:border-violet-300 hover:from-violet-100 hover:to-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40"
-                >
-                  <LayoutGrid className="h-4 w-4" aria-hidden />
-                  Uso de tableros
-                </Link>
-                <Link
-                  href="/admin/usuarios/auditoria"
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-rose-200/80 bg-linear-to-r from-rose-50 to-orange-50/70 px-3.5 text-xs font-semibold uppercase tracking-[0.08em] text-rose-800 shadow-sm transition hover:border-rose-300 hover:from-rose-100 hover:to-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
-                >
-                  Auditoría
-                </Link>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+    <AdminUsuariosShell
+      backHref="/admin/usuarios"
+      backLabel="Volver a usuarios"
+      maxWidthClassName="max-w-[min(100%,72rem)]"
+    >
+        <AdminUsuariosPageHeader
+          icon={BarChart3}
+          title="Registro de accesos"
+          description="Inicios de sesión en el portal. Filtra por rango de fechas y por usuario (se aplican al instante), ordena y navega por páginas."
+          nav={
+            <>
+              <Link href="/admin/usuarios" className={adminUsuariosSoftLinkClass}>
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+                Volver a usuarios
+              </Link>
+              <Link
+                href="/admin/usuarios/accesos/en-linea"
+                className={adminUsuariosSoftLinkClass}
+              >
+                <Radio className="h-4 w-4" aria-hidden />
+                Quién está en línea
+              </Link>
+              <Link
+                href="/admin/usuarios/accesos/pormes"
+                className={adminUsuariosSoftLinkClass}
+              >
+                Ver accesos por mes
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+              </Link>
+              <Link
+                href="/admin/usuarios/uso-tableros"
+                className={adminUsuariosPillClass}
+              >
+                <LayoutGrid className="h-4 w-4 text-slate-500" aria-hidden />
+                Uso de tableros
+              </Link>
+              <Link
+                href="/admin/usuarios/auditoria"
+                className={adminUsuariosPillClass}
+              >
+                Auditoría
+              </Link>
+            </>
+          }
+          actions={
             <button
               type="button"
               onClick={() => void handleLogout()}
-              className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+              className="inline-flex h-9 items-center gap-2 rounded-full px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
             >
               <LogOut className="h-4 w-4" />
               Cerrar sesión
             </button>
-          </div>
-        </header>
+          }
+        />
 
         {error && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -590,7 +578,7 @@ export default function AdminUsuariosAccesosPage() {
           <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
             <div className="flex flex-wrap items-center gap-2">
               <CalendarRange
-                className="h-4 w-4 shrink-0 text-indigo-600"
+                className="h-4 w-4 shrink-0 text-sky-600"
                 aria-hidden
               />
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
@@ -610,7 +598,7 @@ export default function AdminUsuariosAccesosPage() {
                     setDateFrom(e.target.value);
                     setPage(1);
                   }}
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
                 />
               </label>
               <label className="flex min-w-40 flex-1 flex-col gap-1.5">
@@ -625,7 +613,7 @@ export default function AdminUsuariosAccesosPage() {
                     setDateTo(e.target.value);
                     setPage(1);
                   }}
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
                 />
               </label>
               <label className="flex min-w-48 flex-[1.2] flex-col gap-1.5">
@@ -643,7 +631,7 @@ export default function AdminUsuariosAccesosPage() {
                     onChange={(e) => setUserInput(e.target.value)}
                     placeholder="Nombre de usuario…"
                     autoComplete="off"
-                    className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
                   />
                 </div>
               </label>
@@ -657,7 +645,7 @@ export default function AdminUsuariosAccesosPage() {
                     setSedeFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
                 >
                   <option value="">Todas</option>
                   {SEDE_FILTER_OPTIONS.filter(Boolean).map((sede) => (
@@ -677,7 +665,7 @@ export default function AdminUsuariosAccesosPage() {
                     setProfileFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
                 >
                   <option value="">Todos</option>
                   {PORTAL_PROFILE_OPTIONS.map((option) => (
@@ -692,7 +680,7 @@ export default function AdminUsuariosAccesosPage() {
                   type="button"
                   onClick={() => void handleExportCsv()}
                   disabled={exporting || loading}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 text-xs font-semibold text-indigo-800 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3.5 text-xs font-semibold text-sky-800 shadow-sm transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {exporting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -733,7 +721,7 @@ export default function AdminUsuariosAccesosPage() {
                     onClick={() => applyDateShortcut(shortcut.id)}
                     className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                       isActive
-                        ? "border-indigo-300 bg-indigo-50 text-indigo-900"
+                        ? "border-sky-300 bg-sky-50 text-sky-900"
                         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                     }`}
                   >
@@ -758,7 +746,7 @@ export default function AdminUsuariosAccesosPage() {
               </p>
             )}
           </div>
-          <div className="flex flex-col gap-3 border-b border-slate-100 bg-linear-to-r from-slate-50/90 to-indigo-50/40 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-linear-to-r from-slate-50/90 to-sky-50/40 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
               <h2 className="text-base font-bold text-slate-900">
                 Historial de inicios de sesión
@@ -784,7 +772,7 @@ export default function AdminUsuariosAccesosPage() {
                 onClick={() => toggleSort("logged_at")}
                 className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
                   sortBy === "logged_at"
-                    ? "border-indigo-300 bg-indigo-50 text-indigo-900"
+                    ? "border-sky-300 bg-sky-50 text-sky-900"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                 }`}
               >
@@ -796,7 +784,7 @@ export default function AdminUsuariosAccesosPage() {
                 onClick={() => toggleSort("username")}
                 className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
                   sortBy === "username"
-                    ? "border-indigo-300 bg-indigo-50 text-indigo-900"
+                    ? "border-sky-300 bg-sky-50 text-sky-900"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                 }`}
               >
@@ -810,7 +798,7 @@ export default function AdminUsuariosAccesosPage() {
             {loading ? (
               <div className="flex min-h-[240px] items-center justify-center py-16">
                 <div className="flex flex-col items-center gap-3 text-slate-500">
-                  <div className="h-9 w-9 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                  <div className="h-9 w-9 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
                   <p className="text-sm font-medium">Cargando accesos…</p>
                 </div>
               </div>
@@ -853,7 +841,7 @@ export default function AdminUsuariosAccesosPage() {
                     return (
                       <Fragment key={log.id}>
                       <tr
-                        className="transition hover:bg-indigo-50/40"
+                        className="transition hover:bg-sky-50/40"
                       >
                         <td className="hidden whitespace-nowrap px-4 py-3 text-xs tabular-nums text-slate-400 sm:table-cell">
                           {n}
@@ -885,7 +873,7 @@ export default function AdminUsuariosAccesosPage() {
                           <div className="flex flex-col gap-1">
                             <Link
                               href={`/admin/usuarios/${log.user_id}/metricas`}
-                              className="inline-flex w-fit items-center gap-1 font-semibold text-indigo-700 transition hover:text-indigo-900 hover:underline"
+                              className="inline-flex w-fit items-center gap-1 font-semibold text-sky-700 transition hover:text-sky-900 hover:underline"
                               title="Ver métricas de actividad"
                             >
                               {log.username}
@@ -1013,7 +1001,7 @@ export default function AdminUsuariosAccesosPage() {
                       onClick={() => setPage(item)}
                       className={`min-w-9 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${
                         page === item
-                          ? "bg-indigo-600 text-white shadow-sm"
+                          ? "bg-sky-600 text-white shadow-sm"
                           : "border border-transparent text-slate-600 hover:bg-white hover:shadow-sm"
                       }`}
                     >
@@ -1083,8 +1071,6 @@ export default function AdminUsuariosAccesosPage() {
           </div>
         </section>
 
-        </div>
-      </div>
-    </div>
+    </AdminUsuariosShell>
   );
 }

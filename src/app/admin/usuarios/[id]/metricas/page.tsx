@@ -8,18 +8,20 @@ import {
   AlertCircle,
   ArrowLeft,
   CalendarDays,
-  Clock,
   ExternalLink,
   Globe,
   Laptop,
-  LayoutGrid,
   RefreshCw,
   Smartphone,
   Tablet,
   TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  adminUsuariosPillClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 import { cn } from "@/lib/shared/utils";
 import { getPathLabel } from "@/lib/shared/path-labels";
 import type {
@@ -316,73 +318,63 @@ export default function UserMetricsPage() {
   }, [load]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppTopBar backHref="/admin/usuarios" backLabel="Volver a usuarios" />
-      <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <Link
-              href="/admin/usuarios"
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 hover:text-slate-800"
-            >
-              <LayoutGrid className="h-3 w-3" />
-              Admin · Usuarios
-            </Link>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-              {data?.user.username ?? "Métricas de usuario"}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+    <AdminUsuariosShell
+      backHref="/admin/usuarios"
+      backLabel="Volver a usuarios"
+      maxWidthClassName="max-w-7xl"
+    >
+        <AdminUsuariosPageHeader
+          icon={TrendingUp}
+          title={data?.user.username ?? "Métricas de usuario"}
+          description={
+            data?.lastActivity.observedAt
+              ? `Última actividad: ${getPathLabel(data.lastActivity.path)} · ${formatRelativeTime(data.lastActivity.observedAt)} (${formatAbsolute(data.lastActivity.observedAt)})`
+              : "Resumen de actividad, dispositivos y tableros visitados."
+          }
+          nav={
+            <>
               {data?.user.role === "admin" ? (
-                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                <span className="inline-flex h-9 items-center rounded-full bg-amber-100 px-3 text-[11px] font-medium text-amber-800">
                   Administrador
                 </span>
-              ) : (
-                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+              ) : data ? (
+                <span className="inline-flex h-9 items-center rounded-full bg-slate-100 px-3 text-[11px] font-medium text-slate-700">
                   Usuario
                 </span>
-              )}
-              {data?.user.sede && (
-                <span className="text-slate-600">· {data.user.sede}</span>
-              )}
-              {data && !data.user.isActive && (
-                <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+              ) : null}
+              {data?.user.sede ? (
+                <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-[11px] font-medium text-slate-600">
+                  {data.user.sede}
+                </span>
+              ) : null}
+              {data && !data.user.isActive ? (
+                <span className="inline-flex h-9 items-center rounded-full bg-rose-100 px-3 text-[11px] font-medium text-rose-800">
                   Inactivo
                 </span>
-              )}
-            </div>
-            {data?.lastActivity.observedAt && (
-              <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500">
-                <Clock className="h-3 w-3" />
-                Última actividad: {getPathLabel(data.lastActivity.path)} ·{" "}
-                {formatRelativeTime(data.lastActivity.observedAt)}
-                <span className="ml-1 text-slate-400">
-                  ({formatAbsolute(data.lastActivity.observedAt)})
-                </span>
-              </p>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void load()}
-              disabled={loading}
-              className="gap-1.5 border-slate-200 bg-white"
-            >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", loading && "animate-spin")}
-              />
-              Actualizar
-            </Button>
-            <Link
-              href="/admin/usuarios"
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Volver
-            </Link>
-          </div>
-        </header>
+              ) : null}
+            </>
+          }
+          actions={
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void load()}
+                disabled={loading}
+                className="gap-1.5 border-slate-200 bg-white"
+              >
+                <RefreshCw
+                  className={cn("h-3.5 w-3.5", loading && "animate-spin")}
+                />
+                Actualizar
+              </Button>
+              <Link href="/admin/usuarios" className={adminUsuariosPillClass}>
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Volver
+              </Link>
+            </>
+          }
+        />
 
         {error && (
           <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
@@ -560,7 +552,6 @@ export default function UserMetricsPage() {
             </footer>
           </>
         )}
-      </main>
-    </div>
+    </AdminUsuariosShell>
   );
 }

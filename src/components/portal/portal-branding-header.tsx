@@ -1,37 +1,29 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarDays, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, CalendarDays, CircleHelp, LayoutGrid, Users } from "lucide-react";
+import { PORTAL_APP_VERSION } from "@/lib/shared/uaid-brand";
 import { UserMenu } from "./user-menu";
-import { PortalTourHelpButton } from "./portal-tour-help-button";
+import { useUaidSurfaceTheme } from "./uaid-surface-theme";
 
-export const PORTAL_APP_VERSION = "v4.0";
+export { PORTAL_APP_VERSION } from "@/lib/shared/uaid-brand";
 
 export type PortalBrandingHeaderProps = {
   canAccessCronograma: boolean;
   isAdmin: boolean;
-  /**
-   * Si se provee, muestra un boton "Volver a X" (flecha + texto) que ejecuta
-   * este callback. Ideal para paginas internas que quieren volver al hub
-   * padre (ej. /venta) ademas del atajo global a /secciones.
-   */
   onBackToSecciones?: () => void;
-  /** Texto del boton "Volver". Default "Volver a secciones". */
   backLabel?: string;
-  /**
-   * Si es `true`, muestra el boton-icono cuadricula (2x2) que va a `/secciones`.
-   * Coexiste con el boton "Volver a X" cuando ambos estan activos.
-   */
   showSeccionesShortcut?: boolean;
-  /** Reduce padding y tamaños para no chocar con el contenido inmediatamente debajo. */
   compact?: boolean;
-  /** Usuario actual; si se provee se muestra el avatar con menu (cambiar contrasena / cerrar sesion). */
   username?: string | null;
   sede?: string | null;
-  /** Si se provee, muestra boton Ayuda para el tutorial interactivo. */
   onTourHelp?: () => void;
 };
 
+/**
+ * Franja superior UAID 5.0 — fina.
+ * Acciones (Cronograma / Usuarios) en pastillas al mismo estilo del menú de usuario.
+ */
 export function PortalBrandingHeader({
   canAccessCronograma,
   isAdmin,
@@ -44,163 +36,160 @@ export function PortalBrandingHeader({
   onTourHelp,
 }: PortalBrandingHeaderProps) {
   const router = useRouter();
-  // Cronograma/Usuarios solo en /secciones (cuando no hay ningun shortcut/back).
+  const { surface } = useUaidSurfaceTheme();
+  const dark = surface === "dark";
+
   const showSegment =
     !showSeccionesShortcut &&
     !onBackToSecciones &&
     (canAccessCronograma || isAdmin);
 
+  const navPill = dark
+    ? "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+    : "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900";
+
+  const navPillPrimary = dark
+    ? "inline-flex h-8 items-center gap-1.5 rounded-full bg-sky-500/20 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-200 ring-1 ring-sky-400/35 transition-colors hover:bg-sky-500/30"
+    : "inline-flex h-8 items-center gap-1.5 rounded-full bg-sky-50 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-700 ring-1 ring-sky-200 transition-colors hover:bg-sky-100";
+
+  const iconBtn = dark
+    ? "inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+    : "inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800";
+
+  const cluster = dark
+    ? "inline-flex items-center gap-0.5 rounded-full border border-white/10 bg-white/5 p-0.5"
+    : "inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white p-0.5 shadow-sm";
+
   return (
     <header
-      className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/70 backdrop-blur-xl"
+      className={
+        dark
+          ? "sticky top-0 z-50 w-full border-b border-white/[0.08] bg-[#05070d]/85 text-slate-100 backdrop-blur-md"
+          : "sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/90 text-slate-800 backdrop-blur-md"
+      }
       aria-label="Portal UAID"
     >
       <div
         className={
           compact
-            ? "mx-auto flex w-full max-w-[1280px] items-center justify-between gap-2 px-3 py-1.5 sm:gap-4 sm:px-6"
-            : "mx-auto flex w-full max-w-[1280px] items-center justify-between gap-2 px-3 py-3 sm:gap-4 sm:px-6"
+            ? "mx-auto flex h-11 w-full max-w-[1280px] items-center justify-between gap-3 px-3 sm:px-6"
+            : "mx-auto flex h-12 w-full max-w-[1280px] items-center justify-between gap-3 px-3 sm:px-6"
         }
       >
-        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
-          <span
-            className={
-              compact
-                ? "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-violet-500 via-violet-600 to-violet-800 text-white shadow-[0_6px_16px_-10px_rgba(91,33,182,0.65)]"
-                : "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-violet-500 via-violet-600 to-violet-800 text-white shadow-[0_8px_22px_-12px_rgba(91,33,182,0.65)]"
-            }
-            aria-hidden
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.push("/secciones")}
+            className="group flex min-w-0 items-center gap-2 text-left"
+            title="Ir a secciones"
           >
-            <Sparkles
-              className={compact ? "h-3.5 w-3.5" : "h-4 w-4"}
-              strokeWidth={2}
+            <span
+              aria-hidden
+              className={
+                dark
+                  ? "h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.9)]"
+                  : "h-1.5 w-1.5 shrink-0 rounded-full bg-sky-600"
+              }
             />
-          </span>
-          {compact ? (
-            <p className="hidden min-w-0 truncate text-[12px] font-semibold tracking-tight text-foreground sm:block">
-              Portal UAID{" "}
-              <span className="font-normal text-muted-foreground/80">
-                · {PORTAL_APP_VERSION}
+            <span
+              className={
+                dark
+                  ? "min-w-0 truncate text-[11px] font-medium tracking-[0.04em] text-slate-300 group-hover:text-white"
+                  : "min-w-0 truncate text-[11px] font-medium tracking-[0.04em] text-slate-700 group-hover:text-slate-950"
+              }
+            >
+              Portal UAID
+              <span className={dark ? "mx-1.5 text-slate-600" : "mx-1.5 text-slate-300"}>
+                —
               </span>
-            </p>
-          ) : (
-            <div className="hidden min-w-0 leading-tight sm:block">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-                Portal <span className="text-muted-foreground/80">•</span> UAID{" "}
+              <span className={dark ? "text-slate-500" : "text-slate-400"}>
+                Sala de control
+              </span>
+              <span
+                className={
+                  dark
+                    ? "ml-2 font-mono text-[10px] text-slate-600"
+                    : "ml-2 font-mono text-[10px] text-slate-400"
+                }
+              >
                 {PORTAL_APP_VERSION}
-              </p>
-              <p className="mt-0.5 text-[15px] font-semibold tracking-tight text-foreground">
-                Portal UAID
-              </p>
-            </div>
-          )}
+              </span>
+            </span>
+          </button>
         </div>
 
-        <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
           {onBackToSecciones ? (
             <button
               type="button"
               onClick={onBackToSecciones}
               title={backLabel}
               aria-label={backLabel}
-              className={
-                compact
-                  ? "inline-flex max-w-[9.5rem] items-center gap-1.5 rounded-md border border-border bg-transparent px-2 py-1 text-[11px] font-semibold uppercase tracking-widest text-foreground transition-all hover:border-foreground/45 active:scale-[0.99] sm:max-w-none sm:px-2.5"
-                  : "inline-flex max-w-[9.5rem] items-center gap-1.5 rounded-lg border border-border bg-transparent px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-foreground transition-all hover:border-foreground/45 hover:shadow-[0_2px_12px_-4px_rgba(15,23,42,0.18)] active:scale-[0.99] sm:max-w-none sm:gap-2 sm:px-3 sm:py-2 sm:text-[12px]"
-              }
+              className={navPill}
             >
-              <ArrowLeft
-                className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"}
-                strokeWidth={2.25}
-              />
-              <span className="truncate">{backLabel}</span>
+              <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.25} />
+              <span className="hidden max-w-[9rem] truncate sm:inline">
+                {backLabel}
+              </span>
             </button>
           ) : null}
+
           {showSeccionesShortcut ? (
             <button
               type="button"
               onClick={() => router.push("/secciones")}
               title="Ir a secciones"
               aria-label="Ir a secciones"
-              className={
-                compact
-                  ? "group/grid relative inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-300 bg-linear-to-br from-white to-slate-100 text-slate-900 shadow-[0_1px_3px_-1px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:border-slate-400 hover:from-slate-50 hover:to-slate-200/80 hover:shadow-[0_6px_14px_-6px_rgba(15,23,42,0.35)] active:translate-y-0 active:scale-[0.96]"
-                  : "group/grid relative inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-linear-to-br from-white to-slate-100 text-slate-900 shadow-[0_2px_6px_-2px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-slate-400 hover:from-slate-50 hover:to-slate-200/80 hover:shadow-[0_10px_22px_-10px_rgba(15,23,42,0.4)] active:translate-y-0 active:scale-[0.97]"
-              }
+              className={navPill}
             >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 -translate-x-full bg-linear-to-r from-transparent via-white/70 to-transparent opacity-0 transition-all duration-500 ease-out group-hover/grid:translate-x-full group-hover/grid:opacity-100"
-              />
-              <svg
-                aria-hidden
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={
-                  compact
-                    ? "relative h-4 w-4 shrink-0 transition-transform duration-200 group-hover/grid:scale-105"
-                    : "relative h-5 w-5 shrink-0 transition-transform duration-200 group-hover/grid:scale-105"
-                }
-              >
-                <rect x="2" y="2" width="9" height="9" rx="1.5" />
-                <rect x="13" y="2" width="9" height="9" rx="1.5" />
-                <rect x="2" y="13" width="9" height="9" rx="1.5" />
-                <rect x="13" y="13" width="9" height="9" rx="1.5" />
-              </svg>
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Secciones</span>
             </button>
           ) : null}
+
           {showSegment ? (
-            <div
-              className={
-                compact
-                  ? "inline-flex items-center rounded-full border border-border/80 bg-background/80 p-0.5 shadow-sm"
-                  : "inline-flex items-center rounded-full border border-border/80 bg-background/80 p-1 shadow-sm"
-              }
-            >
-              {canAccessCronograma && (
+            <div className={cluster}>
+              {canAccessCronograma ? (
                 <button
                   type="button"
                   onClick={() => router.push("/cronograma")}
-                  className={
-                    compact
-                      ? "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                      : "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                  }
+                  className={navPill}
                 >
-                  <CalendarDays
-                    className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"}
-                  />
-                  Cronograma
+                  <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Cronograma</span>
                 </button>
-              )}
-              {isAdmin && (
+              ) : null}
+              {isAdmin ? (
                 <button
                   type="button"
                   onClick={() => router.push("/admin/usuarios")}
-                  className={
-                    compact
-                      ? "inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-slate-900 px-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white shadow-sm transition-colors hover:bg-slate-800"
-                      : "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-slate-900 px-3.5 text-[10px] font-bold uppercase tracking-[0.2em] text-white shadow-sm transition-colors hover:bg-slate-800"
-                  }
+                  className={navPillPrimary}
                 >
-                  <Users
-                    className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"}
-                  />
-                  Usuarios
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Usuarios</span>
                 </button>
-              )}
+              ) : null}
             </div>
           ) : null}
-          {onTourHelp ? <PortalTourHelpButton onClick={onTourHelp} /> : null}
+
+          {onTourHelp ? (
+            <button
+              type="button"
+              onClick={onTourHelp}
+              title="Ver tutorial interactivo"
+              aria-label="Ayuda"
+              className={iconBtn}
+            >
+              <CircleHelp className="h-4 w-4" />
+            </button>
+          ) : null}
+
           {username !== null ? (
             <UserMenu
               username={username}
               role={isAdmin ? "admin" : "user"}
               sede={sede}
+              tone={dark ? "control" : "default"}
             />
           ) : null}
         </div>

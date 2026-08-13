@@ -22,6 +22,14 @@ const clearAuthCookies = (response: NextResponse) => {
 
 const isPublicPagePath = (pathname: string) => {
   if (pathname === "/login" || pathname.startsWith("/login/")) return true;
+  // Preview visual UAID 5.0: solo en next dev (sin cookie de sesión).
+  if (
+    process.env.NODE_ENV === "development" &&
+    (pathname === "/dev/uaid-5-preview" ||
+      pathname.startsWith("/dev/uaid-5-preview/"))
+  ) {
+    return true;
+  }
   if (
     pathname === "/proveedores/ingreso" ||
     pathname.startsWith("/proveedores/ingreso/")

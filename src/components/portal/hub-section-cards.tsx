@@ -55,8 +55,12 @@ type HubShellProps = { children: React.ReactNode };
 
 export function PortalHubShell({ children }: HubShellProps) {
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 text-foreground lg:px-6">
-      {children}
+    <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 text-foreground lg:px-6">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-8 h-40 bg-[radial-gradient(ellipse_65%_80%_at_8%_0%,rgba(37,99,235,0.1),transparent_62%)]"
+      />
+      <div className="relative z-1 flex flex-col gap-10">{children}</div>
     </div>
   );
 }

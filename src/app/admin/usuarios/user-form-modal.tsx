@@ -88,7 +88,7 @@ type UserFormModalProps = {
 };
 
 const INPUT_CLASS =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
 
 const INPUT_ERROR_CLASS =
   "border-red-300 focus:border-red-400 focus:ring-red-100";
@@ -123,7 +123,7 @@ function CheckboxChip({
       className={cn(
         "flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition",
         checked
-          ? "border-indigo-200 bg-indigo-50/80 text-indigo-950"
+          ? "border-sky-200 bg-sky-50/80 text-sky-950"
           : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
       )}
     >
@@ -131,7 +131,7 @@ function CheckboxChip({
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+        className="h-4 w-4 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-200"
       />
       <span className="min-w-0 font-medium leading-snug">{label}</span>
     </label>
@@ -523,7 +523,7 @@ export function UserFormModal({
                 }))
               }
               className={cn(
-                "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-100",
+                "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-sky-100",
                 formState.is_active ? "bg-emerald-500" : "bg-slate-200",
               )}
             >
@@ -558,7 +558,7 @@ export function UserFormModal({
             >
               <SelectTrigger
                 id="admin-user-profile"
-                className="mt-1.5 h-auto min-h-10 w-full rounded-lg border-slate-200 bg-white py-2.5 text-left shadow-sm focus:ring-indigo-100"
+                className="mt-1.5 h-auto min-h-10 w-full rounded-lg border-slate-200 bg-white py-2.5 text-left shadow-sm focus:ring-sky-100"
               >
                 <SelectValue placeholder="Selecciona un perfil">
                   {getPortalProfileLabel(formState.portalProfile)}
@@ -588,9 +588,9 @@ export function UserFormModal({
               </SelectContent>
             </Select>
             {!canEditDashboardPermissions && selectedProfileSummary ? (
-              <div className="mt-3 flex gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3.5 py-3">
-                <Info className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
-                <p className="text-xs leading-relaxed text-indigo-900/85">
+              <div className="mt-3 flex gap-2.5 rounded-lg border border-sky-100 bg-sky-50/60 px-3.5 py-3">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                <p className="text-xs leading-relaxed text-sky-900/85">
                   {selectedProfileSummary}
                 </p>
               </div>
@@ -679,7 +679,7 @@ export function UserFormModal({
                       isAdminProfile
                         ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
                         : checked
-                          ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                          ? "border-sky-300 bg-sky-50 text-sky-800"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                   >
@@ -743,7 +743,7 @@ export function UserFormModal({
                 sections: !prev.sections,
               }))
             }
-            accentClassName="bg-indigo-600 text-white"
+            accentClassName="bg-sky-600 text-white"
           >
             <CheckboxGrid
               options={visibleSectionOptions}
@@ -775,7 +775,7 @@ export function UserFormModal({
                 subsections: !prev.subsections,
               }))
             }
-            accentClassName="bg-indigo-600 text-white"
+            accentClassName="bg-sky-600 text-white"
           >
             <div className="space-y-3">
               {visiblePortalSections.map((section) => (
@@ -839,7 +839,7 @@ export function UserFormModal({
             onToggle={() =>
               setPermissionsPanels((prev) => ({ ...prev, roles: !prev.roles }))
             }
-            accentClassName="bg-indigo-600 text-white"
+            accentClassName="bg-sky-600 text-white"
           >
             <CheckboxGrid
               options={specialRoleOptions}
@@ -869,7 +869,7 @@ export function UserFormModal({
             onToggle={() =>
               setPermissionsPanels((prev) => ({ ...prev, lines: !prev.lines }))
             }
-            accentClassName="bg-indigo-600 text-white"
+            accentClassName="bg-sky-600 text-white"
           >
             <CheckboxGrid
               options={DEFAULT_LINES.map((line) => ({
@@ -952,7 +952,7 @@ export function UserFormModal({
           }}
         >
           <div className="flex shrink-0 items-start gap-4 border-b border-slate-100 px-5 py-5 sm:px-6">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-md shadow-sky-600/25">
               {isEditing ? (
                 <UserCog className="h-5 w-5" strokeWidth={2} />
               ) : (
@@ -960,11 +960,11 @@ export function UserFormModal({
               )}
             </div>
             <div className="min-w-0 flex-1 pr-8">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Administración
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700">
+                Portal / Administración
               </p>
               <DialogHeader className="mt-1 gap-1">
-                <DialogTitle className="text-xl">
+                <DialogTitle className="text-xl tracking-tight text-slate-950">
                   {isEditing ? "Editar usuario" : "Nuevo usuario"}
                 </DialogTitle>
                 <DialogDescription>
@@ -997,7 +997,7 @@ export function UserFormModal({
                         isCompleted
                           ? "bg-emerald-500 text-white"
                           : isActive
-                            ? "bg-indigo-600 text-white"
+                            ? "bg-sky-600 text-white"
                             : "bg-slate-100 text-slate-500",
                       )}
                     >
@@ -1055,7 +1055,7 @@ export function UserFormModal({
             {isSummaryStep ? (
               <Button
                 type="button"
-                className="rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-600/25 hover:bg-indigo-700"
+                className="rounded-lg bg-sky-600 text-white shadow-sm shadow-sky-600/25 hover:bg-sky-700"
                 onClick={handleConfirmSave}
                 disabled={saving}
               >
@@ -1073,7 +1073,7 @@ export function UserFormModal({
             ) : (
               <Button
                 type="button"
-                className="rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-600/25 hover:bg-indigo-700"
+                className="rounded-lg bg-sky-600 text-white shadow-sm shadow-sky-600/25 hover:bg-sky-700"
                 onClick={goNext}
                 disabled={saving}
               >

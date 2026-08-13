@@ -5,13 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  LayoutGrid,
   Loader2,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
-import { AppTopBar } from "@/components/portal/app-top-bar";
 import { Button } from "@/components/ui/button";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  adminUsuariosSoftLinkClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 import type { AdminAuditListResponse, AdminAuditRow } from "@/app/api/admin/audit/route";
 import type {
   FailedLoginListResponse,
@@ -110,28 +113,17 @@ export default function AdminAuditPage() {
   }, [load]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppTopBar backHref="/admin/usuarios" backLabel="Volver a usuarios" />
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <Link
-              href="/admin/usuarios"
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 hover:text-slate-800"
-            >
-              <LayoutGrid className="h-3 w-3" />
-              Admin · Usuarios
-            </Link>
-            <h1 className="mt-1 flex items-center gap-2 text-3xl font-bold tracking-tight text-slate-900">
-              <ShieldAlert className="h-7 w-7 text-rose-600" />
-              Auditoría
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Cambios de permisos/estado hechos por admins e intentos de login
-              fallidos.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+    <AdminUsuariosShell
+      backHref="/admin/usuarios"
+      backLabel="Volver a usuarios"
+      maxWidthClassName="max-w-7xl"
+    >
+        <AdminUsuariosPageHeader
+          icon={ShieldAlert}
+          title="Auditoría"
+          description="Cambios de permisos/estado hechos por admins e intentos de login fallidos."
+          actions={
+            <>
             <Button
               size="sm"
               variant="outline"
@@ -205,8 +197,9 @@ export default function AdminAuditPage() {
               />
               Actualizar
             </Button>
-          </div>
-        </header>
+            </>
+          }
+        />
 
         {error ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -341,14 +334,13 @@ export default function AdminAuditPage() {
 
             <Link
               href="/admin/usuarios"
-              className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
+              className={adminUsuariosSoftLinkClass}
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Volver a usuarios
             </Link>
           </>
         )}
-      </main>
-    </div>
+    </AdminUsuariosShell>
   );
 }

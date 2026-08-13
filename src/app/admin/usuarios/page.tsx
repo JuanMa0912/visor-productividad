@@ -17,12 +17,8 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
-  ShieldCheck,
-  Sparkles,
   Trash2,
-  UserCheck,
   UserPlus,
-  Users,
 } from "lucide-react";
 import { BRANCH_LOCATIONS, DEFAULT_LINES } from "@/lib/shared/constants";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -61,7 +57,14 @@ import {
 import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { canonicalizeSedeKey } from "@/lib/horarios/visible-sedes";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
-import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  AdminUsuariosStatCard,
+  AdminUsuariosToolCard,
+  adminUsuariosPillClass,
+  adminUsuariosPrimaryPillClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 import { UserFormModal } from "@/app/admin/usuarios/user-form-modal";
 import type { UserFormState } from "@/app/admin/usuarios/user-form-validation";
 
@@ -203,13 +206,12 @@ const resolveUserPortalProfile = (user: UserRow): PortalProfileId =>
 
 const USERS_PAGE_SIZE = 10;
 const RECENT_ACCESS_LOGS_LIMIT = 6;
-const APP_VERSION_LABEL = "UAID V4.0";
 
 const AVATAR_STYLES = [
   { bg: "bg-teal-500", text: "text-white" },
   { bg: "bg-sky-600", text: "text-white" },
-  { bg: "bg-indigo-600", text: "text-white" },
-  { bg: "bg-fuchsia-500", text: "text-white" },
+  { bg: "bg-slate-700", text: "text-white" },
+  { bg: "bg-rose-500", text: "text-white" },
   { bg: "bg-amber-500", text: "text-white" },
   { bg: "bg-emerald-600", text: "text-white" },
 ];
@@ -1090,67 +1092,50 @@ export default function AdminUsuariosPage() {
     )?.summary ?? "";
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
-      <AppTopBar showBack={false} />
-      <div className="px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-[min(100%,112rem)] flex-col gap-6">
-          <header className="flex flex-col gap-6 rounded-xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
-                <Sparkles className="h-5 w-5" strokeWidth={2} />
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Administración <span className="text-slate-400">●</span>{" "}
-                  {APP_VERSION_LABEL}
-                </p>
-                <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                  Usuarios de la aplicación
-                </h1>
-                <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-                  Gestiona roles, accesos por sección y actividad reciente del
-                  portal.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <Link
-                href="/secciones"
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-              >
-                <LayoutGrid className="h-4 w-4 text-slate-500" />
-                Ir a secciones
-              </Link>
-              <button
-                type="button"
-                onClick={() => void handleFlushServerCache()}
-                disabled={flushingCache}
-                title="Vacía cache en memoria del proceso (informe y márgenes). No afecta sessionStorage de cada navegador."
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${flushingCache ? "animate-spin" : ""}`}
-                />
-                {flushingCache ? "Vaciando…" : "Vaciar cache"}
-              </button>
-              <button
-                type="button"
-                onClick={openCreate}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700"
-              >
-                <UserPlus className="h-4 w-4" />
-                Nuevo usuario
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
-              >
-                <LogOut className="h-4 w-4" />
-                Cerrar sesión
-              </button>
-            </div>
-          </header>
+    <AdminUsuariosShell
+      showBack={false}
+      maxWidthClassName="max-w-[min(100%,112rem)]"
+    >
+          <AdminUsuariosPageHeader
+            title="Usuarios"
+            description="Gestiona roles, accesos por sección y actividad reciente del portal."
+            actions={
+              <>
+                <Link href="/secciones" className={adminUsuariosPillClass}>
+                  <LayoutGrid className="h-4 w-4 text-slate-500" />
+                  Ir a secciones
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void handleFlushServerCache()}
+                  disabled={flushingCache}
+                  title="Vacía cache en memoria del proceso (informe y márgenes). No afecta sessionStorage de cada navegador."
+                  className={`${adminUsuariosPillClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${flushingCache ? "animate-spin" : ""}`}
+                  />
+                  {flushingCache ? "Vaciando…" : "Vaciar cache"}
+                </button>
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  className={adminUsuariosPrimaryPillClass}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Nuevo usuario
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="inline-flex h-9 items-center gap-2 rounded-full px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Cerrar sesión
+                </button>
+              </>
+            }
+          />
 
           {loading ? (
             <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
@@ -1158,118 +1143,96 @@ export default function AdminUsuariosPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-                <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">
-                  <div className="p-5 sm:p-6">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                        <Users className="h-5 w-5" />
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
-                        +{newUsersThisMonth} este mes
-                      </span>
-                    </div>
-                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Total usuarios
-                    </p>
-                    <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
-                      {stats.total}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Cuentas registradas
-                    </p>
-                  </div>
-                  <div className="p-5 sm:p-6">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                        <UserCheck className="h-5 w-5" />
-                      </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50/80 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        LIVE
-                      </span>
-                    </div>
-                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Usuarios activos
-                    </p>
-                    <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
-                      {stats.active}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Con acceso habilitado
-                    </p>
-                  </div>
-                  <div className="p-5 sm:p-6">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                        <ShieldCheck className="h-5 w-5" />
-                      </div>
-                      <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                        Nivel raíz
-                      </span>
-                    </div>
-                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Administradores
-                    </p>
-                    <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
-                      {String(stats.admins).padStart(2, "0")}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Roles con permisos totales
-                    </p>
-                  </div>
-                </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <AdminUsuariosStatCard
+                  code="ADM — 01"
+                  label="Total usuarios"
+                  value={stats.total}
+                  hint="Cuentas registradas"
+                  accent="slate"
+                  badge={
+                    <span className="rounded-full border border-slate-200 px-2.5 py-0.5 text-[10px] font-bold tracking-[0.12em] text-slate-600 uppercase">
+                      +{newUsersThisMonth} este mes
+                    </span>
+                  }
+                />
+                <AdminUsuariosStatCard
+                  code="ADM — 02"
+                  label="Usuarios activos"
+                  value={stats.active}
+                  hint="Con acceso habilitado"
+                  accent="emerald"
+                  badge={
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold tracking-[0.18em] text-emerald-600 uppercase">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Live
+                    </span>
+                  }
+                />
+                <AdminUsuariosStatCard
+                  code="ADM — 03"
+                  label="Administradores"
+                  value={String(stats.admins).padStart(2, "0")}
+                  hint="Roles con permisos totales"
+                  accent="sky"
+                  badge={
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[10px] font-bold tracking-[0.12em] text-sky-700 uppercase">
+                      Nivel raíz
+                    </span>
+                  }
+                />
               </div>
 
               <nav
                 aria-label="Herramientas de administración"
-                className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                className="grid grid-cols-2 gap-3 sm:grid-cols-4"
               >
-                <Link
+                <AdminUsuariosToolCard
                   href="/admin/usuarios/accesos"
-                  className="inline-flex items-center gap-2.5 rounded-xl border border-sky-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-sky-800 shadow-sm transition hover:border-sky-300 hover:bg-sky-50"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
-                    <History className="h-4 w-4" />
-                  </span>
-                  Accesos
-                </Link>
-                <Link
+                  code="MOD — 01"
+                  label="Accesos"
+                  icon={History}
+                  accent="sky"
+                />
+                <AdminUsuariosToolCard
                   href="/admin/usuarios/uso-tableros"
-                  className="inline-flex items-center gap-2.5 rounded-xl border border-violet-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:border-violet-300 hover:bg-violet-50"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
-                    <BarChart3 className="h-4 w-4" />
-                  </span>
-                  Uso de tableros
-                </Link>
-                <Link
+                  code="MOD — 02"
+                  label="Uso de tableros"
+                  icon={BarChart3}
+                  accent="sky"
+                />
+                <AdminUsuariosToolCard
                   href="/admin/usuarios/auditoria"
-                  className="inline-flex items-center gap-2.5 rounded-xl border border-rose-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-rose-800 shadow-sm transition hover:border-rose-300 hover:bg-rose-50"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-700">
-                    <ShieldAlert className="h-4 w-4" />
-                  </span>
-                  Auditoría
-                </Link>
-                <Link
+                  code="MOD — 03"
+                  label="Auditoría"
+                  icon={ShieldAlert}
+                  accent="rose"
+                />
+                <AdminUsuariosToolCard
                   href="/admin/usuarios/descargas"
-                  className="inline-flex items-center gap-2.5 rounded-xl border border-emerald-200/80 bg-white px-3.5 py-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                    <Download className="h-4 w-4" />
-                  </span>
-                  Descargas
-                </Link>
+                  code="MOD — 04"
+                  label="Descargas"
+                  icon={Download}
+                  accent="emerald"
+                />
               </nav>
 
               <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
-                <div className="self-start overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+                <div className="uaid-panel-rise relative self-start overflow-hidden rounded-xl border border-sky-200 bg-white shadow-sm">
+                  <div
+                    aria-hidden
+                    className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-sky-500 to-transparent"
+                  />
                   <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-base font-bold text-slate-900">
-                        Usuarios
-                      </h2>
+                      <div>
+                        <p className="text-[10px] font-bold tracking-[0.22em] text-slate-500 uppercase">
+                          Directorio
+                        </p>
+                        <h2 className="mt-1 text-base font-semibold text-slate-900">
+                          Usuarios
+                        </h2>
+                      </div>
                       <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
                         {filteredTableUsers.length} registrados
                       </span>
@@ -1282,24 +1245,24 @@ export default function AdminUsuariosPage() {
                           placeholder="Buscar usuario o nombre..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                          className="h-9 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-1 focus:ring-sky-200"
                         />
                       </div>
                       <button
                         type="button"
                         onClick={() => setFiltersOpen((o) => !o)}
-                        className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+                        className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-[10px] font-bold tracking-[0.14em] uppercase transition ${
                           filtersOpen ||
                           roleFilter !== "all" ||
                           presenceFilter !== "all"
-                            ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            ? "border-sky-200 bg-sky-50 text-sky-800"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         }`}
                       >
-                        <Filter className="h-4 w-4" />
+                        <Filter className="h-3.5 w-3.5" />
                         Filtros
                         {(roleFilter !== "all" || presenceFilter !== "all") && (
-                          <span className="ml-1 inline-flex h-4 min-w-16px items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
+                          <span className="ml-1 inline-flex h-4 min-w-16px items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold text-white">
                             {(roleFilter !== "all" ? 1 : 0) +
                               (presenceFilter !== "all" ? 1 : 0)}
                           </span>
@@ -1326,7 +1289,7 @@ export default function AdminUsuariosPage() {
                             onClick={() => setRoleFilter(value)}
                             className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                               roleFilter === value
-                                ? "bg-indigo-600 text-white shadow-sm"
+                                ? "bg-sky-600 text-white shadow-sm"
                                 : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
                             }`}
                           >
@@ -1388,7 +1351,7 @@ export default function AdminUsuariosPage() {
                               onClick={() => setPresenceFilter(value)}
                               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
                                 isSelected
-                                  ? "bg-indigo-600 text-white shadow-sm"
+                                  ? "bg-sky-600 text-white shadow-sm"
                                   : `bg-white ring-1 ring-slate-200 hover:bg-slate-50 ${
                                       textClass ?? "text-slate-600"
                                     }`
@@ -1528,14 +1491,14 @@ export default function AdminUsuariosPage() {
                                 <span
                                   className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
                                     user.role === "admin"
-                                      ? "border-indigo-100 bg-indigo-50 text-indigo-800"
+                                      ? "border-sky-100 bg-sky-50 text-sky-800"
                                       : "border-slate-200 bg-slate-50 text-slate-600"
                                   }`}
                                 >
                                   <span
                                     className={`h-1.5 w-1.5 rounded-full ${
                                       user.role === "admin"
-                                        ? "bg-indigo-500"
+                                        ? "bg-sky-500"
                                         : "bg-slate-400"
                                     }`}
                                   />
@@ -1631,7 +1594,7 @@ export default function AdminUsuariosPage() {
                                   <button
                                     type="button"
                                     onClick={() => openEdit(user)}
-                                    className="rounded-lg p-1.5 text-indigo-600 transition hover:bg-indigo-50"
+                                    className="rounded-lg p-1.5 text-sky-600 transition hover:bg-sky-50"
                                     title="Editar"
                                   >
                                     <Pencil className="h-4 w-4" />
@@ -1755,14 +1718,14 @@ export default function AdminUsuariosPage() {
                             <div
                               className={`rounded-lg border p-2.5 ${
                                 logIndex === 0
-                                  ? "border-indigo-200 bg-indigo-50/60"
+                                  ? "border-sky-200 bg-sky-50/60"
                                   : "border-slate-100 bg-slate-50/80"
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <Link
                                   href={`/admin/usuarios/${log.user_id}/metricas`}
-                                  className="truncate font-semibold text-slate-900 transition hover:text-indigo-700 hover:underline"
+                                  className="truncate font-semibold text-slate-900 transition hover:text-sky-700 hover:underline"
                                 >
                                   {log.username}
                                 </Link>
@@ -1797,7 +1760,6 @@ export default function AdminUsuariosPage() {
               </div>
             </>
           )}
-        </div>
 
         <UserFormModal
           open={formOpen}
@@ -1822,7 +1784,6 @@ export default function AdminUsuariosPage() {
             )
           }
         />
-      </div>
-    </div>
+    </AdminUsuariosShell>
   );
 }

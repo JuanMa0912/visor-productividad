@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BarChart3, ChevronLeft, LayoutGrid, LogOut, Search, Sparkles } from "lucide-react";
+import { BarChart3, ChevronLeft, LayoutGrid, LogOut, Search } from "lucide-react";
 import { getPathLabel } from "@/lib/shared/path-labels";
-import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  adminUsuariosPillClass,
+  adminUsuariosSoftLinkClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 
-const APP_VERSION_LABEL = "UAID V4.0";
 const USER_FILTER_DEBOUNCE_MS = 400;
 
 type MonthlyUserAccessRow = {
@@ -123,54 +127,41 @@ export default function AdminUsuariosAccesosPorMesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
-      <AppTopBar backHref="/admin/usuarios/accesos" backLabel="Volver a accesos" />
-      <div className="px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-[min(100%,72rem)] flex-col gap-6">
-        <header className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-emerald-600 to-emerald-700 text-white shadow-lg shadow-emerald-600/25">
-              <Sparkles className="h-6 w-6" strokeWidth={2} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Administración <span className="text-slate-400">●</span>{" "}
-                {APP_VERSION_LABEL}
-              </p>
-              <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                Usuarios / accesos por mes
-              </h1>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-                Días con login, cantidad de ingresos, minutos activos estimados
-                (heartbeats) y tablero más visitado en el mes.
-              </p>
-              <Link
-                href="/admin/usuarios/accesos"
-                className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-sky-600 transition hover:text-sky-700 hover:underline"
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden />
-                Volver a accesos
-              </Link>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+    <AdminUsuariosShell
+      backHref="/admin/usuarios/accesos"
+      backLabel="Volver a accesos"
+      maxWidthClassName="max-w-[min(100%,72rem)]"
+    >
+        <AdminUsuariosPageHeader
+          icon={BarChart3}
+          title="Usuarios / accesos por mes"
+          description="Días con login, cantidad de ingresos, minutos activos estimados (heartbeats) y tablero más visitado en el mes."
+          nav={
             <Link
-              href="/secciones"
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              href="/admin/usuarios/accesos"
+              className={adminUsuariosSoftLinkClass}
             >
-              <LayoutGrid className="h-4 w-4 text-slate-500" />
-              Ir a secciones
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+              Volver a accesos
             </Link>
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
-            >
-              <LogOut className="h-4 w-4" />
-              Cerrar sesión
-            </button>
-          </div>
-        </header>
+          }
+          actions={
+            <>
+              <Link href="/secciones" className={adminUsuariosPillClass}>
+                <LayoutGrid className="h-4 w-4 text-slate-500" />
+                Ir a secciones
+              </Link>
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="inline-flex h-9 items-center gap-2 rounded-full px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+              >
+                <LogOut className="h-4 w-4" />
+                Cerrar sesión
+              </button>
+            </>
+          }
+        />
 
         <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.12)]">
           <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
@@ -183,7 +174,7 @@ export default function AdminUsuariosAccesosPorMesPage() {
                   type="month"
                   value={monthKey}
                   onChange={(e) => setMonthKey(e.target.value)}
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
                 />
               </label>
               <label className="flex min-w-48 flex-col gap-1.5">
@@ -201,7 +192,7 @@ export default function AdminUsuariosAccesosPorMesPage() {
                     onChange={(e) => setUserInput(e.target.value)}
                     placeholder="Nombre de usuario…"
                     autoComplete="off"
-                    className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20"
                   />
                 </div>
               </label>
@@ -254,7 +245,7 @@ export default function AdminUsuariosAccesosPorMesPage() {
                         <div className="flex flex-col gap-1">
                           <Link
                             href={`/admin/usuarios/${user.user_id}/metricas`}
-                            className="inline-flex w-fit items-center gap-1 font-semibold text-indigo-700 hover:underline"
+                            className="inline-flex w-fit items-center gap-1 font-semibold text-sky-700 hover:underline"
                           >
                             {user.username}
                             <BarChart3 className="h-3.5 w-3.5 opacity-70" />
@@ -288,8 +279,6 @@ export default function AdminUsuariosAccesosPorMesPage() {
             )}
           </div>
         </section>
-        </div>
-      </div>
-    </div>
+    </AdminUsuariosShell>
   );
 }

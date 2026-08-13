@@ -7,6 +7,7 @@ import { LocalMigrationNotice } from "@/components/portal/local-migration-notice
 import { PasswordChangeEnforcer } from "@/components/portal/password-change-enforcer";
 import { AuthSessionRecovery } from "@/components/portal/auth-session-recovery";
 import { PortalToaster } from "@/components/portal/portal-toaster";
+import { UaidSurfaceThemeProvider } from "@/components/portal/uaid-surface-theme";
 
 // ============================================================================
 // CONFIGURACIÓN DE FUENTES
@@ -75,8 +76,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
+    { media: "(prefers-color-scheme: dark)", color: "#020617" },
   ],
 };
 
@@ -98,12 +99,14 @@ export default function RootLayout({ children }: RootLayoutProps) {
         className={`${geistSans.variable} ${geistMono.variable} flex min-h-screen flex-col bg-background text-foreground antialiased`}
       >
         <AuthProvider>
-          <PresenceHeartbeat />
-          <LocalMigrationNotice />
-          <PasswordChangeEnforcer />
-          <AuthSessionRecovery />
-          <main className="flex-1">{children}</main>
-          <PortalToaster />
+          <UaidSurfaceThemeProvider>
+            <PresenceHeartbeat />
+            <LocalMigrationNotice />
+            <PasswordChangeEnforcer />
+            <AuthSessionRecovery />
+            <main className="flex-1">{children}</main>
+            <PortalToaster />
+          </UaidSurfaceThemeProvider>
         </AuthProvider>
       </body>
     </html>

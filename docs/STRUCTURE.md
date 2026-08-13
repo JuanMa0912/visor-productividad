@@ -157,7 +157,10 @@ acotados al dominio cuando se toquen.
 | `LineCard.tsx`, `LineComparisonTable.tsx`, `SelectionSummary.tsx` | productividad y comparativos |
 | `PresenceHeartbeat.tsx` | ping de actividad a `/api/auth/heartbeat` cuando el usuario esta autenticado |
 | `TopBar.tsx` | barra usada por la home de productividad |
-| `portal/*` | top bar global, branding, footer, menu de usuario, toaster y tarjetas hub |
+| `portal/*` | top bar global, branding UAID 5.0 (`uaid-brand`), sala de control en `/secciones` (`portal-control-room`), footer, menu de usuario, toaster y tarjetas hub |
+
+Preview visual sin sesion (solo `next dev`): `/dev/uaid-5-preview` (sala de
+control) y `/dev/uaid-5-preview/usuarios` (Admin → Usuarios).
 | `productividad/*` | controles/skeleton/empty states de productividad |
 | `hourly-analysis/*` | piezas del analisis horario |
 | `cashier/EditorialTop5.tsx` | top de cajeros |

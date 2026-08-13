@@ -43,14 +43,14 @@ export function UserFormSedePicker({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Buscar sede..."
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
             />
           </div>
           <div className="flex gap-2 text-xs font-medium">
             <button
               type="button"
               onClick={onSelectAll}
-              className="text-indigo-600 transition hover:text-indigo-700"
+              className="text-sky-600 transition hover:text-sky-700"
             >
               Todas
             </button>
@@ -73,13 +73,13 @@ export function UserFormSedePicker({
           {selected.map((sede) => (
             <span
               key={sede}
-              className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-900"
+              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-900"
             >
               {sede}
               <button
                 type="button"
                 onClick={() => onToggle(sede, true)}
-                className="rounded-full p-0.5 text-indigo-500 transition hover:bg-indigo-100 hover:text-indigo-800"
+                className="rounded-full p-0.5 text-sky-500 transition hover:bg-sky-100 hover:text-sky-800"
                 aria-label={`Quitar sede ${sede}`}
               >
                 <X className="h-3 w-3" />
@@ -110,7 +110,7 @@ export function UserFormSedePicker({
                   disabled
                     ? "cursor-not-allowed border-slate-100 bg-slate-50/80 opacity-60"
                     : checked
-                      ? "border-indigo-200 bg-indigo-50/80 text-indigo-950"
+                      ? "border-sky-200 bg-sky-50/80 text-sky-950"
                       : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
                 )}
               >
@@ -119,7 +119,7 @@ export function UserFormSedePicker({
                   checked={checked}
                   disabled={disabled}
                   onChange={() => onToggle(sede, checked)}
-                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200 disabled:cursor-not-allowed"
+                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-200 disabled:cursor-not-allowed"
                 />
                 <span className="min-w-0 font-medium leading-snug">{sede}</span>
               </label>

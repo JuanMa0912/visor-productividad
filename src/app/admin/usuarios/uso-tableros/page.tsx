@@ -40,9 +40,13 @@ import type {
   TableroUsageResponse,
 } from "@/app/api/admin/uso-tableros/route";
 import { getPathLabel } from "@/lib/shared/path-labels";
-import { AppTopBar } from "@/components/portal/app-top-bar";
+import {
+  AdminUsuariosPageHeader,
+  AdminUsuariosShell,
+  adminUsuariosPillClass,
+  adminUsuariosSoftLinkClass,
+} from "@/app/admin/usuarios/admin-usuarios-shell";
 
-const APP_VERSION_LABEL = "UAID V4.0";
 const SEDE_FILTER_OPTIONS = ["", ...BRANCH_LOCATIONS];
 
 type SortKey = "activeMinutes" | "uniqueUsers" | "observations";
@@ -214,54 +218,40 @@ export default function AdminUsoTablerosPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
-      <AppTopBar backHref="/admin/usuarios" backLabel="Volver a usuarios" />
-      <div className="px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-[min(100%,72rem)] flex-col gap-6">
-          <header className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-violet-600 to-indigo-700 text-white shadow-lg shadow-violet-600/25">
-                <LayoutGrid className="h-6 w-6" strokeWidth={2} />
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Administración <span className="text-slate-400">●</span>{" "}
-                  {APP_VERSION_LABEL}
-                </p>
-                <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                  Uso de tableros
-                </h1>
-                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">
-                  Analítica de uso del portal por ruta: minutos con interacción,
-                  usuarios únicos y ranking de tableros según heartbeats de
-                  actividad.
-                </p>
-                <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                  <Link
-                    href="/admin/usuarios"
-                    className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-sky-200/80 bg-sky-50/70 px-3.5 text-sm font-semibold text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100/70"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Usuarios
-                  </Link>
-                  <Link
-                    href="/admin/usuarios/accesos"
-                    className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                    Registro de accesos
-                  </Link>
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
-            >
-              <LogOut className="h-4 w-4" />
-              Cerrar sesión
-            </button>
-          </header>
+    <AdminUsuariosShell
+      backHref="/admin/usuarios"
+      backLabel="Volver a usuarios"
+      maxWidthClassName="max-w-[min(100%,72rem)]"
+    >
+          <AdminUsuariosPageHeader
+            icon={LayoutGrid}
+            title="Uso de tableros"
+            description="Analítica de uso del portal por ruta: minutos con interacción, usuarios únicos y ranking de tableros según heartbeats de actividad."
+            nav={
+              <>
+                <Link href="/admin/usuarios" className={adminUsuariosSoftLinkClass}>
+                  <ChevronLeft className="h-4 w-4" />
+                  Usuarios
+                </Link>
+                <Link
+                  href="/admin/usuarios/accesos"
+                  className={adminUsuariosPillClass}
+                >
+                  Registro de accesos
+                </Link>
+              </>
+            }
+            actions={
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="inline-flex h-9 items-center gap-2 rounded-full px-2 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+              >
+                <LogOut className="h-4 w-4" />
+                Cerrar sesión
+              </button>
+            }
+          />
 
           {error ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -304,7 +294,7 @@ export default function AdminUsoTablerosPage() {
                 className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm"
               >
                 <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  <card.icon className="h-4 w-4 text-indigo-500" />
+                  <card.icon className="h-4 w-4 text-sky-500" />
                   {card.label}
                 </div>
                 <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
@@ -498,7 +488,7 @@ export default function AdminUsoTablerosPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {paths.map((row, idx) => (
-                      <tr key={row.path} className="hover:bg-violet-50/30">
+                      <tr key={row.path} className="hover:bg-sky-50/30">
                         <td className="px-4 py-3 text-xs tabular-nums text-slate-500 sm:px-6">
                           {idx + 1}
                         </td>
@@ -511,7 +501,7 @@ export default function AdminUsoTablerosPage() {
                           </div>
                           <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-slate-100">
                             <div
-                              className="h-full rounded-full bg-linear-to-r from-violet-500 to-indigo-500"
+                              className="h-full rounded-full bg-linear-to-r from-sky-500 to-sky-500"
                               style={{
                                 width: `${Math.max(4, (row.activeMinutes / maxActiveMinutes) * 100)}%`,
                               }}
@@ -524,7 +514,7 @@ export default function AdminUsoTablerosPage() {
                         <td className="px-4 py-3 tabular-nums text-slate-700 sm:px-6">
                           {row.observations}
                         </td>
-                        <td className="px-4 py-3 font-semibold tabular-nums text-indigo-700 sm:px-6">
+                        <td className="px-4 py-3 font-semibold tabular-nums text-sky-700 sm:px-6">
                           {formatUsageMinutes(row.activeMinutes)}
                         </td>
                         <td className="px-4 py-3 tabular-nums text-slate-700 sm:px-6">
@@ -537,8 +527,6 @@ export default function AdminUsoTablerosPage() {
               </div>
             )}
           </section>
-        </div>
-      </div>
-    </div>
+    </AdminUsuariosShell>
   );
 }
