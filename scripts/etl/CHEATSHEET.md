@@ -155,20 +155,27 @@ normal, no un hueco.
 
 ---
 
-## 3.c Detectar dias incompletos (empresa faltante)
+## 3.c Detectar dias incompletos (empresa faltante O empresa flaca)
 
 Cuando el POS 217 no ha cerrado el dia, un ETL carga **0 filas para esa empresa**. La
 tabla queda con datos de las otras y **el total no se ve raro a simple vista**. Paso el
 2026-08-10: faltaban mercamio y mtodo del 07 y mercamio del 09 en 12 tablas, durante dias.
 
-**La consulta que lo destapa** (contar empresas por dia, no filas). Ojo: en las 6 tablas
-de la seccion 3.b la columna es `empresa_bd`; en el resto es `empresa`:
+**Hay un segundo caso, peor: la empresa esta PRESENTE pero trae un tercio de las filas.**
+Paso el 2026-08-07 y el 2026-08-10 (mercamio y mtodo ~30% de lo normal, bogota bien).
+Contar empresas da 3 y el dia pasa por bueno; el hueco solo se ve en el tablero, dias
+despues. Desde 2026-08-12 los 6 ETL de la seccion 3.b tambien avisan de esto comparando
+contra la **mediana de los 14 dias previos** (por debajo del 50% -> exit 3).
+
+**La consulta que lo destapa** — mirar filas POR EMPRESA, no el total del dia (el total
+puede parecer razonable con una empresa entera a la mitad). Ojo: en las 6 tablas de la
+seccion 3.b la columna es `empresa_bd`; en el resto es `empresa`:
 
 ```sql
-SELECT fecha_dcto, count(DISTINCT empresa_bd) AS empresas, count(*) AS filas
+SELECT fecha_dcto, empresa_bd, count(*) AS filas
 FROM ventas_cajas
 WHERE fecha_dcto BETWEEN '20260801' AND '20260809'
-GROUP BY 1 ORDER BY 1;
+GROUP BY 1, 2 ORDER BY 1, 2;
 ```
 
 **Antes de re-correr, comprobar que el POS SI tiene el dato** (si no lo tiene, re-correr
@@ -191,11 +198,17 @@ replace**: subir con la local incompleta **borra en GCP** esas fechas.
 `0` OK · `3` WARNING (sin datos de ayer en tablas canary, exit normal del timer) ·
 `1` ERROR · `2` uso invalido (flag/fecha mal escrita).
 
-> Los 6 ETL de la seccion 3.b tambien salen con **exit 3** si falta una empresa que si
-> tenia ventas en los 14 dias previos (agregado 2026-08-10). Antes reportaban
-> `PIPELINE COMPLETADO EXITOSAMENTE` con una empresa entera ausente. Las empresas
-> esperadas se calculan mirando la propia tabla, no una lista fija: por eso
-> `ventas_asadero` no alarma por bogota.
+> Los 6 ETL de la seccion 3.b tambien salen con **exit 3** en dos casos. Antes reportaban
+> `PIPELINE COMPLETADO EXITOSAMENTE` en ambos:
+> 1. **Empresa ausente** (2026-08-10): falta una empresa que si tenia ventas en los 14
+>    dias previos. Las esperadas se calculan mirando la propia tabla, no una lista fija:
+>    por eso `ventas_asadero` no alarma por bogota, donde no opera.
+> 2. **Empresa flaca** (2026-08-12): esta presente pero por debajo del **50% de su
+>    mediana** de los 14 dias previos. Mediana y no promedio, para que un dia malo ya
+>    dentro de la ventana no arrastre el umbral hacia abajo.
+>
+> **Un exit 3 no dice que el ETL este mal.** Casi siempre el dato no esta en el POS.
+> Comprobar el origen (seccion 3.c) antes de re-correr: re-correr no inventa filas.
 
 ## 5. Ver estado de los timers / logs
 
@@ -205,6 +218,23 @@ systemctl --failed          # un ETL con exit 3 aparece aqui, y se queda hasta r
 ```
 > Tras reparar, limpiar con `sudo systemctl reset-failed <unidad>`; si no, manana no se
 > distingue un fallo nuevo del viejo.
+
+> **`systemctl --failed` NO detecta un timer apagado.** Un timer que no dispara no falla:
+> simplemente no existe. Paso el 2026-08-11 — el timer de ventas quedo `inactive (dead)`,
+> `--failed` salio limpio dos dias y nadie se entero hasta ver el tablero vacio. El unico
+> chequeo que lo ve es mirar que **NEXT tenga una fecha futura**, no un `-`:
+> ```bash
+> systemctl list-timers --all 'visor-etl-*' 'etl-rotacion*' 'ventas-pipeline-*'
+> ```
+> `enabled` NO significa "corriendo": significa "arranca en el proximo boot". Un timer
+> puede estar `enabled` y `inactive` a la vez, que es exactamente el estado malo.
+>
+> **Como se apago:** los dos `.timer` de ventas tenian `Requires=<su>.service` en
+> `[Unit]`. `Requires=` propaga el stop en las dos direcciones, asi que un
+> `systemctl stop` del **servicio** (para cortar una corrida a mano) tumbaba tambien el
+> **timer**. Se quito el 2026-08-12; un timer no necesita declarar nada para activar su
+> servicio homonimo. Si algun dia vuelve a aparecer un `Requires=` dentro de un `.timer`,
+> es un bug.
 
 ```bash
 systemctl list-timers 'visor-etl-*' 'etl-rotacion*' 'ventas-pipeline-*'

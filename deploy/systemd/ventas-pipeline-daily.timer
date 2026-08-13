@@ -1,6 +1,12 @@
 [Unit]
 Description=Timer para Pipeline de Ventas - Carga Diaria
-Requires=ventas-pipeline-daily.service
+# NO poner "Requires=ventas-pipeline-daily.service" aqui. Requires= propaga el
+# stop en las dos direcciones: un `systemctl stop` del servicio (p.ej. para
+# cortar una corrida a mano) tumba TAMBIEN el timer, que queda `enabled` pero
+# `inactive (dead)` y ya no vuelve a disparar hasta el siguiente reinicio.
+# Paso el 2026-08-11 y las ventas del 11 no se cargaron: `systemctl --failed`
+# salia limpio porque un timer apagado no falla, simplemente no existe.
+# El timer ya activa su .service homonimo sin declarar nada (Unit= implicito).
 
 [Timer]
 OnCalendar=Mon..Fri *-*-* 07:00:00
