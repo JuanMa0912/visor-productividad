@@ -5,17 +5,20 @@ import { Download } from "lucide-react";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import {
   defaultOipvWeekRange,
+  filterOipvRows,
+  isOipvAsistenciaFilter,
   OIPV_WEEKDAY_KEYS,
+  type OipvAsistenciaFilter,
   type ProveedorOipvBoard,
   type ProveedorOipvRow,
 } from "@/lib/proveedores/oipv-repo";
 
+/** Solo visual: quita 6 ceros (÷ 1.000.000), igual que el resto del portal. */
 const money = (value: number) =>
-  value.toLocaleString("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  });
+  `$ ${(value / 1_000_000).toLocaleString("es-CO", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}`;
 
 const qty = (value: number) =>
   value.toLocaleString("es-CO", { maximumFractionDigits: 1 });
@@ -60,7 +63,8 @@ export function ProveedoresOipvPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [board, setBoard] = useState<ProveedorOipvBoard | null>(null);
-  const [onlyNoShow, setOnlyNoShow] = useState(false);
+  const [asistenciaFilter, setAsistenciaFilter] =
+    useState<OipvAsistenciaFilter>("all");
 
   const load = useCallback(async () => {
     if (!dateStart || !dateEnd || dateStart > dateEnd) {
@@ -95,11 +99,10 @@ export function ProveedoresOipvPanel() {
     void load();
   }, [load]);
 
-  const rows: ProveedorOipvRow[] = useMemo(() => {
-    const all = board?.rows ?? [];
-    if (!onlyNoShow) return all;
-    return all.filter((r) => !r.asistencia && (r.ventaNeta > 0 || r.unidades > 0));
-  }, [board?.rows, onlyNoShow]);
+  const rows: ProveedorOipvRow[] = useMemo(
+    () => filterOipvRows(board?.rows ?? [], asistenciaFilter),
+    [asistenciaFilter, board?.rows],
+  );
 
   const exportCsv = () => {
     const params = new URLSearchParams({
@@ -109,6 +112,7 @@ export function ProveedoresOipvPanel() {
     });
     if (sede) params.set("sede", sede);
     if (qApplied.trim()) params.set("q", qApplied.trim());
+    if (asistenciaFilter !== "all") params.set("filter", asistenciaFilter);
     window.open(`/api/proveedores/oipv?${params.toString()}`, "_blank");
   };
 
@@ -165,14 +169,21 @@ export function ProveedoresOipvPanel() {
               className="mt-1 block h-9 min-w-48 rounded-lg border border-slate-200 px-3 text-sm"
             />
           </label>
-          <label className="flex items-center gap-2 pb-1 text-xs text-slate-700">
-            <input
-              type="checkbox"
-              checked={onlyNoShow}
-              onChange={(e) => setOnlyNoShow(e.target.checked)}
-              className="rounded border-slate-300"
-            />
-            Solo venta sin visita
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Cruce visita / venta
+            <select
+              value={asistenciaFilter}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (isOipvAsistenciaFilter(next)) setAsistenciaFilter(next);
+              }}
+              className="mt-1 block h-9 min-w-52 rounded-lg border border-slate-200 px-3 text-sm font-semibold normal-case tracking-normal text-slate-800"
+            >
+              <option value="all">Todos</option>
+              <option value="con_visita">Marcaron en el rango</option>
+              <option value="visita_sin_venta">Marcaron sin venta</option>
+              <option value="venta_sin_visita">Venta sin marcar</option>
+            </select>
           </label>
           <button
             type="button"
@@ -196,7 +207,8 @@ export function ProveedoresOipvPanel() {
         <p className="mt-3 text-[11px] text-slate-500">
           Cruce de marcaciones QR con ventas por código. Costo merc. = COGS del
           roll de márgenes (igual familia que precios-proveedor), no tarifa
-          OIPV. Días L–D en hora Bogotá.
+          OIPV. Días L–D en hora Bogotá. Montos ÷ 1.000.000. Los KPI siguen el
+          rango completo; el cruce visita/venta solo filtra la tabla y el CSV.
         </p>
       </section>
 
@@ -238,23 +250,37 @@ export function ProveedoresOipvPanel() {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="max-h-[min(70vh,52rem)] overflow-auto">
           <table className="min-w-full text-left text-xs">
-            <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
               <tr>
-                <th className="px-3 py-2">RS proveedor</th>
-                <th className="px-3 py-2">Código</th>
-                <th className="px-3 py-2">Proveedor (visitante)</th>
-                <th className="px-3 py-2 text-center">Asist.</th>
+                <th className="sticky top-0 bg-slate-50 px-3 py-2">RS proveedor</th>
+                <th className="sticky top-0 bg-slate-50 px-3 py-2">Código</th>
+                <th className="sticky top-0 bg-slate-50 px-3 py-2">
+                  Proveedor (visitante)
+                </th>
+                <th className="sticky top-0 bg-slate-50 px-3 py-2 text-center">
+                  Asist.
+                </th>
                 {OIPV_WEEKDAY_KEYS.map((k) => (
-                  <th key={k} className="px-2 py-2 text-center" title={k}>
+                  <th
+                    key={k}
+                    className="sticky top-0 bg-slate-50 px-2 py-2 text-center"
+                    title={k}
+                  >
                     {WEEKDAY_LABEL[k]}
                   </th>
                 ))}
-                <th className="px-3 py-2 text-right">Unidades</th>
-                <th className="px-3 py-2 text-right">Venta $$</th>
-                <th className="px-3 py-2 text-right">Costo merc.</th>
+                <th className="sticky top-0 bg-slate-50 px-3 py-2 text-right">
+                  Unidades
+                </th>
+                <th className="sticky top-0 bg-slate-50 px-3 py-2 text-right">
+                  Venta $$
+                </th>
+                <th className="sticky top-0 bg-slate-50 px-3 py-2 text-right">
+                  Costo merc.
+                </th>
               </tr>
             </thead>
             <tbody>

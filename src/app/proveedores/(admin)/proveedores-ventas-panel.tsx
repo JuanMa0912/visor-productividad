@@ -14,27 +14,18 @@ import type {
   ProveedorVentasRow,
 } from "@/lib/proveedores/ventas-repo";
 
+/** Solo visual: quita 6 ceros (÷ 1.000.000), igual que productividad / rotación. */
 const money = (value: number) =>
-  value.toLocaleString("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  });
+  `$ ${(value / 1_000_000).toLocaleString("es-CO", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}`;
 
 const units = (value: number) =>
   value.toLocaleString("es-CO", {
     maximumFractionDigits: 1,
   });
 
-const compactMoney = (value: number | null) => {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-};
 
 const shortLabel = (value: string, max = 20) =>
   value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -286,7 +277,7 @@ export function ProveedoresVentasPanel() {
     [byDay],
   );
   const dayVenta = useMemo(
-    () => byDay.map((d) => d.ventaNeta),
+    () => byDay.map((d) => d.ventaNeta / 1_000_000),
     [byDay],
   );
 
@@ -353,7 +344,8 @@ export function ProveedoresVentasPanel() {
           <p className="mt-3 text-[11px] text-slate-500">
             Ventana de datos: {metrics.fechaInicio} → {metrics.fechaFin} (
             {metrics.dias} días, anclada al último día con venta en la tabla).
-            Venta neta = <span className="font-mono">venta_base</span>.
+            Venta neta = <span className="font-mono">venta_base</span>. Montos
+            en pantalla ÷ 1.000.000 (CSV sin recorte).
           </p>
         ) : null}
       </section>
@@ -379,7 +371,7 @@ export function ProveedoresVentasPanel() {
           <MetricCard
             label="Venta neta"
             value={money(metrics.ventaNetaTotal)}
-            hint="Sin IVA (venta_base)"
+            hint="Sin IVA · visual / 1.000.000"
           />
           <MetricCard
             label="Venta + IVA"
@@ -417,7 +409,7 @@ export function ProveedoresVentasPanel() {
           {chartBySede.length > 0 ? (
             <ChartCard
               title="Venta neta por sede"
-              hint="Barras ordenadas de mayor a menor (venta_base)"
+              hint="Barras ordenadas de mayor a menor (venta_base / 1.000.000)"
             >
               <BarChart
                 layout="horizontal"
@@ -432,10 +424,16 @@ export function ProveedoresVentasPanel() {
                 ]}
                 series={[
                   {
-                    data: chartBySede.map((r) => r.ventaNeta),
+                    data: chartBySede.map((r) => r.ventaNeta / 1_000_000),
                     label: "Venta neta",
                     color: "#0369a1",
-                    valueFormatter: (v) => compactMoney(v),
+                    valueFormatter: (v) =>
+                      v == null
+                        ? "—"
+                        : `$ ${v.toLocaleString("es-CO", {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          })}`,
                   },
                 ]}
                 grid={{ vertical: true }}
@@ -463,10 +461,16 @@ export function ProveedoresVentasPanel() {
                 ]}
                 series={[
                   {
-                    data: chartTopProveedores.map((r) => r.ventaNeta),
+                    data: chartTopProveedores.map((r) => r.ventaNeta / 1_000_000),
                     label: "Venta neta",
                     color: "#0f766e",
-                    valueFormatter: (v) => compactMoney(v),
+                    valueFormatter: (v) =>
+                      v == null
+                        ? "—"
+                        : `$ ${v.toLocaleString("es-CO", {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          })}`,
                   },
                 ]}
                 grid={{ vertical: true }}
@@ -495,7 +499,13 @@ export function ProveedoresVentasPanel() {
                     label: "Venta neta",
                     color: "#1d4ed8",
                     showMark: dayLabels.length <= 14,
-                    valueFormatter: (v) => compactMoney(v),
+                    valueFormatter: (v) =>
+                      v == null
+                        ? "—"
+                        : `$ ${v.toLocaleString("es-CO", {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          })}`,
                   },
                 ]}
                 grid={{ horizontal: true }}

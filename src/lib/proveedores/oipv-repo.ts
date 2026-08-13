@@ -36,6 +36,36 @@ export type ProveedorOipvRow = {
   costoMercancia: number;
 };
 
+export const OIPV_ASISTENCIA_FILTERS = [
+  "all",
+  "con_visita",
+  "visita_sin_venta",
+  "venta_sin_visita",
+] as const;
+
+export type OipvAsistenciaFilter = (typeof OIPV_ASISTENCIA_FILTERS)[number];
+
+export const isOipvAsistenciaFilter = (
+  value: string | null | undefined,
+): value is OipvAsistenciaFilter =>
+  OIPV_ASISTENCIA_FILTERS.includes(value as OipvAsistenciaFilter);
+
+const hasOipvVenta = (row: Pick<ProveedorOipvRow, "ventaNeta" | "unidades">) =>
+  row.ventaNeta > 0 || row.unidades > 0;
+
+/** Filtros de cruce visita QR vs venta en el rango. */
+export const filterOipvRows = (
+  rows: ProveedorOipvRow[],
+  filter: OipvAsistenciaFilter,
+): ProveedorOipvRow[] => {
+  if (filter === "all") return rows;
+  if (filter === "con_visita") return rows.filter((row) => row.asistencia);
+  if (filter === "visita_sin_venta") {
+    return rows.filter((row) => row.asistencia && !hasOipvVenta(row));
+  }
+  return rows.filter((row) => !row.asistencia && hasOipvVenta(row));
+};
+
 export type ProveedorOipvBoard = {
   fechaInicio: string;
   fechaFin: string;

@@ -5,6 +5,8 @@ import {
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import {
+  filterOipvRows,
+  isOipvAsistenciaFilter,
   isProveedoresOipvSede,
   listOipvAsistenciaBoard,
 } from "@/lib/proveedores/oipv-repo";
@@ -45,6 +47,12 @@ export async function GET(request: Request) {
   const dateEnd = url.searchParams.get("dateEnd")?.trim() ?? "";
   const sede = url.searchParams.get("sede")?.trim() || null;
   const q = url.searchParams.get("q")?.trim() || null;
+  const filterRaw = url.searchParams.get("filter")?.trim() || "all";
+  if (!isOipvAsistenciaFilter(filterRaw)) {
+    return withSession(
+      NextResponse.json({ error: "Filtro de asistencia no válido." }, { status: 400 }),
+    );
+  }
 
   if (!isIsoDate(dateStart) || !isIsoDate(dateEnd)) {
     return withSession(
@@ -79,6 +87,7 @@ export async function GET(request: Request) {
     });
 
     if (mode === "export") {
+      const exportRows = filterOipvRows(data.rows, filterRaw);
       const header = [
         "rs_proveedor",
         "codigo",
@@ -98,7 +107,7 @@ export async function GET(request: Request) {
       ];
       const lines = [
         header.join(","),
-        ...data.rows.map((row) =>
+        ...exportRows.map((row) =>
           [
             csvEscape(row.rsProveedor),
             csvEscape(row.codigo ?? ""),
