@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
+import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 import type {
   PreciosProveedorCell,
   PreciosProveedorMatrix,
@@ -35,7 +36,7 @@ const unitPrice = (money: number, units: number) =>
 const marginPct = (sales: number, cost: number) =>
   sales > 0 ? ((sales - cost) / sales) * 100 : 0;
 
-/** Sedes tienda (sin Dinastía / plantas). */
+/** Sedes tienda (sin Dinastía / plantas), izq→der como SEDE_ORDER del portal. */
 export const prototypeSedeColumns = (): PreciosProveedorSedeColumn[] =>
   listMargenSedeCatalogOptions()
     .filter((opt) => opt.empresa !== "dinastia")
@@ -44,7 +45,13 @@ export const prototypeSedeColumns = (): PreciosProveedorSedeColumn[] =>
       label: opt.label,
       empresa: opt.empresa,
       idCo: opt.idCo,
-    }));
+    }))
+    .sort((a, b) => {
+      const ai = getSedeOrderIndexForRawName(a.label);
+      const bi = getSedeOrderIndexForRawName(b.label);
+      if (ai !== bi) return ai - bi;
+      return a.label.localeCompare(b.label, "es");
+    });
 
 /**
  * Default = día anterior (calendario).
