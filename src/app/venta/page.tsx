@@ -78,7 +78,7 @@ const VENTA_MODULES: HubModuleItem[] = [
     id: "precios-proveedor",
     icon: Tags,
     badge: "EXP",
-    title: "Precios proveedor",
+    title: "Costos",
     description:
       "Heatmap experimental de precio de venta y costo (COGS) por ítem y sede, con proveedor.",
     href: "/exp/precios-proveedor",

@@ -274,7 +274,7 @@ const SUBSECTION_LABELS: Record<string, string> = {
   "analisis-de-inventario": "Días de inventario",
   "participacion-comercial": "Participación comercial",
   proveedores: "Proveedores",
-  "precios-proveedor": "Precios proveedor",
+  "precios-proveedor": "Costos",
   "mix-y-linea": "Mix y linea",
   margenes: "Margenes",
   rotacion: "Rotacion",

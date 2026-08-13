@@ -762,7 +762,7 @@ export function UserFormModal({
           <StepperStep
             index={2}
             title="Subtableros permitidos"
-            description="Sin marcas = ninguno; todos marcados = sin restricción. Precios proveedor hay que marcarlo aparte."
+            description="Sin marcas = ninguno; todos marcados = sin restricción. Costos hay que marcarlo aparte."
             summary={
               formState.allowedSubdashboards.length === 0
                 ? "Ningún subtablero"

@@ -420,7 +420,7 @@ export default function ExpPreciosProveedorPage() {
         </div>
 
         <h1 className="text-2xl font-black tracking-tight text-slate-900">
-          Precio de venta y costo × sede
+          Costos
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
           Por defecto el <strong>día anterior</strong>. Si eliges un rango, se

@@ -81,7 +81,7 @@ export function canAccessProveedoresBoard(
 }
 
 /**
- * Puede acceder a Precios proveedor (`/exp/precios-proveedor`).
+ * Puede acceder a Costos (`/exp/precios-proveedor`).
  * Admin siempre. El resto necesita sección `venta` y el subtablero
  * `precios-proveedor` marcado de forma explícita (no se hereda de
  * `allowed_subdashboards = null`).

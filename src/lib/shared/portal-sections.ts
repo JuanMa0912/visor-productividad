@@ -38,7 +38,7 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
       "Días de inventario",
       "Participación comercial",
       "Proveedores",
-      "Precios proveedor",
+      "Costos",
     ],
   },
   {
