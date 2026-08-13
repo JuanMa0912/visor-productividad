@@ -131,7 +131,7 @@ Codigo compartido sin UI de pagina.
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets; **sin Dinastía** (empresa/sedes excluidas en catálogo y consultas) |
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`) |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
-| `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in, no hereda de NULL): heatmap ítem×sede precio venta/costo + proveedor; default día anterior; rango = AVG diario; máx. 14 días |
+| `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in, no hereda de NULL): heatmap ítem×sede precio venta / **costo de entrada** (`rotacion_base_item_dia_sede.costo_uni_inventario`, no COGS); doble clic despliega proveedores/SKUs del mismo producto; default día anterior; rango = AVG diario; máx. 14 días |
 | `ordenes-compra` | tablero **solo admin**: OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas |
 | `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |

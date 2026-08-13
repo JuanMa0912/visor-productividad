@@ -6,6 +6,7 @@ import {
 import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import { getDbPool } from "@/lib/db";
 import {
+  queryPreciosProveedorItemExpand,
   queryPreciosProveedorMatrix,
   queryPreciosProveedorMeta,
 } from "@/lib/exp-precios-proveedor/queries";
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 
   const limitedUntil = checkRateLimit(request, {
     windowMs: 60_000,
-    max: 40,
+    max: 80,
     keyPrefix: "exp-precios-proveedor",
   });
   if (limitedUntil) {
@@ -74,7 +75,9 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const mode = url.searchParams.get("mode") === "matrix" ? "matrix" : "meta";
+  const modeRaw = url.searchParams.get("mode");
+  const mode =
+    modeRaw === "matrix" || modeRaw === "proveedores" ? modeRaw : "meta";
 
   try {
     const pool = await getDbPool();
@@ -120,6 +123,26 @@ export async function GET(request: Request) {
             .map((key) => key.trim())
             .filter(Boolean)
         : null;
+
+      if (mode === "proveedores") {
+        const item = url.searchParams.get("item")?.trim() ?? "";
+        if (!item) {
+          return withSession(
+            NextResponse.json(
+              { error: "Falta el ítem para desplegar proveedores." },
+              { status: 400 },
+            ),
+          );
+        }
+        const expand = await queryPreciosProveedorItemExpand(client, {
+          itemId: item,
+          label: url.searchParams.get("label"),
+          fromIso: from,
+          toIso: to,
+          sedeKeys,
+        });
+        return withSession(NextResponse.json({ expand }));
+      }
 
       const matrix = await queryPreciosProveedorMatrix(client, {
         fromIso: from,

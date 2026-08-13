@@ -32,8 +32,10 @@ export type PreciosProveedorRow = {
   sales: number;
   cost: number;
   pvu: number;
+  /** Costo unitario de entrada (inventario), no COGS de venta. */
   pcu: number;
   margenPct: number;
+  proveedorCount: number;
 };
 
 export type PreciosProveedorCell = {
@@ -43,8 +45,19 @@ export type PreciosProveedorCell = {
   sales: number;
   cost: number;
   pvu: number;
+  /** Costo unitario de entrada (inventario). */
   pcu: number;
   margenPct: number;
+};
+
+export type PreciosProveedorExpandRow = {
+  rowId: string;
+  itemId: string;
+  label: string;
+  proveedorId: string;
+  proveedorLabel: string;
+  empresa: string;
+  cells: PreciosProveedorCell[];
 };
 
 export type PreciosProveedorMatrix = {

@@ -3,6 +3,7 @@ import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog
 import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 import type {
   PreciosProveedorCell,
+  PreciosProveedorExpandRow,
   PreciosProveedorMatrix,
   PreciosProveedorMeta,
   PreciosProveedorRow,
@@ -130,7 +131,7 @@ export const queryPreciosProveedorMeta = async (
       label: col.label,
     })),
     note:
-      "Carga el día anterior. Un día = precio/costo de ese día; un rango = promedio simple de los precios/costos diarios. Costo = costo unitario de venta (COGS en roll), no factura de compra al proveedor. Proveedor = maestro POS.",
+      "Carga el día anterior. Un día = precio/costo de ese día; un rango = promedio simple diario. Precio venta = venta/cant. Costo = costo de entrada (costo_uni_inventario), no COGS de venta. Doble clic en el ítem despliega proveedores del mismo producto.",
   };
 };
 
@@ -163,6 +164,7 @@ export const queryPreciosProveedorMatrix = async (
   const fromCompact = isoToCompact(input.fromIso);
   const toCompact = isoToCompact(input.toIso);
   const itemLimit = Math.min(80, Math.max(10, Number(input.itemLimit) || 40));
+  const fetchLimit = Math.min(120, Math.max(itemLimit * 3, itemLimit));
   const allColumns = prototypeSedeColumns();
   const requestedKeys = (input.sedeKeys ?? [])
     .map((key) => key.trim())
@@ -184,7 +186,7 @@ export const queryPreciosProveedorMatrix = async (
   }
   const sedeKeys = columns.map((col) => col.key);
 
-  const params: unknown[] = [fromCompact, toCompact, itemLimit];
+  const params: unknown[] = [fromCompact, toCompact, fetchLimit];
   let lineaSql = "";
   if (input.lineaId?.trim()) {
     params.push(input.lineaId.trim());
@@ -232,14 +234,6 @@ export const queryPreciosProveedorMatrix = async (
   if (pvuMax != null) {
     params.push(pvuMax);
     priceFilterParts.push(`AVG(pvu) FILTER (WHERE pvu IS NOT NULL) <= $${params.length}`);
-  }
-  if (pcuMin != null) {
-    params.push(pcuMin);
-    priceFilterParts.push(`AVG(pcu) FILTER (WHERE pcu IS NOT NULL) >= $${params.length}`);
-  }
-  if (pcuMax != null) {
-    params.push(pcuMax);
-    priceFilterParts.push(`AVG(pcu) FILTER (WHERE pcu IS NOT NULL) <= $${params.length}`);
   }
   const priceHavingSql =
     priceFilterParts.length > 0
@@ -374,9 +368,24 @@ export const queryPreciosProveedorMatrix = async (
     params,
   );
 
+  const itemIds = [
+    ...new Set(result.rows.map((row) => String(row.id_item).trim()).filter(Boolean)),
+  ];
+  const costoEntrada = await queryCostoEntradaMap(client, {
+    fromIso: input.fromIso,
+    toIso: input.toIso,
+    itemIds,
+    columns,
+  });
+
   const rowMap = new Map<
     string,
-    PreciosProveedorRow & { pvuSum: number; pcuSum: number; priceDays: number }
+    PreciosProveedorRow & {
+      pvuSum: number;
+      pcuSum: number;
+      priceDays: number;
+      proveedores: Map<string, string>;
+    }
   >();
   const cells: PreciosProveedorCell[] = [];
   const sedeKeySet = new Set(sedeKeys);
@@ -387,10 +396,10 @@ export const queryPreciosProveedorMatrix = async (
 
     const units = toNum(row.cantidad);
     const sales = toNum(row.ventas_netas);
-    const cost = toNum(row.costo_total);
     const pvu = toNum(row.pvu);
-    const pcu = toNum(row.pcu);
-    const itemId = String(row.id_item);
+    const itemId = String(row.id_item).trim();
+    const pcu = costoEntrada.get(`${itemId}::${key}`) ?? 0;
+    const cost = units > 0 && pcu > 0 ? units * pcu : 0;
 
     cells.push({
       rowId: itemId,
@@ -400,14 +409,17 @@ export const queryPreciosProveedorMatrix = async (
       cost,
       pvu,
       pcu,
-      margenPct: marginPct(sales, cost),
+      margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
     });
 
+    const provId = String(row.proveedor_id ?? "@SP").trim() || "@SP";
+    const provLabel = String(row.proveedor_label ?? "(Sin proveedor)").trim() || "(Sin proveedor)";
     const existing = rowMap.get(itemId);
     if (existing) {
       existing.units += units;
       existing.sales += sales;
       existing.cost += cost;
+      existing.proveedores.set(provId, provLabel);
       if (pvu > 0 || pcu > 0) {
         existing.pvuSum += pvu;
         existing.pcuSum += pcu;
@@ -421,8 +433,9 @@ export const queryPreciosProveedorMatrix = async (
         lineaLabel: String(row.nombre_linea1 ?? row.id_linea1 ?? ""),
         sublineaId: String(row.id_linea2 ?? ""),
         sublineaLabel: String(row.nombre_linea2 ?? row.id_linea2 ?? ""),
-        proveedorId: String(row.proveedor_id ?? "@SP"),
-        proveedorLabel: String(row.proveedor_label ?? "(Sin proveedor)"),
+        proveedorId: provId,
+        proveedorLabel: provLabel,
+        proveedorCount: 1,
         units,
         sales,
         cost,
@@ -432,6 +445,7 @@ export const queryPreciosProveedorMatrix = async (
         pvuSum: pvu > 0 || pcu > 0 ? pvu : 0,
         pcuSum: pvu > 0 || pcu > 0 ? pcu : 0,
         priceDays: pvu > 0 || pcu > 0 ? 1 : 0,
+        proveedores: new Map([[provId, provLabel]]),
       });
     }
   }
@@ -443,9 +457,12 @@ export const queryPreciosProveedorMatrix = async (
           ? row.pvuSum / row.priceDays
           : unitPrice(row.sales, row.units);
       const pcu =
-        row.priceDays > 0
-          ? row.pcuSum / row.priceDays
-          : unitPrice(row.cost, row.units);
+        row.priceDays > 0 ? row.pcuSum / row.priceDays : unitPrice(row.cost, row.units);
+      const proveedorCount = row.proveedores.size;
+      const proveedorLabel =
+        proveedorCount > 1
+          ? `Varios proveedores (${proveedorCount})`
+          : [...row.proveedores.values()][0] ?? row.proveedorLabel;
       return {
         id: row.id,
         label: row.label,
@@ -453,8 +470,9 @@ export const queryPreciosProveedorMatrix = async (
         lineaLabel: row.lineaLabel,
         sublineaId: row.sublineaId,
         sublineaLabel: row.sublineaLabel,
-        proveedorId: row.proveedorId,
-        proveedorLabel: row.proveedorLabel,
+        proveedorId: proveedorCount > 1 ? "*" : row.proveedorId,
+        proveedorLabel,
+        proveedorCount,
         units: row.units,
         sales: row.sales,
         cost: row.cost,
@@ -463,15 +481,363 @@ export const queryPreciosProveedorMatrix = async (
         margenPct: marginPct(row.sales, row.cost),
       };
     })
-    .sort((a, b) => b.sales - a.sales);
+    .filter((row) => {
+      if (pcuMin != null && !(row.pcu >= pcuMin)) return false;
+      if (pcuMax != null && !(row.pcu <= pcuMax)) return false;
+      return true;
+    })
+    .sort((a, b) => b.sales - a.sales)
+    .slice(0, itemLimit);
+
+  const keepIds = new Set(rows.map((row) => row.id));
 
   return {
     columns,
     rows,
-    cells,
+    cells: cells.filter((cell) => keepIds.has(cell.rowId)),
     from: input.fromIso,
     to: input.toIso,
     itemLimit,
     elapsedMs: Math.round(performance.now() - t0),
   };
+};
+
+const ROTACION_SEDE_SQL = `
+  CASE
+    WHEN TRIM(sede) ~ '^[0-9]+$' THEN LPAD(TRIM(sede), 3, '0')
+    ELSE TRIM(sede)
+  END
+`;
+
+async function queryCostoEntradaMap(
+  client: PoolClient,
+  input: {
+    fromIso: string;
+    toIso: string;
+    itemIds: string[];
+    columns: PreciosProveedorSedeColumn[];
+  },
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (input.itemIds.length === 0 || input.columns.length === 0) return map;
+
+  const cols = await client.query<{ column_name: string }>(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'rotacion_base_item_dia_sede'
+      AND column_name = ANY($1::text[])
+    `,
+    [["empresa", "sede", "id_item", "fecha_dia", "costo_uni_inventario"]],
+  );
+  if (cols.rows.length !== 5) return map;
+
+  const params: unknown[] = [input.fromIso, input.toIso, input.itemIds];
+  const tupleSql = input.columns
+    .map((col) => {
+      params.push(col.empresa.trim().toLowerCase(), col.idCo);
+      return `($${params.length - 1}, $${params.length})`;
+    })
+    .join(", ");
+
+  const result = await client.query<{
+    empresa: string;
+    id_co: string;
+    id_item: string;
+    costo_entrada: string | number | null;
+  }>(
+    `
+    SELECT
+      LOWER(BTRIM(empresa)) AS empresa,
+      ${ROTACION_SEDE_SQL} AS id_co,
+      BTRIM(id_item) AS id_item,
+      AVG(costo_uni_inventario) FILTER (
+        WHERE COALESCE(costo_uni_inventario, 0) > 0
+      ) AS costo_entrada
+    FROM rotacion_base_item_dia_sede
+    WHERE fecha_dia >= $1::date
+      AND fecha_dia <= $2::date
+      AND BTRIM(id_item) = ANY($3::text[])
+      AND (LOWER(BTRIM(empresa)), ${ROTACION_SEDE_SQL}) IN (${tupleSql})
+    GROUP BY 1, 2, 3
+    `,
+    params,
+  );
+
+  for (const row of result.rows) {
+    const costo = toNum(row.costo_entrada);
+    if (!(costo > 0)) continue;
+    map.set(`${row.id_item}::${row.empresa}|${row.id_co}`, costo);
+  }
+  return map;
+}
+
+export async function queryPreciosProveedorItemExpand(
+  client: PoolClient,
+  input: {
+    itemId: string;
+    label?: string | null;
+    fromIso: string;
+    toIso: string;
+    sedeKeys?: string[] | null;
+  },
+): Promise<{ itemId: string; label: string; rows: PreciosProveedorExpandRow[] }> {
+  const itemId = input.itemId.trim();
+  const allColumns = prototypeSedeColumns();
+  const requestedKeys = (input.sedeKeys ?? []).map((key) => key.trim()).filter(Boolean);
+  const columns =
+    requestedKeys.length > 0
+      ? allColumns.filter((col) => requestedKeys.includes(col.key))
+      : allColumns;
+  const fromCompact = isoToCompact(input.fromIso);
+  const toCompact = isoToCompact(input.toIso);
+
+  const descRes = await client.query<{ label: string | null }>(
+    `
+    SELECT COALESCE(NULLIF(BTRIM(MAX(item_descripcion)), ''), $3) AS label
+    FROM margen_item_dia_roll
+    WHERE fecha_dcto >= $1
+      AND fecha_dcto <= $2
+      AND BTRIM(id_item) = $3
+    `,
+    [fromCompact, toCompact, itemId],
+  );
+  const label =
+    (input.label ?? "").trim() ||
+    String(descRes.rows[0]?.label ?? "").trim() ||
+    itemId;
+
+  const params: unknown[] = [fromCompact, toCompact, label, itemId];
+  const sedePairs = columns.map((col) => ({
+    empresa: col.empresa,
+    idCo: col.idCo.padStart(3, "0"),
+  }));
+  const sedeTupleSql = sedePairs
+    .map((pair) => {
+      params.push(pair.empresa, pair.idCo);
+      return `($${params.length - 1}, $${params.length})`;
+    })
+    .join(", ");
+  const sedeSql =
+    columns.length > 0
+      ? ` AND (r.empresa_norm, LPAD(TRIM(r.id_co_norm), 3, '0')) IN (${sedeTupleSql})`
+      : "";
+
+  const variants = await client.query<{
+    id_item: string;
+    label: string | null;
+    empresa: string;
+    id_co: string;
+    cantidad: string | number;
+    ventas_netas: string | number;
+    pvu: string | number;
+  }>(
+    `
+    WITH daily AS (
+      SELECT
+        r.fecha_dcto,
+        r.empresa_norm,
+        r.id_co_norm,
+        BTRIM(r.id_item) AS id_item,
+        MAX(r.item_descripcion) AS item_descripcion,
+        SUM(COALESCE(r.cantidad, 0)) AS cantidad,
+        SUM(COALESCE(r.ventas_netas, 0)) AS ventas_netas,
+        CASE
+          WHEN SUM(COALESCE(r.cantidad, 0)) > 0
+          THEN SUM(COALESCE(r.ventas_netas, 0)) / SUM(COALESCE(r.cantidad, 0))
+          ELSE NULL
+        END AS pvu_day
+      FROM margen_item_dia_roll r
+      WHERE r.fecha_dcto >= $1
+        AND r.fecha_dcto <= $2
+        AND TRIM(COALESCE(r.id_tipo, '')) = '4'
+        AND (
+          BTRIM(r.id_item) = $4
+          OR UPPER(BTRIM(COALESCE(r.item_descripcion, ''))) = UPPER(BTRIM($3))
+        )
+        ${sedeSql}
+      GROUP BY r.fecha_dcto, r.empresa_norm, r.id_co_norm, BTRIM(r.id_item)
+    )
+    SELECT
+      id_item,
+      MAX(item_descripcion) AS label,
+      empresa_norm AS empresa,
+      LPAD(TRIM(id_co_norm), 3, '0') AS id_co,
+      SUM(cantidad) AS cantidad,
+      SUM(ventas_netas) AS ventas_netas,
+      AVG(pvu_day) AS pvu
+    FROM daily
+    GROUP BY id_item, empresa_norm, LPAD(TRIM(id_co_norm), 3, '0')
+    `,
+    params,
+  );
+
+  const variantItemIds = [
+    ...new Set(variants.rows.map((row) => String(row.id_item).trim()).filter(Boolean)),
+  ];
+  if (!variantItemIds.includes(itemId)) variantItemIds.unshift(itemId);
+
+  const costoEntrada = await queryCostoEntradaMap(client, {
+    fromIso: input.fromIso,
+    toIso: input.toIso,
+    itemIds: variantItemIds,
+    columns,
+  });
+
+  const provCheck = await client.query<{ ok: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'proveedor_item'
+    ) AS ok
+  `);
+  const provByItemEmpresa = new Map<string, { id: string; label: string }>();
+  if (provCheck.rows[0]?.ok && variantItemIds.length > 0) {
+    const provRes = await client.query<{
+      empresa: string;
+      id_item: string;
+      id_cricla1: string;
+      nombre: string | null;
+    }>(
+      `
+      SELECT
+        pi.empresa,
+        BTRIM(pi.id_item) AS id_item,
+        COALESCE(NULLIF(BTRIM(pi.id_cricla1), ''), '@SP') AS id_cricla1,
+        COALESCE(
+          NULLIF(BTRIM(pc.nombre), ''),
+          NULLIF(BTRIM(pi.descripcion), ''),
+          NULLIF(BTRIM(pi.id_cricla1), ''),
+          '(Sin proveedor)'
+        ) AS nombre
+      FROM proveedor_item pi
+      LEFT JOIN proveedor_pos_catalogo pc
+        ON pc.empresa = pi.empresa
+       AND pc.id_cricla1 = pi.id_cricla1
+      WHERE BTRIM(pi.id_item) = ANY($1::text[])
+      `,
+      [variantItemIds],
+    );
+    for (const row of provRes.rows) {
+      provByItemEmpresa.set(`${row.id_item}::${row.empresa}`, {
+        id: String(row.id_cricla1),
+        label: String(row.nombre ?? row.id_cricla1),
+      });
+    }
+  }
+
+  const expandMap = new Map<string, PreciosProveedorExpandRow>();
+  const sedeKeySet = new Set(columns.map((col) => col.key));
+
+  for (const row of variants.rows) {
+    const variantId = String(row.id_item).trim();
+    const empresa = String(row.empresa).trim();
+    const idCo = String(row.id_co).padStart(3, "0");
+    const sedeKey = `${empresa}|${idCo}`;
+    if (!sedeKeySet.has(sedeKey)) continue;
+
+    const prov = provByItemEmpresa.get(`${variantId}::${empresa}`) ?? {
+      id: "@SP",
+      label: "(Sin proveedor)",
+    };
+    const expandId = `${variantId}::${empresa}::${prov.id}`;
+    const units = toNum(row.cantidad);
+    const sales = toNum(row.ventas_netas);
+    const pvu = toNum(row.pvu);
+    const pcu = costoEntrada.get(`${variantId}::${sedeKey}`) ?? 0;
+    const cost = units > 0 && pcu > 0 ? units * pcu : 0;
+    const cell: PreciosProveedorCell = {
+      rowId: expandId,
+      sedeKey,
+      units,
+      sales,
+      cost,
+      pvu,
+      pcu,
+      margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
+    };
+
+    const existing = expandMap.get(expandId);
+    if (existing) {
+      existing.cells.push(cell);
+    } else {
+      expandMap.set(expandId, {
+        rowId: expandId,
+        itemId: variantId,
+        label: String(row.label ?? variantId).trim() || variantId,
+        proveedorId: prov.id,
+        proveedorLabel: prov.label,
+        empresa,
+        cells: [cell],
+      });
+    }
+  }
+
+  const itemLabelById = new Map<string, string>([[itemId, label]]);
+  for (const row of variants.rows) {
+    const variantId = String(row.id_item).trim();
+    const variantLabel = String(row.label ?? "").trim();
+    if (variantId && variantLabel && !itemLabelById.has(variantId)) {
+      itemLabelById.set(variantId, variantLabel);
+    }
+  }
+
+  for (const [costKey, costo] of costoEntrada) {
+    const sep = costKey.indexOf("::");
+    if (sep < 0 || !(costo > 0)) continue;
+    const variantId = costKey.slice(0, sep);
+    const sedeKey = costKey.slice(sep + 2);
+    if (!sedeKeySet.has(sedeKey)) continue;
+    const empresa = sedeKey.split("|")[0] ?? "";
+    const prov = provByItemEmpresa.get(`${variantId}::${empresa}`) ?? {
+      id: "@SP",
+      label: "(Sin proveedor)",
+    };
+    const expandId = `${variantId}::${empresa}::${prov.id}`;
+    let existing = expandMap.get(expandId);
+    if (!existing) {
+      existing = {
+        rowId: expandId,
+        itemId: variantId,
+        label: itemLabelById.get(variantId) ?? variantId,
+        proveedorId: prov.id,
+        proveedorLabel: prov.label,
+        empresa,
+        cells: [],
+      };
+      expandMap.set(expandId, existing);
+    }
+    const current = existing.cells.find((cell) => cell.sedeKey === sedeKey);
+    if (current) {
+      if (!(current.pcu > 0)) {
+        current.pcu = costo;
+        current.cost = current.units > 0 ? current.units * costo : 0;
+        current.margenPct = marginPct(
+          current.sales > 0 ? current.sales : current.pvu * current.units,
+          current.cost,
+        );
+      }
+      continue;
+    }
+    existing.cells.push({
+      rowId: expandId,
+      sedeKey,
+      units: 0,
+      sales: 0,
+      cost: 0,
+      pvu: 0,
+      pcu: costo,
+      margenPct: 0,
+    });
+  }
+
+  const rows = [...expandMap.values()].sort((a, b) => {
+    if (a.itemId === itemId && b.itemId !== itemId) return -1;
+    if (b.itemId === itemId && a.itemId !== itemId) return 1;
+    const byProv = a.proveedorLabel.localeCompare(b.proveedorLabel, "es");
+    if (byProv !== 0) return byProv;
+    return a.empresa.localeCompare(b.empresa, "es");
+  });
+
+  return { itemId, label, rows };
 };

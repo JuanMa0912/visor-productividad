@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FlaskConical } from "lucide-react";
@@ -8,9 +8,11 @@ import { PortalBrandingHeader } from "@/components/portal/portal-branding-header
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import type {
+  PreciosProveedorExpandRow,
   PreciosProveedorMatrix,
   PreciosProveedorMeta,
   PreciosProveedorMetric,
+  PreciosProveedorRow,
 } from "@/lib/exp-precios-proveedor/types";
 
 /** Escala 0→verde (bajo), 1→rojo (alto). Para costo/precio. */
@@ -145,6 +147,10 @@ export default function ExpPreciosProveedorPage() {
   const [metric, setMetric] = useState<PreciosProveedorMetric>("pcu");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [expandLoading, setExpandLoading] = useState<string | null>(null);
+  const [expandRows, setExpandRows] = useState<PreciosProveedorExpandRow[]>([]);
+  const [expandError, setExpandError] = useState<string | null>(null);
   const skipNextMatrixEffect = useRef(false);
 
   const sublineasOptions = useMemo(() => {
@@ -178,9 +184,8 @@ export default function ExpPreciosProveedorPage() {
   /** Escala por ítem (fila): compara sedes entre sí, no ítem vs ítem. */
   const heatScaleByRow = useMemo(() => {
     const map = new Map<string, { min: number; max: number }>();
-    if (!matrix) return map;
     const byRow = new Map<string, number[]>();
-    for (const cell of matrix.cells) {
+    const pushCell = (cell: PreciosProveedorMatrix["cells"][number]) => {
       const raw =
         metric === "pvu"
           ? cell.pvu
@@ -189,17 +194,21 @@ export default function ExpPreciosProveedorPage() {
             : metric === "units"
               ? cell.units
               : cell.margenPct;
-      if (!Number.isFinite(raw)) continue;
-      if (metric !== "margenPct" && !(raw > 0)) continue;
+      if (!Number.isFinite(raw)) return;
+      if (metric !== "margenPct" && !(raw > 0)) return;
       const list = byRow.get(cell.rowId);
       if (list) list.push(raw);
       else byRow.set(cell.rowId, [raw]);
+    };
+    for (const cell of matrix?.cells ?? []) pushCell(cell);
+    for (const row of expandRows) {
+      for (const cell of row.cells) pushCell(cell);
     }
     for (const [rowId, values] of byRow) {
       map.set(rowId, { min: Math.min(...values), max: Math.max(...values) });
     }
     return map;
-  }, [matrix, metric]);
+  }, [matrix, metric, expandRows]);
 
   const loadMatrix = useCallback(
     async (override?: {
@@ -249,6 +258,9 @@ export default function ExpPreciosProveedorPage() {
         };
         if (!res.ok) throw new Error(data.error ?? "Error matriz");
         setMatrix(data.matrix ?? null);
+        setExpandedItemId(null);
+        setExpandRows([]);
+        setExpandError(null);
       } catch (err) {
         setMatrix(null);
         setError(err instanceof Error ? err.message : "Error cargando");
@@ -268,6 +280,52 @@ export default function ExpPreciosProveedorPage() {
       pvuMinApplied,
       pvuMaxApplied,
     ],
+  );
+
+  const loadExpand = useCallback(
+    async (row: PreciosProveedorRow) => {
+      if (expandedItemId === row.id) {
+        setExpandedItemId(null);
+        setExpandRows([]);
+        setExpandError(null);
+        setExpandLoading(null);
+        return;
+      }
+      if (!dateStart || !dateEnd || selectedSedes.length === 0) return;
+      setExpandedItemId(row.id);
+      setExpandRows([]);
+      setExpandLoading(row.id);
+      setExpandError(null);
+      try {
+        const params = new URLSearchParams({
+          mode: "proveedores",
+          item: row.id,
+          label: row.label,
+          from: dateStart,
+          to: dateEnd,
+          sedes: selectedSedes.join(","),
+        });
+        const res = await fetch(`/api/exp/precios-proveedor?${params}`, {
+          cache: "no-store",
+        });
+        const data = (await res.json()) as {
+          expand?: { rows?: PreciosProveedorExpandRow[] };
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error ?? "Error proveedores");
+        setExpandedItemId(row.id);
+        setExpandRows(data.expand?.rows ?? []);
+      } catch (err) {
+        setExpandedItemId(row.id);
+        setExpandRows([]);
+        setExpandError(
+          err instanceof Error ? err.message : "Error cargando proveedores",
+        );
+      } finally {
+        setExpandLoading(null);
+      }
+    },
+    [dateEnd, dateStart, expandedItemId, selectedSedes],
   );
 
   const loadMeta = useCallback(async () => {
@@ -437,7 +495,9 @@ export default function ExpPreciosProveedorPage() {
           Por defecto el <strong>día anterior</strong>. Si eliges un rango, se
           promedian los precios/costos de cada día. El color compara{" "}
           <strong>sedes del mismo ítem</strong> (no ítem contra ítem). En costo
-          y precio venta: verde = más bajo, rojo = más alto.
+          de entrada y precio venta: verde = más bajo, rojo = más alto.{" "}
+          <strong>Doble clic</strong> en un ítem despliega los proveedores de
+          ese producto.
         </p>
         {meta?.note ? (
           <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -553,7 +613,7 @@ export default function ExpPreciosProveedorPage() {
             />
           </label>
           <label className="text-xs font-semibold text-slate-600">
-            Costo min
+            Costo entrada min
             <input
               type="number"
               min={0}
@@ -565,7 +625,7 @@ export default function ExpPreciosProveedorPage() {
             />
           </label>
           <label className="text-xs font-semibold text-slate-600">
-            Costo max
+            Costo entrada max
             <input
               type="number"
               min={0}
@@ -603,7 +663,7 @@ export default function ExpPreciosProveedorPage() {
           <div className="flex rounded-lg border border-slate-200 p-1">
             {(
               [
-                ["pcu", "Costo"],
+                ["pcu", "Costo entrada"],
                 ["pvu", "Precio venta"],
                 ["margenPct", "Margen %"],
                 ["units", "Unidades"],
@@ -625,10 +685,9 @@ export default function ExpPreciosProveedorPage() {
           </div>
           <p className="w-full text-[11px] text-slate-500">
             {isSingleDay
-              ? "Modo 1 día: precio/costo de ese día."
-              : "Modo rango: promedio simple de los precios/costos diarios."}{" "}
-            Los rangos de costo/precio filtran por el promedio del ítem (sedes
-            seleccionadas).
+              ? "Modo 1 día: precio venta / costo de entrada de ese día."
+              : "Modo rango: promedio simple diario de precio venta y costo de entrada."}{" "}
+            Los rangos filtran por el promedio del ítem (sedes seleccionadas).
           </p>
         </div>
 
@@ -645,7 +704,8 @@ export default function ExpPreciosProveedorPage() {
                 Matriz · ítem × sede
               </h2>
               <p className="text-xs text-slate-500">
-                Top {matrix?.itemLimit ?? 40} ítems por venta neta ·{" "}
+                Top {matrix?.itemLimit ?? 40} ítems por venta neta · doble clic
+                despliega proveedores ·{" "}
                 {matrix
                   ? `${matrix.elapsedMs} ms servidor · ${matrix.rows.length} filas`
                   : loading
@@ -658,7 +718,7 @@ export default function ExpPreciosProveedorPage() {
             {!matrix || matrix.rows.length === 0 ? (
               <p className="px-4 py-8 text-sm text-slate-500">
                 {loading
-                  ? "Consultando margen_item_dia_roll…"
+                  ? "Consultando costo de entrada…"
                   : "Sin datos para el filtro."}
               </p>
             ) : (
@@ -679,46 +739,150 @@ export default function ExpPreciosProveedorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {matrix.rows.map((row) => (
-                    <tr key={row.id} className="border-t border-slate-100">
-                      <th className="sticky left-0 z-10 max-w-[18rem] bg-white px-3 py-2 text-left font-semibold">
-                        <div className="truncate text-slate-900" title={row.label}>
-                          <span className="tabular-nums text-slate-500">
-                            {row.id}
-                          </span>
-                          <span className="text-slate-400"> · </span>
-                          {row.label}
-                        </div>
-                        <div
-                          className="mt-0.5 truncate text-[10px] font-medium text-indigo-700"
-                          title={`${row.proveedorId} · ${row.proveedorLabel}`}
+                  {matrix.rows.map((row) => {
+                    const isExpanded = expandedItemId === row.id;
+                    const isExpanding = expandLoading === row.id;
+                    return (
+                      <Fragment key={row.id}>
+                        <tr
+                          className={`select-none border-t border-slate-100 ${
+                            isExpanded ? "bg-indigo-50/60" : "hover:bg-slate-50"
+                          }`}
+                          onDoubleClick={() => void loadExpand(row)}
+                          title="Doble clic para ver proveedores y costo de entrada"
                         >
-                          {row.proveedorLabel}
-                        </div>
-                      </th>
-                      {matrix.columns.map((col) => {
-                        const cell = cellByKey.get(`${row.id}::${col.key}`);
-                        const style = cellHeatStyle(cell);
-                        const title = cell
-                          ? `${row.label} · ${col.label}
-Precio venta ${unitMoney(cell.pvu)} · Costo ${unitMoney(cell.pcu)}
-Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und
-Venta ${money(cell.sales)} · Costo tot. ${money(cell.cost)}`
-                          : "";
-                        return (
-                          <td key={col.key} className="p-1">
+                          <th
+                            className={`sticky left-0 z-10 max-w-[18rem] px-3 py-2 text-left font-semibold ${
+                              isExpanded ? "bg-indigo-50" : "bg-white"
+                            }`}
+                          >
                             <div
-                              className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
-                              style={style}
-                              title={title}
+                              className="truncate text-slate-900"
+                              title={row.label}
                             >
-                              {formatCell(cell)}
+                              <span className="tabular-nums text-slate-500">
+                                {row.id}
+                              </span>
+                              <span className="text-slate-400"> · </span>
+                              {row.label}
                             </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                            <div
+                              className="mt-0.5 truncate text-[10px] font-medium text-indigo-700"
+                              title={`${row.proveedorId} · ${row.proveedorLabel}`}
+                            >
+                              {row.proveedorLabel}
+                              {row.proveedorCount > 1 ? (
+                                <span className="ml-1 font-semibold text-slate-500">
+                                  · doble clic
+                                </span>
+                              ) : null}
+                            </div>
+                          </th>
+                          {matrix.columns.map((col) => {
+                            const cell = cellByKey.get(`${row.id}::${col.key}`);
+                            const style = cellHeatStyle(cell);
+                            const title = cell
+                              ? `${row.label} · ${col.label}
+Precio venta ${unitMoney(cell.pvu)} · Costo entrada ${unitMoney(cell.pcu)}
+Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und
+Venta ${money(cell.sales)} · Costo entrada tot. ${money(cell.cost)}`
+                              : "";
+                            return (
+                              <td key={col.key} className="p-1">
+                                <div
+                                  className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                  style={style}
+                                  title={title}
+                                >
+                                  {formatCell(cell)}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        {isExpanded ? (
+                          isExpanding ? (
+                            <tr className="border-t border-indigo-100 bg-indigo-50/40">
+                              <td
+                                colSpan={matrix.columns.length + 1}
+                                className="px-6 py-2 text-[11px] text-indigo-800"
+                              >
+                                Cargando proveedores…
+                              </td>
+                            </tr>
+                          ) : expandError ? (
+                            <tr className="border-t border-rose-100 bg-rose-50/60">
+                              <td
+                                colSpan={matrix.columns.length + 1}
+                                className="px-6 py-2 text-[11px] text-rose-800"
+                              >
+                                {expandError}
+                              </td>
+                            </tr>
+                          ) : expandRows.length === 0 ? (
+                            <tr className="border-t border-indigo-100 bg-indigo-50/40">
+                              <td
+                                colSpan={matrix.columns.length + 1}
+                                className="px-6 py-2 text-[11px] text-slate-600"
+                              >
+                                Sin otros proveedores ni SKUs con costo de
+                                entrada para este producto.
+                              </td>
+                            </tr>
+                          ) : (
+                            expandRows.map((child) => {
+                              const childBySede = new Map(
+                                child.cells.map((cell) => [cell.sedeKey, cell]),
+                              );
+                              return (
+                                <tr
+                                  key={child.rowId}
+                                  className="border-t border-indigo-100 bg-indigo-50/40"
+                                >
+                                  <th className="sticky left-0 z-10 max-w-[18rem] bg-indigo-50 px-3 py-2 pl-8 text-left font-semibold">
+                                    <div
+                                      className="truncate text-indigo-950"
+                                      title={child.proveedorLabel}
+                                    >
+                                      {child.proveedorLabel}
+                                    </div>
+                                    <div className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                                      {child.itemId}
+                                      {child.itemId !== row.id
+                                        ? ` · ${child.label}`
+                                        : ""}
+                                      {" · "}
+                                      {child.empresa}
+                                    </div>
+                                  </th>
+                                  {matrix.columns.map((col) => {
+                                    const cell = childBySede.get(col.key);
+                                    const style = cellHeatStyle(cell);
+                                    const title = cell
+                                      ? `${child.proveedorLabel} · ${col.label}
+Costo entrada ${unitMoney(cell.pcu)} · Precio venta ${unitMoney(cell.pvu)}
+Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und`
+                                      : "";
+                                    return (
+                                      <td key={col.key} className="p-1">
+                                        <div
+                                          className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                          style={style}
+                                          title={title}
+                                        >
+                                          {formatCell(cell)}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })
+                          )
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
