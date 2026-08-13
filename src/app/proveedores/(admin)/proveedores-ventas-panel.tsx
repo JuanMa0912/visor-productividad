@@ -90,14 +90,18 @@ const SortTh = ({
   dir,
   align = "left",
   onClick,
+  sticky = false,
 }: {
   label: string;
   active: boolean;
   dir: SortDir;
   align?: "left" | "right";
   onClick: () => void;
+  sticky?: boolean;
 }) => (
-  <th className="px-3 py-2">
+  <th
+    className={`px-3 py-2 ${sticky ? "sticky top-0 z-20 bg-slate-50" : ""}`}
+  >
     <button
       type="button"
       onClick={onClick}
@@ -639,23 +643,26 @@ export function ProveedoresVentasPanel() {
         <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
           Proveedor · unidades · venta neta
         </div>
-        <div className="overflow-x-auto">
+        <div className="max-h-[min(70vh,52rem)] overflow-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-[10px]">
+            <thead className="sticky top-0 z-20 bg-slate-50 text-[10px] shadow-[0_1px_0_0_rgb(226,232,240)]">
               <tr>
                 <SortTh
+                  sticky
                   label="Proveedor"
                   active={provSort.key === "proveedor"}
                   dir={provSort.dir}
                   onClick={() => toggleProvSort("proveedor")}
                 />
                 <SortTh
+                  sticky
                   label="Código"
                   active={provSort.key === "codigo"}
                   dir={provSort.dir}
                   onClick={() => toggleProvSort("codigo")}
                 />
                 <SortTh
+                  sticky
                   label="Unidades"
                   active={provSort.key === "unidades"}
                   dir={provSort.dir}
@@ -663,6 +670,7 @@ export function ProveedoresVentasPanel() {
                   onClick={() => toggleProvSort("unidades")}
                 />
                 <SortTh
+                  sticky
                   label="Venta neta"
                   active={provSort.key === "ventaNeta"}
                   dir={provSort.dir}
@@ -670,6 +678,7 @@ export function ProveedoresVentasPanel() {
                   onClick={() => toggleProvSort("ventaNeta")}
                 />
                 <SortTh
+                  sticky
                   label="Venta + IVA"
                   active={provSort.key === "ventaConImpuesto"}
                   dir={provSort.dir}
@@ -677,6 +686,7 @@ export function ProveedoresVentasPanel() {
                   onClick={() => toggleProvSort("ventaConImpuesto")}
                 />
                 <SortTh
+                  sticky
                   label="Sedes"
                   active={provSort.key === "sedesActivas"}
                   dir={provSort.dir}

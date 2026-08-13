@@ -126,14 +126,18 @@ const SortTh = ({
   dir,
   align = "left",
   onClick,
+  sticky = false,
 }: {
   label: string;
   active: boolean;
   dir: SortDir;
   align?: "left" | "right";
   onClick: () => void;
+  sticky?: boolean;
 }) => (
-  <th className="px-3 py-2">
+  <th
+    className={`px-3 py-2 ${sticky ? "sticky top-0 z-20 bg-slate-50" : ""}`}
+  >
     <button
       type="button"
       onClick={onClick}
@@ -860,7 +864,11 @@ export function ProveedoresProductividadPanel() {
             </button>
           ))}
         </div>
-        <div className={`overflow-x-auto ${provLoading ? "opacity-70" : ""}`}>
+        <div
+          className={`max-h-[min(70vh,52rem)] overflow-auto ${
+            provLoading ? "opacity-70" : ""
+          }`}
+        >
           {provLoading && proveedores.length === 0 ? (
             <div className="space-y-2 py-2">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -869,21 +877,24 @@ export function ProveedoresProductividadPanel() {
             </div>
           ) : (
             <table className="min-w-full text-left text-xs">
-              <thead className="border-b border-slate-200 bg-slate-50 text-[10px]">
+              <thead className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 text-[10px] shadow-[0_1px_0_0_rgb(226,232,240)]">
                 <tr>
                   <SortTh
+                    sticky
                     label="Proveedor"
                     active={provSort.key === "proveedor"}
                     dir={provSort.dir}
                     onClick={() => toggleProvSort("proveedor")}
                   />
                   <SortTh
+                    sticky
                     label="Código"
                     active={provSort.key === "codigo"}
                     dir={provSort.dir}
                     onClick={() => toggleProvSort("codigo")}
                   />
                   <SortTh
+                    sticky
                     label="Industria und"
                     active={provSort.key === "industria"}
                     dir={provSort.dir}
@@ -891,6 +902,7 @@ export function ProveedoresProductividadPanel() {
                     onClick={() => toggleProvSort("industria")}
                   />
                   <SortTh
+                    sticky
                     label="Fruver kg"
                     active={provSort.key === "fruver"}
                     dir={provSort.dir}
@@ -898,6 +910,7 @@ export function ProveedoresProductividadPanel() {
                     onClick={() => toggleProvSort("fruver")}
                   />
                   <SortTh
+                    sticky
                     label="Carnes kg"
                     active={provSort.key === "carnes"}
                     dir={provSort.dir}
@@ -905,6 +918,7 @@ export function ProveedoresProductividadPanel() {
                     onClick={() => toggleProvSort("carnes")}
                   />
                   <SortTh
+                    sticky
                     label="Sedes"
                     active={provSort.key === "sedesActivas"}
                     dir={provSort.dir}
