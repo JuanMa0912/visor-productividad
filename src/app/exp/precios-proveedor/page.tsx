@@ -175,21 +175,30 @@ export default function ExpPreciosProveedorPage() {
     return map;
   }, [matrix]);
 
-  const heatScale = useMemo(() => {
-    if (!matrix) return { min: 0, max: 1 };
-    const values: number[] = [];
+  /** Escala por ítem (fila): compara sedes entre sí, no ítem vs ítem. */
+  const heatScaleByRow = useMemo(() => {
+    const map = new Map<string, { min: number; max: number }>();
+    if (!matrix) return map;
+    const byRow = new Map<string, number[]>();
     for (const cell of matrix.cells) {
-      if (metric === "pvu") values.push(cell.pvu);
-      else if (metric === "pcu") values.push(cell.pcu);
-      else if (metric === "units") values.push(cell.units);
-      else values.push(cell.margenPct);
+      const raw =
+        metric === "pvu"
+          ? cell.pvu
+          : metric === "pcu"
+            ? cell.pcu
+            : metric === "units"
+              ? cell.units
+              : cell.margenPct;
+      if (!Number.isFinite(raw)) continue;
+      if (metric !== "margenPct" && !(raw > 0)) continue;
+      const list = byRow.get(cell.rowId);
+      if (list) list.push(raw);
+      else byRow.set(cell.rowId, [raw]);
     }
-    const positive = values.filter((v) => Number.isFinite(v) && v > 0);
-    if (positive.length === 0) return { min: 0, max: 1 };
-    return {
-      min: Math.min(...positive),
-      max: Math.max(...positive),
-    };
+    for (const [rowId, values] of byRow) {
+      map.set(rowId, { min: Math.min(...values), max: Math.max(...values) });
+    }
+    return map;
   }, [matrix, metric]);
 
   const loadMatrix = useCallback(
@@ -382,12 +391,14 @@ export default function ExpPreciosProveedorPage() {
             ? cell.units
             : cell.margenPct;
     if (!(raw > 0) && metric !== "margenPct") return heatStyleLowGreen(-1);
-    if (metric === "margenPct") {
-      return heatStyleHighGreen(Math.max(0, Math.min(1, raw / 40)));
+    if (metric === "margenPct" && !Number.isFinite(raw)) {
+      return heatStyleLowGreen(-1);
     }
-    const span = heatScale.max - heatScale.min || 1;
-    const t01 = (raw - heatScale.min) / span;
-    // Costo y precio venta: verde = más bajo, rojo = más alto.
+    const scale = heatScaleByRow.get(cell.rowId);
+    if (!scale) return heatStyleLowGreen(-1);
+    const span = scale.max - scale.min;
+    const t01 = span < 1e-9 ? 0.5 : (raw - scale.min) / span;
+    // Costo y precio venta: verde = más bajo entre sedes, rojo = más alto.
     if (metric === "pcu" || metric === "pvu") {
       return heatStyleLowGreen(t01);
     }
@@ -424,8 +435,9 @@ export default function ExpPreciosProveedorPage() {
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
           Por defecto el <strong>día anterior</strong>. Si eliges un rango, se
-          promedian los precios/costos de cada día. En costo (y precio venta):
-          verde = más bajo, rojo = más alto.
+          promedian los precios/costos de cada día. El color compara{" "}
+          <strong>sedes del mismo ítem</strong> (no ítem contra ítem). En costo
+          y precio venta: verde = más bajo, rojo = más alto.
         </p>
         {meta?.note ? (
           <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
