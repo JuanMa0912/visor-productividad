@@ -33,19 +33,19 @@ El runbook general está en [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
 ## Contenido del correo individual
 
-Por sede, con la misma lógica que `/rotacion`, en **un solo correo** con dos bloques:
+Por sede, con la misma lógica que `/rotacion` filtrada a **Manufactura**
+(resto de líneas N1; **perecederos omitidos por ahora**):
 
-1. **Resumen total sede** (D+0+S agregado, ABCD calculado sobre **todo** el catálogo de la sede — como la UI sin filtro de familia).
-2. **Perecederos** (líneas N1 01, 02, 03, 04, 12): total, D, 0 y S (ABCD **solo** entre perecederos — como filtrar familia Perecederos en la UI).
-3. **Manufactura** (resto de líneas N1): total, D, 0 y S (ABCD **solo** entre manufactura — como filtrar familia Manufactura en la UI).
+1. **Resumen Manufactura D+0+S** — productos, inventario y **días de inventario**
+   (cobertura de ítems Demanda D, ABCD solo entre manufactura).
+2. **Bloque Manufactura** en 3 columnas (D | 0 | S).
 
-Los conteos **0** y **S** no dependen del ABCD; **D** sí cambia al filtrar familia. Por eso el total sede puede no coincidir con la suma de D de cada bloque, aunque D+0+S por bloque sí debe cuadrar con la UI al aplicar el mismo filtro de familia.
+Los conteos **0** y **S** no dependen del ABCD; **D** sí. Las cifras deben
+cuadrar con la UI al filtrar familia Manufactura.
 
-Cada bloque se muestra en **3 columnas** (D | 0 | S) para leer rápido:
-
-| Columna | Contenido |
+| Columna / métrica | Contenido |
 | --- | --- |
-| **Total D+0+S** (cabecera de familia) | productos + inventario |
+| **Resumen / cabecera** | productos + inventario + días de inventario (Demanda) |
 | **D · Demanda** | ítems, inventario, días de inventario |
 | **0 · Cero** / **S · Restock** | ítems + Sin ver / Seg / Surt (%) |
 

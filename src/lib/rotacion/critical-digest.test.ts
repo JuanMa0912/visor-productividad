@@ -209,20 +209,23 @@ describe("buildRotacionCriticalDigest", () => {
 
     const subject = buildRotacionCriticalDigestSubject(digest);
     assert.match(subject, /Floresta/);
-    assert.match(subject, /Críticos/);
+    assert.match(subject, /Manufactura/);
 
     const html = buildRotacionCriticalDigestHtml(digest);
-    assert.match(html, /Perecederos/);
+    assert.doesNotMatch(html, /Perecederos/);
     assert.match(html, /Manufactura/);
-    assert.match(html, /Total sede D\+0\+S/);
+    assert.match(html, /Días de inventario/);
     assert.match(html, /Puntuación restock/);
     assert.match(html, />67</);
+    assert.match(html, /400\.000/);
+    assert.doesNotMatch(html, /600\.000/);
 
     const text = buildRotacionCriticalDigestText(digest);
-    assert.match(text, /PERECEDEROS/);
+    assert.doesNotMatch(text, /PERECEDEROS/);
     assert.match(text, /MANUFACTURA/);
-    assert.match(text, /TOTAL SEDE D\+0\+S/);
+    assert.match(text, /Días de inventario/);
     assert.match(text, /PUNTUACIÓN RESTOCK: 67/);
-    assert.match(text, /600\.000/);
+    assert.match(text, /400\.000/);
+    assert.doesNotMatch(text, /600\.000/);
   });
 });

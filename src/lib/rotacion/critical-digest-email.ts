@@ -56,7 +56,7 @@ const formatScoreLabel = (
 const tdMetric = (
   label: string,
   value: string,
-  align: "left" | "right" = "left",
+  align: "left" | "right" | "center" = "left",
   valueStyle?: { color?: string; fontSize?: string },
 ) =>
   `<td style="padding:4px 6px;vertical-align:top;text-align:${align};">
@@ -108,7 +108,7 @@ const renderSectionBlock = (
                   <div style="margin-top:4px;font-size:18px;font-weight:800;color:#881337;line-height:1;">${formatCount(section.demandaD.itemCount)}</div>
                   <div style="margin-top:4px;font-size:11px;line-height:1.35;color:#9f1239;">
                     ${formatEmailInventario(section.demandaD.totalInventario)}<br/>
-                    DI ${formatDiasInventario(section.demandaD.diasInventario)}
+                    Días de inventario ${formatDiasInventario(section.demandaD.diasInventario)}
                   </div>
                 </td>
                 ${renderEstadoCell("0", "Cero", "#475569", section.ceroRotacion)}
@@ -126,7 +126,7 @@ const renderSectionText = (familyLabel: string, section: RotacionCriticalDigestS
   return [
     `=== ${familyLabel.toUpperCase()} ===`,
     `Total D+0+S: ${formatCount(section.total.itemCount)} · ${formatEmailInventario(section.total.totalInventario)}`,
-    `D Demanda: ${formatCount(section.demandaD.itemCount)} · ${formatEmailInventario(section.demandaD.totalInventario)} · DI ${formatDiasInventario(section.demandaD.diasInventario)}`,
+    `D Demanda: ${formatCount(section.demandaD.itemCount)} · ${formatEmailInventario(section.demandaD.totalInventario)} · Días de inventario ${formatDiasInventario(section.demandaD.diasInventario)}`,
     `0 Cero: ${formatCount(section.ceroRotacion.itemCount)} · ${formatEstadoLine(section.ceroRotacion)}`,
     `S Restock: ${formatCount(section.restockS.itemCount)} · ${formatEstadoLine(section.restockS)}`,
   ].join("\n");
@@ -135,13 +135,15 @@ const renderSectionText = (familyLabel: string, section: RotacionCriticalDigestS
 export const buildRotacionCriticalDigestSubject = (
   digest: RotacionCriticalDigest,
 ) =>
-  `Rotación · ${digest.sedeName} · Críticos D+0+S · ${formatRangeLabel(digest.dateRange)}`;
+  `Rotación · ${digest.sedeName} · Manufactura D+0+S · ${formatRangeLabel(digest.dateRange)}`;
 
 export const buildRotacionCriticalDigestHtml = (
   digest: RotacionCriticalDigest,
 ) => {
   const rangeLabel = formatRangeLabel(digest.dateRange);
   const score = formatScoreLabel(digest);
+  const section = digest.manufactura;
+  const familyLabel = LINEA_N1_FAMILY_LABELS.manufactura;
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -152,8 +154,8 @@ export const buildRotacionCriticalDigestHtml = (
 <body style="margin:0;padding:12px;background:#f1f5f9;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
     <tr>
-      <td style="padding:12px 14px 8px;background:#fff1f2;border-bottom:1px solid #fecdd3;">
-        <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#be123c;">Críticos · D+0+S</div>
+      <td style="padding:12px 14px 8px;background:#eff6ff;border-bottom:1px solid #bfdbfe;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1d4ed8;">Críticos · ${familyLabel} · D+0+S</div>
         <div style="margin-top:2px;font-size:18px;font-weight:800;line-height:1.2;color:#0f172a;">${digest.sedeName}</div>
         <div style="margin-top:2px;font-size:12px;color:#64748b;">${rangeLabel} · ${digest.daysConsulted} días</div>
       </td>
@@ -180,18 +182,29 @@ export const buildRotacionCriticalDigestHtml = (
     </tr>
     <tr>
       <td style="padding:8px 14px 4px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
           <tr>
-            <td colspan="2" style="padding:6px 10px 2px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#be123c;">Total sede D+0+S</td>
+            <td colspan="3" style="padding:6px 10px 2px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#1d4ed8;">${familyLabel} · D+0+S</td>
           </tr>
           <tr>
-            ${tdMetric("Productos", formatCount(digest.total.itemCount))}
+            ${tdMetric("Productos", formatCount(section.total.itemCount))}
             ${tdMetric(
               "Inventario",
-              formatEmailInventario(digest.total.totalInventario),
-              "right",
-              { color: "#be123c", fontSize: "20px" },
+              formatEmailInventario(section.total.totalInventario),
+              "center",
+              { color: "#1d4ed8", fontSize: "18px" },
             )}
+            ${tdMetric(
+              "Días de inventario",
+              formatDiasInventario(section.demandaD.diasInventario),
+              "right",
+              { color: "#be123c", fontSize: "18px" },
+            )}
+          </tr>
+          <tr>
+            <td colspan="3" style="padding:2px 10px 8px;font-size:10px;line-height:1.35;color:#64748b;">
+              Días de inventario = cobertura de inventario en ítems Demanda (D).
+            </td>
           </tr>
         </table>
       </td>
@@ -199,14 +212,13 @@ export const buildRotacionCriticalDigestHtml = (
     <tr>
       <td style="padding:0 14px 10px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
-          ${renderSectionBlock(LINEA_N1_FAMILY_LABELS.perecederos, "#047857", "#ecfdf5", digest.perecederos)}
-          ${renderSectionBlock(LINEA_N1_FAMILY_LABELS.manufactura, "#1d4ed8", "#eff6ff", digest.manufactura)}
+          ${renderSectionBlock(familyLabel, "#1d4ed8", "#eff6ff", section)}
         </table>
       </td>
     </tr>
     <tr>
       <td style="padding:8px 14px 12px;border-top:1px solid #f1f5f9;font-size:10px;line-height:1.4;color:#94a3b8;">
-        Automático · Visor. Puntuación restock: primera marca a surtido en el rango + venta en o después. Perecederos: 01–04 y 12. Manufactura: resto.
+        Automático · Visor. Solo ${familyLabel} (resto de líneas N1; perecederos 01–04 y 12 omitidos por ahora). Puntuación restock: primera marca a surtido en el rango + venta en o después.
       </td>
     </tr>
   </table>
@@ -219,6 +231,8 @@ export const buildRotacionCriticalDigestText = (
 ) => {
   const rangeLabel = formatRangeLabel(digest.dateRange);
   const score = formatScoreLabel(digest);
+  const section = digest.manufactura;
+  const familyLabel = LINEA_N1_FAMILY_LABELS.manufactura;
 
   return [
     `Rotación · ${digest.sedeName}`,
@@ -227,10 +241,8 @@ export const buildRotacionCriticalDigestText = (
     `PUNTUACIÓN RESTOCK: ${score.value}/100`,
     `  ${score.detail}`,
     "",
-    `TOTAL SEDE D+0+S: ${formatCount(digest.total.itemCount)} · ${formatEmailInventario(digest.total.totalInventario)}`,
+    `${familyLabel.toUpperCase()} D+0+S: ${formatCount(section.total.itemCount)} · ${formatEmailInventario(section.total.totalInventario)} · Días de inventario ${formatDiasInventario(section.demandaD.diasInventario)}`,
     "",
-    renderSectionText(LINEA_N1_FAMILY_LABELS.perecederos, digest.perecederos),
-    "",
-    renderSectionText(LINEA_N1_FAMILY_LABELS.manufactura, digest.manufactura),
+    renderSectionText(familyLabel, section),
   ].join("\n");
 };
