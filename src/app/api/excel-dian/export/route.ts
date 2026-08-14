@@ -16,6 +16,10 @@ import {
   buildYearLapsoRange,
   queryMtodoMediosMagneticos,
 } from "@/lib/excel-dian/mtodo-medios-magneticos";
+import {
+  queryAnexoCuentas,
+  type AnexoCuentaRow,
+} from "@/lib/excel-dian/anexo-cuentas";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 import { isExcelDianPublicAccess } from "@/lib/excel-dian/public-export-env";
 import {
@@ -159,6 +163,7 @@ const buildWorkbook = async (
   startLapso: string,
   endLapso: string,
   metaEmpresa: { label: string; dbCode: ExcelDianDbEmpresa },
+  anexoRows: AnexoCuentaRow[],
 ) => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Visor de Productividad";
@@ -366,6 +371,151 @@ const buildWorkbook = async (
     };
   }
 
+  // ── Hoja "Anexo Cuentas": respaldo contable por cuenta ────────────────────
+  // Debitos / creditos / movimiento por cada cuenta del mapeo, con su nombre y
+  // concepto, subtotales por concepto y total general. El total de movimiento
+  // respalda el F1007 (= -Ingresos + Devoluciones).
+  const anexo = workbook.addWorksheet("Anexo Cuentas", {
+    views: [
+      {
+        state: "frozen",
+        ySplit: 5,
+        showGridLines: true,
+        zoomScale: 90,
+        zoomScaleNormal: 90,
+      },
+    ],
+    properties: { defaultRowHeight: 15, defaultColWidth: 10 },
+  });
+  anexo.columns = [
+    { width: 12 },
+    { width: 40 },
+    { width: 20 },
+    { width: 20 },
+    { width: 22 },
+    { width: 10 },
+  ];
+
+  const tituloEmpresa = anexo.addRow([metaEmpresa.label]);
+  tituloEmpresa.getCell(1).font = { bold: true, name: "Calibri", size: 12 };
+  anexo.addRow(["ANEXO 1007"]).getCell(1).font = {
+    bold: true,
+    name: "Calibri",
+    size: DATA_FONT_SIZE,
+  };
+  anexo.addRow([
+    startLapso === endLapso
+      ? `Periodo ${startLapso}`
+      : `Periodo ${startLapso} a ${endLapso}`,
+  ]).getCell(1).font = { name: "Calibri", size: DATA_FONT_SIZE };
+  anexo.addRow([]);
+
+  const anexoHeader = anexo.addRow([
+    "Cuenta",
+    "Nombre Cuenta",
+    "Suma de Debitos",
+    "Suma de Creditos",
+    "Suma de Movimiento",
+    "Concepto",
+  ]);
+  anexoHeader.height = 20;
+  anexoHeader.eachCell({ includeEmpty: true }, (cell, col) => {
+    if (col > 6) return;
+    cell.font = {
+      bold: true,
+      color: { argb: HEADER_FONT },
+      name: "Calibri",
+      size: HEADER_FONT_SIZE,
+    };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: BORDER_GRID,
+      left: BORDER_GRID,
+      bottom: BORDER_GRID,
+      right: BORDER_GRID,
+    };
+  });
+
+  const ANEXO_NUM_COLS = new Set([3, 4, 5]);
+  const SUB_FILL = "FFDDEBF7";
+  const TOT_FILL = "FFBDD7EE";
+  const addAnexoRow = (
+    cuenta: string,
+    nombre: string,
+    deb: number,
+    cre: number,
+    mov: number,
+    concepto: string,
+    opts: { bold?: boolean; fill?: string } = {},
+  ) => {
+    const row = anexo.addRow([cuenta, nombre, deb, cre, mov, concepto]);
+    row.eachCell({ includeEmpty: false }, (cell, col) => {
+      if (col > 6) return;
+      cell.font = { name: "Calibri", size: DATA_FONT_SIZE, bold: !!opts.bold };
+      cell.border = {
+        top: BORDER_GRID,
+        left: BORDER_GRID,
+        bottom: BORDER_GRID,
+        right: BORDER_GRID,
+      };
+      if (opts.fill) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: opts.fill } };
+      }
+      if (ANEXO_NUM_COLS.has(col)) {
+        cell.numFmt = NUM_FMT_ACCOUNTING_INT;
+        cell.alignment = { horizontal: "right", vertical: "middle" };
+      } else if (col === 6) {
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      }
+    });
+    return row;
+  };
+
+  let totD = 0;
+  let totC = 0;
+  let totM = 0;
+  let subD = 0;
+  let subC = 0;
+  let subM = 0;
+  let conceptoActual: string | null = null;
+  for (const r of anexoRows) {
+    if (conceptoActual !== null && r.concepto !== conceptoActual) {
+      addAnexoRow("", `Subtotal ${conceptoActual}`, subD, subC, subM, conceptoActual, {
+        bold: true,
+        fill: SUB_FILL,
+      });
+      subD = 0;
+      subC = 0;
+      subM = 0;
+    }
+    conceptoActual = r.concepto;
+    addAnexoRow(
+      r.cuenta,
+      r.nombre_cuenta,
+      r.suma_debitos,
+      r.suma_creditos,
+      r.suma_movimiento,
+      r.concepto,
+    );
+    subD += r.suma_debitos;
+    subC += r.suma_creditos;
+    subM += r.suma_movimiento;
+    totD += r.suma_debitos;
+    totC += r.suma_creditos;
+    totM += r.suma_movimiento;
+  }
+  if (conceptoActual !== null) {
+    addAnexoRow("", `Subtotal ${conceptoActual}`, subD, subC, subM, conceptoActual, {
+      bold: true,
+      fill: SUB_FILL,
+    });
+  }
+  addAnexoRow("", "Total general", totD, totC, totM, "", {
+    bold: true,
+    fill: TOT_FILL,
+  });
+
   return workbook;
 };
 
@@ -533,17 +683,17 @@ export async function GET(request: Request) {
     }
     const client = await pool.connect();
     try {
+      const idEmp = EXCEL_DIAN_ID_EMP[empresa];
       const { rows, startLapso: sl, endLapso: el } =
-        await queryMtodoMediosMagneticos(
-          client,
-          startLapso,
-          endLapso,
-          EXCEL_DIAN_ID_EMP[empresa],
-        );
-      const workbook = await buildWorkbook(rows, sl, el, {
-        label: excelDianEmpresaLabel(empresa),
-        dbCode: empresa,
-      });
+        await queryMtodoMediosMagneticos(client, startLapso, endLapso, idEmp);
+      const anexoRows = await queryAnexoCuentas(client, sl, el, idEmp);
+      const workbook = await buildWorkbook(
+        rows,
+        sl,
+        el,
+        { label: excelDianEmpresaLabel(empresa), dbCode: empresa },
+        anexoRows,
+      );
       const raw = await workbook.xlsx.writeBuffer();
       const body = Buffer.isBuffer(raw) ? raw : Buffer.from(new Uint8Array(raw as ArrayBuffer));
       const filename = `medios-magneticos-${empresa}-${sl}-${el}.xlsx`;
