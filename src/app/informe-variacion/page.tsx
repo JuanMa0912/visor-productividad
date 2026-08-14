@@ -48,7 +48,7 @@ type InformeMeta = {
  * v1 compartía clave entre usuarios; v2 namespaced; v3 fuerza wipe al desplegar
  * tras el incidente de payloads solo-Asaderos en sessionStorage.
  */
-const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v3:";
+const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v4:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
 
 const sessionStoragePrefixForUser = (
@@ -1251,7 +1251,7 @@ export default function InformeVariacionPage() {
                     ? "Todos los rangos listos · cambio instantaneo (vista precargada)"
                     : prefetchTotal > 0
                       ? `Preparando vistas ${Math.min(viewReadyRanges.size, prefetchTotal)}/${prefetchTotal} · chip habilitado al quedar listo`
-                      : "Cortes cerrados + proyección del siguiente acumulado si aplica"}
+                      : "Cortes cerrados + acumulado hasta el último día con datos"}
                 {rangeSwitchPending ? " · sincronizando…" : ""}
               </span>
             </div>

@@ -59,6 +59,8 @@ export const emptyLineMetrics = (
   transactions: 0,
   asaderoPollosUnd: 0,
   asaderoOtherUnd: 0,
+  asaderoPollosHours: 0,
+  asaderoOtherHours: 0,
 });
 
 export const lineHasActivity = (line: LineMetrics): boolean =>
@@ -67,7 +69,9 @@ export const lineHasActivity = (line: LineMetrics): boolean =>
   (line.volume ?? 0) !== 0 ||
   (line.transactions ?? 0) !== 0 ||
   (line.asaderoPollosUnd ?? 0) !== 0 ||
-  (line.asaderoOtherUnd ?? 0) !== 0;
+  (line.asaderoOtherUnd ?? 0) !== 0 ||
+  (line.asaderoPollosHours ?? 0) !== 0 ||
+  (line.asaderoOtherHours ?? 0) !== 0;
 
 /** Cache viejo (solo sales/hours) no sirve para las tarjetas de volumen. */
 export const hasProductivityVolumeShape = (
@@ -79,7 +83,9 @@ export const hasProductivityVolumeShape = (
         typeof line.volume === "number" ||
         typeof line.transactions === "number" ||
         typeof line.asaderoPollosUnd === "number" ||
-        typeof line.asaderoOtherUnd === "number"
+        typeof line.asaderoOtherUnd === "number" ||
+        typeof line.asaderoPollosHours === "number" ||
+        typeof line.asaderoOtherHours === "number"
       ) {
         return true;
       }

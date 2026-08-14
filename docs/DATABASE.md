@@ -209,7 +209,7 @@ APIs relacionadas: `/api/productivity`, `/api/hourly-analysis`,
 Notas:
 
 - `/api/productivity` usa `PRODUCTIVITY_CACHE_PATH` y opcionalmente
-  `PRODUCTIVITY_SERVE_FILE_CACHE`. Cache memoria `productivity:full-v2`; un JSON
+  `PRODUCTIVITY_SERVE_FILE_CACHE`. Cache memoria `productivity:full-v3`; un JSON
   de disco sin campos de volumen se ignora y se regenera.
 - Las tarjetas de Mix y Línea (`/` → `LineCard`) ya no muestran ventas. Volumen:
   Cajas = `COUNT(*)` de tickets con `total_bruto > 0` en `ventas_cajas`;

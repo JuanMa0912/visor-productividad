@@ -4,21 +4,22 @@ import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
   buildInformeSingleDayRange,
+  buildPreciseMtdInformeDayRange,
   parseInformeDayRangeId,
   payloadMatchesInformeSelection,
 } from "@/lib/informe-variacion/day-ranges";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 
 describe("getAvailableInformeDayRanges", () => {
-  it("en dia 15 solo muestra cortes Excel ya cerrados (sin 1 al 15 inventado)", () => {
+  it("en dia 15 ofrece cortes cerrados + acumulado preciso 1 al 15 (sin proyectar a 21)", () => {
     const asOf = new Date(2026, 6, 15);
     const available = getAvailableInformeDayRanges(2026, 7, asOf);
     assert.deepEqual(
       available.map((range) => range.id),
-      ["1-7", "1-14", "8-14", "proj-1-21"],
+      ["1-7", "1-14", "8-14", "mtd-15"],
     );
-    assert.equal(available.at(-1)?.projection?.actualToDay, 15);
-    assert.equal(available.at(-1)?.projection?.targetToDay, 21);
+    assert.equal(available.at(-1)?.toDay, 15);
+    assert.equal(available.at(-1)?.projection, undefined);
   });
 
   it("en mes cerrado muestra todos los rangos del Excel", () => {
@@ -33,49 +34,51 @@ describe("getAvailableInformeDayRanges", () => {
   it("respeta maxDate de BD en mes en curso", () => {
     const asOf = new Date(2026, 6, 20);
     const available = getAvailableInformeDayRanges(2026, 7, asOf, "20260714");
+    // maxDate=14: el acumulado 1-14 ya es corte Excel cerrado; no hay mtd extra
     assert.deepEqual(
       available.map((range) => range.id),
-      ["1-7", "1-14", "8-14", "proj-1-21"],
+      ["1-7", "1-14", "8-14"],
     );
   });
 
-  it("con datos hasta el dia 9 solo deja 1 al 7 y proyecta 1-14", () => {
+  it("con datos hasta el dia 9 deja 1 al 7 y agrega 1 al 9 preciso", () => {
     const asOf = new Date(2026, 6, 10);
     const available = getAvailableInformeDayRanges(2026, 7, asOf, "20260709");
     assert.deepEqual(
       available.map((range) => range.id),
-      ["1-7", "proj-1-14"],
+      ["1-7", "mtd-09"],
     );
-    assert.equal(defaultInformeDayRangeId(available), "1-7");
+    assert.equal(defaultInformeDayRangeId(available), "mtd-09");
   });
 
-  it("antes del dia 7 proyecta 1 al 7 con el ultimo dia cargado", () => {
+  it("antes del dia 7 ofrece 1 al N preciso (sin proyectar a 1-7)", () => {
     const asOf = new Date(2026, 7, 6);
     const available = getAvailableInformeDayRanges(2026, 8, asOf, "20260805");
     assert.deepEqual(
       available.map((range) => range.id),
-      ["proj-1-7"],
+      ["mtd-05"],
     );
-    assert.equal(available[0]?.projection?.actualToDay, 5);
-    assert.equal(available[0]?.projection?.targetToDay, 7);
-    assert.equal(available[0]?.projection?.factor, 7 / 5);
-    assert.equal(defaultInformeDayRangeId(available), "proj-1-7");
+    assert.equal(available[0]?.toDay, 5);
+    assert.equal(available[0]?.projection, undefined);
+    assert.equal(defaultInformeDayRangeId(available), "mtd-05");
   });
 
   it("normaliza maxDate ISO desde PostgreSQL", () => {
     const asOf = new Date(2026, 6, 10);
     const available = getAvailableInformeDayRanges(2026, 7, asOf, "2026-07-09");
-    assert.equal(defaultInformeDayRangeId(available), "1-7");
+    assert.equal(defaultInformeDayRangeId(available), "mtd-09");
   });
 
-  it("rechaza ids inventados tipo 1-15", () => {
+  it("rechaza ids inventados tipo 1-15; acepta mtd-15", () => {
     assert.equal(parseInformeDayRangeId("1-15"), null);
     assert.equal(parseInformeDayRangeId("1-9"), null);
     assert.ok(parseInformeDayRangeId("1-14"));
-    assert.ok(parseInformeDayRangeId("proj-1-7"));
+    assert.ok(parseInformeDayRangeId("mtd-15"));
+    assert.equal(parseInformeDayRangeId("mtd-15")?.toDay, 15);
+    assert.ok(parseInformeDayRangeId("proj-1-7")); // legacy
   });
 
-  it("includeProjection false omite el corte proyectado", () => {
+  it("includeProjection false omite el acumulado abierto (solo cerrados)", () => {
     const asOf = new Date(2026, 7, 6);
     const available = getAvailableInformeDayRanges(2026, 8, asOf, "20260805", {
       includeProjection: false,
@@ -85,10 +88,34 @@ describe("getAvailableInformeDayRanges", () => {
 });
 
 describe("defaultInformeDayRangeId", () => {
-  it("elige el acumulado Excel mas amplio disponible", () => {
+  it("elige el acumulado preciso cuando existe; si no, el Excel mas amplio", () => {
     const asOf = new Date(2026, 6, 15);
     const available = getAvailableInformeDayRanges(2026, 7, asOf);
-    assert.equal(defaultInformeDayRangeId(available), "1-14");
+    assert.equal(defaultInformeDayRangeId(available), "mtd-15");
+
+    const closed = getAvailableInformeDayRanges(2026, 6, new Date(2026, 6, 1));
+    assert.equal(defaultInformeDayRangeId(closed), "1-eom");
+  });
+});
+
+describe("buildPreciseMtdInformeDayRange", () => {
+  it("compara 1→N vs 1→N en MoM y YoY", () => {
+    const mtd = buildPreciseMtdInformeDayRange(
+      2026,
+      8,
+      new Date(2026, 7, 14),
+      "20260813",
+    );
+    assert.ok(mtd);
+    assert.equal(mtd.id, "mtd-13");
+    assert.equal(mtd.label, "1 al 13");
+    const periods = computeInformePeriods(2026, 8, mtd);
+    assert.equal(periods.current.from, "20260801");
+    assert.equal(periods.current.to, "20260813");
+    assert.equal(periods.mom.from, "20260701");
+    assert.equal(periods.mom.to, "20260713");
+    assert.equal(periods.yoy.from, "20250801");
+    assert.equal(periods.yoy.to, "20250813");
   });
 });
 
@@ -109,7 +136,7 @@ describe("computeInformePeriods con rango parcial", () => {
   });
 });
 
-describe("computeInformePeriods con proyeccion", () => {
+describe("computeInformePeriods con proyeccion legacy", () => {
   it("SQL actual usa dias reales; MoM/YoY usan el corte meta", () => {
     const periods = computeInformePeriods(2026, 8, {
       id: "proj-1-7",
@@ -153,6 +180,20 @@ describe("payloadMatchesInformeSelection", () => {
     );
     assert.equal(
       payloadMatchesInformeSelection(payload, 2026, 6, "15-21", ranges),
+      false,
+    );
+  });
+
+  it("valida mtd-NN contra 1→N del mes", () => {
+    const payload = {
+      periods: { current: { from: "20260801", to: "20260813" } },
+    };
+    assert.equal(
+      payloadMatchesInformeSelection(payload, 2026, 8, "mtd-13", []),
+      true,
+    );
+    assert.equal(
+      payloadMatchesInformeSelection(payload, 2026, 8, "mtd-12", []),
       false,
     );
   });

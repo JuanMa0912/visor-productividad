@@ -21,6 +21,10 @@ export interface LineMetrics {
   asaderoPollosUnd?: number;
   /** Asadero: cantidad cruda que no entra a UND.Pollo. */
   asaderoOtherUnd?: number;
+  /** Asadero: horas de asistencia mapeadas a pollo asado / UND.Pollo. */
+  asaderoPollosHours?: number;
+  /** Asadero: horas de asistencia del resto de asadero / Unidades. */
+  asaderoOtherHours?: number;
 }
 
 export interface DailyProductivity {

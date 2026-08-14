@@ -229,6 +229,8 @@ const aggregateLines = (
       transactions: number;
       asaderoPollosUnd: number;
       asaderoOtherUnd: number;
+      asaderoPollosHours: number;
+      asaderoOtherHours: number;
     }
   >();
 
@@ -254,6 +256,8 @@ const aggregateLines = (
         existing.transactions += line.transactions ?? 0;
         existing.asaderoPollosUnd += line.asaderoPollosUnd ?? 0;
         existing.asaderoOtherUnd += line.asaderoOtherUnd ?? 0;
+        existing.asaderoPollosHours += line.asaderoPollosHours ?? 0;
+        existing.asaderoOtherHours += line.asaderoOtherHours ?? 0;
       } else {
         lineMap.set(line.id, {
           id: line.id,
@@ -265,6 +269,8 @@ const aggregateLines = (
           transactions: line.transactions ?? 0,
           asaderoPollosUnd: line.asaderoPollosUnd ?? 0,
           asaderoOtherUnd: line.asaderoOtherUnd ?? 0,
+          asaderoPollosHours: line.asaderoPollosHours ?? 0,
+          asaderoOtherHours: line.asaderoOtherHours ?? 0,
         });
       }
     });
@@ -286,6 +292,8 @@ const aggregateLines = (
         transactions: 0,
         asaderoPollosUnd: 0,
         asaderoOtherUnd: 0,
+        asaderoPollosHours: 0,
+        asaderoOtherHours: 0,
       });
     }
   });
@@ -300,6 +308,8 @@ const aggregateLines = (
     transactions: line.transactions,
     asaderoPollosUnd: line.asaderoPollosUnd,
     asaderoOtherUnd: line.asaderoOtherUnd,
+    asaderoPollosHours: line.asaderoPollosHours,
+    asaderoOtherHours: line.asaderoOtherHours,
   }));
 };
 

@@ -9,6 +9,7 @@ import {
   buildInformeSingleDayRange,
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  isMtdInformeRangeId,
   isSingleDayInformeRangeId,
   normalizeInformeCompactDate,
   parseSingleDayInformeRangeId,
@@ -187,8 +188,8 @@ export async function GET(request: Request) {
     asOf,
     maxCompactDate,
   );
-  const hasProjectedRange = availableRanges.some((range) =>
-    Boolean(range.projection),
+  const hasLiveOnlyRange = availableRanges.some(
+    (range) => Boolean(range.projection) || isMtdInformeRangeId(range.id),
   );
   const wantsBundle = url.searchParams.get("bundle") === "month";
   const forceRefresh = url.searchParams.get("force") === "1";
@@ -239,7 +240,7 @@ export async function GET(request: Request) {
     }
 
     const useStd =
-      dataKind === "default" && !forceRefresh && !hasProjectedRange;
+      dataKind === "default" && !forceRefresh && !hasLiveOnlyRange;
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
       try {

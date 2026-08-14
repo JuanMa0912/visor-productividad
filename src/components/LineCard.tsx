@@ -79,20 +79,38 @@ export const LineCard = ({ line, hasData = true }: LineCardProps) => {
       { label: "KG/hr", value: rateValue(kg, 2) },
     ];
   } else if (kind === "asadero") {
+    const pollosUnd = line.asaderoPollosUnd ?? 0;
+    const otherUnd = line.asaderoOtherUnd ?? 0;
+    const pollosHours = hasLaborData ? (line.asaderoPollosHours ?? 0) : 0;
+    const otherHours = hasLaborData ? (line.asaderoOtherHours ?? 0) : 0;
+    const pollosRate = hasData ? perHour(pollosUnd, pollosHours) : null;
+    const otherRate = hasData ? perHour(otherUnd, otherHours) : null;
     metrics = [
       {
         label: "UND.Pollo",
-        value: hasData
-          ? formatLineVolume(line.asaderoPollosUnd ?? 0, 2)
-          : emptyLabel,
+        value: hasData ? formatLineVolume(pollosUnd, 2) : emptyLabel,
+      },
+      {
+        label: "Horas UND.Pollo",
+        value: hasData ? `${formatHours(pollosHours)}h` : "0h",
+      },
+      {
+        label: "UND.Pollo/hr",
+        value:
+          pollosRate === null ? emptyLabel : formatLineVolume(pollosRate, 2),
       },
       {
         label: "Unidades",
-        value: hasData
-          ? formatLineVolume(line.asaderoOtherUnd ?? 0, 0)
-          : emptyLabel,
+        value: hasData ? formatLineVolume(otherUnd, 0) : emptyLabel,
       },
-      { label: "Horas trabajadas", value: hoursValue },
+      {
+        label: "Horas Unidades",
+        value: hasData ? `${formatHours(otherHours)}h` : "0h",
+      },
+      {
+        label: "Und/hr",
+        value: otherRate === null ? emptyLabel : formatLineVolume(otherRate, 2),
+      },
     ];
   } else {
     metrics = [{ label: "Horas trabajadas", value: hoursValue }];

@@ -29,17 +29,26 @@ export type InformeSingleDayRangeId = `d-${string}`;
 export type InformeDayRangeId =
   | InformeClosedDayRangeId
   | `proj-${InformeClosedDayRangeId}`
-  | InformeSingleDayRangeId;
+  | InformeSingleDayRangeId
+  /** Acumulado preciso 1→N (sin proyectar al siguiente corte Excel). */
+  | `mtd-${string}`;
 
 export const SINGLE_DAY_RANGE_PREFIX = "d-";
+export const MTD_RANGE_PREFIX = "mtd-";
 
 export const isSingleDayInformeRangeId = (rangeId: string): boolean =>
   /^d-\d{1,2}$/.test(rangeId.trim());
+
+export const isMtdInformeRangeId = (rangeId: string): boolean =>
+  /^mtd-\d{1,2}$/.test(rangeId.trim());
 
 export const buildSingleDayInformeRangeId = (
   day: number,
 ): InformeSingleDayRangeId =>
   `${SINGLE_DAY_RANGE_PREFIX}${String(day).padStart(2, "0")}`;
+
+export const buildMtdInformeRangeId = (day: number): `mtd-${string}` =>
+  `${MTD_RANGE_PREFIX}${String(day).padStart(2, "0")}`;
 
 /** Numero de dia de un id `d-NN`, o null si no lo es o cae fuera de 1..31. */
 export const parseSingleDayInformeRangeId = (
@@ -47,6 +56,16 @@ export const parseSingleDayInformeRangeId = (
 ): number | null => {
   if (!rangeId || !isSingleDayInformeRangeId(rangeId)) return null;
   const day = Number(rangeId.trim().slice(SINGLE_DAY_RANGE_PREFIX.length));
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  return day;
+};
+
+/** Dia N de un id `mtd-NN` (acumulado 1→N), o null si no aplica. */
+export const parseMtdInformeRangeId = (
+  rangeId: string | null | undefined,
+): number | null => {
+  if (!rangeId || !isMtdInformeRangeId(rangeId)) return null;
+  const day = Number(rangeId.trim().slice(MTD_RANGE_PREFIX.length));
   if (!Number.isInteger(day) || day < 1 || day > 31) return null;
   return day;
 };
@@ -121,8 +140,38 @@ export const isProjectedInformeRangeId = (rangeId: string): boolean =>
   rangeId.startsWith("proj-");
 
 /**
- * Primer acumulado Excel (1→N) aun no cerrado: proyectar N con datos 1→refDay.
- * Ej.: refDay=5 → proyeccion a 1–7 con factor 7/5.
+ * Acumulado preciso 1→refDay cuando el mes aún no cierra en un corte Excel.
+ * Ej.: refDay=13 → "1 al 13" (MoM/YoY también 1→13). Sin proyección/escala.
+ * Si refDay ya es un acumulado Excel cerrado (7, 14, 21, 28, fin), no se agrega.
+ */
+export const buildPreciseMtdInformeDayRange = (
+  year: number,
+  month: number,
+  asOf: Date = new Date(),
+  maxCompactDate?: string | null,
+): InformeDayRangeSpec | null => {
+  const refDay = resolveInformeReferenceDay(year, month, asOf, maxCompactDate);
+  if (refDay < 1) return null;
+
+  const monthLast = lastDayOfMonth(year, month);
+  const matchesClosedCumulative = INFORME_DAY_RANGES.some((range) => {
+    if (range.fromDay !== 1) return false;
+    const endDay = range.toDay ?? monthLast;
+    return endDay === refDay;
+  });
+  if (matchesClosedCumulative) return null;
+
+  return {
+    id: buildMtdInformeRangeId(refDay),
+    label: `1 al ${refDay}`,
+    fromDay: 1,
+    toDay: refDay,
+  };
+};
+
+/**
+ * @deprecated Preferir `buildPreciseMtdInformeDayRange`. Se mantiene por compat
+ * con ids `proj-*` ya cacheados; la UI ya no ofrece proyección.
  */
 export const buildNextProjectedInformeDayRange = (
   year: number,
@@ -163,8 +212,9 @@ export const buildNextProjectedInformeDayRange = (
 };
 
 /**
- * Cortes Excel ya cerrados (+ opcional proyeccion del siguiente acumulado).
- * `includeProjection` default true para UI/API; warm/std usan false.
+ * Cortes Excel ya cerrados (+ acumulado preciso 1→último día con datos si aplica).
+ * `includeProjection` (legacy name): si false, solo cortes cerrados (warm/std).
+ * Default true incluye el MTD preciso; ya no agrega `proj-*`.
  */
 export const getAvailableInformeDayRanges = (
   year: number,
@@ -173,7 +223,7 @@ export const getAvailableInformeDayRanges = (
   maxCompactDate?: string | null,
   options: { includeProjection?: boolean } = {},
 ): InformeDayRangeSpec[] => {
-  const includeProjection = options.includeProjection !== false;
+  const includeOpenMtd = options.includeProjection !== false;
   const refDay = resolveInformeReferenceDay(year, month, asOf, maxCompactDate);
   if (refDay <= 0) return [];
 
@@ -183,22 +233,26 @@ export const getAvailableInformeDayRanges = (
     return refDay >= endDay;
   }).map((range) => ({ ...range }) as InformeDayRangeSpec);
 
-  if (!includeProjection) return closed;
+  if (!includeOpenMtd) return closed;
 
-  const projected = buildNextProjectedInformeDayRange(
+  const mtd = buildPreciseMtdInformeDayRange(
     year,
     month,
     asOf,
     maxCompactDate,
   );
-  if (!projected) return closed;
-  return [...closed, projected];
+  if (!mtd) return closed;
+  return [...closed, mtd];
 };
 
 export const defaultInformeDayRangeId = (
   available: readonly InformeDayRangeSpec[],
 ): InformeDayRangeId | null => {
   if (available.length === 0) return null;
+  // Preferir el acumulado preciso 1→N cuando existe (fecha real, no proyección).
+  const mtd = available.find((range) => isMtdInformeRangeId(range.id));
+  if (mtd) return mtd.id;
+
   const cumulative = available.filter((range) => range.fromDay === 1);
   const pool = cumulative.length > 0 ? cumulative : available;
   const real = pool.filter((range) => !range.projection);
@@ -267,6 +321,15 @@ export const parseInformeDayRangeId = (
       toDay: singleDay,
     };
   }
+  const mtdDay = parseMtdInformeRangeId(raw);
+  if (mtdDay !== null) {
+    return {
+      id: raw as InformeDayRangeId,
+      label: `1 al ${mtdDay}`,
+      fromDay: 1,
+      toDay: mtdDay,
+    };
+  }
   if (raw.startsWith("proj-")) {
     const baseId = raw.slice(5) as InformeClosedDayRangeId;
     const found = DAY_RANGE_BY_ID.get(baseId);
@@ -310,13 +373,18 @@ export const payloadMatchesInformeSelection = (
   if (payloadYear !== year || payloadMonth !== month) return false;
   if (!dayRangeId) return true;
 
-  // Los dias sueltos no viven en `availableRanges` (ver buildInformeSingleDayRange).
-  // Hay que resolverlos aparte: si cayeran en el `return true` de abajo, un payload
-  // de otro rango se daria por bueno y el tablero mostraria datos que no son.
+  // Los dias sueltos y el MTD preciso no siempre viven en `availableRanges`
+  // (MTD sí cuando includeOpenMtd; dias sueltos nunca). Resolver aparte.
   const singleDay = parseSingleDayInformeRangeId(dayRangeId);
   if (singleDay !== null) {
     const expected = compactDate(year, month, singleDay);
     return from === expected && to === expected;
+  }
+  const mtdDay = parseMtdInformeRangeId(dayRangeId);
+  if (mtdDay !== null) {
+    const expectedFrom = compactDate(year, month, 1);
+    const expectedTo = compactDate(year, month, mtdDay);
+    return from === expectedFrom && to === expectedTo;
   }
 
   const range = availableRanges.find((entry) => entry.id === dayRangeId);

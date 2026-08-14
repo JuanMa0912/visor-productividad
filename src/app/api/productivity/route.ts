@@ -18,6 +18,7 @@ import {
   resolveProductivityLineFromRoll,
   splitAsaderoQty,
 } from "@/lib/productivity/line-volume";
+import { resolveAsaderoHoursBucket } from "@/lib/shared/departamento-line";
 import {
   filterProductivityByDateRange,
   isProductivityIsoDate,
@@ -44,7 +45,7 @@ const resolveCachePath = () => {
   return path.resolve(/* turbopackIgnore: true */ process.cwd(), envPath);
 };
 
-const PRODUCTIVITY_MEMORY_CACHE_KEY = "productivity:full-v2";
+const PRODUCTIVITY_MEMORY_CACHE_KEY = "productivity:full-v3";
 const PRODUCTIVITY_MEMORY_TTL_MS = 10 * 60 * 1000;
 
 type ProductivityDateBounds = {
@@ -718,7 +719,18 @@ const fetchAllProductivityData = async (
     }
 
     const lineMetric = ensureLine(getOrCreateDaily(fecha, sedeName), lineId);
-    lineMetric.hours += Number(typedRow.total_hours) || 0;
+    const hours = Number(typedRow.total_hours) || 0;
+    lineMetric.hours += hours;
+    if (lineId === "asadero") {
+      const bucket = resolveAsaderoHoursBucket(typedRow.departamento);
+      if (bucket === "pollos") {
+        lineMetric.asaderoPollosHours =
+          (lineMetric.asaderoPollosHours ?? 0) + hours;
+      } else {
+        lineMetric.asaderoOtherHours =
+          (lineMetric.asaderoOtherHours ?? 0) + hours;
+      }
+    }
   }
 
   for (const row of tipo4VolumeResult.rows ?? []) {

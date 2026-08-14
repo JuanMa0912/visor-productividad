@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isDepartamentoAllowedForLines,
+  resolveAsaderoHoursBucket,
   resolveDepartamentoLineId,
 } from "@/lib/shared/departamento-line";
 
@@ -12,6 +13,12 @@ describe("resolveDepartamentoLineId", () => {
 
   it("mapea departamentos de cajas", () => {
     assert.equal(resolveDepartamentoLineId("SUPERVISION Y CAJAS"), "cajas");
+  });
+  it("reparte horas de asadero entre UND.Pollo y Unidades", () => {
+    assert.equal(resolveAsaderoHoursBucket("POLLO ASADO"), "pollos");
+    assert.equal(resolveAsaderoHoursBucket("pollo asado"), "pollos");
+    assert.equal(resolveAsaderoHoursBucket("ASADERO"), "other");
+    assert.equal(resolveAsaderoHoursBucket("asadero"), "other");
   });
 });
 

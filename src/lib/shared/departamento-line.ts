@@ -71,3 +71,15 @@ export const isDepartamentoAllowedForLines = (
   const allowed = new Set(allowedLineIds.map(normalizeLineId));
   return allowed.has(normalizeLineId(lineId));
 };
+
+/**
+ * Dentro de asadero, reparte horas de asistencia entre UND.Pollo y Unidades.
+ * `pollo asado` (o depto con "pollo") → pollos; el resto de asadero → other.
+ */
+export const resolveAsaderoHoursBucket = (
+  depto: string,
+): "pollos" | "other" => {
+  const normalized = normalizeDepartamento(depto);
+  if (normalized.includes("pollo")) return "pollos";
+  return "other";
+};

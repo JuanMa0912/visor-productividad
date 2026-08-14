@@ -120,10 +120,10 @@ Codigo compartido sin UI de pagina.
 | `admin/login-logs`, `admin/login-failures`, `admin/audit`, `admin/exports`, `admin/user-presence`, `admin/uso-tableros` | accesos, fallos de login, auditoría admin, descargas, presencia y uso de tableros |
 | `exports/log` | POST: registra metadatos de una descarga/export (auth; fire-and-forget desde cliente) |
 | `admin/cache/flush` | POST (CSRF): vacía cache en memoria del proceso (informe + márgenes). GET: tamaño actual |
-| `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v2`/disco; tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und, fruver/carnes/pollo=kg, asadero=UND.Pollo+unidades) y conservan `$` para Excel/PDF |
+| `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v3`/disco; tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und, fruver/carnes/pollo=kg, asadero=UND.Pollo+horas+Unidades+horas) y conservan `$` para Excel/PDF |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
-| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el acumulado Excel aún no cierra, ofrece `proj-1-N` (run-rate hasta el corte con datos al `maxDate`); UI monta explorador bajo demanda |
+| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar al siguiente corte); UI monta explorador bajo demanda |
 | `rotacion` | rotacion e inventario con baja salida |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |
