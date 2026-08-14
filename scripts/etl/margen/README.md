@@ -92,7 +92,7 @@ directo `margen_final`.
 **Refresh automatico:**
 - Sync 07:50 (`sync-local-to-gcp.sh`): ventana sincronizada de `margen_final_roll`
   + `margen_item_dia_roll` cuando sube `margen_final`.
-- Timer `visor-refresh-variacion.timer` (08:30 en app-server): rebuild completo de
+- Timer `visor-refresh-variacion.timer` (08:15 en app-server): rebuild completo de
   `margen_item_dia_roll` via `scripts/refresh-variacion-roll.sh`.
 
 Ver [`../README-sync.md`](../README-sync.md) y [`deploy/CHEATSHEET.md`](../../../deploy/CHEATSHEET.md).

@@ -9,7 +9,6 @@ import {
   buildInformeSingleDayRange,
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
-  isMtdInformeRangeId,
   isSingleDayInformeRangeId,
   normalizeInformeCompactDate,
   parseSingleDayInformeRangeId,
@@ -188,9 +187,6 @@ export async function GET(request: Request) {
     asOf,
     maxCompactDate,
   );
-  const hasLiveOnlyRange = availableRanges.some(
-    (range) => Boolean(range.projection) || isMtdInformeRangeId(range.id),
-  );
   const wantsBundle = url.searchParams.get("bundle") === "month";
   const forceRefresh = url.searchParams.get("force") === "1";
 
@@ -239,8 +235,9 @@ export async function GET(request: Request) {
       }
     }
 
-    const useStd =
-      dataKind === "default" && !forceRefresh && !hasLiveOnlyRange;
+    // Intenta std aunque haya mtd-N: el warm matutino ya materializa ese rango.
+    // Si falta algún range_id en la tabla, getInformePayloadStdBundle devuelve null.
+    const useStd = dataKind === "default" && !forceRefresh;
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
       try {

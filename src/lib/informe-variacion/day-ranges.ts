@@ -213,8 +213,10 @@ export const buildNextProjectedInformeDayRange = (
 
 /**
  * Cortes Excel ya cerrados (+ acumulado preciso 1→último día con datos si aplica).
- * `includeProjection` (legacy name): si false, solo cortes cerrados (warm/std).
+ * `includeProjection` (legacy name): si false, solo cortes cerrados.
  * Default true incluye el MTD preciso; ya no agrega `proj-*`.
+ * El warm matutino (`informe:warm-snapshot`) usa el default para precargar
+ * `mtd-N` del mes en curso cuando el día no cae en 7/14/21/28/fin de mes.
  */
 export const getAvailableInformeDayRanges = (
   year: number,

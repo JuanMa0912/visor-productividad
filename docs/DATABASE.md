@@ -289,10 +289,11 @@ faltan esas columnas en el roll.
 1. Sync diario `visor-etl-sync.timer` (07:50): al subir `margen_final`,
    `scripts/etl/sync-local-to-gcp.sh` refresca la ventana sincronizada de
    `margen_final_roll` y `margen_item_dia_roll`.
-2. Timer dedicado `visor-refresh-variacion.timer` (08:30 en app-server):
+2. Timer dedicado `visor-refresh-variacion.timer` (08:15 en app-server):
    `scripts/refresh-variacion-roll.sh` refresca ventana ~60 dias (incremental)
    y al final materializa `informe_variacion_payload_std` (mes actual + anterior,
-   scope `*`). Rebuild total del roll: `--full`.
+   scope `*`: cortes Excel cerrados + `mtd-N` del mes en curso si el día no es
+   un corte cerrado). Rebuild total del roll: `--full`.
 
 Warm manual del snapshot (tras aplicar migracion 42):
 

@@ -346,8 +346,9 @@ En **hit**, Network no muestra request `rotacion` de ~15 MB; solo catálogo
 - Migración: `db/migrations/20260616_rotacion_clean_matview.sql`
 - Refresh diario: `visor-refresh-rotacion.timer` (06:15 UTC)
 - Script manual: `scripts/refresh-rotacion-matview.sh`
-- Variacion (`margen_item_dia_roll`): `visor-refresh-variacion.timer` (08:30) +
-  `scripts/refresh-variacion-roll.sh` (ademas del refresh inline del sync 07:50)
+- Variacion (`margen_item_dia_roll`): `visor-refresh-variacion.timer` (08:15) +
+  `scripts/refresh-variacion-roll.sh` (ademas del refresh inline del sync 07:50;
+  el warm incluye cortes + `mtd-N` del mes en curso)
 
 **Aplicar migración (una vez; ~3–8 min, pico de CPU en Cloud SQL):**
 
@@ -434,7 +435,7 @@ sudo systemctl start visor-refresh-rotacion.service
 sudo journalctl -u visor-refresh-rotacion -n 30 --no-pager
 ```
 
-### Timer de refresh diario variacion (`margen_item_dia_roll`, 08:30)
+### Timer de refresh diario variacion (`margen_item_dia_roll`, 08:15)
 
 Tras el roll, el script tambien materializa `informe_variacion_payload_std`
 (payload JSON scope `*` del mes actual + anterior) para first paint &lt;2s.

@@ -2,6 +2,9 @@
  * Materializa payloads JSON de /informe-variacion en informe_variacion_payload_std.
  * Scope '*' (todas las sedes). Corre tras refresh-variacion-roll.sh.
  *
+ * Incluye cortes Excel cerrados (7/14/21/28/mes) y, en el mes en curso, el
+ * acumulado preciso `mtd-N` cuando el día actual no cae en un corte cerrado.
+ *
  *   npx tsx scripts/warm-informe-variacion-snapshot.mts
  *   WARM_MONTHS=2 npx tsx scripts/warm-informe-variacion-snapshot.mts
  */
@@ -15,6 +18,7 @@ import {
 import { loadInformeVariacionMonthBundle } from "../src/lib/informe-variacion/daily-bundle.ts";
 import { loadInformeVariacionMeta } from "../src/lib/informe-variacion/meta.ts";
 import {
+  deleteStaleInformePayloadStdMtd,
   touchInformePayloadStdMeta,
   upsertInformePayloadStd,
 } from "../src/lib/informe-variacion/payload-std-server.ts";
@@ -83,12 +87,13 @@ try {
       primaryMonth = month;
     }
 
+    // Default includeProjection: true → cortes cerrados + mtd-N si el mes
+    // aún no está en un corte Excel (p. ej. día 13 → mtd-13).
     const ranges = getAvailableInformeDayRanges(
       year,
       month,
       asOf,
       maxCompactDate,
-      { includeProjection: false },
     );
     if (ranges.length === 0) {
       console.log(
@@ -97,8 +102,9 @@ try {
       continue;
     }
 
+    const rangeLabels = ranges.map((r) => r.id).join(", ");
     console.log(
-      `  ${year}-${String(month).padStart(2, "0")}: ${ranges.length} rangos…`,
+      `  ${year}-${String(month).padStart(2, "0")}: ${ranges.length} rangos (${rangeLabels})…`,
     );
     const t0 = Date.now();
     const loaded = await loadInformeVariacionMonthBundle(
@@ -129,8 +135,16 @@ try {
       totalRanges += 1;
     }
 
+    const removed = await deleteStaleInformePayloadStdMtd(
+      client,
+      year,
+      month,
+      loaded.bundle.rangeIds,
+    );
+    const staleNote = removed > 0 ? `, mtd obsoletos=${removed}` : "";
+
     console.log(
-      `  OK ${loaded.bundle.rangeIds.length} payloads en ${((Date.now() - t0) / 1000).toFixed(1)}s (sql=${loaded.stats.sqlMs}ms)`,
+      `  OK ${loaded.bundle.rangeIds.length} payloads en ${((Date.now() - t0) / 1000).toFixed(1)}s (sql=${loaded.stats.sqlMs}ms${staleNote})`,
     );
   }
 

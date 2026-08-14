@@ -182,6 +182,53 @@ export const upsertInformePayloadStd = async (
   );
 };
 
+/**
+ * Borra snapshots `mtd-*` del mes que ya no corresponden al corte actual
+ * (p. ej. ayer era mtd-13 y hoy mtd-14).
+ */
+export const deleteStaleInformePayloadStdMtd = async (
+  client: Queryable,
+  year: number,
+  month: number,
+  keepRangeIds: readonly string[],
+  scopeKey: string = INFORME_PAYLOAD_STD_FULL_SCOPE,
+): Promise<number> => {
+  const keepMtd = keepRangeIds.filter((id) => id.startsWith("mtd-"));
+  try {
+    if (keepMtd.length === 0) {
+      const result = await client.query(
+        `
+        DELETE FROM informe_variacion_payload_std
+        WHERE year = $1
+          AND month = $2
+          AND scope_key = $3
+          AND range_id LIKE 'mtd-%'
+        `,
+        [year, month, scopeKey],
+      );
+      return result.rowCount ?? 0;
+    }
+    const result = await client.query(
+      `
+      DELETE FROM informe_variacion_payload_std
+      WHERE year = $1
+        AND month = $2
+        AND scope_key = $3
+        AND range_id LIKE 'mtd-%'
+        AND NOT (range_id = ANY($4::text[]))
+      `,
+      [year, month, scopeKey, keepMtd],
+    );
+    return result.rowCount ?? 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (TABLE_MISSING.test(message) && DOES_NOT_EXIST.test(message)) {
+      return 0;
+    }
+    throw error;
+  }
+};
+
 export const touchInformePayloadStdMeta = async (
   client: Queryable,
   year: number,

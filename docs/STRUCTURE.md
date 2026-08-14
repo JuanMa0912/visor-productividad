@@ -123,7 +123,7 @@ Codigo compartido sin UI de pagina.
 | `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v3`/disco; tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und, fruver/carnes/pollo=kg, asadero=UND.Pollo+horas+Unidades+horas) y conservan `$` para Excel/PDF |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
-| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar); UI carga **solo el rango visible** (chips bajo demanda) y construye la matriz en chunks para no congelar el navegador |
+| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar); el warm matutino precarga también ese `mtd-N` para first paint vía `payload-std`; UI carga **solo el rango visible** (chips bajo demanda) y construye la matriz en chunks para no congelar el navegador |
 | `rotacion` | rotacion e inventario con baja salida |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |
