@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { findTiendaSedeByName } from "@/lib/proveedores/line-family";
 import {
   closeSalida,
   countActiveProveedorCatalog,
@@ -18,6 +19,9 @@ import {
   normalizeVisitanteNombre,
 } from "@/lib/proveedores/types";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
+
+const empresaForSede = (sedeName: string): string | null =>
+  findTiendaSedeByName(sedeName)?.empresa ?? null;
 
 const json = (body: unknown, status = 200) =>
   NextResponse.json(body, { status });
@@ -43,12 +47,14 @@ export async function GET(request: Request) {
     if (!sede) {
       return json({ error: "Enlace de sede no válido." }, 404);
     }
-    const providers = await searchProveedorCatalog(client, q, 30);
+    const empresa = empresaForSede(sede.sedeName);
+    const providers = await searchProveedorCatalog(client, q, 30, empresa);
     // “Sin resultados” no es “catálogo vacío”: el visitante debe poder borrar
     // el texto y buscar otro proveedor sin que el campo quede deshabilitado.
-    const activeCount = await countActiveProveedorCatalog(client);
+    const activeCount = await countActiveProveedorCatalog(client, empresa);
     return json({
       sedeName: sede.sedeName,
+      empresa,
       providers,
       catalogEmpty: activeCount === 0,
     });
@@ -145,12 +151,17 @@ export async function POST(request: Request) {
       if (!isValidVisitanteNombre(nombre)) {
         return json({ error: "Nombre inválido (mínimo 3 caracteres)." }, 400);
       }
-      const proveedor = await getProveedorById(client, body.proveedorId);
+      const empresa = empresaForSede(sede.sedeName);
+      const proveedor = await getProveedorById(
+        client,
+        body.proveedorId,
+        empresa,
+      );
       if (!proveedor) {
         return json(
           {
             error:
-              "Seleccione un proveedor de la lista. Si no aparece ninguno, el catálogo aún no está cargado.",
+              "Seleccione un proveedor de la lista de esta sede. Si no aparece ninguno, el catálogo aún no está cargado.",
           },
           400,
         );

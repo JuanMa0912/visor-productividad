@@ -133,7 +133,7 @@ Codigo compartido sin UI de pagina.
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
 | `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in, no hereda de NULL): heatmap ítem×sede precio venta / **costo de entrada** (`rotacion_base_item_dia_sede.costo_uni_inventario`, no COGS); doble clic despliega proveedores/SKUs del mismo producto; default día anterior; rango = AVG diario; máx. 14 días |
 | `ordenes-compra` | tablero **solo admin**: OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas |
-| `proveedores/ingreso` | público: meta/catálogo + lookup/entrada/salida por token QR de sede; entrada exige autorización habeas data (`autorizacionDatos`) |
+| `proveedores/ingreso` | público: meta/catálogo (`proveedor_tercero` filtrado por empresa de la sede del QR) + lookup/entrada/salida; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
 | `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
 | `proveedores/productividad` | subtablero `proveedores`: `mode=board` (KPIs/sede/día + volumen÷horas pagadas, cache 45s) + `mode=proveedores` (ranking); industria=und, fruver/carnes=kg, cajas=tx; máx. 31 días |

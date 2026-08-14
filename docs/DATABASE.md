@@ -521,7 +521,7 @@ Migraciones:
 
 | Tabla / vista | Uso |
 | --- | --- |
-| `proveedor_catalogo` | (opcional / legacy) catálogo propio; el form QR usa POS |
+| `proveedor_catalogo` | (opcional / legacy) catálogo propio; el form QR usa `proveedor_tercero` filtrado por empresa de la sede |
 | `proveedor_pos_catalogo` | maestro de criterios del ítem (~3.4k): `empresa`+`id_cricla1`+`nombre`+`nit` |
 | `proveedor_tercero` | maestro comercial POS que usa el QR: `empresa`+`codigo`+`sucursal`+`nombre`+`nit` |
 | `proveedor_sede_qr` | token opaco por sede → URL pública `/proveedores/ingreso/[token]` |

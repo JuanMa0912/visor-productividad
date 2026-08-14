@@ -359,7 +359,7 @@ export default function ProveedoresIngresoPage() {
                     >
                       <span className="block">{p.nombre}</span>
                       <span className="mt-0.5 block text-xs font-normal text-slate-500">
-                        NIT {p.nit ?? "sin NIT"} · {p.empresa}
+                        NIT {p.nit ?? "sin NIT"}
                         {p.sucursal !== "00" ? ` · sucursal ${p.sucursal}` : ""}
                       </span>
                     </button>

@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { normalizeEmpresaBd } from "@/lib/proveedores/line-family";
 import {
   listQrVisitasTablePairs,
   resolveQrVisitasTable,
@@ -113,62 +114,43 @@ const mapCatalogRow = (row: {
 
 /**
  * Maestro comercial POS (`proveedor_tercero`).
- * Conserva empresa + sucursal: el mismo NIT puede tener condiciones/sucursales distintas.
+ * Con `empresa` (sede del QR) solo lista esa compañía; sin ella, las 3.
  */
 export const searchProveedorCatalog = async (
   client: PoolClient,
   query: string,
   limit = 20,
+  empresa?: string | null,
 ): Promise<ProveedorCatalogItem[]> => {
   const q = query.trim().slice(0, 80);
   const capped = Math.min(Math.max(limit, 1), 50);
   const safeLike = q.replace(/[%_]/g, "");
+  const empresaNorm = empresa?.trim()
+    ? normalizeEmpresaBd(empresa.trim())
+    : null;
 
-  if (!safeLike) {
-    const result = await client.query(
-      `
-      SELECT empresa, codigo, sucursal, nombre, nit
-      FROM proveedor_tercero
-      WHERE activo IS TRUE
-        AND btrim(COALESCE(nombre, '')) <> ''
-      ORDER BY
-        lower(btrim(nombre)),
-        CASE lower(btrim(empresa))
-          WHEN 'mercamio' THEN 0
-          WHEN 'mtodo' THEN 1
-          WHEN 'bogota' THEN 2
-          ELSE 9
-        END,
-        codigo,
-        sucursal
-      LIMIT $1
-      `,
-      [capped],
-    );
-    return (result.rows ?? []).map((row) =>
-      mapCatalogRow(
-        row as {
-          empresa: string;
-          codigo: string;
-          sucursal: string;
-          nombre: string;
-          nit: string | null;
-        },
-      ),
+  const params: unknown[] = [];
+  const where: string[] = [
+    "activo IS TRUE",
+    "btrim(COALESCE(nombre, '')) <> ''",
+  ];
+  if (empresaNorm) {
+    params.push(empresaNorm);
+    where.push(`lower(btrim(empresa)) = $${params.length}`);
+  }
+  if (safeLike) {
+    params.push(`%${safeLike}%`);
+    where.push(
+      `(nombre ILIKE $${params.length} OR COALESCE(codigo, '') ILIKE $${params.length} OR COALESCE(nit, '') ILIKE $${params.length})`,
     );
   }
+  params.push(capped);
 
   const result = await client.query(
     `
     SELECT empresa, codigo, sucursal, nombre, nit
     FROM proveedor_tercero
-    WHERE activo IS TRUE
-      AND btrim(COALESCE(nombre, '')) <> ''
-      AND (
-        nombre ILIKE $1
-        OR COALESCE(codigo, '') ILIKE $1
-        OR COALESCE(nit, '') ILIKE $1
-      )
+    WHERE ${where.join("\n      AND ")}
     ORDER BY
       lower(btrim(nombre)),
       CASE lower(btrim(empresa))
@@ -179,9 +161,9 @@ export const searchProveedorCatalog = async (
       END,
       codigo,
       sucursal
-    LIMIT $2
+    LIMIT $${params.length}
     `,
-    [`%${safeLike}%`, capped],
+    params,
   );
   return (result.rows ?? []).map((row) =>
     mapCatalogRow(
@@ -199,9 +181,16 @@ export const searchProveedorCatalog = async (
 export const getProveedorById = async (
   client: PoolClient,
   id: unknown,
+  empresa?: string | null,
 ): Promise<ProveedorCatalogItem | null> => {
   const key = decodeProveedorPosKey(id);
   if (!key) return null;
+  const empresaNorm = empresa?.trim()
+    ? normalizeEmpresaBd(empresa.trim())
+    : null;
+  if (empresaNorm && normalizeEmpresaBd(key.empresa) !== empresaNorm) {
+    return null;
+  }
   const result = await client.query(
     `
     SELECT empresa, codigo, sucursal, nombre, nit
@@ -578,14 +567,31 @@ export const listSedeQrTokens = async (
 
 export const countActiveProveedorCatalog = async (
   client: PoolClient,
+  empresa?: string | null,
 ): Promise<number> => {
+  const empresaNorm = empresa?.trim()
+    ? normalizeEmpresaBd(empresa.trim())
+    : null;
+  if (!empresaNorm) {
+    const result = await client.query(
+      `
+      SELECT count(*)::int AS n
+      FROM proveedor_tercero
+      WHERE activo IS TRUE
+        AND btrim(COALESCE(nombre, '')) <> ''
+      `,
+    );
+    return Number(result.rows?.[0]?.n ?? 0);
+  }
   const result = await client.query(
     `
     SELECT count(*)::int AS n
     FROM proveedor_tercero
     WHERE activo IS TRUE
       AND btrim(COALESCE(nombre, '')) <> ''
+      AND lower(btrim(empresa)) = $1
     `,
+    [empresaNorm],
   );
   return Number(result.rows?.[0]?.n ?? 0);
 };
