@@ -146,8 +146,23 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   const [drillQuery, setDrillQuery] = useState("");
   const [sortKey, setSortKey] = useState<DrillSortKey>("inventoryValue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  /** Orden de filas del mapa: por código (01→última). Clic en encabezado invierte. */
+  /**
+   * Orden de filas del mapa:
+   * - `label`: por código de línea/categoría (como hoy).
+   * - `sede`: por DI de esa columna (menos→mayor / mayor→menos).
+   */
+  const [heatmapSortBy, setHeatmapSortBy] = useState<"label" | "sede">("label");
+  const [heatmapSortSedeKey, setHeatmapSortSedeKey] = useState<string | null>(
+    null,
+  );
   const [heatmapSortDir, setHeatmapSortDir] = useState<"asc" | "desc">("asc");
+  /** Detalle por sede: ordenar por DI (default menos → mayor días). */
+  const [sedeDetailSortKey, setSedeDetailSortKey] = useState<
+    "sede" | "diUnits" | "diValue" | "inventoryUnits" | "inventoryValue"
+  >("diUnits");
+  const [sedeDetailSortDir, setSedeDetailSortDir] = useState<"asc" | "desc">(
+    "asc",
+  );
   const [exportingExcel, setExportingExcel] = useState(false);
   const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
   const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
@@ -426,8 +441,16 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
   }, [loadingBoard, drill]);
 
   useEffect(() => {
+    setHeatmapSortBy("label");
+    setHeatmapSortSedeKey(null);
     setHeatmapSortDir("asc");
   }, [heatmap?.rowLevel]);
+
+  useEffect(() => {
+    if (!sedeDetailRow) return;
+    setSedeDetailSortKey(metric === "value" ? "diValue" : "diUnits");
+    setSedeDetailSortDir("asc");
+  }, [sedeDetailRow?.id, metric]);
 
   const cellByKey = useMemo(() => {
     const map = new Map<string, AnalisisInventarioHeatmapCell>();
@@ -439,7 +462,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
 
   const sedeDetailRows = useMemo(() => {
     if (!sedeDetailRow || !heatmap) return [];
-    return heatmap.columns.map((col) => {
+    const rows = heatmap.columns.map((col) => {
       const cell = cellByKey.get(`${sedeDetailRow.id}::${col.key}`);
       return {
         key: col.key,
@@ -451,21 +474,116 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         hasData: Boolean(cell),
       };
     });
-  }, [sedeDetailRow, heatmap, cellByKey]);
+    const dir = sedeDetailSortDir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const pick = (row: (typeof rows)[number]) => {
+        switch (sedeDetailSortKey) {
+          case "sede":
+            return row.label.toLowerCase();
+          case "diUnits":
+            return diSortValue(row.diUnits);
+          case "diValue":
+            return diSortValue(row.diValue);
+          case "inventoryUnits":
+            return row.hasData ? row.inventoryUnits : Number.NEGATIVE_INFINITY;
+          case "inventoryValue":
+            return row.hasData ? row.inventoryValue : Number.NEGATIVE_INFINITY;
+        }
+      };
+      const av = pick(a);
+      const bv = pick(b);
+      if (typeof av === "string" && typeof bv === "string") {
+        return av.localeCompare(bv, "es") * dir;
+      }
+      const an = Number(av);
+      const bn = Number(bv);
+      if (an !== bn) return (an - bn) * dir;
+      return a.label.localeCompare(b.label, "es");
+    });
+  }, [
+    sedeDetailRow,
+    heatmap,
+    cellByKey,
+    sedeDetailSortKey,
+    sedeDetailSortDir,
+  ]);
 
   const sortedHeatmapRows = useMemo(() => {
     if (!heatmap) return [];
     const dir = heatmapSortDir === "asc" ? 1 : -1;
+    if (heatmapSortBy === "sede" && heatmapSortSedeKey) {
+      const sedeKey = heatmapSortSedeKey;
+      return [...heatmap.rows].sort((a, b) => {
+        const cellA = cellByKey.get(`${a.id}::${sedeKey}`);
+        const cellB = cellByKey.get(`${b.id}::${sedeKey}`);
+        const diA = diSortValue(
+          metric === "value"
+            ? (cellA?.diValue ?? Number.NaN)
+            : (cellA?.diUnits ?? Number.NaN),
+        );
+        const diB = diSortValue(
+          metric === "value"
+            ? (cellB?.diValue ?? Number.NaN)
+            : (cellB?.diUnits ?? Number.NaN),
+        );
+        if (diA !== diB) return (diA - diB) * dir;
+        return a.id.localeCompare(b.id, "es", { numeric: true });
+      });
+    }
     return [...heatmap.rows].sort(
       (a, b) => a.id.localeCompare(b.id, "es", { numeric: true }) * dir,
     );
-  }, [heatmap, heatmapSortDir]);
+  }, [
+    heatmap,
+    heatmapSortDir,
+    heatmapSortBy,
+    heatmapSortSedeKey,
+    cellByKey,
+    metric,
+  ]);
 
-  const toggleHeatmapSort = () => {
-    setHeatmapSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+  const toggleHeatmapLabelSort = () => {
+    if (heatmapSortBy === "label") {
+      setHeatmapSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setHeatmapSortBy("label");
+    setHeatmapSortSedeKey(null);
+    setHeatmapSortDir("asc");
   };
 
-  const heatmapSortHint = heatmapSortDir === "asc" ? " ↑" : " ↓";
+  const toggleHeatmapSedeSort = (sedeKey: string) => {
+    if (heatmapSortBy === "sede" && heatmapSortSedeKey === sedeKey) {
+      setHeatmapSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setHeatmapSortBy("sede");
+    setHeatmapSortSedeKey(sedeKey);
+    setHeatmapSortDir("asc");
+  };
+
+  const toggleSedeDetailSort = (
+    key: "sede" | "diUnits" | "diValue" | "inventoryUnits" | "inventoryValue",
+  ) => {
+    if (sedeDetailSortKey === key) {
+      setSedeDetailSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSedeDetailSortKey(key);
+    setSedeDetailSortDir(
+      key === "diUnits" || key === "diValue" ? "asc" : "desc",
+    );
+  };
+
+  const heatmapSortHint = (active: boolean) => {
+    if (!active) return "";
+    return heatmapSortDir === "asc" ? " ↑" : " ↓";
+  };
+
+  const sedeDetailSortHint = (key: typeof sedeDetailSortKey) => {
+    if (sedeDetailSortKey !== key) return "";
+    return sedeDetailSortDir === "asc" ? " ↑" : " ↓";
+  };
 
   const empresaOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -1042,7 +1160,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                         ? "solo filtros seleccionados (empresa/sede/línea/sublínea/ítem)."
                         : "todas las empresas, sedes, líneas, sublíneas e ítems."
                     }`
-                  : `Cascada: categoría → línea → sublínea → ítem. Clic profundiza · doble clic: unidades, valor y DI por sede. Métrica: ${
+                  : `Cascada: categoría → línea → sublínea → ítem. Clic profundiza · doble clic: unidades, valor y DI por sede. Clic en sede: ordena filas por DI (menos→mayor). Métrica: ${
                       metric === "units" ? "DI unidades" : "DI valor"
                     }.`}
               </p>
@@ -1109,12 +1227,14 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                   <th className="sticky left-0 z-30 bg-slate-50 px-3 py-2 font-semibold">
                     <button
                       type="button"
-                      onClick={toggleHeatmapSort}
+                      onClick={toggleHeatmapLabelSort}
                       className="hover:text-slate-900"
                       title={
-                        heatmapSortDir === "asc"
-                          ? "Orden: código ascendente (01 primero). Clic para invertir."
-                          : "Orden: código descendente (última primero). Clic para invertir."
+                        heatmapSortBy === "label" && heatmapSortDir === "asc"
+                          ? "Orden: código ascendente. Clic para invertir."
+                          : heatmapSortBy === "label"
+                            ? "Orden: código descendente. Clic para invertir."
+                            : "Ordenar filas por código (01 primero)."
                       }
                     >
                       {heatmap?.rowLevel === "categoria"
@@ -1124,7 +1244,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                           : heatmap?.rowLevel === "sublinea"
                             ? "Sublínea"
                             : "Ítem"}
-                      {heatmapSortHint}
+                      {heatmapSortHint(heatmapSortBy === "label")}
                     </button>
                   </th>
                   {heatmap.columns.map((col) => (
@@ -1132,7 +1252,27 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                       key={col.key}
                       className="px-2 py-2 text-center font-semibold whitespace-nowrap"
                     >
-                      {col.label}
+                      <button
+                        type="button"
+                        onClick={() => toggleHeatmapSedeSort(col.key)}
+                        className="hover:text-slate-900"
+                        title={
+                          heatmapSortBy === "sede" &&
+                          heatmapSortSedeKey === col.key &&
+                          heatmapSortDir === "asc"
+                            ? `Orden: DI ${col.label} de menos a más días. Clic para invertir.`
+                            : heatmapSortBy === "sede" &&
+                                heatmapSortSedeKey === col.key
+                              ? `Orden: DI ${col.label} de más a menos días. Clic para invertir.`
+                              : `Ordenar filas por DI en ${col.label} (menos → mayor días).`
+                        }
+                      >
+                        {col.label}
+                        {heatmapSortHint(
+                          heatmapSortBy === "sede" &&
+                            heatmapSortSedeKey === col.key,
+                        )}
+                      </button>
                     </th>
                   ))}
                 </tr>
@@ -1235,6 +1375,7 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                 </h3>
                 <p className="text-xs text-slate-500">
                   Unidades y valor de inventario, más DI und y DI valor.
+                  Orden inicial: DI de menos a más días.
                 </p>
               </div>
               <button
@@ -1250,18 +1391,57 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
               <table className="min-w-full border-collapse text-xs">
                 <thead className="sticky top-0 bg-slate-50 text-slate-600">
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Sede</th>
-                    <th className="px-3 py-2 text-right font-semibold">
-                      Inv. und
+                    <th className="px-3 py-2 text-left font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleSedeDetailSort("sede")}
+                        className="hover:text-slate-900"
+                      >
+                        Sede
+                        {sedeDetailSortHint("sede")}
+                      </button>
                     </th>
                     <th className="px-3 py-2 text-right font-semibold">
-                      Inv. valor
+                      <button
+                        type="button"
+                        onClick={() => toggleSedeDetailSort("inventoryUnits")}
+                        className="hover:text-slate-900"
+                      >
+                        Inv. und
+                        {sedeDetailSortHint("inventoryUnits")}
+                      </button>
                     </th>
                     <th className="px-3 py-2 text-right font-semibold">
-                      DI und
+                      <button
+                        type="button"
+                        onClick={() => toggleSedeDetailSort("inventoryValue")}
+                        className="hover:text-slate-900"
+                      >
+                        Inv. valor
+                        {sedeDetailSortHint("inventoryValue")}
+                      </button>
                     </th>
                     <th className="px-3 py-2 text-right font-semibold">
-                      DI valor
+                      <button
+                        type="button"
+                        onClick={() => toggleSedeDetailSort("diUnits")}
+                        className="hover:text-slate-900"
+                        title="Ordenar por DI unidades (menos → mayor)"
+                      >
+                        DI und
+                        {sedeDetailSortHint("diUnits")}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleSedeDetailSort("diValue")}
+                        className="hover:text-slate-900"
+                        title="Ordenar por DI valor (menos → mayor)"
+                      >
+                        DI valor
+                        {sedeDetailSortHint("diValue")}
+                      </button>
                     </th>
                   </tr>
                 </thead>
