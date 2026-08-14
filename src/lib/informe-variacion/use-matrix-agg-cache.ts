@@ -14,7 +14,7 @@ import {
   warmUnfilteredBoard,
 } from "@/lib/informe-variacion/board-warm-cache";
 import {
-  buildMatrixAggCache,
+  buildMatrixAggCacheChunked,
   buildSublineItemAgg,
   getUnfilteredMatrixWarm,
   mergeUnfilteredMatrixWarm,
@@ -48,7 +48,8 @@ const EMPTY_DUAL: PartialDualMatrixAggCache = { u: null, v: null };
 
 /** Prefetch de la otra metrica: debe correr aunque el tab este ocupado. */
 const OTHER_METRIC_IDLE_TIMEOUT_MS = 8_000;
-const RANGE_WARM_IDLE_TIMEOUT_MS = 2_500;
+/** Timeout largo: no forzar warm agresivo mientras el usuario interactúa. */
+const RANGE_WARM_IDLE_TIMEOUT_MS = 8_000;
 
 const scheduleIdle = (
   fn: () => void,
@@ -223,9 +224,23 @@ export const useMatrixAggCache = (
     [],
   );
 
-  const buildOne = useCallback(
-    (activeMetric: InformeMetric): MatrixAggCache =>
-      buildMatrixAggCache(
+  const buildOneAsync = useCallback(
+    async (activeMetric: InformeMetric): Promise<MatrixAggCache> => {
+      if (buildArgs.isUnfiltered) {
+        const dual = await warmUnfilteredMatrixAggChunked(
+          buildArgs.rows,
+          buildArgs.rowIndex,
+          buildArgs.sedeCount,
+          buildArgs.metricCtx,
+          [activeMetric],
+        );
+        const built = dual[activeMetric];
+        if (!built) {
+          throw new Error(`Matriz ${activeMetric} no construida.`);
+        }
+        return built;
+      }
+      return buildMatrixAggCacheChunked(
         buildArgs.rows,
         buildArgs.rowIndex,
         buildArgs.filteredSet,
@@ -233,11 +248,12 @@ export const useMatrixAggCache = (
         activeMetric,
         buildArgs.sedeCount,
         buildArgs.metricCtx,
-      ),
+      );
+    },
     [buildArgs],
   );
 
-  // Rebuild async (setTimeout/idle) para no setState sync en el cuerpo del effect.
+  // Rebuild async chunked para no congelar el hilo principal (10–30s sync).
   useEffect(() => {
     let cancelled = false;
     let cancelSecondary: (() => void) | undefined;
@@ -245,70 +261,76 @@ export const useMatrixAggCache = (
 
     const timeoutId = setTimeout(() => {
       if (cancelled) return;
-      const active = metricRef.current;
+      void (async () => {
+        const active = metricRef.current;
 
-      if (buildArgs.isUnfiltered) {
-        const warm = getUnfilteredMatrixWarm(buildArgs.rows);
-        if (warm?.[active]) {
-          commitDual(buildArgs.rows, warm);
-          if (!warm[otherInformeMetric(active)]) {
-            cancelSecondary = scheduleIdle(() => {
-              if (cancelled) return;
-              const other = otherInformeMetric(active);
+        if (buildArgs.isUnfiltered) {
+          const warm = getUnfilteredMatrixWarm(buildArgs.rows);
+          if (warm?.[active]) {
+            commitDual(buildArgs.rows, warm);
+            if (!warm[otherInformeMetric(active)]) {
+              cancelSecondary = scheduleIdle(() => {
+                if (cancelled) return;
+                void (async () => {
+                  const other = otherInformeMetric(active);
+                  if (getUnfilteredMatrixWarm(buildArgs.rows)?.[other]) return;
+                  const second = await buildOneAsync(other);
+                  if (cancelled) return;
+                  const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
+                    [other]: second,
+                  } as PartialDualMatrixAggCache);
+                  commitDual(buildArgs.rows, next);
+                })();
+              });
+            }
+            return;
+          }
+        }
+
+        const first = await buildOneAsync(active);
+        if (cancelled) return;
+        if (buildArgs.isUnfiltered) {
+          const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
+            [active]: first,
+          } as PartialDualMatrixAggCache);
+          commitDual(buildArgs.rows, next);
+        } else {
+          setCacheState({
+            rows: buildArgs.rows,
+            dual: { ...EMPTY_DUAL, [active]: first },
+          });
+        }
+
+        cancelSecondary = scheduleIdle(() => {
+          if (cancelled) return;
+          void (async () => {
+            const other = otherInformeMetric(active);
+            if (buildArgs.isUnfiltered) {
               if (getUnfilteredMatrixWarm(buildArgs.rows)?.[other]) return;
-              const second = buildOne(other);
-              if (cancelled) return;
+            } else if (dualCacheRef.current[other]) {
+              return;
+            }
+            const second = await buildOneAsync(other);
+            if (cancelled) return;
+            if (buildArgs.isUnfiltered) {
               const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
                 [other]: second,
               } as PartialDualMatrixAggCache);
               commitDual(buildArgs.rows, next);
-            });
-          }
-          return;
-        }
-      }
-
-      const first = buildOne(active);
-      if (cancelled) return;
-      if (buildArgs.isUnfiltered) {
-        const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
-          [active]: first,
-        } as PartialDualMatrixAggCache);
-        commitDual(buildArgs.rows, next);
-      } else {
-        setCacheState({
-          rows: buildArgs.rows,
-          dual: { ...EMPTY_DUAL, [active]: first },
-        });
-      }
-
-      cancelSecondary = scheduleIdle(() => {
-        if (cancelled) return;
-        const other = otherInformeMetric(active);
-        if (buildArgs.isUnfiltered) {
-          if (getUnfilteredMatrixWarm(buildArgs.rows)?.[other]) return;
-        } else if (dualCacheRef.current[other]) {
-          return;
-        }
-        const second = buildOne(other);
-        if (cancelled) return;
-        if (buildArgs.isUnfiltered) {
-          const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
-            [other]: second,
-          } as PartialDualMatrixAggCache);
-          commitDual(buildArgs.rows, next);
-        } else {
-          setCacheState((current) => {
-            if (current.rows !== buildArgs.rows || current.dual[other]) {
-              return current;
+            } else {
+              setCacheState((current) => {
+                if (current.rows !== buildArgs.rows || current.dual[other]) {
+                  return current;
+                }
+                return {
+                  rows: buildArgs.rows,
+                  dual: { ...current.dual, [other]: second },
+                };
+              });
             }
-            return {
-              rows: buildArgs.rows,
-              dual: { ...current.dual, [other]: second },
-            };
-          });
-        }
-      });
+          })();
+        });
+      })();
     }, 0);
 
     return () => {
@@ -316,43 +338,45 @@ export const useMatrixAggCache = (
       clearTimeout(timeoutId);
       cancelSecondary?.();
     };
-  }, [buildArgs, buildOne, commitDual]);
+  }, [buildArgs, buildOneAsync, commitDual]);
 
   // Si el usuario cambia de metrica antes del prefetch, construye solo la faltante.
   useEffect(() => {
     let cancelled = false;
     const timeoutId = setTimeout(() => {
       if (cancelled) return;
-      const warmHit = buildArgs.isUnfiltered
-        ? getUnfilteredMatrixWarm(buildArgs.rows)?.[metric]
-        : null;
-      if (warmHit || dualCacheRef.current[metric]) return;
+      void (async () => {
+        const warmHit = buildArgs.isUnfiltered
+          ? getUnfilteredMatrixWarm(buildArgs.rows)?.[metric]
+          : null;
+        if (warmHit || dualCacheRef.current[metric]) return;
 
-      const built = buildOne(metric);
-      if (cancelled) return;
-      if (buildArgs.isUnfiltered) {
-        const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
-          [metric]: built,
-        } as PartialDualMatrixAggCache);
-        commitDual(buildArgs.rows, next);
-      } else {
-        setCacheState((current) => {
-          if (current.rows !== buildArgs.rows || current.dual[metric]) {
-            return current;
-          }
-          return {
-            rows: buildArgs.rows,
-            dual: { ...current.dual, [metric]: built },
-          };
-        });
-      }
+        const built = await buildOneAsync(metric);
+        if (cancelled) return;
+        if (buildArgs.isUnfiltered) {
+          const next = mergeUnfilteredMatrixWarm(buildArgs.rows, {
+            [metric]: built,
+          } as PartialDualMatrixAggCache);
+          commitDual(buildArgs.rows, next);
+        } else {
+          setCacheState((current) => {
+            if (current.rows !== buildArgs.rows || current.dual[metric]) {
+              return current;
+            }
+            return {
+              rows: buildArgs.rows,
+              dual: { ...current.dual, [metric]: built },
+            };
+          });
+        }
+      })();
     }, 0);
 
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [metric, buildOne, buildArgs, commitDual]);
+  }, [metric, buildOneAsync, buildArgs, commitDual]);
 
   // Preferir warm por identidad de `rows` en el mismo render del cambio de corte.
   const stateIsForCurrentRows = cacheState.rows === payload.rows;

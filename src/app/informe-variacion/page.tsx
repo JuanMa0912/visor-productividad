@@ -21,7 +21,7 @@ import {
   type InformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
-import { readInformeApiResponse, readInformeBundleApiResponse, isInformeMonthBundleResponse } from "@/lib/informe-variacion/read-api-response";
+import { readInformeApiResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
 import {
   isInformeRangeViewReady,
@@ -73,9 +73,6 @@ const purgeLegacyInformeSessionCache = () => {
     // ignore
   }
 };
-
-const buildMonthBundleCacheKey = (year: number, month: number, scopeSuffix = "") =>
-  `${year}-${month}:bundle${scopeSuffix}`;
 
 const buildRangeCacheKey = (
   year: number,
@@ -231,9 +228,9 @@ export default function InformeVariacionPage() {
   const [monthLoadLocked, setMonthLoadLocked] = useState(false);
   const [rangeSwitchPending, setRangeSwitchPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [prefetchDone, setPrefetchDone] = useState(0);
+  const [, setPrefetchDone] = useState(0);
   const [prefetchTotal, setPrefetchTotal] = useState(0);
-  const [readyRanges, setReadyRanges] = useState<Set<InformeDayRangeId>>(
+  const [, setReadyRanges] = useState<Set<InformeDayRangeId>>(
     () => new Set(),
   );
   /** Prepare + matriz + KPI listos: solo entonces el chip permite swap barato. */
@@ -243,9 +240,6 @@ export default function InformeVariacionPage() {
 
   const memoryCacheRef = useRef<Map<string, InformeVariacionPayload>>(new Map());
   const inflightRef = useRef<Map<string, Promise<InformeVariacionPayload>>>(
-    new Map(),
-  );
-  const bundleInflightRef = useRef<Map<string, Promise<"ok" | "fallback">>>(
     new Map(),
   );
   const monthAbortRef = useRef<AbortController | null>(null);
@@ -260,7 +254,6 @@ export default function InformeVariacionPage() {
   useEffect(() => {
     memoryCacheRef.current.clear();
     inflightRef.current.clear();
-    bundleInflightRef.current.clear();
   }, [user?.id, dataTenant]);
 
   useEffect(() => {
@@ -407,62 +400,23 @@ export default function InformeVariacionPage() {
     [lineCategoryScope, markRangeReady, markViewReady, scopeCacheSuffix, sessionStoragePrefix],
   );
 
-  const storeMonthBundle = useCallback(
-    (
-      year: number,
-      month: number,
-      payloads: Record<string, InformeVariacionPayload>,
-    ) => {
-      const primaryId = dayRangeIdRef.current;
-      const stored: Array<{
-        rangeId: string;
-        payload: InformeVariacionPayload;
-        isPrimary: boolean;
-      }> = [];
-      for (const [rangeId, data] of Object.entries(payloads)) {
-        const isPrimary = rangeId === primaryId;
-        const scoped = storePayload(
-          year,
-          month,
-          rangeId as InformeDayRangeId,
-          data,
-          {
-            // Calentar en cola (uno a uno). No sync-warm en el store.
-            warm: false,
-            persistSession: isPrimary ? "idle" : "none",
-          },
-        );
-        if (scoped) {
-          stored.push({ rangeId, payload: scoped, isPrimary });
-        }
-      }
-      // Primero el visible; luego el resto para que el cambio de chip sea hit.
-      stored.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
-      for (const entry of stored) {
-        prefetchWarmInformeRange(entry.payload, {
-          metrics: ["v"],
-          priority: entry.isPrimary,
-          onDone: () => markViewReady(entry.rangeId as InformeDayRangeId),
-        });
-      }
-    },
-    [markViewReady, storePayload],
-  );
-
   const readCachedPayload = useCallback(
     (
       year: number,
       month: number,
       rangeId: InformeDayRangeId,
+      options: { warm?: boolean } = {},
     ): InformeVariacionPayload | null => {
       const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
       const memoryHit = memoryCacheRef.current.get(key);
       if (memoryHit) {
         markRangeReady(rangeId);
-        prefetchWarmInformeRange(memoryHit, {
-          metrics: ["v"],
-          onDone: () => markViewReady(rangeId),
-        });
+        if (options.warm) {
+          prefetchWarmInformeRange(memoryHit, {
+            metrics: ["v"],
+            onDone: () => markViewReady(rangeId),
+          });
+        }
         return memoryHit;
       }
       const sessionHit = readSessionInforme(sessionStoragePrefix, key);
@@ -473,10 +427,12 @@ export default function InformeVariacionPage() {
         );
         memoryCacheRef.current.set(key, scoped);
         markRangeReady(rangeId);
-        prefetchWarmInformeRange(scoped, {
-          metrics: ["v"],
-          onDone: () => markViewReady(rangeId),
-        });
+        if (options.warm) {
+          prefetchWarmInformeRange(scoped, {
+            metrics: ["v"],
+            onDone: () => markViewReady(rangeId),
+          });
+        }
         return scoped;
       }
       return null;
@@ -581,97 +537,6 @@ export default function InformeVariacionPage() {
     [readCachedPayload, router, storePayload, scopeCacheSuffix, tenantEmpresaParam],
   );
 
-  const fetchMonthBundle = useCallback(
-    async (
-      year: number,
-      month: number,
-      signal: AbortSignal,
-      options: { force?: boolean } = {},
-    ): Promise<"ok" | "fallback"> => {
-      const bundleKey = buildMonthBundleCacheKey(year, month, scopeCacheSuffix);
-      if (!options.force) {
-        const ranges = getAvailableInformeDayRanges(year, month, new Date(), maxDate);
-        const allCached =
-          ranges.length > 0 &&
-          ranges.every((range) =>
-            Boolean(readCachedPayload(year, month, range.id)),
-          );
-        if (allCached) return "ok";
-
-        if (!signal.aborted) {
-          const inflight = bundleInflightRef.current.get(bundleKey);
-          if (inflight) return inflight;
-        }
-      }
-      if (signal.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-
-      // Mismo caso que arriba: `const` romperia por TDZ en la ruta de abort sincrona.
-      let request!: Promise<"ok" | "fallback">;
-      // eslint-disable-next-line prefer-const
-      request = (async (): Promise<"ok" | "fallback"> => {
-        const controller = new AbortController();
-        const timeoutId = window.setTimeout(
-          () => controller.abort(),
-          INFORME_FETCH_TIMEOUT_MS,
-        );
-        const onAbort = () => controller.abort();
-        signal.addEventListener("abort", onAbort);
-
-        try {
-          if (signal.aborted) {
-            throw new DOMException("Aborted", "AbortError");
-          }
-          const params = new URLSearchParams({
-            year: String(year),
-            month: String(month),
-            bundle: "month",
-          });
-          if (options.force) params.set("force", "1");
-          if (tenantEmpresaParam) params.set("empresa", tenantEmpresaParam);
-          const response = await fetch(
-            `/api/informe-variacion?${params.toString()}`,
-            { cache: "no-store", signal: controller.signal },
-          );
-          if (signal.aborted) {
-            throw new DOMException("Aborted", "AbortError");
-          }
-          if (response.status === 401) {
-            router.replace("/login");
-            throw new Error("Sesion expirada.");
-          }
-          if (response.status === 403) {
-            router.replace("/secciones");
-            throw new Error("Sin permisos.");
-          }
-          const data = await readInformeBundleApiResponse(response);
-          if (!response.ok) {
-            throw new Error(data.error ?? "No fue posible cargar el informe.");
-          }
-          if (!isInformeMonthBundleResponse(data)) {
-            return "fallback" as const;
-          }
-          if (signal.aborted) {
-            throw new DOMException("Aborted", "AbortError");
-          }
-          storeMonthBundle(year, month, data.payloads);
-          return "ok" as const;
-        } finally {
-          window.clearTimeout(timeoutId);
-          signal.removeEventListener("abort", onAbort);
-          if (bundleInflightRef.current.get(bundleKey) === request) {
-            bundleInflightRef.current.delete(bundleKey);
-          }
-        }
-      })();
-
-      bundleInflightRef.current.set(bundleKey, request);
-      return request;
-    },
-    [maxDate, readCachedPayload, router, storeMonthBundle, scopeCacheSuffix, tenantEmpresaParam],
-  );
-
   /** Clic: swap sync si la vista ya esta caliente; si no, calienta sin congelar el UI. */
   const selectDayRange = useCallback(
     (rangeId: InformeDayRangeId) => {
@@ -683,7 +548,7 @@ export default function InformeVariacionPage() {
       setDayRangeId(rangeId);
       setError(null);
 
-      const cached = readCachedPayload(year, month, rangeId);
+      const cached = readCachedPayload(year, month, rangeId, { warm: false });
       if (cached) {
         if (isInformeRangeViewReady(cached, "v")) {
           setRangeSwitchPending(false);
@@ -818,7 +683,6 @@ export default function InformeVariacionPage() {
             inflightRef.current.delete(key);
           }
         }
-        bundleInflightRef.current.delete(buildMonthBundleCacheKey(year, month, scopeCacheSuffix));
         clearSessionInformeMonth(sessionStoragePrefix, year, month);
         setReadyRanges(new Set());
         setViewReadyRanges(new Set());
@@ -829,19 +693,10 @@ export default function InformeVariacionPage() {
         primaryFromState && ranges.some((range) => range.id === primaryFromState)
           ? primaryFromState
           : (defaultInformeDayRangeId(ranges) as InformeDayRangeId);
-      const others = ranges
-        .map((range) => range.id)
-        .filter((id) => id !== primaryId)
-        .sort((a, b) => {
-          const ra = ranges.find((range) => range.id === a)!;
-          const rb = ranges.find((range) => range.id === b)!;
-          const ac = ra.fromDay === 1 ? 0 : 1;
-          const bc = rb.fromDay === 1 ? 0 : 1;
-          if (ac !== bc) return ac - bc;
-          return (ra.toDay ?? 99) - (rb.toDay ?? 99);
-        });
-
-      setPrefetchTotal(ranges.length);
+      // El bundle mensual deserializaba y preparaba varias matrices después de
+      // pintar el rango visible, bloqueando el navegador. Cada chip se carga
+      // ahora bajo demanda.
+      setPrefetchTotal(1);
       setPrefetchDone(0);
       setError(null);
       setRangeSwitchPending(false);
@@ -872,38 +727,14 @@ export default function InformeVariacionPage() {
         ranges.some((range) => range.id === dayRangeIdRef.current)
           ? dayRangeIdRef.current
           : primaryId;
-      const allCached =
-        !options.force &&
-        ranges.every((range) =>
-          Boolean(readCachedPayload(year, month, range.id)),
-        );
-      if (allCached) {
-        const selectedPayload = readCachedPayload(year, month, selectedId);
-        if (selectedPayload) {
-          setPayload(selectedPayload);
-        }
-        setPrefetchDone(ranges.length);
-        setLoading(false);
-        setRangeSwitchPending(false);
-        setMonthLoadLocked(false);
-        return;
-      }
-
       const cachedSelected = options.force
         ? null
-        : readCachedPayload(year, month, selectedId);
+        : readCachedPayload(year, month, selectedId, { warm: true });
       if (cachedSelected) {
         setPayload(cachedSelected);
       } else {
         setLoading(true);
       }
-
-      const updatePrefetchProgress = () => {
-        const ready = ranges.filter((range) =>
-          Boolean(readCachedPayload(year, month, range.id)),
-        ).length;
-        setPrefetchDone(ready);
-      };
 
       const applySelectedPayload = () => {
         const current =
@@ -911,7 +742,7 @@ export default function InformeVariacionPage() {
           ranges.some((range) => range.id === dayRangeIdRef.current)
             ? dayRangeIdRef.current
             : selectedId;
-        const data = readCachedPayload(year, month, current);
+        const data = readCachedPayload(year, month, current, { warm: true });
         if (data) {
           startTransition(() => setPayload(data));
           setRangeSwitchPending(false);
@@ -919,168 +750,26 @@ export default function InformeVariacionPage() {
       };
 
       try {
-        updatePrefetchProgress();
-
-        const primaryTask = cachedSelected
-          ? Promise.resolve(cachedSelected)
-          : fetchRangePayload(
-              year,
-              month,
-              selectedId,
-              controller.signal,
-              options,
-            );
-
-        // Un solo rango: no pedir bundle (misma SQL agregada).
-        if (ranges.length <= 1) {
-          if (cachedSelected) {
-            setLoading(false);
-          } else {
-            setLoading(true);
-          }
-          try {
-            const data = await primaryTask;
-            if (
-              controller.signal.aborted ||
-              activeMonthKeyRef.current !== monthToken
-            ) {
-              return;
-            }
-            if (!cachedSelected) {
-              setPayload(data);
-            }
-          } catch (primaryErr) {
-            if (
-              primaryErr instanceof Error &&
-              primaryErr.name === "AbortError"
-            ) {
-              return;
-            }
-            if (!readCachedPayload(year, month, selectedId)) {
-              throw primaryErr;
-            }
-          }
-          if (
-            controller.signal.aborted ||
-            activeMonthKeyRef.current !== monthToken
-          ) {
-            return;
-          }
-          applySelectedPayload();
-          setPrefetchDone(ranges.length);
-          setLoading(false);
-          setRangeSwitchPending(false);
-          return;
-        }
-
-        // Varios rangos: rango visible primero (pinta UI), luego bundle.
-        // Antes corrían en paralelo y saturaban Cloud SQL (~5s + ~15s a la vez).
-        if (!cachedSelected) {
-          setLoading(true);
-          try {
-            const data = await primaryTask;
-            if (
-              controller.signal.aborted ||
-              activeMonthKeyRef.current !== monthToken
-            ) {
-              return;
-            }
-            setPayload(data);
-            setLoading(false);
-            setMonthLoadLocked(false);
-            updatePrefetchProgress();
-          } catch (primaryErr) {
-            if (
-              primaryErr instanceof Error &&
-              primaryErr.name === "AbortError"
-            ) {
-              return;
-            }
-            if (!readCachedPayload(year, month, selectedId)) {
-              throw primaryErr;
-            }
-            setLoading(false);
-            setMonthLoadLocked(false);
-          }
-        } else {
-          setLoading(false);
-          setMonthLoadLocked(false);
-        }
-
+        const data =
+          cachedSelected ??
+          (await fetchRangePayload(
+            year,
+            month,
+            selectedId,
+            controller.signal,
+            options,
+          ));
         if (
           controller.signal.aborted ||
           activeMonthKeyRef.current !== monthToken
         ) {
           return;
         }
-
-        const bundleResult = await fetchMonthBundle(
-          year,
-          month,
-          controller.signal,
-          options,
-        );
-        if (
-          controller.signal.aborted ||
-          activeMonthKeyRef.current !== monthToken
-        ) {
-          return;
-        }
-
-        if (bundleResult === "ok") {
-          applySelectedPayload();
-          setPrefetchDone(ranges.length);
-          setLoading(false);
-          setRangeSwitchPending(false);
-          return;
-        }
-
-        // Sin item_dia_roll: precargar el resto de rangos en serie.
+        if (!cachedSelected) setPayload(data);
         applySelectedPayload();
+        setPrefetchDone(1);
         setLoading(false);
-        updatePrefetchProgress();
-
-        const missingOthers = others.filter(
-          (rangeId) => !readCachedPayload(year, month, rangeId),
-        );
-        for (const rangeId of missingOthers) {
-          if (
-            controller.signal.aborted ||
-            activeMonthKeyRef.current !== monthToken
-          ) {
-            return;
-          }
-          try {
-            await fetchRangePayload(
-              year,
-              month,
-              rangeId,
-              controller.signal,
-              options,
-            );
-            updatePrefetchProgress();
-          } catch (prefetchErr) {
-            if (
-              controller.signal.aborted ||
-              (prefetchErr instanceof Error && prefetchErr.name === "AbortError")
-            ) {
-              return;
-            }
-            console.warn(
-              `[informe-variacion] fallo precargando rango ${rangeId}`,
-              prefetchErr,
-            );
-          }
-        }
-
-        if (
-          controller.signal.aborted ||
-          activeMonthKeyRef.current !== monthToken
-        ) {
-          return;
-        }
-
-        applySelectedPayload();
+        setRangeSwitchPending(false);
       } catch (err) {
         if (
           controller.signal.aborted ||
@@ -1112,7 +801,7 @@ export default function InformeVariacionPage() {
         }
       }
     },
-    [availableDayRanges, fetchMonthBundle, fetchRangePayload, parsedMonth, readCachedPayload, scopeCacheSuffix, sessionStoragePrefix],
+    [availableDayRanges, fetchRangePayload, parsedMonth, readCachedPayload, scopeCacheSuffix, sessionStoragePrefix],
   );
 
   // Carga / precarga al entrar o cambiar de mes.
@@ -1248,20 +937,16 @@ export default function InformeVariacionPage() {
                 {periodControlsDisabled
                   ? "Cargando periodo seleccionado…"
                   : preloadReady
-                    ? "Todos los rangos listos · cambio instantaneo (vista precargada)"
-                    : prefetchTotal > 0
-                      ? `Preparando vistas ${Math.min(viewReadyRanges.size, prefetchTotal)}/${prefetchTotal} · chip habilitado al quedar listo`
-                      : "Cortes cerrados + acumulado hasta el último día con datos"}
+                    ? "Rango actual listo"
+                    : "Cada rango se carga al seleccionarlo para mantener el navegador fluido"}
                 {rangeSwitchPending ? " · sincronizando…" : ""}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {availableDayRanges
-                .filter((range) => readyRanges.has(range.id))
-                .map((range) => {
+              {availableDayRanges.map((range) => {
                   const viewReady = viewReadyRanges.has(range.id);
                   const selected = dayRangeId === range.id;
-                  const canClick = selected || viewReady;
+                  const canClick = true;
                   return (
                   <button
                     key={range.id}
@@ -1278,7 +963,7 @@ export default function InformeVariacionPage() {
                           ? "border-amber-600 bg-amber-600 text-white shadow-sm"
                           : "border-blue-600 bg-blue-600 text-white shadow-sm"
                         : !viewReady
-                          ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
+                          ? "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50"
                           : range.projection
                             ? "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300"
                             : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
@@ -1287,25 +972,14 @@ export default function InformeVariacionPage() {
                       range.projection
                         ? `Proyección a día ${range.projection.targetToDay} con datos hasta el ${range.projection.actualToDay}`
                         : viewReady
-                          ? "Vista precargada · cambio instantaneo"
-                          : "Preparando vista en segundo plano…"
+                          ? "Vista lista"
+                          : "Cargar este rango"
                     }
                   >
                     {range.label}
-                    {!viewReady && !selected ? (
-                      <Loader2 className="ml-1.5 inline h-3 w-3 animate-spin opacity-70" />
-                    ) : null}
                   </button>
                   );
                 })}
-              {!preloadReady &&
-              (readyRanges.size < prefetchTotal ||
-                viewReadyRanges.size < prefetchTotal) ? (
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-200 px-3 py-1.5 text-xs text-slate-400">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Preparando mas rangos…
-                </span>
-              ) : null}
             </div>
             {payload?.meta.dayRange?.projection ? (
               <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">

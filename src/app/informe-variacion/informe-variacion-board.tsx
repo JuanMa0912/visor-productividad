@@ -502,12 +502,9 @@ function InformeVariacionBoardReady({
               onChange={(value) => {
                 const depth = value as "cat" | "lin";
                 setMatrixDepth(depth);
+                // No abrir todas las categorías a la vez: el DOM × sedes congela.
+                // El usuario expande categoría por categoría.
                 setMatrixOpen(new Set());
-                if (depth === "lin") {
-                  setMatrixOpen(
-                    new Set(prepared.rowIndex.allCats.map((cat) => `c${cat}`)),
-                  );
-                }
               }}
             />
             <MatrixExportMenu
