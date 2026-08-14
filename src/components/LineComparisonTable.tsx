@@ -626,11 +626,11 @@ export const LineComparisonTable = ({
               };
               const salesPerHour =
                 hasLaborDataForLine(line.id) && totals.hours > 0
-                  ? totals.sales / 1_000_000 / totals.hours
+                  ? totals.sales / totals.hours
                   : 0;
               const previousSalesPerHour =
                 hasLaborDataForLine(line.id) && previousTotals.hours > 0
-                  ? previousTotals.sales / 1_000_000 / previousTotals.hours
+                  ? previousTotals.sales / previousTotals.hours
                   : 0;
               const isExpanded = expandedLineIds.includes(line.id);
               const bySede = lineSedeMetrics.get(line.id) ?? new Map<string, SedeMetrics>();
@@ -647,7 +647,7 @@ export const LineComparisonTable = ({
                     hours: metrics.hours,
                     salesPerHour:
                       hasLaborDataForLine(line.id) && metrics.hours > 0
-                        ? metrics.sales / 1_000_000 / metrics.hours
+                        ? metrics.sales / metrics.hours
                         : 0,
                   };
                 })
@@ -694,9 +694,7 @@ export const LineComparisonTable = ({
                       if (!hasLaborDataForLine(line.id) || previousHours <= 0) {
                         return sum;
                       }
-                      return (
-                        sum + (previousDetail?.sales ?? 0) / 1_000_000 / previousHours
-                      );
+                      return sum + (previousDetail?.sales ?? 0) / previousHours;
                     }, 0) / selectedSedeCount
                   : 0;
               const averageHours =
@@ -911,7 +909,7 @@ export const LineComparisonTable = ({
                               };
                               const previousDetailSalesPerHour =
                                 hasLaborDataForLine(line.id) && previousDetail.hours > 0
-                                  ? previousDetail.sales / 1_000_000 / previousDetail.hours
+                                  ? previousDetail.sales / previousDetail.hours
                                   : 0;
                               return (
                               <div
