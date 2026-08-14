@@ -43,73 +43,29 @@ const formatScore = (digest: RotacionCriticalDigest): string => {
   return String(eff.score ?? 0);
 };
 
-const mergeEstado = (
-  a: SurtidoEstadoBreakdown,
-  b: SurtidoEstadoBreakdown,
-): SurtidoEstadoBreakdown => {
-  const itemCount = a.itemCount + b.itemCount;
-  const surtido = a.surtido + b.surtido;
-  return {
-    itemCount,
-    sinVerificar: a.sinVerificar + b.sinVerificar,
-    seguimiento: a.seguimiento + b.seguimiento,
-    surtido,
-    surtidoPct: itemCount > 0 ? (surtido / itemCount) * 100 : null,
-  };
-};
-
-/** 0 y S no dependen de ABCD; D se deriva para cuadrar con total sede. */
+/** Criticos D+0+S solo Manufactura (misma regla que el correo individual). */
 export const sedeCriticalBreakdown = (digest: RotacionCriticalDigest) => {
-  const ceroEstado = mergeEstado(
-    digest.perecederos.ceroRotacion,
-    digest.manufactura.ceroRotacion,
-  );
-  const restockEstado = mergeEstado(
-    digest.perecederos.restockS,
-    digest.manufactura.restockS,
-  );
-  const demandaD = Math.max(
-    0,
-    digest.total.itemCount - ceroEstado.itemCount - restockEstado.itemCount,
-  );
+  const section = digest.manufactura;
+  const ceroEstado: SurtidoEstadoBreakdown = section.ceroRotacion;
+  const restockEstado: SurtidoEstadoBreakdown = section.restockS;
   return {
-    demandaD,
+    demandaD: section.demandaD.itemCount,
     cero: ceroEstado.itemCount,
     restockS: restockEstado.itemCount,
     ceroEstado,
     restockEstado,
+    itemCount: section.total.itemCount,
+    totalInventario: section.total.totalInventario,
   };
 };
 
-/**
- * DI de Demanda D a nivel sede: promedio ponderado por ítems de cada familia
- * (misma métrica que el correo individual, agregada).
- */
+/** DI Demanda D de Manufactura (misma métrica del correo individual). */
 export const sedeDemandaDiasInventario = (
   digest: RotacionCriticalDigest,
 ): number | null => {
-  const parts = [
-    digest.perecederos.demandaD,
-    digest.manufactura.demandaD,
-  ].filter((part) => part.itemCount > 0);
-  if (parts.length === 0) return null;
-  const weight = parts.reduce((acc, part) => acc + part.itemCount, 0);
-  if (weight <= 0) return null;
-  const allSinVenta = parts.every(
-    (part) => part.diasInventario >= NO_SALES_DI_VALUE,
-  );
-  if (allSinVenta) return NO_SALES_DI_VALUE;
-  const usable = parts.filter(
-    (part) => part.diasInventario < NO_SALES_DI_VALUE,
-  );
-  if (usable.length === 0) return NO_SALES_DI_VALUE;
-  const usableWeight = usable.reduce((acc, part) => acc + part.itemCount, 0);
-  return (
-    usable.reduce(
-      (acc, part) => acc + part.diasInventario * part.itemCount,
-      0,
-    ) / usableWeight
-  );
+  const part = digest.manufactura.demandaD;
+  if (part.itemCount <= 0) return null;
+  return part.diasInventario;
 };
 
 export type SedeManagementSignals = {
@@ -203,9 +159,9 @@ export const aggregateConsolidatedDigestTotals = (
   let restockSold = 0;
 
   for (const digest of digests) {
-    itemCount += digest.total.itemCount;
-    totalInventario += digest.total.totalInventario;
     const breakdown = sedeCriticalBreakdown(digest);
+    itemCount += breakdown.itemCount;
+    totalInventario += breakdown.totalInventario;
     demandaD += breakdown.demandaD;
     cero += breakdown.cero;
     restockS += breakdown.restockS;
@@ -233,8 +189,8 @@ export const aggregateConsolidatedDigestTotals = (
 const th = (
   label: string,
   align: "left" | "right" | "center" = "left",
-  accent = "#9f1239",
-  border = "#fecdd3",
+  accent = "#1d4ed8",
+  border = "#bfdbfe",
 ) =>
   `<th style="padding:7px 6px;border-bottom:2px solid ${border};font-size:9px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:${accent};text-align:${align};white-space:nowrap;">${label}</th>`;
 
@@ -248,21 +204,20 @@ const td = (
 const buildOverviewRows = (digests: readonly RotacionCriticalDigest[]) =>
   digests
     .map((digest, index) => {
-      const bg = index % 2 === 0 ? "#ffffff" : "#fff7f8";
-      const { demandaD: dCount, cero: ceroCount, restockS: sCount } =
-        sedeCriticalBreakdown(digest);
+      const bg = index % 2 === 0 ? "#ffffff" : "#eff6ff";
+      const breakdown = sedeCriticalBreakdown(digest);
       return `<tr style="background:${bg};">
         ${td(`<strong>${escapeHtml(digest.sedeName)}</strong>`)}
         ${td(formatScore(digest), "center", "font-weight:800;")}
-        ${td(formatCount(digest.total.itemCount), "right", "font-variant-numeric:tabular-nums;")}
+        ${td(formatCount(breakdown.itemCount), "right", "font-variant-numeric:tabular-nums;")}
         ${td(
-          formatInventario(digest.total.totalInventario),
+          formatInventario(breakdown.totalInventario),
           "right",
-          "font-size:15px;font-weight:800;color:#be123c;font-variant-numeric:tabular-nums;",
+          "font-size:15px;font-weight:800;color:#1d4ed8;font-variant-numeric:tabular-nums;",
         )}
-        ${td(formatCount(dCount), "right", "font-variant-numeric:tabular-nums;color:#9f1239;")}
-        ${td(formatCount(ceroCount), "right", "font-variant-numeric:tabular-nums;color:#475569;")}
-        ${td(formatCount(sCount), "right", "font-variant-numeric:tabular-nums;color:#0e7490;")}
+        ${td(formatCount(breakdown.demandaD), "right", "font-variant-numeric:tabular-nums;color:#9f1239;")}
+        ${td(formatCount(breakdown.cero), "right", "font-variant-numeric:tabular-nums;color:#475569;")}
+        ${td(formatCount(breakdown.restockS), "right", "font-variant-numeric:tabular-nums;color:#0e7490;")}
       </tr>`;
     })
     .join("");
@@ -286,25 +241,25 @@ const buildManagementRows = (digests: readonly RotacionCriticalDigest[]) =>
     })
     .join("");
 
-const buildFamilyRows = (digests: readonly RotacionCriticalDigest[]) =>
+const buildManufacturaRows = (digests: readonly RotacionCriticalDigest[]) =>
   digests
     .map((digest, index) => {
-      const bg = index % 2 === 0 ? "#ffffff" : "#f8fafc";
-      const per = digest.perecederos.total;
-      const man = digest.manufactura.total;
+      const bg = index % 2 === 0 ? "#ffffff" : "#eff6ff";
+      const man = digest.manufactura;
       return `<tr style="background:${bg};">
         ${td(`<strong>${escapeHtml(digest.sedeName)}</strong>`)}
-        ${td(formatCount(per.itemCount), "right", "font-variant-numeric:tabular-nums;")}
+        ${td(formatCount(man.total.itemCount), "right", "font-variant-numeric:tabular-nums;")}
         ${td(
-          formatInventario(per.totalInventario),
-          "right",
-          "font-weight:700;color:#047857;font-variant-numeric:tabular-nums;",
-        )}
-        ${td(formatCount(man.itemCount), "right", "font-variant-numeric:tabular-nums;")}
-        ${td(
-          formatInventario(man.totalInventario),
+          formatInventario(man.total.totalInventario),
           "right",
           "font-weight:700;color:#1d4ed8;font-variant-numeric:tabular-nums;",
+        )}
+        ${td(
+          formatDiasInventario(
+            man.demandaD.itemCount > 0 ? man.demandaD.diasInventario : null,
+          ),
+          "right",
+          "font-variant-numeric:tabular-nums;color:#be123c;",
         )}
       </tr>`;
     })
@@ -318,7 +273,7 @@ export const buildRotacionCriticalDigestConsolidatedSubject = (
     ({ start: "", end: "" } as RotacionCriticalDigest["dateRange"]);
   const rangeLabel =
     range.start && range.end ? formatRangeLabel(range) : "sin rango";
-  return `Rotación · Todas las sedes · Críticos D+0+S · ${rangeLabel}`;
+  return `Rotación · Todas las sedes · Manufactura D+0+S · ${rangeLabel}`;
 };
 
 export const buildRotacionCriticalDigestConsolidatedHtml = (
@@ -334,19 +289,20 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
   const totals = aggregateConsolidatedDigestTotals(digests);
   const scoreLabel = `${totals.restockScore ?? 0}`;
   const scoreDetail = `${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)} vendieron tras surtido`;
+  const familyLabel = LINEA_N1_FAMILY_LABELS.manufactura;
 
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Rotación · Todas las sedes</title>
+  <title>Rotación · Todas las sedes · ${familyLabel}</title>
 </head>
 <body style="margin:0;padding:12px;background:#f1f5f9;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:820px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
     <tr>
-      <td style="padding:14px 16px 10px;background:#fff1f2;border-bottom:1px solid #fecdd3;">
-        <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#be123c;">Críticos · D+0+S · Cadena</div>
+      <td style="padding:14px 16px 10px;background:#eff6ff;border-bottom:1px solid #bfdbfe;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1d4ed8;">Críticos · ${familyLabel} · D+0+S · Cadena</div>
         <div style="margin-top:2px;font-size:20px;font-weight:800;line-height:1.2;color:#0f172a;">Todas las sedes</div>
         <div style="margin-top:2px;font-size:12px;color:#64748b;">${escapeHtml(rangeLabel)} · ${formatCount(days)} días · ${formatCount(digests.length)} sedes</div>
       </td>
@@ -358,6 +314,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
           <tr>
             <td style="padding:10px 12px;font-size:12px;line-height:1.45;color:#334155;">
               <strong style="color:#0f172a;">Cómo leer (gerente)</strong><br/>
+              <span style="color:#64748b;">· Solo <strong>${familyLabel}</strong> (líneas N1 distintas de 01–04 y 12).</span><br/>
               <span style="color:#64748b;">· <strong>Restock alto</strong> = lo marcado surtido sí está vendiendo.</span><br/>
               <span style="color:#64748b;">· <strong>Inventario / D·0·S</strong> = tamaño del problema crítico en la sede.</span><br/>
               <span style="color:#64748b;">· <strong>Gestión</strong> = qué falta por hacer (sin verificar, % surtido, DI de demanda).</span>
@@ -369,10 +326,10 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
 
     <tr>
       <td style="padding:10px 16px 6px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fff1f2;border:1px solid #fecdd3;border-radius:10px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;">
           <tr>
             <td style="padding:10px 12px;">
-              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#be123c;">Total cadena D+0+S</div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#1d4ed8;">Total cadena · ${familyLabel} D+0+S</div>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:6px;">
                 <tr>
                   <td style="vertical-align:top;">
@@ -381,11 +338,11 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
                   </td>
                   <td style="vertical-align:top;text-align:right;">
                     <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;">Inventario</div>
-                    <div style="margin-top:2px;font-size:22px;font-weight:800;color:#be123c;">${formatInventario(totals.totalInventario)}</div>
+                    <div style="margin-top:2px;font-size:22px;font-weight:800;color:#1d4ed8;">${formatInventario(totals.totalInventario)}</div>
                   </td>
                 </tr>
               </table>
-              <div style="margin-top:8px;padding-top:8px;border-top:1px solid #fecdd3;font-size:12px;color:#475569;">
+              <div style="margin-top:8px;padding-top:8px;border-top:1px solid #bfdbfe;font-size:12px;color:#475569;">
                 Restock cadena: <strong style="color:#155e75;font-size:16px;">${scoreLabel}</strong>
                 <span style="color:#64748b;"> · ${escapeHtml(scoreDetail)}</span>
                 <span style="color:#94a3b8;"> · D ${formatCount(totals.demandaD)} · 0 ${formatCount(totals.cero)} · S ${formatCount(totals.restockS)}</span>
@@ -399,10 +356,10 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
     <tr>
       <td style="padding:10px 16px 4px;">
         <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">1 · Comparativo (tamaño del crítico)</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Mismas cifras del correo individual por sede. Inventario en rojo.</div>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #fecdd3;border-radius:10px;overflow:hidden;">
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Mismas cifras del correo individual por sede (${familyLabel}).</div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #bfdbfe;border-radius:10px;overflow:hidden;">
           <thead>
-            <tr style="background:#fff1f2;">
+            <tr style="background:#eff6ff;">
               ${th("Sede")}
               ${th("Restock", "center")}
               ${th("Prod.", "right")}
@@ -414,14 +371,14 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
           </thead>
           <tbody>
             ${buildOverviewRows(digests)}
-            <tr style="background:#ffe4e6;">
+            <tr style="background:#dbeafe;">
               ${td("<strong>Total</strong>")}
               ${td(scoreLabel, "center", "font-weight:800;")}
               ${td(`<strong>${formatCount(totals.itemCount)}</strong>`, "right")}
               ${td(
                 `<strong>${formatInventario(totals.totalInventario)}</strong>`,
                 "right",
-                "font-size:15px;font-weight:800;color:#be123c;",
+                "font-size:15px;font-weight:800;color:#1d4ed8;",
               )}
               ${td(`<strong>${formatCount(totals.demandaD)}</strong>`, "right")}
               ${td(`<strong>${formatCount(totals.cero)}</strong>`, "right")}
@@ -436,7 +393,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
       <td style="padding:14px 16px 4px;">
         <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">2 · Gestión (qué mejorar)</div>
         <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
-          Sin ver = ceros aún sin revisar. % surtido 0/S = avance del admin. DI D = días de inventario en Demanda.
+          Sin ver = ceros aún sin revisar. % surtido 0/S = avance del admin. DI D = días de inventario en Demanda (${familyLabel}).
         </div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
           <thead>
@@ -458,20 +415,19 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
 
     <tr>
       <td style="padding:14px 16px 6px;">
-        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">3 · Por familia</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">${LINEA_N1_FAMILY_LABELS.perecederos} (01–04, 12) · ${LINEA_N1_FAMILY_LABELS.manufactura} (resto).</div>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">3 · ${familyLabel}</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Productos, inventario y días de inventario (Demanda D). Alcance: ${familyLabel}.</div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #bfdbfe;border-radius:10px;overflow:hidden;">
           <thead>
-            <tr style="background:#f8fafc;">
-              ${th("Sede", "left", "#475569", "#e2e8f0")}
-              ${th("Perec. #", "right", "#047857", "#e2e8f0")}
-              ${th("Perec. inv.", "right", "#047857", "#e2e8f0")}
-              ${th("Manuf. #", "right", "#1d4ed8", "#e2e8f0")}
-              ${th("Manuf. inv.", "right", "#1d4ed8", "#e2e8f0")}
+            <tr style="background:#eff6ff;">
+              ${th("Sede")}
+              ${th("#", "right")}
+              ${th("Inventario", "right")}
+              ${th("Días inv.", "right")}
             </tr>
           </thead>
           <tbody>
-            ${buildFamilyRows(digests)}
+            ${buildManufacturaRows(digests)}
           </tbody>
         </table>
       </td>
@@ -479,7 +435,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
 
     <tr>
       <td style="padding:10px 16px 14px;border-top:1px solid #f1f5f9;font-size:10px;line-height:1.45;color:#94a3b8;">
-        Automático · Visor. Mismas reglas D+0+S y restock que el correo de cada sede.
+        Automático · Visor. Solo ${familyLabel} (mismas reglas D+0+S que el correo de cada sede).
         Foco = alertas automáticas (restock &lt; 40, ceros sin verificar, poco % surtido, DI D alto).
       </td>
     </tr>
@@ -498,20 +454,20 @@ export const buildRotacionCriticalDigestConsolidatedText = (
   const days = digests[0]!.daysConsulted;
   const totals = aggregateConsolidatedDigestTotals(digests);
   const scoreLabel = String(totals.restockScore ?? 0);
+  const familyLabel = LINEA_N1_FAMILY_LABELS.manufactura;
 
   const lines = [
-    `Rotación · Todas las sedes · Críticos D+0+S`,
+    `Rotación · Todas las sedes · ${familyLabel} D+0+S`,
     `Periodo: ${rangeLabel} (${formatCount(days)} días) · ${formatCount(digests.length)} sedes`,
     "",
-    `TOTAL CADENA: ${formatCount(totals.itemCount)} productos · ${formatInventario(totals.totalInventario)}`,
+    `TOTAL CADENA ${familyLabel.toUpperCase()}: ${formatCount(totals.itemCount)} productos · ${formatInventario(totals.totalInventario)}`,
     `Restock cadena: ${scoreLabel} (${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)})`,
     `D ${formatCount(totals.demandaD)} · 0 ${formatCount(totals.cero)} · S ${formatCount(totals.restockS)}`,
     "",
     "1. COMPARATIVO | RESTOCK | PROD | INV | D | 0 | S",
     ...digests.map((digest) => {
-      const { demandaD: dCount, cero: ceroCount, restockS: sCount } =
-        sedeCriticalBreakdown(digest);
-      return `${digest.sedeName} | ${formatScore(digest)} | ${formatCount(digest.total.itemCount)} | ${formatInventario(digest.total.totalInventario)} | ${formatCount(dCount)} | ${formatCount(ceroCount)} | ${formatCount(sCount)}`;
+      const breakdown = sedeCriticalBreakdown(digest);
+      return `${digest.sedeName} | ${formatScore(digest)} | ${formatCount(breakdown.itemCount)} | ${formatInventario(breakdown.totalInventario)} | ${formatCount(breakdown.demandaD)} | ${formatCount(breakdown.cero)} | ${formatCount(breakdown.restockS)}`;
     }),
     "",
     "2. GESTIÓN | SIN VER | %SURT 0 | %SURT S | DI D | FOCO",
@@ -520,11 +476,10 @@ export const buildRotacionCriticalDigestConsolidatedText = (
       return `${digest.sedeName} | ${formatCount(signals.sinVerificarCero)} | ${formatPct(signals.surtidoPctCero)} | ${formatPct(signals.surtidoPctRestock)} | ${formatDiasInventario(signals.diasInventarioD)} | ${signals.focusHints.join("; ")}`;
     }),
     "",
-    `3. FAMILIA · ${LINEA_N1_FAMILY_LABELS.perecederos.toUpperCase()} | ${LINEA_N1_FAMILY_LABELS.manufactura.toUpperCase()}`,
+    `3. ${familyLabel.toUpperCase()} | # | INV | DÍAS INV.`,
     ...digests.map((digest) => {
-      const per = digest.perecederos.total;
-      const man = digest.manufactura.total;
-      return `${digest.sedeName} | P ${formatCount(per.itemCount)} ${formatInventario(per.totalInventario)} | M ${formatCount(man.itemCount)} ${formatInventario(man.totalInventario)}`;
+      const man = digest.manufactura;
+      return `${digest.sedeName} | ${formatCount(man.total.itemCount)} | ${formatInventario(man.total.totalInventario)} | ${formatDiasInventario(man.demandaD.itemCount > 0 ? man.demandaD.diasInventario : null)}`;
     }),
   ];
 

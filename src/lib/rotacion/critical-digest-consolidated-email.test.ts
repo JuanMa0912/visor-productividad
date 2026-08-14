@@ -84,13 +84,11 @@ const digestFor = (
 });
 
 describe("critical-digest-consolidated-email", () => {
-  it("agrega totales de cadena y score restock ponderado", () => {
+  it("agrega totales de cadena solo manufactura y score restock ponderado", () => {
     const digests = [
       digestFor({
         sedeName: "Floresta",
         sedeId: "001",
-        total: { itemCount: 10, totalInventario: 1_000_000 },
-        // 0=5, S=2 → D=3
         restockEffectiveness: {
           score: 50,
           markedSurtidoCount: 2,
@@ -102,8 +100,6 @@ describe("critical-digest-consolidated-email", () => {
         sedeName: "Palmira",
         sedeId: "002",
         empresa: "mmio",
-        total: { itemCount: 7, totalInventario: 500_000 },
-        // mismas familias 0=5 S=2 → D=0
         restockEffectiveness: {
           score: 100,
           markedSurtidoCount: 1,
@@ -114,17 +110,18 @@ describe("critical-digest-consolidated-email", () => {
     ];
 
     const totals = aggregateConsolidatedDigestTotals(digests);
-    assert.equal(totals.itemCount, 17);
-    assert.equal(totals.totalInventario, 1_500_000);
+    // Solo manufactura: 4+4 productos, 400k+400k
+    assert.equal(totals.itemCount, 8);
+    assert.equal(totals.totalInventario, 800_000);
     assert.equal(totals.restockMarked, 3);
     assert.equal(totals.restockSold, 2);
     assert.equal(totals.restockScore, 67);
-    assert.equal(totals.demandaD, 3); // 10-5-2 + max(0,7-5-2)=3+0
-    assert.equal(totals.cero, 10);
-    assert.equal(totals.restockS, 4);
+    assert.equal(totals.demandaD, 2); // 1+1
+    assert.equal(totals.cero, 4); // 2+2
+    assert.equal(totals.restockS, 2); // 1+1
   });
 
-  it("genera asunto, HTML y texto con tabla por sede", () => {
+  it("genera asunto, HTML y texto sin perecederos", () => {
     const digests = [
       digestFor({ sedeName: "Calle 5ta", sedeId: "010" }),
       digestFor({ sedeName: "Floresta", sedeId: "001" }),
@@ -132,23 +129,26 @@ describe("critical-digest-consolidated-email", () => {
 
     const subject = buildRotacionCriticalDigestConsolidatedSubject(digests);
     assert.match(subject, /Todas las sedes/);
-    assert.match(subject, /Críticos/);
+    assert.match(subject, /Manufactura/);
 
     const html = buildRotacionCriticalDigestConsolidatedHtml(digests);
     assert.match(html, /Comparativo/);
     assert.match(html, /Gestión/);
     assert.match(html, /Calle 5ta/);
     assert.match(html, /Floresta/);
-    assert.match(html, /Por familia/);
-    assert.match(html, /#be123c/);
-    assert.match(html, /Total cadena D\+0\+S/);
+    assert.match(html, /Manufactura/);
+    assert.match(html, /Días inv\./);
+    assert.doesNotMatch(html, /Perec\./);
+    assert.doesNotMatch(html, />Perecederos</);
+    assert.match(html, /Total cadena/);
     assert.match(html, /Cómo leer/);
 
     const text = buildRotacionCriticalDigestConsolidatedText(digests);
-    assert.match(text, /TOTAL CADENA/);
+    assert.match(text, /TOTAL CADENA MANUFACTURA/);
     assert.match(text, /GESTIÓN/);
     assert.match(text, /Floresta/);
     assert.match(text, /Calle 5ta/);
+    assert.doesNotMatch(text, /\| P /);
   });
 
   it("genera focos de gestión cuando hay alertas", () => {
@@ -161,7 +161,7 @@ describe("critical-digest-consolidated-email", () => {
         soldAfterCount: 1,
         unavailable: false,
       },
-      perecederos: {
+      manufactura: {
         ...emptySection(),
         total: { itemCount: 6, totalInventario: 600_000 },
         demandaD: {
@@ -190,6 +190,6 @@ describe("critical-digest-consolidated-email", () => {
     assert.ok(
       signals.focusHints.some((hint) => /Restock|cero|DI|Demanda/i.test(hint)),
     );
-    assert.equal(signals.sinVerificarCero, 4); // 3 + 1 from manufactura default? manufactura still has 1 sinVerificar from template
+    assert.equal(signals.sinVerificarCero, 3);
   });
 });

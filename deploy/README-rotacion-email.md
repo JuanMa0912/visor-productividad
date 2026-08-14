@@ -52,15 +52,16 @@ cuadrar con la UI al filtrar familia Manufactura.
 
 ## Contenido del correo consolidado (todas las sedes)
 
-Asunto: `Rotación · Todas las sedes · Críticos D+0+S · {rango}`.
+Asunto: `Rotación · Todas las sedes · Manufactura D+0+S · {rango}`.
 
-Pensado para que gerencia vea si cada sede “funciona” y qué mejorar:
+Misma lógica que el individual: **solo Manufactura** (perecederos omitidos
+por ahora). Pensado para que gerencia vea si cada sede “funciona” y qué mejorar:
 
 1. **Cómo leer** — guía corta (restock, tamaño del crítico, gestión).
-2. **Total cadena** — productos + inventario D+0+S + restock agregado.
+2. **Total cadena** — productos + inventario Manufactura D+0+S + restock agregado.
 3. **Comparativo** — Restock · Productos · Inventario · D · 0 · S (mismas cifras del individual).
-4. **Gestión** — Sin ver (ceros) · % surtido 0 · % surtido S · DI Demanda · **Foco** (alertas: restock bajo, ceros sin verificar, poco surtido, DI alto).
-5. **Por familia** — Perecederos / Manufactura.
+4. **Gestión** — Sin ver (ceros) · % surtido 0 · % surtido S · DI Demanda · **Foco**.
+5. **Manufactura** — # · inventario · días de inventario por sede.
 
 Las sedes salen del catálogo de rotación del rango por defecto. Sedes sin
 destinatario en el mapa individual igual entran al consolidado.
