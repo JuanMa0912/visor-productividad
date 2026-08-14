@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { Button } from "@/components/ui/button";
-import type { AdminAuditListResponse, AdminAuditRow } from "@/app/api/admin/audit/route";
+import type {
+  AdminAuditListResponse,
+  AdminAuditRow,
+} from "@/app/api/admin/audit/route";
 import type {
   FailedLoginListResponse,
   FailedLoginRow,
@@ -188,7 +191,9 @@ export default function AdminAuditPage() {
                 a.click();
                 URL.revokeObjectURL(url);
               }}
-              disabled={loading || (auditRows.length === 0 && failRows.length === 0)}
+              disabled={
+                loading || (auditRows.length === 0 && failRows.length === 0)
+              }
               className="gap-1.5 border-slate-200 bg-white"
             >
               Exportar CSV

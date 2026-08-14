@@ -2,7 +2,14 @@
 
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
-import { formatCOP, formatHours, hasLaborDataForLine } from "@/lib/shared/calc";
+import { formatHours, formatLineVolume, hasLaborDataForLine } from "@/lib/shared/calc";
+import {
+  getLineVolumeFractionDigits,
+  getLineVolumeHours,
+  getLineVolumeLabel,
+  getLineVolumeRateLabel,
+  getLineVolumeValue,
+} from "@/lib/productivity/line-volume";
 import { DailyProductivity, LineMetrics } from "@/types";
 
 interface LineComparisonTableProps {
@@ -214,10 +221,11 @@ export const LineComparisonTable = ({
       item.lines.forEach((line) => {
         const bySede = byLine.get(line.id) ?? new Map<string, SedeMetrics>();
         const current = bySede.get(item.sede) ?? { sales: 0, hours: 0 };
-        const hours = hasLaborDataForLine(line.id) ? line.hours : 0;
         bySede.set(item.sede, {
-          sales: current.sales + line.sales,
-          hours: current.hours + hours,
+          sales: current.sales + getLineVolumeValue(line),
+          hours:
+            current.hours +
+            (hasLaborDataForLine(line.id) ? getLineVolumeHours(line) : 0),
         });
         byLine.set(line.id, bySede);
       });
@@ -240,10 +248,11 @@ export const LineComparisonTable = ({
       item.lines.forEach((line) => {
         const bySede = byLine.get(line.id) ?? new Map<string, SedeMetrics>();
         const current = bySede.get(item.sede) ?? { sales: 0, hours: 0 };
-        const hours = hasLaborDataForLine(line.id) ? line.hours : 0;
         bySede.set(item.sede, {
-          sales: current.sales + line.sales,
-          hours: current.hours + hours,
+          sales: current.sales + getLineVolumeValue(line),
+          hours:
+            current.hours +
+            (hasLaborDataForLine(line.id) ? getLineVolumeHours(line) : 0),
         });
         byLine.set(line.id, bySede);
       });
@@ -303,11 +312,11 @@ export const LineComparisonTable = ({
       const bTotals = totalsByLine.get(b.id) ?? { sales: 0, hours: 0 };
       const aSalesPerHour =
         hasLaborDataForLine(a.id) && aTotals.hours > 0
-          ? aTotals.sales / 1_000_000 / aTotals.hours
+          ? aTotals.sales / aTotals.hours
           : 0;
       const bSalesPerHour =
         hasLaborDataForLine(b.id) && bTotals.hours > 0
-          ? bTotals.sales / 1_000_000 / bTotals.hours
+          ? bTotals.sales / bTotals.hours
           : 0;
 
       const aValue =
@@ -455,7 +464,7 @@ export const LineComparisonTable = ({
             Comparativo de lineas
           </p>
           <h3 className="text-lg font-semibold text-slate-900 sm:text-2xl">
-            Ventas en comparacion
+            Volumen en comparacion
           </h3>
           <p className="mt-1 text-xs text-slate-700 sm:text-sm">
             Selecciona varias sedes y expande cada linea para ver el detalle.
@@ -536,12 +545,12 @@ export const LineComparisonTable = ({
               </th>
               <th className="px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
                 <div className="flex items-center justify-center gap-2">
-                  <span>Ventas</span>
+                  <span>Volumen</span>
                   <button
                     type="button"
                     onClick={() => handleSortToggle("sales")}
                     className={`rounded p-0.5 ${sortMetric === "sales" ? "text-blue-700" : "text-slate-400 hover:text-slate-700"}`}
-                    aria-label="Cambiar orden de ventas"
+                    aria-label="Cambiar orden de volumen"
                   >
                     {sortMetric === "sales" && sortOrder === "asc" ? (
                       <ChevronUp className="h-3.5 w-3.5" />
@@ -564,12 +573,12 @@ export const LineComparisonTable = ({
               ) : null}
               <th className="px-2 py-1.5 text-center font-semibold sm:px-4 sm:py-2">
                 <div className="flex items-center justify-center gap-2">
-                  <span>Vta/Hr</span>
+                  <span>Vol./Hr</span>
                   <button
                     type="button"
                     onClick={() => handleSortToggle("salesPerHour")}
                     className={`rounded p-0.5 ${sortMetric === "salesPerHour" ? "text-blue-700" : "text-slate-400 hover:text-slate-700"}`}
-                    aria-label="Cambiar orden de Vta/Hr"
+                    aria-label="Cambiar orden de volumen por hora"
                   >
                     {sortMetric === "salesPerHour" && sortOrder === "asc" ? (
                       <ChevronUp className="h-3.5 w-3.5" />
@@ -584,7 +593,7 @@ export const LineComparisonTable = ({
                   <span
                     className={`inline-flex rounded-full px-2.5 py-1 ${PREVIOUS_PERIOD_HEADER_CLASS}`}
                   >
-                    Vta/Hr mes anterior
+                    Vol./Hr mes anterior
                   </span>
                 </th>
               ) : null}
@@ -747,26 +756,44 @@ export const LineComparisonTable = ({
                       <p className="hidden text-xs text-slate-700 sm:block">{line.id}</p>
                     </td>
                     <td className="px-2 py-2 text-center text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
-                      {hasData ? formatCOP(totals.sales) : "-"}
+                      {hasData
+                        ? formatLineVolume(
+                            totals.sales,
+                            getLineVolumeFractionDigits(line.id),
+                          ) + ` ${getLineVolumeLabel(line.id)}`
+                        : "-"}
                     </td>
                     {showPreviousComparison ? (
                       <>
                         <td
                           className={`px-2 py-2 text-center text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm ${PREVIOUS_PERIOD_CELL_CLASS}`}
                         >
-                          {hasData ? formatCOP(previousTotals.sales) : "-"}
+                          {hasData
+                            ? formatLineVolume(
+                                previousTotals.sales,
+                                getLineVolumeFractionDigits(line.id),
+                              ) + ` ${getLineVolumeLabel(line.id)}`
+                            : "-"}
                         </td>
                       </>
                     ) : null}
                     <td className="px-2 py-2 text-center text-xs font-semibold text-slate-900 sm:px-4 sm:py-3 sm:text-sm">
-                      {hasData ? salesPerHour.toFixed(3) : "-"}
+                      {hasData
+                        ? formatLineVolume(
+                            salesPerHour,
+                            getLineVolumeFractionDigits(line.id) + 2,
+                          ) + ` ${getLineVolumeRateLabel(line.id)}`
+                        : "-"}
                     </td>
                     {showPreviousComparison ? (
                       <td
                         className={`px-2 py-2 text-center text-xs font-semibold sm:px-4 sm:py-3 sm:text-sm ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
                       >
                         {hasData && hasLaborDataForLine(line.id) && previousTotals.hours > 0
-                          ? previousSalesPerHour.toFixed(3)
+                          ? formatLineVolume(
+                              previousSalesPerHour,
+                              getLineVolumeFractionDigits(line.id) + 2,
+                            ) + ` ${getLineVolumeRateLabel(line.id)}`
                           : "-"}
                       </td>
                     ) : null}
@@ -815,9 +842,9 @@ export const LineComparisonTable = ({
                                   ? "text-blue-700"
                                   : "text-slate-500 hover:text-slate-700"
                               }`}
-                              aria-label={`Ordenar ${line.name} por ventas`}
+                              aria-label={`Ordenar ${line.name} por volumen`}
                             >
-                              <span>Ventas</span>
+                              <span>Volumen</span>
                               {detailSort.metric === "sales" && detailSort.order === "asc" ? (
                                 <ChevronUp className="h-3.5 w-3.5" />
                               ) : (
@@ -841,9 +868,9 @@ export const LineComparisonTable = ({
                                   ? "text-blue-700"
                                   : "text-slate-500 hover:text-slate-700"
                               }`}
-                              aria-label={`Ordenar ${line.name} por venta por hora`}
+                              aria-label={`Ordenar ${line.name} por volumen por hora`}
                             >
-                              <span>Vta/Hr</span>
+                              <span>Vol./Hr</span>
                               {detailSort.metric === "salesPerHour" &&
                               detailSort.order === "asc" ? (
                                 <ChevronUp className="h-3.5 w-3.5" />
@@ -855,7 +882,7 @@ export const LineComparisonTable = ({
                               <span
                                 className={`rounded-lg px-2 py-1 text-center ${PREVIOUS_PERIOD_HEADER_CLASS}`}
                               >
-                                Vta/Hr mes anterior
+                                Vol./Hr mes anterior
                               </span>
                             ) : null}
                             <button
@@ -899,26 +926,41 @@ export const LineComparisonTable = ({
                                   {detail.sedeName}
                                 </span>
                                 <span className="text-center font-semibold text-slate-900">
-                                  {formatCOP(detail.sales)}
+                                  {formatLineVolume(
+                                    detail.sales,
+                                    getLineVolumeFractionDigits(line.id),
+                                  )}{" "}
+                                  {getLineVolumeLabel(line.id)}
                                 </span>
                                   {showPreviousComparison ? (
                                     <>
                                       <span
                                         className={`rounded-lg px-2 py-1 text-center font-semibold ${PREVIOUS_PERIOD_CELL_CLASS}`}
                                       >
-                                        {formatCOP(previousDetail.sales)}
+                                        {formatLineVolume(
+                                          previousDetail.sales,
+                                          getLineVolumeFractionDigits(line.id),
+                                        )}{" "}
+                                        {getLineVolumeLabel(line.id)}
                                       </span>
                                     </>
                                   ) : null}
                                 <span className="text-center font-semibold text-slate-800">
-                                  {detail.salesPerHour.toFixed(3)}
+                                  {formatLineVolume(
+                                    detail.salesPerHour,
+                                    getLineVolumeFractionDigits(line.id) + 2,
+                                  )}{" "}
+                                  {getLineVolumeRateLabel(line.id)}
                                 </span>
                                   {showPreviousComparison ? (
                                     <span
                                       className={`rounded-lg px-2 py-1 text-center font-semibold ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
                                     >
                                       {hasLaborDataForLine(line.id) && previousDetail.hours > 0
-                                        ? previousDetailSalesPerHour.toFixed(3)
+                                        ? formatLineVolume(
+                                            previousDetailSalesPerHour,
+                                            getLineVolumeFractionDigits(line.id) + 2,
+                                          ) + ` ${getLineVolumeRateLabel(line.id)}`
                                         : "-"}
                                     </span>
                                   ) : null}
@@ -935,25 +977,41 @@ export const LineComparisonTable = ({
                               }`}>
                               <span className="text-center text-slate-800">Promedio ({selectedSedeCount} sedes)</span>
                               <span className="text-center text-slate-900">
-                                {formatCOP(averageSales)}
+                                {formatLineVolume(
+                                  averageSales,
+                                  getLineVolumeFractionDigits(line.id),
+                                )}{" "}
+                                {getLineVolumeLabel(line.id)}
                               </span>
                               {showPreviousComparison ? (
                                 <>
                                   <span
                                     className={`rounded-lg px-2 py-1 text-center ${PREVIOUS_PERIOD_CELL_CLASS}`}
                                   >
-                                    {formatCOP(averagePreviousSales)}
+                                    {formatLineVolume(
+                                      averagePreviousSales,
+                                      getLineVolumeFractionDigits(line.id),
+                                    )}{" "}
+                                    {getLineVolumeLabel(line.id)}
                                   </span>
                                 </>
                               ) : null}
                               <span className="text-center text-slate-900">
-                                {averageSalesPerHour.toFixed(3)}
+                                {formatLineVolume(
+                                  averageSalesPerHour,
+                                  getLineVolumeFractionDigits(line.id) + 2,
+                                )}{" "}
+                                {getLineVolumeRateLabel(line.id)}
                               </span>
                               {showPreviousComparison ? (
                                 <span
                                   className={`rounded-lg px-2 py-1 text-center ${PREVIOUS_PERIOD_SUBTLE_CELL_CLASS}`}
                                 >
-                                  {averagePreviousSalesPerHour.toFixed(3)}
+                                  {formatLineVolume(
+                                    averagePreviousSalesPerHour,
+                                    getLineVolumeFractionDigits(line.id) + 2,
+                                  )}{" "}
+                                  {getLineVolumeRateLabel(line.id)}
                                 </span>
                               ) : null}
                               <span className="text-center text-slate-800">

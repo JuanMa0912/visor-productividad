@@ -25,6 +25,10 @@ import type { LineSeries } from "@mui/x-charts/LineChart";
 import type { MarkPlotProps, LinePlotProps } from "@mui/x-charts/LineChart";
 import { hasLaborDataForLine } from "@/lib/shared/calc";
 import {
+  getLineVolumeHours,
+  getLineVolumeValue,
+} from "@/lib/productivity/line-volume";
+import {
   escapeCsvValue,
   sanitizeExportText,
 } from "@/lib/shared/export-utils";
@@ -351,17 +355,17 @@ export const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizatio
             if (!lineData) return acc;
 
             const hasLaborData = hasLaborDataForLine(lineData.id);
-            const hours = hasLaborData ? lineData.hours : 0;
+            const hours = hasLaborData ? getLineVolumeHours(lineData) : 0;
 
             return {
-              sales: acc.sales + lineData.sales,
+              sales: acc.sales + getLineVolumeValue(lineData),
               hours: acc.hours + hours,
             };
           },
           { sales: 0, hours: 0 },
         );
 
-        return totals.hours > 0 ? totals.sales / 1_000_000 / totals.hours : 0;
+        return totals.hours > 0 ? totals.sales / totals.hours : 0;
       });
 
       map.set(id, data);
@@ -471,7 +475,7 @@ export const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizatio
 
   const handleExportChartCsv = useCallback(() => {
     if (chartDates.length === 0 || seriesDefinitions.length === 0) return false;
-    const header = ["Fecha", ...seriesDefinitions.map((s) => s.label)];
+    const header = ["Fecha", ...seriesDefinitions.map((s) => `${s.label} (Vol./Hr)`)];
     const rows = chartDates.map((date, index) => [
       date,
       ...seriesDefinitions.map((series) => {
@@ -503,7 +507,7 @@ export const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizatio
     ];
     sheet.addRow([
       "Fecha",
-      ...seriesDefinitions.map((s) => sanitizeExportText(s.label)),
+      ...seriesDefinitions.map((s) => sanitizeExportText(`${s.label} (Vol./Hr)`)),
     ]);
     chartDates.forEach((date, index) => {
       sheet.addRow([
@@ -553,7 +557,7 @@ export const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizatio
   );
 
   const yAxis = useMemo<YAxis<"linear", number>[]>(
-    () => [{ label: "Vta/Hr" }],
+    () => [{ label: "Vol./Hr" }],
     [],
   );
 
@@ -612,7 +616,7 @@ export const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizatio
           Grafico de productividad
         </p>
         <h3 className="mt-1 text-lg font-semibold text-slate-900">
-          Vta/Hr por dia
+          Volumen por hora por día
         </h3>
       </div>
 
@@ -784,7 +788,7 @@ export const ChartVisualization = forwardRef<ViewExportHandle, ChartVisualizatio
                     <span className="font-semibold text-slate-900">
                       {CHART_DISPLAY_TOP_N}
                     </span>{" "}
-                    con mayor Vta/Hr promedio en este rango (
+                    con mayor volumen/hora promedio en este rango (
                     {seriesDefinitions.length} combinaciones sede/línea
                     seleccionadas). CSV y Excel siguen incluyendo todas.
                   </>

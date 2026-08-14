@@ -45,6 +45,58 @@ export const volumeKindForLine = (
   return null;
 };
 
+/**
+ * Métrica primaria para los comparativos, gráficos y tendencias de Línea.
+ * Asadero conserva el detalle de Unidades en la tarjeta; en vistas que
+ * requieren una única serie se usa UND.Pollo y sus horas asociadas.
+ */
+export const getLineVolumeValue = (line: LineMetrics): number => {
+  const kind = volumeKindForLine(line.id);
+  if (kind === "tx") return line.transactions ?? line.volume ?? 0;
+  if (kind === "asadero") return line.asaderoPollosUnd ?? 0;
+  return line.volume ?? 0;
+};
+
+export const getLineVolumeHours = (line: LineMetrics): number => {
+  if (volumeKindForLine(line.id) === "asadero") {
+    return line.asaderoPollosHours ?? 0;
+  }
+  return line.hours ?? 0;
+};
+
+export const getLineVolumeLabel = (lineId: string): string => {
+  switch (volumeKindForLine(lineId)) {
+    case "tx":
+      return "Transacciones";
+    case "und":
+      return "Unidades";
+    case "kg":
+      return "KG";
+    case "asadero":
+      return "UND.Pollo";
+    default:
+      return "Volumen";
+  }
+};
+
+export const getLineVolumeRateLabel = (lineId: string): string => {
+  switch (volumeKindForLine(lineId)) {
+    case "tx":
+      return "Tx/hr";
+    case "und":
+      return "Und/hr";
+    case "kg":
+      return "KG/hr";
+    case "asadero":
+      return "UND.Pollo/hr";
+    default:
+      return "Vol./hr";
+  }
+};
+
+export const getLineVolumeFractionDigits = (lineId: string): number =>
+  volumeKindForLine(lineId) === "kg" ? 1 : 0;
+
 export const emptyLineMetrics = (
   id: Linekey,
   name: string,

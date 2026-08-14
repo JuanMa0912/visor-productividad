@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  getLineVolumeHours,
+  getLineVolumeLabel,
+  getLineVolumeValue,
   hasProductivityVolumeShape,
   lineHasActivity,
   resolveProductivityLineFromRoll,
@@ -25,6 +28,46 @@ describe("productivity line-volume", () => {
     assert.equal(volumeKindForLine("industria"), "und");
     assert.equal(volumeKindForLine("fruver"), "kg");
     assert.equal(volumeKindForLine("asadero"), "asadero");
+  });
+
+  it("expone el volumen contextual para vistas de Línea", () => {
+    assert.equal(
+      getLineVolumeValue({
+        id: "cajas",
+        name: "Cajas",
+        sales: 99,
+        hours: 4,
+        hourlyRate: 0,
+        transactions: 12,
+      }),
+      12,
+    );
+    assert.equal(
+      getLineVolumeValue({
+        id: "asadero",
+        name: "Asadero",
+        sales: 99,
+        hours: 4,
+        hourlyRate: 0,
+        asaderoPollosUnd: 8.5,
+        asaderoOtherUnd: 3,
+        asaderoPollosHours: 2.5,
+      }),
+      8.5,
+    );
+    assert.equal(
+      getLineVolumeHours({
+        id: "asadero",
+        name: "Asadero",
+        sales: 0,
+        hours: 4,
+        hourlyRate: 0,
+        asaderoPollosHours: 2.5,
+      }),
+      2.5,
+    );
+    assert.equal(getLineVolumeLabel("pollo y pescado"), "KG");
+    assert.equal(getLineVolumeLabel("asadero"), "UND.Pollo");
   });
 
   it("conserva días con volumen aunque ventas y horas sean 0", () => {

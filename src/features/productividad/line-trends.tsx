@@ -10,10 +10,17 @@ import {
   useState,
 } from "react";
 import {
-  formatCOP,
+  formatLineVolume,
   getSedeM2,
   hasLaborDataForLine,
 } from "@/lib/shared/calc";
+import {
+  getLineVolumeFractionDigits,
+  getLineVolumeHours,
+  getLineVolumeLabel,
+  getLineVolumeRateLabel,
+  getLineVolumeValue,
+} from "@/lib/productivity/line-volume";
 import {
   escapeCsvValue,
   sanitizeExportText,
@@ -43,7 +50,7 @@ export type LineTrendsProps = {
 };
 
 export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
-  dailyDataSet,
+  dailyDataSet: rawDailyDataSet,
   selectedSedeIds,
   availableDates,
   lines,
@@ -82,6 +89,31 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const filtersRef = useRef<HTMLDivElement | null>(null);
   const [showFloatingFilters, setShowFloatingFilters] = useState(false);
+  // Reutiliza los cálculos de tendencia existentes (que expresaban COP en
+  // millones), sustituyendo ventas por el volumen contextual de cada línea.
+  const dailyDataSet = useMemo(
+    () =>
+      rawDailyDataSet.map((day) => ({
+        ...day,
+        lines: day.lines.map((line) => ({
+          ...line,
+          sales: getLineVolumeValue(line) * 1_000_000,
+          hours: getLineVolumeHours(line),
+        })),
+      })),
+    [rawDailyDataSet],
+  );
+  const volumeDigits = getLineVolumeFractionDigits(selectedLine);
+  const volumeLabel = getLineVolumeLabel(selectedLine);
+  const volumeRateLabel = getLineVolumeRateLabel(selectedLine);
+  const formatVolume = useCallback(
+    (value: number, rate = false) =>
+      formatLineVolume(
+        value / 1_000_000,
+        volumeDigits + (rate ? 2 : 0),
+      ),
+    [volumeDigits],
+  );
   const availableDateBounds = useMemo(() => {
     if (availableDates.length === 0) return { min: "", max: "" };
     const sortedDates = [...availableDates].sort();
@@ -736,12 +768,14 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
     if (viewType === "temporal") {
       if (trendData.length === 0) return false;
       const rows = [
-        ["Fecha", "Ventas", "Horas", "Vta/Hr"],
+        ["Fecha", volumeLabel, "Horas", volumeRateLabel],
         ...trendData.map((point) => [
           point.date,
-          Math.round(point.sales),
+          Number((point.sales / 1_000_000).toFixed(volumeDigits)),
           point.hours.toFixed(2),
-          point.hours > 0 ? (point.sales / 1_000_000 / point.hours).toFixed(3) : "0.000",
+          point.hours > 0
+            ? (point.sales / 1_000_000 / point.hours).toFixed(volumeDigits + 2)
+            : "0",
         ]),
       ];
       const csv = rows.map((r) => r.map(escapeCsvValue).join(",")).join("\n");
@@ -760,14 +794,16 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
     }
 
     const rows = [
-      ["Fecha", "Sede", "Ventas", "Horas", "Vta/Hr"],
+      ["Fecha", "Sede", volumeLabel, "Horas", volumeRateLabel],
       ...sedeComparisonData.flatMap((day) =>
         day.sedes.map((sede) => [
           day.date,
           sede.sedeName,
-          Math.round(sede.sales),
+          Number((sede.sales / 1_000_000).toFixed(volumeDigits)),
           sede.hours.toFixed(2),
-          sede.hours > 0 ? (sede.sales / 1_000_000 / sede.hours).toFixed(3) : "0.000",
+          sede.hours > 0
+            ? (sede.sales / 1_000_000 / sede.hours).toFixed(volumeDigits + 2)
+            : "0",
         ]),
       ),
     ];
@@ -787,6 +823,9 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
     trendData,
     trendEffectiveDateRange.end,
     trendEffectiveDateRange.start,
+    volumeDigits,
+    volumeLabel,
+    volumeRateLabel,
     viewType,
   ]);
 
@@ -806,13 +845,15 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
         { key: "hours", width: 12 },
         { key: "productivity", width: 12 },
       ];
-      sheet.addRow(["Fecha", "Ventas", "Horas", "Vta/Hr"]);
+      sheet.addRow(["Fecha", volumeLabel, "Horas", volumeRateLabel]);
       trendData.forEach((point) => {
         sheet.addRow([
           sanitizeExportText(point.date),
-          Math.round(point.sales),
+          Number((point.sales / 1_000_000).toFixed(volumeDigits)),
           Number(point.hours.toFixed(2)),
-          point.hours > 0 ? Number((point.sales / 1_000_000 / point.hours).toFixed(3)) : 0,
+          point.hours > 0
+            ? Number((point.sales / 1_000_000 / point.hours).toFixed(volumeDigits + 2))
+            : 0,
         ]);
       });
     } else {
@@ -826,15 +867,17 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
         { key: "hours", width: 12 },
         { key: "productivity", width: 12 },
       ];
-      sheet.addRow(["Fecha", "Sede", "Ventas", "Horas", "Vta/Hr"]);
+      sheet.addRow(["Fecha", "Sede", volumeLabel, "Horas", volumeRateLabel]);
       sedeComparisonData.forEach((day) => {
         day.sedes.forEach((sede) => {
           sheet.addRow([
             sanitizeExportText(day.date),
             sanitizeExportText(sede.sedeName),
-            Math.round(sede.sales),
+            Number((sede.sales / 1_000_000).toFixed(volumeDigits)),
             Number(sede.hours.toFixed(2)),
-            sede.hours > 0 ? Number((sede.sales / 1_000_000 / sede.hours).toFixed(3)) : 0,
+            sede.hours > 0
+              ? Number((sede.sales / 1_000_000 / sede.hours).toFixed(volumeDigits + 2))
+              : 0,
           ]);
         });
       });
@@ -862,6 +905,9 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
     trendData,
     trendEffectiveDateRange.end,
     trendEffectiveDateRange.start,
+    volumeDigits,
+    volumeLabel,
+    volumeRateLabel,
     viewType,
   ]);
 
@@ -1200,7 +1246,7 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
                 <div>
                   <p className="text-sm text-slate-700">Promedio del periodo</p>
                   <p className="text-2xl font-semibold text-slate-900">
-                    {formatCOP(avgValue)}
+                    {formatVolume(avgValue)}
                   </p>
                   <p className="text-lg font-semibold text-slate-800">
                     {(
@@ -1216,7 +1262,7 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
                     Prom. total (todas las sedes)
                   </p>
                   <div className="mt-1 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
-                    <span>Ventas {formatCOP(totalPeriodStats.salesPerDay)}</span>
+                    <span>{volumeLabel} {formatVolume(totalPeriodStats.salesPerDay)}</span>
                     <span>Horas {totalPeriodStats.hoursPerDay.toFixed(1)}h</span>
                   </div>
                 </div>
@@ -1246,10 +1292,10 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
                         </span>
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-semibold text-slate-900">
-                            Vta/Hr: {salesPerHour.toFixed(3)}
+                            {volumeRateLabel}: {formatVolume(salesPerHour * 1_000_000, true)}
                           </span>
                           <span className="text-[11px] font-semibold text-slate-700">
-                            {formatCOP(point.value)}
+                            {formatVolume(point.value)}
                           </span>
                           <span className="text-[10px] text-slate-500">
                             {point.hours.toFixed(1)}h
@@ -1305,15 +1351,18 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
                     </p>
                     <div className="mt-1 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
                       <span>
-                        Vta/Hr{" "}
+                        {volumeRateLabel}{" "}
                         {comparisonSedeIds.length > 0
-                          ? selectedComparisonStats.salesPerHour.toFixed(3)
+                          ? formatVolume(
+                              selectedComparisonStats.salesPerHour * 1_000_000,
+                              true,
+                            )
                           : "—"}
                       </span>
                       <span>
-                        Ventas{" "}
+                        {volumeLabel}{" "}
                         {comparisonSedeIds.length > 0
-                          ? formatCOP(selectedComparisonStats.salesPerDay)
+                          ? formatVolume(selectedComparisonStats.salesPerDay)
                           : "—"}
                       </span>
                       <span>
@@ -1329,8 +1378,11 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
                       Prom. total
                     </p>
                     <div className="mt-1 flex flex-wrap gap-3 text-sm font-semibold text-slate-900">
-                      <span>Vta/Hr {totalComparisonStats.salesPerHour.toFixed(3)}</span>
-                      <span>Ventas {formatCOP(totalComparisonStats.salesPerDay)}</span>
+                      <span>
+                        {volumeRateLabel}{" "}
+                        {formatVolume(totalComparisonStats.salesPerHour * 1_000_000, true)}
+                      </span>
+                      <span>{volumeLabel} {formatVolume(totalComparisonStats.salesPerDay)}</span>
                       <span>Horas {totalComparisonStats.hoursPerDay.toFixed(1)}h</span>
                     </div>
                   </div>
@@ -1398,8 +1450,8 @@ export const LineTrends = forwardRef<ViewExportHandle, LineTrendsProps>(({
                                   }}
                                 >
                                   <span className="ml-auto shrink-0 rounded-full bg-white/85 px-2 py-0.5 text-[12px] font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200/60">
-                                    Vta/Hr: {salesPerHour.toFixed(3)} |{" "}
-                                    {formatCOP(sede.value)} |{" "}
+                                    {volumeRateLabel}: {formatVolume(salesPerHour * 1_000_000, true)} |{" "}
+                                    {formatVolume(sede.value)} |{" "}
                                     {sede.hours.toFixed(1)}h
                                   </span>
                                 </div>
