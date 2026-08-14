@@ -76,12 +76,33 @@ test("QR proveedores: admin siempre; resto necesita proveedores_qr", () => {
   assert.equal(canViewProveedoresQrLinks(["abcd"], false), false);
 });
 
-test("ordenes-compra: solo admin (no se asigna por subtablero)", () => {
-  assert.equal(canAccessOrdenesCompra(true), true);
-  assert.equal(canAccessOrdenesCompra(false), false);
-  assert.equal(isAdminOnlyPortalSubsection("ordenes-compra"), true);
+test("ordenes-compra es opt-in: null no lo concede; admin o venta + subtablero", () => {
+  assert.equal(canAccessPortalSubsection(null, "ordenes-compra"), false);
+  assert.equal(canAccessPortalSubsection([], "ordenes-compra"), false);
+  assert.equal(
+    canAccessPortalSubsection(["proveedores"], "ordenes-compra"),
+    false,
+  );
+  assert.equal(
+    canAccessPortalSubsection(["ordenes-compra"], "ordenes-compra"),
+    true,
+  );
+  assert.equal(isAdminOnlyPortalSubsection("ordenes-compra"), false);
   assert.equal(
     listAssignablePortalSubsectionIds().includes("ordenes-compra"),
+    true,
+  );
+
+  assert.equal(canAccessOrdenesCompra("admin", [], []), true);
+  assert.equal(canAccessOrdenesCompra("user", null, null), false);
+  assert.equal(canAccessOrdenesCompra("user", ["venta"], null), false);
+  assert.equal(canAccessOrdenesCompra("user", ["venta"], []), false);
+  assert.equal(
+    canAccessOrdenesCompra("user", ["venta"], ["ordenes-compra"]),
+    true,
+  );
+  assert.equal(
+    canAccessOrdenesCompra("user", ["producto"], ["ordenes-compra"]),
     false,
   );
 });
@@ -123,15 +144,19 @@ test("encode/expand no marca precios-proveedor cuando null = todos", () => {
     OPT_IN_PORTAL_SUBSECTIONS,
   );
   assert.equal(expanded.includes("precios-proveedor"), false);
-  assert.equal(expanded.includes("proveedores"), true);
   assert.equal(expanded.includes("ordenes-compra"), false);
+  assert.equal(expanded.includes("proveedores"), true);
 
   assert.equal(
     encodePortalPermissionSelection(expanded, allIds, OPT_IN_PORTAL_SUBSECTIONS),
     null,
   );
 
-  const withOptIn = [...expanded, "precios-proveedor"] as typeof expanded;
+  const withOptIn = [
+    ...expanded,
+    "precios-proveedor",
+    "ordenes-compra",
+  ] as typeof expanded;
   const encoded = encodePortalPermissionSelection(
     withOptIn,
     allIds,
@@ -139,5 +164,6 @@ test("encode/expand no marca precios-proveedor cuando null = todos", () => {
   );
   assert.ok(Array.isArray(encoded));
   assert.equal(encoded?.includes("precios-proveedor"), true);
+  assert.equal(encoded?.includes("ordenes-compra"), true);
   assert.equal(encoded?.includes("proveedores"), true);
 });

@@ -126,13 +126,13 @@ test("validateSedesForPortalProfile bloquea Todas en gerente", () => {
   assert.equal(validateSedesForPortalProfile("gerente", ["Floresta"]), null);
 });
 
-test("form de subadmin/gerente no marca precios-proveedor (opt-in)", () => {
+test("form de subadmin/gerente no marca precios-proveedor ni ordenes-compra (opt-in)", () => {
   const permissions = materializePortalProfilePermissions("subadmin");
   const form = portalPermissionsToFormArrays(permissions);
   assert.equal(permissions.allowedSubdashboards, null);
   assert.equal(form.allowedSubdashboards.includes("precios-proveedor"), false);
-  assert.equal(form.allowedSubdashboards.includes("proveedores"), true);
   assert.equal(form.allowedSubdashboards.includes("ordenes-compra"), false);
+  assert.equal(form.allowedSubdashboards.includes("proveedores"), true);
 });
 
 test("mergeAdminPermissionBodyWithCurrent respeta null explicito en subtableros", () => {

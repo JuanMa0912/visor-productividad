@@ -124,7 +124,11 @@ export default function VentaHubPage() {
           return canAccessProveedoresBoard(isAdmin, allowedSubdashboards);
         }
         if (module.id === "ordenes-compra") {
-          return canAccessOrdenesCompra(isAdmin);
+          return canAccessOrdenesCompra(
+            isAdmin ? "admin" : "user",
+            user?.allowedDashboards ?? null,
+            allowedSubdashboards,
+          );
         }
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);

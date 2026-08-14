@@ -39,7 +39,13 @@ export async function GET(request: Request) {
     return applySessionCookies(response, session);
   };
 
-  if (!canAccessOrdenesCompra(session.user.role === "admin")) {
+  if (
+    !canAccessOrdenesCompra(
+      session.user.role,
+      session.user.allowedDashboards,
+      session.user.allowedSubdashboards,
+    )
+  ) {
     return withSession(
       NextResponse.json(
         { error: "No tienes permisos para esta seccion." },

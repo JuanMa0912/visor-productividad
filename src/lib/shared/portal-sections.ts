@@ -219,6 +219,7 @@ export const normalizeAllowedPortalSubsections = (
  */
 export const OPT_IN_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [
   "precios-proveedor",
+  "ordenes-compra",
 ];
 
 export const isOptInPortalSubsection = (
@@ -297,9 +298,7 @@ export const encodePortalPermissionSelection = <T extends string>(
  * mientras el acceso real sea solo admin (evita falsa sensación de permiso).
  * Vacío: todos los subtableros registrados son asignables en gestión de usuarios.
  */
-export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [
-  "ordenes-compra",
-];
+export const ADMIN_ONLY_PORTAL_SUBSECTIONS: readonly PortalSubsectionId[] = [];
 
 export const isAdminOnlyPortalSubsection = (
   subsectionId: PortalSubsectionId,

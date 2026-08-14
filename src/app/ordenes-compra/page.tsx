@@ -5,15 +5,16 @@ import { useRouter } from "next/navigation";
 import { ClipboardList } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { usePermissions, useRequireAuth } from "@/lib/auth/auth-context";
-import { canAccessOrdenesCompra } from "@/lib/shared/special-role-features";
 import { OrdenesCompraBoard } from "./ordenes-compra-board";
 
 export default function OrdenesCompraPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
-  const { isAdmin, hasSpecialRole } = usePermissions();
+  const { isAdmin, hasSpecialRole, hasSection, hasSubsection } = usePermissions();
   const ready = status === "authenticated" && Boolean(user);
-  const canAccess = canAccessOrdenesCompra(isAdmin);
+  const canAccess =
+    isAdmin ||
+    (hasSection("venta") && hasSubsection("ordenes-compra"));
 
   useEffect(() => {
     if (ready && !canAccess) router.replace("/secciones");
@@ -45,12 +46,12 @@ export default function OrdenesCompraPage() {
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Admin · Venta
+              Venta
             </p>
             <h1 className="text-2xl font-semibold text-slate-900">Órdenes de compra</h1>
             <p className="mt-1 max-w-3xl text-sm text-slate-600">
               Seguimiento visual de OC abiertas, incompletas y vencidas (SLA 7 días).
-              Recarga diaria 8:00. Solo administradores.
+              Recarga diaria 8:00.
             </p>
           </div>
         </div>
