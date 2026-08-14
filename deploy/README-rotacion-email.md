@@ -26,8 +26,9 @@ Sin destinatario aún: **Centro Sur**, **Dinastía 1**, **Dinastía 2** (se omit
 
 Incluye **puntuación restock 0–100**: % de ítems marcados `surtido` en contexto
 restock **dentro del rango del correo** que luego tuvieron venta (misma sede)
-hasta el fin del rango. En el consolidado, el score de cadena agrega marcas y
-ventas de todas las sedes.
+hasta el fin del rango. Si no hubo marcas a surtido en el periodo, el score es
+**0** (no “vacío”). Solo se muestra “—” si faltan tablas de auditoría/ventas.
+En el consolidado, el score de cadena agrega marcas y ventas de todas las sedes.
 
 El runbook general está en [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 

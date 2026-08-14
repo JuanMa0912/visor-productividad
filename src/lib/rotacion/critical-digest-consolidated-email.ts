@@ -39,8 +39,8 @@ const escapeHtml = (value: string) =>
 
 const formatScore = (digest: RotacionCriticalDigest): string => {
   const eff = digest.restockEffectiveness;
-  if (eff.unavailable || eff.score == null) return "—";
-  return String(eff.score);
+  if (eff.unavailable) return "—";
+  return String(eff.score ?? 0);
 };
 
 const mergeEstado = (
@@ -186,7 +186,7 @@ export type ConsolidatedDigestTotals = {
   demandaD: number;
   cero: number;
   restockS: number;
-  restockScore: number | null;
+  restockScore: number;
   restockMarked: number;
   restockSold: number;
 };
@@ -216,9 +216,7 @@ export const aggregateConsolidatedDigestTotals = (
   }
 
   const restockScore =
-    restockMarked > 0
-      ? Math.round((restockSold / restockMarked) * 100)
-      : null;
+    restockMarked > 0 ? Math.round((restockSold / restockMarked) * 100) : 0;
 
   return {
     itemCount,
@@ -334,12 +332,8 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
   const rangeLabel = formatRangeLabel(range);
   const days = digests[0]!.daysConsulted;
   const totals = aggregateConsolidatedDigestTotals(digests);
-  const scoreLabel =
-    totals.restockScore == null ? "—" : `${totals.restockScore}`;
-  const scoreDetail =
-    totals.restockMarked > 0
-      ? `${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)} vendieron tras surtido`
-      : "Sin marcas a surtido (restock) en el periodo";
+  const scoreLabel = `${totals.restockScore ?? 0}`;
+  const scoreDetail = `${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)} vendieron tras surtido`;
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -503,8 +497,7 @@ export const buildRotacionCriticalDigestConsolidatedText = (
   const rangeLabel = formatRangeLabel(range);
   const days = digests[0]!.daysConsulted;
   const totals = aggregateConsolidatedDigestTotals(digests);
-  const scoreLabel =
-    totals.restockScore == null ? "—" : String(totals.restockScore);
+  const scoreLabel = String(totals.restockScore ?? 0);
 
   const lines = [
     `Rotación · Todas las sedes · Críticos D+0+S`,

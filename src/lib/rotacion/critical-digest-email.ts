@@ -41,14 +41,9 @@ const formatScoreLabel = (
   if (eff.unavailable) {
     return { value: "—", detail: "Sin datos de auditoría/ventas" };
   }
-  if (eff.score == null) {
-    return {
-      value: "—",
-      detail: "Sin marcas a surtido (restock) en el periodo",
-    };
-  }
+  const score = eff.score ?? 0;
   return {
-    value: `${eff.score}`,
+    value: `${score}`,
     detail: `${formatCount(eff.soldAfterCount)} de ${formatCount(eff.markedSurtidoCount)} vendieron tras surtido`,
   };
 };

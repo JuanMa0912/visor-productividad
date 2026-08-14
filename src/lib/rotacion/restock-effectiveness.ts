@@ -22,7 +22,8 @@ export type RestockEffectivenessScore = {
 export const emptyRestockEffectivenessScore = (
   unavailable = false,
 ): RestockEffectivenessScore => ({
-  score: null,
+  // Sin datos de sistema → null. Sin marcas en el periodo → 0 (no “inexistente”).
+  score: unavailable ? null : 0,
   markedSurtidoCount: 0,
   soldAfterCount: 0,
   unavailable,
@@ -36,7 +37,7 @@ export const computeRestockEffectivenessScore = (
   const sold = Math.max(0, Math.min(marked, Math.floor(soldAfterCount)));
   if (marked === 0) {
     return {
-      score: null,
+      score: 0,
       markedSurtidoCount: 0,
       soldAfterCount: 0,
       unavailable: false,

@@ -228,4 +228,70 @@ describe("buildRotacionCriticalDigest", () => {
     assert.match(text, /400\.000/);
     assert.doesNotMatch(text, /600\.000/);
   });
+
+  it("muestra puntuación restock 0 cuando no hay marcas (no vacío)", () => {
+    const digest: RotacionCriticalDigest = {
+      sedeName: "Floralia",
+      empresa: "mtodo",
+      sedeId: "002",
+      dateRange: { start: "2026-07-14", end: "2026-08-13" },
+      daysConsulted: 31,
+      total: { itemCount: 10, totalInventario: 1_000_000 },
+      perecederos: {
+        total: { itemCount: 0, totalInventario: 0 },
+        demandaD: { itemCount: 0, totalInventario: 0, diasInventario: 0 },
+        ceroRotacion: {
+          itemCount: 0,
+          sinVerificar: 0,
+          seguimiento: 0,
+          surtido: 0,
+          surtidoPct: null,
+        },
+        restockS: {
+          itemCount: 0,
+          sinVerificar: 0,
+          seguimiento: 0,
+          surtido: 0,
+          surtidoPct: null,
+        },
+      },
+      manufactura: {
+        total: { itemCount: 10, totalInventario: 1_000_000 },
+        demandaD: {
+          itemCount: 5,
+          totalInventario: 500_000,
+          diasInventario: 20,
+        },
+        ceroRotacion: {
+          itemCount: 3,
+          sinVerificar: 3,
+          seguimiento: 0,
+          surtido: 0,
+          surtidoPct: 0,
+        },
+        restockS: {
+          itemCount: 2,
+          sinVerificar: 2,
+          seguimiento: 0,
+          surtido: 0,
+          surtidoPct: 0,
+        },
+      },
+      restockEffectiveness: {
+        score: 0,
+        markedSurtidoCount: 0,
+        soldAfterCount: 0,
+        unavailable: false,
+      },
+    };
+
+    const html = buildRotacionCriticalDigestHtml(digest);
+    assert.match(html, />0</);
+    assert.match(html, /0 de 0 vendieron tras surtido/);
+    assert.doesNotMatch(html, /Sin marcas a surtido/);
+
+    const text = buildRotacionCriticalDigestText(digest);
+    assert.match(text, /PUNTUACIÓN RESTOCK: 0\/100/);
+    assert.match(text, /0 de 0 vendieron tras surtido/);
+  });
 });
