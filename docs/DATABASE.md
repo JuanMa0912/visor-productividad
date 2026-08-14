@@ -522,7 +522,8 @@ Migraciones:
 | Tabla / vista | Uso |
 | --- | --- |
 | `proveedor_catalogo` | (opcional / legacy) catálogo propio; el form QR usa POS |
-| `proveedor_pos_catalogo` | maestro real (~3.4k): `empresa`+`id_cricla1`+`nombre`+`nit` |
+| `proveedor_pos_catalogo` | maestro de criterios del ítem (~3.4k): `empresa`+`id_cricla1`+`nombre`+`nit` |
+| `proveedor_tercero` | maestro comercial POS que usa el QR: `empresa`+`codigo`+`sucursal`+`nombre`+`nit` |
 | `proveedor_sede_qr` | token opaco por sede → URL pública `/proveedores/ingreso/[token]` |
 | `qr_calle_5ta` … `qr_chia` | marcaciones físicas por sede (entrada/salida; abierta = `salida_at IS NULL`; `autorizacion_datos_at` = habeas data al entrar) |
 | `proveedor_visitas` | **vista** solo lectura = `UNION ALL` de `qr_*` (la app no escribe aquí) |
@@ -547,7 +548,8 @@ ETL: `scripts/etl/proveedores/etl_proveedores.py` (ver su
 
 | Tabla | Grano | Uso |
 | --- | --- | --- |
-| `proveedor_pos_catalogo` | empresa + id_cricla1 | maestro (~3.4k) con `nit`; el ETL nunca pisa un `nit_origen='manual'` |
+| `proveedor_pos_catalogo` | empresa + id_cricla1 | maestro de **criterio del ítem** (~3.4k) con `nit`; el ETL nunca pisa un `nit_origen='manual'` |
+| `proveedor_tercero` | empresa + codigo + sucursal | maestro **comercial** POS (`terceros.ind_pro=1`); distinto de `criterios_itm_1` |
 | `proveedor_item` | empresa + id_item | puente item -> proveedor (~145k); sin el no se puede valorizar inventario |
 | `ventas_proveedor_dia` | empresa + fecha + id_co + id_cricla1 | ventas: `unidades`, `venta_base`, `impuestos`, `venta_con_impuesto` |
 | `inventario_proveedor_dia` | empresa + fecha_dia + id_co + id_cricla1 | inventario valorizado al costo, derivado de `rotacion_base_item_dia_sede` |
@@ -558,8 +560,9 @@ Notas que evitan errores de lectura:
   Medido: `cmmovimiento_pdv.ven_netas = vlrtot_bru + imp_netos`, o sea que
   `ventas_item_diario.venta_sin_impuesto_dia` **si trae impuesto pese a su nombre**. El ranking de
   proveedores cambia segun cual se use.
-- El proveedor sale de `criterios_itm_1` del POS (no de `terceros`). Lo que no resuelve entra como
-  `@SP` / `(SIN PROVEEDOR)` para que las sumas cuadren: 1,3% de la venta, 0% del inventario.
+- El “proveedor” de venta/inventario sale de `criterios_itm_1` del POS (no de `terceros`).
+  Lo que no resuelve entra como `@SP` / `(SIN PROVEEDOR)` para que las sumas cuadren:
+  1,3% de la venta, 0% del inventario. La lista comercial real vive en `proveedor_tercero`.
 - El NIT sale de `nit_mmio` (mercamio) y `nit_mtodo` (mtodo); bogota lo hereda. Descarta el
   centinela `'99999999'` (750 de 1093 filas). Cobertura: 341 de 1137 criterios.
 - Devoluciones (`id_tipdoc_fc LIKE 'Z%'`) se excluyen, igual que `ventas_item_diario`.
@@ -581,7 +584,8 @@ Pollo (`03`) y asadero (`12` / `id_tipo=3`) quedan fuera de industria para no me
 python3 scripts/etl/proveedores/etl_proveedores.py --desde 20260701 --hasta 20260731
 python3 scripts/etl/proveedores/etl_proveedores.py --reconciliar --days 30
 bash scripts/etl/sync-local-to-gcp.sh --only proveedor_pos_catalogo --only proveedor_item \
-  --only ventas_proveedor_dia --only inventario_proveedor_dia --days 3 --verify
+  --only proveedor_tercero --only ventas_proveedor_dia --only inventario_proveedor_dia \
+  --days 3 --verify
 ```
 
 ### 4.aa Ordenes de compra (incremental POS)
@@ -608,6 +612,30 @@ Notas:
 python3 scripts/etl/orden-compra/etl_orden_compra.py --dry-run
 python3 scripts/etl/orden-compra/etl_orden_compra.py
 bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --verify
+```
+
+### 4.ab Maestro comercial POS (`proveedor_tercero`)
+
+Migracion: `db/migrations/20260813_proveedor_tercero.sql`.
+ETL: `scripts/etl/proveedores/etl_proveedor_tercero.py`.
+Timer: `visor-etl-proveedores` (07:12, segunda `ExecStart`) + sync diario 07:35 (`MODE=full`).
+
+| Tabla | Grano | Uso |
+| --- | --- | --- |
+| `proveedor_tercero` | empresa + codigo + sucursal | lista comercial (`terceros.ind_pro=1`); NIT, sucursal, ultima compra |
+
+Notas:
+
+- Origen: `public.terceros` en 217 (mercamio / mtodo / bogota). Una tabla destino, no tres.
+- No sustituye `proveedor_pos_catalogo` (`criterios_itm_1`, p.ej. MERCAMIO FRUVER).
+- Default: solo proveedores (`ind_pro='1'`). `--todos` carga cualquier tercero con codigo.
+- Centinela NIT `99999999` se guarda como NULL. Filas que salen del POS: `activo=false`.
+- Sucursal vacia del POS se normaliza a `'00'` (alineado con OC `id_suc_terc`).
+
+```bash
+python3 scripts/etl/proveedores/etl_proveedor_tercero.py --dry-run
+python3 scripts/etl/proveedores/etl_proveedor_tercero.py
+bash scripts/etl/sync-local-to-gcp.sh --only proveedor_tercero --no-refresh --verify
 ```
 
 Actualizar este documento cuando cambien migraciones, tablas leidas, columnas

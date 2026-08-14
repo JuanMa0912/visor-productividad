@@ -12,6 +12,7 @@ WorkingDirectory=/home/prodapp/visor-productividad
 # --days 7 recarga [ayer-6..ayer]. Como el ETL reemplaza por (empresa, fecha), re-correr
 # no duplica: sirve para recuperar dias que quedaron vacios porque el POS llego tarde.
 ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/proveedores/etl_proveedores.py --days 7
+ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/proveedores/etl_proveedor_tercero.py
 StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=true

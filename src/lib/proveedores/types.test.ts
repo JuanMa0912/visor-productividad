@@ -38,11 +38,12 @@ describe("proveedores types", () => {
   });
 
   it("encode/decode clave POS", () => {
-    const id = encodeProveedorPosKey("mercamio", "0011");
-    assert.equal(id, "mercamio|0011");
+    const id = encodeProveedorPosKey("mercamio", "0011", "02");
+    assert.equal(id, "mercamio|0011|02");
     assert.deepEqual(decodeProveedorPosKey(id), {
       empresa: "mercamio",
       codigo: "0011",
+      sucursal: "02",
     });
   });
 });

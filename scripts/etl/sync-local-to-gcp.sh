@@ -16,7 +16,8 @@
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
 #   ventas_industria, rotacion_base_item_dia_sede, ventas_item_diario,
 #   ventas_proveedor_dia, inventario_proveedor_dia,
-#   proveedor_pos_catalogo y proveedor_item (catalogos sin fecha: se suben completos),
+#   proveedor_pos_catalogo, proveedor_item y proveedor_tercero
+#                      (catalogos sin fecha: se suben completos),
 #   orden_compra      (NO va en el diario 07:50; la sube visor-etl-orden-compra 08:00
 #                      con --only; upsert de toda la tabla local, sin borrar GCP),
 #   asistencia_horas  (modo replace SIEMPRE, ver aviso de arriba)
@@ -184,7 +185,7 @@ DESDEC="${DESDE//-/}"; HASTAC="${HASTA//-/}"
 # OJO CON EL ORDEN: proveedor_pos_catalogo va PRIMERO porque el tablero /proveedores hace
 # join contra el; si subieran antes los hechos, habria una ventana en la que el tablero
 # mostraria proveedores sin nombre.
-TABLES=(proveedor_pos_catalogo proveedor_item
+TABLES=(proveedor_pos_catalogo proveedor_item proveedor_tercero
         ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
         ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario
         ventas_proveedor_dia inventario_proveedor_dia orden_compra margen_final)
@@ -250,6 +251,7 @@ CONFLICT[ventas_item_diario]="(fecha_dcto, COALESCE(empresa_norm, empresa), COAL
 # usan columnas PLANAS a proposito, asi que el ON CONFLICT default "(KEY)" sirve tal cual.
 KEY[proveedor_pos_catalogo]="empresa,id_cricla1"
 KEY[proveedor_item]="empresa,id_item"
+KEY[proveedor_tercero]="empresa,codigo,sucursal"
 KEY[ventas_proveedor_dia]="empresa,fecha_dcto,id_co,id_cricla1"
 KEY[inventario_proveedor_dia]="empresa,fecha_dia,id_co,id_cricla1"
 KEY[orden_compra]="empresa,id_co,tipdoc,documento_oc"
@@ -270,6 +272,8 @@ DATECOL[ventas_proveedor_dia]="fecha_dcto"; DATETYPE[ventas_proveedor_dia]="text
 DATECOL[proveedor_pos_catalogo]=""; DATETYPE[proveedor_pos_catalogo]=""; EXCLUDE[proveedor_pos_catalogo]=""; MODE[proveedor_pos_catalogo]="full"
 # proveedor_item: puente item->proveedor, tambien SIN fecha -> MODE=full (~48k filas x empresa).
 DATECOL[proveedor_item]=""; DATETYPE[proveedor_item]=""; EXCLUDE[proveedor_item]=""; MODE[proveedor_item]="full"
+# proveedor_tercero: maestro comercial POS (terceros ind_pro=1). Catalogo sin fecha.
+DATECOL[proveedor_tercero]=""; DATETYPE[proveedor_tercero]=""; EXCLUDE[proveedor_tercero]=""; MODE[proveedor_tercero]="full"
 # inventario_proveedor_dia: fecha DATE (viene de rotacion), no text YYYYMMDD como el resto.
 DATECOL[inventario_proveedor_dia]="fecha_dia"; DATETYPE[inventario_proveedor_dia]="date"; EXCLUDE[inventario_proveedor_dia]="id"
 # orden_compra: el diario 07:50 NO la toca. La sube visor-etl-orden-compra 08:00
@@ -545,6 +549,7 @@ MAXEXPR[asistencia_horas]="to_char(max(fecha),'YYYYMMDD')"
 # upsert refresca en cada sync.
 MAXEXPR[proveedor_pos_catalogo]="to_char(max(updated_at),'YYYYMMDD')"
 MAXEXPR[proveedor_item]="to_char(max(updated_at),'YYYYMMDD')"
+MAXEXPR[proveedor_tercero]="to_char(max(updated_at),'YYYYMMDD')"
 MAXEXPR[inventario_proveedor_dia]="to_char(max(fecha_dia),'YYYYMMDD')"
 # OC: fecha_dcto puede ser futura; loaded_at dice si el incremental de 08:00 corrio.
 MAXEXPR[orden_compra]="to_char(max(loaded_at),'YYYYMMDD')"

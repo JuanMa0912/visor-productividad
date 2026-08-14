@@ -98,18 +98,22 @@ export const resolveSedeByToken = async (
 
 const mapCatalogRow = (row: {
   empresa: string;
-  id_cricla1: string;
+  codigo: string;
+  sucursal: string;
   nombre: string;
+  nit: string | null;
 }): ProveedorCatalogItem => ({
-  id: encodeProveedorPosKey(row.empresa, row.id_cricla1),
+  id: encodeProveedorPosKey(row.empresa, row.codigo, row.sucursal),
   empresa: String(row.empresa),
-  codigo: String(row.id_cricla1),
+  codigo: String(row.codigo),
+  sucursal: String(row.sucursal || "00"),
   nombre: String(row.nombre),
+  nit: row.nit == null || String(row.nit).trim() === "" ? null : String(row.nit),
 });
 
 /**
- * Maestro POS (`proveedor_pos_catalogo`).
- * Deduplica por nombre (misma razón social en varias empresas) priorizando mercamio.
+ * Maestro comercial POS (`proveedor_tercero`).
+ * Conserva empresa + sucursal: el mismo NIT puede tener condiciones/sucursales distintas.
  */
 export const searchProveedorCatalog = async (
   client: PoolClient,
@@ -123,12 +127,10 @@ export const searchProveedorCatalog = async (
   if (!safeLike) {
     const result = await client.query(
       `
-      SELECT DISTINCT ON (lower(btrim(nombre)))
-        empresa, id_cricla1, nombre
-      FROM proveedor_pos_catalogo
+      SELECT empresa, codigo, sucursal, nombre, nit
+      FROM proveedor_tercero
       WHERE activo IS TRUE
         AND btrim(COALESCE(nombre, '')) <> ''
-        AND lower(btrim(nombre)) <> '(sin proveedor)'
       ORDER BY
         lower(btrim(nombre)),
         CASE lower(btrim(empresa))
@@ -137,27 +139,34 @@ export const searchProveedorCatalog = async (
           WHEN 'bogota' THEN 2
           ELSE 9
         END,
-        id_cricla1
+        codigo,
+        sucursal
       LIMIT $1
       `,
       [capped],
     );
     return (result.rows ?? []).map((row) =>
-      mapCatalogRow(row as { empresa: string; id_cricla1: string; nombre: string }),
+      mapCatalogRow(
+        row as {
+          empresa: string;
+          codigo: string;
+          sucursal: string;
+          nombre: string;
+          nit: string | null;
+        },
+      ),
     );
   }
 
   const result = await client.query(
     `
-    SELECT DISTINCT ON (lower(btrim(nombre)))
-      empresa, id_cricla1, nombre
-    FROM proveedor_pos_catalogo
+    SELECT empresa, codigo, sucursal, nombre, nit
+    FROM proveedor_tercero
     WHERE activo IS TRUE
       AND btrim(COALESCE(nombre, '')) <> ''
-      AND lower(btrim(nombre)) <> '(sin proveedor)'
       AND (
         nombre ILIKE $1
-        OR COALESCE(id_cricla1, '') ILIKE $1
+        OR COALESCE(codigo, '') ILIKE $1
         OR COALESCE(nit, '') ILIKE $1
       )
     ORDER BY
@@ -168,13 +177,22 @@ export const searchProveedorCatalog = async (
         WHEN 'bogota' THEN 2
         ELSE 9
       END,
-      id_cricla1
+      codigo,
+      sucursal
     LIMIT $2
     `,
     [`%${safeLike}%`, capped],
   );
   return (result.rows ?? []).map((row) =>
-    mapCatalogRow(row as { empresa: string; id_cricla1: string; nombre: string }),
+    mapCatalogRow(
+      row as {
+        empresa: string;
+        codigo: string;
+        sucursal: string;
+        nombre: string;
+        nit: string | null;
+      },
+    ),
   );
 };
 
@@ -186,23 +204,32 @@ export const getProveedorById = async (
   if (!key) return null;
   const result = await client.query(
     `
-    SELECT empresa, id_cricla1, nombre
-    FROM proveedor_pos_catalogo
+    SELECT empresa, codigo, sucursal, nombre, nit
+    FROM proveedor_tercero
     WHERE empresa = $1
-      AND id_cricla1 = $2
+      AND codigo = $2
+      AND sucursal = $3
       AND activo IS TRUE
     LIMIT 1
     `,
-    [key.empresa, key.codigo],
+    [key.empresa, key.codigo, key.sucursal],
   );
   const row = result.rows?.[0] as
-    | { empresa?: string; id_cricla1?: string; nombre?: string }
+    | {
+        empresa?: string;
+        codigo?: string;
+        sucursal?: string;
+        nombre?: string;
+        nit?: string | null;
+      }
     | undefined;
-  if (!row?.empresa || !row.id_cricla1 || !row.nombre) return null;
+  if (!row?.empresa || !row.codigo || !row.nombre) return null;
   return mapCatalogRow({
     empresa: row.empresa,
-    id_cricla1: row.id_cricla1,
+    codigo: row.codigo,
+    sucursal: row.sucursal ?? "00",
     nombre: row.nombre,
+    nit: row.nit ?? null,
   });
 };
 
@@ -555,10 +582,9 @@ export const countActiveProveedorCatalog = async (
   const result = await client.query(
     `
     SELECT count(*)::int AS n
-    FROM proveedor_pos_catalogo
+    FROM proveedor_tercero
     WHERE activo IS TRUE
       AND btrim(COALESCE(nombre, '')) <> ''
-      AND lower(btrim(nombre)) <> '(sin proveedor)'
     `,
   );
   return Number(result.rows?.[0]?.n ?? 0);

@@ -10,8 +10,10 @@ User=prodapp
 Group=prodapp
 WorkingDirectory=/home/prodapp/visor-productividad
 # python3 del sistema (tiene psycopg2-binary). No hay venv. Sin flags = ayer.
-# Cada corrida refresca tambien el catalogo de proveedores (upsert, nunca borra el NIT).
+# Cada corrida refresca tambien el catalogo de criterios (upsert, nunca borra el NIT)
+# y el maestro comercial terceros (ind_pro=1).
 ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/proveedores/etl_proveedores.py
+ExecStart=/usr/bin/python3 /home/prodapp/visor-productividad/scripts/etl/proveedores/etl_proveedor_tercero.py
 StandardOutput=journal
 StandardError=journal
 # OJO: NO se declara SuccessExitStatus=3 a proposito, igual que en visor-etl-ventas-item.

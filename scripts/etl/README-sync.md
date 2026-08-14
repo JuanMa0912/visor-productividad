@@ -9,7 +9,7 @@ Sube el dia a dia de las tablas de **hechos** desde el Postgres **local**
   `ventas_asadero`, `ventas_pollo_pesc`, `ventas_industria`,
   `rotacion_base_item_dia_sede`, `asistencia_horas`, `ventas_item_diario`,
   `ventas_proveedor_dia`, `inventario_proveedor_dia`, `proveedor_pos_catalogo`,
-  `proveedor_item`, `orden_compra`, `margen_final`.
+  `proveedor_item`, `proveedor_tercero`, `orden_compra`, `margen_final`.
 - **`orden_compra`:** **no** entra en el diario 07:50 ni en el reconcile. La
   carga POS→232 (dias nuevos + abiertas) y el upsert a GCP los hace
   `visor-etl-orden-compra` (08:00) con `--only orden_compra` (tabla local

@@ -43,7 +43,7 @@ presentes en el local en vez de upsert; limpia huerfanas cuando el local perdio 
 `ventas_cajas` `ventas_fruver` `ventas_carnes` `ventas_asadero` `ventas_pollo_pesc`
 `ventas_industria` `rotacion_base_item_dia_sede` `asistencia_horas`
 `ventas_item_diario` `ventas_proveedor_dia` `inventario_proveedor_dia`
-`proveedor_pos_catalogo` `proveedor_item` `orden_compra` `margen_final`.
+`proveedor_pos_catalogo` `proveedor_item` `proveedor_tercero` `orden_compra` `margen_final`.
 
 Receta tipica de backfill de UNA tabla (dry-run -> real):
 ```bash

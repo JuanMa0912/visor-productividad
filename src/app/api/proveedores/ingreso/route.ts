@@ -44,9 +44,9 @@ export async function GET(request: Request) {
       return json({ error: "Enlace de sede no válido." }, 404);
     }
     const providers = await searchProveedorCatalog(client, q, 30);
-    const activeCount = q.trim()
-      ? providers.length
-      : await countActiveProveedorCatalog(client);
+    // “Sin resultados” no es “catálogo vacío”: el visitante debe poder borrar
+    // el texto y buscar otro proveedor sin que el campo quede deshabilitado.
+    const activeCount = await countActiveProveedorCatalog(client);
     return json({
       sedeName: sede.sedeName,
       providers,

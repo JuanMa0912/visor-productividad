@@ -33,6 +33,8 @@ export default function ProveedoresIngresoPage() {
   const deferredQuery = useDeferredValue(proveedorQuery);
   const [providers, setProviders] = useState<ProveedorCatalogItem[]>([]);
   const [proveedorId, setProveedorId] = useState<string | null>(null);
+  const [selectedProveedor, setSelectedProveedor] =
+    useState<ProveedorCatalogItem | null>(null);
   const [openVisit, setOpenVisit] = useState<ProveedorVisitaOpen | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -99,8 +101,6 @@ export default function ProveedoresIngresoPage() {
       window.clearTimeout(t);
     };
   }, [deferredQuery, loadMeta, step]);
-
-  const selectedProveedor = providers.find((p) => p.id === proveedorId) ?? null;
 
   const onLookup = async () => {
     setError(null);
@@ -220,6 +220,7 @@ export default function ProveedoresIngresoPage() {
     setNombre("");
     setProveedorQuery("");
     setProveedorId(null);
+    setSelectedProveedor(null);
     setOpenVisit(null);
     setMessage(null);
     setError(null);
@@ -328,9 +329,10 @@ export default function ProveedoresIngresoPage() {
                   onChange={(e) => {
                     setProveedorQuery(e.target.value);
                     setProveedorId(null);
+                    setSelectedProveedor(null);
                   }}
                   className="mt-1 block h-11 w-full rounded-xl border border-slate-200 px-3 text-base"
-                  placeholder="Escriba para filtrar"
+                  placeholder="Nombre, NIT o código"
                   disabled={catalogEmpty}
                 />
               </label>
@@ -346,6 +348,7 @@ export default function ProveedoresIngresoPage() {
                       type="button"
                       onClick={() => {
                         setProveedorId(p.id);
+                        setSelectedProveedor(p);
                         setProveedorQuery(p.nombre);
                       }}
                       className={`block w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm last:border-0 ${
@@ -354,7 +357,11 @@ export default function ProveedoresIngresoPage() {
                           : "text-slate-700 hover:bg-slate-50"
                       }`}
                     >
-                      {p.nombre}
+                      <span className="block">{p.nombre}</span>
+                      <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                        NIT {p.nit ?? "sin NIT"} · {p.empresa}
+                        {p.sucursal !== "00" ? ` · sucursal ${p.sucursal}` : ""}
+                      </span>
                     </button>
                   ))
                 )}
@@ -365,6 +372,7 @@ export default function ProveedoresIngresoPage() {
                   <span className="font-semibold text-slate-800">
                     {selectedProveedor.nombre}
                   </span>
+                  {selectedProveedor.nit ? ` · NIT ${selectedProveedor.nit}` : ""}
                 </p>
               ) : null}
               <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">

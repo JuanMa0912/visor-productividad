@@ -52,28 +52,36 @@ export const normalizeProveedorToken = (raw: unknown): string =>
 export const isValidProveedorToken = (token: string): boolean =>
   /^prv_[a-f0-9]{20,64}$/i.test(token);
 
-/** Clave de selección: empresa|id_cricla1 (maestro POS). */
-export const encodeProveedorPosKey = (empresa: string, codigo: string): string =>
-  `${empresa.trim()}|${codigo.trim()}`;
+/** Clave de selección: empresa|codigo|sucursal del maestro comercial POS. */
+export const encodeProveedorPosKey = (
+  empresa: string,
+  codigo: string,
+  sucursal?: string,
+): string =>
+  `${empresa.trim()}|${codigo.trim()}|${(sucursal ?? "00").trim() || "00"}`;
 
 export const decodeProveedorPosKey = (
   raw: unknown,
-): { empresa: string; codigo: string } | null => {
+): { empresa: string; codigo: string; sucursal: string } | null => {
   const value = String(raw ?? "").trim();
-  const sep = value.indexOf("|");
-  if (sep <= 0 || sep === value.length - 1) return null;
-  const empresa = value.slice(0, sep).trim();
-  const codigo = value.slice(sep + 1).trim();
+  const [empresaRaw, codigoRaw, sucursalRaw = "00", ...extra] = value.split("|");
+  if (extra.length > 0) return null;
+  const empresa = empresaRaw?.trim() ?? "";
+  const codigo = codigoRaw?.trim() ?? "";
+  const sucursal = sucursalRaw.trim() || "00";
   if (!empresa || !codigo || codigo.length > 40) return null;
-  return { empresa, codigo };
+  if (sucursal.length > 10) return null;
+  return { empresa, codigo, sucursal };
 };
 
 export type ProveedorCatalogItem = {
-  /** `empresa|id_cricla1` */
+  /** `empresa|codigo|sucursal` del maestro comercial POS. */
   id: string;
   empresa: string;
   codigo: string;
+  sucursal: string;
   nombre: string;
+  nit: string | null;
 };
 
 export type ProveedorVisitaOpen = {

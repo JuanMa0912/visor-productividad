@@ -1,11 +1,12 @@
 # ETL de proveedores (POS 217 -> produXdia 232 -> GCP)
 
-Alimenta el tablero `/proveedores`. Carga dos tablas en `produXdia` (232):
+Alimenta el tablero `/proveedores`. Carga en `produXdia` (232):
 
 | Tabla | Que es | Como se carga |
 |---|---|---|
-| `ventas_proveedor_dia` | HECHOS: venta por proveedor x dia x sede | reemplazo por `(empresa, fecha_dcto)` |
-| `proveedor_pos_catalogo` | CATALOGO de proveedores, **aqui vive el NIT** | upsert; nunca borra ni pisa el NIT |
+| `ventas_proveedor_dia` | HECHOS: venta por criterio x dia x sede | reemplazo por `(empresa, fecha_dcto)` |
+| `proveedor_pos_catalogo` | CATALOGO de **criterio del item** (`criterios_itm_1`), aqui vive el NIT del criterio | upsert; nunca borra ni pisa el NIT |
+| `proveedor_tercero` | Maestro **comercial** POS (`terceros.ind_pro=1`) | `etl_proveedor_tercero.py`; upsert; `activo=false` si sale del POS |
 
 Migracion: [`db/migrations/20260805_ventas_proveedor.sql`](../../../db/migrations/20260805_ventas_proveedor.sql).
 
@@ -13,8 +14,8 @@ Migracion: [`db/migrations/20260805_ventas_proveedor.sql`](../../../db/migration
 
 | Unidad | Cuando | Que hace |
 |---|---|---|
-| `visor-etl-proveedores.timer` | **Lun-Vie 07:12** | carga **ayer** + refresca catalogo |
-| `visor-etl-proveedores-reconcile.timer` | **Sab y Dom 07:12** | `--days 7`: recarga los ultimos 7 dias |
+| `visor-etl-proveedores.timer` | **Lun-Vie 07:12** | carga **ayer** + refresca catalogo de criterios + `proveedor_tercero` |
+| `visor-etl-proveedores-reconcile.timer` | **Sab y Dom 07:12** | `--days 7` + refresco de `proveedor_tercero` |
 
 Las 07:12 caen despues de `visor-etl-ventas-item` (07:09, ~1,5 min) y antes del sync a GCP
 (07:35). El orden importa: `--reconciliar` compara contra `ventas_item_diario`, asi que ese
@@ -38,6 +39,8 @@ cd /home/prodapp/visor-productividad
 # diario
 python3 scripts/etl/proveedores/etl_proveedores.py                      # ayer
 python3 scripts/etl/proveedores/etl_proveedores.py --days 7             # ultimos 7 dias
+python3 scripts/etl/proveedores/etl_proveedor_tercero.py                # lista comercial POS
+python3 scripts/etl/proveedores/etl_proveedor_tercero.py --dry-run
 
 # cargue por RANGO (backfill / recarga manual)
 python3 scripts/etl/proveedores/etl_proveedores.py --date 20260729
@@ -61,7 +64,7 @@ Despues de una carga manual, subir a GCP:
 
 ```bash
 bash scripts/etl/sync-local-to-gcp.sh --only proveedor_pos_catalogo --only ventas_proveedor_dia \
-  --desde 2026-07-01 --hasta 2026-07-31 --verify
+  --only proveedor_tercero --desde 2026-07-01 --hasta 2026-07-31 --verify
 ```
 
 ### Sobre el "rollback"
