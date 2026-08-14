@@ -44,6 +44,7 @@ type BoardProps = {
 
 type DrillSortKey =
   | "name"
+  | "proveedor"
   | "diUnits"
   | "diValue"
   | "inventoryUnits"
@@ -649,7 +650,9 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
           (row) =>
             row.label.toLowerCase().includes(q) ||
             row.id.toLowerCase().includes(q) ||
-            (row.description ?? "").toLowerCase().includes(q),
+            (row.description ?? "").toLowerCase().includes(q) ||
+            (row.proveedorLabel ?? "").toLowerCase().includes(q) ||
+            (row.proveedorId ?? "").toLowerCase().includes(q),
         )
       : rows;
 
@@ -659,6 +662,8 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
         switch (sortKey) {
           case "name":
             return row.label.toLowerCase();
+          case "proveedor":
+            return (row.proveedorLabel ?? row.proveedorId ?? "").toLowerCase();
           case "diUnits":
             return diSortValue(row.diUnits);
           case "diValue":
@@ -744,12 +749,14 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
     id: string;
     label: string;
     level: string;
+    proveedorLabel?: string | null;
   }) => {
     if (row.level === "linea" && row.id && !row.id.startsWith("__")) {
       return `${row.id} · ${row.label}`;
     }
     if (row.level === "item" && row.id && !row.id.startsWith("__")) {
-      return `${row.id} · ${row.label}`;
+      const base = `${row.id} · ${row.label}`;
+      return row.proveedorLabel ? `${base} · ${row.proveedorLabel}` : base;
     }
     return row.label;
   };
@@ -1586,6 +1593,11 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                   {(
                     [
                       ["name", "Nombre", "left"],
+                      ...(drill?.level === "item"
+                        ? ([["proveedor", "Proveedor", "left"]] as Array<
+                            [DrillSortKey, string, "left" | "right"]
+                          >)
+                        : []),
                       ["diUnits", "DI und.", "right"],
                       ["diValue", "DI valor", "right"],
                       ["inventoryUnits", "Inv. und.", "right"],
@@ -1639,6 +1651,20 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
                           </button>
                         )}
                       </td>
+                      {drill?.level === "item" ? (
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-slate-800">
+                            {row.proveedorLabel ?? "—"}
+                          </div>
+                          {row.proveedorId &&
+                          row.proveedorId !== "@SP" &&
+                          row.proveedorLabel ? (
+                            <div className="text-[11px] text-slate-500">
+                              {row.proveedorId}
+                            </div>
+                          ) : null}
+                        </td>
+                      ) : null}
                       <td className="px-3 py-2.5 text-right">
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${diPillClassName(row.diUnits)}`}

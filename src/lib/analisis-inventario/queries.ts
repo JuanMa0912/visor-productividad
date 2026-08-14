@@ -6,6 +6,7 @@ import {
 } from "@/lib/analisis-inventario/drill-path";
 import { lineFamilySqlFilter } from "@/lib/analisis-inventario/line-family";
 import type { AnalisisInventarioLineFamily } from "@/lib/analisis-inventario/line-family";
+import { lookupProveedorByItemIds } from "@/lib/analisis-inventario/item-proveedor";
 import {
   dimensionPathSql,
   passesDiMinFilter,
@@ -389,7 +390,7 @@ type QueryArgs = {
   /** Filtros multi-select (línea / sublínea / ítem / DI mín). */
   dimFilters?: Pick<
     AnalisisInventarioDimensionFilters,
-    "lineas" | "sublineas" | "items" | "diMinDays"
+    "empresas" | "lineas" | "sublineas" | "items" | "diMinDays"
   >;
   /** Métrica DI usada por el filtro diMinDays. */
   metric?: AnalisisInventarioMetric;
@@ -738,7 +739,7 @@ export async function queryAnalisisInventarioDrill(
     client.query(sql, params),
   );
   const metric = args.metric ?? "units";
-  const rows = ((result.rows ?? []) as AggDbRow[])
+  let rows = ((result.rows ?? []) as AggDbRow[])
     .map((row) => {
       const mapped = mapAgg(row, level, periodDays);
       return { ...mapped, drillStep: toDrillStep(mapped) };
@@ -752,6 +753,36 @@ export async function queryAnalisisInventarioDrill(
       const bv = metric === "value" ? b.diValue : b.diUnits;
       return bv - av;
     });
+
+  if (level === "item" && rows.length > 0) {
+    const empresas = args.dimFilters?.empresas?.length
+      ? args.dimFilters.empresas
+      : [
+          ...new Set(
+            (args.sedePairs ?? [])
+              .map((p) => p.empresa.toLowerCase())
+              .filter(Boolean),
+          ),
+        ];
+    try {
+      const byItem = await lookupProveedorByItemIds(
+        client,
+        rows.map((row) => row.id),
+        empresas.length > 0 ? empresas : null,
+      );
+      rows = rows.map((row) => {
+        const prov = byItem.get(row.id);
+        if (!prov) return row;
+        return {
+          ...row,
+          proveedorId: prov.id,
+          proveedorLabel: prov.label,
+        };
+      });
+    } catch (error) {
+      console.warn("[analisis-inventario] proveedor por ítem no disponible:", error);
+    }
+  }
 
   return { level, rows, sourceMode: mode };
 }
@@ -907,11 +938,46 @@ export async function queryAnalisisInventarioHeatmap(
           );
   const orderedSet = new Set(orderedRowIds);
 
+  let rows = orderedRowIds
+    .map((id) => rowMap.get(id))
+    .filter((row): row is AnalisisInventarioHeatmapRow => Boolean(row));
+
+  if (rowLevel === "item" && rows.length > 0) {
+    const empresas = args.dimFilters?.empresas?.length
+      ? args.dimFilters.empresas
+      : [
+          ...new Set(
+            (args.sedePairs ?? [])
+              .map((p) => p.empresa.toLowerCase())
+              .filter(Boolean),
+          ),
+        ];
+    try {
+      const byItem = await lookupProveedorByItemIds(
+        client,
+        rows.map((row) => row.id),
+        empresas.length > 0 ? empresas : null,
+      );
+      rows = rows.map((row) => {
+        const prov = byItem.get(row.id);
+        if (!prov) return row;
+        return {
+          ...row,
+          proveedorId: prov.id,
+          proveedorLabel: prov.label,
+        };
+      });
+    } catch (error) {
+      console.warn(
+        "[analisis-inventario] proveedor heatmap por ítem no disponible:",
+        error,
+      );
+    }
+  }
+
   return {
     rowLevel,
-    rows: orderedRowIds
-      .map((id) => rowMap.get(id))
-      .filter((row): row is AnalisisInventarioHeatmapRow => Boolean(row)),
+    rows,
     columns: args.columns,
     cells: cells.filter((cell) => orderedSet.has(cell.rowId)),
     path: args.path,

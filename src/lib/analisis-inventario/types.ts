@@ -34,6 +34,10 @@ export type AnalisisInventarioDrillRow = AnalisisInventarioAgg & {
   description?: string | null;
   empresa?: string;
   sedeId?: string;
+  /** Solo nivel ítem: código criterio POS (`id_cricla1`). */
+  proveedorId?: string | null;
+  /** Solo nivel ítem: nombre en `proveedor_pos_catalogo`. */
+  proveedorLabel?: string | null;
 };
 
 export type AnalisisInventarioHeatmapCell = AnalisisInventarioAgg & {
@@ -46,6 +50,8 @@ export type AnalisisInventarioHeatmapRow = {
   label: string;
   level: Exclude<AnalisisInventarioLevel, "sede">;
   drillStep: AnalisisInventarioDrillStep;
+  proveedorId?: string | null;
+  proveedorLabel?: string | null;
 };
 
 export type AnalisisInventarioSedeColumn = {

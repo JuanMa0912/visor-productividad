@@ -269,6 +269,7 @@ export async function GET(request: Request) {
       lineFamily,
       metric,
       dimFilters: {
+        empresas: dimFilters.empresas,
         lineas: dimFilters.lineas,
         sublineas: dimFilters.sublineas,
         items: dimFilters.items,

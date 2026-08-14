@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
+import { empresaLabel } from "@/lib/margenes/margen-final-query";
 import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 import type {
   PreciosProveedorCell,
@@ -12,6 +13,70 @@ import type {
 
 const toNum = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
+
+/** Join opcional a maestro comercial por NIT (misma empresa). */
+const PROVEEDOR_TERCERO_LATERAL = `
+    LEFT JOIN LATERAL (
+      SELECT
+        BTRIM(pt.codigo) AS codigo,
+        BTRIM(COALESCE(pt.sucursal, '00')) AS sucursal,
+        NULLIF(BTRIM(pt.nombre), '') AS nombre
+      FROM proveedor_tercero pt
+      WHERE pt.empresa = pi.empresa
+        AND pt.activo IS TRUE
+        AND NULLIF(BTRIM(pc.nit), '') IS NOT NULL
+        AND BTRIM(pc.nit) NOT IN ('99999999', '0')
+        AND pt.nit = BTRIM(pc.nit)
+      ORDER BY
+        CASE WHEN BTRIM(COALESCE(pt.sucursal, '00')) IN ('', '00') THEN 0 ELSE 1 END,
+        pt.sucursal
+      LIMIT 1
+    ) pt ON TRUE
+`;
+
+type ResolvedItemProveedor = {
+  id: string;
+  label: string;
+  criterioId: string | null;
+  criterioLabel: string | null;
+  nit: string | null;
+  fromTercero: boolean;
+};
+
+const resolveItemProveedorRow = (row: {
+  id_cricla1: string;
+  criterio_nombre: string | null;
+  nit: string | null;
+  tercero_codigo: string | null;
+  tercero_nombre: string | null;
+}): ResolvedItemProveedor => {
+  const criterioId =
+    String(row.id_cricla1 ?? "").trim() || "@SP";
+  const criterioLabel =
+    String(row.criterio_nombre ?? "").trim() ||
+    (criterioId !== "@SP" ? criterioId : "(Sin proveedor)");
+  const nit = String(row.nit ?? "").trim() || null;
+  const terceroCodigo = String(row.tercero_codigo ?? "").trim();
+  const terceroNombre = String(row.tercero_nombre ?? "").trim();
+  if (terceroCodigo || terceroNombre) {
+    return {
+      id: terceroCodigo ? `t:${terceroCodigo}` : `t:${criterioId}`,
+      label: terceroNombre || criterioLabel,
+      criterioId: criterioId === "@SP" ? null : criterioId,
+      criterioLabel,
+      nit,
+      fromTercero: true,
+    };
+  }
+  return {
+    id: criterioId,
+    label: criterioLabel,
+    criterioId: criterioId === "@SP" ? null : criterioId,
+    criterioLabel,
+    nit,
+    fromTercero: false,
+  };
+};
 
 const isoToCompact = (iso: string) => iso.replace(/-/g, "");
 
@@ -240,13 +305,19 @@ export const queryPreciosProveedorMatrix = async (
       ? `HAVING ${priceFilterParts.join(" AND ")}`
       : "";
 
-  const provCheck = await client.query<{ ok: boolean }>(`
-    SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'proveedor_item'
-    ) AS ok
+  const provCheck = await client.query<{ ok: boolean; tercero: boolean }>(`
+    SELECT
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'proveedor_item'
+      ) AS ok,
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'proveedor_tercero'
+      ) AS tercero
   `);
   const hasProveedor = Boolean(provCheck.rows[0]?.ok);
+  const hasTercero = Boolean(provCheck.rows[0]?.tercero);
 
   const proveedorJoin = hasProveedor
     ? `
@@ -256,11 +327,26 @@ export const queryPreciosProveedorMatrix = async (
     LEFT JOIN proveedor_pos_catalogo pc
       ON pc.empresa = a.empresa_norm
      AND pc.id_cricla1 = pi.id_cricla1
+    ${hasTercero ? PROVEEDOR_TERCERO_LATERAL : ""}
   `
     : "";
 
   const proveedorSelect = hasProveedor
-    ? `
+    ? hasTercero
+      ? `
+      COALESCE(
+        NULLIF(TRIM(pt.codigo), ''),
+        NULLIF(TRIM(pi.id_cricla1), ''),
+        '@SP'
+      ) AS proveedor_id,
+      COALESCE(
+        NULLIF(TRIM(pt.nombre), ''),
+        NULLIF(TRIM(pc.nombre), ''),
+        NULLIF(TRIM(pi.descripcion), ''),
+        '(Sin proveedor)'
+      ) AS proveedor_label
+    `
+      : `
       COALESCE(NULLIF(TRIM(pi.id_cricla1), ''), '@SP') AS proveedor_id,
       COALESCE(
         NULLIF(TRIM(pc.nombre), ''),
@@ -685,19 +771,28 @@ export async function queryPreciosProveedorItemExpand(
     columns,
   });
 
-  const provCheck = await client.query<{ ok: boolean }>(`
-    SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'proveedor_item'
-    ) AS ok
+  const provCheck = await client.query<{ ok: boolean; tercero: boolean }>(`
+    SELECT
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'proveedor_item'
+      ) AS ok,
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'proveedor_tercero'
+      ) AS tercero
   `);
-  const provByItemEmpresa = new Map<string, { id: string; label: string }>();
+  const provByItemEmpresa = new Map<string, ResolvedItemProveedor>();
   if (provCheck.rows[0]?.ok && variantItemIds.length > 0) {
+    const hasTercero = Boolean(provCheck.rows[0]?.tercero);
     const provRes = await client.query<{
       empresa: string;
       id_item: string;
       id_cricla1: string;
-      nombre: string | null;
+      criterio_nombre: string | null;
+      nit: string | null;
+      tercero_codigo: string | null;
+      tercero_nombre: string | null;
     }>(
       `
       SELECT
@@ -709,25 +804,45 @@ export async function queryPreciosProveedorItemExpand(
           NULLIF(BTRIM(pi.descripcion), ''),
           NULLIF(BTRIM(pi.id_cricla1), ''),
           '(Sin proveedor)'
-        ) AS nombre
+        ) AS criterio_nombre,
+        NULLIF(BTRIM(pc.nit), '') AS nit
+        ${
+          hasTercero
+            ? `,
+        pt.codigo AS tercero_codigo,
+        pt.nombre AS tercero_nombre`
+            : `,
+        NULL::text AS tercero_codigo,
+        NULL::text AS tercero_nombre`
+        }
       FROM proveedor_item pi
       LEFT JOIN proveedor_pos_catalogo pc
         ON pc.empresa = pi.empresa
        AND pc.id_cricla1 = pi.id_cricla1
+      ${hasTercero ? PROVEEDOR_TERCERO_LATERAL : ""}
       WHERE BTRIM(pi.id_item) = ANY($1::text[])
       `,
       [variantItemIds],
     );
     for (const row of provRes.rows) {
-      provByItemEmpresa.set(`${row.id_item}::${row.empresa}`, {
-        id: String(row.id_cricla1),
-        label: String(row.nombre ?? row.id_cricla1),
-      });
+      provByItemEmpresa.set(
+        `${row.id_item}::${row.empresa}`,
+        resolveItemProveedorRow(row),
+      );
     }
   }
 
   const expandMap = new Map<string, PreciosProveedorExpandRow>();
   const sedeKeySet = new Set(columns.map((col) => col.key));
+
+  const fallbackProv = (): ResolvedItemProveedor => ({
+    id: "@SP",
+    label: "(Sin proveedor)",
+    criterioId: null,
+    criterioLabel: null,
+    nit: null,
+    fromTercero: false,
+  });
 
   for (const row of variants.rows) {
     const variantId = String(row.id_item).trim();
@@ -736,10 +851,8 @@ export async function queryPreciosProveedorItemExpand(
     const sedeKey = `${empresa}|${idCo}`;
     if (!sedeKeySet.has(sedeKey)) continue;
 
-    const prov = provByItemEmpresa.get(`${variantId}::${empresa}`) ?? {
-      id: "@SP",
-      label: "(Sin proveedor)",
-    };
+    const prov =
+      provByItemEmpresa.get(`${variantId}::${empresa}`) ?? fallbackProv();
     const expandId = `${variantId}::${empresa}::${prov.id}`;
     const units = toNum(row.cantidad);
     const sales = toNum(row.ventas_netas);
@@ -767,7 +880,12 @@ export async function queryPreciosProveedorItemExpand(
         label: String(row.label ?? variantId).trim() || variantId,
         proveedorId: prov.id,
         proveedorLabel: prov.label,
+        criterioId: prov.criterioId,
+        criterioLabel: prov.criterioLabel,
         empresa,
+        empresaLabel: empresaLabel(empresa),
+        nit: prov.nit,
+        fromTercero: prov.fromTercero,
         cells: [cell],
       });
     }
@@ -789,10 +907,8 @@ export async function queryPreciosProveedorItemExpand(
     const sedeKey = costKey.slice(sep + 2);
     if (!sedeKeySet.has(sedeKey)) continue;
     const empresa = sedeKey.split("|")[0] ?? "";
-    const prov = provByItemEmpresa.get(`${variantId}::${empresa}`) ?? {
-      id: "@SP",
-      label: "(Sin proveedor)",
-    };
+    const prov =
+      provByItemEmpresa.get(`${variantId}::${empresa}`) ?? fallbackProv();
     const expandId = `${variantId}::${empresa}::${prov.id}`;
     let existing = expandMap.get(expandId);
     if (!existing) {
@@ -802,7 +918,12 @@ export async function queryPreciosProveedorItemExpand(
         label: itemLabelById.get(variantId) ?? variantId,
         proveedorId: prov.id,
         proveedorLabel: prov.label,
+        criterioId: prov.criterioId,
+        criterioLabel: prov.criterioLabel,
         empresa,
+        empresaLabel: empresaLabel(empresa),
+        nit: prov.nit,
+        fromTercero: prov.fromTercero,
         cells: [],
       };
       expandMap.set(expandId, existing);
@@ -834,6 +955,8 @@ export async function queryPreciosProveedorItemExpand(
   const rows = [...expandMap.values()].sort((a, b) => {
     if (a.itemId === itemId && b.itemId !== itemId) return -1;
     if (b.itemId === itemId && a.itemId !== itemId) return 1;
+    const byEmpresa = a.empresaLabel.localeCompare(b.empresaLabel, "es");
+    if (byEmpresa !== 0) return byEmpresa;
     const byProv = a.proveedorLabel.localeCompare(b.proveedorLabel, "es");
     if (byProv !== 0) return byProv;
     return a.empresa.localeCompare(b.empresa, "es");

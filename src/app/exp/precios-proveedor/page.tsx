@@ -496,8 +496,9 @@ export default function ExpPreciosProveedorPage() {
           promedian los precios/costos de cada día. El color compara{" "}
           <strong>sedes del mismo ítem</strong> (no ítem contra ítem). En costo
           de entrada y precio venta: verde = más bajo, rojo = más alto.{" "}
-          <strong>Doble clic</strong> en un ítem despliega los proveedores de
-          ese producto.
+          <strong>Doble clic</strong> en un ítem despliega proveedores por
+          empresa: comercial (NIT → proveedor_tercero) o criterio POS si no hay
+          match.
         </p>
         {meta?.note ? (
           <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -842,24 +843,43 @@ Venta ${money(cell.sales)} · Costo entrada tot. ${money(cell.cost)}`
                                   <th className="sticky left-0 z-10 max-w-[18rem] bg-indigo-50 px-3 py-2 pl-8 text-left font-semibold">
                                     <div
                                       className="truncate text-indigo-950"
-                                      title={child.proveedorLabel}
+                                      title={`${child.empresaLabel} · ${child.proveedorLabel}${
+                                        child.criterioLabel
+                                          ? ` · criterio ${child.criterioLabel}`
+                                          : ""
+                                      }`}
                                     >
+                                      {child.empresaLabel}
+                                      {" · "}
                                       {child.proveedorLabel}
+                                      {child.fromTercero ? (
+                                        <span className="ml-1 text-[10px] font-semibold text-emerald-700">
+                                          comercial
+                                        </span>
+                                      ) : (
+                                        <span className="ml-1 text-[10px] font-semibold text-amber-700">
+                                          criterio
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
                                       {child.itemId}
                                       {child.itemId !== row.id
                                         ? ` · ${child.label}`
                                         : ""}
-                                      {" · "}
-                                      {child.empresa}
+                                      {child.nit ? ` · NIT ${child.nit}` : ""}
+                                      {child.criterioLabel &&
+                                      child.criterioLabel !==
+                                        child.proveedorLabel
+                                        ? ` · POS ${child.criterioLabel}`
+                                        : ""}
                                     </div>
                                   </th>
                                   {matrix.columns.map((col) => {
                                     const cell = childBySede.get(col.key);
                                     const style = cellHeatStyle(cell);
                                     const title = cell
-                                      ? `${child.proveedorLabel} · ${col.label}
+                                      ? `${child.empresaLabel} · ${child.proveedorLabel} · ${col.label}
 Costo entrada ${unitMoney(cell.pcu)} · Precio venta ${unitMoney(cell.pvu)}
 Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und`
                                       : "";

@@ -198,20 +198,38 @@ const writeDrillSheet = (
     views: [{ state: "frozen", ySplit: 2 }],
   });
 
-  const headers = [
-    "Nivel",
-    "Código / ID",
-    "Nombre",
-    "DI und. (días)",
-    "DI valor (días)",
-    "Inv. und.",
-    "Inv. $",
-    "Venta und.",
-    "Costo venta $",
-    "Hijos",
-  ];
+  const showProveedor = input.drill.level === "item";
+  const headers = showProveedor
+    ? [
+        "Nivel",
+        "Código / ID",
+        "Nombre",
+        "Proveedor",
+        "Código proveedor",
+        "DI und. (días)",
+        "DI valor (días)",
+        "Inv. und.",
+        "Inv. $",
+        "Venta und.",
+        "Costo venta $",
+        "Hijos",
+      ]
+    : [
+        "Nivel",
+        "Código / ID",
+        "Nombre",
+        "DI und. (días)",
+        "DI valor (días)",
+        "Inv. und.",
+        "Inv. $",
+        "Venta und.",
+        "Costo venta $",
+        "Hijos",
+      ];
 
-  const widths = [12, 16, 42, 14, 14, 12, 16, 12, 16, 8];
+  const widths = showProveedor
+    ? [12, 16, 36, 28, 14, 14, 14, 12, 16, 12, 16, 8]
+    : [12, 16, 42, 14, 14, 12, 16, 12, 16, 8];
   widths.forEach((width, index) => {
     sheet.getColumn(index + 1).width = width;
   });
@@ -239,28 +257,49 @@ const writeDrillSheet = (
     (a, b) => b.inventoryValue - a.inventoryValue,
   );
 
+  const diUnitsCol = showProveedor ? 5 : 3;
+  const diValueCol = showProveedor ? 6 : 4;
+  const numericStart = showProveedor ? 7 : 5;
+  const numericEnd = showProveedor ? 10 : 8;
+  const hijosCol = showProveedor ? 11 : 9;
+
   sorted.forEach((row, index) => {
     const excelRow = sheet.getRow(index + 3);
-    const values: Array<string | number> = [
-      ANALISIS_INVENTARIO_LEVEL_LABELS[row.level],
-      sanitizeExportText(row.id),
-      sanitizeExportText(row.label),
-      diExcelValue(row.diUnits),
-      diExcelValue(row.diValue),
-      Math.round(row.inventoryUnits * 10) / 10,
-      Math.round(row.inventoryValue),
-      Math.round(row.soldUnits * 10) / 10,
-      Math.round(row.costOfSales),
-      row.childCount,
-    ];
+    const values: Array<string | number> = showProveedor
+      ? [
+          ANALISIS_INVENTARIO_LEVEL_LABELS[row.level],
+          sanitizeExportText(row.id),
+          sanitizeExportText(row.label),
+          sanitizeExportText(row.proveedorLabel ?? ""),
+          sanitizeExportText(row.proveedorId ?? ""),
+          diExcelValue(row.diUnits),
+          diExcelValue(row.diValue),
+          Math.round(row.inventoryUnits * 10) / 10,
+          Math.round(row.inventoryValue),
+          Math.round(row.soldUnits * 10) / 10,
+          Math.round(row.costOfSales),
+          row.childCount,
+        ]
+      : [
+          ANALISIS_INVENTARIO_LEVEL_LABELS[row.level],
+          sanitizeExportText(row.id),
+          sanitizeExportText(row.label),
+          diExcelValue(row.diUnits),
+          diExcelValue(row.diValue),
+          Math.round(row.inventoryUnits * 10) / 10,
+          Math.round(row.inventoryValue),
+          Math.round(row.soldUnits * 10) / 10,
+          Math.round(row.costOfSales),
+          row.childCount,
+        ];
     values.forEach((value, col) => {
       const cell = excelRow.getCell(col + 1);
       cell.value = value;
       border(cell);
       cell.font = { size: 9 };
       if (index % 2 === 1) fill(cell, ALT_ROW);
-      if (col === 3 || col === 4) {
-        const di = col === 3 ? row.diUnits : row.diValue;
+      if (col === diUnitsCol || col === diValueCol) {
+        const di = col === diUnitsCol ? row.diUnits : row.diValue;
         const band = resolveDiBand(di);
         fill(cell, BAND_FILL[band] ?? ALT_ROW);
         cell.font = {
@@ -270,11 +309,12 @@ const writeDrillSheet = (
         };
         cell.alignment = { horizontal: "center" };
       }
-      if (col >= 5 && col <= 8 && typeof value === "number") {
-        cell.numFmt = col === 5 || col === 7 ? "#,##0.0" : "#,##0";
+      if (col >= numericStart && col <= numericEnd && typeof value === "number") {
+        cell.numFmt =
+          col === numericStart || col === numericStart + 2 ? "#,##0.0" : "#,##0";
         cell.alignment = { horizontal: "right" };
       }
-      if (col === 9) cell.alignment = { horizontal: "center" };
+      if (col === hijosCol) cell.alignment = { horizontal: "center" };
     });
   });
 
@@ -285,17 +325,32 @@ const writeDrillSheet = (
   const invV = sorted.reduce((sum, row) => sum + row.inventoryValue, 0);
   const sold = sorted.reduce((sum, row) => sum + row.soldUnits, 0);
   const cost = sorted.reduce((sum, row) => sum + row.costOfSales, 0);
-  [
-    "",
-    "",
-    "",
-    "",
-    Math.round(invU * 10) / 10,
-    Math.round(invV),
-    Math.round(sold * 10) / 10,
-    Math.round(cost),
-    "",
-  ].forEach((value, offset) => {
+  const totalValues = showProveedor
+    ? [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        Math.round(invU * 10) / 10,
+        Math.round(invV),
+        Math.round(sold * 10) / 10,
+        Math.round(cost),
+        "",
+      ]
+    : [
+        "",
+        "",
+        "",
+        "",
+        Math.round(invU * 10) / 10,
+        Math.round(invV),
+        Math.round(sold * 10) / 10,
+        Math.round(cost),
+        "",
+      ];
+  totalValues.forEach((value, offset) => {
     const cell = totalRow.getCell(offset + 2);
     cell.value = value;
     cell.font = { bold: true, size: 9 };
