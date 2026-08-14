@@ -21,6 +21,12 @@ export const formatHours = (value: number) => {
   return value.toFixed(2);
 };
 
+export const formatLineVolume = (value: number, fractionDigits = 1) =>
+  new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: fractionDigits,
+    minimumFractionDigits: 0,
+  }).format(value);
+
 export const formatPercent = (value: number) => {
   return new Intl.NumberFormat("es-CO", {
     style: "percent",

@@ -1,4 +1,5 @@
-﻿import { formatCOP, formatHours, hasLaborDataForLine } from "@/lib/shared/calc";
+﻿import { formatHours, formatLineVolume, hasLaborDataForLine } from "@/lib/shared/calc";
+import { volumeKindForLine } from "@/lib/productivity/line-volume";
 import { LineMetrics } from "@/types";
 
 interface LineCardProps {
@@ -18,43 +19,90 @@ const getLineAccentClass = (lineId: string) => {
   return accents[lineId] ?? "bg-slate-500";
 };
 
-// Componente extraído para mejor legibilidad
 const MetricRow = ({
   label,
   value,
-  icon,
   valueClassName = "text-slate-900",
 }: {
   label: string;
   value: string | number;
-  icon?: React.ReactNode;
   valueClassName?: string;
 }) => (
   <div className="flex items-center justify-between">
-    <span className="flex items-center gap-2 text-slate-700">
-      {icon}
-      {label}
-    </span>
+    <span className="flex items-center gap-2 text-slate-700">{label}</span>
     <span className={`text-base font-semibold ${valueClassName}`}>{value}</span>
   </div>
 );
 
+const perHour = (volume: number, hours: number): number | null =>
+  hours > 0 ? volume / hours : null;
+
 export const LineCard = ({ line, hasData = true }: LineCardProps) => {
   const hasLaborData = hasLaborDataForLine(line.id);
   const displayHours = hasLaborData ? line.hours : 0;
-  const salesPerHour =
-    hasData && displayHours > 0
-      ? line.sales / 1_000_000 / displayHours
-      : null;
+  const kind = volumeKindForLine(line.id);
   const emptyLabel = "—";
-  const zeroHours = "0h";
+  const valueClass = hasData ? "text-slate-900" : "text-slate-600";
+  const hoursValue = hasData ? `${formatHours(displayHours)}h` : "0h";
+
+  const rateValue = (volume: number, digits: number) => {
+    const rate = hasData ? perHour(volume, displayHours) : null;
+    return rate === null ? emptyLabel : formatLineVolume(rate, digits);
+  };
+
+  let metrics: Array<{ label: string; value: string }> = [];
+  if (kind === "tx") {
+    const tx = line.transactions ?? line.volume ?? 0;
+    metrics = [
+      {
+        label: "Transacciones",
+        value: hasData ? formatLineVolume(tx, 0) : emptyLabel,
+      },
+      { label: "Horas trabajadas", value: hoursValue },
+      { label: "Tx/hr", value: rateValue(tx, 2) },
+    ];
+  } else if (kind === "und") {
+    const und = line.volume ?? 0;
+    metrics = [
+      {
+        label: "Unidades",
+        value: hasData ? formatLineVolume(und, 0) : emptyLabel,
+      },
+      { label: "Horas trabajadas", value: hoursValue },
+      { label: "Und/hr", value: rateValue(und, 2) },
+    ];
+  } else if (kind === "kg") {
+    const kg = line.volume ?? 0;
+    metrics = [
+      { label: "KG", value: hasData ? formatLineVolume(kg, 1) : emptyLabel },
+      { label: "Horas trabajadas", value: hoursValue },
+      { label: "KG/hr", value: rateValue(kg, 2) },
+    ];
+  } else if (kind === "asadero") {
+    metrics = [
+      {
+        label: "UND.Pollo",
+        value: hasData
+          ? formatLineVolume(line.asaderoPollosUnd ?? 0, 2)
+          : emptyLabel,
+      },
+      {
+        label: "Unidades",
+        value: hasData
+          ? formatLineVolume(line.asaderoOtherUnd ?? 0, 0)
+          : emptyLabel,
+      },
+      { label: "Horas trabajadas", value: hoursValue },
+    ];
+  } else {
+    metrics = [{ label: "Horas trabajadas", value: hoursValue }];
+  }
 
   return (
     <article
       data-animate="line-card"
       className="flex flex-col gap-4 rounded-3xl border border-slate-200/80 bg-linear-to-br from-white via-slate-50 to-slate-50/60 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.15)] transition-all duration-200 hover:border-slate-300 hover:shadow-[0_20px_70px_-35px_rgba(15,23,42,0.2)]"
     >
-      {/* Header */}
       <header>
         <span
           className={`mb-3 block h-1.5 w-14 rounded-full ${getLineAccentClass(line.id)}`}
@@ -65,26 +113,16 @@ export const LineCard = ({ line, hasData = true }: LineCardProps) => {
         <h2 className="text-xl font-semibold text-slate-900">{line.name}</h2>
       </header>
 
-      {/* Metrics */}
       <div className="grid gap-3 text-sm">
-        <MetricRow
-          label="Ventas"
-          value={hasData ? formatCOP(line.sales) : emptyLabel}
-          valueClassName={hasData ? "text-slate-900" : "text-slate-600"}
-        />
-        <MetricRow
-          label="Horas trabajadas"
-          value={hasData ? `${formatHours(displayHours)}h` : zeroHours}
-          valueClassName={hasData ? "text-slate-900" : "text-slate-600"}
-        />
-        <MetricRow
-          label="Vta/hr"
-          value={salesPerHour === null ? emptyLabel : salesPerHour.toFixed(3)}
-          valueClassName={hasData ? "text-slate-900" : "text-slate-600"}
-        />
+        {metrics.map((metric) => (
+          <MetricRow
+            key={metric.label}
+            label={metric.label}
+            value={metric.value}
+            valueClassName={valueClass}
+          />
+        ))}
       </div>
     </article>
   );
 };
-
-

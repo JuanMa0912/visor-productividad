@@ -13,6 +13,14 @@ export interface LineMetrics {
   sales: number;
   hours: number;
   hourlyRate: number;
+  /** Volumen de tarjeta: tx (cajas), und (industria) o kg (fruver/carnes/pollo). */
+  volume?: number;
+  /** Cajas: tickets con venta en `ventas_cajas`. */
+  transactions?: number;
+  /** Asadero: equivalentes pollo (misma conversión que Informe Variación). */
+  asaderoPollosUnd?: number;
+  /** Asadero: cantidad cruda que no entra a UND.Pollo. */
+  asaderoOtherUnd?: number;
 }
 
 export interface DailyProductivity {

@@ -169,7 +169,7 @@ Dominios principales:
 | Dominio | Tablas principales |
 | --- | --- |
 | Auth/admin | `app_users`, `app_user_sessions`, `app_user_login_logs`, `app_user_activity_log` |
-| Productividad | `ventas_cajas`, `ventas_fruver`, `ventas_industria`, `ventas_carnes`, `ventas_pollo_pesc`, `ventas_asadero`, `asistencia_horas` |
+| Productividad | `ventas_cajas`, `ventas_fruver`, `ventas_industria`, `ventas_carnes`, `ventas_pollo_pesc`, `ventas_asadero`, `asistencia_horas`; volumen de tarjetas Mix y Línea desde `margen_item_dia_roll` |
 | Margenes | `margenes_linea_co_dia` |
 | Ventas x item | `ventas_item_diario`, `ventas_item_cargas`, `ventas_item_sede_map` |
 | Rotacion/inventario/kardex | `rotacion_base_item_dia_sede`, `rotacion_v4`, `rotacion_abcd_config*`, `rotacion_cero_item_estado*` |

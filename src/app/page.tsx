@@ -219,7 +219,17 @@ const aggregateLines = (
 ): LineMetrics[] => {
   const lineMap = new Map<
     string,
-    { id: string; name: string; sales: number; hours: number; cost: number }
+    {
+      id: string;
+      name: string;
+      sales: number;
+      hours: number;
+      cost: number;
+      volume: number;
+      transactions: number;
+      asaderoPollosUnd: number;
+      asaderoOtherUnd: number;
+    }
   >();
 
   const allowedIds =
@@ -240,6 +250,10 @@ const aggregateLines = (
         existing.sales += line.sales;
         existing.hours += hours;
         existing.cost += cost;
+        existing.volume += line.volume ?? 0;
+        existing.transactions += line.transactions ?? 0;
+        existing.asaderoPollosUnd += line.asaderoPollosUnd ?? 0;
+        existing.asaderoOtherUnd += line.asaderoOtherUnd ?? 0;
       } else {
         lineMap.set(line.id, {
           id: line.id,
@@ -247,6 +261,10 @@ const aggregateLines = (
           sales: line.sales,
           hours,
           cost,
+          volume: line.volume ?? 0,
+          transactions: line.transactions ?? 0,
+          asaderoPollosUnd: line.asaderoPollosUnd ?? 0,
+          asaderoOtherUnd: line.asaderoOtherUnd ?? 0,
         });
       }
     });
@@ -264,6 +282,10 @@ const aggregateLines = (
         sales: 0,
         hours: 0,
         cost: 0,
+        volume: 0,
+        transactions: 0,
+        asaderoPollosUnd: 0,
+        asaderoOtherUnd: 0,
       });
     }
   });
@@ -274,6 +296,10 @@ const aggregateLines = (
     sales: line.sales,
     hours: line.hours,
     hourlyRate: line.hours ? line.cost / line.hours : 0,
+    volume: line.volume,
+    transactions: line.transactions,
+    asaderoPollosUnd: line.asaderoPollosUnd,
+    asaderoOtherUnd: line.asaderoOtherUnd,
   }));
 };
 

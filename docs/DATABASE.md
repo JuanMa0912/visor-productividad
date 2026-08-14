@@ -209,7 +209,14 @@ APIs relacionadas: `/api/productivity`, `/api/hourly-analysis`,
 Notas:
 
 - `/api/productivity` usa `PRODUCTIVITY_CACHE_PATH` y opcionalmente
-  `PRODUCTIVITY_SERVE_FILE_CACHE`.
+  `PRODUCTIVITY_SERVE_FILE_CACHE`. Cache memoria `productivity:full-v2`; un JSON
+  de disco sin campos de volumen se ignora y se regenera.
+- Las tarjetas de Mix y Línea (`/` → `LineCard`) ya no muestran ventas. Volumen:
+  Cajas = `COUNT(*)` de tickets con `total_bruto > 0` en `ventas_cajas`;
+  Industria = `SUM(cantidad)` und; Fruver/Carnes/Pollo y pescado = `SUM(cantidad)` kg;
+  Asadero = UND.Pollo (misma conversión que Informe Variación) + unidades no-pollo.
+  KG/und salen de `margen_item_dia_roll` (cat. 4 / cat. 3). Las ventas `$` siguen
+  en el payload para Excel/PDF y comparativos.
 - `src/lib/horarios/ocultar-cedulas.ts` excluye cedulas del analisis para no
   admins.
 - `asistencia_horas` no tiene DDL completo en el repo.
@@ -221,7 +228,7 @@ Notas:
 | `margenes_linea_co_dia` | legacy: agregados por linea/sede/dia (feb 2026 en prod) |
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD; incluye `id_caja`, `vend_cc`/`vend_cc_desc`, `documento_docfc`, `id_terc`/`nombre_terc` |
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta `/margenes` (Producto/Factura/Cliente/Sede); atributos de factura vía MAX |
-| `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` |
+| `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` y del volumen de tarjetas Mix y Línea |
 | `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Productividad (`ventas_dinastia`) pendiente. |
 | `margen_dinastia_roll` | rollup factura+item desde `margen_dinastia`; alimenta `/margenes` e `/informe-variacion` tenant Dinastia (sin `item_dia` dedicado; el informe arma bundle rango-a-rango). |
 | `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s (también para usuarios con sedes/línea: se recorta en servidor) |

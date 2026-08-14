@@ -90,6 +90,7 @@ Codigo compartido sin UI de pagina.
 | `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
 | `participacion-comercial/` | mix/participación sede↔línea por almacén |
 | `proveedores/` | visitas QR (`qr_*` por sede), ventas, productividad und/kg/tx, OIPV asistencia (admin) |
+| `productivity/` | ventana de fechas, cache disco y volumen de tarjetas Mix y Línea (`tx`/`und`/`kg`/`UND.Pollo`) |
 | `checklists/` | catálogo de auditorías y scoring (bodega gerencial); subtablero `checklists` |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
 | `notion/` | cliente Notion y normalizacion del cronograma |
@@ -119,7 +120,7 @@ Codigo compartido sin UI de pagina.
 | `admin/login-logs`, `admin/login-failures`, `admin/audit`, `admin/exports`, `admin/user-presence`, `admin/uso-tableros` | accesos, fallos de login, auditoría admin, descargas, presencia y uso de tableros |
 | `exports/log` | POST: registra metadatos de una descarga/export (auth; fire-and-forget desde cliente) |
 | `admin/cache/flush` | POST (CSRF): vacía cache en memoria del proceso (informe + márgenes). GET: tamaño actual |
-| `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria/disco; views pesadas en dynamic import |
+| `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v2`/disco; tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und, fruver/carnes/pollo=kg, asadero=UND.Pollo+unidades) y conservan `$` para Excel/PDF |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
 | `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el acumulado Excel aún no cierra, ofrece `proj-1-N` (run-rate hasta el corte con datos al `maxDate`); UI monta explorador bajo demanda |
@@ -155,7 +156,7 @@ acotados al dominio cuando se toquen.
 | Ruta | Rol |
 | --- | --- |
 | `HourlyAnalysis.tsx` | analisis por hora embebido en productividad/jornada |
-| `LineCard.tsx`, `LineComparisonTable.tsx`, `SelectionSummary.tsx` | productividad y comparativos |
+| `LineCard.tsx`, `LineComparisonTable.tsx`, `SelectionSummary.tsx` | tarjetas Mix y Línea (volumen + horas; sin ventas) y comparativos |
 | `PresenceHeartbeat.tsx` | ping de actividad a `/api/auth/heartbeat` cuando el usuario esta autenticado |
 | `TopBar.tsx` | barra usada por la home de productividad |
 | `portal/*` | top bar global, branding, footer, menu de usuario, toaster y tarjetas hub |

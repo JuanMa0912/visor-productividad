@@ -12,6 +12,13 @@ import { promises as fs } from "fs";
 import path from "path";
 import { shouldServeProductivityFileCache } from "@/lib/productivity/file-cache-policy";
 import {
+  emptyLineMetrics,
+  hasProductivityVolumeShape,
+  lineHasActivity,
+  resolveProductivityLineFromRoll,
+  splitAsaderoQty,
+} from "@/lib/productivity/line-volume";
+import {
   filterProductivityByDateRange,
   isProductivityIsoDate,
   toProductivityCompactDate,
@@ -37,7 +44,7 @@ const resolveCachePath = () => {
   return path.resolve(/* turbopackIgnore: true */ process.cwd(), envPath);
 };
 
-const PRODUCTIVITY_MEMORY_CACHE_KEY = "productivity:full-v1";
+const PRODUCTIVITY_MEMORY_CACHE_KEY = "productivity:full-v2";
 const PRODUCTIVITY_MEMORY_TTL_MS = 10 * 60 * 1000;
 
 type ProductivityDateBounds = {
@@ -126,6 +133,9 @@ const readCache = async (): Promise<{
     if (!Array.isArray(parsed.dailyData) || parsed.dailyData.length === 0) {
       return null;
     }
+    if (!hasProductivityVolumeShape(parsed.dailyData)) {
+      return null;
+    }
     const updatedAt =
       typeof parsed.updatedAt === "string" && parsed.updatedAt.trim()
         ? parsed.updatedAt.trim()
@@ -204,7 +214,7 @@ const compactDailyDataForTransport = (
   dailyData
     .map((day) => ({
       ...day,
-      lines: day.lines.filter((line) => line.sales !== 0 || line.hours !== 0),
+      lines: day.lines.filter(lineHasActivity),
     }))
     .filter((day) => day.lines.length > 0);
 
@@ -243,6 +253,7 @@ const LINE_TABLES: Array<{
 
 const normalizeLineId = (value: string) => value.trim().toLowerCase();
 const LINE_ID_SET = new Set(LINE_TABLES.map((line) => normalizeLineId(line.id)));
+const LINE_NAME_BY_ID = new Map(LINE_TABLES.map((line) => [line.id, line.name]));
 
 const resolveSessionAllowedLineIds = (allowedLines: string[] | null | undefined) => {
   if (!Array.isArray(allowedLines) || allowedLines.length === 0) {
@@ -513,45 +524,142 @@ const fetchAllProductivityData = async (
         ORDER BY fecha, sede
       `;
 
+  const needsRollVolume =
+    allowedSet.size === 0 ||
+    Array.from(allowedSet).some((id) => id !== "cajas");
+  const rollWhereParts = ["fecha_dcto IS NOT NULL"];
+  const rollParams: string[] = [];
+  if (fromCompact) {
+    rollParams.push(fromCompact);
+    rollWhereParts.push(`fecha_dcto >= $${rollParams.length}`);
+  }
+  if (toCompact) {
+    rollParams.push(toCompact);
+    rollWhereParts.push(`fecha_dcto <= $${rollParams.length}`);
+  }
+  const rollWhere = rollWhereParts.join("\n          AND ");
+  const tipo4VolumeQuery = `
+        SELECT
+          fecha_dcto,
+          empresa_norm,
+          id_co_norm,
+          TRIM(COALESCE(id_tipo, '')) AS id_tipo,
+          TRIM(COALESCE(id_linea1, '')) AS id_linea1,
+          SUM(COALESCE(cantidad, 0)) AS qty
+        FROM margen_item_dia_roll
+        WHERE ${rollWhere}
+          AND TRIM(COALESCE(id_tipo, '')) = '4'
+        GROUP BY fecha_dcto, empresa_norm, id_co_norm,
+          TRIM(COALESCE(id_tipo, '')), TRIM(COALESCE(id_linea1, ''))
+      `;
+  const asaderoVolumeQuery = `
+        SELECT
+          fecha_dcto,
+          empresa_norm,
+          id_co_norm,
+          TRIM(COALESCE(id_tipo, '')) AS id_tipo,
+          TRIM(COALESCE(id_linea1, '')) AS id_linea1,
+          TRIM(COALESCE(id_linea2, '')) AS id_linea2,
+          MAX(nombre_linea1) AS nombre_linea1,
+          MAX(nombre_linea2) AS nombre_linea2,
+          TRIM(COALESCE(id_item, '')) AS id_item,
+          MAX(item_descripcion) AS item_descripcion,
+          SUM(COALESCE(cantidad, 0)) AS qty
+        FROM margen_item_dia_roll
+        WHERE ${rollWhere}
+          AND TRIM(COALESCE(id_tipo, '')) = '3'
+        GROUP BY fecha_dcto, empresa_norm, id_co_norm,
+          TRIM(COALESCE(id_tipo, '')), TRIM(COALESCE(id_linea1, '')),
+          TRIM(COALESCE(id_linea2, '')), TRIM(COALESCE(id_item, ''))
+      `;
+
+  const emptyQueryResult = { rows: [] as Record<string, unknown>[] };
+  const queryOrEmpty = async (sql: string, params: string[], label: string) => {
+    try {
+      return await pool.query(sql, params);
+    } catch (error) {
+      console.warn(`No se pudo consultar ${label}:`, error);
+      return emptyQueryResult;
+    }
+  };
+
   // Varias conexiones del pool en paralelo (antes: 1 client serializado).
-  const [lineOutputs, hoursQueryResult] = await Promise.all([
-    Promise.all(
-      lineTables.map(async (line) => {
-        const query = `
+  const [lineOutputs, hoursQueryResult, tipo4VolumeResult, asaderoVolumeResult] =
+    await Promise.all([
+      Promise.all(
+        lineTables.map(async (line) => {
+          const query = `
           SELECT
             fecha_dcto,
             centro_operacion,
             empresa_bd,
-            COALESCE(SUM(total_bruto), 0) AS total_sales
+            COALESCE(SUM(total_bruto), 0) AS total_sales,
+            COUNT(*) FILTER (WHERE COALESCE(total_bruto, 0) > 0)::int AS tx_count
           FROM ${line.table}
           WHERE ${ventasWhere}
           GROUP BY fecha_dcto, centro_operacion, empresa_bd
           ORDER BY fecha_dcto, centro_operacion
         `;
-        try {
-          const result = await pool.query(query, ventasParams);
-          return {
-            line,
-            rows: (result.rows ?? []) as Record<string, unknown>[],
-          };
-        } catch (error) {
-          console.warn(
-            `No se pudo consultar la tabla ${line.table}. Se omite.`,
-            error,
-          );
-          return { line, rows: [] as Record<string, unknown>[] };
-        }
-      }),
-    ),
-    (async () => {
-      try {
-        return await pool.query(hoursQuery, hoursParams);
-      } catch (error) {
-        console.warn("No se pudo consultar la tabla asistencia_horas:", error);
-        return { rows: [] as Record<string, unknown>[] };
-      }
-    })(),
-  ]);
+          try {
+            const result = await pool.query(query, ventasParams);
+            return {
+              line,
+              rows: (result.rows ?? []) as Record<string, unknown>[],
+            };
+          } catch (error) {
+            console.warn(
+              `No se pudo consultar la tabla ${line.table}. Se omite.`,
+              error,
+            );
+            return { line, rows: [] as Record<string, unknown>[] };
+          }
+        }),
+      ),
+      queryOrEmpty(hoursQuery, hoursParams, "asistencia_horas"),
+      needsRollVolume
+        ? queryOrEmpty(tipo4VolumeQuery, rollParams, "margen_item_dia_roll (cat. 4)")
+        : Promise.resolve(emptyQueryResult),
+      needsRollVolume
+        ? queryOrEmpty(
+            asaderoVolumeQuery,
+            rollParams,
+            "margen_item_dia_roll (asadero)",
+          )
+        : Promise.resolve(emptyQueryResult),
+    ]);
+
+  const getOrCreateDaily = (fecha: string, sedeName: string) => {
+    const key = `${fecha}_${sedeName}`;
+    let dailyData = dailyDataMap.get(key);
+    if (!dailyData) {
+      dailyData = { date: fecha, sede: sedeName, lines: [] };
+      dailyDataMap.set(key, dailyData);
+    }
+    return dailyData;
+  };
+
+  const ensureLine = (
+    dailyData: DailyProductivity,
+    lineId: string,
+    lineName?: string,
+  ) => {
+    let lineMetric = dailyData.lines.find((l) => l.id === lineId);
+    if (!lineMetric) {
+      lineMetric = emptyLineMetrics(
+        lineId,
+        lineName || LINE_NAME_BY_ID.get(lineId) || lineId,
+      );
+      dailyData.lines.push(lineMetric);
+    }
+    return lineMetric;
+  };
+
+  const sedeNameFromRoll = (idCo: string, empresa: string) => {
+    const centro = String(idCo ?? "").trim().padStart(3, "0");
+    const emp = String(empresa ?? "").toLowerCase().trim();
+    const sedeKey = getSedeKey(centro, emp);
+    return SEDE_NAMES[sedeKey] || `Sede ${centro} ${emp}`.trim();
+  };
 
   for (const { line, rows } of lineOutputs) {
     for (const row of rows) {
@@ -560,6 +668,7 @@ const fetchAllProductivityData = async (
         centro_operacion: string;
         empresa_bd: string | null;
         total_sales: string | number;
+        tx_count?: string | number;
       };
       const fecha = formatDate(typedRow.fecha_dcto);
       const centroOp = typedRow.centro_operacion;
@@ -567,31 +676,13 @@ const fetchAllProductivityData = async (
       const sedeKey = getSedeKey(centroOp, empresa);
       const sedeName =
         SEDE_NAMES[sedeKey] || `Sede ${centroOp} ${empresa}`.trim();
-      const key = `${fecha}_${sedeName}`;
-
-      let dailyData = dailyDataMap.get(key);
-      if (!dailyData) {
-        dailyData = {
-          date: fecha,
-          sede: sedeName,
-          lines: [],
-        };
-        dailyDataMap.set(key, dailyData);
-      }
-
-      let lineMetric = dailyData.lines.find((l) => l.id === line.id);
-      if (!lineMetric) {
-        lineMetric = {
-          id: line.id,
-          name: line.name,
-          sales: 0,
-          hours: 0,
-          hourlyRate: 50000,
-        };
-        dailyData.lines.push(lineMetric);
-      }
-
+      const lineMetric = ensureLine(getOrCreateDaily(fecha, sedeName), line.id, line.name);
       lineMetric.sales += Number(typedRow.total_sales) || 0;
+      if (line.id === "cajas") {
+        const tx = Number(typedRow.tx_count) || 0;
+        lineMetric.transactions = (lineMetric.transactions ?? 0) + tx;
+        lineMetric.volume = (lineMetric.volume ?? 0) + tx;
+      }
     }
   }
 
@@ -626,40 +717,74 @@ const fetchAllProductivityData = async (
       continue;
     }
 
-    const key = `${fecha}_${sedeName}`;
-    let dailyData = dailyDataMap.get(key);
-
-    if (!dailyData) {
-      dailyData = {
-        date: fecha,
-        sede: sedeName,
-        lines: [],
-      };
-      dailyDataMap.set(key, dailyData);
-    }
-
-    let lineMetric = dailyData.lines.find((l) => l.id === lineId);
-    if (!lineMetric) {
-      const lineInfo = LINE_TABLES.find((l) => l.id === lineId);
-      lineMetric = {
-        id: lineId,
-        name: lineInfo?.name || lineId,
-        sales: 0,
-        hours: 0,
-        hourlyRate: 50000,
-      };
-      dailyData.lines.push(lineMetric);
-    }
-
+    const lineMetric = ensureLine(getOrCreateDaily(fecha, sedeName), lineId);
     lineMetric.hours += Number(typedRow.total_hours) || 0;
+  }
+
+  for (const row of tipo4VolumeResult.rows ?? []) {
+    const typedRow = row as {
+      fecha_dcto: string;
+      empresa_norm: string;
+      id_co_norm: string;
+      id_tipo: string;
+      id_linea1: string;
+      qty: string | number;
+    };
+    const lineId = resolveProductivityLineFromRoll(
+      typedRow.id_tipo,
+      typedRow.id_linea1,
+    );
+    if (!lineId || lineId === "asadero") continue;
+    if (allowedSet.size > 0 && !allowedSet.has(normalizeLineId(lineId))) {
+      continue;
+    }
+    const qty = Number(typedRow.qty) || 0;
+    if (qty === 0) continue;
+    const fecha = formatDate(typedRow.fecha_dcto);
+    const sedeName = sedeNameFromRoll(typedRow.id_co_norm, typedRow.empresa_norm);
+    const lineMetric = ensureLine(getOrCreateDaily(fecha, sedeName), lineId);
+    lineMetric.volume = (lineMetric.volume ?? 0) + qty;
+  }
+
+  for (const row of asaderoVolumeResult.rows ?? []) {
+    const typedRow = row as {
+      fecha_dcto: string;
+      empresa_norm: string;
+      id_co_norm: string;
+      id_tipo: string;
+      id_linea1: string;
+      id_linea2: string;
+      nombre_linea1: string | null;
+      nombre_linea2: string | null;
+      id_item: string;
+      item_descripcion: string | null;
+      qty: string | number;
+    };
+    if (allowedSet.size > 0 && !allowedSet.has("asadero")) continue;
+    const split = splitAsaderoQty({
+      idTipo: typedRow.id_tipo,
+      idLinea1: typedRow.id_linea1,
+      idLinea2: typedRow.id_linea2,
+      nombreLinea1: typedRow.nombre_linea1 ?? "",
+      nombreLinea2: typedRow.nombre_linea2 ?? "",
+      idItem: typedRow.id_item,
+      itemDescripcion: typedRow.item_descripcion ?? "",
+      cantidad: Number(typedRow.qty) || 0,
+    });
+    if (split.pollosUnd === 0 && split.otherUnd === 0) continue;
+    const fecha = formatDate(typedRow.fecha_dcto);
+    const sedeName = sedeNameFromRoll(typedRow.id_co_norm, typedRow.empresa_norm);
+    const lineMetric = ensureLine(getOrCreateDaily(fecha, sedeName), "asadero");
+    lineMetric.asaderoPollosUnd =
+      (lineMetric.asaderoPollosUnd ?? 0) + split.pollosUnd;
+    lineMetric.asaderoOtherUnd =
+      (lineMetric.asaderoOtherUnd ?? 0) + split.otherUnd;
   }
 
   // No rellenar líneas en 0: el cliente ya completa DEFAULT_LINES y el JSON baja mucho.
   const result: DailyProductivity[] = [];
   for (const dailyData of dailyDataMap.values()) {
-    dailyData.lines = dailyData.lines.filter(
-      (line) => line.sales !== 0 || line.hours !== 0,
-    );
+    dailyData.lines = dailyData.lines.filter(lineHasActivity);
     if (dailyData.lines.length === 0) continue;
     result.push(dailyData);
   }
