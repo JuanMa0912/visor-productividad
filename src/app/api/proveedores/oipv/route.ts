@@ -102,6 +102,7 @@ export async function GET(request: Request) {
         "D",
         "visitas",
         "unidades",
+        "hl",
         "venta_neta",
         "costo_mercancia",
       ];
@@ -122,6 +123,7 @@ export async function GET(request: Request) {
             row.weekdays.D ? "X" : "",
             String(row.visitas),
             String(row.unidades),
+            String(row.hl),
             String(row.ventaNeta),
             String(row.costoMercancia ?? 0),
           ].join(","),

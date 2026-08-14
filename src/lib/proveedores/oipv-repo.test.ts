@@ -4,6 +4,7 @@ import {
   defaultOipvWeekRange,
   filterOipvRows,
   isoDowToWeekdayKey,
+  oipvHlFromUnidades,
   oipvRowKey,
   type ProveedorOipvRow,
 } from "@/lib/proveedores/oipv-repo";
@@ -27,12 +28,18 @@ const sampleRow = (
   },
   visitas: 0,
   unidades: 0,
+  hl: 0,
   ventaNeta: 0,
   costoMercancia: 0,
   ...overrides,
 });
 
 describe("oipv-repo helpers", () => {
+  it("HL = unidades ÷ 350", () => {
+    assert.equal(oipvHlFromUnidades(350), 1);
+    assert.equal(oipvHlFromUnidades(103_084.5), 103_084.5 / 350);
+    assert.equal(oipvHlFromUnidades(0), 0);
+  });
   it("mapea ISODOW a columnas L–D", () => {
     assert.equal(isoDowToWeekdayKey(1), "L");
     assert.equal(isoDowToWeekdayKey(2), "Ma");

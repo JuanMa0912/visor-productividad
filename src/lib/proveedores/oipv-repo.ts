@@ -31,10 +31,18 @@ export type ProveedorOipvRow = {
   weekdays: OipvWeekdayFlags;
   visitas: number;
   unidades: number;
+  /** Unidades ÷ 350 (factor operativo OIPV). */
+  hl: number;
   ventaNeta: number;
   /** COGS total del periodo (margen_item_dia_roll vía proveedor_item). */
   costoMercancia: number;
 };
+
+/** Divisor fijo: HL = unidades / 350. */
+export const OIPV_HL_DIVISOR = 350;
+
+export const oipvHlFromUnidades = (unidades: number): number =>
+  Number.isFinite(unidades) ? unidades / OIPV_HL_DIVISOR : 0;
 
 export const OIPV_ASISTENCIA_FILTERS = [
   "all",
@@ -504,6 +512,7 @@ export const listOipvAsistenciaBoard = async (
       weekdays: { ...acc.weekdays },
       visitas: acc.visitas,
       unidades: acc.unidades,
+      hl: oipvHlFromUnidades(acc.unidades),
       ventaNeta: acc.ventaNeta,
       costoMercancia: acc.costoMercancia,
     }))

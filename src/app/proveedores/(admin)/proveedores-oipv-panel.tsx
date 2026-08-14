@@ -275,6 +275,12 @@ export function ProveedoresOipvPanel() {
                 <th className="sticky top-0 bg-slate-50 px-3 py-2 text-right">
                   Unidades
                 </th>
+                <th
+                  className="sticky top-0 bg-slate-50 px-3 py-2 text-right"
+                  title="Unidades ÷ 350"
+                >
+                  HL
+                </th>
                 <th className="sticky top-0 bg-slate-50 px-3 py-2 text-right">
                   Venta $$
                 </th>
@@ -286,14 +292,14 @@ export function ProveedoresOipvPanel() {
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={14} className="px-3 py-8 text-center text-slate-500">
                     Cargando…
                   </td>
                 </tr>
               ) : null}
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={14} className="px-3 py-8 text-center text-slate-500">
                     Sin filas en el rango.
                   </td>
                 </tr>
@@ -327,6 +333,9 @@ export function ProveedoresOipvPanel() {
                   ))}
                   <td className="px-3 py-2 text-right tabular-nums">
                     {qty(row.unidades)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {qty(row.hl)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {money(row.ventaNeta)}
