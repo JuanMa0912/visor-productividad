@@ -421,15 +421,15 @@ export async function GET(request: Request) {
     );
   }
 
-  // Merkmios (bgt) aun no tiene consulta estandar; no corremos la query de
-  // mtodo/mio contra su base. El selector ya lo deshabilita, pero la API tambien
-  // valida (puede llamarse directo, incluso con export publico).
+  // Guard: solo se exportan empresas habilitadas (enabled en
+  // EXCEL_DIAN_EMPRESA_OPTIONS). El selector ya deshabilita las que no lo esten,
+  // pero la API tambien valida porque puede llamarse directo (incluso con export
+  // publico). Hoy las tres (mtodo/mio/bgt) estan habilitadas.
   if (!isExcelDianEmpresaEnabled(empresa)) {
     return finalizeResponse(
       NextResponse.json(
         {
-          error:
-            "La exportacion para Merkmios (Bogota) esta en construccion: aun no hay consulta estandar.",
+          error: `La exportacion para ${excelDianEmpresaLabel(empresa)} esta deshabilitada.`,
         },
         { status: 422, headers: { "Cache-Control": "no-store" } },
       ),
