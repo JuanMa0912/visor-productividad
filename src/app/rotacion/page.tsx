@@ -68,6 +68,12 @@ import {
 } from "./rotation-filter-widgets";
 import type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN2Option, LineaN1FamilyKey, AbcdConfig, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, GroupRowsQuickFilter } from "./rotacion-preamble";
 import {
+  getOverstockBand,
+  isOverstockFilter,
+  matchesOverstockFilter,
+  type OverstockFilter,
+} from "@/lib/rotacion/overstock";
+import {
   getCookieValue,
   ALL_LINEA_N1_FAMILY_KEYS,
   LINEA_N1_FAMILY_LABELS,
@@ -3693,6 +3699,10 @@ export function RotacionPageInner() {
                             ? filteredRows.filter((row) =>
                                 isNuevoItemInSelectedRange(row),
                               )
+                            : isOverstockFilter(categoryFilter)
+                              ? filteredRows.filter((row) =>
+                                  matchesOverstockFilter(row, categoryFilter),
+                                )
                             : Array.isArray(categoryFilter)
                               ? filteredRows.filter((row) => {
                                   const cat = categoryByItem.get(row.item);
@@ -3837,6 +3847,41 @@ export function RotacionPageInner() {
                       summarizeRotationMetricRows(abcMetricRows);
                     const criticalGroupMetrics =
                       summarizeRotationMetricRows(criticalMetricRows);
+                    const overstock32Rows = filteredRows.filter(
+                      (row) => getOverstockBand(row) === "32",
+                    );
+                    const overstock50Rows = filteredRows.filter(
+                      (row) => getOverstockBand(row) === "50",
+                    );
+                    const overstockAllRows = [
+                      ...overstock32Rows,
+                      ...overstock50Rows,
+                    ];
+                    const hasOverstockSelection = isOverstockFilter(categoryFilter);
+                    const overstockMetricRows =
+                      categoryFilter === "O32"
+                        ? overstock32Rows
+                        : categoryFilter === "O50"
+                          ? overstock50Rows
+                          : overstockAllRows;
+                    const overstockGroupMetrics =
+                      summarizeRotationMetricRows(overstockMetricRows);
+                    const overstockGroupLabel =
+                      categoryFilter === "O32"
+                        ? "32–50"
+                        : categoryFilter === "O50"
+                          ? ">50"
+                          : "32+";
+                    const toggleOverstockFilter = (next: OverstockFilter) => {
+                      setAbcdFilterByGroup((prev) => ({
+                        ...prev,
+                        [groupKey]: prev[groupKey] === next ? "all" : next,
+                      }));
+                      setPageByGroupKey((prev) => ({
+                        ...prev,
+                        [groupKey]: 1,
+                      }));
+                    };
                     const abcGroupLabel = hasAbcSelection
                       ? abcSelectedLetters.join("+")
                       : "A+B+C";
@@ -4035,7 +4080,7 @@ export function RotacionPageInner() {
                                     ? ROTACION_TOUR_ANCHOR.tableAbcd
                                     : undefined
                                 }
-                                className="grid w-fit max-w-full grid-cols-1 gap-2 sm:grid-cols-2 sm:items-start"
+                                className="grid w-fit max-w-full grid-cols-1 gap-2 sm:grid-cols-2 sm:items-start xl:grid-cols-3"
                               >
                                   <div className="flex w-[15.5rem] max-w-full flex-col gap-1.5">
                                   <div
@@ -4419,6 +4464,140 @@ export function RotacionPageInner() {
                                         <span className="font-black text-rose-950">
                                           {formatPercent(
                                             criticalGroupMetrics.marginPct,
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  </div>
+
+                                  <div className="flex w-[15.5rem] max-w-full flex-col gap-1.5">
+                                  <div
+                                    title="Productos con venta y 32 o más días de inventario. 50+ es sobrestock alto."
+                                    className="flex w-full flex-col rounded-xl border border-violet-200/90 bg-linear-to-br from-violet-50/90 via-white to-amber-50/40 px-3 py-2 shadow-sm ring-1 ring-violet-100/90"
+                                  >
+                                    <div className="mb-1.5 space-y-0.5">
+                                      <p className="text-[11px] font-bold tracking-tight text-violet-950">
+                                        Sobrestock · Días de inventario
+                                      </p>
+                                      <p className="text-[10px] leading-snug text-violet-800/85">
+                                        32 en adelante · alto desde 50
+                                      </p>
+                                    </div>
+                                    <div className="mx-auto grid w-fit grid-cols-2 gap-1.5 justify-items-center">
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                                          32–50
+                                        </span>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          title="Productos con 32 a 49 días de inventario."
+                                          onClick={() => toggleOverstockFilter("O32")}
+                                          className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                            categoryFilter === "O32"
+                                              ? "border-amber-800 bg-amber-600 text-white shadow-md ring-2 ring-amber-200"
+                                              : "border-amber-300 bg-amber-100 text-amber-950"
+                                          }`}
+                                        >
+                                          <span className="text-sm leading-none">32+</span>
+                                          <span className="text-[11px] leading-none tabular-nums">
+                                            {overstock32Rows.length.toLocaleString("es-CO")}
+                                          </span>
+                                        </Button>
+                                      </div>
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-orange-700">
+                                          &gt;50
+                                        </span>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          title="Productos con 50 o más días de inventario."
+                                          onClick={() => toggleOverstockFilter("O50")}
+                                          className={`mx-auto flex aspect-square h-18 w-18 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border p-1 text-center whitespace-normal text-xs font-bold leading-tight tabular-nums shadow-sm transition-all ${
+                                            categoryFilter === "O50"
+                                              ? "border-orange-800 bg-orange-600 text-white shadow-md ring-2 ring-orange-200"
+                                              : "border-orange-300 bg-orange-100 text-orange-950"
+                                          }`}
+                                        >
+                                          <span className="text-sm leading-none">50+</span>
+                                          <span className="text-[11px] leading-none tabular-nums">
+                                            {overstock50Rows.length.toLocaleString("es-CO")}
+                                          </span>
+                                        </Button>
+                                      </div>
+                                    </div>
+                                    <div className="mt-1.5 rounded-lg border border-violet-200/80 bg-white/80 px-2.5 py-1.5 shadow-sm">
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between gap-3 text-left"
+                                        title="Ver todos los productos con 32 o más días de inventario."
+                                        onClick={() => toggleOverstockFilter("O")}
+                                      >
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-700">
+                                          Total 32+
+                                        </span>
+                                        <span
+                                          className={`text-sm font-black leading-none tabular-nums ${
+                                            categoryFilter === "O"
+                                              ? "text-violet-700"
+                                              : "text-violet-950"
+                                          }`}
+                                        >
+                                          {overstockAllRows.length.toLocaleString("es-CO")}
+                                        </span>
+                                      </button>
+                                      <p className="mt-0.5 text-[10px] leading-snug text-violet-800/70">
+                                        Productos con inventario lento
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div
+                                    className={`min-w-0 w-full rounded-xl border px-3 py-2 shadow-sm ring-1 ${
+                                      hasOverstockSelection
+                                        ? "border-violet-400 bg-violet-50/90 ring-violet-200"
+                                        : "border-violet-200/90 bg-violet-50/40 ring-violet-100/80"
+                                    }`}
+                                  >
+                                    <div className="mb-2 space-y-0.5">
+                                      <p className="text-[11px] font-bold tracking-tight text-violet-950">
+                                        Sobrestock · {overstockGroupLabel}
+                                      </p>
+                                      <p className="text-[10px] leading-snug text-violet-800/85">
+                                        Totales {overstockGroupLabel} d
+                                      </p>
+                                    </div>
+                                    <div className="space-y-1 text-sm text-violet-950/80">
+                                      <div>
+                                        Total venta:{" "}
+                                        <span className="font-black text-violet-950">
+                                          {formatPriceWithoutSixZeros(
+                                            overstockGroupMetrics.totalSales,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Total inventario:{" "}
+                                        <span className="font-black text-violet-950">
+                                          {formatPriceWithoutSixZeros(
+                                            overstockGroupMetrics.totalInv,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Dias de inventario:{" "}
+                                        <span className="font-black text-violet-950">
+                                          {formatRotationOneDecimal(
+                                            overstockGroupMetrics.salesCoverageDays,
+                                          )}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        Margen {overstockGroupLabel} %:{" "}
+                                        <span className="font-black text-violet-950">
+                                          {formatPercent(
+                                            overstockGroupMetrics.marginPct,
                                           )}
                                         </span>
                                       </div>

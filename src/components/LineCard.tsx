@@ -129,6 +129,12 @@ export const LineCard = ({ line, hasData = true }: LineCardProps) => {
           Línea
         </p>
         <h2 className="text-xl font-semibold text-slate-900">{line.name}</h2>
+        {line.id === "industria" ? (
+          <p className="mt-1 text-xs text-slate-500">
+            Sin unidades de proveedores que marcaron visita QR ese día en la
+            sede.
+          </p>
+        ) : null}
       </header>
 
       <div className="grid gap-3 text-sm">

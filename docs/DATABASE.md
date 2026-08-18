@@ -209,11 +209,13 @@ APIs relacionadas: `/api/productivity`, `/api/hourly-analysis`,
 Notas:
 
 - `/api/productivity` usa `PRODUCTIVITY_CACHE_PATH` y opcionalmente
-  `PRODUCTIVITY_SERVE_FILE_CACHE`. Cache memoria `productivity:full-v3`; un JSON
-  de disco sin campos de volumen se ignora y se regenera.
+  `PRODUCTIVITY_SERVE_FILE_CACHE`. Cache memoria `productivity:full-v4`; un JSON
+  de disco sin `volumeSchema=4` o sin campos de volumen se ignora y se regenera.
 - Las tarjetas de Mix y Línea (`/` → `LineCard`) ya no muestran ventas. Volumen:
   Cajas = `COUNT(*)` de tickets con `total_bruto > 0` en `ventas_cajas`;
-  Industria = `SUM(cantidad)` und; Fruver/Carnes/Pollo y pescado = `SUM(cantidad)` kg;
+  Industria = `SUM(cantidad)` und menos unidades de proveedores con visita QR
+  ese día en esa sede (cruce `qr_*` + `proveedor_item` por código y NIT);
+  Fruver/Carnes/Pollo y pescado = `SUM(cantidad)` kg;
   Asadero = UND.Pollo (misma conversión que Informe Variación) + unidades no-pollo.
   KG/und salen de `margen_item_dia_roll` (cat. 4 / cat. 3). Las ventas `$` siguen
   en el payload para Excel/PDF y comparativos.

@@ -120,11 +120,11 @@ Codigo compartido sin UI de pagina.
 | `admin/login-logs`, `admin/login-failures`, `admin/audit`, `admin/exports`, `admin/user-presence`, `admin/uso-tableros` | accesos, fallos de login, auditoría admin, descargas, presencia y uso de tableros |
 | `exports/log` | POST: registra metadatos de una descarga/export (auth; fire-and-forget desde cliente) |
 | `admin/cache/flush` | POST (CSRF): vacía cache en memoria del proceso (informe + márgenes). GET: tamaño actual |
-| `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v3`/disco; tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und, fruver/carnes/pollo=kg, asadero=UND.Pollo+horas+Unidades+horas) y conservan `$` para Excel/PDF |
+| `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v4`/disco (`volumeSchema=4`); tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und menos visitas QR del día/sede, fruver/carnes/pollo=kg, asadero=UND.Pollo+horas+Unidades+horas) y conservan `$` para Excel/PDF |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
 | `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar); el warm matutino precarga también ese `mtd-N` para first paint vía `payload-std`; UI carga **solo el rango visible** (chips bajo demanda) y construye la matriz en chunks para no congelar el navegador |
-| `rotacion` | rotacion e inventario con baja salida |
+| `rotacion` | rotacion e inventario con baja salida; capitulos A-B-C, criticos (D+0+S) y sobrestock (32+ / 50+ dias de inventario) |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |

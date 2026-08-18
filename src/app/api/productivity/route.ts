@@ -18,6 +18,11 @@ import {
   resolveProductivityLineFromRoll,
   splitAsaderoQty,
 } from "@/lib/productivity/line-volume";
+import {
+  applyIndustriaVisitDiscount,
+  PRODUCTIVITY_VOLUME_SCHEMA,
+  queryIndustriaVisitDiscount,
+} from "@/lib/productivity/industria-visit-discount";
 import { resolveAsaderoHoursBucket } from "@/lib/shared/departamento-line";
 import {
   filterProductivityByDateRange,
@@ -45,7 +50,7 @@ const resolveCachePath = () => {
   return path.resolve(/* turbopackIgnore: true */ process.cwd(), envPath);
 };
 
-const PRODUCTIVITY_MEMORY_CACHE_KEY = "productivity:full-v3";
+const PRODUCTIVITY_MEMORY_CACHE_KEY = "productivity:full-v4";
 const PRODUCTIVITY_MEMORY_TTL_MS = 10 * 60 * 1000;
 
 type ProductivityDateBounds = {
@@ -130,8 +135,12 @@ const readCache = async (): Promise<{
     const parsed = JSON.parse(raw) as {
       dailyData?: DailyProductivity[];
       updatedAt?: string;
+      volumeSchema?: number;
     };
     if (!Array.isArray(parsed.dailyData) || parsed.dailyData.length === 0) {
+      return null;
+    }
+    if (parsed.volumeSchema !== PRODUCTIVITY_VOLUME_SCHEMA) {
       return null;
     }
     if (!hasProductivityVolumeShape(parsed.dailyData)) {
@@ -160,6 +169,7 @@ const writeProductivityCacheFile = async (
       cacheFilePath,
       JSON.stringify({
         dailyData,
+        volumeSchema: PRODUCTIVITY_VOLUME_SCHEMA,
         updatedAt: new Date().toISOString(),
       }),
       "utf-8",
@@ -584,9 +594,18 @@ const fetchAllProductivityData = async (
     }
   };
 
+  const needsIndustriaDiscount =
+    needsRollVolume &&
+    (allowedSet.size === 0 || allowedSet.has(normalizeLineId("industria")));
+
   // Varias conexiones del pool en paralelo (antes: 1 client serializado).
-  const [lineOutputs, hoursQueryResult, tipo4VolumeResult, asaderoVolumeResult] =
-    await Promise.all([
+  const [
+    lineOutputs,
+    hoursQueryResult,
+    tipo4VolumeResult,
+    asaderoVolumeResult,
+    industriaVisitDiscountRows,
+  ] = await Promise.all([
       Promise.all(
         lineTables.map(async (line) => {
           const query = `
@@ -627,6 +646,9 @@ const fetchAllProductivityData = async (
             "margen_item_dia_roll (asadero)",
           )
         : Promise.resolve(emptyQueryResult),
+      needsIndustriaDiscount
+        ? queryIndustriaVisitDiscount(pool, fromCompact, toCompact)
+        : Promise.resolve([]),
     ]);
 
   const getOrCreateDaily = (fecha: string, sedeName: string) => {
@@ -757,6 +779,16 @@ const fetchAllProductivityData = async (
     const lineMetric = ensureLine(getOrCreateDaily(fecha, sedeName), lineId);
     lineMetric.volume = (lineMetric.volume ?? 0) + qty;
   }
+
+  applyIndustriaVisitDiscount(
+    industriaVisitDiscountRows,
+    (fecha, sedeName) =>
+      dailyDataMap
+        .get(`${fecha}_${sedeName}`)
+        ?.lines.find((line) => line.id === "industria"),
+    formatDate,
+    sedeNameFromRoll,
+  );
 
   for (const row of asaderoVolumeResult.rows ?? []) {
     const typedRow = row as {

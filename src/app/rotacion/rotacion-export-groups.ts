@@ -17,6 +17,7 @@ import {
   type GroupRowsQuickFilter,
   type RotationRow,
 } from "./rotacion-preamble";
+import { isOverstockFilter, matchesOverstockFilter } from "@/lib/rotacion/overstock";
 import {
   CERO_ROTACION_ESTADO_LABELS,
   CERO_ROTACION_ESTADO_VALUES,
@@ -189,6 +190,10 @@ export const buildRotacionExportGroups = (
               ? filteredRows.filter((row) =>
                   input.isNuevoItemInSelectedRange(row),
                 )
+              : isOverstockFilter(categoryFilter)
+                ? filteredRows.filter((row) =>
+                    matchesOverstockFilter(row, categoryFilter),
+                  )
               : Array.isArray(categoryFilter)
                 ? filteredRows.filter((row) => {
                     const cat = categoryByItem.get(row.item);

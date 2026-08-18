@@ -67,7 +67,7 @@ export const ROTACION_TOUR_STEPS: DriveStep[] = [
     popover: {
       title: "ABCD y restock",
       description:
-        "Filtra por clase A–D, cero rotación, restock o ítems nuevos. Los contadores indican cuántos ítems hay en cada grupo.",
+        "Filtra por clase A–D, cero rotación, restock, ítems nuevos o sobrestock (32+ / 50+ días de inventario). Los contadores indican cuántos ítems hay en cada grupo.",
       side: "left",
       align: "start",
     },

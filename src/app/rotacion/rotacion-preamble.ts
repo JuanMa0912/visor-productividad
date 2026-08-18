@@ -153,7 +153,16 @@ type AbcdConfig = {
 };
 type AbcdCategory = "A" | "B" | "C" | "D";
 /** "all" = sin filtro ABCD; "0"/"S" = modos especiales; arreglo = union de clases A-D. */
-type GroupAbcdFilter = "all" | "0" | "S" | "R" | "N" | AbcdCategory[];
+type GroupAbcdFilter =
+  | "all"
+  | "0"
+  | "S"
+  | "R"
+  | "N"
+  | "O"
+  | "O32"
+  | "O50"
+  | AbcdCategory[];
 
 const ABCD_FILTER_LETTERS_ORDER: AbcdCategory[] = ["A", "B", "C", "D"];
 
@@ -166,7 +175,15 @@ const toggleAbcdLetterFilter = (
   current: GroupAbcdFilter,
   letter: AbcdCategory,
 ): GroupAbcdFilter => {
-  if (current === "0" || current === "S" || current === "R" || current === "N") {
+  if (
+    current === "0" ||
+    current === "S" ||
+    current === "R" ||
+    current === "N" ||
+    current === "O" ||
+    current === "O32" ||
+    current === "O50"
+  ) {
     return normalizeAbcdLetterSelection([letter]);
   }
   if (current === "all") {
@@ -193,6 +210,9 @@ const formatAbcdCategoryFilterLabel = (
   if (filter === "all") return null;
   if (filter === "0") return "0";
   if (filter === "S" || filter === "R" || filter === "N") return "S";
+  if (filter === "O") return "SO";
+  if (filter === "O32") return "32+";
+  if (filter === "O50") return "50+";
   if (Array.isArray(filter) && filter.length > 0) {
     return filter.join("+");
   }
