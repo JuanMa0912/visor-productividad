@@ -145,10 +145,12 @@ export default function ExpPreciosProveedorPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [expandMode, setExpandMode] = useState<"cost" | "detail">("cost");
   const [expandLoading, setExpandLoading] = useState<string | null>(null);
   const [expandRows, setExpandRows] = useState<PreciosProveedorExpandRow[]>([]);
   const [expandError, setExpandError] = useState<string | null>(null);
   const skipNextMatrixEffect = useRef(false);
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sublineasOptions = useMemo(() => {
     const all = meta?.sublineas ?? [];
@@ -265,6 +267,7 @@ export default function ExpPreciosProveedorPage() {
         setExpandedItemId(null);
         setExpandRows([]);
         setExpandError(null);
+        setExpandMode("cost");
       } catch (err) {
         setMatrix(null);
         setError(err instanceof Error ? err.message : "Error cargando");
@@ -286,12 +289,16 @@ export default function ExpPreciosProveedorPage() {
   );
 
   const loadExpand = useCallback(
-    async (row: PreciosProveedorRow) => {
-      if (expandedItemId === row.id) {
+    async (row: PreciosProveedorRow, mode: "cost" | "detail") => {
+      if (expandedItemId === row.id && expandMode === mode) {
         setExpandedItemId(null);
         setExpandRows([]);
         setExpandError(null);
         setExpandLoading(null);
+        return;
+      }
+      setExpandMode(mode);
+      if (expandedItemId === row.id && expandRows.length > 0) {
         return;
       }
       if (!dateStart || !dateEnd || selectedSedes.length === 0) return;
@@ -328,7 +335,7 @@ export default function ExpPreciosProveedorPage() {
         setExpandLoading(null);
       }
     },
-    [dateEnd, dateStart, expandedItemId, selectedSedes],
+    [dateEnd, dateStart, expandMode, expandRows.length, expandedItemId, selectedSedes],
   );
 
   const loadMeta = useCallback(async () => {
@@ -513,8 +520,8 @@ export default function ExpPreciosProveedorPage() {
           promedian los precios/costos de cada día. El color compara{" "}
           <strong>sedes del mismo ítem</strong> (no ítem contra ítem). En costo
           de entrada y precio venta: verde = más bajo, rojo = más alto.{" "}
-          <strong>Doble clic</strong> despliega kilos entregados (EF), venta
-          total y margen por quien trajo la mercancía.
+          <strong>Un clic</strong> abre proveedores con costo de entrada.{" "}
+          <strong>Doble clic</strong> muestra kilos, venta total y margen.
         </p>
         {meta?.note ? (
           <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -723,8 +730,8 @@ export default function ExpPreciosProveedorPage() {
                 Matriz · ítem × sede
               </h2>
               <p className="text-xs text-slate-500">
-                Top {matrix?.itemLimit ?? 40} ítems por venta neta · doble clic
-                despliega proveedores ·{" "}
+                Top {matrix?.itemLimit ?? 40} ítems por venta neta · clic:
+                costo de entrada · doble clic: kilos / venta / margen ·{" "}
                 {matrix
                   ? `${matrix.elapsedMs} ms servidor · ${matrix.rows.length} filas`
                   : loading
@@ -764,11 +771,24 @@ export default function ExpPreciosProveedorPage() {
                     return (
                       <Fragment key={row.id}>
                         <tr
-                          className={`select-none border-t border-slate-100 ${
+                          className={`cursor-pointer select-none border-t border-slate-100 ${
                             isExpanded ? "bg-indigo-50/60" : "hover:bg-slate-50"
                           }`}
-                          onDoubleClick={() => void loadExpand(row)}
-                          title="Doble clic para ver proveedores y costo de entrada"
+                          onClick={() => {
+                            if (clickTimer.current) return;
+                            clickTimer.current = setTimeout(() => {
+                              clickTimer.current = null;
+                              void loadExpand(row, "cost");
+                            }, 280);
+                          }}
+                          onDoubleClick={() => {
+                            if (clickTimer.current) {
+                              clearTimeout(clickTimer.current);
+                              clickTimer.current = null;
+                            }
+                            void loadExpand(row, "detail");
+                          }}
+                          title="Clic: proveedores y costo de entrada. Doble clic: kilos, venta y margen."
                         >
                           <th
                             className={`sticky left-0 z-10 max-w-[18rem] px-3 py-2 text-left font-semibold ${
@@ -792,7 +812,7 @@ export default function ExpPreciosProveedorPage() {
                               {row.proveedorLabel}
                               {row.proveedorCount > 1 ? (
                                 <span className="ml-1 font-semibold text-slate-500">
-                                  · doble clic
+                                  · clic / doble clic
                                 </span>
                               ) : null}
                             </div>
@@ -912,7 +932,11 @@ Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und`
                                           style={style}
                                           title={title}
                                         >
-                                          {formatExpandCell(cell)}
+                                          {expandMode === "detail"
+                                            ? formatExpandCell(cell)
+                                            : cell
+                                              ? unitMoney(cell.pcu)
+                                              : "—"}
                                         </div>
                                       </td>
                                     );
