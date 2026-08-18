@@ -9,6 +9,7 @@ import {
   yyyymmddDiffDays,
   yyyymmddToday,
 } from "./status";
+import { sortOcEmpresas, sortOcSedes } from "./filters";
 import type {
   OrdenCompraBoard,
   OrdenCompraBreakdown,
@@ -19,6 +20,21 @@ const num = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+function uniqueTexts(...groups: Array<string[] | string | null | undefined>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    const values = Array.isArray(group) ? group : group ? [group] : [];
+    for (const raw of values) {
+      const value = raw.trim();
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      out.push(value);
+    }
+  }
+  return out;
+}
 
 const ABIERTAS_SQL = `
   BTRIM(ind_estado) <> '2'
@@ -53,7 +69,10 @@ export async function queryOrdenesCompraBoard(
     vista: OcVista;
     q?: string | null;
     empresa?: string | null;
+    empresas?: string[] | null;
     sede?: string | null;
+    sedes?: string[] | null;
+    proveedores?: string[] | null;
     tipdoc?: string | null;
     comprador?: string | null;
     desde?: string | null;
@@ -66,13 +85,20 @@ export async function queryOrdenesCompraBoard(
   const params: unknown[] = [];
   const where: string[] = [];
 
-  if (input.empresa) {
-    params.push(input.empresa);
-    where.push(`empresa = $${params.length}`);
+  const empresas = uniqueTexts(input.empresas, input.empresa);
+  const sedes = uniqueTexts(input.sedes, input.sede);
+  const proveedores = uniqueTexts(input.proveedores);
+  if (empresas.length > 0) {
+    params.push(empresas);
+    where.push(`empresa = ANY($${params.length}::text[])`);
   }
-  if (input.sede) {
-    params.push(input.sede);
-    where.push(`sede = $${params.length}`);
+  if (sedes.length > 0) {
+    params.push(sedes);
+    where.push(`sede = ANY($${params.length}::text[])`);
+  }
+  if (proveedores.length > 0) {
+    params.push(proveedores);
+    where.push(`COALESCE(terc_nombre, '') = ANY($${params.length}::text[])`);
   }
   if (input.tipdoc) {
     params.push(input.tipdoc.toUpperCase());
@@ -117,6 +143,17 @@ export async function queryOrdenesCompraBoard(
         WHERE comprador_nom IS NOT NULL AND BTRIM(comprador_nom) <> ''
         ORDER BY 1
       ) AS compradores,
+      ARRAY(
+        SELECT terc_nombre
+        FROM (
+          SELECT terc_nombre, count(*) AS n
+          FROM orden_compra
+          WHERE terc_nombre IS NOT NULL AND BTRIM(terc_nombre) <> ''
+          GROUP BY terc_nombre
+          ORDER BY n DESC, terc_nombre
+          LIMIT 800
+        ) t
+      ) AS proveedores,
       MAX(loaded_at)::text AS loaded_at
     FROM orden_compra
     `,
@@ -270,8 +307,9 @@ export async function queryOrdenesCompraBoard(
 
   return {
     meta: {
-      empresas: (metaRow.empresas as string[] | null) ?? [],
-      sedes: (metaRow.sedes as string[] | null) ?? [],
+      empresas: sortOcEmpresas((metaRow.empresas as string[] | null) ?? []),
+      sedes: sortOcSedes((metaRow.sedes as string[] | null) ?? []),
+      proveedores: ((metaRow.proveedores as string[] | null) ?? []).filter(Boolean),
       tipdocs,
       compradores: (metaRow.compradores as string[] | null) ?? [],
       loadedAt: metaRow.loaded_at ? String(metaRow.loaded_at) : null,

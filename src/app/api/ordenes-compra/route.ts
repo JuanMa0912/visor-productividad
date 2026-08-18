@@ -23,6 +23,22 @@ const yyyymmdd = (raw: string | null): string | null => {
   return compact;
 };
 
+function parseListParam(url: URL, keys: string[]): string[] {
+  const values: string[] = [];
+  const seen = new Set<string>();
+  for (const key of keys) {
+    for (const raw of url.searchParams.getAll(key)) {
+      for (const part of raw.split(",")) {
+        const value = part.trim();
+        if (!value || seen.has(value)) continue;
+        seen.add(value);
+        values.push(value);
+      }
+    }
+  }
+  return values;
+}
+
 export async function GET(request: Request) {
   const session = await requireAuthSession();
   if (!session) {
@@ -72,8 +88,9 @@ export async function GET(request: Request) {
   const vistaRaw = (url.searchParams.get("vista") ?? "abiertas").trim();
   const vista = (VISTAS.includes(vistaRaw as OcVista) ? vistaRaw : "abiertas") as OcVista;
   const q = url.searchParams.get("q")?.trim() || null;
-  const empresa = url.searchParams.get("empresa")?.trim() || null;
-  const sede = url.searchParams.get("sede")?.trim() || null;
+  const empresas = parseListParam(url, ["empresas", "empresa"]);
+  const sedes = parseListParam(url, ["sedes", "sede"]);
+  const proveedores = parseListParam(url, ["proveedores", "proveedor"]);
   const tipdoc = url.searchParams.get("tipdoc")?.trim() || null;
   const comprador = url.searchParams.get("comprador")?.trim() || null;
   const desde = yyyymmdd(url.searchParams.get("desde"));
@@ -96,8 +113,9 @@ export async function GET(request: Request) {
     const board = await queryOrdenesCompraBoard(client, {
       vista,
       q,
-      empresa,
-      sede,
+      empresas,
+      sedes,
+      proveedores,
       tipdoc,
       comprador,
       desde,

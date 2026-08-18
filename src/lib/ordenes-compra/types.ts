@@ -57,6 +57,7 @@ export type OrdenCompraBreakdown = {
 export type OrdenCompraMeta = {
   empresas: string[];
   sedes: string[];
+  proveedores: string[];
   tipdocs: { codigo: string; nombre: string }[];
   compradores: string[];
   loadedAt: string | null;

@@ -16,7 +16,13 @@ import type {
   OrdenCompraBreakdown,
   OrdenCompraRow,
 } from "@/lib/ordenes-compra/types";
+import { OcMultiSelect } from "./oc-multi-select";
 import { ScrollToTopButton } from "@/components/ui/scroll-to-top-button";
+import {
+  labelOcEmpresa,
+  ocSedeMatchesEmpresas,
+  sortOcSedes,
+} from "@/lib/ordenes-compra/filters";
 
 const VISTAS: { id: OcVista; label: string }[] = [
   { id: "abiertas", label: "Abiertas" },
@@ -61,8 +67,9 @@ export function OrdenesCompraBoard() {
   const [vista, setVista] = useState<OcVista>("abiertas");
   const [q, setQ] = useState("");
   const [qDebounced, setQDebounced] = useState("");
-  const [empresa, setEmpresa] = useState("");
-  const [sede, setSede] = useState("");
+  const [empresas, setEmpresas] = useState<string[]>([]);
+  const [sedes, setSedes] = useState<string[]>([]);
+  const [proveedores, setProveedores] = useState<string[]>([]);
   const [tipdoc, setTipdoc] = useState("");
   const [comprador, setComprador] = useState("");
   const [desde, setDesde] = useState("");
@@ -83,8 +90,9 @@ export function OrdenesCompraBoard() {
     setError(null);
     const params = new URLSearchParams({ vista });
     if (qDebounced) params.set("q", qDebounced);
-    if (empresa) params.set("empresa", empresa);
-    if (sede) params.set("sede", sede);
+    if (empresas.length) params.set("empresas", empresas.join(","));
+    if (sedes.length) params.set("sedes", sedes.join(","));
+    if (proveedores.length) params.set("proveedores", proveedores.join(","));
     if (tipdoc) params.set("tipdoc", tipdoc);
     if (comprador) params.set("comprador", comprador);
     if (desde) params.set("desde", isoToYmd(desde));
@@ -102,7 +110,7 @@ export function OrdenesCompraBoard() {
     } finally {
       setLoading(false);
     }
-  }, [vista, qDebounced, empresa, sede, tipdoc, comprador, desde, hasta]);
+  }, [vista, qDebounced, empresas, sedes, proveedores, tipdoc, comprador, desde, hasta]);
 
   useEffect(() => {
     void load();
@@ -110,7 +118,7 @@ export function OrdenesCompraBoard() {
 
   useEffect(() => {
     setSelected(null);
-  }, [vista, empresa, sede, tipdoc, comprador, qDebounced, desde, hasta]);
+  }, [vista, empresas, sedes, proveedores, tipdoc, comprador, qDebounced, desde, hasta]);
 
   const loadedLabel = useMemo(() => {
     if (!data?.meta.loadedAt) return "sin recarga registrada";
@@ -143,12 +151,49 @@ export function OrdenesCompraBoard() {
   }, [kpis]);
   const badgeMixTotal = badgeMix.reduce((acc, item) => acc + item.value, 0) || 1;
 
-  const hasFilters = Boolean(q || empresa || sede || tipdoc || comprador || desde || hasta);
+  const empresaOptions = useMemo(
+    () =>
+      (data?.meta.empresas ?? []).map((item) => ({
+        value: item,
+        label: labelOcEmpresa(item),
+      })),
+    [data?.meta.empresas],
+  );
+  const sedeOptions = useMemo(() => {
+    const list = (data?.meta.sedes ?? []).filter((item) =>
+      ocSedeMatchesEmpresas(item, empresas),
+    );
+    return sortOcSedes(list).map((item) => ({ value: item, label: item }));
+  }, [data?.meta.sedes, empresas]);
+  const proveedorOptions = useMemo(
+    () =>
+      (data?.meta.proveedores ?? []).map((item) => ({
+        value: item,
+        label: item,
+      })),
+    [data?.meta.proveedores],
+  );
+
+  useEffect(() => {
+    setSedes((cur) => cur.filter((item) => ocSedeMatchesEmpresas(item, empresas)));
+  }, [empresas]);
+
+  const hasFilters = Boolean(
+    q ||
+      empresas.length ||
+      sedes.length ||
+      proveedores.length ||
+      tipdoc ||
+      comprador ||
+      desde ||
+      hasta,
+  );
 
   const clearFilters = () => {
     setQ("");
-    setEmpresa("");
-    setSede("");
+    setEmpresas([]);
+    setSedes([]);
+    setProveedores([]);
     setTipdoc("");
     setComprador("");
     setDesde("");
@@ -225,14 +270,22 @@ export function OrdenesCompraBoard() {
         <BreakdownPanel
           title="Por sede"
           items={data?.breakdowns.sede ?? []}
-          activeKey={sede}
-          onSelect={(key) => setSede((cur) => (cur === key ? "" : key))}
+          activeKeys={sedes}
+          onSelect={(key) =>
+            setSedes((cur) =>
+              cur.includes(key) ? cur.filter((item) => item !== key) : [...cur, key],
+            )
+          }
         />
         <BreakdownPanel
           title="Por empresa / tipo"
           items={data?.breakdowns.empresa ?? []}
-          activeKey={empresa}
-          onSelect={(key) => setEmpresa((cur) => (cur === key ? "" : key))}
+          activeKeys={empresas}
+          onSelect={(key) =>
+            setEmpresas((cur) =>
+              cur.includes(key) ? cur.filter((item) => item !== key) : [...cur, key],
+            )
+          }
           secondary={data?.breakdowns.tipdoc ?? []}
           secondaryActive={tipdoc}
           onSecondarySelect={(key) => setTipdoc((cur) => (cur === key ? "" : key))}
@@ -274,34 +327,38 @@ export function OrdenesCompraBoard() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="OC, proveedor, NIT, comprador o conf."
+              placeholder="OC, NIT, comprador o conf."
               className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm"
             />
           </label>
-          <select
-            value={empresa}
-            onChange={(e) => setEmpresa(e.target.value)}
-            className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm"
-          >
-            <option value="">Todas las empresas</option>
-            {(data?.meta.empresas ?? []).map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          <select
-            value={sede}
-            onChange={(e) => setSede(e.target.value)}
-            className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm"
-          >
-            <option value="">Todas las sedes</option>
-            {(data?.meta.sedes ?? []).map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          <OcMultiSelect
+            label="Proveedor"
+            values={proveedores}
+            options={proveedorOptions}
+            onChange={setProveedores}
+            emptyLabel="Todos los proveedores"
+            searchable
+            searchPlaceholder="Ej. Nutresa"
+            className="xl:col-span-2"
+          />
+          <OcMultiSelect
+            label="Empresa"
+            values={empresas}
+            options={empresaOptions}
+            onChange={setEmpresas}
+            emptyLabel="Todas las empresas"
+            searchable
+            searchPlaceholder="Mercamio, Mercatodo…"
+          />
+          <OcMultiSelect
+            label="Sede"
+            values={sedes}
+            options={sedeOptions}
+            onChange={setSedes}
+            emptyLabel="Todas las sedes"
+            searchable
+            searchPlaceholder="Calle 5ta, Bogotá…"
+          />
           <select
             value={tipdoc}
             onChange={(e) => setTipdoc(e.target.value)}
@@ -520,7 +577,7 @@ function KpiCard({
 function BreakdownPanel({
   title,
   items,
-  activeKey,
+  activeKeys,
   onSelect,
   secondary,
   secondaryActive,
@@ -528,7 +585,7 @@ function BreakdownPanel({
 }: {
   title: string;
   items: OrdenCompraBreakdown[];
-  activeKey: string;
+  activeKeys: string[];
   onSelect: (key: string) => void;
   secondary?: OrdenCompraBreakdown[];
   secondaryActive?: string;
@@ -546,10 +603,10 @@ function BreakdownPanel({
             key={item.key}
             type="button"
             onClick={() => onSelect(item.key)}
-            className={`block w-full text-left ${activeKey === item.key ? "opacity-100" : ""}`}
+            className={`block w-full text-left ${activeKeys.includes(item.key) ? "opacity-100" : ""}`}
           >
             <div className="mb-0.5 flex items-center justify-between text-xs">
-              <span className={`truncate ${activeKey === item.key ? "font-semibold text-slate-900" : "text-slate-700"}`}>
+              <span className={`truncate ${activeKeys.includes(item.key) ? "font-semibold text-slate-900" : "text-slate-700"}`}>
                 {item.label}
               </span>
               <span className="ml-2 shrink-0 text-slate-500">
