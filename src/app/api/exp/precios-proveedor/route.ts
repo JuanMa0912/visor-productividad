@@ -153,8 +153,6 @@ export async function GET(request: Request) {
         search: url.searchParams.get("search"),
         pvuMin: parseNum(url.searchParams.get("pvuMin")),
         pvuMax: parseNum(url.searchParams.get("pvuMax")),
-        pcuMin: parseNum(url.searchParams.get("pcuMin")),
-        pcuMax: parseNum(url.searchParams.get("pcuMax")),
         itemLimit: Number(url.searchParams.get("limit") ?? 40) || 40,
       });
       return withSession(NextResponse.json({ matrix }));

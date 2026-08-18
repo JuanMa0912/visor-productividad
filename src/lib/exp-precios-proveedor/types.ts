@@ -7,6 +7,7 @@ export type PreciosProveedorMeta = {
   defaultEnd: string;
   lineas: Array<{ id: string; label: string }>;
   sublineas: Array<{ id: string; label: string; lineaId: string }>;
+  marcas: Array<{ id: string; label: string }>;
   sedes: Array<{ key: string; label: string }>;
   note: string;
 };

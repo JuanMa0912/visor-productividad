@@ -41,6 +41,7 @@ type ResolvedItemProveedor = {
   criterioLabel: string | null;
   nit: string | null;
   fromTercero: boolean;
+  qtyByCo?: Map<string, number>;
 };
 
 const resolveItemProveedorRow = (row: {
@@ -78,7 +79,10 @@ const resolveItemProveedorRow = (row: {
   };
 };
 
-type OcLineProveedor = ResolvedItemProveedor & { idCos: Set<string> };
+type OcLineProveedor = ResolvedItemProveedor & {
+  idCos: Set<string>;
+  qtyByCo: Map<string, number>;
+};
 
 /**
  * Tercero real por item (quien trajo la mercancia), desde lineas de OC/FR.
@@ -108,15 +112,20 @@ async function queryOrdenCompraLineaProveedores(
     id_terc: string;
     terc_nombre: string | null;
     terc_nit: string | null;
+    qty: string | number | null;
   }>(
     `
     SELECT
       LOWER(BTRIM(empresa)) AS empresa,
       BTRIM(id_item) AS id_item,
-      LPAD(BTRIM(id_co), 3, '0') AS id_co,
+      CASE
+        WHEN BTRIM(id_co) ~ '^[0-9]+$' THEN LPAD(BTRIM(id_co), 3, '0')
+        ELSE BTRIM(id_co)
+      END AS id_co,
       BTRIM(id_terc) AS id_terc,
       NULLIF(BTRIM(terc_nombre), '') AS terc_nombre,
-      NULLIF(BTRIM(terc_nit), '') AS terc_nit
+      NULLIF(BTRIM(terc_nit), '') AS terc_nit,
+      COALESCE(NULLIF(cantidad_ent, 0), cantidad, 0) AS qty
     FROM orden_compra_linea
     WHERE BTRIM(id_item) = ANY($1::text[])
       AND fecha_dcto >= $2
@@ -150,15 +159,38 @@ async function queryOrdenCompraLineaProveedores(
         nit: String(row.terc_nit ?? "").trim() || null,
         fromTercero: true,
         idCos: new Set(),
+        qtyByCo: new Map(),
       };
       list.push(prov);
     }
-    if (idCo) prov.idCos.add(idCo);
+    if (idCo) {
+      prov.idCos.add(idCo);
+      const qty = toNum(row.qty);
+      if (qty > 0) {
+        prov.qtyByCo.set(idCo, (prov.qtyByCo.get(idCo) ?? 0) + qty);
+      }
+    }
   }
   return map;
 }
 
 const isoToCompact = (iso: string) => iso.replace(/-/g, "");
+
+/** YYYYMMDD local, para mirar OC de dias previos al dia del tablero. */
+const compactShiftDays = (compact: string, days: number) => {
+  const raw = String(compact ?? "").trim();
+  if (!/^\d{8}$/.test(raw)) return raw;
+  const dt = new Date(
+    Number(raw.slice(0, 4)),
+    Number(raw.slice(4, 6)) - 1,
+    Number(raw.slice(6, 8)),
+  );
+  dt.setDate(dt.getDate() + days);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+};
 
 const compactToIso = (compact: string): string | null => {
   const raw = String(compact ?? "").trim();
@@ -275,8 +307,11 @@ export const queryPreciosProveedorMeta = async (
       key: col.key,
       label: col.label,
     })),
+    marcas: [...new Set(prototypeSedeColumns().map((col) => col.empresa))].map(
+      (id) => ({ id, label: empresaLabel(id) }),
+    ),
     note:
-      "Carga el día anterior. Un día = precio/costo de ese día; un rango = promedio simple diario. Precio venta = venta/cant. Costo = costo de entrada (costo_uni_inventario), no COGS de venta. Doble clic en el ítem despliega proveedores del mismo producto.",
+      "Costo de entrada = EF (OC/FR del día: valor/kilos entregados). Si ese día no hay EF, se usa el promedio. Precio venta no se toca. Doble clic: kilos, venta y margen por quien entregó.",
   };
 };
 
@@ -291,8 +326,6 @@ export type PreciosProveedorQueryInput = {
   /** Filtro sobre el promedio del ítem (sedes seleccionadas). */
   pvuMin?: number | null;
   pvuMax?: number | null;
-  pcuMin?: number | null;
-  pcuMax?: number | null;
   itemLimit?: number;
 };
 
@@ -368,8 +401,6 @@ export const queryPreciosProveedorMatrix = async (
     typeof value === "number" && Number.isFinite(value) ? value : null;
   const pvuMin = parseBound(input.pvuMin ?? null);
   const pvuMax = parseBound(input.pvuMax ?? null);
-  const pcuMin = parseBound(input.pcuMin ?? null);
-  const pcuMax = parseBound(input.pcuMax ?? null);
 
   const priceFilterParts: string[] = [];
   if (pvuMin != null) {
@@ -647,11 +678,6 @@ export const queryPreciosProveedorMatrix = async (
         margenPct: marginPct(row.sales, row.cost),
       };
     })
-    .filter((row) => {
-      if (pcuMin != null && !(row.pcu >= pcuMin)) return false;
-      if (pcuMax != null && !(row.pcu <= pcuMax)) return false;
-      return true;
-    })
     .sort((a, b) => b.sales - a.sales)
     .slice(0, itemLimit);
 
@@ -699,13 +725,77 @@ async function queryCostoEntradaMap(
   );
   if (cols.rows.length !== 5) return map;
 
-  const params: unknown[] = [input.fromIso, input.toIso, input.itemIds];
+  const fromCompact = isoToCompact(input.fromIso);
+  const toCompact = isoToCompact(input.toIso);
+  const params: unknown[] = [
+    input.fromIso,
+    input.toIso,
+    input.itemIds,
+    fromCompact,
+    toCompact,
+  ];
   const tupleSql = input.columns
     .map((col) => {
       params.push(col.empresa.trim().toLowerCase(), col.idCo);
       return `($${params.length - 1}, $${params.length})`;
     })
     .join(", ");
+
+  const ocExists = await client.query<{ ok: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
+    ) AS ok
+  `);
+
+  const efCte = ocExists.rows[0]?.ok
+    ? `
+    ef AS (
+      SELECT
+        LOWER(BTRIM(empresa)) AS empresa,
+        CASE
+          WHEN BTRIM(id_co) ~ '^[0-9]+$' THEN LPAD(BTRIM(id_co), 3, '0')
+          ELSE BTRIM(id_co)
+        END AS id_co,
+        BTRIM(id_item) AS id_item,
+        BTRIM(fecha_dcto) AS fecha,
+        SUM(tot_bruto)
+          / NULLIF(SUM(COALESCE(NULLIF(cantidad_ent, 0), cantidad)), 0) AS pcu_ef
+      FROM orden_compra_linea
+      WHERE BTRIM(fecha_dcto) >= $4
+        AND BTRIM(fecha_dcto) <= $5
+        AND BTRIM(id_item) = ANY($3::text[])
+      GROUP BY 1, 2, 3, 4
+      HAVING SUM(COALESCE(NULLIF(cantidad_ent, 0), cantidad)) > 0
+    ),
+    days AS (
+      SELECT empresa, id_co, id_item, fecha FROM inv
+      UNION
+      SELECT empresa, id_co, id_item, fecha FROM ef
+    )
+    SELECT
+      d.empresa,
+      d.id_co,
+      d.id_item,
+      AVG(COALESCE(e.pcu_ef, i.pcu_inv)) AS costo_entrada
+    FROM days d
+    LEFT JOIN ef e
+      ON e.empresa = d.empresa AND e.id_co = d.id_co
+     AND e.id_item = d.id_item AND e.fecha = d.fecha
+    LEFT JOIN inv i
+      ON i.empresa = d.empresa AND i.id_co = d.id_co
+     AND i.id_item = d.id_item AND i.fecha = d.fecha
+    GROUP BY 1, 2, 3
+    `
+    : `
+    SELECT
+      empresa,
+      id_co,
+      id_item,
+      AVG(pcu_inv) AS costo_entrada
+    FROM inv
+    GROUP BY 1, 2, 3
+    `;
 
   const result = await client.query<{
     empresa: string;
@@ -714,19 +804,23 @@ async function queryCostoEntradaMap(
     costo_entrada: string | number | null;
   }>(
     `
-    SELECT
-      LOWER(BTRIM(empresa)) AS empresa,
-      ${ROTACION_SEDE_SQL} AS id_co,
-      BTRIM(id_item) AS id_item,
-      AVG(costo_uni_inventario) FILTER (
-        WHERE COALESCE(costo_uni_inventario, 0) > 0
-      ) AS costo_entrada
-    FROM rotacion_base_item_dia_sede
-    WHERE fecha_dia >= $1::date
-      AND fecha_dia <= $2::date
-      AND BTRIM(id_item) = ANY($3::text[])
-      AND (LOWER(BTRIM(empresa)), ${ROTACION_SEDE_SQL}) IN (${tupleSql})
-    GROUP BY 1, 2, 3
+    WITH inv AS (
+      SELECT
+        LOWER(BTRIM(empresa)) AS empresa,
+        ${ROTACION_SEDE_SQL} AS id_co,
+        BTRIM(id_item) AS id_item,
+        TO_CHAR(fecha_dia, 'YYYYMMDD') AS fecha,
+        AVG(costo_uni_inventario) FILTER (
+          WHERE COALESCE(costo_uni_inventario, 0) > 0
+        ) AS pcu_inv
+      FROM rotacion_base_item_dia_sede
+      WHERE fecha_dia >= $1::date
+        AND fecha_dia <= $2::date
+        AND BTRIM(id_item) = ANY($3::text[])
+        AND (LOWER(BTRIM(empresa)), ${ROTACION_SEDE_SQL}) IN (${tupleSql})
+      GROUP BY 1, 2, 3, 4
+    )${ocExists.rows[0]?.ok ? "," : ""}
+    ${efCte}
     `,
     params,
   );
@@ -912,10 +1006,16 @@ export async function queryPreciosProveedorItemExpand(
     }
   }
 
+  // La OC del fruver no siempre cae el mismo dia de la venta/costo. Si filtramos
+  // solo el dia del tablero, el desglose cae al criterio POS (MERCAMIO FRUVER).
+  const ocFromCompact =
+    compactShiftDays(toCompact, -13) < fromCompact
+      ? compactShiftDays(toCompact, -13)
+      : fromCompact;
   const ocByItemEmpresa = await queryOrdenCompraLineaProveedores(
     client,
     variantItemIds,
-    fromCompact,
+    ocFromCompact,
     toCompact,
   );
 
@@ -981,24 +1081,24 @@ export async function queryPreciosProveedorItemExpand(
     const sedeKey = `${empresa}|${idCo}`;
     if (!sedeKeySet.has(sedeKey)) continue;
 
-    const units = toNum(row.cantidad);
     const sales = toNum(row.ventas_netas);
     const pvu = toNum(row.pvu);
     const pcu = costoEntrada.get(`${variantId}::${sedeKey}`) ?? 0;
-    const cost = units > 0 && pcu > 0 ? units * pcu : 0;
     const variantLabel = String(row.label ?? variantId).trim() || variantId;
-    const cellBase: PreciosProveedorCell = {
-      rowId: "",
-      sedeKey,
-      units,
-      sales,
-      cost,
-      pvu,
-      pcu,
-      margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
-    };
     for (const prov of provsForSede(variantId, empresa, idCo)) {
-      upsertExpandCell(prov, variantId, variantLabel, empresa, cellBase);
+      const kilos = prov.qtyByCo?.get(idCo) ?? 0;
+      const units = kilos > 0 ? kilos : toNum(row.cantidad);
+      const cost = units > 0 && pcu > 0 ? units * pcu : 0;
+      upsertExpandCell(prov, variantId, variantLabel, empresa, {
+        rowId: "",
+        sedeKey,
+        units,
+        sales,
+        cost,
+        pvu,
+        pcu,
+        margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
+      });
     }
   }
 

@@ -132,16 +132,13 @@ export default function ExpPreciosProveedorPage() {
   const [dateEnd, setDateEnd] = useState(yesterdayIso);
   const [linea, setLinea] = useState("");
   const [sublinea, setSublinea] = useState("");
+  const [marca, setMarca] = useState("");
   const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
   const [sedesReady, setSedesReady] = useState(false);
   const [search, setSearch] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
-  const [pcuMin, setPcuMin] = useState("");
-  const [pcuMax, setPcuMax] = useState("");
   const [pvuMin, setPvuMin] = useState("");
   const [pvuMax, setPvuMax] = useState("");
-  const [pcuMinApplied, setPcuMinApplied] = useState("");
-  const [pcuMaxApplied, setPcuMaxApplied] = useState("");
   const [pvuMinApplied, setPvuMinApplied] = useState("");
   const [pvuMaxApplied, setPvuMaxApplied] = useState("");
   const [metric, setMetric] = useState<PreciosProveedorMetric>("pcu");
@@ -162,6 +159,13 @@ export default function ExpPreciosProveedorPage() {
   const allSedeKeys = useMemo(
     () => (meta?.sedes ?? []).map((sede) => sede.key),
     [meta],
+  );
+  const visibleSedeKeys = useMemo(
+    () =>
+      marca
+        ? allSedeKeys.filter((key) => key.startsWith(`${marca}|`))
+        : allSedeKeys,
+    [allSedeKeys, marca],
   );
 
   const toggleSede = (key: string) => {
@@ -218,7 +222,9 @@ export default function ExpPreciosProveedorPage() {
     }) => {
       const from = override?.from ?? dateStart;
       const to = override?.to ?? dateEnd;
-      const sedes = override?.sedes ?? selectedSedes;
+      const sedes = (override?.sedes ?? selectedSedes).filter((key) =>
+        marca ? key.startsWith(`${marca}|`) : true,
+      );
       if (!from || !to) return;
       if (sedes.length === 0) {
         setMatrix({
@@ -245,8 +251,6 @@ export default function ExpPreciosProveedorPage() {
         if (linea) params.set("linea", linea);
         if (sublinea) params.set("sublinea", sublinea);
         if (searchApplied.trim()) params.set("search", searchApplied.trim());
-        if (pcuMinApplied.trim()) params.set("pcuMin", pcuMinApplied.trim());
-        if (pcuMaxApplied.trim()) params.set("pcuMax", pcuMaxApplied.trim());
         if (pvuMinApplied.trim()) params.set("pvuMin", pvuMinApplied.trim());
         if (pvuMaxApplied.trim()) params.set("pvuMax", pvuMaxApplied.trim());
         const res = await fetch(`/api/exp/precios-proveedor?${params}`, {
@@ -275,10 +279,9 @@ export default function ExpPreciosProveedorPage() {
       sublinea,
       selectedSedes,
       searchApplied,
-      pcuMinApplied,
-      pcuMaxApplied,
       pvuMinApplied,
       pvuMaxApplied,
+      marca,
     ],
   );
 
@@ -385,10 +388,9 @@ export default function ExpPreciosProveedorPage() {
     selectedSedes,
     sedesReady,
     searchApplied,
-    pcuMinApplied,
-    pcuMaxApplied,
     pvuMinApplied,
     pvuMaxApplied,
+    marca,
     loadMatrix,
   ]);
 
@@ -404,13 +406,11 @@ export default function ExpPreciosProveedorPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setPcuMinApplied(pcuMin.trim());
-      setPcuMaxApplied(pcuMax.trim());
       setPvuMinApplied(pvuMin.trim());
       setPvuMaxApplied(pvuMax.trim());
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [pcuMin, pcuMax, pvuMin, pvuMax]);
+  }, [pvuMin, pvuMax]);
 
   useEffect(() => {
     if (!sublinea) return;
@@ -434,6 +434,23 @@ export default function ExpPreciosProveedorPage() {
     if (metric === "pcu") return unitMoney(cell.pcu);
     if (metric === "units") return unitsFmt(cell.units);
     return pctFmt(cell.margenPct);
+  };
+
+  const formatExpandCell = (
+    cell: PreciosProveedorMatrix["cells"][number] | undefined,
+  ) => {
+    if (!cell) return "—";
+    return (
+      <div className="leading-tight">
+        <div>{unitsFmt(cell.units)} kg</div>
+        <div className="text-[10px] font-medium opacity-90">
+          {money(cell.sales)}
+        </div>
+        <div className="text-[10px] font-medium opacity-90">
+          {pctFmt(cell.margenPct)}
+        </div>
+      </div>
+    );
   };
 
   const cellHeatStyle = (
@@ -496,9 +513,8 @@ export default function ExpPreciosProveedorPage() {
           promedian los precios/costos de cada día. El color compara{" "}
           <strong>sedes del mismo ítem</strong> (no ítem contra ítem). En costo
           de entrada y precio venta: verde = más bajo, rojo = más alto.{" "}
-          <strong>Doble clic</strong> en un ítem despliega quién trajo la
-          mercancía: tercero de la orden de compra (nombre real) o, si no hay
-          OC en el rango, comercial / criterio POS (p.ej. MERCAMIO FRUVER).
+          <strong>Doble clic</strong> despliega kilos entregados (EF), venta
+          total y margen por quien trajo la mercancía.
         </p>
         {meta?.note ? (
           <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -512,7 +528,7 @@ export default function ExpPreciosProveedorPage() {
               <span className="text-xs font-semibold text-slate-600">Sedes</span>
               <button
                 type="button"
-                onClick={() => setSelectedSedes(allSedeKeys)}
+                onClick={() => setSelectedSedes(visibleSedeKeys)}
                 className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
               >
                 Todas
@@ -525,11 +541,15 @@ export default function ExpPreciosProveedorPage() {
                 Ninguna
               </button>
               <span className="text-[10px] text-slate-400">
-                {selectedSedes.length}/{allSedeKeys.length}
+                {selectedSedes.length}/{visibleSedeKeys.length}
               </span>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {(meta?.sedes ?? []).map((sede) => {
+              {(meta?.sedes ?? [])
+                .filter((sede) =>
+                  marca ? sede.key.startsWith(`${marca}|`) : true,
+                )
+                .map((sede) => {
                 const active = selectedSedes.includes(sede.key);
                 return (
                   <button
@@ -614,28 +634,26 @@ export default function ExpPreciosProveedorPage() {
             />
           </label>
           <label className="text-xs font-semibold text-slate-600">
-            Costo entrada min
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={pcuMin}
-              onChange={(e) => setPcuMin(e.target.value)}
-              placeholder="—"
-              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-xs font-semibold text-slate-600">
-            Costo entrada max
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={pcuMax}
-              onChange={(e) => setPcuMax(e.target.value)}
-              placeholder="—"
-              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            />
+            Marca
+            <select
+              value={marca}
+              onChange={(e) => {
+                const next = e.target.value;
+                setMarca(next);
+                const keys = (meta?.sedes ?? [])
+                  .map((sede) => sede.key)
+                  .filter((key) => (next ? key.startsWith(`${next}|`) : true));
+                setSelectedSedes(keys);
+              }}
+              className="mt-1 block min-w-[10rem] rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+            >
+              <option value="">Todas</option>
+              {(meta?.marcas ?? []).map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="text-xs font-semibold text-slate-600">
             Precio min
@@ -894,7 +912,7 @@ Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und`
                                           style={style}
                                           title={title}
                                         >
-                                          {formatCell(cell)}
+                                          {formatExpandCell(cell)}
                                         </div>
                                       </td>
                                     );
