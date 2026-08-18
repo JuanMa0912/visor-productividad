@@ -691,7 +691,9 @@ verify_freshness() {
   "${GCP_PSQL[@]}" -P pager=off -c "
     WITH m AS ($cte)
     SELECT t AS tabla, COALESCE(d,'-') AS hasta,
-           CASE WHEN d >= '$HASTAC' THEN 'OK' ELSE 'ATRASADA' END AS estado
+           CASE WHEN d IS NULL      THEN 'SIN DATOS'
+                WHEN d >= '$HASTAC' THEN 'OK'
+                ELSE 'ATRASADA' END AS estado
     FROM m ORDER BY estado DESC, tabla;" || log "WARN: verificacion fallo."
 }
 
