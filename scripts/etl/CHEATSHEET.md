@@ -297,6 +297,10 @@ replace**: subir con la local incompleta **borra en GCP** esas fechas.
 > deja el sync en exit 3, en vez de tumbar la corrida entera; y el `--verify` omite las
 > que aun no existen **en GCP** en vez de dejar de reportar todas las demas. Eso permite
 > desplegar el script antes que su migracion sin romper el diario de las 07:35.
+>
+> En el `--verify`, **`SIN DATOS` no es `ATRASADA`**: la tabla existe en GCP pero esta
+> vacia, o sea espera su primera carga. Es lo normal recien aplicada una migracion.
+> `ATRASADA` de verdad es tener datos, pero mas viejos que el objetivo.
 
 > Los 6 ETL de la seccion 3.b tambien salen con **exit 3** en dos casos. Antes reportaban
 > `PIPELINE COMPLETADO EXITOSAMENTE` en ambos:
