@@ -15,8 +15,11 @@
 # Tablas (allowlist fija; NO toca tablas de estado de la app ni matviews):
 #   ventas_cajas, ventas_fruver, ventas_carnes, ventas_asadero, ventas_pollo_pesc,
 #   ventas_industria, rotacion_base_item_dia_sede, ventas_item_diario,
+#   rotacion_salidas_dia (movimientos de inventario NO-RV; el documento EK alimenta
+#                      el DIC de demanda de /rotacion),
 #   ventas_proveedor_dia, inventario_proveedor_dia,
-#   proveedor_pos_catalogo, proveedor_item y proveedor_tercero
+#   proveedor_pos_catalogo, proveedor_item, proveedor_tercero,
+#   rotacion_kit_composicion y rotacion_item_codbar
 #                      (catalogos sin fecha: se suben completos),
 #   orden_compra / orden_compra_linea
 #                     (NO van en el diario 07:50; las sube visor-etl-orden-compra 08:00
@@ -186,10 +189,15 @@ DESDEC="${DESDE//-/}"; HASTAC="${HASTA//-/}"
 # OJO CON EL ORDEN: proveedor_pos_catalogo va PRIMERO porque el tablero /proveedores hace
 # join contra el; si subieran antes los hechos, habria una ventana en la que el tablero
 # mostraria proveedores sin nombre.
+# rotacion_kit_composicion / rotacion_item_codbar son CATALOGOS y van primero por la misma
+# razon que los de proveedor: el tablero hace LEFT JOIN contra ellos.
 TABLES=(proveedor_pos_catalogo proveedor_item proveedor_tercero
+        rotacion_kit_composicion rotacion_item_codbar
         ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
-        ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario
-        ventas_proveedor_dia inventario_proveedor_dia orden_compra orden_compra_linea margen_final)
+        ventas_industria rotacion_base_item_dia_sede rotacion_salidas_dia
+        asistencia_horas ventas_item_diario
+        ventas_proveedor_dia inventario_proveedor_dia orden_compra orden_compra_linea
+        margen_final)
 CANARIES="ventas_cajas rotacion_base_item_dia_sede asistencia_horas"
 
 # --only / --table: filtra la allowlist a un subconjunto (backfill quirurgico).
@@ -243,6 +251,11 @@ KEY[ventas_asadero]="$VENTAS_FULL"
 KEY[ventas_pollo_pesc]="$VENTAS_FULL"
 KEY[ventas_industria]="empresa_bd,centro_operacion,sede,caja,fecha_dcto,id_tipdoc_fc,documento_fc,id_vend_cc,categoria"
 KEY[rotacion_base_item_dia_sede]="empresa,fecha_dia,sede,bodega_local,id_item"
+# rotacion_salidas_dia: movimientos de inventario NO-RV (el EK alimenta el DIC de demanda).
+# ~1.000 filas/dia contra las 210.000 de la base: por eso es tabla aparte y no columnas.
+KEY[rotacion_salidas_dia]="empresa,fecha_dia,sede,bodega_local,id_item,doc_inv_tipo,ind_es"
+KEY[rotacion_kit_composicion]="empresa,id_item_padre,id_item_hijo"
+KEY[rotacion_item_codbar]="empresa,id_item"
 KEY[asistencia_horas]="numero,fecha"
 # ventas_item_diario: PK serial (id) + FK (source_load_id) -> se excluyen. Su unico
 # natural usa COALESCE, asi que el ON CONFLICT va con la expresion (no columnas planas).
@@ -262,6 +275,12 @@ for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pe
   DATECOL[$t]="fecha_dcto"; DATETYPE[$t]="text"; EXCLUDE[$t]=""
 done
 DATECOL[rotacion_base_item_dia_sede]="fecha_dia"; DATETYPE[rotacion_base_item_dia_sede]="date"; EXCLUDE[rotacion_base_item_dia_sede]=""
+DATECOL[rotacion_salidas_dia]="fecha_dia"; DATETYPE[rotacion_salidas_dia]="date"; EXCLUDE[rotacion_salidas_dia]=""
+# Los dos catalogos de rotacion NO tienen fecha -> MODE=full (upsert entero, transaccional),
+# igual que proveedor_pos_catalogo. El ETL los reemplaza por empresa en el 232, asi que el
+# upsert no puede dejar huerfanas mientras la empresa siga existiendo.
+DATECOL[rotacion_kit_composicion]=""; DATETYPE[rotacion_kit_composicion]=""; EXCLUDE[rotacion_kit_composicion]=""; MODE[rotacion_kit_composicion]="full"
+DATECOL[rotacion_item_codbar]=""; DATETYPE[rotacion_item_codbar]=""; EXCLUDE[rotacion_item_codbar]=""; MODE[rotacion_item_codbar]="full"
 DATECOL[asistencia_horas]="fecha"; DATETYPE[asistencia_horas]="date"; EXCLUDE[asistencia_horas]="id_asistencia"; MODE[asistencia_horas]="replace"  # replace SIEMPRE: el biometrico re-importa/corrige (a veces con MENOS filas) y el upsert dejaria huerfanas en GCP -> borra-fechas-presentes + reinserta cada sync
 DATECOL[ventas_item_diario]="fecha_dcto"; DATETYPE[ventas_item_diario]="text"; EXCLUDE[ventas_item_diario]="id,source_load_id"
 DATECOL[margen_final]="fecha_dcto"; DATETYPE[margen_final]="text"; EXCLUDE[margen_final]="id"; MODE[margen_final]="replace"
@@ -296,7 +315,7 @@ process_table_margen_full() {
   if [[ "$DRY_RUN" -eq 1 ]]; then log "[$tbl] dry-run: no escribe"; return 0; fi
 
   cols="$(build_cols "$tbl")"
-  [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
+  [[ -n "$cols" ]] || { log_cols_vacias "$tbl"; return 1; }
   drop_stmt=""
   for _ec in ${EXCLUDE[$tbl]//,/ }; do drop_stmt+="ALTER TABLE _stg DROP COLUMN $_ec;"; done
   tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
@@ -331,6 +350,62 @@ build_where() {
 }
 
 # Columnas comunes (existentes en ambos), en orden de GCP, menos la excluida.
+# Conectividad real a cada extremo. Devuelve 0 si responde a un SELECT 1.
+# OJO: no basta con que el host haga ping. Cuando la IP publica del 232 se cae de las
+# redes autorizadas del Cloud SQL, el ICMP pasa y el 5432 se queda colgado hasta el
+# timeout; por eso el chequeo tiene que ser una consulta, no un ping.
+db_alcanzable() {  # $1 = local|gcp
+  local out
+  if [[ "$1" == "gcp" ]]; then
+    out="$("${GCP_PSQL[@]}" -tA -c 'SELECT 1' 2>&1)" || { printf '%s' "$out"; return 1; }
+  else
+    out="$("${SRC_PSQL[@]}" -tA -c 'SELECT 1' 2>&1)" || { printf '%s' "$out"; return 1; }
+  fi
+  [[ "$out" == "1" ]] || { printf '%s' "$out"; return 1; }
+  return 0
+}
+
+# Preflight: falla ANTES de recorrer tablas si un extremo no responde.
+# Sin esto el script itera las 15 tablas y cada una reporta "sin columnas comunes
+# resueltas", que manda a quien lee el log a buscar una columna que no falta.
+# Asi se perdieron 2 dias en agosto de 2026 (ver README-sync.md).
+preflight_conexiones() {
+  local err
+  if ! err="$(db_alcanzable local)"; then
+    log "ERROR: la base LOCAL ($DB_HOST_LOCAL/$DB_NAME_LOCAL) no responde."
+    log "ERROR: detalle: ${err//$'\n'/ | }"
+    exit 2
+  fi
+  if ! err="$(db_alcanzable gcp)"; then
+    log "ERROR: GCP ($DB_HOST_GCP/$DB_NAME_GCP) no responde. NO es un problema de esquema."
+    log "ERROR: detalle: ${err//$'\n'/ | }"
+    log "ERROR: si dice 'Expiro el tiempo de conexion' o 'timeout', la causa mas probable es"
+    log "ERROR: que la IP publica de esta maquina cambio y ya no esta en las redes autorizadas"
+    log "ERROR: del Cloud SQL. IP actual: $(curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo '(no se pudo consultar)')"
+    log "ERROR: autorizala en la consola de GCP (SQL > Conexiones > Redes autorizadas) y reintenta."
+    exit 2
+  fi
+}
+
+# Diagnostico para cuando build_cols devuelve vacio. Solo se paga cuando ya hay error.
+# Distingue las tres causas, que hasta ahora se reportaban todas con el mismo mensaje.
+log_cols_vacias() {
+  local tbl="$1" err n
+  if ! err="$(db_alcanzable gcp)"; then
+    log "[$tbl] ERROR: se perdio la conexion con GCP a mitad del sync (no es un problema de esquema)."
+    log "[$tbl] ERROR: detalle: ${err//$'\n'/ | }"
+    return 0
+  fi
+  n="$("${GCP_PSQL[@]}" -tA -c \
+    "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='$tbl';" 2>/dev/null || echo "?")"
+  if [[ "$n" == "0" ]]; then
+    log "[$tbl] ERROR: la tabla NO existe en GCP. Falta correr su migracion alla (ver db/migrations/)."
+  else
+    log "[$tbl] ERROR: sin columnas comunes entre local y GCP (GCP tiene $n columnas)."
+    log "[$tbl] ERROR: revisa que EXCLUDE[$tbl]='${EXCLUDE[$tbl]:-}' no este dejando fuera todo."
+  fi
+}
+
 build_cols() {
   local tbl="$1" exclude=",${EXCLUDE[$1]}," localset out="" c
   localset=" $("${SRC_PSQL[@]}" -tA -c \
@@ -358,7 +433,11 @@ build_set() {  # cols_csv keys_csv -> "a = EXCLUDED.a, b = EXCLUDED.b"
 }
 
 TMPFILES=()
-cleanup() { local f; for f in "${TMPFILES[@]:-}"; do [[ -n "${f:-}" ]] && rm -f "$f"; done; }
+# El `return 0` NO es decorativo: sin el, cuando TMPFILES queda vacio (dry-run, o todas las
+# tablas omitidas) el ultimo comando del trap es un `[[ -n '' ]]` que devuelve 1, y ese 1 se
+# vuelve el codigo de salida del script pisando incluso un `exit 3` de WARNING. Es decir, el
+# codigo de salida dependia de si habian quedado archivos temporales.
+cleanup() { local f; for f in "${TMPFILES[@]:-}"; do [[ -n "${f:-}" ]] && rm -f "$f"; done; return 0; }
 trap cleanup EXIT
 
 CANARY_EMPTY=()
@@ -366,6 +445,14 @@ WARN=0
 
 process_table() {
   local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt _ec mode datecol
+  # Una tabla de la allowlist que aun no existe en el local NO puede tumbar el sync entero:
+  # durante un despliegue el script llega antes que la migracion, y sin esto el diario de
+  # las 07:35 muere con un error crudo de psql arrastrando a las tablas que si estaban bien.
+  if ! "${SRC_PSQL[@]}" -tAc "SELECT to_regclass('public.$tbl')" 2>/dev/null | grep -q .; then
+    log "[$tbl] AVISO: no existe en el local todavia; se omite. Corre su migracion en el 232."
+    WARN=1
+    return 0
+  fi
   where="$(build_where "$tbl")"
   cnt="$("${SRC_PSQL[@]}" -tA -c "SELECT count(*) FROM public.$tbl WHERE $where")"
   log "[$tbl] local tiene $cnt filas en [$DESDE..$HASTA]"
@@ -377,7 +464,7 @@ process_table() {
   if [[ "$DRY_RUN" -eq 1 ]]; then log "[$tbl] dry-run: no escribe"; return 0; fi
 
   cols="$(build_cols "$tbl")"
-  [[ -n "$cols" ]] || { log "[$tbl] ERROR: sin columnas comunes resueltas"; return 1; }
+  [[ -n "$cols" ]] || { log_cols_vacias "$tbl"; return 1; }
   mode="${MODE[$tbl]:-upsert}"
   # --replace: forzar borra-fechas + reinserta. NO aplica a tablas sin columna de fecha
   # (catalogos): ahi "replace" no tiene sentido y abortaria con "replace requiere DATECOL".
@@ -474,8 +561,12 @@ refresh_matviews() {
   fn="$("${GCP_PSQL[@]}" -tAc "SELECT 1 FROM pg_proc WHERE proname='refresh_rotacion_item_periodo_std' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')"
   if [[ -n "$fn" ]]; then
     log "Refrescando snapshot rotacion_item_periodo_std()..."
+    # WARN=1 a proposito (antes solo logueaba): si el snapshot no se refresca, el tablero
+    # sigue sirviendo el periodo anterior SIN que nada falle, y eso pasa desapercibido.
+    # Causa tipica desde 2026-08-14: falta rotacion_salidas_dia en GCP -> la funcion aborta
+    # con EXCEPTION en vez de publicar un DIC sin el consumo por kit.
     "${GCP_PSQL[@]}" -c "SET statement_timeout=0;" -c "SELECT refresh_rotacion_item_periodo_std();" >/dev/null 2>&1 \
-      || log "WARN: refresh de periodo_std fallo."
+      || { log "WARN: refresh de periodo_std fallo; el tablero sirve el periodo ANTERIOR. Revisa que rotacion_salidas_dia exista y este cargada en GCP."; WARN=1; }
   fi
   log "Refresh de matviews OK."
 }
@@ -558,14 +649,36 @@ MAXEXPR[inventario_proveedor_dia]="to_char(max(fecha_dia),'YYYYMMDD')"
 # OC: fecha_dcto puede ser futura; loaded_at dice si el incremental de 08:00 corrio.
 MAXEXPR[orden_compra]="to_char(max(loaded_at),'YYYYMMDD')"
 MAXEXPR[orden_compra_linea]="to_char(max(loaded_at),'YYYYMMDD')"
+MAXEXPR[rotacion_salidas_dia]="to_char(max(fecha_dia),'YYYYMMDD')"
+# Catalogos de rotacion: sin fecha de negocio, se verifican por fecha_carga (el upsert la
+# refresca en cada sync), igual que los catalogos de proveedor.
+MAXEXPR[rotacion_kit_composicion]="to_char(max(fecha_carga),'YYYYMMDD')"
+MAXEXPR[rotacion_item_codbar]="to_char(max(fecha_carga),'YYYYMMDD')"
 
 # Chequeo simple: fecha maxima por tabla en GCP vs el objetivo (HASTA).
 # Respeta --only para no referenciar tablas que tal vez no existan aun en GCP.
 verify_freshness() {
   log "Verificando frescura en GCP (objetivo $HASTA)..."
-  local cte="" t
+  local cte="" t existentes
+  # Una sola consulta con las tablas que SI existen en GCP. Sin esto, una tabla recien
+  # agregada a la allowlist pero todavia sin migrar alla hace fallar el UNION completo y
+  # el verify no reporta NINGUNA de las demas, que es justo cuando mas se necesita.
+  existentes=" $("${GCP_PSQL[@]}" -tAc \
+    "SELECT table_name FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null \
+    | tr '\n' ' ') "
   for t in "${TABLES[@]}"; do
     should_process "$t" || continue
+    if [[ "$existentes" != *" $t "* ]]; then
+      log "verify: $t aun no existe en GCP; se omite del chequeo."
+      continue
+    fi
+    # Sin MAXEXPR no se puede verificar esa tabla. Se avisa y se sigue: con `set -u` una
+    # entrada faltante abortaria el script DESPUES de haber subido todo bien, y la unidad
+    # systemd quedaria en fallo por una tabla nueva sin configurar.
+    if [[ -z "${MAXEXPR[$t]:-}" ]]; then
+      log "WARN: $t no tiene MAXEXPR; queda FUERA del verify (agregala en la seccion MAXEXPR)."
+      continue
+    fi
     if [[ -z "$cte" ]]; then
       cte="SELECT '$t' t, ${MAXEXPR[$t]} d FROM $t"
     else
@@ -585,6 +698,8 @@ verify_freshness() {
 log "=== ETL local -> GCP | ventana [$DESDE..$HASTA] | dias=$DAYS | dry_run=$DRY_RUN ==="
 log "Config: $ETL_ENV_FILE"
 log "Origen(local): $DB_HOST_LOCAL/$DB_NAME_LOCAL  ->  Destino(GCP): $DB_HOST_GCP/$DB_NAME_GCP (ssl=$GCP_SSL)"
+
+preflight_conexiones
 
 for t in "${TABLES[@]}"; do
   if [[ -z "${ONLY_TABLES// /}" ]] && in_default_skip "$t"; then

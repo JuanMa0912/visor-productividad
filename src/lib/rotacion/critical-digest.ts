@@ -17,6 +17,7 @@ import {
   matchesLineaN1Family,
   normalizeRotationRows,
   parseDateKey,
+  resolveRotationDemandaUnits,
 } from "@/app/rotacion/rotacion-preamble";
 
 export type SurtidoEstadoBreakdown = {
@@ -90,9 +91,14 @@ const computeSalesCoverageDays = (
   daysConsulted: number,
 ): number => {
   const totalInvUnits = rows.reduce((acc, row) => acc + row.inventoryUnits, 0);
-  const totalUnits = rows.reduce((acc, row) => acc + row.totalUnits, 0);
-  if (totalUnits > 0 && daysConsulted > 0) {
-    return (totalInvUnits * daysConsulted) / totalUnits;
+  // Denominador = demanda (venta PDV + consumo por kit), el mismo que usa el DIC
+  // por fila. El correo diario y el tablero no pueden dar numeros distintos.
+  const demandaUnits = rows.reduce(
+    (acc, row) => acc + resolveRotationDemandaUnits(row),
+    0,
+  );
+  if (demandaUnits > 0 && daysConsulted > 0) {
+    return (totalInvUnits * daysConsulted) / demandaUnits;
   }
   if (totalInvUnits > 0) return NO_SALES_DI_VALUE;
   return 0;

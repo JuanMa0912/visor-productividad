@@ -1514,6 +1514,15 @@ export function AnalisisInventarioBoard(_props: BoardProps) {
             <p className="text-xs text-slate-500">
               Sede → categoría → línea → sublínea → ítem
             </p>
+            {/*
+              El DI und ya divide por la demanda (venta POS + consumo por kit, igual
+              que el DIC de /rotacion) y el DI valor no. Sin esta nota, un hijo de kit
+              muestra dos numeros muy distintos en la misma fila y parece un error.
+            */}
+            <p className="text-[11px] text-slate-400">
+              DI und. incluye el consumo por kit (ensamble); DI valor solo la venta
+              POS.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button

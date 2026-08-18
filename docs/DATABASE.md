@@ -345,11 +345,54 @@ porcentajes.
 | `rotacion_dinastia_item_dia_clean` | matview (`20260723_rotacion_dinastia_matview`) | mismo rol que `rotacion_item_dia_clean` sobre `rotacion_dinastia` |
 | `rotacion_dinastia_item_periodo_std` | refresh nocturno | snapshot rolling default para tenant Dinastia |
 | `rotacion_dinastia_item_periodo_std_meta` | refresh nocturno | meta del snapshot Dinastia |
+| `rotacion_salidas_dia` | ETL (`scripts/etl/rotacion-dim`) | movimientos de inventario que no son venta PDV; el tipo `EK` (ensamble de kit) alimenta el denominador del DIC. Solo tenant legacy |
 | `rotacion_v4` | ETL/servidor (legacy, sin UI en portal) |
 | `rotacion_abcd_config` | runtime/API | umbrales ABCD globales |
 | `rotacion_abcd_config_sede` | runtime/API | umbrales ABCD por empresa/sede |
 | `rotacion_cero_item_estado` | migraciones | estado operativo cero/restock |
 | `rotacion_cero_item_estado_audit` | migraciones | historial de cambios |
+
+DIC (dias de inventario) = `inventory_units * tracked_days / demanda_units`, con
+`demanda_units = total_units + uds_equivalentes` y `uds_equivalentes` = salidas
+del documento `EK` en la ventana (`rotacion_salidas_dia`, `ind_es = 2`). El POS
+cobra el multipack en el codigo padre pero descuenta el inventario del hijo, asi
+que sin ese termino el hijo sale con DIC absurdo. Bordes: sin inventario -> `0`;
+sin demanda o sin dias -> `999999`.
+
+La formula esta escrita en cuatro sitios que deben moverse juntos:
+`refresh_rotacion_item_periodo_std()` (snapshot),
+`buildRotacionMatviewSql` y el query sobre tabla cruda en
+`src/app/api/rotacion/route.ts` (rangos fuera del snapshot) y
+`buildConsolidatedRowsBySelection` en `src/app/rotacion/rotacion-preamble.ts`
+(consolidado de sedes, que re-divide porque el DIC no es aditivo). Si
+`rotacion_salidas_dia` no existe, todos caen al denominador viejo (solo venta
+PDV) y el resultado es el previo al cambio.
+
+Comprobar que el camino en vivo y el snapshot coinciden (no sirve compararlo por
+HTTP: para la ventana del snapshot el endpoint siempre sirve el snapshot):
+
+```sql
+-- 0 filas = camino en vivo y snapshot dan el mismo denominador.
+WITH m AS (
+  SELECT periodo_start, periodo_end FROM rotacion_item_periodo_std_meta WHERE id = 1
+),
+eq AS (
+  SELECT s.empresa, s.sede AS sede_id, s.id_item AS item,
+         GREATEST(SUM(-s.unidades), 0)::numeric AS uds_equivalentes
+  FROM rotacion_salidas_dia s, m
+  WHERE s.fecha_dia BETWEEN m.periodo_start AND m.periodo_end
+    AND s.doc_inv_tipo = 'EK' AND s.ind_es = 2
+  GROUP BY 1, 2, 3
+)
+SELECT p.empresa, p.sede_id, p.item, p.demanda_units,
+       p.total_units + COALESCE(eq.uds_equivalentes, 0) AS demanda_en_vivo
+FROM rotacion_item_periodo_std p
+LEFT JOIN eq ON eq.empresa = p.empresa AND eq.sede_id = p.sede_id AND eq.item = p.item
+WHERE abs(p.demanda_units - (p.total_units + COALESCE(eq.uds_equivalentes, 0))) > 0.0001;
+```
+
+Si sale distinto, el snapshot esta viejo (refrescar) o el `equiv` del SQL en vivo
+dejo de ser identico al de la funcion.
 
 `rotacion_cero_item_estado` usa PK actual
 `(empresa, sede_id, item, context)`. La migracion

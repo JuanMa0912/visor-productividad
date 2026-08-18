@@ -60,6 +60,56 @@ describe("calculateDiFromRates", () => {
     assert.equal(diUnits, 10);
   });
 
+  it("sin datos de kit el resultado es identico al de antes del cambio", () => {
+    // Compatibilidad hacia atras: BD sin `rotacion_salidas_dia` ni columnas del
+    // snapshot -> el SQL manda 0 (o nada) y el DI no se mueve ni un decimal.
+    const base = {
+      inventoryUnits: 100,
+      inventoryValue: 1_000_000,
+      unitsPerDay: 50 / 30,
+      costPerDay: 500_000 / 30,
+    };
+    const sinCampo = calculateDiFromRates(base);
+    const conCero = calculateDiFromRates({ ...base, equivUnitsPerDay: 0 });
+    assert.equal(sinCampo.diUnits, conCero.diUnits);
+    assert.equal(sinCampo.diValue, conCero.diValue);
+    assert.ok(Math.abs(sinCampo.diUnits - 60) < 1e-9);
+  });
+
+  it("ARROZ BLANQUITA*500g: el consumo por kit entra al denominador", () => {
+    // Caso real (mercamio/001, agosto 2026): el POS registro 537 und vendidas
+    // en 31 dias, pero la ARROBA se llevo 8.309 und mas por documento EK.
+    const soloPdv = calculateDiFromRates({
+      inventoryUnits: 13_005,
+      inventoryValue: 26_000_000,
+      unitsPerDay: 537 / 31,
+      costPerDay: 1_000_000 / 31,
+    });
+    const conKits = calculateDiFromRates({
+      inventoryUnits: 13_005,
+      inventoryValue: 26_000_000,
+      unitsPerDay: 537 / 31,
+      equivUnitsPerDay: 8_309 / 31,
+      costPerDay: 1_000_000 / 31,
+    });
+    assert.ok(soloPdv.diUnits > 700);
+    assert.ok(Math.abs(conKits.diUnits - 45.6) < 0.1);
+    // El DI por costo no lleva consumo por kit: se queda como estaba.
+    assert.equal(soloPdv.diValue, conKits.diValue);
+  });
+
+  it("item que SOLO se mueve dentro de kits deja de ser 'Sin venta'", () => {
+    const { diUnits } = calculateDiFromRates({
+      inventoryUnits: 40,
+      inventoryValue: 400_000,
+      unitsPerDay: 0,
+      equivUnitsPerDay: 20,
+      costPerDay: 0,
+    });
+    assert.equal(diUnits, 2);
+    assert.equal(resolveDiBand(diUnits), "alta");
+  });
+
   it("sin tasa de salida marca sin venta; sin inventario da 0", () => {
     assert.equal(
       calculateDiFromRates({

@@ -351,31 +351,76 @@ export const buildDayMetricsSql = (
   );
 
 /**
- * Nivel 0 híbrido: dinero + facturas desde `margen_final_roll` (entity HashAgg)
- * y conteos de dims desde `margen_item_dia_roll` (~8× menos filas).
+ * Nivel N híbrido: dinero + facturas desde el roll factura+ítem (única fuente de
+ * `ventas_con_iva` y `documento_fc`) y los conteos de dimensiones desde
+ * `margen_item_dia_roll`, que para la misma ventana tiene ~8,7x menos filas
+ * (441.537 vs 3.842.527 en 13 días × 11 sedes, medido en GCP 2026-08-14).
  *
- * Medido 2026-08-06 (5 días × 13 sedes, Mercado): full `buildDayMetricsSql`
- * ~5,8 s → híbrido ~4,5 s. Las dims solas en item_dia ~0,4 s.
+ * Por qué importa: `buildGroupedMetricsSql` materializa el CTE `base` y lo
+ * recorre CUATRO veces (sums, fac, itm, dims). Sobre el roll eso son 3,8M filas
+ * volcadas a un tuplestore que se derrama a disco. Moviendo itm/dims a item_dia
+ * el CTE del roll se queda en dos recorridos y mucho más angosto.
+ *
+ * Medido contra GCP el 2026-08-14 con el SQL que emiten ESTAS funciones,
+ * alternando A/B EN CALIENTE (la primera lectura de cada ventana viene de disco
+ * y confunde caché fría con costo real; agosto 1-13 × 11 sedes):
+ *
+ *   nivel 1 = ACUMULADO → Categorías     nivel 2 = Líneas dentro de Mercado
+ *          agrupado   híbrido                   agrupado   híbrido
+ *   r1     10.949 ms  7.466 ms            r1    10.469 ms  8.980 ms
+ *   r2      8.429 ms  6.129 ms            r2    11.681 ms  7.875 ms
+ *   r3      9.813 ms  6.174 ms            r3    10.005 ms  7.822 ms
+ *
+ * Verificado que las filas salen IDÉNTICAS: EXCEPT ALL en ambos sentidos = 0
+ * (2 filas en nivel 1, 48 en nivel 2).
+ *
+ * Lo que NO arregla: el grueso del tiempo es leer el roll factura+ítem
+ * (3,84M filas / 1,06 GB de páginas para esa ventana). Reformular el agregado
+ * del dinero casi no mueve la aguja — se probaron tres formas y quedaron todas
+ * entre 5,4 y 7,0 s. Para bajar de ahí habría que dejar de tocar el roll en
+ * nivel 0..4, y eso exige `ventas_con_iva` en item_dia + un rollup de facturas
+ * por día/sede (documento_fc se repite entre sedes, así que no se puede contar
+ * por sede y sumar).
+ *
+ * `keySql` tiene que existir en LAS DOS tablas: solo sirve para claves que
+ * `margen_item_dia_roll` también agrupa (fecha, tipo, línea, sublínea, ítem).
+ * La etiqueta sigue saliendo del roll (`labelSourceSql`) para no depender de
+ * cómo quedó el MAX() al refrescar item_dia.
  *
  * `rollWhereSql` / `itemDiaWhereSql` deben usar placeholders continuos del
  * mismo array de params (primero roll, luego item_dia).
  */
-export const buildDayMetricsHybridSql = (
+export const buildGroupedMetricsHybridSql = (
   rollTable: MargenDataTable,
   rollWhereSql: string,
   itemDiaWhereSql: string,
+  group: {
+    keySql: string;
+    keyAlias: string;
+    /** Columna/expresión en el ROLL para MAX → etiqueta (nombre línea, etc.). */
+    labelSourceSql?: string;
+    labelAlias?: string;
+  },
   orderBySql = "",
-): string => `
+  limitSql = "",
+): string => {
+  const key = group.keyAlias;
+  const labelAlias = group.labelAlias ?? "nombre";
+  const labelSelect = group.labelSourceSql ? `, m.${labelAlias}` : "";
+
+  return `
   WITH money AS (
-    ${buildEntityBoardMetricsSql(
-      rollTable,
-      rollWhereSql,
-      { keySql: "fecha_dcto", keyAlias: "fecha_dcto" },
-    )}
+    ${buildEntityBoardMetricsSql(rollTable, rollWhereSql, {
+      keySql: group.keySql,
+      keyAlias: key,
+      ...(group.labelSourceSql
+        ? { labelSourceSql: group.labelSourceSql, labelAlias }
+        : {}),
+    })}
   ),
   base AS (
     SELECT
-      fecha_dcto,
+      ${group.keySql} AS ${key},
       NULLIF(id_tipo, '') AS dim_tipo,
       NULLIF(id_linea1, '') AS dim_linea1,
       NULLIF(id_linea2, '') AS dim_linea2,
@@ -384,28 +429,29 @@ export const buildDayMetricsHybridSql = (
     WHERE ${itemDiaWhereSql}
   ),
   itm AS (
-    SELECT fecha_dcto, COUNT(*) AS items
+    SELECT ${key}, COUNT(*) AS items
     FROM (
-      SELECT DISTINCT fecha_dcto, dim_item
+      SELECT DISTINCT ${key}, dim_item
       FROM base
       WHERE dim_item IS NOT NULL
     ) d
-    GROUP BY fecha_dcto
+    GROUP BY ${key}
   ),
   dims AS (
-    SELECT DISTINCT fecha_dcto, dim_tipo, dim_linea1, dim_linea2 FROM base
+    SELECT DISTINCT ${key}, dim_tipo, dim_linea1, dim_linea2 FROM base
   ),
   dimc AS (
     SELECT
-      fecha_dcto,
+      ${key},
       COUNT(DISTINCT dim_tipo) AS categorias,
       COUNT(DISTINCT dim_linea1) AS lineas,
       COUNT(DISTINCT dim_linea2) AS sublineas
     FROM dims
-    GROUP BY fecha_dcto
+    GROUP BY ${key}
   )
   SELECT
-    m.fecha_dcto,
+    m.${key}
+    ${labelSelect},
     m.ventas_netas,
     m.costo_total,
     m.margen_pesos,
@@ -420,10 +466,31 @@ export const buildDayMetricsHybridSql = (
     m.pvu_iva,
     m.pcu
   FROM money m
-  LEFT JOIN itm ON itm.fecha_dcto = m.fecha_dcto
-  LEFT JOIN dimc ON dimc.fecha_dcto = m.fecha_dcto
+  LEFT JOIN itm ON itm.${key} = m.${key}
+  LEFT JOIN dimc ON dimc.${key} = m.${key}
   ${orderBySql}
+  ${limitSql}
 `;
+};
+
+/**
+ * Nivel 0 híbrido (wrapper de `buildGroupedMetricsHybridSql` por fecha).
+ * Medido 2026-08-06 (5 días × 13 sedes, Mercado): full `buildDayMetricsSql`
+ * ~5,8 s → híbrido ~4,5 s. Las dims solas en item_dia ~0,4 s.
+ */
+export const buildDayMetricsHybridSql = (
+  rollTable: MargenDataTable,
+  rollWhereSql: string,
+  itemDiaWhereSql: string,
+  orderBySql = "",
+): string =>
+  buildGroupedMetricsHybridSql(
+    rollTable,
+    rollWhereSql,
+    itemDiaWhereSql,
+    { keySql: "fecha_dcto", keyAlias: "fecha_dcto" },
+    orderBySql,
+  );
 
 /**
  * Métricas del tablero Por Cliente / facturas de cliente:

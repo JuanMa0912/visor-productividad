@@ -124,6 +124,7 @@ import {
   formatRotationOneDecimal,
   calculateDuvDays,
   calculateDiSinceLastIngresoDays,
+  resolveRotationDemandaUnits,
   normalizeRotationRows,
   filterRotationRowsByLineaAndCategoria,
   readCatalogCache,
@@ -3726,8 +3727,11 @@ export function RotacionPageInner() {
                       (acc, row) => acc + row.totalSales,
                       0,
                     );
-                    const infoTotalUnits = filteredRows.reduce(
-                      (acc, row) => acc + row.totalUnits,
+                    // El DIC del bloque divide por la DEMANDA (venta PDV +
+                    // consumo por kit), igual que el DIC de cada fila; con la
+                    // venta PDV sola el resumen contradice a la tabla.
+                    const infoTotalDemandaUnits = filteredRows.reduce(
+                      (acc, row) => acc + resolveRotationDemandaUnits(row),
                       0,
                     );
                     const infoRowsWithCostBasis = filteredRows.filter(
@@ -3746,8 +3750,9 @@ export function RotacionPageInner() {
                         ? rotationMarginPct(infoMarginSales, infoMarginCost)
                         : null;
                     const infoSalesCoverageDays =
-                      infoTotalUnits > 0 && daysConsulted > 0
-                        ? (infoTotalInvUnits * daysConsulted) / infoTotalUnits
+                      infoTotalDemandaUnits > 0 && daysConsulted > 0
+                        ? (infoTotalInvUnits * daysConsulted) /
+                          infoTotalDemandaUnits
                         : infoTotalInvUnits > 0
                           ? NO_SALES_DI_VALUE
                           : 0;
@@ -3766,8 +3771,8 @@ export function RotacionPageInner() {
                         (acc, row) => acc + row.totalSales,
                         0,
                       );
-                      const totalUnits = metricRows.reduce(
-                        (acc, row) => acc + row.totalUnits,
+                      const totalDemandaUnits = metricRows.reduce(
+                        (acc, row) => acc + resolveRotationDemandaUnits(row),
                         0,
                       );
                       const withCost = metricRows.filter(
@@ -3786,8 +3791,8 @@ export function RotacionPageInner() {
                           ? rotationMarginPct(marginSales, marginCost)
                           : null;
                       const salesCoverageDays =
-                        totalUnits > 0 && daysConsulted > 0
-                          ? (totalInvUnits * daysConsulted) / totalUnits
+                        totalDemandaUnits > 0 && daysConsulted > 0
+                          ? (totalInvUnits * daysConsulted) / totalDemandaUnits
                           : totalInvUnits > 0
                             ? NO_SALES_DI_VALUE
                             : 0;

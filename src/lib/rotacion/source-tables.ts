@@ -36,6 +36,22 @@ export const ROTACION_PERIODO_STD_META_BY_SOURCE = {
   [ROTACION_SOURCE_DINASTIA]: "rotacion_dinastia_item_periodo_std_meta",
 } as const;
 
+/**
+ * Hecho de movimientos de inventario que NO son venta PDV (documento `EK` entre
+ * otros). Solo aplica al tenant legacy: `scripts/etl/rotacion-dim` lo carga para
+ * mercamio/mtodo/bogota. Para dinastia es `null` a proposito — no hay filas y
+ * `empresa` es texto libre, asi que un join a ciegas podria sumarle a dinastia el
+ * consumo de otro tenant. `null` = el DIC de ese tenant se queda como estaba.
+ */
+export const ROTACION_SALIDAS_DIA_BY_SOURCE = {
+  [ROTACION_SOURCE_LEGACY]: "rotacion_salidas_dia",
+  [ROTACION_SOURCE_DINASTIA]: null,
+} as const;
+
+export const resolveRotacionSalidasDiaTable = (
+  source: RotacionSourceTable,
+): string | null => ROTACION_SALIDAS_DIA_BY_SOURCE[source];
+
 export type RotacionCleanMatview =
   (typeof ROTACION_CLEAN_MATVIEW_BY_SOURCE)[RotacionSourceTable];
 export type RotacionPeriodoStdTable =
