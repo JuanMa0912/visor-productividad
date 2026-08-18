@@ -19,7 +19,6 @@ import {
   facturaSedeSqlFilters,
   fechaDctoCompactSql,
   idTercExpr,
-  isFacturaItemRollTable,
   isRollTable,
   mercadoTipoSql,
   nombreTercExpr,
@@ -43,6 +42,7 @@ import {
   buildDayMetricsHybridSql,
   buildDayMetricsSql,
   buildEntityBoardMetricsSql,
+  buildGroupedMetricsHybridSql,
   buildGroupedMetricsSql,
   buildMargenOrderBy,
   KPI_MERCADO_TIPO,
@@ -447,6 +447,24 @@ export const kpiFromAggregatedRows = (
   });
 };
 
+/**
+ * ¿Se pueden sacar los conteos de dimensiones de `margen_item_dia_roll`?
+ *
+ * Solo con el roll legacy: esa tabla se alimenta ÚNICAMENTE de
+ * `margen_final_roll` (ver refresh_margen_item_dia_roll), así que no tiene ni
+ * una fila de Dinastía (verificado en GCP 2026-08-14: empresa_norm ∈
+ * {bogota, mercamio, mtodo}). El guard anterior era `isFacturaItemRollTable`,
+ * que también acepta `margen_dinastia_roll`: un usuario Dinastía entraba al
+ * híbrido y el lado item_dia no casaba ninguna fila, así que categorías/líneas/
+ * sublíneas/ítems salían en 0. Mismo criterio que ya usa `queryFilterOptions`.
+ */
+const canUseItemDiaHybrid = async (
+  client: ClientBase,
+  table: MargenDataTable,
+): Promise<boolean> =>
+  table === MARGEN_ROLL_TABLE &&
+  (await resolveInformeMargenDataSource(client)) === MARGEN_ITEM_DIA_ROLL_TABLE;
+
 const withMercadoDefaultCategoria = (
   filters: MargenQueryFilters,
   table: MargenDataTable,
@@ -483,10 +501,7 @@ const queryDrillLevel0 = async (
   // Híbrido: dinero+facturas en roll + dims en item_dia (~5,8 s → ~4,5 s con
   // 5 días × 13 sedes). Si item_dia no está, cae al GROUP BY completo del roll.
   let daySql: string;
-  if (
-    isFacturaItemRollTable(table) &&
-    (await resolveInformeMargenDataSource(client)) === MARGEN_ITEM_DIA_ROLL_TABLE
-  ) {
+  if (await canUseItemDiaHybrid(client, table)) {
     const rollWhere = buildWhere(levelFilters, [], params, table, false);
     const itemWhere = buildWhere(
       levelFilters,
@@ -932,22 +947,42 @@ export const queryDrillRows = async (
   search?: string,
 ): Promise<{ level: number; levelName: string; rows: DrillRow[] }> => {
   const level = path.length;
-  const params: unknown[] = [];
-  const where = buildWhere(filters, path, params, table);
 
   if (level === 0) {
     const board = await queryDrillLevel0(client, filters, table);
     return board;
   }
 
+  const params: unknown[] = [];
+  const where = buildWhere(filters, path, params, table);
+
+  // Niveles 1..4 agrupan por dimensiones que `margen_item_dia_roll` también
+  // tiene: los conteos de categorías/líneas/sublíneas/ítems salen de ahí y solo
+  // el dinero + facturas siguen leyendo el roll factura+ítem. Nivel 5 (factura)
+  // y el detalle sí necesitan `documento_fc`, que item_dia no guarda.
+  const hybrid = level <= 4 && (await canUseItemDiaHybrid(client, table));
+  /**
+   * WHERE gemelo sobre item_dia. Encola sus params DESPUÉS de los del roll en
+   * el MISMO array, que es lo que espera `buildGroupedMetricsHybridSql`.
+   * Ojo: solo llamar cuando el híbrido está activo; si no, quedarían params de
+   * más y el bind falla.
+   */
+  const itemDiaWhere = () =>
+    buildWhere(filters, path, params, MARGEN_ITEM_DIA_ROLL_TABLE);
+
   if (level === 1) {
+    const group = { keySql: idTipoExpr(table), keyAlias: "id_tipo" };
+    const orderBy = buildMargenOrderBy(filters.orderBy, filters.orderDir, "1");
     const result = await client.query(
-      buildGroupedMetricsSql(
-        table,
-        where,
-        { keySql: idTipoExpr(table), keyAlias: "id_tipo" },
-        buildMargenOrderBy(filters.orderBy, filters.orderDir, "1"),
-      ),
+      hybrid
+        ? buildGroupedMetricsHybridSql(
+            table,
+            where,
+            itemDiaWhere(),
+            group,
+            orderBy,
+          )
+        : buildGroupedMetricsSql(table, where, group, orderBy),
       params,
     );
     return {
@@ -973,18 +1008,23 @@ export const queryDrillRows = async (
     const labelSrc = isRollTable(table)
       ? "NULLIF(nombre_linea1, '')"
       : "NULLIF(TRIM(nombre_linea1), '')";
+    const group = {
+      keySql: idLinea1Expr(table),
+      keyAlias: "id_linea1",
+      labelSourceSql: labelSrc,
+      labelAlias: "nombre",
+    };
+    const orderBy = buildMargenOrderBy(filters.orderBy, filters.orderDir, "1");
     const result = await client.query(
-      buildGroupedMetricsSql(
-        table,
-        where,
-        {
-          keySql: idLinea1Expr(table),
-          keyAlias: "id_linea1",
-          labelSourceSql: labelSrc,
-          labelAlias: "nombre",
-        },
-        buildMargenOrderBy(filters.orderBy, filters.orderDir, "1"),
-      ),
+      hybrid
+        ? buildGroupedMetricsHybridSql(
+            table,
+            where,
+            itemDiaWhere(),
+            group,
+            orderBy,
+          )
+        : buildGroupedMetricsSql(table, where, group, orderBy),
       params,
     );
     return {
@@ -1009,18 +1049,23 @@ export const queryDrillRows = async (
     const labelSrc = isRollTable(table)
       ? "NULLIF(nombre_linea2, '')"
       : "NULLIF(TRIM(nombre_linea2), '')";
+    const group = {
+      keySql: idLinea2Expr(table),
+      keyAlias: "id_linea2",
+      labelSourceSql: labelSrc,
+      labelAlias: "nombre",
+    };
+    const orderBy = buildMargenOrderBy(filters.orderBy, filters.orderDir, "1");
     const result = await client.query(
-      buildGroupedMetricsSql(
-        table,
-        where,
-        {
-          keySql: idLinea2Expr(table),
-          keyAlias: "id_linea2",
-          labelSourceSql: labelSrc,
-          labelAlias: "nombre",
-        },
-        buildMargenOrderBy(filters.orderBy, filters.orderDir, "1"),
-      ),
+      hybrid
+        ? buildGroupedMetricsHybridSql(
+            table,
+            where,
+            itemDiaWhere(),
+            group,
+            orderBy,
+          )
+        : buildGroupedMetricsSql(table, where, group, orderBy),
       params,
     );
     return {
@@ -1042,38 +1087,47 @@ export const queryDrillRows = async (
   }
 
   if (level === 4) {
-    let itemWhere = where;
+    // El filtro de búsqueda se reusa TAL CUAL en el lado item_dia: ambas tablas
+    // son rolls, así que `id_item` / `item_descripcion` se escriben igual y el
+    // placeholder ya empujado sirve para las dos (un $n puede repetirse).
+    let searchClause = "";
     if (search?.trim()) {
       params.push(`%${search.trim().toLowerCase()}%`);
       const itemCol = idItemExpr(table);
       const descCol = isRollTable(table)
         ? "item_descripcion"
         : "TRIM(COALESCE(item_descripcion, ''))";
-      itemWhere += ` AND (
+      searchClause = ` AND (
         LOWER(${itemCol}) LIKE $${params.length}
         OR LOWER(${descCol}) LIKE $${params.length}
       )`;
     }
+    const itemWhere = where + searchClause;
     const labelSrc = isRollTable(table)
       ? "NULLIF(item_descripcion, '')"
       : "NULLIF(TRIM(item_descripcion), '')";
+    const group = {
+      keySql: idItemExpr(table),
+      keyAlias: "id_item",
+      labelSourceSql: labelSrc,
+      labelAlias: "descripcion",
+    };
+    const orderBy = buildMargenOrderBy(
+      filters.orderBy,
+      filters.orderDir,
+      "ventas_netas DESC",
+    );
     const result = await client.query(
-      buildGroupedMetricsSql(
-        table,
-        itemWhere,
-        {
-          keySql: idItemExpr(table),
-          keyAlias: "id_item",
-          labelSourceSql: labelSrc,
-          labelAlias: "descripcion",
-        },
-        buildMargenOrderBy(
-          filters.orderBy,
-          filters.orderDir,
-          "ventas_netas DESC",
-        ),
-        "LIMIT 1000",
-      ),
+      hybrid
+        ? buildGroupedMetricsHybridSql(
+            table,
+            itemWhere,
+            itemDiaWhere() + searchClause,
+            group,
+            orderBy,
+            "LIMIT 1000",
+          )
+        : buildGroupedMetricsSql(table, itemWhere, group, orderBy, "LIMIT 1000"),
       params,
     );
     return {
@@ -1199,11 +1253,7 @@ export const queryFactNavRows = async (
       "fecha_dcto DESC",
     );
     let daySql: string;
-    if (
-      isFacturaItemRollTable(table) &&
-      (await resolveInformeMargenDataSource(client)) ===
-        MARGEN_ITEM_DIA_ROLL_TABLE
-    ) {
+    if (await canUseItemDiaHybrid(client, table)) {
       const itemWhere = buildFactWhere(
         filters,
         path,

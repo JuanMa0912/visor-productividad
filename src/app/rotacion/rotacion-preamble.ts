@@ -42,6 +42,15 @@ type RotationRow = {
   totalMargin: number;
   marginDailyAvgPct: number;
   totalUnits: number;
+  /**
+   * Consumo del item dentro de un kit (documento EK del ERP): el POS cobra en el
+   * codigo padre y descuenta el inventario del hijo.
+   * Opcionales porque una respuesta cacheada (IndexedDB) o una BD sin la migracion
+   * `20260814_rotacion_periodo_std_demanda` no los trae; ver `resolveRotationDemandaUnits`.
+   */
+  udsEquivalentes?: number;
+  /** Denominador del DIC: `totalUnits + udsEquivalentes`. */
+  demandaUnits?: number;
   openingInventoryUnits: number;
   minInventoryUnits: number;
   inventoryUnits: number;
@@ -809,6 +818,17 @@ const safeNumber = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
 /**
+ * Denominador del DIC. La API ya lo manda calculado (venta PDV + consumo por kit);
+ * si la fila viene de una respuesta vieja en cache o de una BD sin la migracion,
+ * el campo no llega y se cae a la venta PDV: preferimos repetir el numero de hoy
+ * antes que dividir por cero y marcar todo como "Sin venta".
+ */
+const resolveRotationDemandaUnits = (row: RotationRow) =>
+  typeof row.demandaUnits === "number" && Number.isFinite(row.demandaUnits)
+    ? row.demandaUnits
+    : safeNumber(row.totalUnits);
+
+/**
  * Filas "vacias": sin venta, sin costo y sin inventario en el periodo. No aportan
  * informacion utilil (ni a la tabla ni al Pareto ABCD) y suelen ser items que ya
  * salieron del catalogo activo o que cargaron una sola foto en cero.
@@ -827,6 +847,8 @@ const normalizeRotationRows = (rows: RotationRow[]) =>
         totalUnits: safeNumber(
           (row as RotationRow & { totalUnits?: number }).totalUnits,
         ),
+        udsEquivalentes: safeNumber(row.udsEquivalentes),
+        demandaUnits: resolveRotationDemandaUnits(row),
         marginDailyAvgPct: safeNumber(
           (row as RotationRow & { marginDailyAvgPct?: number })
             .marginDailyAvgPct,
@@ -1438,13 +1460,23 @@ const buildConsolidatedRowsBySelection = (
     const key = row.item.trim().toUpperCase();
     const current = byItem.get(key);
     if (!current) {
-      byItem.set(key, { ...row });
+      // Se normaliza la demanda al entrar: mas abajo `totalUnits` ya viene mutado
+      // y el fallback a venta PDV daria el acumulado, no el de esta fila.
+      byItem.set(key, {
+        ...row,
+        udsEquivalentes: safeNumber(row.udsEquivalentes),
+        demandaUnits: resolveRotationDemandaUnits(row),
+      });
       return;
     }
     current.totalSales += row.totalSales;
     current.totalCost += row.totalCost;
     current.totalMargin += row.totalMargin;
     current.totalUnits += row.totalUnits;
+    current.udsEquivalentes =
+      safeNumber(current.udsEquivalentes) + safeNumber(row.udsEquivalentes);
+    current.demandaUnits =
+      safeNumber(current.demandaUnits) + resolveRotationDemandaUnits(row);
     current.inventoryUnits += row.inventoryUnits;
     current.inventoryValue += row.inventoryValue;
     current.openingInventoryUnits =
@@ -1469,12 +1501,18 @@ const buildConsolidatedRowsBySelection = (
       (row.lastPurchaseDate ?? "") > current.lastPurchaseDate
         ? row.lastPurchaseDate
         : current.lastPurchaseDate;
+    // El DIC no es aditivo: al juntar sedes hay que volver a dividir. El
+    // denominador es la DEMANDA (venta PDV + consumo por kit), igual que en
+    // db/migrations/20260814_rotacion_periodo_std_demanda.sql y que el SQL en
+    // vivo; con `totalUnits` una sede que solo mueve el item dentro de kits
+    // aportaria inventario al numerador y cero al denominador.
     current.rotation =
       current.inventoryUnits <= 0 || current.inventoryValue <= 0
         ? 0
-        : current.totalUnits <= 0 || current.trackedDays <= 0
+        : safeNumber(current.demandaUnits) <= 0 || current.trackedDays <= 0
           ? NO_SALES_DI_VALUE
-          : (current.inventoryUnits * current.trackedDays) / current.totalUnits;
+          : (current.inventoryUnits * current.trackedDays) /
+            safeNumber(current.demandaUnits);
     current.status =
       statusRank[row.status] > statusRank[current.status]
         ? row.status
@@ -1734,4 +1772,4 @@ const readRotationApiForbiddenMessage = async (
 };
 
 export type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN2Option, LineaN1FamilyKey, AbcdConfig, AbcdCategory, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, AbcdSummaryRow, GroupRowsQuickFilter, GroupZeroEstadoSetFilter };
-export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, mergeRotationLineaN2NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, compareLineaN2FilterCodes, normalizeLineaN1CodeForFilter, normalizeLineaN2CodeForFilter, buildRotationItemLineaN2Key, resolveRowLineaN2FilterCode, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, rotationMarginPct, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, buildLineasN2QueryValues, buildLineasN2ClientFilterValues, rowMatchesLineaN2Filter, filterRotationRowsByLineaAndCategoria, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage, DEFAULT_GROUP_ZERO_ESTADO_SET_FILTER, normalizeGroupZeroEstadoSetFilter };
+export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, mergeRotationLineaN2NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, compareLineaN2FilterCodes, normalizeLineaN1CodeForFilter, normalizeLineaN2CodeForFilter, buildRotationItemLineaN2Key, resolveRowLineaN2FilterCode, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, rotationMarginPct, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, resolveRotationDemandaUnits, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, buildLineasN2QueryValues, buildLineasN2ClientFilterValues, rowMatchesLineaN2Filter, filterRotationRowsByLineaAndCategoria, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage, DEFAULT_GROUP_ZERO_ESTADO_SET_FILTER, normalizeGroupZeroEstadoSetFilter };

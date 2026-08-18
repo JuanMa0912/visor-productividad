@@ -13,6 +13,7 @@ import {
   ROTACION_SOURCE_LEGACY,
   resolveRotacionCleanMatview,
   resolveRotacionPeriodoStdTable,
+  resolveRotacionSalidasDiaTable,
 } from "@/lib/rotacion/source-tables";
 import {
   canonicalizeEmpresaCode,
@@ -109,6 +110,14 @@ type RotationDbRow = {
   total_margin: string | number | null;
   margin_daily_avg_pct: string | number | null;
   total_units: string | number | null;
+  /**
+   * Consumo del item dentro de un kit (documento EK del ERP). Llega en `null`
+   * cuando la BD todavia no tiene `rotacion_salidas_dia` / las columnas del
+   * snapshot; ese caso equivale a "no hay kits" y no debe cambiar el DIC.
+   */
+  uds_equivalentes?: string | number | null;
+  /** Denominador real del DIC: `total_units + uds_equivalentes`. */
+  demanda_units?: string | number | null;
   opening_inventory_units: string | number | null;
   min_inventory_units: string | number | null;
   inventory_units: string | number | null;
@@ -144,6 +153,17 @@ type RotationRow = {
   totalMargin: number;
   marginDailyAvgPct: number;
   totalUnits: number;
+  /**
+   * Consumo por ensamble de kit y denominador del DIC (`totalUnits +
+   * udsEquivalentes`). Viajan al front porque el DIC no es aditivo: al consolidar
+   * sedes hay que volver a dividir, y sin `demandaUnits` el front dividiria solo
+   * por la venta PDV.
+   * `mapRotationDbRows` siempre los llena; son opcionales para seguir siendo
+   * estructuralmente compatibles con el tipo homonimo del front, que tolera filas
+   * cacheadas de antes de este cambio.
+   */
+  udsEquivalentes?: number;
+  demandaUnits?: number;
   openingInventoryUnits: number;
   minInventoryUnits: number;
   inventoryUnits: number;
@@ -227,6 +247,12 @@ let rotacionPeriodoStdSublineaProbeCache:
 let rotacionMatviewSublineaProbeCache:
   | { table: string; hasSublinea: boolean; expiresAt: number }
   | null = null;
+let rotacionPeriodoStdDemandaProbeCache:
+  | { table: string; hasDemanda: boolean; expiresAt: number }
+  | null = null;
+let rotacionSalidasDiaProbeCache:
+  | { table: string; exists: boolean; expiresAt: number }
+  | null = null;
 
 const tableHasColumn = async (
   client: RotacionBaseQueryClient,
@@ -302,6 +328,79 @@ const probeRotacionMatviewHasSublineaColumns = async (
     return hasSublinea;
   } catch {
     return false;
+  }
+};
+
+/**
+ * `demanda_units` / `uds_equivalentes` llegan con
+ * `db/migrations/20260814_rotacion_periodo_std_demanda.sql`. Mientras no este
+ * aplicada hay que seguir sirviendo el snapshot viejo sin romper el SELECT.
+ */
+const probeRotacionPeriodoStdHasDemandaColumns = async (
+  client: RotacionBaseQueryClient,
+): Promise<boolean> => {
+  const table = resolveRotacionPeriodoStdTable(getRotacionSourceTable());
+  const now = Date.now();
+  if (
+    rotacionPeriodoStdDemandaProbeCache &&
+    rotacionPeriodoStdDemandaProbeCache.expiresAt > now &&
+    rotacionPeriodoStdDemandaProbeCache.table === table
+  ) {
+    return rotacionPeriodoStdDemandaProbeCache.hasDemanda;
+  }
+  try {
+    const hasDemanda = await tableHasColumn(client, table, "demanda_units");
+    rotacionPeriodoStdDemandaProbeCache = {
+      table,
+      hasDemanda,
+      expiresAt: now + ROTACION_SCHEMA_PROBE_CACHE_TTL_MS,
+    };
+    return hasDemanda;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * `rotacion_salidas_dia` (consumo por kit) puede no existir todavia: la BD del
+ * entorno puede ir por detras del repo. Devolver `null` deja el DIC exactamente
+ * como esta hoy en vez de reventar el query en vivo. Se cachea igual que el resto
+ * de probes de esquema porque preguntarlo por sede seria un round-trip por sede.
+ */
+const probeRotacionSalidasDiaTable = async (
+  client: RotacionBaseQueryClient,
+): Promise<string | null> => {
+  const table = resolveRotacionSalidasDiaTable(getRotacionSourceTable());
+  if (!table) return null;
+  const now = Date.now();
+  if (
+    rotacionSalidasDiaProbeCache &&
+    rotacionSalidasDiaProbeCache.expiresAt > now &&
+    rotacionSalidasDiaProbeCache.table === table
+  ) {
+    return rotacionSalidasDiaProbeCache.exists ? table : null;
+  }
+  try {
+    const result = await client.query(
+      "SELECT to_regclass($1) IS NOT NULL AS exists",
+      [table],
+    );
+    const exists = Boolean(
+      (result.rows?.[0] as { exists?: boolean } | undefined)?.exists,
+    );
+    rotacionSalidasDiaProbeCache = {
+      table,
+      exists,
+      expiresAt: now + ROTACION_SCHEMA_PROBE_CACHE_TTL_MS,
+    };
+    return exists ? table : null;
+  } catch (err) {
+    console.warn(
+      `[rotacion API] probe ${table} fallo (DIC sigue sin consumo por kit): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return null;
   }
 };
 
@@ -1778,6 +1877,16 @@ const rotationRowsHaveAdequateLineaN2Metadata = (
   return withMeta / sample.length >= PERIODO_STD_MIN_N2_METADATA_RATIO;
 };
 
+/**
+ * Sin `demanda_units` (BD sin migrar o snapshot viejo) el denominador vuelve a
+ * ser la venta PDV: se prefiere repetir el numero de hoy antes que publicar un
+ * DIC con denominador cero.
+ */
+const resolveDemandaUnitsFromDbRow = (row: RotationDbRow): number =>
+  row.demanda_units === null || row.demanda_units === undefined
+    ? toNumber(row.total_units)
+    : toNumber(row.demanda_units);
+
 const mapRotationDbRows = (rows: RotationDbRow[]): RotationRow[] =>
   rows
     .map((row) => ({
@@ -1802,6 +1911,8 @@ const mapRotationDbRows = (rows: RotationDbRow[]): RotationRow[] =>
       totalMargin: toNumber(row.total_margin),
       marginDailyAvgPct: toNumber(row.margin_daily_avg_pct),
       totalUnits: toNumber(row.total_units),
+      udsEquivalentes: toNumber(row.uds_equivalentes),
+      demandaUnits: resolveDemandaUnitsFromDbRow(row),
       openingInventoryUnits: toNumber(row.opening_inventory_units),
       minInventoryUnits: toNumber(row.min_inventory_units),
       inventoryUnits: toNumber(row.inventory_units),
@@ -1847,6 +1958,15 @@ async function queryRotationRowsViaPeriodoStd({
       sublinea,`
     : `NULL::text AS linea_n2_codigo,
       NULL::text AS sublinea,`;
+  // El snapshot ya trae `rotation` calculada contra la demanda; estas dos
+  // columnas viajan para que el front pueda re-dividir al consolidar sedes.
+  const hasDemandaColumns =
+    await probeRotacionPeriodoStdHasDemandaColumns(client);
+  const demandaSelect = hasDemandaColumns
+    ? `uds_equivalentes,
+      demanda_units,`
+    : `0::numeric AS uds_equivalentes,
+      NULL::numeric AS demanda_units,`;
   const baseSql = `
     SELECT
       empresa,
@@ -1869,6 +1989,7 @@ async function queryRotationRowsViaPeriodoStd({
       total_margin,
       margin_daily_avg_pct,
       total_units,
+      ${demandaSelect}
       opening_inventory_units,
       min_inventory_units,
       inventory_units,
@@ -1967,12 +2088,21 @@ async function ensureRotacionCleanMatViewProbe(
  * SQL contra `rotacion_item_dia_clean`. Dos variantes conservadas:
  * - `ranked`: window functions (default, ~10–11 s medido en prod).
  * - `hashagg`: item_bounds + DISTINCT ON (alternativa; midió peor en prod).
+ *
+ * INVARIANTE: para la ventana del snapshot este SQL y
+ * `refresh_rotacion_item_periodo_std()` tienen que dar el mismo `rotation`. No se
+ * puede comparar por HTTP (para esa ventana el endpoint siempre sirve el
+ * snapshot); la comparacion se hace en BD, corriendo este query con
+ * `periodo_start/periodo_end` de `rotacion_item_periodo_std_meta` y diffeando
+ * contra la tabla del snapshot por (empresa, sede_id, item). Ver la receta en
+ * `docs/DATABASE.md`, seccion 4.4.
  */
 const buildRotacionMatviewSql = (
   strategy: RotacionMatviewSqlStrategy,
-  options: { hasSublineaColumns?: boolean } = {},
+  options: { hasSublineaColumns?: boolean; salidasTable?: string | null } = {},
 ): string => {
   const hasSublineaColumns = options.hasSublineaColumns ?? true;
+  const salidasTable = options.salidasTable ?? null;
   const sublineaSelect = hasSublineaColumns
     ? `linea_n2_codigo,
         sublinea,`
@@ -2015,6 +2145,47 @@ const buildRotacionMatviewSql = (
           OR COALESCE(linea_n1_codigo, '__sin_n1__') = ANY($7::text[])
         )
         AND ($10::text[] IS NULL OR categoria_key = ANY($10::text[]))
+    )`;
+
+  // Consumo por ENSAMBLE DE KIT (doc `EK`) en la misma ventana: el POS cobra en el
+  // codigo padre pero descuenta el inventario del hijo, y esa salida no viaja por
+  // cmmovimiento_pdv. Misma definicion que
+  // db/migrations/20260814_rotacion_periodo_std_demanda.sql; si aqui y alla no son
+  // identicas, el mismo item da DIC distinto segun el rango que pida el usuario.
+  // `unidades` viene firmado del ERP (salidas negativas), de ahi el signo cambiado.
+  // Cuando la tabla no existe se deja una CTE vacia para no bifurcar el resto del
+  // SQL: el LEFT JOIN devuelve NULL y el DIC queda como antes del cambio.
+  // OJO: la variante `ranked` agrupa por (empresa, sede, item, linea, descripcion,
+  // unidad), asi que un item que cambio de descripcion dentro del rango sale en dos
+  // filas y cada una recibe el total de kits. Es la misma asimetria que ya tenia
+  // `total_units` en esa variante; `hashagg` y el snapshot agrupan por item.
+  const equivCte = salidasTable
+    ? `
+    equiv AS (
+      SELECT
+        s.empresa,
+        s.sede    AS sede_id,
+        s.id_item AS item,
+        GREATEST(SUM(-s.unidades), 0)::numeric AS uds_equivalentes
+      FROM ${salidasTable} s
+      WHERE s.fecha_dia BETWEEN $1::date AND $2::date
+        AND s.doc_inv_tipo = 'EK'
+        AND s.ind_es = 2
+        -- Mismos filtros de alcance que \`base\`: no cambian el resultado del
+        -- LEFT JOIN (esas filas no casarian), pero evitan agregar todo el pais
+        -- una vez por sede consultada.
+        AND ($5::text IS NULL OR s.empresa = $5)
+        AND ($6::text IS NULL OR s.sede = $6)
+      GROUP BY 1, 2, 3
+    )`
+    : `
+    equiv AS (
+      SELECT
+        NULL::text AS empresa,
+        NULL::text AS sede_id,
+        NULL::text AS item,
+        0::numeric AS uds_equivalentes
+      WHERE false
     )`;
 
   const rankedAggregated = `
@@ -2210,32 +2381,42 @@ const buildRotacionMatviewSql = (
   const tail = `
     enriched AS (
       SELECT
-        *,
+        a.*,
+        COALESCE(eq.uds_equivalentes, 0)::numeric AS uds_equivalentes,
+        (COALESCE(a.total_units, 0) + COALESCE(eq.uds_equivalentes, 0))::numeric
+          AS demanda_units,
         NULL::text AS nombre_bodega,
+        -- DIC DE DEMANDA: venta PDV + consumo por kit.
         CASE
-          WHEN COALESCE(inventory_units, 0) <= 0
-            OR COALESCE(inventory_value, 0) <= 0 THEN 0::numeric
-          WHEN COALESCE(total_units, 0) <= 0
-            OR COALESCE(tracked_days, 0) <= 0 THEN 999999::numeric
-          ELSE (COALESCE(inventory_units, 0) * tracked_days::numeric)
-               / NULLIF(total_units, 0)
+          WHEN COALESCE(a.inventory_units, 0) <= 0
+            OR COALESCE(a.inventory_value, 0) <= 0 THEN 0::numeric
+          WHEN (COALESCE(a.total_units, 0) + COALESCE(eq.uds_equivalentes, 0)) <= 0
+            OR COALESCE(a.tracked_days, 0) <= 0 THEN 999999::numeric
+          ELSE (COALESCE(a.inventory_units, 0) * a.tracked_days::numeric)
+               / NULLIF(COALESCE(a.total_units, 0) + COALESCE(eq.uds_equivalentes, 0), 0)
         END AS rotation,
         CASE
-          WHEN last_movement_date IS NULL THEN NULL
-          ELSE ($3::date - last_movement_date)
+          WHEN a.last_movement_date IS NULL THEN NULL
+          ELSE ($3::date - a.last_movement_date)
         END::int AS effective_days
-      FROM aggregated
-      WHERE $4::numeric IS NULL OR total_sales <= $4::numeric
+      FROM aggregated a
+      LEFT JOIN equiv eq
+        ON  eq.empresa = a.empresa
+        AND eq.sede_id = a.sede_id
+        AND eq.item    = a.item
+      WHERE $4::numeric IS NULL OR a.total_sales <= $4::numeric
     ),
     classified AS (
       SELECT
         *,
         CASE
           WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 'Agotado'
-          WHEN total_units > 0
+          -- Contra la demanda igual que el DIC: si uno mira la venta PDV y el otro
+          -- la demanda, el estado contradice al numero que se muestra al lado.
+          WHEN demanda_units > 0
             AND tracked_days > 0
             AND inventory_units > 0
-            AND inventory_units <= ((total_units / tracked_days) * $8::numeric)
+            AND inventory_units <= ((demanda_units / tracked_days) * $8::numeric)
             THEN 'Futuro agotado'
           WHEN COALESCE(rotation, 0) > $9 THEN 'Baja rotacion'
           ELSE 'En seguimiento'
@@ -2264,6 +2445,8 @@ const buildRotacionMatviewSql = (
       total_margin,
       margin_daily_avg_pct,
       total_units,
+      uds_equivalentes,
+      demanda_units,
       opening_inventory_units,
       min_inventory_units,
       inventory_units,
@@ -2286,7 +2469,7 @@ const buildRotacionMatviewSql = (
 
   const aggregated =
     strategy === "hashagg" ? hashaggAggregated : rankedAggregated;
-  return `${baseCte},\n    ${aggregated},\n    ${tail}`;
+  return `${baseCte},${equivCte},\n    ${aggregated},\n    ${tail}`;
 };
 
 async function queryRotationRowsViaMatview({
@@ -2314,8 +2497,10 @@ async function queryRotationRowsViaMatview({
 }): Promise<RotationRow[] | ExplainPlanResult> {
   const sqlStartTs = performance.now();
   const hasSublineaColumns = await probeRotacionMatviewHasSublineaColumns(client);
+  const salidasTable = await probeRotacionSalidasDiaTable(client);
   const baseSql = buildRotacionMatviewSql(matviewSqlStrategy, {
     hasSublineaColumns,
+    salidasTable,
   });
   const params = [
     startDate, // $1: fecha desde (ISO)
@@ -2556,6 +2741,37 @@ async function queryRotationRows({
         fields,
         forcedRotacionCategoriaKeys,
       );
+      // Mismo denominador que la matview y que el snapshot: sin esto el perfil
+      // asaderos (que fuerza tabla cruda) veria otro DIC que el resto del portal.
+      const rawSalidasTable = await probeRotacionSalidasDiaTable(client);
+      const rawEquivCte = rawSalidasTable
+        ? `
+      equiv AS (
+        SELECT
+          s.empresa,
+          s.sede    AS sede_id,
+          s.id_item AS item,
+          GREATEST(SUM(-s.unidades), 0)::numeric AS uds_equivalentes
+        FROM ${rawSalidasTable} s
+        WHERE s.fecha_dia
+              BETWEEN TO_DATE($1::text, 'YYYYMMDD') AND TO_DATE($2::text, 'YYYYMMDD')
+          AND s.doc_inv_tipo = 'EK'
+          AND s.ind_es = 2
+          -- Mismos filtros de alcance que \`scoped\`: no cambian el resultado del
+          -- LEFT JOIN, solo evitan agregar todo el pais una vez por sede.
+          AND ($5::text IS NULL OR s.empresa = $5)
+          AND ($6::text IS NULL OR s.sede = $6)
+        GROUP BY 1, 2, 3
+      ),`
+        : `
+      equiv AS (
+        SELECT
+          NULL::text AS empresa,
+          NULL::text AS sede_id,
+          NULL::text AS item,
+          0::numeric AS uds_equivalentes
+        WHERE false
+      ),`;
       const sqlStartTs = performance.now();
       const baseSql = `
       -- IMPORTANTE: NO usar 'WITH scoped AS MATERIALIZED'. Se intento para
@@ -2606,7 +2822,7 @@ async function queryRotationRows({
           AND ($7::text[] IS NULL OR COALESCE(${fields.n1CodeExpr}, '__sin_n1__') = ANY($7::text[]))
           AND ($10::text[] IS NULL OR ${fields.categoriaKeyExpr} = ANY($10::text[]))
           AND ${buildHiddenSedeWhereClause(fields.sedeNameExpr)}
-      ),
+      ),${rawEquivCte}
       ranked AS (
         SELECT
           *,
@@ -2803,46 +3019,56 @@ async function queryRotationRows({
       ),
       enriched AS (
         SELECT
-          empresa,
-          sede_id,
-          sede_name,
-          linea,
-          linea_n1_codigo,
-          linea_n2_codigo,
-          sublinea,
-          item,
-          descripcion,
-          unidad,
-          bodega,
-          nombre_bodega,
-          categoria,
-          nombre_categoria,
-          linea01,
-          nombre_linea01,
-          total_sales,
-          total_cost,
-          total_margin,
-          margin_daily_avg_pct,
-          total_units,
-          COALESCE(opening_inventory_units, 0) AS opening_inventory_units,
-          COALESCE(min_inventory_units, 0) AS min_inventory_units,
-          COALESCE(inventory_units, 0) AS inventory_units,
-          COALESCE(inventory_value, 0) AS inventory_value,
-          tracked_days,
-          sales_effective_days,
-          last_movement_date,
-          last_purchase_date,
+          a.empresa,
+          a.sede_id,
+          a.sede_name,
+          a.linea,
+          a.linea_n1_codigo,
+          a.linea_n2_codigo,
+          a.sublinea,
+          a.item,
+          a.descripcion,
+          a.unidad,
+          a.bodega,
+          a.nombre_bodega,
+          a.categoria,
+          a.nombre_categoria,
+          a.linea01,
+          a.nombre_linea01,
+          a.total_sales,
+          a.total_cost,
+          a.total_margin,
+          a.margin_daily_avg_pct,
+          a.total_units,
+          COALESCE(eq.uds_equivalentes, 0)::numeric AS uds_equivalentes,
+          (COALESCE(a.total_units, 0) + COALESCE(eq.uds_equivalentes, 0))::numeric
+            AS demanda_units,
+          COALESCE(a.opening_inventory_units, 0) AS opening_inventory_units,
+          COALESCE(a.min_inventory_units, 0) AS min_inventory_units,
+          COALESCE(a.inventory_units, 0) AS inventory_units,
+          COALESCE(a.inventory_value, 0) AS inventory_value,
+          a.tracked_days,
+          a.sales_effective_days,
+          a.last_movement_date,
+          a.last_purchase_date,
+          -- DIC DE DEMANDA: venta PDV + consumo por kit.
           CASE
-            WHEN COALESCE(inventory_units, 0) <= 0 OR COALESCE(inventory_value, 0) <= 0 THEN 0::numeric
-            WHEN COALESCE(total_units, 0) <= 0 OR COALESCE(tracked_days, 0) <= 0 THEN 999999::numeric
-            ELSE (COALESCE(inventory_units, 0) * tracked_days::numeric) / NULLIF(total_units, 0)
+            WHEN COALESCE(a.inventory_units, 0) <= 0 OR COALESCE(a.inventory_value, 0) <= 0 THEN 0::numeric
+            WHEN (COALESCE(a.total_units, 0) + COALESCE(eq.uds_equivalentes, 0)) <= 0
+              OR COALESCE(a.tracked_days, 0) <= 0 THEN 999999::numeric
+            ELSE (COALESCE(a.inventory_units, 0) * a.tracked_days::numeric)
+                 / NULLIF(COALESCE(a.total_units, 0) + COALESCE(eq.uds_equivalentes, 0), 0)
           END AS rotation,
           CASE
-            WHEN last_movement_date IS NULL THEN NULL
-            ELSE ($3::date - last_movement_date)
+            WHEN a.last_movement_date IS NULL THEN NULL
+            ELSE ($3::date - a.last_movement_date)
           END::int AS effective_days
-        FROM aggregated
-        WHERE $4::numeric IS NULL OR total_sales <= $4::numeric
+        FROM aggregated a
+        LEFT JOIN equiv eq
+          ON  eq.empresa = a.empresa
+          AND eq.sede_id = a.sede_id
+          AND eq.item    = a.item
+        WHERE $4::numeric IS NULL OR a.total_sales <= $4::numeric
       ),
       classified AS (
         SELECT
@@ -2867,6 +3093,8 @@ async function queryRotationRows({
           total_margin,
           margin_daily_avg_pct,
           total_units,
+          uds_equivalentes,
+          demanda_units,
           opening_inventory_units,
           min_inventory_units,
           inventory_units,
@@ -2879,10 +3107,12 @@ async function queryRotationRows({
           effective_days,
           CASE
             WHEN inventory_units <= 0 OR inventory_value <= 0 THEN 'Agotado'
-            WHEN total_units > 0
+            -- Contra la demanda igual que el DIC, para que estado y numero no se
+            -- contradigan en la misma fila.
+            WHEN demanda_units > 0
               AND tracked_days > 0
               AND inventory_units > 0
-              AND inventory_units <= ((total_units / tracked_days) * $8::numeric)
+              AND inventory_units <= ((demanda_units / tracked_days) * $8::numeric)
               THEN 'Futuro agotado'
             WHEN COALESCE(rotation, 0) > $9 THEN 'Baja rotacion'
             ELSE 'En seguimiento'
@@ -2909,6 +3139,8 @@ async function queryRotationRows({
         total_margin,
         margin_daily_avg_pct,
         total_units,
+        uds_equivalentes,
+        demanda_units,
         opening_inventory_units,
         min_inventory_units,
         inventory_units,

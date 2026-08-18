@@ -151,6 +151,62 @@ por defecto). El daily 07:50 es upsert; el reconcile dominical usa `--replace` (
 
 ---
 
+## 3.a Salidas de inventario + kits + codigo de barras (`rotacion-dim`)
+
+**Que arregla:** el DIC de `/rotacion` dividia inventario entre la venta del POS, y eso deja
+fuera el documento **`EK` = ENSAMBLE DE KIT** — el consumo del hijo cuando se vende un
+multipack, arroba o reempaque. El POS cobra en el codigo PADRE y descuenta el inventario del
+HIJO, y esa salida no viaja por `cmmovimiento_pdv`. Resultado: el hijo salia con DIC absurdo
+(hasta 38.180 dias) y el padre salia "Agotado" mientras vendia.
+
+```bash
+ROTDIM="python3 /home/prodapp/visor-productividad/scripts/etl/rotacion-dim/etl_rotacion_dim.py"
+```
+
+| Quiero... | Comando |
+| --- | --- |
+| Diario (catalogos + salidas de AYER) | `$ROTDIM` |
+| Solo salidas de un dia | `$ROTDIM --mode salidas --date 20260813` |
+| Backfill de salidas | `$ROTDIM --mode salidas --desde 20260701 --hasta 20260813` |
+| Solo catalogos (kits + codbar) | `$ROTDIM --mode dim` |
+| Probar sin escribir | agrega `--dry-run` |
+| Una empresa | `--empresas mercamio` |
+
+> Fechas **sin guiones** (`YYYYMMDD`), igual que el ETL de margen.
+> Cuesta **~19 s por dia por empresa** (~1 min/dia las tres): un backfill de 30 dias son
+> ~30 min. Lanzalo fuera de horario. Idempotente: reemplaza por (empresa, dia).
+
+Subirlo a GCP (fechas **con** guiones):
+```bash
+$SYNC --only rotacion_salidas_dia --desde 2026-07-01 --hasta 2026-08-13 --verify
+$SYNC --only rotacion_kit_composicion,rotacion_item_codbar    # catalogos, sin fecha
+```
+
+**Orden obligatorio al instalar** (si se invierte, el snapshot aborta y el tablero se queda
+sirviendo el periodo anterior):
+1. `db/migrations/20260814_rotacion_salidas_kits_codbar.sql` en **232 y GCP**.
+2. Correr `$ROTDIM --mode dim` y el backfill de salidas de la ventana del snapshot.
+3. Subir a GCP con el `$SYNC` de arriba.
+4. `db/migrations/20260814_rotacion_periodo_std_demanda.sql` en **GCP**.
+
+**Comprobar que quedo bien** (si `uds_equivalentes` sale todo en 0, el snapshot se refresco
+sin las salidas: revisa el paso 3):
+```sql
+SELECT count(*) FILTER (WHERE uds_equivalentes > 0) AS filas_con_kit,
+       ROUND(MAX(uds_equivalentes),0) AS max_uds
+FROM rotacion_item_periodo_std;
+```
+
+> **El sync ahora sale con WARN si el snapshot no se refresca.** Antes solo logueaba: un
+> snapshot que no se actualiza no falla nada, sirve el periodo anterior y pasa desapercibido.
+
+**Lo que NO entra al denominador del DIC** (siguen guardados en la tabla, cambiar el criterio
+es editar la funcion sin re-ETL): `ST`/`TB` traslados (la demanda es de otra sede),
+`FS`/`Na`/`FN` averias, y `AA`/`AJ`/`IF` que son **ajustes contables, no mercancia**. La
+entrada real es `EA` (y `EF` en fruver).
+
+---
+
 ## 3.b Ventas por linea de negocio (`/opt/ventas_pipeline`) — **el otro ETL**
 
 **Hay DOS sistemas de ETL en la 232, no uno.** Este NO esta en el repo y carga
@@ -226,7 +282,21 @@ replace**: subir con la local incompleta **borra en GCP** esas fechas.
 ## 4. Codigos de salida
 
 `0` OK · `3` WARNING (sin datos de ayer en tablas canary, exit normal del timer) ·
-`1` ERROR · `2` uso invalido (flag/fecha mal escrita).
+`1` ERROR · `2` uso invalido (flag/fecha mal escrita) **o un extremo no responde**.
+
+> **`sync-local-to-gcp.sh`, exit 2 = problema de CONEXION, no de esquema.** El script
+> ahora hace un preflight (`SELECT 1` a local y a GCP) antes de recorrer tablas y dice
+> cual extremo esta caido, con la IP publica actual de la maquina. Si el detalle menciona
+> timeout, casi siempre es que esa IP se cayo de las **redes autorizadas del Cloud SQL**
+> (la IP del ISP es dinamica). Se autoriza en la consola de GCP: SQL > Conexiones > Redes
+> autorizadas. Antes de este preflight el sintoma era `ERROR: sin columnas comunes
+> resueltas` en cada tabla, que manda a buscar una columna que no falta; asi pasaron
+> 2 dias sin que nadie lo notara en agosto de 2026.
+>
+> Una tabla de la allowlist que todavia no existe **en el local** se omite con AVISO y
+> deja el sync en exit 3, en vez de tumbar la corrida entera; y el `--verify` omite las
+> que aun no existen **en GCP** en vez de dejar de reportar todas las demas. Eso permite
+> desplegar el script antes que su migracion sin romper el diario de las 07:35.
 
 > Los 6 ETL de la seccion 3.b tambien salen con **exit 3** en dos casos. Antes reportaban
 > `PIPELINE COMPLETADO EXITOSAMENTE` en ambos:

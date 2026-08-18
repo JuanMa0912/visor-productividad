@@ -31,7 +31,10 @@ import {
   probeRotacionPeriodoStdReady,
 } from "@/lib/rotacion/periodo-std-server";
 import type { RotacionSourceTable } from "@/lib/rotacion/source-tables";
-import { resolveRotacionPeriodoStdTable } from "@/lib/rotacion/source-tables";
+import {
+  resolveRotacionPeriodoStdTable,
+  resolveRotacionSalidasDiaTable,
+} from "@/lib/rotacion/source-tables";
 import { sedeKey } from "@/lib/margenes/margen-final-query";
 
 const toNum = (value: string | number | null | undefined) =>
@@ -65,6 +68,11 @@ type AggDbRow = {
   cost_of_sales: string | number | null;
   /** Σ (unidades_i / dias_activos_i): tasa diaria del grupo. Divisor del DI. */
   units_per_day: string | number | null;
+  /**
+   * Σ (uds_equivalentes_i / dias_activos_i): consumo por ensamble de kit (doc `EK`).
+   * Llega 0 cuando la BD no tiene `rotacion_salidas_dia` ni las columnas del snapshot.
+   */
+  equiv_per_day?: string | number | null;
   /** Σ (costo_i / dias_activos_i). */
   cost_per_day: string | number | null;
   child_count: string | number | null;
@@ -80,6 +88,7 @@ type HeatCellDbRow = {
   sold_units: string | number | null;
   cost_of_sales: string | number | null;
   units_per_day: string | number | null;
+  equiv_per_day?: string | number | null;
   cost_per_day: string | number | null;
   child_count: string | number | null;
 };
@@ -112,6 +121,15 @@ const matviewExistsCache = new Map<
   string,
   { exists: boolean; expiresAt: number }
 >();
+const periodoStdEquivColumnCache = new Map<
+  string,
+  { hasEquiv: boolean; expiresAt: number }
+>();
+const salidasDiaExistsCache = new Map<
+  string,
+  { exists: boolean; expiresAt: number }
+>();
+const SCHEMA_PROBE_TTL_MS = 5 * 60 * 1000;
 
 const pathFiltersSql = (
   path: AnalisisInventarioDrillStep[],
@@ -160,6 +178,24 @@ const pathFiltersWithoutSedeSql = (
     path.filter((step) => step.type !== "sede"),
     params,
   );
+
+/**
+ * Solo las clausulas de SEDE del path, para acotar la CTE de consumo por kit.
+ * `rotacion_salidas_dia` no tiene categoria ni linea, y tampoco hacen falta: un
+ * item que no pase esos filtros no llega a `sales_item` y el LEFT JOIN lo descarta
+ * igual. Se reutilizan los strings YA generados por `pathFiltersSql` (mismo orden
+ * que `path`) en vez de volver a llamarla: una segunda llamada empujaria parametros
+ * duplicados y correria la numeracion de los `$n` del resto de la consulta.
+ */
+const sedePathFiltersSql = (
+  path: AnalisisInventarioDrillStep[],
+  pathParts: string[],
+): string =>
+  path
+    .map((step, index) => (step.type === "sede" ? pathParts[index] : null))
+    .filter((part): part is string => Boolean(part))
+    .map((part) => `AND ${part}`)
+    .join("\n        ");
 
 type LevelGroup = {
   idExpr: string;
@@ -220,6 +256,7 @@ const mapAgg = (
     inventoryUnits: toNum(row.inventory_units),
     inventoryValue: toNum(row.inventory_value),
     unitsPerDay: toNum(row.units_per_day),
+    equivUnitsPerDay: toNum(row.equiv_per_day),
     costPerDay: toNum(row.cost_per_day),
   });
   return {
@@ -303,6 +340,82 @@ async function probeMatview(
     expiresAt: now + 5 * 60 * 1000,
   });
   return exists;
+}
+
+/**
+ * `uds_equivalentes` llega con `db/migrations/20260814_rotacion_periodo_std_demanda.sql`.
+ * Mientras no este aplicada hay que seguir sirviendo el snapshot viejo sin romper el
+ * SELECT: un tablero no puede devolver 500 por una columna que aun no existe.
+ * Se lee esa columna y no `demanda_units` a proposito: entre la migracion y el primer
+ * refresh, `demanda_units` vale 0 (DEFAULT del ALTER) mientras `total_units` sigue con
+ * dato, asi que sumar `uds_equivalentes` (tambien 0) repite el numero de hoy en vez de
+ * marcar todo el tablero como "Sin venta".
+ */
+async function probePeriodoStdHasEquivColumn(
+  client: PoolClient,
+  table: string,
+): Promise<boolean> {
+  const now = Date.now();
+  const cached = periodoStdEquivColumnCache.get(table);
+  if (cached && cached.expiresAt > now) return cached.hasEquiv;
+  try {
+    const result = await client.query(
+      `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_name = $1
+        AND column_name = 'uds_equivalentes'
+        AND table_schema = ANY(current_schemas(false))
+      LIMIT 1
+      `,
+      [table],
+    );
+    const hasEquiv = (result.rowCount ?? 0) > 0;
+    periodoStdEquivColumnCache.set(table, {
+      hasEquiv,
+      expiresAt: now + SCHEMA_PROBE_TTL_MS,
+    });
+    return hasEquiv;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `rotacion_salidas_dia` puede no existir todavia (la BD del entorno puede ir por
+ * detras del repo). Devolver `null` deja el DI exactamente como esta hoy en vez de
+ * reventar la consulta en vivo. Para dinastia
+ * `resolveRotacionSalidasDiaTable` ya devuelve `null`: ese tenant no se carga.
+ */
+async function probeSalidasDiaTable(
+  client: PoolClient,
+  sourceTable: RotacionSourceTable,
+): Promise<string | null> {
+  const table = resolveRotacionSalidasDiaTable(sourceTable);
+  if (!table) return null;
+  const now = Date.now();
+  const cached = salidasDiaExistsCache.get(table);
+  if (cached && cached.expiresAt > now) return cached.exists ? table : null;
+  try {
+    const result = await client.query(
+      "SELECT to_regclass($1) IS NOT NULL AS exists",
+      [table],
+    );
+    const exists = Boolean(
+      (result.rows?.[0] as { exists?: boolean } | undefined)?.exists,
+    );
+    salidasDiaExistsCache.set(table, {
+      exists,
+      expiresAt: now + SCHEMA_PROBE_TTL_MS,
+    });
+    return exists ? table : null;
+  } catch (error) {
+    console.warn(
+      `[analisis-inventario] probe ${table} falló (DI sigue sin consumo por kit):`,
+      error,
+    );
+    return null;
+  }
 }
 
 export async function queryAnalisisInventarioDateBounds(
@@ -420,6 +533,8 @@ const buildPeriodoStdAggSql = (args: {
   groupBy: string[];
   sedeFilter: string;
   pathSql: string;
+  /** false = BD sin la migracion de demanda; el DI queda como estaba. */
+  hasEquivColumn: boolean;
   invSelectExtras?: string;
   outerSelectExtras?: string;
   havingSql?: string;
@@ -430,6 +545,11 @@ const buildPeriodoStdAggSql = (args: {
   const groupBySql = args.groupBy.join(", ");
   const idAlias = args.idAlias ?? "group_id";
   const labelAlias = args.labelAlias ?? "group_label";
+  // `sold_units` sigue siendo la venta PDV: es lo que la tabla titula "Venta und.".
+  // El consumo por kit entra solo al DENOMINADOR del DI, igual que en /rotacion.
+  const equivPerDaySql = args.hasEquivColumn
+    ? `SUM(COALESCE(uds_equivalentes, 0) / NULLIF(dias_activos, 0))::numeric`
+    : `0::numeric`;
   return `
     SELECT
       ${args.idExpr} AS ${idAlias},
@@ -443,6 +563,7 @@ const buildPeriodoStdAggSql = (args: {
       -- exposición (dias_activos), no por los días calendario del periodo.
       -- Ver calculateDiFromRates y la migración 20260731_rotacion_periodo_std_dias_activos.
       SUM(COALESCE(total_units, 0) / NULLIF(dias_activos, 0))::numeric AS units_per_day,
+      ${equivPerDaySql} AS equiv_per_day,
       SUM(COALESCE(total_cost, 0) / NULLIF(dias_activos, 0))::numeric AS cost_per_day,
       COUNT(DISTINCT ${args.childExpr})::int AS child_count
     FROM ${args.table}
@@ -456,6 +577,61 @@ const buildPeriodoStdAggSql = (args: {
   `;
 };
 
+/**
+ * CTE `equiv`: consumo por ENSAMBLE DE KIT (documento `EK`) en el rango pedido.
+ * Misma definicion que `db/migrations/20260814_rotacion_periodo_std_demanda.sql` y
+ * que el SQL en vivo de `/api/rotacion`: si las tres no coinciden, el mismo item da
+ * un DI distinto segun el tablero o el rango. `unidades` viene FIRMADO del ERP
+ * (salidas negativas), de ahi el signo cambiado.
+ *
+ * Sin la tabla se emite una CTE vacia en vez de bifurcar el resto del SQL: el
+ * LEFT JOIN devuelve NULL, `equiv_per_day` queda en 0 y el DI es el de hoy.
+ *
+ * La sede se normaliza con LPAD en AMBOS lados. `rotacion_salidas_dia.sede` sale de
+ * `LEFT(id_local, 3)` del ERP y la matview trae `sede_id` unas veces con ceros y
+ * otras sin ellos (por eso los filtros de sede ya comparan las dos formas). Sin
+ * normalizar, el join fallaria en silencio y la correccion de kits seria un no-op.
+ */
+const buildEquivCteSql = (args: {
+  salidasTable: string | null;
+  sedeFilter: string;
+  sedePathSql: string;
+}) => {
+  if (!args.salidasTable) {
+    return `
+    equiv AS (
+      SELECT
+        NULL::text AS eq_empresa,
+        NULL::text AS eq_sede,
+        NULL::text AS eq_item,
+        0::numeric AS uds_equivalentes
+      WHERE false
+    )`;
+  }
+  return `
+    equiv AS (
+      SELECT
+        empresa AS eq_empresa,
+        ${DIM.sedeId} AS eq_sede,
+        item AS eq_item,
+        GREATEST(SUM(-unidades), 0)::numeric AS uds_equivalentes
+      FROM (
+        SELECT
+          s.empresa,
+          s.sede AS sede_id,
+          s.id_item AS item,
+          s.unidades
+        FROM ${args.salidasTable} s
+        WHERE s.fecha_dia BETWEEN $1::date AND $2::date
+          AND s.doc_inv_tipo = 'EK'
+          AND s.ind_es = 2
+      ) sal
+      WHERE ${args.sedeFilter}
+        ${args.sedePathSql}
+      GROUP BY 1, 2, 3
+    )`;
+};
+
 /** Live: inventario día fin + ventas del rango (matview diaria). */
 const buildMatviewPairedAggSql = (args: {
   matview: string;
@@ -465,6 +641,8 @@ const buildMatviewPairedAggSql = (args: {
   groupBy: string[];
   sedeFilter: string;
   pathSql: string;
+  /** CTE `equiv` ya resuelta (vacia si no hay tabla de salidas). */
+  equivCteSql: string;
   invSelectExtras?: string;
   salesSelectExtras?: string;
   /**
@@ -500,35 +678,51 @@ const buildMatviewPairedAggSql = (args: {
         ${args.pathSql}
       GROUP BY ${groupBySql}
     ),
+    ${args.equivCteSql},
     -- Paso intermedio por ÍTEM: aquí se calcula la ventana de exposición de cada
     -- uno dentro del rango pedido. Es el equivalente en vivo de la columna
     -- dias_activos del snapshot (migración 20260731). Hace falta porque la
     -- matview es DENSA: trae fila con ceros aunque el ítem no exista todavía en
     -- esa sede, así que dividir por los días del rango infla el DI de todo ítem
     -- que llegó a mitad de periodo.
+    --
+    -- El GROUP BY baja hasta (empresa, sede) SOLO para poder colgar el consumo por
+    -- kit, que viene por (empresa, sede, item). No cambia ningun numero: las sumas
+    -- se vuelven a colapsar en \`sales\` y la ventana de exposicion se sigue midiendo
+    -- al grano del grupo (el MIN() de \`sales_item_rated\`), no al de la sede.
     sales_item AS (
       SELECT
         ${args.idExpr} AS group_id
         ${args.salesSelectExtras ?? ""},
         ${DIM.itemId} AS di_item,
+        ${DIM.empresa} AS di_empresa,
+        ${DIM.sedeId} AS di_sede,
         SUM(COALESCE(unidades_vendidas_dia, 0))::numeric AS item_units,
         SUM(COALESCE(cost_value_dia, 0))::numeric AS item_cost,
-        LEAST(
-          GREATEST(
-            ($2::date - MIN(fecha) FILTER (
-              WHERE COALESCE(unidades_vendidas_dia, 0) > 0
-                 OR COALESCE(inventory_units_dia, 0) > 0
-            )) + 1,
-            1
-          ),
-          ($2::date - $1::date) + 1
-        )::numeric AS item_dias
+        MIN(fecha) FILTER (
+          WHERE COALESCE(unidades_vendidas_dia, 0) > 0
+             OR COALESCE(inventory_units_dia, 0) > 0
+        ) AS item_first_fecha
       FROM ${args.matview}
       WHERE fecha BETWEEN $1::date AND $2::date
         AND NULLIF(TRIM(item), '') IS NOT NULL
         AND ${args.sedeFilter}
         ${args.pathSql}
-      GROUP BY ${groupBySql}, ${DIM.itemId}
+      GROUP BY ${groupBySql}, ${DIM.itemId}, ${DIM.empresa}, ${DIM.sedeId}
+    ),
+    sales_item_rated AS (
+      SELECT
+        si.*,
+        LEAST(
+          GREATEST(
+            ($2::date - MIN(si.item_first_fecha) OVER (
+              PARTITION BY si.group_id${args.salesGroupExtras ?? ""}, si.di_item
+            )) + 1,
+            1
+          ),
+          ($2::date - $1::date) + 1
+        )::numeric AS item_dias
+      FROM sales_item si
     ),
     sales AS (
       SELECT
@@ -537,8 +731,17 @@ const buildMatviewPairedAggSql = (args: {
         SUM(item_units)::numeric AS sold_units,
         SUM(item_cost)::numeric AS cost_of_sales,
         SUM(item_units / NULLIF(item_dias, 0))::numeric AS units_per_day,
+        -- Consumo por kit del item EN ESA SEDE, dividido por la misma ventana de
+        -- exposicion que sus unidades vendidas.
+        SUM(
+          COALESCE(eq.uds_equivalentes, 0) / NULLIF(item_dias, 0)
+        )::numeric AS equiv_per_day,
         SUM(item_cost / NULLIF(item_dias, 0))::numeric AS cost_per_day
-      FROM sales_item
+      FROM sales_item_rated
+      LEFT JOIN equiv eq
+        ON  eq.eq_empresa = di_empresa
+        AND eq.eq_sede    = di_sede
+        AND eq.eq_item    = di_item
       GROUP BY group_id ${args.salesGroupExtras ?? ""}
     )
     SELECT
@@ -550,6 +753,7 @@ const buildMatviewPairedAggSql = (args: {
       COALESCE(s.sold_units, 0)::numeric AS sold_units,
       COALESCE(s.cost_of_sales, 0)::numeric AS cost_of_sales,
       COALESCE(s.units_per_day, 0)::numeric AS units_per_day,
+      COALESCE(s.equiv_per_day, 0)::numeric AS equiv_per_day,
       COALESCE(s.cost_per_day, 0)::numeric AS cost_per_day,
       i.child_count
     FROM inv i
@@ -599,16 +803,58 @@ const composePathSql = (
   return `${base}${dimSql}`;
 };
 
+/** Que sabe la BD del consumo por kit; resuelto una vez por consulta. */
+type EquivSupport = {
+  /** Snapshot con `uds_equivalentes` (migracion 20260814 aplicada). */
+  hasEquivColumn: boolean;
+  /** CTE `equiv` para el camino en vivo; vacia si falta `rotacion_salidas_dia`. */
+  equivCteSql: string;
+};
+
+/**
+ * Cada camino toma el consumo por kit de donde le sale mas barato: el snapshot ya
+ * lo trae agregado por item x sede, el camino en vivo tiene que agregarlo el mismo.
+ * Si la BD no tiene ninguno de los dos, el DI queda identico al de hoy.
+ */
+const resolveEquivSupport = async (
+  client: PoolClient,
+  args: QueryArgs,
+  mode: SourceMode,
+  sedeFilter: string,
+  sedePathSql: string,
+): Promise<EquivSupport> => {
+  if (mode === "periodo_std") {
+    return {
+      hasEquivColumn: await probePeriodoStdHasEquivColumn(
+        client,
+        args.periodoStdTable,
+      ),
+      equivCteSql: buildEquivCteSql({
+        salidasTable: null,
+        sedeFilter,
+        sedePathSql,
+      }),
+    };
+  }
+  const salidasTable = await probeSalidasDiaTable(client, args.sourceTable);
+  return {
+    hasEquivColumn: false,
+    equivCteSql: buildEquivCteSql({ salidasTable, sedeFilter, sedePathSql }),
+  };
+};
+
 const buildDrillSql = (
   mode: SourceMode,
   level: AnalisisInventarioLevel,
   table: string,
   sedeFilter: string,
   pathSql: string,
+  equiv: EquivSupport,
   havingSql = "",
   outerWhereSql = "",
 ) => {
   const group = levelGroup(level);
+  const { hasEquivColumn, equivCteSql } = equiv;
   const sedeExtras = {
     invSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
     salesSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
@@ -627,6 +873,7 @@ const buildDrillSql = (
         groupBy: [DIM.empresa, DIM.sedeId],
         sedeFilter,
         pathSql,
+        hasEquivColumn,
         outerSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
         havingSql,
         limit: 100,
@@ -641,6 +888,7 @@ const buildDrillSql = (
         groupBy: group.groupBy,
         sedeFilter,
         pathSql,
+        hasEquivColumn,
         outerSelectExtras: `, MAX(descripcion) AS description`,
         havingSql,
         limit: 1500,
@@ -654,6 +902,7 @@ const buildDrillSql = (
       groupBy: group.groupBy,
       sedeFilter,
       pathSql,
+      hasEquivColumn,
       havingSql,
       limit: 300,
     });
@@ -668,6 +917,7 @@ const buildDrillSql = (
       groupBy: [DIM.empresa, DIM.sedeId],
       sedeFilter,
       pathSql,
+      equivCteSql,
       ...sedeExtras,
       outerWhereSql,
       limit: 100,
@@ -682,6 +932,7 @@ const buildDrillSql = (
       groupBy: group.groupBy,
       sedeFilter,
       pathSql,
+      equivCteSql,
       invSelectExtras: `, MAX(descripcion) AS description`,
       outerSelectExtras: `, i.description`,
       outerWhereSql,
@@ -696,6 +947,7 @@ const buildDrillSql = (
     groupBy: group.groupBy,
     sedeFilter,
     pathSql,
+    equivCteSql,
     outerWhereSql,
     limit: 300,
   });
@@ -732,7 +984,14 @@ export async function queryAnalisisInventarioDrill(
 
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
-  const sql = buildDrillSql(mode, level, table, sedeFilter, pathSql);
+  const equiv = await resolveEquivSupport(
+    client,
+    args,
+    mode,
+    sedeFilter,
+    sedePathFiltersSql(args.path, pathParts),
+  );
+  const sql = buildDrillSql(mode, level, table, sedeFilter, pathSql, equiv);
 
   const periodDays = calendarDaysInclusive(args.dateStart, args.dateEnd);
   const result = await withStatementTimeout(client, 30_000, () =>
@@ -828,6 +1087,9 @@ export async function queryAnalisisInventarioHeatmap(
   const table =
     mode === "periodo_std" ? args.periodoStdTable : args.matview;
   const limit = diMinDays != null ? 2500 : rowLevel === "item" ? 800 : 600;
+  // El path del mapa nunca trae sede (las sedes son las columnas), asi que la CTE
+  // de kits se acota solo con el alcance de sedes del usuario.
+  const equiv = await resolveEquivSupport(client, args, mode, sedeFilter, "");
 
   const sql =
     mode === "periodo_std"
@@ -839,6 +1101,7 @@ export async function queryAnalisisInventarioHeatmap(
           groupBy: [...group.groupBy, DIM.empresa, DIM.sedeId],
           sedeFilter,
           pathSql,
+          hasEquivColumn: equiv.hasEquivColumn,
           outerSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
           idAlias: "row_id",
           labelAlias: "row_label",
@@ -852,6 +1115,7 @@ export async function queryAnalisisInventarioHeatmap(
           groupBy: [...group.groupBy, DIM.empresa, DIM.sedeId],
           sedeFilter,
           pathSql,
+          equivCteSql: equiv.equivCteSql,
           invSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
           salesSelectExtras: `, ${DIM.empresa} AS empresa, ${DIM.sedeId} AS sede_id`,
           salesGroupExtras: `, empresa, sede_id`,
@@ -877,6 +1141,7 @@ export async function queryAnalisisInventarioHeatmap(
       inventoryUnits: toNum(row.inventory_units),
       inventoryValue: toNum(row.inventory_value),
       unitsPerDay: toNum(row.units_per_day),
+      equivUnitsPerDay: toNum(row.equiv_per_day),
       costPerDay: toNum(row.cost_per_day),
     });
     if (
