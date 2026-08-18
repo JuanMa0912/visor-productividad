@@ -18,7 +18,8 @@
 #   ventas_proveedor_dia, inventario_proveedor_dia,
 #   proveedor_pos_catalogo, proveedor_item y proveedor_tercero
 #                      (catalogos sin fecha: se suben completos),
-#   orden_compra      (NO va en el diario 07:50; la sube visor-etl-orden-compra 08:00
+#   orden_compra / orden_compra_linea
+#                     (NO van en el diario 07:50; las sube visor-etl-orden-compra 08:00
 #                      con --only; upsert de toda la tabla local, sin borrar GCP),
 #   asistencia_horas  (modo replace SIEMPRE, ver aviso de arriba)
 #   margen_final      (modo replace SIEMPRE; --margen-full para snapshot completo)
@@ -188,7 +189,7 @@ DESDEC="${DESDE//-/}"; HASTAC="${HASTA//-/}"
 TABLES=(proveedor_pos_catalogo proveedor_item proveedor_tercero
         ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc
         ventas_industria rotacion_base_item_dia_sede asistencia_horas ventas_item_diario
-        ventas_proveedor_dia inventario_proveedor_dia orden_compra margen_final)
+        ventas_proveedor_dia inventario_proveedor_dia orden_compra orden_compra_linea margen_final)
 CANARIES="ventas_cajas rotacion_base_item_dia_sede asistencia_horas"
 
 # --only / --table: filtra la allowlist a un subconjunto (backfill quirurgico).
@@ -209,8 +210,8 @@ table_selected() {  # 0 si la tabla esta seleccionada (o si no hay filtro)
 }
 
 # Tablas con timer propio. El diario/reconcile SIN --only no las toca.
-# Siguen en la allowlist para `$SYNC --only orden_compra`.
-SKIP_IN_DEFAULT_SYNC=(orden_compra)
+# Siguen en la allowlist para `$SYNC --only orden_compra --only orden_compra_linea`.
+SKIP_IN_DEFAULT_SYNC=(orden_compra orden_compra_linea)
 in_default_skip() {
   local t="$1" s
   for s in "${SKIP_IN_DEFAULT_SYNC[@]}"; do [[ "$s" == "$t" ]] && return 0; done
@@ -255,6 +256,7 @@ KEY[proveedor_tercero]="empresa,codigo,sucursal"
 KEY[ventas_proveedor_dia]="empresa,fecha_dcto,id_co,id_cricla1"
 KEY[inventario_proveedor_dia]="empresa,fecha_dia,id_co,id_cricla1"
 KEY[orden_compra]="empresa,id_co,tipdoc,documento_oc"
+KEY[orden_compra_linea]="empresa,id_co,tipdoc,documento_oc,id_item,id_terc"
 
 for t in ventas_cajas ventas_fruver ventas_carnes ventas_asadero ventas_pollo_pesc ventas_industria; do
   DATECOL[$t]="fecha_dcto"; DATETYPE[$t]="text"; EXCLUDE[$t]=""
@@ -280,6 +282,8 @@ DATECOL[inventario_proveedor_dia]="fecha_dia"; DATETYPE[inventario_proveedor_dia
 # con --only. MODE=full (sin ventana): hay que subir tambien incompletas viejas
 # cuyo fecha_dcto no es "ayer". UPSERT, no borra GCP.
 DATECOL[orden_compra]=""; DATETYPE[orden_compra]=""; EXCLUDE[orden_compra]="id"; MODE[orden_compra]="full"
+# orden_compra_linea: mismo timer 08:00. MODE=full, sin id serial.
+DATECOL[orden_compra_linea]=""; DATETYPE[orden_compra_linea]=""; EXCLUDE[orden_compra_linea]=""; MODE[orden_compra_linea]="full"
 
 process_table_margen_full() {
   local tbl="margen_final" cols tmp cnt drop_stmt _ec
@@ -553,6 +557,7 @@ MAXEXPR[proveedor_tercero]="to_char(max(updated_at),'YYYYMMDD')"
 MAXEXPR[inventario_proveedor_dia]="to_char(max(fecha_dia),'YYYYMMDD')"
 # OC: fecha_dcto puede ser futura; loaded_at dice si el incremental de 08:00 corrio.
 MAXEXPR[orden_compra]="to_char(max(loaded_at),'YYYYMMDD')"
+MAXEXPR[orden_compra_linea]="to_char(max(loaded_at),'YYYYMMDD')"
 
 # Chequeo simple: fecha maxima por tabla en GCP vs el objetivo (HASTA).
 # Respeta --only para no referenciar tablas que tal vez no existan aun en GCP.

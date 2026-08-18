@@ -3,8 +3,10 @@
 ETL de ORDENES DE COMPRA: carga desde las BD POS de origen
 (192.168.35.217: mercamio / mtodo / bogota) a produXdia.orden_compra (232).
 
-Snapshot de CABECERA (una fila por OC), no linea. Alimenta el tablero de OC.
-Ver db/migrations/20260813_orden_compra.sql.
+Snapshot de CABECERA (una fila por OC) mas LINEAS (item + tercero real).
+La cabecera alimenta el tablero de OC. Las lineas alimentan el desglose de
+costos: quien trajo el item, no el criterio POS (p.ej. MERCAMIO FRUVER).
+Ver db/migrations/20260813_orden_compra.sql y 20260818_orden_compra_linea.sql.
 
 CARGA INCREMENTAL (default del timer 08:00)
 -------------------------------------------
@@ -13,7 +15,8 @@ CARGA INCREMENTAL (default del timer 08:00)
    actualizar cantidad_ent / estado. No toca las ya cumplidas. No descubre OC
    historicas que nunca se cargaron (eso no termina a tiempo).
 Si la tabla esta vacia, hay que hacer una carga inicial (--mes-actual / --desde).
-GCP: `$SYNC --only orden_compra` (upsert de toda la tabla local; es chica).
+GCP: `$SYNC --only orden_compra --only orden_compra_linea`
+(upsert de las tablas locales; son chicas).
 
 SLA DE 7 DIAS
 -------------
@@ -48,6 +51,7 @@ import argparse
 import datetime
 import io
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -71,6 +75,7 @@ TIPDOC_NOM = {
 }
 
 TABLE = "public.orden_compra"
+TABLE_LINEA = "public.orden_compra_linea"
 TABLE_SEDE_MAP = "public.ventas_item_sede_map"
 ABIERTAS_CHUNK = 400
 
@@ -79,6 +84,10 @@ STG_COLS = (
     "terc_nombre, terc_nit, ind_estado, estado_nom, usuario_ing, usuario_conf, "
     "fecha_conf, hora_conf, comprador_nom, n_lineas, n_items, cantidad, cantidad_ent, "
     "tot_bruto, tot_venta"
+)
+STG_LINEA_COLS = (
+    "id_co, tipdoc, documento_oc, fecha_dcto, id_item, id_terc, id_suc_terc, "
+    "terc_nombre, terc_nit, cantidad, cantidad_ent, tot_bruto"
 )
 
 # Fechas inline (validadas YYYYMMDD): COPY no acepta parametros. BTRIM en llaves
@@ -175,6 +184,57 @@ LEFT JOIN LATERAL (
 ORDER BY a.tipdoc, a.documento_oc, a.id_co
 """
 
+# Mismas lineas del POS, sin agrupar: item + tercero real (p.ej. quien trajo el tomate).
+SQL_LINEAS = r"""
+WITH agg AS (
+  SELECT
+    BTRIM(oc.id_co)                         AS id_co,
+    BTRIM(oc.id_tipdoc)                     AS tipdoc,
+    BTRIM(oc.documento_oc)                  AS documento_oc,
+    BTRIM(oc.fecha_dcto)                    AS fecha_dcto,
+    NULLIF(BTRIM(oc.id_item), '')           AS id_item,
+    COALESCE(NULLIF(BTRIM(oc.id_terc), ''), '') AS id_terc,
+    NULLIF(BTRIM(oc.id_suc), '')            AS id_suc_terc,
+    COALESCE(SUM(oc.cantidad), 0)           AS cantidad,
+    COALESCE(SUM(oc.cantidad_ent), 0)       AS cantidad_ent,
+    COALESCE(SUM(oc.tot_bruto), 0)          AS tot_bruto
+  FROM public.cmmovimiento_ocompra oc
+  WHERE BTRIM(oc.id_tipdoc) IN ('OC','FR','OM','OS')
+    AND NULLIF(BTRIM(oc.id_item), '') IS NOT NULL
+    AND ({filtro})
+  GROUP BY 1, 2, 3, 4, 5, 6, 7
+)
+SELECT
+  a.id_co,
+  a.tipdoc,
+  a.documento_oc,
+  a.fecha_dcto,
+  a.id_item,
+  a.id_terc,
+  a.id_suc_terc,
+  terc.terc_nombre,
+  terc.terc_nit,
+  a.cantidad,
+  a.cantidad_ent,
+  a.tot_bruto
+FROM agg a
+LEFT JOIN LATERAL (
+  SELECT
+    NULLIF(BTRIM(t.descripcion), '') AS terc_nombre,
+    NULLIF(BTRIM(t.nit), '')         AS terc_nit
+  FROM public.terceros t
+  WHERE a.id_terc <> ''
+    AND BTRIM(t.codigo) = a.id_terc
+  ORDER BY
+    CASE WHEN a.id_suc_terc IS NOT NULL
+              AND BTRIM(COALESCE(t.sucursal, '')) = a.id_suc_terc
+         THEN 0 ELSE 1 END,
+    t.sucursal
+  LIMIT 1
+) terc ON true
+ORDER BY a.tipdoc, a.documento_oc, a.id_co, a.id_item
+"""
+
 DDL_STG = """
 CREATE TEMP TABLE IF NOT EXISTS stg_orden_compra (
   id_co          text,
@@ -199,6 +259,23 @@ CREATE TEMP TABLE IF NOT EXISTS stg_orden_compra (
   cantidad_ent   numeric(18,4),
   tot_bruto      numeric(18,4),
   tot_venta      numeric(18,4)
+);
+"""
+
+DDL_STG_LINEA = """
+CREATE TEMP TABLE IF NOT EXISTS stg_orden_compra_linea (
+  id_co          text,
+  tipdoc         text,
+  documento_oc   text,
+  fecha_dcto     text,
+  id_item        text,
+  id_terc        text,
+  id_suc_terc    text,
+  terc_nombre    text,
+  terc_nit       text,
+  cantidad       numeric(18,4),
+  cantidad_ent   numeric(18,4),
+  tot_bruto      numeric(18,4)
 );
 """
 
@@ -249,6 +326,29 @@ def valid_date(s: str) -> str:
 def add_days(yyyymmdd: str, days: int) -> str:
     d = datetime.datetime.strptime(yyyymmdd, "%Y%m%d").date()
     return (d + datetime.timedelta(days=days)).strftime("%Y%m%d")
+
+
+def iter_days(desde: str, hasta: str) -> list[str]:
+    out: list[str] = []
+    cur = datetime.datetime.strptime(desde, "%Y%m%d").date()
+    end = datetime.datetime.strptime(hasta, "%Y%m%d").date()
+    while cur <= end:
+        out.append(cur.strftime("%Y%m%d"))
+        cur += datetime.timedelta(days=1)
+    return out
+
+
+def dias_de_filtro_between(filtro: str) -> list[str] | None:
+    """Si el filtro es un BETWEEN de fechas, parte en dias (el POS mata COPY largos)."""
+    m = re.search(
+        r"fecha_dcto\s+BETWEEN\s+'(\d{8})'\s+AND\s+'(\d{8})'",
+        filtro,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    dias = iter_days(m.group(1), m.group(2))
+    return dias if len(dias) > 1 else None
 
 
 def ayer_yyyymmdd(hoy: datetime.date | None = None) -> str:
@@ -311,12 +411,16 @@ def mes_actual_rango(hoy: datetime.date | None = None) -> tuple[str, str]:
 
 
 def pos_conn(env: dict, db: dict):
-    return psycopg2.connect(
+    conn = psycopg2.connect(
         host=require(env, "DB_HOST_POS"), port=env.get("DB_PORT_POS", "5432"),
         dbname=db["db"], user=db["user"], password=require(env, db["pwd_env"]),
         connect_timeout=12,
-        options="-c statement_timeout=300000",
+        options="-c statement_timeout=0",
     )
+    with conn.cursor() as c:
+        c.execute("SET statement_timeout = 0")
+    conn.commit()
+    return conn
 
 
 def empresas_seleccionadas(solo: str | None):
@@ -395,6 +499,29 @@ ON CONFLICT (empresa, id_co, tipdoc, documento_oc) DO UPDATE SET
     loaded_at = now();
 """
 
+UPSERT_LINEA_SQL = f"""
+INSERT INTO {TABLE_LINEA} (
+    empresa, id_co, tipdoc, documento_oc, fecha_dcto,
+    id_item, id_terc, id_suc_terc, terc_nombre, terc_nit,
+    cantidad, cantidad_ent, tot_bruto, loaded_at
+)
+SELECT
+    %s, s.id_co, s.tipdoc, s.documento_oc, s.fecha_dcto,
+    s.id_item, COALESCE(s.id_terc, ''), s.id_suc_terc,
+    s.terc_nombre, s.terc_nit,
+    s.cantidad, s.cantidad_ent, s.tot_bruto, now()
+FROM stg_orden_compra_linea s
+ON CONFLICT (empresa, id_co, tipdoc, documento_oc, id_item, id_terc) DO UPDATE SET
+    fecha_dcto = EXCLUDED.fecha_dcto,
+    id_suc_terc = EXCLUDED.id_suc_terc,
+    terc_nombre = EXCLUDED.terc_nombre,
+    terc_nit = EXCLUDED.terc_nit,
+    cantidad = EXCLUDED.cantidad,
+    cantidad_ent = EXCLUDED.cantidad_ent,
+    tot_bruto = EXCLUDED.tot_bruto,
+    loaded_at = now();
+"""
+
 
 def upsert_filtro(
     *,
@@ -422,6 +549,12 @@ def upsert_filtro(
         log(f"[{empresa}] SIN FILAS en POS ({etiqueta})")
         return 0
 
+    q_lin = SQL_LINEAS.format(filtro=filtro)
+    buf_lin = io.StringIO()
+    with src.cursor() as sc:
+        sc.copy_expert(f"COPY ({q_lin}) TO STDOUT", buf_lin)
+    payload_lin = buf_lin.getvalue()
+
     with tgt.cursor() as tc:
         tc.execute("TRUNCATE stg_orden_compra;")
         tc.copy_expert(
@@ -443,13 +576,41 @@ def upsert_filtro(
              empresa),
         )
         n_ins = tc.rowcount
+        n_lin = 0
+        if rango_borrar:
+            tc.execute(
+                f"DELETE FROM {TABLE_LINEA} WHERE empresa = %s "
+                f"AND fecha_dcto BETWEEN %s AND %s",
+                (empresa, rango_borrar[0], rango_borrar[1]),
+            )
+        if payload_lin.strip():
+            tc.execute("TRUNCATE stg_orden_compra_linea;")
+            tc.copy_expert(
+                f"COPY stg_orden_compra_linea ({STG_LINEA_COLS}) FROM STDIN",
+                io.StringIO(payload_lin),
+            )
+            if not rango_borrar:
+                tc.execute(
+                    f"""
+                    DELETE FROM {TABLE_LINEA} l
+                     USING stg_orden_compra_linea s
+                     WHERE l.empresa = %s
+                       AND l.id_co = s.id_co
+                       AND l.tipdoc = s.tipdoc
+                       AND l.documento_oc = s.documento_oc
+                    """,
+                    (empresa,),
+                )
+            tc.execute(UPSERT_LINEA_SQL, (empresa,))
+            n_lin = tc.rowcount
         tc.execute(
             f"SELECT count(*) FROM {TABLE} WHERE empresa = %s",
             (empresa,),
         )
         total = tc.fetchone()[0]
     tgt.commit()
-    log(f"[{empresa}] {n_ins} OC upsert ({etiqueta}); total empresa={total}")
+    log(f"[{empresa}] {n_ins} OC upsert ({etiqueta}); "
+        f"{n_lin} lineas; total cabeceras empresa={total}")
     return n_ins
 
 
@@ -470,7 +631,9 @@ def cargar(
     try:
         tgt.autocommit = False
         with tgt.cursor() as c:
+            c.execute("SET statement_timeout = 0")
             c.execute(DDL_STG)
+            c.execute(DDL_STG_LINEA)
         tgt.commit()
 
         for db in empresas:
@@ -517,11 +680,27 @@ def cargar(
                     continue
 
                 if filtro:
-                    upsert_filtro(
-                        src=src, tgt=tgt, empresa=empresa,
-                        filtro=filtro, etiqueta=etiqueta,
-                        rango_borrar=rango_borrar, dry_run=dry_run,
-                    )
+                    dias = dias_de_filtro_between(filtro)
+                    if dias:
+                        log(f"[{empresa}] {etiqueta}: {len(dias)} dias (uno por COPY)")
+                        for dia in dias:
+                            upsert_filtro(
+                                src=src, tgt=tgt, empresa=empresa,
+                                filtro=(
+                                    f"oc.fecha_dcto BETWEEN '{dia}' AND '{dia}'"
+                                ),
+                                etiqueta=f"fecha_dcto {dia}",
+                                rango_borrar=(
+                                    (dia, dia) if rango_borrar else None
+                                ),
+                                dry_run=dry_run,
+                            )
+                    else:
+                        upsert_filtro(
+                            src=src, tgt=tgt, empresa=empresa,
+                            filtro=filtro, etiqueta=etiqueta,
+                            rango_borrar=rango_borrar, dry_run=dry_run,
+                        )
 
                 if not refrescar_abiertas:
                     continue

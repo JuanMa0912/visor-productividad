@@ -54,9 +54,9 @@ export type PreciosProveedorExpandRow = {
   rowId: string;
   itemId: string;
   label: string;
-  /** Id estable: `t:CODIGO` (comercial) o criterio POS. */
+  /** Id estable: `oc:CODIGO` (linea OC), `t:CODIGO` (comercial) o criterio POS. */
   proveedorId: string;
-  /** Nombre comercial si hay match por NIT; si no, criterio POS. */
+  /** Nombre del tercero de OC si hay lineas; si no, comercial por NIT o criterio POS. */
   proveedorLabel: string;
   /** Criterio del ítem (`proveedor_pos_catalogo`), distinto del comercial. */
   criterioId: string | null;
@@ -65,7 +65,7 @@ export type PreciosProveedorExpandRow = {
   /** Marca legible: Mercamio / Mercatodo / Merkmios. */
   empresaLabel: string;
   nit: string | null;
-  /** true si el nombre sale de `proveedor_tercero`. */
+  /** true si el nombre sale de `orden_compra_linea` o `proveedor_tercero`. */
   fromTercero: boolean;
   cells: PreciosProveedorCell[];
 };

@@ -1,12 +1,15 @@
 # ETL de ordenes de compra (POS 217 -> produXdia 232 -> GCP)
 
-Alimenta el tablero de OC. Carga **una** tabla en `produXdia` (232):
+Alimenta el tablero de OC y el desglose de costos (tercero real por item).
+Carga **dos** tablas en `produXdia` (232):
 
 | Tabla | Grano | Como se carga |
 |---|---|---|
 | `orden_compra` | cabecera: empresa + co + tipdoc + documento_oc | incremental UPSERT por dia de `fecha_dcto` |
+| `orden_compra_linea` | linea: + id_item + id_terc | mismo filtro; item + nombre del tercero POS |
 
-Migracion: [`db/migrations/20260813_orden_compra.sql`](../../../db/migrations/20260813_orden_compra.sql).
+Migraciones: [`db/migrations/20260813_orden_compra.sql`](../../../db/migrations/20260813_orden_compra.sql),
+[`db/migrations/20260818_orden_compra_linea.sql`](../../../db/migrations/20260818_orden_compra_linea.sql).
 
 Origen POS: `cmmovimiento_ocompra` (tipos `OC` `FR` `OM` `OS`). Confirmacion del
 sistema = `usuario_conf` / `fecha_conf` / `hora_conf`. Recepcion = `cantidad` vs
@@ -40,7 +43,7 @@ la promesa real del POS (en fruver suele ser +1/+2, no +7).
 
 | Unidad | Cuando | Que hace |
 |---|---|---|
-| `visor-etl-orden-compra.timer` | **todos los dias 08:00** | `--incremental` (dias + abiertas) + `$SYNC --only orden_compra --no-refresh` |
+| `visor-etl-orden-compra.timer` | **todos los dias 08:00** | `--incremental` (dias + abiertas) + `$SYNC --only orden_compra --only orden_compra_linea --no-refresh` |
 
 A las 08:00, **despues** del sync general 07:50, para no competir por el POS ni
 por GCP. `visor-etl-sync` (07:50) **no** incluye `orden_compra`. Este timer sube
@@ -54,7 +57,7 @@ Cadena:
 | hora | proceso |
 |---|---|
 | 07:50 | `visor-etl-sync` (resto de tablas) |
-| **08:00** | **este ETL + sync solo `orden_compra`** |
+| **08:00** | **este ETL + sync `orden_compra` + `orden_compra_linea`** |
 
 ## Uso manual
 
@@ -75,7 +78,7 @@ python3 scripts/etl/orden-compra/etl_orden_compra.py --dry-run
 Subir a GCP despues de una carga manual (y de aplicar la migracion en GCP):
 
 ```bash
-bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --no-refresh --verify
+bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --only orden_compra_linea --no-refresh --verify
 ```
 
 `--only orden_compra` es obligatorio: sin eso `sync-local-to-gcp.sh` es el diario
@@ -119,13 +122,15 @@ sudo systemctl enable --now visor-etl-orden-compra.timer
 # 232
 cd /home/prodapp/visor-productividad
 psql -h 127.0.0.1 -U postgres -d produXdia -v ON_ERROR_STOP=1 \
-  -f db/migrations/20260813_orden_compra.sql
+  -f db/migrations/20260813_orden_compra.sql \
+  -f db/migrations/20260818_orden_compra_linea.sql
 python3 scripts/etl/orden-compra/etl_orden_compra.py --dry-run
 python3 scripts/etl/orden-compra/etl_orden_compra.py
 
 # GCP (en el app-server de la nube, o psql contra Cloud SQL)
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260813_orden_compra.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260818_orden_compra_linea.sql
 
 # subir snapshot
-sudo -u prodapp bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --verify
+sudo -u prodapp bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --only orden_compra_linea --verify
 ```

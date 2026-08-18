@@ -175,7 +175,7 @@ Dominios principales:
 | Rotacion/inventario/kardex | `rotacion_base_item_dia_sede`, `rotacion_v4`, `rotacion_abcd_config*`, `rotacion_cero_item_estado*` |
 | Horarios | `horario_planillas`, `horario_planilla_detalles` |
 | Inventario presets | `inventario_x_item_user_presets` |
-| Ordenes de compra | `orden_compra` (incremental POS; ETL `scripts/etl/orden-compra`) |
+| Ordenes de compra | `orden_compra` + `orden_compra_linea` (incremental POS; ETL `scripts/etl/orden-compra`) |
 
 El repo no contiene todo el DDL de tablas ETL como `ventas_*`,
 `asistencia_horas`, `rotacion_base_item_dia_sede` o `margenes_linea_co_dia`.

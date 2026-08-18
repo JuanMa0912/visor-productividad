@@ -132,7 +132,7 @@ Codigo compartido sin UI de pagina.
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets; **sin Dinastía** (empresa/sedes excluidas en catálogo y consultas) |
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`); en nivel ítem muestra proveedor (`proveedor_item` + `proveedor_pos_catalogo`); mapa: clic en sede ordena filas por DI (menos→mayor); detalle por sede ordena DI asc por defecto |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
-| `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in, no hereda de NULL): heatmap ítem×sede precio venta / **costo de entrada** (`rotacion_base_item_dia_sede.costo_uni_inventario`, no COGS); doble clic despliega por empresa: comercial vía NIT→`proveedor_tercero` o criterio POS (`proveedor_pos_catalogo`); default día anterior; rango = AVG diario; máx. 14 días |
+| `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in, no hereda de NULL): heatmap ítem×sede precio venta / **costo de entrada** (`rotacion_base_item_dia_sede.costo_uni_inventario`, no COGS); doble clic despliega por empresa: tercero de OC (`orden_compra_linea`) si hay líneas en el rango; si no, comercial vía NIT→`proveedor_tercero` o criterio POS (`proveedor_pos_catalogo`, p.ej. MERCAMIO FRUVER); default día anterior; rango = AVG diario; máx. 14 días |
 | `ordenes-compra` | tablero opt-in (`ordenes-compra` en `allowed_subdashboards`): OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas |
 | `proveedores/ingreso` | público: meta/catálogo (`proveedor_tercero` filtrado por empresa de la sede del QR) + lookup/entrada/salida; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
@@ -224,7 +224,7 @@ Orden completo despues de `schema-auth.sql`:
 | `create-admin.js` | crear/actualizar admin desde `ADMIN_*` |
 | `test-db.js`, `test-db-postgres.js` | pruebas de conexion |
 | `apply-migration-file.mjs` | aplicar un SQL de `db/migrations/` |
-| `etl/orden-compra/etl_orden_compra.py` | OC incremental POS 217 → `orden_compra` (232): dias nuevos + abiertas; GCP via `$SYNC --only orden_compra` (no entra en el diario 07:50) |
+| `etl/orden-compra/etl_orden_compra.py` | OC incremental POS 217 → `orden_compra` + `orden_compra_linea` (232): dias nuevos + abiertas; GCP via `$SYNC --only orden_compra --only orden_compra_linea` (no entra en el diario 07:50) |
 | `apply-activity-log-migration.mjs` | apoyo historico para migracion de actividad |
 | `playwright_smoke.py` | smoke E2E con dev server activo |
 | `cleanup-logs.sh` | limpieza de logs/sesiones para systemd |

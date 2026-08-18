@@ -43,7 +43,7 @@ presentes en el local en vez de upsert; limpia huerfanas cuando el local perdio 
 `ventas_cajas` `ventas_fruver` `ventas_carnes` `ventas_asadero` `ventas_pollo_pesc`
 `ventas_industria` `rotacion_base_item_dia_sede` `asistencia_horas`
 `ventas_item_diario` `ventas_proveedor_dia` `inventario_proveedor_dia`
-`proveedor_pos_catalogo` `proveedor_item` `proveedor_tercero` `orden_compra` `margen_final`.
+`proveedor_pos_catalogo` `proveedor_item` `proveedor_tercero` `orden_compra` `orden_compra_linea` `margen_final`.
 
 Receta tipica de backfill de UNA tabla (dry-run -> real):
 ```bash
@@ -55,8 +55,9 @@ $SYNC --only ventas_item_diario --desde 2026-06-01 --hasta 2026-06-24 --no-refre
 
 ## 1.b Ordenes de compra POS -> local -> GCP
 
-Carga `orden_compra` (cabecera OC) en la **local (232)** desde el POS (217). El
-diario 07:50 **no** la toca; la sube el timer 08:00 con `--only orden_compra`
+Carga `orden_compra` (cabecera) y `orden_compra_linea` (item + tercero real) en
+la **local (232)** desde el POS (217). El diario 07:50 **no** las toca; las sube
+el timer 08:00 con `--only orden_compra --only orden_compra_linea`
 (upsert por `fecha_dcto`, no recopia todas las tablas). Prefijo:
 ```bash
 OC="python3 /home/prodapp/visor-productividad/scripts/etl/orden-compra/etl_orden_compra.py"
@@ -73,7 +74,7 @@ OC="python3 /home/prodapp/visor-productividad/scripts/etl/orden-compra/etl_orden
 | Rehacer un rango sucio | `$OC --reemplazar --desde 20260801 --hasta 20260812` |
 | Una empresa | `$OC --empresa mercamio` |
 | Probar sin escribir | `$OC --dry-run` |
-| Subir a GCP (solo OC, tabla local) | `$SYNC --only orden_compra --no-refresh --verify` |
+| Subir a GCP (solo OC, tablas locales) | `$SYNC --only orden_compra --only orden_compra_linea --no-refresh --verify` |
 
 Detalle: [`orden-compra/README.md`](orden-compra/README.md). Timer
 `visor-etl-orden-compra` **todos los dias 08:00** (`run-daily.sh`: incremental + sync GCP).

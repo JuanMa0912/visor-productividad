@@ -106,6 +106,7 @@ Orden completo despues de `schema-auth.sql`:
 53. `20260811_proveedor_visitas_por_sede.sql` (marcaciones QR en tablas físicas `qr_*` por sede; vista `proveedor_visitas`)
 54. `20260813_qr_visitas_autorizacion_datos.sql` (`autorizacion_datos_at` en `qr_*`; recrea vista `proveedor_visitas`)
 55. `20260813_orden_compra.sql` (snapshot cabecera OC: POS `cmmovimiento_ocompra` -> `orden_compra`)
+56. `20260818_orden_compra_linea.sql` (lineas OC: item + tercero real desde el mismo POS)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -608,6 +609,7 @@ ETL: `scripts/etl/orden-compra/etl_orden_compra.py` (ver su
 | Tabla | Grano | Uso |
 | --- | --- | --- |
 | `orden_compra` | empresa + id_co + tipdoc + documento_oc | cabecera OC: estado, confirmacion POS, cantidades pedidas/recibidas |
+| `orden_compra_linea` | empresa + id_co + tipdoc + documento_oc + id_item + id_terc | linea: item + tercero real (quien trajo la mercancia) |
 
 Notas:
 
@@ -616,12 +618,13 @@ Notas:
 - Primera carga: `--mes-actual` / `--desde`. Backfill sucio: `--reemplazar --desde/--hasta`.
 - Confirmacion del sistema: `usuario_conf` / `fecha_conf` / `hora_conf`. Recepcion: `cantidad` vs `cantidad_ent`.
 - El SLA de 7 dias **no** se persiste. El tablero calcula `fecha_dcto + 7`; `fecha_entrega` es la promesa POS.
-- Sync GCP: solo via `--only orden_compra` (upsert de toda la tabla local). El diario 07:50 / reconcile no la tocan.
+- Sync GCP: solo via `--only orden_compra --only orden_compra_linea` (upsert de las tablas locales). El diario 07:50 / reconcile no las tocan.
+- El criterio POS (`proveedor_pos_catalogo`, p.ej. MERCAMIO FRUVER) no es el tercero. Los nombres reales salen de `orden_compra_linea` (POS 217, `cmmovimiento_ocompra.id_terc` + `terceros`).
 
 ```bash
 python3 scripts/etl/orden-compra/etl_orden_compra.py --dry-run
 python3 scripts/etl/orden-compra/etl_orden_compra.py
-bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --verify
+bash scripts/etl/sync-local-to-gcp.sh --only orden_compra --only orden_compra_linea --verify
 ```
 
 ### 4.ab Maestro comercial POS (`proveedor_tercero`)

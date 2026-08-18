@@ -78,6 +78,86 @@ const resolveItemProveedorRow = (row: {
   };
 };
 
+type OcLineProveedor = ResolvedItemProveedor & { idCos: Set<string> };
+
+/**
+ * Tercero real por item (quien trajo la mercancia), desde lineas de OC/FR.
+ * El criterio del item (p.ej. MERCAMIO FRUVER) no es ese tercero.
+ */
+async function queryOrdenCompraLineaProveedores(
+  client: PoolClient,
+  itemIds: string[],
+  fromCompact: string,
+  toCompact: string,
+): Promise<Map<string, OcLineProveedor[]>> {
+  const map = new Map<string, OcLineProveedor[]>();
+  if (itemIds.length === 0) return map;
+
+  const exists = await client.query<{ ok: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
+    ) AS ok
+  `);
+  if (!exists.rows[0]?.ok) return map;
+
+  const res = await client.query<{
+    empresa: string;
+    id_item: string;
+    id_co: string;
+    id_terc: string;
+    terc_nombre: string | null;
+    terc_nit: string | null;
+  }>(
+    `
+    SELECT
+      LOWER(BTRIM(empresa)) AS empresa,
+      BTRIM(id_item) AS id_item,
+      LPAD(BTRIM(id_co), 3, '0') AS id_co,
+      BTRIM(id_terc) AS id_terc,
+      NULLIF(BTRIM(terc_nombre), '') AS terc_nombre,
+      NULLIF(BTRIM(terc_nit), '') AS terc_nit
+    FROM orden_compra_linea
+    WHERE BTRIM(id_item) = ANY($1::text[])
+      AND fecha_dcto >= $2
+      AND fecha_dcto <= $3
+      AND BTRIM(COALESCE(id_terc, '')) <> ''
+    `,
+    [itemIds, fromCompact, toCompact],
+  );
+
+  for (const row of res.rows) {
+    const itemId = String(row.id_item ?? "").trim();
+    const empresa = String(row.empresa ?? "").trim();
+    const idTerc = String(row.id_terc ?? "").trim();
+    const idCo = String(row.id_co ?? "").padStart(3, "0");
+    if (!itemId || !empresa || !idTerc) continue;
+    const groupKey = `${itemId}::${empresa}`;
+    let list = map.get(groupKey);
+    if (!list) {
+      list = [];
+      map.set(groupKey, list);
+    }
+    const provId = `oc:${idTerc}`;
+    let prov = list.find((entry) => entry.id === provId);
+    if (!prov) {
+      const nombre = String(row.terc_nombre ?? "").trim();
+      prov = {
+        id: provId,
+        label: nombre || idTerc,
+        criterioId: null,
+        criterioLabel: null,
+        nit: String(row.terc_nit ?? "").trim() || null,
+        fromTercero: true,
+        idCos: new Set(),
+      };
+      list.push(prov);
+    }
+    if (idCo) prov.idCos.add(idCo);
+  }
+  return map;
+}
+
 const isoToCompact = (iso: string) => iso.replace(/-/g, "");
 
 const compactToIso = (compact: string): string | null => {
@@ -832,6 +912,13 @@ export async function queryPreciosProveedorItemExpand(
     }
   }
 
+  const ocByItemEmpresa = await queryOrdenCompraLineaProveedores(
+    client,
+    variantItemIds,
+    fromCompact,
+    toCompact,
+  );
+
   const expandMap = new Map<string, PreciosProveedorExpandRow>();
   const sedeKeySet = new Set(columns.map((col) => col.key));
 
@@ -844,6 +931,49 @@ export async function queryPreciosProveedorItemExpand(
     fromTercero: false,
   });
 
+  const provsForSede = (
+    variantId: string,
+    empresa: string,
+    idCo: string,
+  ): ResolvedItemProveedor[] => {
+    const ocList = ocByItemEmpresa.get(`${variantId}::${empresa.toLowerCase()}`);
+    if (ocList && ocList.length > 0) {
+      const matched = ocList.filter((entry) => entry.idCos.has(idCo));
+      return matched.length > 0 ? matched : ocList;
+    }
+    return [provByItemEmpresa.get(`${variantId}::${empresa}`) ?? fallbackProv()];
+  };
+
+  const upsertExpandCell = (
+    prov: ResolvedItemProveedor,
+    variantId: string,
+    variantLabel: string,
+    empresa: string,
+    cell: PreciosProveedorCell,
+  ) => {
+    const expandId = `${variantId}::${empresa}::${prov.id}`;
+    const nextCell = { ...cell, rowId: expandId };
+    const existing = expandMap.get(expandId);
+    if (existing) {
+      existing.cells.push(nextCell);
+      return;
+    }
+    expandMap.set(expandId, {
+      rowId: expandId,
+      itemId: variantId,
+      label: variantLabel,
+      proveedorId: prov.id,
+      proveedorLabel: prov.label,
+      criterioId: prov.criterioId,
+      criterioLabel: prov.criterioLabel,
+      empresa,
+      empresaLabel: empresaLabel(empresa),
+      nit: prov.nit,
+      fromTercero: prov.fromTercero,
+      cells: [nextCell],
+    });
+  };
+
   for (const row of variants.rows) {
     const variantId = String(row.id_item).trim();
     const empresa = String(row.empresa).trim();
@@ -851,16 +981,14 @@ export async function queryPreciosProveedorItemExpand(
     const sedeKey = `${empresa}|${idCo}`;
     if (!sedeKeySet.has(sedeKey)) continue;
 
-    const prov =
-      provByItemEmpresa.get(`${variantId}::${empresa}`) ?? fallbackProv();
-    const expandId = `${variantId}::${empresa}::${prov.id}`;
     const units = toNum(row.cantidad);
     const sales = toNum(row.ventas_netas);
     const pvu = toNum(row.pvu);
     const pcu = costoEntrada.get(`${variantId}::${sedeKey}`) ?? 0;
     const cost = units > 0 && pcu > 0 ? units * pcu : 0;
-    const cell: PreciosProveedorCell = {
-      rowId: expandId,
+    const variantLabel = String(row.label ?? variantId).trim() || variantId;
+    const cellBase: PreciosProveedorCell = {
+      rowId: "",
       sedeKey,
       units,
       sales,
@@ -869,25 +997,8 @@ export async function queryPreciosProveedorItemExpand(
       pcu,
       margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
     };
-
-    const existing = expandMap.get(expandId);
-    if (existing) {
-      existing.cells.push(cell);
-    } else {
-      expandMap.set(expandId, {
-        rowId: expandId,
-        itemId: variantId,
-        label: String(row.label ?? variantId).trim() || variantId,
-        proveedorId: prov.id,
-        proveedorLabel: prov.label,
-        criterioId: prov.criterioId,
-        criterioLabel: prov.criterioLabel,
-        empresa,
-        empresaLabel: empresaLabel(empresa),
-        nit: prov.nit,
-        fromTercero: prov.fromTercero,
-        cells: [cell],
-      });
+    for (const prov of provsForSede(variantId, empresa, idCo)) {
+      upsertExpandCell(prov, variantId, variantLabel, empresa, cellBase);
     }
   }
 
@@ -907,49 +1018,51 @@ export async function queryPreciosProveedorItemExpand(
     const sedeKey = costKey.slice(sep + 2);
     if (!sedeKeySet.has(sedeKey)) continue;
     const empresa = sedeKey.split("|")[0] ?? "";
-    const prov =
-      provByItemEmpresa.get(`${variantId}::${empresa}`) ?? fallbackProv();
-    const expandId = `${variantId}::${empresa}::${prov.id}`;
-    let existing = expandMap.get(expandId);
-    if (!existing) {
-      existing = {
-        rowId: expandId,
-        itemId: variantId,
-        label: itemLabelById.get(variantId) ?? variantId,
-        proveedorId: prov.id,
-        proveedorLabel: prov.label,
-        criterioId: prov.criterioId,
-        criterioLabel: prov.criterioLabel,
-        empresa,
-        empresaLabel: empresaLabel(empresa),
-        nit: prov.nit,
-        fromTercero: prov.fromTercero,
-        cells: [],
-      };
-      expandMap.set(expandId, existing);
-    }
-    const current = existing.cells.find((cell) => cell.sedeKey === sedeKey);
-    if (current) {
-      if (!(current.pcu > 0)) {
-        current.pcu = costo;
-        current.cost = current.units > 0 ? current.units * costo : 0;
-        current.margenPct = marginPct(
-          current.sales > 0 ? current.sales : current.pvu * current.units,
-          current.cost,
-        );
+    const idCo = (sedeKey.split("|")[1] ?? "").padStart(3, "0");
+    const variantLabel = itemLabelById.get(variantId) ?? variantId;
+    for (const prov of provsForSede(variantId, empresa, idCo)) {
+      const expandId = `${variantId}::${empresa}::${prov.id}`;
+      let existing = expandMap.get(expandId);
+      if (!existing) {
+        existing = {
+          rowId: expandId,
+          itemId: variantId,
+          label: variantLabel,
+          proveedorId: prov.id,
+          proveedorLabel: prov.label,
+          criterioId: prov.criterioId,
+          criterioLabel: prov.criterioLabel,
+          empresa,
+          empresaLabel: empresaLabel(empresa),
+          nit: prov.nit,
+          fromTercero: prov.fromTercero,
+          cells: [],
+        };
+        expandMap.set(expandId, existing);
       }
-      continue;
+      const current = existing.cells.find((cell) => cell.sedeKey === sedeKey);
+      if (current) {
+        if (!(current.pcu > 0)) {
+          current.pcu = costo;
+          current.cost = current.units > 0 ? current.units * costo : 0;
+          current.margenPct = marginPct(
+            current.sales > 0 ? current.sales : current.pvu * current.units,
+            current.cost,
+          );
+        }
+        continue;
+      }
+      existing.cells.push({
+        rowId: expandId,
+        sedeKey,
+        units: 0,
+        sales: 0,
+        cost: 0,
+        pvu: 0,
+        pcu: costo,
+        margenPct: 0,
+      });
     }
-    existing.cells.push({
-      rowId: expandId,
-      sedeKey,
-      units: 0,
-      sales: 0,
-      cost: 0,
-      pvu: 0,
-      pcu: costo,
-      margenPct: 0,
-    });
   }
 
   const rows = [...expandMap.values()].sort((a, b) => {

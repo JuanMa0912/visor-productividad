@@ -496,9 +496,9 @@ export default function ExpPreciosProveedorPage() {
           promedian los precios/costos de cada día. El color compara{" "}
           <strong>sedes del mismo ítem</strong> (no ítem contra ítem). En costo
           de entrada y precio venta: verde = más bajo, rojo = más alto.{" "}
-          <strong>Doble clic</strong> en un ítem despliega proveedores por
-          empresa: comercial (NIT → proveedor_tercero) o criterio POS si no hay
-          match.
+          <strong>Doble clic</strong> en un ítem despliega quién trajo la
+          mercancía: tercero de la orden de compra (nombre real) o, si no hay
+          OC en el rango, comercial / criterio POS (p.ej. MERCAMIO FRUVER).
         </p>
         {meta?.note ? (
           <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -852,7 +852,11 @@ Venta ${money(cell.sales)} · Costo entrada tot. ${money(cell.cost)}`
                                       {child.empresaLabel}
                                       {" · "}
                                       {child.proveedorLabel}
-                                      {child.fromTercero ? (
+                                      {child.proveedorId.startsWith("oc:") ? (
+                                        <span className="ml-1 text-[10px] font-semibold text-emerald-700">
+                                          OC
+                                        </span>
+                                      ) : child.fromTercero ? (
                                         <span className="ml-1 text-[10px] font-semibold text-emerald-700">
                                           comercial
                                         </span>
