@@ -5,7 +5,8 @@ Envía cada mañana:
 1. **Correo individual por sede** (activo) → solo el digest de esa sede al
    correo del mapa en `email-pilot-sedes.ts`.
 2. **Correo consolidado** (todas las sedes) →
-   **`aprendizppt@mercamio.com`** (override con `ROTACION_EMAIL_FORCE_TO`).
+   **`aprendizppt@mercamio.com`** y **`alexander@mercamio.com`**
+   (override CSV con `ROTACION_EMAIL_FORCE_TO`).
 
 ### Mapa actual (cuaderno 2026-08-03)
 
@@ -72,8 +73,8 @@ destinatario en el mapa individual igual entran al consolidado.
 | --- | --- |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | servidor SMTP |
 | `SMTP_FROM` | remitente (opcional; default `SMTP_USER`) |
-| `ROTACION_EMAIL_FLORESTA_TO` | legacy; el envío piloto fuerza `ROTACION_EMAIL_FORCE_TO` o `aprendizppt@mercamio.com` |
-| `ROTACION_EMAIL_FORCE_TO` | destinatario único (default `aprendizppt@mercamio.com`) |
+| `ROTACION_EMAIL_FLORESTA_TO` | legacy (prueba SMTP); el consolidado usa el mapa de código, no esta variable |
+| `ROTACION_EMAIL_FORCE_TO` | override CSV del consolidado (default `aprendizppt@mercamio.com,alexander@mercamio.com`) |
 | `ROTACION_EMAIL_DRY_RUN` | `true` imprime en consola sin enviar |
 | `ROTACION_EMAIL_SKIP_INDIVIDUAL` | `true` omite correos por sede |
 | `ROTACION_EMAIL_FORCE_INDIVIDUAL_TO` | redirige todos los individuales a un solo correo (pruebas) |
@@ -154,7 +155,7 @@ SMTP_PORT=3465
 SMTP_USER=notificaciones.uaid@mercamio.com
 SMTP_PASSWORD='...'
 SMTP_FROM="Notificaciones UAID <notificaciones.uaid@mercamio.com>"
-ROTACION_EMAIL_FLORESTA_TO=aprendizppt@mercamio.com,alexander@mercamio.com
+# Consolidado diario: aprendizppt + alexander (código). No hace falta FORCE_TO.
 SMTP_TLS_REJECT_UNAUTHORIZED=false
 ```
 

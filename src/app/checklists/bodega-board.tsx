@@ -38,6 +38,7 @@ import type {
   ChecklistMeta,
 } from "@/lib/checklists/types";
 import { useChecklistRunContext } from "@/app/checklists/checklist-run-context";
+import { ChecklistPhotoControl } from "@/app/checklists/checklist-photo-control";
 import { formatPriorAnswer } from "@/lib/checklists/snapshot";
 import "./bodega-board.css";
 
@@ -740,7 +741,7 @@ export function BodegaGerencialBoard() {
             <div className="sp" />
             <button
               type="button"
-              className="gh"
+              className="gh desk"
               onClick={() =>
                 setTheme((t) => (t === "dark" ? "light" : "dark"))
               }
@@ -861,22 +862,22 @@ export function BodegaGerencialBoard() {
                 >
                   {showAllCriteria ? "Ocultar criterios" : "Ver criterios"}
                 </button>
-                <button type="button" className="btn p" onClick={exportCsv}>
+                <button type="button" className="btn p desk" onClick={exportCsv}>
                   Excel / CSV
                 </button>
-                <button type="button" className="btn" onClick={exportJson}>
+                <button type="button" className="btn desk" onClick={exportJson}>
                   Guardar
                 </button>
                 <button
                   type="button"
-                  className="btn"
+                  className="btn desk"
                   onClick={() => auditFileRef.current?.click()}
                 >
                   Cargar
                 </button>
                 <button
                   type="button"
-                  className="btn"
+                  className="btn desk"
                   onClick={() => window.print()}
                 >
                   Imprimir / PDF
@@ -1019,6 +1020,18 @@ export function BodegaGerencialBoard() {
                               ))}
                             </div>
                           </div>
+                          {showF && runCtx ? (
+                            <div className="px-3 pb-2">
+                              <ChecklistPhotoControl
+                                hasPhoto={runCtx.evidenceKeys.includes(
+                                  String(it.c),
+                                )}
+                                onUpload={(file) =>
+                                  runCtx.uploadEvidence(String(it.c), file)
+                                }
+                              />
+                            </div>
+                          ) : null}
                           <div className="fnd" data-f={it.c}>
                             <div style={{ gridColumn: "1 / -1" }}>
                               <label>

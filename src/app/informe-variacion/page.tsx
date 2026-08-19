@@ -1,34 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCcw, TrendingUp } from "lucide-react";
 import { AppTopBar } from "@/components/portal/app-top-bar";
 import { useRequireAuth } from "@/lib/auth/auth-context";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
-import {
-  defaultInformeYearMonth,
-  isInformeYearMonthBefore,
-  parseYearMonthInput,
-  previousCalendarMonth,
-  yearMonthToInputValue,
-} from "@/lib/informe-variacion/periods";
-import {
-  buildSingleDayInformeRangeId,
-  defaultInformeDayRangeId,
-  getAvailableInformeDayRanges,
-  latestInformeSingleDay,
-  parseSingleDayInformeRangeId,
-  payloadMatchesInformeSelection,
-  type InformeDayRangeId,
-} from "@/lib/informe-variacion/day-ranges";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse } from "@/lib/informe-variacion/read-api-response";
 import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
-import {
-  isInformeRangeViewReady,
-  prefetchWarmInformeRange,
-} from "@/lib/informe-variacion/use-matrix-agg-cache";
+import { prefetchWarmInformeRange } from "@/lib/informe-variacion/use-matrix-agg-cache";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
   filterInformePayloadForLineScope,
@@ -39,18 +20,20 @@ import {
   userHasDinastiaAccess,
   userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
-import { cn } from "@/lib/shared/utils";
+import {
+  alignPreviousYearRange,
+  compactToIso,
+  defaultInformeYtdRanges,
+  isoToCompact,
+  type InformeSelectedRanges,
+} from "@/lib/informe-variacion/date-range";
 
 type InformeMeta = {
   maxDate: string | null;
+  minDate?: string | null;
 };
 
-/**
- * v3: namespace por usuario + invalidación global.
- * v1 compartía clave entre usuarios; v2 namespaced; v3 fuerza wipe al desplegar
- * tras el incidente de payloads solo-Asaderos en sessionStorage.
- */
-const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v6:";
+const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v7:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
 
 const sessionStoragePrefixForUser = (
@@ -77,15 +60,10 @@ const purgeLegacyInformeSessionCache = () => {
 };
 
 const buildRangeCacheKey = (
-  year: number,
-  month: number,
-  rangeId: InformeDayRangeId,
+  ranges: InformeSelectedRanges,
   scopeSuffix = "",
-  compare?: { year: number; month: number } | null,
-) => {
-  const cmp = compare ?? previousCalendarMonth(year, month);
-  return `${year}-${month}:cmp=${cmp.year}-${cmp.month}:range=${rangeId}${scopeSuffix}`;
-};
+) =>
+  `${ranges.currentFrom}:${ranges.currentTo}:${ranges.previousFrom}:${ranges.previousTo}${scopeSuffix}`;
 
 const readSessionInforme = (
   storagePrefix: string,
@@ -93,12 +71,11 @@ const readSessionInforme = (
 ): InformeVariacionPayload | null => {
   if (typeof window === "undefined") return null;
   try {
-    const storageKey = `${storagePrefix}${key}`;
-    const raw = sessionStorage.getItem(storageKey);
+    const raw = sessionStorage.getItem(`${storagePrefix}${key}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as InformeVariacionPayload;
     if (!parsed.rows?.length) {
-      sessionStorage.removeItem(storageKey);
+      sessionStorage.removeItem(`${storagePrefix}${key}`);
       return null;
     }
     return parsed;
@@ -114,16 +91,12 @@ const writeSessionInforme = (
 ) => {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(
-      `${storagePrefix}${key}`,
-      JSON.stringify(payload),
-    );
+    sessionStorage.setItem(`${storagePrefix}${key}`, JSON.stringify(payload));
   } catch {
-    // quota o payload demasiado grande
+    // quota
   }
 };
 
-/** Evita congelar el UI al serializar payloads multi-MB del mes. */
 const writeSessionInformeIdle = (
   storagePrefix: string,
   key: string,
@@ -138,24 +111,14 @@ const writeSessionInformeIdle = (
   window.setTimeout(run, 0);
 };
 
-const clearSessionInformeMonth = (
-  storagePrefix: string,
-  year: number,
-  month: number,
-) => {
-  if (typeof window === "undefined") return;
-  const prefix = `${storagePrefix}${year}-${month}:`;
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < sessionStorage.length; i += 1) {
-      const key = sessionStorage.key(i);
-      if (key?.startsWith(prefix)) keysToRemove.push(key);
-    }
-    for (const key of keysToRemove) sessionStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
-};
+const payloadMatchesRanges = (
+  payload: InformeVariacionPayload,
+  ranges: InformeSelectedRanges,
+) =>
+  payload.periods.current.from === ranges.currentFrom &&
+  payload.periods.current.to === ranges.currentTo &&
+  payload.periods.mom.from === ranges.previousFrom &&
+  payload.periods.mom.to === ranges.previousTo;
 
 export default function InformeVariacionPage() {
   const router = useRouter();
@@ -173,7 +136,10 @@ export default function InformeVariacionPage() {
   }, [user]);
 
   const lineCategoryScope = useMemo(
-    () => (user ? resolveSessionLineCategoryScope(user) : resolveSessionLineCategoryScope({ role: "user", allowedLines: null })),
+    () =>
+      user
+        ? resolveSessionLineCategoryScope(user)
+        : resolveSessionLineCategoryScope({ role: "user", allowedLines: null }),
     [user],
   );
   const dinastiaOnly = useMemo(
@@ -198,7 +164,9 @@ export default function InformeVariacionPage() {
       ),
     [user],
   );
-  const [dataTenant, setDataTenant] = useState<"default" | "dinastia">("default");
+  const [dataTenant, setDataTenant] = useState<"default" | "dinastia">(
+    "default",
+  );
   useEffect(() => {
     if (dinastiaOnly) setDataTenant("dinastia");
   }, [dinastiaOnly]);
@@ -216,9 +184,7 @@ export default function InformeVariacionPage() {
   );
 
   useEffect(() => {
-    if (ready && !canAccess) {
-      router.replace("/secciones");
-    }
+    if (ready && !canAccess) router.replace("/secciones");
   }, [canAccess, ready, router]);
 
   useEffect(() => {
@@ -227,36 +193,21 @@ export default function InformeVariacionPage() {
 
   const [metaLoading, setMetaLoading] = useState(true);
   const [maxDate, setMaxDate] = useState<string | null>(null);
-  const [monthInput, setMonthInput] = useState("");
-  const [prevMonthInput, setPrevMonthInput] = useState("");
-  const [dayRangeId, setDayRangeId] = useState<InformeDayRangeId | "">("");
+  const [minDate, setMinDate] = useState<string | null>(null);
+  const [draft, setDraft] = useState<InformeSelectedRanges | null>(null);
+  const [applied, setApplied] = useState<InformeSelectedRanges | null>(null);
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
-  const [monthLoadLocked, setMonthLoadLocked] = useState(false);
-  const [rangeSwitchPending, setRangeSwitchPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [, setPrefetchDone] = useState(0);
-  const [prefetchTotal, setPrefetchTotal] = useState(0);
-  const [, setReadyRanges] = useState<Set<InformeDayRangeId>>(
-    () => new Set(),
-  );
-  /** Prepare + matriz + KPI listos: solo entonces el chip permite swap barato. */
-  const [viewReadyRanges, setViewReadyRanges] = useState<Set<InformeDayRangeId>>(
-    () => new Set(),
-  );
 
-  const memoryCacheRef = useRef<Map<string, InformeVariacionPayload>>(new Map());
+  const memoryCacheRef = useRef<Map<string, InformeVariacionPayload>>(
+    new Map(),
+  );
   const inflightRef = useRef<Map<string, Promise<InformeVariacionPayload>>>(
     new Map(),
   );
-  const monthAbortRef = useRef<AbortController | null>(null);
-  const rangeAbortRef = useRef<AbortController | null>(null);
-  const activeMonthKeyRef = useRef("");
-  const dayRangeIdRef = useRef<InformeDayRangeId | "">("");
-
-  useEffect(() => {
-    dayRangeIdRef.current = dayRangeId;
-  }, [dayRangeId]);
+  const abortRef = useRef<AbortController | null>(null);
+  const appliedKeyRef = useRef("");
 
   useEffect(() => {
     memoryCacheRef.current.clear();
@@ -272,9 +223,7 @@ export default function InformeVariacionPage() {
         const metaUrl = tenantEmpresaParam
           ? `/api/informe-variacion/meta?empresa=${encodeURIComponent(tenantEmpresaParam)}`
           : "/api/informe-variacion/meta";
-        const response = await fetch(metaUrl, {
-          cache: "no-store",
-        });
+        const response = await fetch(metaUrl, { cache: "no-store" });
         if (response.status === 401) {
           router.replace("/login");
           return;
@@ -285,17 +234,17 @@ export default function InformeVariacionPage() {
         }
         const data = (await response.json()) as InformeMeta;
         if (cancelled) return;
-        setMaxDate(data.maxDate);
-        const { year, month } = defaultInformeYearMonth(data.maxDate);
-        setMonthInput(yearMonthToInputValue(year, month));
-        const prev = previousCalendarMonth(year, month);
-        setPrevMonthInput(yearMonthToInputValue(prev.year, prev.month));
+        const max = data.maxDate;
+        setMaxDate(max);
+        setMinDate(data.minDate ?? null);
+        const next = defaultInformeYtdRanges(max);
+        setDraft(next);
+        setApplied(next);
       } catch {
         if (!cancelled) {
-          const now = defaultInformeYearMonth(null);
-          setMonthInput(yearMonthToInputValue(now.year, now.month));
-          const prev = previousCalendarMonth(now.year, now.month);
-          setPrevMonthInput(yearMonthToInputValue(prev.year, prev.month));
+          const next = defaultInformeYtdRanges(null);
+          setDraft(next);
+          setApplied(next);
         }
       } finally {
         if (!cancelled) setMetaLoading(false);
@@ -307,199 +256,55 @@ export default function InformeVariacionPage() {
     };
   }, [canAccess, ready, router, tenantEmpresaParam]);
 
-  const parsedMonth = useMemo(() => parseYearMonthInput(monthInput), [monthInput]);
-  const parsedPrev = useMemo(
-    () => parseYearMonthInput(prevMonthInput),
-    [prevMonthInput],
-  );
-
-  const availableDayRanges = useMemo(() => {
-    if (!parsedMonth) return [];
-    return getAvailableInformeDayRanges(
-      parsedMonth.year,
-      parsedMonth.month,
-      new Date(),
-      maxDate,
-    );
-  }, [maxDate, parsedMonth]);
-
-  /** Ultimo dia del mes con datos cargados; null si el mes aun no empieza. */
-  const maxSingleDay = useMemo(() => {
-    if (!parsedMonth) return null;
-    return latestInformeSingleDay(
-      parsedMonth.year,
-      parsedMonth.month,
-      new Date(),
-      maxDate,
-    );
-  }, [maxDate, parsedMonth]);
-
-  /** Dia activo cuando el rango seleccionado es un dia suelto (`d-05`). */
-  const activeSingleDay = useMemo(
-    () => parseSingleDayInformeRangeId(dayRangeId || null),
-    [dayRangeId],
-  );
-
-  useEffect(() => {
-    if (availableDayRanges.length === 0) {
-      setDayRangeId("");
-      return;
-    }
-    setDayRangeId((current) => {
-      if (current && availableDayRanges.some((range) => range.id === current)) {
-        return current;
-      }
-      // Los dias sueltos NO estan en availableDayRanges (no se precargan, ver
-      // buildInformeSingleDayRange). Sin esta rama, este efecto los borraria al
-      // instante y el modo dia seria inusable: hay que conservarlos mientras el
-      // dia siga existiendo y tenga datos en el mes elegido.
-      const day = parseSingleDayInformeRangeId(current || null);
-      if (day !== null && maxSingleDay !== null && day <= maxSingleDay) {
-        return current;
-      }
-      return defaultInformeDayRangeId(availableDayRanges) ?? "";
-    });
-  }, [availableDayRanges, maxSingleDay]);
-
-  const monthKey = useMemo(() => {
-    if (!parsedMonth) return "";
-    return `${parsedMonth.year}-${parsedMonth.month}`;
-  }, [parsedMonth]);
-  const prevKey = useMemo(() => {
-    if (!parsedPrev) return "";
-    return `${parsedPrev.year}-${parsedPrev.month}`;
-  }, [parsedPrev]);
-  const selectionKey = monthKey && prevKey ? `${monthKey}:${prevKey}` : "";
-  const prevMonthMax = useMemo(() => {
-    if (!parsedMonth) return undefined;
-    const prev = previousCalendarMonth(parsedMonth.year, parsedMonth.month);
-    return yearMonthToInputValue(prev.year, prev.month);
-  }, [parsedMonth]);
-
-  const markRangeReady = useCallback((rangeId: InformeDayRangeId) => {
-    setReadyRanges((current) => {
-      if (current.has(rangeId)) return current;
-      const next = new Set(current);
-      next.add(rangeId);
-      return next;
-    });
-  }, []);
-
-  const markViewReady = useCallback((rangeId: InformeDayRangeId) => {
-    setViewReadyRanges((current) => {
-      if (current.has(rangeId)) return current;
-      const next = new Set(current);
-      next.add(rangeId);
-      return next;
-    });
-  }, []);
+  const minIso = minDate ? compactToIso(minDate) : undefined;
+  const maxIso = maxDate ? compactToIso(maxDate) : undefined;
 
   const storePayload = useCallback(
-    (
-      year: number,
-      month: number,
-      rangeId: InformeDayRangeId,
-      data: InformeVariacionPayload,
-      options: { warm?: boolean; persistSession?: "sync" | "idle" | "none" } = {},
-    ): InformeVariacionPayload | null => {
-      // No persistir vacios (p.ej. durante TRUNCATE del refresh diario).
+    (ranges: InformeSelectedRanges, data: InformeVariacionPayload) => {
       const scoped = filterInformePayloadForLineScope(data, lineCategoryScope);
       if (!scoped.rows?.length) return null;
-      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix, parsedPrev);
+      const key = buildRangeCacheKey(ranges, scopeCacheSuffix);
       memoryCacheRef.current.set(key, scoped);
-      const persist = options.persistSession ?? "idle";
-      if (persist === "sync") {
-        writeSessionInforme(sessionStoragePrefix, key, scoped);
-      } else if (persist === "idle") {
-        writeSessionInformeIdle(sessionStoragePrefix, key, scoped);
-      }
-      markRangeReady(rangeId);
-      if (options.warm !== false) {
-        prefetchWarmInformeRange(scoped, {
-          metrics: ["v"],
-          onDone: () => markViewReady(rangeId),
-        });
-      }
+      writeSessionInformeIdle(sessionStoragePrefix, key, scoped);
+      prefetchWarmInformeRange(scoped, { metrics: ["v"] });
       return scoped;
     },
-    [lineCategoryScope, markRangeReady, markViewReady, parsedPrev, scopeCacheSuffix, sessionStoragePrefix],
+    [lineCategoryScope, scopeCacheSuffix, sessionStoragePrefix],
   );
 
   const readCachedPayload = useCallback(
-    (
-      year: number,
-      month: number,
-      rangeId: InformeDayRangeId,
-      options: { warm?: boolean } = {},
-    ): InformeVariacionPayload | null => {
-      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix, parsedPrev);
+    (ranges: InformeSelectedRanges): InformeVariacionPayload | null => {
+      const key = buildRangeCacheKey(ranges, scopeCacheSuffix);
       const memoryHit = memoryCacheRef.current.get(key);
-      if (memoryHit) {
-        markRangeReady(rangeId);
-        if (options.warm) {
-          prefetchWarmInformeRange(memoryHit, {
-            metrics: ["v"],
-            onDone: () => markViewReady(rangeId),
-          });
-        }
-        return memoryHit;
-      }
+      if (memoryHit) return memoryHit;
       const sessionHit = readSessionInforme(sessionStoragePrefix, key);
-      if (sessionHit) {
-        const scoped = filterInformePayloadForLineScope(
-          sessionHit,
-          lineCategoryScope,
-        );
-        memoryCacheRef.current.set(key, scoped);
-        markRangeReady(rangeId);
-        if (options.warm) {
-          prefetchWarmInformeRange(scoped, {
-            metrics: ["v"],
-            onDone: () => markViewReady(rangeId),
-          });
-        }
-        return scoped;
-      }
-      return null;
+      if (!sessionHit) return null;
+      const scoped = filterInformePayloadForLineScope(
+        sessionHit,
+        lineCategoryScope,
+      );
+      memoryCacheRef.current.set(key, scoped);
+      return scoped;
     },
-    [
-      lineCategoryScope,
-      markRangeReady,
-      markViewReady,
-      parsedPrev,
-      scopeCacheSuffix,
-      sessionStoragePrefix,
-    ],
+    [lineCategoryScope, scopeCacheSuffix, sessionStoragePrefix],
   );
 
-  const fetchRangePayload = useCallback(
+  const fetchRanges = useCallback(
     async (
-      year: number,
-      month: number,
-      rangeId: InformeDayRangeId,
+      ranges: InformeSelectedRanges,
       signal: AbortSignal,
       options: { force?: boolean } = {},
     ): Promise<InformeVariacionPayload> => {
-      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix, parsedPrev);
+      const key = buildRangeCacheKey(ranges, scopeCacheSuffix);
       if (!options.force) {
-        const cached = readCachedPayload(year, month, rangeId);
+        const cached = readCachedPayload(ranges);
         if (cached) return cached;
-        if (!signal.aborted) {
-          const inflight = inflightRef.current.get(key);
-          if (inflight) return inflight;
-        }
+        const inflight = inflightRef.current.get(key);
+        if (inflight) return inflight;
       }
-      if (signal.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
 
-      // No convertir a `const`: el `finally` de abajo lee `request`, y en la ruta de
-      // abort el throw es SINCRONO (antes del primer await), asi que ese `finally`
-      // corre mientras el IIFE aun no retorna. Con `const` eso seria un ReferenceError
-      // por TDZ que taparia el AbortError; con `let` simplemente lee `undefined`.
-      let request!: Promise<InformeVariacionPayload>;
-      // eslint-disable-next-line prefer-const
-      request = (async () => {
+      const request = (async () => {
         const timeoutController = new AbortController();
         const onAbort = () => timeoutController.abort();
         signal.addEventListener("abort", onAbort);
@@ -508,30 +313,18 @@ export default function InformeVariacionPage() {
           INFORME_FETCH_TIMEOUT_MS,
         );
         try {
-          if (signal.aborted) {
-            throw new DOMException("Aborted", "AbortError");
-          }
           const params = new URLSearchParams({
-            year: String(year),
-            month: String(month),
-            range: rangeId,
+            from: ranges.currentFrom,
+            to: ranges.currentTo,
+            compareFrom: ranges.previousFrom,
+            compareTo: ranges.previousTo,
           });
-          if (parsedPrev) {
-            params.set("compareYear", String(parsedPrev.year));
-            params.set("compareMonth", String(parsedPrev.month));
-          }
           if (options.force) params.set("force", "1");
           if (tenantEmpresaParam) params.set("empresa", tenantEmpresaParam);
           const response = await fetch(
             `/api/informe-variacion?${params.toString()}`,
-            {
-              cache: "no-store",
-              signal: timeoutController.signal,
-            },
+            { cache: "no-store", signal: timeoutController.signal },
           );
-          if (signal.aborted) {
-            throw new DOMException("Aborted", "AbortError");
-          }
           if (response.status === 401) {
             router.replace("/login");
             throw new Error("No autorizado.");
@@ -544,343 +337,107 @@ export default function InformeVariacionPage() {
           if (!response.ok) {
             throw new Error(data.error ?? "No fue posible cargar el informe.");
           }
-          if (signal.aborted) {
-            throw new DOMException("Aborted", "AbortError");
+          const stored = storePayload(ranges, data);
+          if (!stored) {
+            throw new Error(
+              "Sin datos en el alcance permitido para este informe.",
+            );
           }
-          const scoped = storePayload(year, month, rangeId, data);
-          if (!scoped) {
-            throw new Error("Sin datos en el alcance permitido para este informe.");
-          }
-          return scoped;
+          return stored;
         } finally {
           window.clearTimeout(timeoutId);
           signal.removeEventListener("abort", onAbort);
-          if (inflightRef.current.get(key) === request) {
-            inflightRef.current.delete(key);
-          }
         }
       })();
 
       inflightRef.current.set(key, request);
-      return request;
+      try {
+        return await request;
+      } finally {
+        if (inflightRef.current.get(key) === request) {
+          inflightRef.current.delete(key);
+        }
+      }
     },
-    [parsedPrev, readCachedPayload, router, storePayload, scopeCacheSuffix, tenantEmpresaParam],
+    [readCachedPayload, router, scopeCacheSuffix, storePayload, tenantEmpresaParam],
   );
 
-  /** Clic: swap sync si la vista ya esta caliente; si no, calienta sin congelar el UI. */
-  const selectDayRange = useCallback(
-    (rangeId: InformeDayRangeId) => {
-      if (!parsedMonth) return;
-      if (rangeId === dayRangeIdRef.current) return;
-
-      const { year, month } = parsedMonth;
-      dayRangeIdRef.current = rangeId;
-      setDayRangeId(rangeId);
+  const loadSelection = useCallback(
+    async (
+      ranges: InformeSelectedRanges,
+      options: { force?: boolean } = {},
+    ) => {
+      const token = buildRangeCacheKey(ranges, scopeCacheSuffix);
+      appliedKeyRef.current = token;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setError(null);
-
-      const cached = readCachedPayload(year, month, rangeId, { warm: false });
+      const cached = options.force ? null : readCachedPayload(ranges);
       if (cached) {
-        if (isInformeRangeViewReady(cached, "v")) {
-          setRangeSwitchPending(false);
-          markViewReady(rangeId);
-          startTransition(() => setPayload(cached));
-          return;
-        }
-        // No llamar prepare/matriz en el click (congela 10–30s). Cola idle.
-        setRangeSwitchPending(true);
-        prefetchWarmInformeRange(cached, {
-          metrics: ["v"],
-          priority: true,
-          onDone: () => {
-            if (dayRangeIdRef.current !== rangeId) return;
-            markViewReady(rangeId);
-            startTransition(() => setPayload(cached));
-            setRangeSwitchPending(false);
-          },
-        });
-        return;
-      }
-
-      // Sin cache: mantener vista actual y pedir el rango en background.
-      setRangeSwitchPending(true);
-      rangeAbortRef.current?.abort();
-      const controller = new AbortController();
-      rangeAbortRef.current = controller;
-      void fetchRangePayload(year, month, rangeId, controller.signal)
-        .then((data) => {
-          if (controller.signal.aborted) return;
-          if (dayRangeIdRef.current !== rangeId) return;
-          prefetchWarmInformeRange(data, {
-            metrics: ["v"],
-            priority: true,
-            onDone: () => {
-              if (dayRangeIdRef.current !== rangeId) return;
-              markViewReady(rangeId);
-              startTransition(() => setPayload(data));
-              setRangeSwitchPending(false);
-            },
-          });
-        })
-        .catch((err) => {
-          if (controller.signal.aborted) return;
-          if (err instanceof Error && err.name === "AbortError") return;
-          if (dayRangeIdRef.current !== rangeId) return;
-          setRangeSwitchPending(false);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Error desconocido cargando el informe.",
-          );
-        });
-    },
-    [fetchRangePayload, markViewReady, parsedMonth, readCachedPayload],
-  );
-
-  /** Selecciona un dia suelto, acotado a [1, ultimo dia con datos]. */
-  const selectSingleDay = useCallback(
-    (day: number) => {
-      if (!maxSingleDay) return;
-      const clamped = Math.min(Math.max(Math.trunc(day), 1), maxSingleDay);
-      selectDayRange(buildSingleDayInformeRangeId(clamped));
-    },
-    [maxSingleDay, selectDayRange],
-  );
-
-  /**
-   * Al ver un dia suelto se compara contra el MISMO NUMERO de dia del mes anterior
-   * y del año pasado. Eso cruza dias de semana distintos y en retail un domingo no
-   * se parece a un miercoles, asi que buena parte de la variacion puede ser efecto
-   * calendario. Se avisa cuando ocurre en vez de dejar que el % se lea como real.
-   */
-  const weekdayComparisonWarning = useMemo(() => {
-    if (!payload || activeSingleDay === null) return null;
-    const NAMES = [
-      "domingo",
-      "lunes",
-      "martes",
-      "miercoles",
-      "jueves",
-      "viernes",
-      "sabado",
-    ];
-    const weekdayOf = (compact: string) =>
-      new Date(
-        Number(compact.slice(0, 4)),
-        Number(compact.slice(4, 6)) - 1,
-        Number(compact.slice(6, 8)),
-      ).getDay();
-    const cur = weekdayOf(payload.periods.current.from);
-    const mom = weekdayOf(payload.periods.mom.from);
-    const yoy = weekdayOf(payload.periods.yoy.from);
-    if (cur === mom && cur === yoy) return null;
-    return `Se compara el mismo numero de dia: este es ${NAMES[cur]}, el del periodo anterior cae en ${NAMES[mom]} y el del año pasado en ${NAMES[yoy]}. Parte de la variacion puede ser efecto calendario, no venta.`;
-  }, [activeSingleDay, payload]);
-
-  const loadMonthBundle = useCallback(
-    async (options: { force?: boolean } = {}) => {
-      if (!parsedMonth || !parsedPrev) {
-        setError("Selecciona un mes valido.");
-        setMonthLoadLocked(false);
-        return;
-      }
-      if (!isInformeYearMonthBefore(parsedPrev, parsedMonth)) {
-        setError("El periodo anterior debe ser anterior al periodo actual.");
-        setMonthLoadLocked(false);
-        return;
-      }
-
-      const ranges = availableDayRanges;
-      if (ranges.length === 0) {
-        setError("No hay rangos de dias disponibles para este mes.");
-        setPayload(null);
-        setMonthLoadLocked(false);
-        return;
-      }
-
-      const { year, month } = parsedMonth;
-      const monthToken = `${year}-${month}:${parsedPrev.year}-${parsedPrev.month}`;
-      activeMonthKeyRef.current = monthToken;
-      setMonthLoadLocked(true);
-
-      monthAbortRef.current?.abort();
-      rangeAbortRef.current?.abort();
-      const controller = new AbortController();
-      monthAbortRef.current = controller;
-
-      if (options.force) {
-        for (const key of [...memoryCacheRef.current.keys()]) {
-          if (key.startsWith(`${year}-${month}:`)) {
-            memoryCacheRef.current.delete(key);
-          }
-        }
-        for (const key of [...inflightRef.current.keys()]) {
-          if (key.startsWith(`${year}-${month}:`)) {
-            inflightRef.current.delete(key);
-          }
-        }
-        clearSessionInformeMonth(sessionStoragePrefix, year, month);
-        setReadyRanges(new Set());
-        setViewReadyRanges(new Set());
-      }
-
-      const primaryFromState = dayRangeIdRef.current;
-      const primaryId =
-        primaryFromState && ranges.some((range) => range.id === primaryFromState)
-          ? primaryFromState
-          : (defaultInformeDayRangeId(ranges) as InformeDayRangeId);
-      // El bundle mensual deserializaba y preparaba varias matrices después de
-      // pintar el rango visible, bloqueando el navegador. Cada chip se carga
-      // ahora bajo demanda.
-      setPrefetchTotal(1);
-      setPrefetchDone(0);
-      setError(null);
-      setRangeSwitchPending(false);
-      if (!options.force) {
-        // Conserva chips del mismo mes si ya hay cache; al cambiar mes limpia.
-        setReadyRanges((current) => {
-          const kept = new Set<InformeDayRangeId>();
-          for (const range of ranges) {
-            if (
-              current.has(range.id) ||
-              memoryCacheRef.current.has(
-                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix, parsedPrev),
-              ) ||
-              readSessionInforme(
-                sessionStoragePrefix,
-                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix, parsedPrev),
-              )
-            ) {
-              kept.add(range.id);
-            }
-          }
-          return kept;
-        });
-      }
-
-      const selectedId =
-        dayRangeIdRef.current &&
-        ranges.some((range) => range.id === dayRangeIdRef.current)
-          ? dayRangeIdRef.current
-          : primaryId;
-      const cachedSelected = options.force
-        ? null
-        : readCachedPayload(year, month, selectedId, { warm: true });
-      if (cachedSelected) {
-        setPayload(cachedSelected);
+        setPayload(cached);
+        setLoading(false);
+        prefetchWarmInformeRange(cached, { metrics: ["v"] });
+        if (!options.force) return;
       } else {
         setLoading(true);
       }
-
-      const applySelectedPayload = () => {
-        const current =
-          dayRangeIdRef.current &&
-          ranges.some((range) => range.id === dayRangeIdRef.current)
-            ? dayRangeIdRef.current
-            : selectedId;
-        const data = readCachedPayload(year, month, current, { warm: true });
-        if (data) {
-          startTransition(() => setPayload(data));
-          setRangeSwitchPending(false);
-        }
-      };
-
       try {
-        const data =
-          cachedSelected ??
-          (await fetchRangePayload(
-            year,
-            month,
-            selectedId,
-            controller.signal,
-            options,
-          ));
-        if (
-          controller.signal.aborted ||
-          activeMonthKeyRef.current !== monthToken
-        ) {
+        const data = await fetchRanges(ranges, controller.signal, options);
+        if (appliedKeyRef.current !== token || controller.signal.aborted) {
           return;
         }
-        if (!cachedSelected) setPayload(data);
-        applySelectedPayload();
-        setPrefetchDone(1);
+        setPayload(data);
         setLoading(false);
-        setRangeSwitchPending(false);
       } catch (err) {
-        if (
-          controller.signal.aborted ||
-          activeMonthKeyRef.current !== monthToken
-        ) {
+        if (controller.signal.aborted || appliedKeyRef.current !== token) {
           return;
         }
-        if (!readCachedPayload(year, month, primaryId)) {
-          setPayload(null);
-        }
-        if (err instanceof Error && err.name === "AbortError") {
-          setError(
-            "La consulta tardo demasiado. Prueba un mes o rango con menos datos.",
-          );
-        } else {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Error desconocido cargando el informe.",
-          );
-        }
+        if (!cached) setPayload(null);
+        setError(
+          err instanceof Error
+            ? err.name === "AbortError"
+              ? "La consulta tardo demasiado. Prueba un rango mas corto."
+              : err.message
+            : "Error desconocido cargando el informe.",
+        );
       } finally {
-        if (
-          !controller.signal.aborted &&
-          activeMonthKeyRef.current === monthToken
-        ) {
+        if (!controller.signal.aborted && appliedKeyRef.current === token) {
           setLoading(false);
-          setMonthLoadLocked(false);
         }
       }
     },
-    [availableDayRanges, fetchRangePayload, parsedMonth, parsedPrev, readCachedPayload, scopeCacheSuffix, sessionStoragePrefix],
+    [fetchRanges, readCachedPayload, scopeCacheSuffix],
   );
 
-  // Carga al entrar o cambiar periodo actual / anterior.
   useEffect(() => {
-    if (!ready || !canAccess || metaLoading || !selectionKey) return;
-    setReadyRanges(new Set());
-    setViewReadyRanges(new Set());
-    setPrefetchDone(0);
-    setPrefetchTotal(0);
-    if (availableDayRanges.length === 0) {
-      setPayload(null);
-      return;
-    }
-    void loadMonthBundle();
-    return () => {
-      monthAbortRef.current?.abort();
-      rangeAbortRef.current?.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bundle por mes actual + anterior
-  }, [canAccess, metaLoading, selectionKey, ready]);
+    if (!ready || !canAccess || metaLoading || !applied) return;
+    void loadSelection(applied);
+    return () => abortRef.current?.abort();
+  }, [applied, canAccess, loadSelection, metaLoading, ready]);
 
-  const preloadReady =
-    prefetchTotal > 0 &&
-    viewReadyRanges.size >= prefetchTotal &&
-    !loading;
-  const periodControlsDisabled = metaLoading || monthLoadLocked;
+  const applyDraft = (next: InformeSelectedRanges) => {
+    setDraft(next);
+    setApplied(next);
+  };
+
+  const updateDraftDate = (
+    field: keyof InformeSelectedRanges,
+    iso: string,
+  ) => {
+    const compact = isoToCompact(iso);
+    if (!compact || !draft) return;
+    setDraft({ ...draft, [field]: compact });
+  };
+
+  const periodControlsDisabled = metaLoading || loading;
   const showInitialLoader = metaLoading || (loading && !payload && !error);
+  const payloadMatchesSelection = Boolean(
+    payload && applied && payloadMatchesRanges(payload, applied),
+  );
   const showBoard = Boolean(payload) && !metaLoading;
-  const payloadMatchesSelection = useMemo(() => {
-    if (!payload || !parsedMonth) return false;
-    return payloadMatchesInformeSelection(
-      payload,
-      parsedMonth.year,
-      parsedMonth.month,
-      dayRangeId,
-      availableDayRanges,
-      parsedPrev,
-    );
-  }, [availableDayRanges, dayRangeId, parsedMonth, parsedPrev, payload]);
   const boardDataPending =
-    rangeSwitchPending ||
-    (Boolean(payload) &&
-      !payloadMatchesSelection &&
-      (monthLoadLocked || loading));
+    Boolean(payload) && !payloadMatchesSelection && loading;
 
   if (!ready || !canAccess) {
     return (
@@ -900,13 +457,15 @@ export default function InformeVariacionPage() {
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-bold text-slate-900">
-              Informe de variacion MoM · YoY
+              Informe de variacion
             </h1>
             <p className="text-sm text-slate-500">
-              Empresa → Sede → Categoria → Linea → Sublinea → Item
+              Compara dos periodos de fechas. Empresa → Sede → Categoria →
+              Linea → Sublinea → Item
             </p>
           </div>
         </div>
+
         <div className="mb-4 flex flex-wrap items-end justify-end gap-3">
           {canSelectDinastia && !dinastiaOnly ? (
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
@@ -915,18 +474,17 @@ export default function InformeVariacionPage() {
                 value={dataTenant}
                 disabled={periodControlsDisabled}
                 onChange={(event) => {
-                  if (periodControlsDisabled) return;
                   const next =
                     event.target.value === "dinastia" ? "dinastia" : "default";
                   setDataTenant(next);
                   setPayload(null);
-                  setReadyRanges(new Set());
-                  setViewReadyRanges(new Set());
                   setError(null);
                 }}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               >
-                <option value="default">Mercamio / Comercializadora / Merkmios</option>
+                <option value="default">
+                  Mercamio / Comercializadora / Merkmios
+                </option>
                 <option value="dinastia">Dinastía</option>
               </select>
             </label>
@@ -938,236 +496,126 @@ export default function InformeVariacionPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => void loadMonthBundle({ force: true })}
-            disabled={periodControlsDisabled}
+            onClick={() => applied && void loadSelection(applied, { force: true })}
+            disabled={periodControlsDisabled || !applied}
             className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <RefreshCcw
-              className={`h-4 w-4 ${monthLoadLocked ? "animate-spin" : ""}`}
-            />
+            <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Actualizar
           </button>
         </div>
 
         <div className="mb-5 rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
-        {availableDayRanges.length > 0 ? (
-          <>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Rango de dias
-              </span>
-              <span className="text-xs text-slate-400">
-                {periodControlsDisabled
-                  ? "Cargando periodo seleccionado…"
-                  : preloadReady
-                    ? "Rango actual listo"
-                    : "Cada rango se carga al seleccionarlo para mantener el navegador fluido"}
-                {rangeSwitchPending ? " · sincronizando…" : ""}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {availableDayRanges.map((range) => {
-                  const viewReady = viewReadyRanges.has(range.id);
-                  const selected = dayRangeId === range.id;
-                  const canClick = true;
-                  return (
-                  <button
-                    key={range.id}
-                    type="button"
-                    disabled={!canClick || periodControlsDisabled}
-                    onClick={() => {
-                      if (!canClick) return;
-                      selectDayRange(range.id);
-                    }}
-                    className={cn(
-                      "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
-                      selected
-                        ? range.projection
-                          ? "border-amber-600 bg-amber-600 text-white shadow-sm"
-                          : "border-blue-600 bg-blue-600 text-white shadow-sm"
-                        : !viewReady
-                          ? "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50"
-                          : range.projection
-                            ? "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300"
-                            : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
-                    )}
-                    title={
-                      range.projection
-                        ? `Proyección a día ${range.projection.targetToDay} con datos hasta el ${range.projection.actualToDay}`
-                        : viewReady
-                          ? "Vista lista"
-                          : "Cargar este rango"
-                    }
-                  >
-                    {range.label}
-                  </button>
-                  );
-                })}
-            </div>
-            {payload?.meta.dayRange?.projection ? (
-              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                Proyección a{" "}
-                <span className="font-semibold">
-                  día {payload.meta.dayRange.projection.targetToDay}
-                </span>{" "}
-                con corte real hasta el{" "}
-                <span className="font-semibold">
-                  día {payload.meta.dayRange.projection.actualToDay}
-                </span>{" "}
-                (último cargado). Fórmula: (venta 1→
-                {payload.meta.dayRange.projection.actualToDay} /{" "}
-                {payload.meta.dayRange.projection.actualToDay}) ×{" "}
-                {payload.meta.dayRange.projection.targetToDay}. El periodo
-                anterior y YoY usan el tramo cerrado comparable.
-              </p>
-            ) : null}
-          </>
-        ) : parsedMonth ? (
-          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Este mes aun no tiene dias cargados en la fuente de datos. Elige un mes
-            anterior o espera a que suba el primer dia del mes.
+          <p className="mb-3 text-xs text-slate-500">
+            Elige inicio y fin en cada periodo. Al comparar, las cifras salen
+            de una: meses cerrados ya van preagregados.
           </p>
-        ) : null}
-
-            <div
-              className={cn(
-                "flex flex-wrap items-end gap-3",
-                availableDayRanges.length > 0 && "mt-3 border-t border-slate-100 pt-3",
-              )}
-            >
-              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+          <div className="flex flex-wrap items-end gap-4">
+            <fieldset className="flex flex-wrap items-end gap-2">
+              <legend className="mb-1 w-full text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Periodo actual
+              </legend>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Desde
                 <input
-                  type="month"
-                  value={monthInput}
-                  disabled={periodControlsDisabled}
-                  max={
-                    maxDate && maxDate.length >= 6
-                      ? `${maxDate.slice(0, 4)}-${maxDate.slice(4, 6)}`
-                      : undefined
+                  type="date"
+                  value={draft ? compactToIso(draft.currentFrom) : ""}
+                  min={minIso}
+                  max={maxIso}
+                  disabled={metaLoading}
+                  onChange={(event) =>
+                    updateDraftDate("currentFrom", event.target.value)
                   }
-                  onChange={(event) => {
-                    if (periodControlsDisabled) return;
-                    const next = parseYearMonthInput(event.target.value);
-                    if (!next) return;
-                    setMonthInput(event.target.value);
-                    const prev = previousCalendarMonth(next.year, next.month);
-                    setPrevMonthInput(
-                      yearMonthToInputValue(prev.year, prev.month),
-                    );
-                  }}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-                  aria-busy={monthLoadLocked}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-                Periodo anterior
+                Hasta
                 <input
-                  type="month"
-                  value={prevMonthInput}
-                  disabled={periodControlsDisabled || !parsedMonth}
-                  max={prevMonthMax}
-                  onChange={(event) => {
-                    if (periodControlsDisabled || !parsedMonth) return;
-                    const next = parseYearMonthInput(event.target.value);
-                    if (!next || !isInformeYearMonthBefore(next, parsedMonth)) {
-                      return;
-                    }
-                    setPrevMonthInput(event.target.value);
-                  }}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  type="date"
+                  value={draft ? compactToIso(draft.currentTo) : ""}
+                  min={minIso}
+                  max={maxIso}
+                  disabled={metaLoading}
+                  onChange={(event) =>
+                    updateDraftDate("currentTo", event.target.value)
+                  }
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                 />
               </label>
+            </fieldset>
 
-              {maxSingleDay ? (
-                <>
-                  <button
-                    type="button"
-                    disabled={periodControlsDisabled}
-                    onClick={() =>
-                      selectSingleDay(activeSingleDay ?? maxSingleDay)
-                    }
-                    className={cn(
-                      "rounded-lg border px-3 py-1.5 text-sm font-medium transition",
-                      activeSingleDay
-                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50",
-                    )}
-                    title="Ver la venta de un solo dia"
-                  >
-                    Dia
-                  </button>
+            <span className="hidden pb-3 text-sm font-semibold text-slate-400 sm:inline">
+              vs
+            </span>
 
-                  <button
-                    type="button"
-                    aria-label="Dia anterior"
-                    disabled={
-                      periodControlsDisabled ||
-                      (activeSingleDay ?? maxSingleDay) <= 1
-                    }
-                    onClick={() =>
-                      selectSingleDay((activeSingleDay ?? maxSingleDay) - 1)
-                    }
-                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ‹
-                  </button>
+            <fieldset className="flex flex-wrap items-end gap-2">
+              <legend className="mb-1 w-full text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Periodo anterior
+              </legend>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Desde
+                <input
+                  type="date"
+                  value={draft ? compactToIso(draft.previousFrom) : ""}
+                  min={minIso}
+                  max={maxIso}
+                  disabled={metaLoading}
+                  onChange={(event) =>
+                    updateDraftDate("previousFrom", event.target.value)
+                  }
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Hasta
+                <input
+                  type="date"
+                  value={draft ? compactToIso(draft.previousTo) : ""}
+                  min={minIso}
+                  max={maxIso}
+                  disabled={metaLoading}
+                  onChange={(event) =>
+                    updateDraftDate("previousTo", event.target.value)
+                  }
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
+                />
+              </label>
+            </fieldset>
 
-                  <input
-                    type="date"
-                    aria-label="Elegir dia"
-                    disabled={periodControlsDisabled}
-                    value={
-                      parsedMonth
-                        ? `${parsedMonth.year}-${String(parsedMonth.month).padStart(2, "0")}-${String(activeSingleDay ?? maxSingleDay).padStart(2, "0")}`
-                        : ""
-                    }
-                    min={
-                      parsedMonth
-                        ? `${parsedMonth.year}-${String(parsedMonth.month).padStart(2, "0")}-01`
-                        : undefined
-                    }
-                    max={
-                      parsedMonth
-                        ? `${parsedMonth.year}-${String(parsedMonth.month).padStart(2, "0")}-${String(maxSingleDay).padStart(2, "0")}`
-                        : undefined
-                    }
-                    onChange={(event) => {
-                      const day = Number(event.target.value.slice(8, 10));
-                      if (Number.isInteger(day)) selectSingleDay(day);
-                    }}
-                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 disabled:opacity-50"
-                  />
-
-                  <button
-                    type="button"
-                    aria-label="Dia siguiente"
-                    disabled={
-                      periodControlsDisabled ||
-                      (activeSingleDay ?? maxSingleDay) >= maxSingleDay
-                    }
-                    onClick={() =>
-                      selectSingleDay((activeSingleDay ?? maxSingleDay) + 1)
-                    }
-                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ›
-                  </button>
-
-                  <span className="pb-2 text-xs text-slate-400">
-                    {activeSingleDay
-                      ? "Venta de un solo dia"
-                      : `Ultimo dia cargado: ${maxSingleDay}`}
-                  </span>
-                </>
-              ) : null}
-            </div>
-
-                {activeSingleDay && weekdayComparisonWarning ? (
-                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                    {weekdayComparisonWarning}
-                  </p>
-                ) : null}
+            <button
+              type="button"
+              disabled={!draft || metaLoading}
+              onClick={() => {
+                if (!draft) return;
+                const aligned = alignPreviousYearRange(
+                  draft.currentFrom,
+                  draft.currentTo,
+                );
+                if (!aligned) return;
+                setDraft({ ...draft, ...aligned });
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Mismo tramo año anterior
+            </button>
+            <button
+              type="button"
+              disabled={!maxDate || metaLoading}
+              onClick={() => applyDraft(defaultInformeYtdRanges(maxDate))}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Corrido del año
+            </button>
+            <button
+              type="button"
+              disabled={!draft || metaLoading}
+              onClick={() => draft && applyDraft(draft)}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              Comparar
+            </button>
+          </div>
         </div>
 
         {error ? (
@@ -1179,16 +627,13 @@ export default function InformeVariacionPage() {
         {showInitialLoader ? (
           <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80">
             <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
-            <p className="mt-3 text-sm text-slate-600">Construyendo informe...</p>
-            {prefetchTotal > 1 ? (
-              <p className="mt-1 text-xs text-slate-400">
-                Luego se precargaran el resto de rangos del mes
-              </p>
-            ) : null}
+            <p className="mt-3 text-sm text-slate-600">
+              Cargando comparativo…
+            </p>
           </div>
         ) : showBoard ? (
           <InformeVariacionBoard
-            key={`${selectionKey || "informe"}${scopeCacheSuffix}`}
+            key={`${applied?.currentFrom ?? ""}-${applied?.previousFrom ?? ""}${scopeCacheSuffix}`}
             payload={payload!}
             dataPending={boardDataPending}
             categoryScopeLocked={Boolean(
@@ -1205,7 +650,9 @@ export default function InformeVariacionPage() {
               <div className="mt-2">
                 <button
                   type="button"
-                  onClick={() => void loadMonthBundle({ force: true })}
+                  onClick={() =>
+                    applied && void loadSelection(applied, { force: true })
+                  }
                   className="text-sm font-semibold text-blue-600"
                 >
                   Reintentar

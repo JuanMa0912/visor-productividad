@@ -123,12 +123,12 @@ Codigo compartido sin UI de pagina.
 | `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v4`/disco (`volumeSchema=4`); tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und menos visitas QR del día/sede, fruver/carnes/pollo=kg, asadero=UND.Pollo+horas+Unidades+horas) y conservan `$` para Excel/PDF |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
-| `informe-variacion` | informe de variacion; periodo actual y periodo anterior elegibles (default = mes calendario previo) más YoY del mes actual; los rangos de días se aplican igual a ambos meses; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` solo si el anterior es el MoM por defecto); UI carga **solo el rango visible** y separa tablas en pestañas (empresa/sede, ranking, matriz); filtro general aplica a indicadores y a la pestaña activa |
+| `informe-variacion` | informe de variacion; dos rangos de fecha libres (default = corrido del año vs mismo tramo año anterior); sin cortes Excel ni YoY/MoM automaticos; fuente `margen_item_dia_roll` + `margen_item_mes_roll` (meses cerrados) y snapshot `informe_variacion_payload_std` del YTD por defecto; UI separa tablas en pestañas (empresa/sede, ranking, matriz) |
 | `rotacion` | rotacion e inventario con baja salida; capitulos A-B-C, criticos (D+0+S) y sobrestock (32+ / 50+ dias de inventario); filtro CAT (multi); restock muestra conteo S.inventario (sin verificar / seguimiento / surtido) |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `rotacion/restock-fotos` | GET metadatos o foto base64; PUT foto de item restock ya surtido |
-| `checklists/runs` | GET/POST intento: 20 min, rol encargado/revisor, 1/mes por sede, guardar respuestas, desbloqueo panel |
-| `checklists/panel` | GET listado mensual de sedes/puntajes/tiempo/responsable |
+| `checklists/runs` | GET/POST intento: 20 min, rol encargado/revisor, 1/mes por sede, guardar respuestas, foto obligatoria en P/NC, firma al finalizar, desbloqueo panel |
+| `checklists/panel` | GET listado mensual de sedes/puntajes/tiempo/responsable; errores de esquema/SQL se devuelven en JSON |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |

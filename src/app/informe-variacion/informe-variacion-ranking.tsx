@@ -71,10 +71,12 @@ export function InformeRankingTable({
   onDimensionChange,
   sort,
   onSortChange,
-  mode,
-  onModeChange,
+  mode: _mode,
+  onModeChange: _onModeChange,
   pass,
 }: RankingProps) {
+  void _mode;
+  void _onModeChange;
   const rows = useMemo(
     () =>
       buildInformeRankingRows({
@@ -111,18 +113,9 @@ export function InformeRankingTable({
           value={sort}
           options={[
             { id: "cur", label: "Actual" },
-            { id: "yoy", label: "YoY" },
-            { id: "mom", label: "Anterior" },
+            { id: "mom", label: "Variación" },
           ]}
           onChange={(value) => onSortChange(value as InformeRankingSort)}
-        />
-        <MiniToggle
-          value={mode}
-          options={[
-            { id: "yoy", label: "Heatmap YoY" },
-            { id: "mom", label: "Heatmap anterior" },
-          ]}
-          onChange={(value) => onModeChange(value as "yoy" | "mom")}
         />
       </div>
       <p className="text-xs text-slate-500">
@@ -138,7 +131,7 @@ export function InformeRankingTable({
               <th className="sticky left-0 z-10 bg-white px-2 py-2 text-left">#</th>
               <th className="sticky left-8 z-10 bg-white px-2 py-2 text-left">Nombre</th>
               <th className="px-2 py-2 text-right">Actual</th>
-              <th className="px-2 py-2 text-right">YoY</th>
+              <th className="px-2 py-2 text-right">Var. %</th>
               <th className="px-2 py-2 text-right">Anterior</th>
               {payload.sedes.map((sede) => (
                 <th key={sede.key} className="px-1 py-2 text-center font-semibold text-slate-600">
@@ -160,16 +153,15 @@ export function InformeRankingTable({
                   {formatInformeValue(row.total[0], metric)}
                 </td>
                 <td className="px-2 py-1.5 text-right">
-                  <VariationChip current={row.total[0]} previous={row.total[2]} />
-                </td>
-                <td className="px-2 py-1.5 text-right">
                   <VariationChip current={row.total[0]} previous={row.total[1]} />
                 </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {formatInformeValue(row.total[1], metric)}
+                </td>
                 {row.perSede.map((values, sedeIndex) => {
-                  const previous = mode === "mom" ? values[1] : values[2];
-                  const nd = mode === "yoy" && !payload.sedeYoy[sedeIndex];
-                  const pct = nd ? null : computeVariationPct(values[0], previous);
-                  const style = heatmapCellStyle(pct, nd);
+                  const previous = values[1];
+                  const pct = computeVariationPct(values[0], previous);
+                  const style = heatmapCellStyle(pct, false);
                   return (
                     <td
                       key={sedeIndex}
@@ -180,7 +172,7 @@ export function InformeRankingTable({
                         {formatInformeValue(values[0], metric)}
                       </div>
                       <div className="opacity-90">
-                        {nd ? "N/D" : formatInformePct(pct)}
+                        {formatInformePct(pct)}
                       </div>
                     </td>
                   );
@@ -243,13 +235,7 @@ export function InformeEmpresaSummaryCards({
             {formatInformeValue(row.total[0], metric)}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-500">YoY</span>
-            <VariationChip
-              current={row.total[0]}
-              previous={row.total[2]}
-              yoyOk={row.yoyOk}
-            />
-            <span className="text-slate-500">Ant.</span>
+            <span className="text-slate-500">vs ant.</span>
             <VariationChip current={row.total[0]} previous={row.total[1]} />
             <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
               {(row.share * 100).toFixed(1)}%

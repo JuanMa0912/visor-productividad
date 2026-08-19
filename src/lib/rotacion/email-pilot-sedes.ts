@@ -2,10 +2,32 @@ import { normalizeKeyCompact } from "@/lib/shared/normalize";
 import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 
 /**
- * Destinatario del correo consolidado (todas las sedes) en fase piloto.
- * Override: `ROTACION_EMAIL_FORCE_TO`.
+ * Destinatarios del correo consolidado (todas las sedes) cada mañana.
+ * Override CSV: `ROTACION_EMAIL_FORCE_TO`.
  */
-export const ROTACION_EMAIL_PILOT_ONLY_TO = "aprendizppt@mercamio.com";
+export const ROTACION_EMAIL_CONSOLIDATED_TO = [
+  "aprendizppt@mercamio.com",
+  "alexander@mercamio.com",
+] as const;
+
+/** @deprecated Preferir {@link ROTACION_EMAIL_CONSOLIDATED_TO}. */
+export const ROTACION_EMAIL_PILOT_ONLY_TO = ROTACION_EMAIL_CONSOLIDATED_TO[0];
+
+export const parseRotacionEmailAddresses = (
+  raw: string | undefined,
+): string[] =>
+  (raw ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+export const resolveRotacionEmailConsolidatedRecipients = (
+  forceTo?: string,
+): string[] => {
+  const forced = parseRotacionEmailAddresses(forceTo);
+  if (forced.length > 0) return forced;
+  return [...ROTACION_EMAIL_CONSOLIDATED_TO];
+};
 
 export type RotacionEmailSedeRecipient = {
   /** Nombre canónico del portal (`SEDE_ORDER`). */

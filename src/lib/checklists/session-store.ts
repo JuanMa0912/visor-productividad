@@ -38,6 +38,8 @@ type DbRun = {
   answers: unknown;
   score_pct: string | number | null;
   duration_seconds: number | null;
+  signature_png?: string | null;
+  has_signature?: boolean;
 };
 
 const toIso = (value: Date | string | null | undefined): string | null => {
@@ -78,6 +80,7 @@ export const mapChecklistRun = (
     scorePct: toScore(row.score_pct),
     durationSeconds: row.duration_seconds,
     answers: row.answers ?? null,
+    hasSignature: Boolean(row.has_signature) || Boolean(row.signature_png),
   };
 };
 
@@ -258,6 +261,7 @@ export const completeChecklistRun = async (
   runId: string,
   userId: string,
   snapshot: ChecklistSnapshot | null,
+  signaturePng: string,
   now = new Date(),
 ): Promise<DbRun | null> => {
   const updated = await client.query<DbRun>(
@@ -268,6 +272,7 @@ export const completeChecklistRun = async (
         updated_at = $3::timestamptz,
         answers = COALESCE($4::jsonb, answers),
         score_pct = COALESCE($5, score_pct),
+        signature_png = $6,
         duration_seconds = GREATEST(0, FLOOR(EXTRACT(EPOCH FROM ($3::timestamptz - started_at))))
     WHERE id = $1::uuid
       AND user_id = $2::uuid
@@ -281,9 +286,89 @@ export const completeChecklistRun = async (
       now.toISOString(),
       snapshot ? JSON.stringify(snapshot) : null,
       snapshot?.scorePct ?? null,
+      signaturePng,
     ],
   );
   return updated.rows[0] ?? null;
+};
+
+export const listChecklistEvidenceKeys = async (
+  client: PoolClient,
+  runId: string,
+): Promise<string[]> => {
+  const result = await client.query<{ item_key: string }>(
+    `
+    SELECT item_key
+    FROM checklist_run_evidence
+    WHERE run_id = $1::uuid
+    ORDER BY item_key
+    `,
+    [runId],
+  );
+  return result.rows.map((row) => String(row.item_key).trim()).filter(Boolean);
+};
+
+export const upsertChecklistEvidence = async (
+  client: PoolClient,
+  input: {
+    runId: string;
+    userId: string;
+    itemKey: string;
+    fotoBase64: string;
+    mime: string;
+  },
+  now = new Date(),
+): Promise<boolean> => {
+  const owned = await client.query(
+    `
+    SELECT 1
+    FROM checklist_run
+    WHERE id = $1::uuid AND user_id = $2::uuid AND status = 'in_progress'
+    `,
+    [input.runId, input.userId],
+  );
+  if (!owned.rowCount) return false;
+  await client.query(
+    `
+    INSERT INTO checklist_run_evidence (run_id, item_key, foto_base64, mime, updated_at)
+    VALUES ($1::uuid, $2, $3, $4, $5::timestamptz)
+    ON CONFLICT (run_id, item_key) DO UPDATE
+    SET foto_base64 = EXCLUDED.foto_base64,
+        mime = EXCLUDED.mime,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      input.runId,
+      input.itemKey,
+      input.fotoBase64,
+      input.mime,
+      now.toISOString(),
+    ],
+  );
+  return true;
+};
+
+export const getChecklistEvidence = async (
+  client: PoolClient,
+  runId: string,
+  userId: string,
+  itemKey: string,
+): Promise<{ fotoBase64: string; mime: string } | null> => {
+  const result = await client.query<{ foto_base64: string; mime: string }>(
+    `
+    SELECT e.foto_base64, e.mime
+    FROM checklist_run_evidence e
+    JOIN checklist_run r ON r.id = e.run_id
+    WHERE e.run_id = $1::uuid
+      AND e.item_key = $2
+      AND r.user_id = $3::uuid
+    LIMIT 1
+    `,
+    [runId, itemKey, userId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return { fotoBase64: row.foto_base64, mime: row.mime };
 };
 
 export const reopenChecklistRun = async (

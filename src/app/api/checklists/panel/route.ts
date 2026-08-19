@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { applySessionCookies, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { canAccessChecklistPanel } from "@/lib/checklists/access";
+import {
+  CHECKLIST_MIGRATION_HINT,
+  isChecklistSchemaError,
+} from "@/lib/checklists/evidence";
 import { getChecklistPeriod } from "@/lib/checklists/period";
 import {
   listPanelChecklistRuns,
@@ -30,7 +34,10 @@ export async function GET(request: Request) {
   const month = Number(url.searchParams.get("month") ?? current.month);
   const period = {
     year: Number.isInteger(year) ? year : current.year,
-    month: Number.isInteger(month) && month >= 1 && month <= 12 ? month : current.month,
+    month:
+      Number.isInteger(month) && month >= 1 && month <= 12
+        ? month
+        : current.month,
   };
 
   const pool = await getDbPool();
@@ -41,6 +48,15 @@ export async function GET(request: Request) {
       period,
       runs: rows.map((row) => mapChecklistRun(row)),
     });
+    return applySessionCookies(response, session);
+  } catch (error) {
+    console.error("[checklists/panel]", error);
+    const message = isChecklistSchemaError(error)
+      ? `Faltan tablas o columnas de checklists. ${CHECKLIST_MIGRATION_HINT}`
+      : error instanceof Error
+        ? error.message
+        : "No se pudo cargar el panel de checklists.";
+    const response = NextResponse.json({ error: message }, { status: 500 });
     return applySessionCookies(response, session);
   } finally {
     client.release();

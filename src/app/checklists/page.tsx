@@ -96,14 +96,15 @@ export default function ChecklistsHubPage() {
         sede={user.sede}
         showSeccionesShortcut
       />
-      <PortalHubShell>
+      <PortalHubShell className="max-w-3xl gap-5 py-4 sm:py-6">
         <PortalHubHeroCard
           theme="operacion"
           icon={ClipboardCheck}
           eyebrow="Operación • Checklists"
           title="Checklists"
-          description="Encargado de sede: un checklist al mes. El revisor lo cruza con esa respuesta. El panel ve puntajes y puede desbloquear vencidos."
+          description="Un checklist al mes por sede. El revisor lo cruza. En celular: marca, foto si es P/NC y firma al final."
           moduleCount={modules.length}
+          density="compact"
           actions={
             <div className="flex flex-wrap justify-end gap-2">
               {canSeePanel ? (
@@ -111,14 +112,14 @@ export default function ChecklistsHubPage() {
                   href="/checklists/panel"
                   className="inline-flex h-9 items-center rounded-full border border-rose-200/80 bg-rose-50 px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-800 hover:bg-rose-100/90"
                 >
-                  Panel de control
+                  Panel
                 </Link>
               ) : null}
               <Link
                 href="/horario"
                 className="inline-flex h-9 items-center rounded-full border border-slate-200/90 bg-white px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600 hover:border-slate-300 hover:bg-slate-50"
               >
-                ← Volver a operación
+                ← Operación
               </Link>
             </div>
           }
@@ -127,7 +128,8 @@ export default function ChecklistsHubPage() {
           theme="operacion"
           items={modules}
           onNavigate={(href) => router.push(href)}
-          columnsClassName="gap-4 sm:grid-cols-2"
+          density="compact"
+          columnsClassName="gap-2"
         />
         {canSeePanel ? <ChecklistExpiredAdminPanel /> : null}
       </PortalHubShell>

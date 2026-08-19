@@ -2,53 +2,50 @@ import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
-import { loadInformeVariacionPayload } from "@/lib/informe-variacion/query";
-import { loadInformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
+import { loadInformeVariacionRangePayload } from "@/lib/informe-variacion/query";
 import { loadInformeVariacionMeta } from "@/lib/informe-variacion/meta";
 import {
-  buildInformeSingleDayRange,
-  defaultInformeDayRangeId,
-  getAvailableInformeDayRanges,
-  isSingleDayInformeRangeId,
   normalizeInformeCompactDate,
-  parseSingleDayInformeRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import {
-  buildInformeBundleCacheKey,
-  buildInformeCacheKey,
-  getCachedInformeMonthBundle,
+  buildInformeRangeCacheKey,
   getCachedInformePayload,
   invalidateInformeCacheKey,
-  setCachedInformeMonthBundle,
   setCachedInformePayload,
 } from "@/lib/informe-variacion/informe-cache";
 import {
-  adaptInformePayloadStdBundleForRequest,
   adaptInformePayloadStdForRequest,
   getInformePayloadStd,
-  getInformePayloadStdBundle,
 } from "@/lib/informe-variacion/payload-std-server";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
-import {
-  ensureInformeProveedores,
-  ensureInformeProveedoresOnMap,
-} from "@/lib/informe-variacion/proveedores";
+import { ensureInformeProveedores } from "@/lib/informe-variacion/proveedores";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
   resolveDataSourceKind,
   userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
-import {
-  isDefaultInformeCompareMonth,
-  isInformeCompareMonthError,
-  parseInformeCompareMonthParam,
-} from "@/lib/informe-variacion/periods";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
+import {
+  defaultInformeYtdRanges,
+  informeRangeCacheKey,
+  isInformeCompactDateError,
+  parseInformeCompactDateParam,
+  validateInformeSelectedRanges,
+  type InformeSelectedRanges,
+} from "@/lib/informe-variacion/date-range";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 const CACHE_CONTROL = "no-store, private";
+
+const parseRangeParam = (
+  raw: string | null,
+  fallback: string,
+): string | { error: string } => {
+  if (raw == null || raw.trim() === "") return fallback;
+  return parseInformeCompactDateParam(raw);
+};
 
 export async function GET(request: Request) {
   const session = await requireAuthSession();
@@ -84,42 +81,6 @@ export async function GET(request: Request) {
     );
   }
 
-  const url = new URL(request.url);
-  const year = Number(url.searchParams.get("year"));
-  const month = Number(url.searchParams.get("month"));
-  if (
-    !Number.isInteger(year) ||
-    year < 2000 ||
-    year > 2100 ||
-    !Number.isInteger(month) ||
-    month < 1 ||
-    month > 12
-  ) {
-    return withSession(
-      NextResponse.json(
-        { error: "Parametros year y month invalidos." },
-        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
-      ),
-    );
-  }
-
-  const compareOrError = parseInformeCompareMonthParam(
-    year,
-    month,
-    url.searchParams.get("compareYear"),
-    url.searchParams.get("compareMonth"),
-  );
-  if (isInformeCompareMonthError(compareOrError)) {
-    return withSession(
-      NextResponse.json(
-        { error: compareOrError.error },
-        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
-      ),
-    );
-  }
-  const compare = compareOrError;
-  const customCompare = !isDefaultInformeCompareMonth(year, month, compare);
-
   const scope = resolveMargenSedeScope({
     role: session.user.role,
     sede: session.user.sede,
@@ -136,6 +97,7 @@ export async function GET(request: Request) {
     );
   }
 
+  const url = new URL(request.url);
   const empresaParam = url.searchParams.get("empresa")?.trim() || null;
   const selectedEmpresas = empresaParam
     ? [empresaParam]
@@ -153,10 +115,6 @@ export async function GET(request: Request) {
   }
   const dataKind = dataSource.kind;
 
-  // Alinear sedes visibles con el tenant (no mezclar Dinastia + legacy).
-  // Importante: para admin en histórico dejar `null` (no expandir a lista)
-  // para no desactivar el snapshot rápido `informe_variacion_payload_std`.
-  // El catálogo del payload ya excluye Dinastia cuando kind=default.
   let allowedSedeKeys = scope.allowedKeys;
   if (dataKind === "dinastia") {
     if (allowedSedeKeys) {
@@ -176,6 +134,7 @@ export async function GET(request: Request) {
 
   const metaClient = await (await getDbPool()).connect();
   let maxCompactDate: string | null = null;
+  let minCompactDate: string | null = null;
   let metaFailed = false;
   try {
     try {
@@ -183,6 +142,7 @@ export async function GET(request: Request) {
         kind: dataKind,
       });
       maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
+      minCompactDate = normalizeInformeCompactDate(meta.minDate);
     } catch (metaError) {
       metaFailed = true;
       console.error("[informe-variacion] error cargando maxDate:", metaError);
@@ -191,11 +151,7 @@ export async function GET(request: Request) {
     metaClient.release();
   }
 
-  // Sin maxDate del ETL, no abrir rangos del mes en curso (evita cortes adelantados).
-  const asOf = new Date();
-  const isCurrentMonth =
-    year === asOf.getFullYear() && month === asOf.getMonth() + 1;
-  if (metaFailed && isCurrentMonth) {
+  if (metaFailed && !maxCompactDate) {
     return withSession(
       NextResponse.json(
         {
@@ -207,265 +163,70 @@ export async function GET(request: Request) {
     );
   }
 
-  const availableRanges = getAvailableInformeDayRanges(
-    year,
-    month,
-    asOf,
-    maxCompactDate,
+  const defaults = defaultInformeYtdRanges(maxCompactDate);
+  const currentFrom = parseRangeParam(
+    url.searchParams.get("from"),
+    defaults.currentFrom,
   );
-  const wantsBundle = url.searchParams.get("bundle") === "month";
-  const forceRefresh = url.searchParams.get("force") === "1";
-
-  if (wantsBundle) {
-    if (availableRanges.length === 0) {
-      return withSession(
-        NextResponse.json(
-          { error: "No hay rangos de dias disponibles para el mes seleccionado." },
-          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
-        ),
-      );
-    }
-
-    const bundleKey = `${buildInformeBundleCacheKey(
-      year,
-      month,
-      allowedSedeKeys,
-      lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-      compare,
-    )}:ds=${dataKind}`;
-    if (forceRefresh) {
-      invalidateInformeCacheKey(bundleKey);
-      for (const range of availableRanges) {
-        invalidateInformeCacheKey(
-          `${buildInformeCacheKey(
-            year,
-            month,
-            allowedSedeKeys,
-            range.id,
-            lineScope.forcedMargenTipos,
-            lineScope.forcedMargenLineas,
-            lineScope.excludedMargenTipos,
-            compare,
-          )}:ds=${dataKind}`,
-        );
-      }
-    } else {
-      const cachedBundle = getCachedInformeMonthBundle(bundleKey);
-      if (cachedBundle) {
-        return withSession(
-          NextResponse.json(cachedBundle, {
-            headers: {
-              "Cache-Control": CACHE_CONTROL,
-              "X-Data-Source": "cache",
-            },
-          }),
-        );
-      }
-    }
-
-    // Intenta std aunque haya mtd-N: el warm matutino ya materializa ese rango.
-    // Si falta algún range_id en la tabla, getInformePayloadStdBundle devuelve null.
-    const useStd = dataKind === "default" && !forceRefresh && !customCompare;
-    if (useStd) {
-      const stdClient = await (await getDbPool()).connect();
-      try {
-        const snapped = await getInformePayloadStdBundle(
-          stdClient,
-          year,
-          month,
-          availableRanges.map((range) => range.id),
-        );
-        if (snapped) {
-          const cleaned = adaptInformePayloadStdBundleForRequest(
-            snapped,
-            allowedSedeKeys,
-            lineScope,
-          );
-          const withProv = {
-            ...cleaned,
-            payloads: await ensureInformeProveedoresOnMap(
-              stdClient,
-              cleaned.payloads,
-            ),
-          };
-          setCachedInformeMonthBundle(
-            bundleKey,
-            withProv,
-            allowedSedeKeys,
-            lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-          );
-          return withSession(
-            NextResponse.json(withProv, {
-              headers: {
-                "Cache-Control": CACHE_CONTROL,
-                "X-Data-Source": "payload-std",
-              },
-            }),
-          );
-        }
-      } finally {
-        stdClient.release();
-      }
-    }
-
-    const client = await (await getDbPool()).connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("SET LOCAL work_mem = '256MB'");
-      await client.query("SET LOCAL statement_timeout = '120s'");
-      await client.query("SET LOCAL jit = off");
-
-      const startedAt = Date.now();
-      const loaded = await loadInformeVariacionMonthBundle(
-        client,
-        year,
-        month,
-        allowedSedeKeys,
-        availableRanges,
-        lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-        { kind: dataKind, compare },
-      );
-      const elapsedMs = Date.now() - startedAt;
-      await client.query("COMMIT");
-
-      if (!loaded) {
-        return withSession(
-          NextResponse.json(
-            { bundle: false as const },
-            {
-              headers: {
-                "Cache-Control": CACHE_CONTROL,
-                "X-Informe-Bundle-Fallback": "1",
-              },
-            },
-          ),
-        );
-      }
-
-      const { bundle, stats } = loaded;
-
-      if (elapsedMs > 5_000) {
-        console.info(
-          `[informe-variacion] bundle lento ${elapsedMs}ms year=${year} month=${month} ranges=${bundle.rangeIds.length} sql=${stats.sqlMs}ms build=${stats.buildMs}ms dailyRows=${stats.dailyRowCount}`,
-        );
-      }
-
-      setCachedInformeMonthBundle(
-        bundleKey,
-        bundle,
-        allowedSedeKeys,
-        lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-      );
-
-      return withSession(
-        NextResponse.json(bundle, {
-          headers: {
-            "Cache-Control": CACHE_CONTROL,
-            "X-Data-Source": "database",
-            "X-Informe-Elapsed-Ms": String(elapsedMs),
-            "X-Informe-Sql-Ms": String(stats.sqlMs),
-            "X-Informe-Build-Ms": String(stats.buildMs),
-            "X-Informe-Daily-Rows": String(stats.dailyRowCount),
-          },
-        }),
-      );
-    } catch (error) {
-      try {
-        await client.query("ROLLBACK");
-      } catch {
-        /* ignore */
-      }
-      console.error("Error en /api/informe-variacion (bundle):", error);
-      return withSession(
-        NextResponse.json(
-          {
-            error:
-              error instanceof Error
-                ? error.message
-                : "No fue posible generar el informe de variacion.",
-          },
-          { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
-        ),
-      );
-    } finally {
-      client.release();
-    }
-  }
-
-  const rangeParam = url.searchParams.get("range")?.trim() || null;
-
-  // Dia suelto (`d-05`): NO vive en availableRanges a proposito, porque ese listado
-  // alimenta el bundle mensual y en modo dinastia el bundle lanza una consulta por
-  // rango. Se resuelve aqui, bajo demanda. Devuelve null si el dia no existe en el
-  // mes o si todavia no hay datos cargados hasta ahi.
-  const requestedSingleDay = rangeParam
-    ? parseSingleDayInformeRangeId(rangeParam)
-    : null;
-  const singleDayRange =
-    requestedSingleDay !== null
-      ? buildInformeSingleDayRange(
-          year,
-          month,
-          requestedSingleDay,
-          asOf,
-          maxCompactDate,
-        )
-      : null;
-
-  if (rangeParam && isSingleDayInformeRangeId(rangeParam) && !singleDayRange) {
-    return withSession(
-      NextResponse.json(
-        {
-          error:
-            "El dia seleccionado aun no tiene datos cargados o no existe en ese mes.",
-        },
-        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
-      ),
-    );
-  }
-
+  const currentTo = parseRangeParam(
+    url.searchParams.get("to"),
+    defaults.currentTo,
+  );
+  const previousFrom = parseRangeParam(
+    url.searchParams.get("compareFrom"),
+    defaults.previousFrom,
+  );
+  const previousTo = parseRangeParam(
+    url.searchParams.get("compareTo"),
+    defaults.previousTo,
+  );
   if (
-    rangeParam &&
-    !singleDayRange &&
-    !availableRanges.some((range) => range.id === rangeParam)
+    isInformeCompactDateError(currentFrom) ||
+    isInformeCompactDateError(currentTo) ||
+    isInformeCompactDateError(previousFrom) ||
+    isInformeCompactDateError(previousTo)
   ) {
+    const firstError = [currentFrom, currentTo, previousFrom, previousTo].find(
+      isInformeCompactDateError,
+    );
     return withSession(
       NextResponse.json(
-        {
-          error:
-            "El rango de dias seleccionado aun no esta disponible para este mes.",
-        },
+        { error: firstError?.error ?? "Fechas invalidas." },
         { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
   }
 
-  const defaultId = defaultInformeDayRangeId(availableRanges);
-  const effectiveRange =
-    singleDayRange ??
-    (rangeParam
-      ? availableRanges.find((range) => range.id === rangeParam)
-      : null) ??
-    (defaultId
-      ? availableRanges.find((range) => range.id === defaultId)
-      : null) ??
-    null;
-  if (!effectiveRange) {
+  const ranges: InformeSelectedRanges = {
+    currentFrom,
+    currentTo,
+    previousFrom,
+    previousTo,
+  };
+  const valid = validateInformeSelectedRanges(ranges, {
+    maxDate: maxCompactDate,
+    minDate: minCompactDate,
+  });
+  if (!valid.ok) {
     return withSession(
       NextResponse.json(
-        { error: "No hay rangos de dias disponibles para el mes seleccionado." },
+        { error: valid.error },
         { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
   }
 
-  const cacheKey = `${buildInformeCacheKey(
-    year,
-    month,
+  const forceRefresh = url.searchParams.get("force") === "1";
+  const rangeId = informeRangeCacheKey(ranges);
+  const toYear = Number(ranges.currentTo.slice(0, 4));
+  const toMonth = Number(ranges.currentTo.slice(4, 6));
+
+  const cacheKey = `${buildInformeRangeCacheKey(
+    ranges,
     allowedSedeKeys,
-    effectiveRange?.id,
-    lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-    compare,
+    lineScope.forcedMargenTipos,
+    lineScope.forcedMargenLineas,
+    lineScope.excludedMargenTipos,
   )}:ds=${dataKind}`;
   if (forceRefresh) {
     invalidateInformeCacheKey(cacheKey);
@@ -483,19 +244,20 @@ export async function GET(request: Request) {
     }
   }
 
-  const useStd =
-    dataKind === "default" &&
-    !forceRefresh &&
-    !effectiveRange.projection &&
-    !customCompare;
+  const isDefaultYtd =
+    ranges.currentFrom === defaults.currentFrom &&
+    ranges.currentTo === defaults.currentTo &&
+    ranges.previousFrom === defaults.previousFrom &&
+    ranges.previousTo === defaults.previousTo;
+  const useStd = dataKind === "default" && !forceRefresh && isDefaultYtd;
   if (useStd) {
     const stdClient = await (await getDbPool()).connect();
     try {
       const snapped = await getInformePayloadStd(
         stdClient,
-        year,
-        month,
-        effectiveRange.id,
+        toYear,
+        toMonth,
+        rangeId,
       );
       if (snapped) {
         const cleaned = adaptInformePayloadStdForRequest(
@@ -527,25 +289,22 @@ export async function GET(request: Request) {
     await client.query("SET LOCAL jit = off");
 
     const startedAt = Date.now();
-    const payload = await loadInformeVariacionPayload(
+    const payload = await loadInformeVariacionRangePayload(
       client,
-      year,
-      month,
+      ranges,
       allowedSedeKeys,
       {
-        dayRange: effectiveRange,
         forcedMargenTipos: lineScope.forcedMargenTipos,
         forcedMargenLineas: lineScope.forcedMargenLineas,
         excludedMargenTipos: lineScope.excludedMargenTipos,
         kind: dataKind,
-        compare,
       },
     );
     const elapsedMs = Date.now() - startedAt;
     await client.query("COMMIT");
     if (elapsedMs > 5_000) {
       console.info(
-        `[informe-variacion] query lenta ${elapsedMs}ms year=${year} month=${month} range=${effectiveRange.id} rows=${payload.meta.rowCount}`,
+        `[informe-variacion] query lenta ${elapsedMs}ms ${rangeId} rows=${payload.meta.rowCount}`,
       );
     }
 

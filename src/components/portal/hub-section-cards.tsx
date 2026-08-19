@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/shared/utils";
 
 export type HubSectionTheme = "venta" | "producto" | "operacion";
 
@@ -61,11 +62,16 @@ const renderHubIcon = (Icon: LucideIcon | undefined, className: string) => {
   return <Icon className={className} />;
 };
 
-type HubShellProps = { children: ReactNode };
+type HubShellProps = { children: ReactNode; className?: string };
 
-export function PortalHubShell({ children }: HubShellProps) {
+export function PortalHubShell({ children, className = "" }: HubShellProps) {
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 text-foreground lg:px-6">
+    <div
+      className={cn(
+        "mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 text-foreground lg:px-6",
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -98,6 +104,7 @@ type HubHeroCardProps = {
   tourAnchorId?: string;
   actions?: ReactNode;
   countNoun?: string;
+  density?: "default" | "compact";
 };
 
 export function PortalHubHeroCard({
@@ -110,21 +117,31 @@ export function PortalHubHeroCard({
   tourAnchorId,
   actions,
   countNoun = "modulos",
+  density = "default",
 }: HubHeroCardProps) {
   const styles = resolveHubTheme(theme);
   const countLabel = String(Math.max(0, moduleCount)).padStart(2, "0");
+  const compact = density === "compact";
 
   return (
     <div
       id={tourAnchorId}
-      className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 ${styles.topBorderClass}`}
+      className={cn(
+        "relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1",
+        styles.topBorderClass,
+        compact ? "px-4 py-4" : "px-6 py-6",
+      )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-1 flex-wrap items-start gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-start gap-3">
           <span
-            className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${styles.iconClasses}`}
+            className={cn(
+              "inline-flex shrink-0 items-center justify-center rounded-xl border",
+              styles.iconClasses,
+              compact ? "h-9 w-9" : "h-11 w-11",
+            )}
           >
-            {renderHubIcon(Icon, "h-5 w-5")}
+            {renderHubIcon(Icon, compact ? "h-4 w-4" : "h-5 w-5")}
           </span>
           <div className="min-w-0 flex-1">
             <p
@@ -132,15 +149,27 @@ export function PortalHubHeroCard({
             >
               {eyebrow}
             </p>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-900 sm:text-[1.65rem]">
+            <h1
+              className={cn(
+                "font-black tracking-tight text-slate-900",
+                compact
+                  ? "mt-1 text-xl"
+                  : "mt-2 text-2xl sm:text-[1.65rem]",
+              )}
+            >
               {title}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
+            <p
+              className={cn(
+                "max-w-3xl leading-relaxed text-slate-600",
+                compact ? "mt-1 text-xs sm:text-sm" : "mt-2 text-sm",
+              )}
+            >
               {description}
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-3">
+        <div className="flex shrink-0 flex-col items-end gap-2">
           {actions}
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
             {countLabel} {countNoun}
@@ -168,6 +197,7 @@ type HubModuleCardProps = {
   index: number;
   total: number;
   onNavigate: (href: string) => void;
+  density?: "default" | "compact";
 };
 
 export function PortalHubModuleCard({
@@ -176,6 +206,7 @@ export function PortalHubModuleCard({
   index,
   total,
   onNavigate,
+  density = "default",
 }: HubModuleCardProps) {
   const styles = resolveHubTheme(theme);
   const Icon = item.icon;
@@ -183,14 +214,64 @@ export function PortalHubModuleCard({
   const totalLabel = String(Math.max(total, 1)).padStart(2, "0");
   const isDisabled = item.disabled === true;
   const footerLabel = item.footerLabel ?? "Abrir modulo";
+  const compact = density === "compact";
 
-  const cardClassName = `group relative flex h-full min-h-[300px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 ${styles.topBorderClass} ${
-    isDisabled
-      ? "cursor-not-allowed opacity-75 before:bg-slate-300"
-      : "hover:-translate-y-1 hover:border-foreground/15 hover:shadow-floating"
-  }`;
+  const cardClassName = compact
+    ? `group relative flex min-h-14 w-full items-center gap-3 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-[0_8px_20px_-18px_rgba(15,23,42,0.35)] transition-colors before:absolute before:inset-y-0 before:left-0 before:w-1 ${styles.topBorderClass} ${
+        isDisabled
+          ? "cursor-not-allowed opacity-70 before:bg-slate-300"
+          : "active:bg-slate-50 hover:border-foreground/15 hover:bg-slate-50/80"
+      }`
+    : `group relative flex h-full min-h-[300px] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 text-left shadow-[0_16px_34px_-28px_rgba(15,23,42,0.32)] transition-all duration-500 ease-out before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-1 ${styles.topBorderClass} ${
+        isDisabled
+          ? "cursor-not-allowed opacity-75 before:bg-slate-300"
+          : "hover:-translate-y-1 hover:border-foreground/15 hover:shadow-floating"
+      }`;
 
-  const content = (
+  const chevron = !isDisabled ? (
+    <span
+      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${styles.chevronBtnClasses}`}
+      aria-hidden
+    >
+      <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
+    </span>
+  ) : (
+    <span
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400"
+      aria-hidden
+    >
+      <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
+    </span>
+  );
+
+  const content = compact ? (
+    <>
+      <span
+        className={`relative z-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${styles.iconClasses}`}
+      >
+        {renderHubIcon(Icon, "h-4 w-4")}
+      </span>
+      <div className="relative z-1 min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px] font-bold leading-tight text-slate-900">
+            {item.title}
+          </span>
+          <span
+            className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${styles.badgeClasses}`}
+          >
+            {item.badge}
+          </span>
+        </div>
+        <p className="mt-0.5 hidden text-xs text-slate-500 sm:line-clamp-1 sm:block">
+          {item.description}
+        </p>
+        <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          {footerLabel}
+        </p>
+      </div>
+      {chevron}
+    </>
+  ) : (
     <>
       {!isDisabled ? (
         <span
@@ -226,21 +307,7 @@ export function PortalHubModuleCard({
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
           {footerLabel}
         </span>
-        {!isDisabled ? (
-          <span
-            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${styles.chevronBtnClasses}`}
-            aria-hidden
-          >
-            <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
-          </span>
-        ) : (
-          <span
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400"
-            aria-hidden
-          >
-            <ChevronRight className="h-4 w-4" strokeWidth={2.25} />
-          </span>
-        )}
+        {chevron}
       </div>
     </>
   );
@@ -274,6 +341,7 @@ type HubModuleGridProps = {
   onNavigate: (href: string) => void;
   columnsClassName?: string;
   tourAnchorId?: string;
+  density?: "default" | "compact";
 };
 
 export function PortalHubModuleGrid({
@@ -282,10 +350,11 @@ export function PortalHubModuleGrid({
   onNavigate,
   columnsClassName = "gap-4 sm:grid-cols-2 lg:grid-cols-3",
   tourAnchorId,
+  density = "default",
 }: HubModuleGridProps) {
   const total = items.length;
   return (
-    <div id={tourAnchorId} className={`mt-6 grid ${columnsClassName}`}>
+    <div id={tourAnchorId} className={`mt-4 grid ${columnsClassName}`}>
       {items.map((item, index) => (
         <PortalHubModuleCard
           key={item.id}
@@ -294,6 +363,7 @@ export function PortalHubModuleGrid({
           index={index}
           total={total}
           onNavigate={onNavigate}
+          density={density}
         />
       ))}
     </div>

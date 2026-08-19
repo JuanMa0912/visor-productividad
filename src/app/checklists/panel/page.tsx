@@ -48,10 +48,19 @@ export default function ChecklistPanelPage() {
       `/api/checklists/panel?year=${year}&month=${month}`,
       { cache: "no-store" },
     );
-    const json = (await response.json()) as {
-      runs?: ChecklistRunRow[];
-      error?: string;
-    };
+    const text = await response.text();
+    let json: { runs?: ChecklistRunRow[]; error?: string } = {};
+    try {
+      json = text
+        ? (JSON.parse(text) as { runs?: ChecklistRunRow[]; error?: string })
+        : {};
+    } catch {
+      throw new Error(
+        response.ok
+          ? "El panel devolvió una respuesta ilegible."
+          : "No se pudo cargar el panel.",
+      );
+    }
     if (!response.ok) throw new Error(json.error || "No se pudo cargar el panel.");
     setRuns(json.runs ?? []);
   }, [month, year]);

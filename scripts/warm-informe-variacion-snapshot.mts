@@ -1,48 +1,32 @@
 /**
- * Materializa payloads JSON de /informe-variacion en informe_variacion_payload_std.
- * Scope '*' (todas las sedes). Corre tras refresh-variacion-roll.sh.
- *
- * Incluye cortes Excel cerrados (7/14/21/28/mes) y, en el mes en curso, el
- * acumulado preciso `mtd-N` cuando el día actual no cae en un corte cerrado.
+ * Materializa el payload YTD por defecto de /informe-variacion
+ * (1 ene → maxDate vs el mismo tramo del año anterior) en
+ * informe_variacion_payload_std.
  *
  *   npx tsx scripts/warm-informe-variacion-snapshot.mts
- *   WARM_MONTHS=2 npx tsx scripts/warm-informe-variacion-snapshot.mts
  */
 
 import pg from "pg";
 import { loadEnvFiles, resolvePgClientConfig } from "./db-client-config.mjs";
-import {
-  getAvailableInformeDayRanges,
-  normalizeInformeCompactDate,
-} from "../src/lib/informe-variacion/day-ranges.ts";
-import { loadInformeVariacionMonthBundle } from "../src/lib/informe-variacion/daily-bundle.ts";
+import { normalizeInformeCompactDate } from "../src/lib/informe-variacion/day-ranges.ts";
+import { loadInformeVariacionRangePayload } from "../src/lib/informe-variacion/query.ts";
 import { loadInformeVariacionMeta } from "../src/lib/informe-variacion/meta.ts";
 import {
-  deleteStaleInformePayloadStdMtd,
   touchInformePayloadStdMeta,
   upsertInformePayloadStd,
 } from "../src/lib/informe-variacion/payload-std-server.ts";
 import { INFORME_PAYLOAD_STD_FULL_SCOPE } from "../src/lib/informe-variacion/payload-std.ts";
+import {
+  defaultInformeYtdRanges,
+  informeRangeCacheKey,
+} from "../src/lib/informe-variacion/date-range.ts";
 
 loadEnvFiles();
-
-const monthsBack = Math.max(
-  1,
-  Math.min(6, Number(process.env.WARM_MONTHS ?? "2") || 2),
-);
-
-const shiftMonth = (year: number, month: number, delta: number) => {
-  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
-  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
-};
 
 const client = new pg.Client(resolvePgClientConfig());
 await client.connect();
 
 const startedAt = Date.now();
-let totalRanges = 0;
-let primaryYear = new Date().getFullYear();
-let primaryMonth = new Date().getMonth() + 1;
 
 try {
   const tableCheck = await client.query(
@@ -67,90 +51,33 @@ try {
 
   const meta = await loadInformeVariacionMeta(client, null);
   const maxCompactDate = normalizeInformeCompactDate(meta.maxDate);
-  const asOf = new Date();
+  const ranges = defaultInformeYtdRanges(maxCompactDate);
+  const rangeId = informeRangeCacheKey(ranges);
+  const year = Number(ranges.currentTo.slice(0, 4));
+  const month = Number(ranges.currentTo.slice(4, 6));
 
   console.log(
-    `=== Warm informe_variacion_payload_std (scope=${INFORME_PAYLOAD_STD_FULL_SCOPE}, meses=${monthsBack}) ===`,
+    `=== Warm informe_variacion_payload_std YTD (scope=${INFORME_PAYLOAD_STD_FULL_SCOPE}) ===`,
   );
-  if (maxCompactDate) {
-    console.log(`maxDate roll: ${maxCompactDate}`);
-  }
-
-  for (let offset = 0; offset < monthsBack; offset += 1) {
-    const { year, month } = shiftMonth(
-      asOf.getFullYear(),
-      asOf.getMonth() + 1,
-      -offset,
-    );
-    if (offset === 0) {
-      primaryYear = year;
-      primaryMonth = month;
-    }
-
-    // Default includeProjection: true → cortes cerrados + mtd-N si el mes
-    // aún no está en un corte Excel (p. ej. día 13 → mtd-13).
-    const ranges = getAvailableInformeDayRanges(
-      year,
-      month,
-      asOf,
-      maxCompactDate,
-    );
-    if (ranges.length === 0) {
-      console.log(
-        `  ${year}-${String(month).padStart(2, "0")}: sin rangos disponibles`,
-      );
-      continue;
-    }
-
-    const rangeLabels = ranges.map((r) => r.id).join(", ");
-    console.log(
-      `  ${year}-${String(month).padStart(2, "0")}: ${ranges.length} rangos (${rangeLabels})…`,
-    );
-    const t0 = Date.now();
-    const loaded = await loadInformeVariacionMonthBundle(
-      client,
-      year,
-      month,
-      null,
-      ranges,
-      null,
-    );
-
-    if (!loaded) {
-      console.warn(
-        `  WARN: bundle no disponible (¿margen_item_dia_roll?). Skip ${year}-${month}`,
-      );
-      continue;
-    }
-
-    for (const rangeId of loaded.bundle.rangeIds) {
-      const payload = loaded.bundle.payloads[rangeId];
-      if (!payload) continue;
-      await upsertInformePayloadStd(client, {
-        year,
-        month,
-        rangeId,
-        payload,
-      });
-      totalRanges += 1;
-    }
-
-    const removed = await deleteStaleInformePayloadStdMtd(
-      client,
-      year,
-      month,
-      loaded.bundle.rangeIds,
-    );
-    const staleNote = removed > 0 ? `, mtd obsoletos=${removed}` : "";
-
-    console.log(
-      `  OK ${loaded.bundle.rangeIds.length} payloads en ${((Date.now() - t0) / 1000).toFixed(1)}s (sql=${loaded.stats.sqlMs}ms${staleNote})`,
-    );
-  }
-
-  await touchInformePayloadStdMeta(client, primaryYear, primaryMonth, totalRanges);
   console.log(
-    `Completado: ${totalRanges} rangos en ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+    `rango ${ranges.currentFrom}-${ranges.currentTo} vs ${ranges.previousFrom}-${ranges.previousTo}`,
+  );
+
+  const t0 = Date.now();
+  const payload = await loadInformeVariacionRangePayload(
+    client,
+    ranges,
+    null,
+  );
+  await upsertInformePayloadStd(client, {
+    year,
+    month,
+    rangeId,
+    payload,
+  });
+  await touchInformePayloadStdMeta(client, year, month, 1);
+  console.log(
+    `OK ${payload.meta.rowCount} filas en ${((Date.now() - t0) / 1000).toFixed(1)}s (total ${((Date.now() - startedAt) / 1000).toFixed(1)}s)`,
   );
 } catch (error) {
   console.error("warm-informe-variacion-snapshot failed:", error);

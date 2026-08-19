@@ -66,7 +66,6 @@ function DetailRows({
   });
   const defs: Array<[string, 0 | 1 | 2]> = [
     ["Actual", 0],
-    ["YoY base", 2],
     ["Anterior", 1],
   ];
   return (
@@ -406,7 +405,7 @@ export function MatrixTable({
   return (
     <div className="overflow-x-auto">
       <p className="mb-2 text-xs text-slate-500">
-        Clic: ver Actual / YoY / Anterior · Doble clic: expandir nivel
+        Clic: ver Actual / Anterior · Doble clic: expandir nivel
       </p>
       <table className="min-w-full border-collapse text-sm">
         <thead>
@@ -513,11 +512,11 @@ function MatrixRow({
       )}
       title={
         onDetailClick && onExpand
-          ? "Clic: ver Actual / YoY / Anterior · Doble clic: expandir"
+          ? "Clic: ver Actual / Anterior · Doble clic: expandir"
           : onExpand
             ? "Doble clic: expandir"
             : onDetailClick
-              ? "Clic: ver Actual / YoY / Anterior"
+              ? "Clic: ver Actual / Anterior"
               : undefined
       }
     >

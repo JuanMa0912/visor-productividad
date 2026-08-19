@@ -131,7 +131,7 @@ export function canViewProveedoresQrLinks(
 }
 
 /**
- * Puede acceder al informe de variacion MoM/YoY.
+ * Puede acceder al informe de variacion (comparativo de dos periodos).
  * Requiere seccion producto y subseccion `informe-variacion` (permiso propio;
  * no se hereda de margenes ni rotacion).
  * `allowedSubdashboards` vacio/null = todos los subtableros (incluye informe).

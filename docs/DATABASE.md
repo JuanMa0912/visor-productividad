@@ -107,6 +107,7 @@ Orden completo despues de `schema-auth.sql`:
 54. `20260813_qr_visitas_autorizacion_datos.sql` (`autorizacion_datos_at` en `qr_*`; recrea vista `proveedor_visitas`)
 55. `20260813_orden_compra.sql` (snapshot cabecera OC: POS `cmmovimiento_ocompra` -> `orden_compra`)
 56. `20260818_orden_compra_linea.sql` (lineas OC: item + tercero real desde el mismo POS)
+57. `20260820_margen_item_mes_roll.sql` (agregado mensual para `/informe-variacion` YTD; se refresca al final de `margen:refresh-roll` y `refresh-variacion-roll.sh`)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -232,6 +233,7 @@ Notas:
 | `margen_final` | detalle linea/factura; CSV `movimiento_unificado_*`; `fecha_dcto` YYYYMMDD; incluye `id_caja`, `vend_cc`/`vend_cc_desc`, `documento_docfc`, `id_terc`/`nombre_terc` |
 | `margen_final_roll` | rollup factura+item/dia/sede; alimenta `/margenes` (Producto/Factura/Cliente/Sede); atributos de factura vía MAX |
 | `margen_item_dia_roll` | rollup dia+sede+item (sin factura); fuente preferida de `/informe-variacion` y del volumen de tarjetas Mix y Línea |
+| `margen_item_mes_roll` | rollup mes+sede+item (YYYYMM) derivado de `margen_item_dia_roll`; acelera comparativos YTD de `/informe-variacion` |
 | `margen_dinastia` | mismo esquema que `margen_final` para empresa Dinastia (tenant aparte; sedes `001` Santa Elena / `002` CR Primera). Productividad (`ventas_dinastia`) pendiente. |
 | `margen_dinastia_roll` | rollup factura+item desde `margen_dinastia`; alimenta `/margenes` e `/informe-variacion` tenant Dinastia (sin `item_dia` dedicado; el informe arma bundle rango-a-rango). |
 | `informe_variacion_payload_std` | snapshot JSONB del payload por (year, month, range_id, scope=`*`); first paint &lt;2s (también para usuarios con sedes/línea: se recorta en servidor) |
@@ -293,10 +295,19 @@ faltan esas columnas en el roll.
    `scripts/etl/sync-local-to-gcp.sh` refresca la ventana sincronizada de
    `margen_final_roll` y `margen_item_dia_roll`.
 2. Timer dedicado `visor-refresh-variacion.timer` (08:15 en app-server):
-   `scripts/refresh-variacion-roll.sh` refresca ventana ~60 dias (incremental)
-   y al final materializa `informe_variacion_payload_std` (mes actual + anterior,
-   scope `*`: cortes Excel cerrados + `mtd-N` del mes en curso si el día no es
-   un corte cerrado). Rebuild total del roll: `--full`.
+   `scripts/refresh-variacion-roll.sh` refresca ventana ~60 dias (incremental),
+   actualiza `margen_item_mes_roll` y materializa `informe_variacion_payload_std`
+   con el comparativo YTD por defecto (1 ene → maxDate vs mismo tramo año anterior).
+   Rebuild total del roll: `--full`.
+
+No hace falta una tabla nueva en GCP: `margen_item_mes_roll` se arma en Postgres
+desde `margen_item_dia_roll`. Tras desplegar, aplicar la migracion y un refresh:
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260820_margen_item_mes_roll.sql
+sudo -u visor npm run margen:refresh-roll
+sudo -u visor npm run informe:warm-snapshot
+```
 
 Warm manual del snapshot (tras aplicar migracion 42):
 
@@ -320,7 +331,7 @@ sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260715_marge
 sudo -u visor npm run margen:refresh-roll
 ```
 
-`margen:refresh-roll` pobla ambos rollups (`margen_final_roll` + `margen_item_dia_roll`).
+`margen:refresh-roll` pobla `margen_final_roll`, `margen_item_dia_roll` y `margen_item_mes_roll`.
 
 Equivalente SQL (misma conexion remota que `DB_HOST` en `.env.local`):
 
@@ -702,11 +713,13 @@ Migracion: `db/migrations/20260819_checklist_runs.sql`.
 
 | Tabla | Uso |
 | --- | --- |
-| `checklist_run` | intento por sede/rol/mes (`actor_role`, `sede`, `period_year/month`, `answers`, `score_pct`, `duration_seconds`); 20 min; 1 vez al mes; panel puede reabrir vencidos |
+| `checklist_run` | intento por sede/rol/mes (`actor_role`, `sede`, `period_year/month`, `answers`, `score_pct`, `duration_seconds`, `signature_png`); 20 min; 1 vez al mes; panel puede reabrir vencidos |
+| `checklist_run_evidence` | foto por ítem (`run_id`, `item_key`) cuando la respuesta es P o NC |
 
 ```bash
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_checklist_runs.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_checklist_run_workflow.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_checklist_evidence.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_rotacion_restock_surtido_foto.sql
 ```
 

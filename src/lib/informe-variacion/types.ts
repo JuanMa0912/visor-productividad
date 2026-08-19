@@ -6,7 +6,12 @@ export type InformePeriodRange = {
 
 export type InformePeriods = {
   current: InformePeriodRange;
+  /** Periodo anterior elegido (antes era MoM automatico). */
   mom: InformePeriodRange;
+  /**
+   * Copia de `mom` para no romper el compact-row de 3 slots.
+   * La UI ya no muestra YoY/MoM a la vez: un solo comparativo.
+   */
   yoy: InformePeriodRange;
 };
 
@@ -66,6 +71,7 @@ export type InformeVariacionPayload = {
         factor: number;
       };
     };
+    rangeKey?: string;
   };
 };
 

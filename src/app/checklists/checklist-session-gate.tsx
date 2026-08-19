@@ -18,7 +18,10 @@ import {
   type ChecklistSessionId,
 } from "@/lib/checklists/session";
 import { parseChecklistSnapshot, type ChecklistSnapshot } from "@/lib/checklists/snapshot";
+import { missingChecklistPhotoKeys } from "@/lib/checklists/evidence";
 import { ChecklistRunProvider } from "@/app/checklists/checklist-run-context";
+import { ChecklistSignaturePad } from "@/app/checklists/checklist-signature-pad";
+import { compressImageFileToJpegBase64 } from "@/app/checklists/checklist-photo-control";
 
 const cookieValue = (name: string) => {
   if (typeof document === "undefined") return "";
@@ -48,6 +51,8 @@ export function ChecklistSessionGate({
 
   const [run, setRun] = useState<ChecklistRunRow | null>(null);
   const [priorRun, setPriorRun] = useState<ChecklistRunRow | null>(null);
+  const [evidenceKeys, setEvidenceKeys] = useState<string[]>([]);
+  const [signOpen, setSignOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,11 +75,13 @@ export function ChecklistSessionGate({
     const json = (await response.json()) as {
       run?: ChecklistRunRow | null;
       priorRun?: ChecklistRunRow | null;
+      evidenceKeys?: string[];
       error?: string;
     };
     if (!response.ok) throw new Error(json.error || "No se pudo leer el intento.");
     setRun(json.run ?? null);
     setPriorRun(json.priorRun ?? null);
+    setEvidenceKeys(json.evidenceKeys ?? json.run?.evidenceKeys ?? []);
     if (json.run?.empresa) setEmpresa(json.run.empresa);
     if (json.run?.sede) setSede(json.run.sede);
     if (json.run?.actorRole) setActorRole(json.run.actorRole);
@@ -117,7 +124,10 @@ export function ChecklistSessionGate({
     });
   }, [leftMs, load, run?.status]);
 
-  const mutate = async (action: "start" | "complete" | "reopen") => {
+  const mutate = async (
+    action: "start" | "complete" | "reopen",
+    extra?: Record<string, unknown>,
+  ) => {
     setBusy(true);
     setError(null);
     try {
@@ -136,11 +146,23 @@ export function ChecklistSessionGate({
           empresa,
           sede,
           snapshot: action === "complete" ? latestSnapshot.current : undefined,
+          ...extra,
         }),
       });
-      const json = (await response.json()) as {
+      const text = await response.text();
+      const json = (
+        text
+          ? (JSON.parse(text) as {
+              run?: ChecklistRunRow;
+              priorRun?: ChecklistRunRow | null;
+              evidenceKeys?: string[];
+              error?: string;
+            })
+          : {}
+      ) as {
         run?: ChecklistRunRow;
         priorRun?: ChecklistRunRow | null;
+        evidenceKeys?: string[];
         error?: string;
       };
       if (!response.ok) {
@@ -150,12 +172,62 @@ export function ChecklistSessionGate({
       }
       setRun(json.run ?? null);
       setPriorRun(json.priorRun ?? null);
+      if (json.evidenceKeys) setEvidenceKeys(json.evidenceKeys);
+      if (action === "complete") setSignOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo actualizar.");
     } finally {
       setBusy(false);
     }
   };
+
+  const requestComplete = () => {
+    const snapshot = latestSnapshot.current;
+    const missing = missingChecklistPhotoKeys(
+      snapshot?.answers ?? {},
+      evidenceKeys,
+    );
+    if (missing.length > 0) {
+      setError(
+        `Hay ${missing.length} punto(s) en P o NC sin foto. Sube la foto de cada uno antes de finalizar.`,
+      );
+      return;
+    }
+    setError(null);
+    setSignOpen(true);
+  };
+
+  const uploadEvidence = useCallback(
+    async (itemKey: string, file: File) => {
+      if (!run?.id) throw new Error("No hay un intento en curso.");
+      const fotoBase64 = await compressImageFileToJpegBase64(file);
+      const csrf = cookieValue("vp_csrf");
+      const response = await fetch("/api/checklists/runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrf,
+        },
+        body: JSON.stringify({
+          action: "photo",
+          checklistId,
+          runId: run.id,
+          itemKey,
+          fotoBase64,
+          mime: "image/jpeg",
+        }),
+      });
+      const json = (await response.json()) as {
+        evidenceKeys?: string[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(json.error || "No se pudo guardar la foto.");
+      }
+      setEvidenceKeys(json.evidenceKeys ?? []);
+    },
+    [checklistId, run?.id],
+  );
 
   const saveSnapshot = useCallback(
     (snapshot: ChecklistSnapshot) => {
@@ -213,11 +285,13 @@ export function ChecklistSessionGate({
   return (
     <div className="relative">
       {running ? (
-        <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5">
-          <p className="inline-flex items-center gap-2 text-sm font-semibold text-amber-950">
-            <Clock3 className={`h-4 w-4 ${leftMs <= 180_000 ? "text-rose-600" : ""}`} />
-            {run?.actorRole === "revisor" ? "Revisor" : "Encargado"} ·{" "}
-            {run?.sede} · tiempo{" "}
+        <div className="sticky top-0 z-30 flex flex-col gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-4">
+          <p className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-amber-950">
+            <Clock3 className={`h-4 w-4 shrink-0 ${leftMs <= 180_000 ? "text-rose-600" : ""}`} />
+            <span className="min-w-0">
+              {run?.actorRole === "revisor" ? "Revisor" : "Encargado"} ·{" "}
+              {run?.sede}
+            </span>
             <span
               className={`tabular-nums ${leftMs <= 180_000 ? "text-rose-700" : "text-amber-900"}`}
             >
@@ -230,19 +304,22 @@ export function ChecklistSessionGate({
           <button
             type="button"
             disabled={busy}
-            onClick={() => void mutate("complete")}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            onClick={requestComplete}
+            className="min-h-11 w-full rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 sm:min-h-0 sm:w-auto sm:py-1.5 sm:text-xs"
           >
             Finalizar checklist
           </button>
+          {error && !signOpen ? (
+            <p className="w-full text-xs font-medium text-rose-700">{error}</p>
+          ) : null}
         </div>
       ) : null}
 
       {idle ? (
-        <div className="mx-auto max-w-lg px-4 py-16">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
+        <div className="mx-auto max-w-lg px-4 py-6 sm:py-12">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <h1 className="text-lg font-semibold text-slate-900 sm:text-xl">{title}</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
               Confirma el inicio. Tendrás{" "}
               <strong>{CHECKLIST_DURATION_MINUTES} minutos exactos</strong>. Cada
               checklist se hace <strong>una vez al mes por sede</strong>. El
@@ -250,22 +327,22 @@ export function ChecklistSessionGate({
               encuentra.
             </p>
             {canEncargado && canRevisor ? (
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setActorRole("encargado")}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                  className={`min-h-11 rounded-lg px-3 text-sm font-semibold ${
                     actorRole === "encargado"
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 text-slate-700"
                   }`}
                 >
-                  Encargado de sede
+                  Encargado
                 </button>
                 <button
                   type="button"
                   onClick={() => setActorRole("revisor")}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                  className={`min-h-11 rounded-lg px-3 text-sm font-semibold ${
                     actorRole === "revisor"
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 text-slate-700"
@@ -283,7 +360,7 @@ export function ChecklistSessionGate({
               <label className="text-xs font-semibold text-slate-600">
                 Empresa
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 text-base sm:text-sm"
                   value={empresa}
                   onChange={(event) => {
                     const next = event.target.value;
@@ -304,7 +381,7 @@ export function ChecklistSessionGate({
               <label className="text-xs font-semibold text-slate-600">
                 Sede
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 text-base sm:text-sm"
                   value={sede}
                   onChange={(event) => setSede(event.target.value)}
                 >
@@ -327,7 +404,7 @@ export function ChecklistSessionGate({
               type="button"
               disabled={busy}
               onClick={() => void mutate("start")}
-              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
+              className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
             >
               <Play className="h-4 w-4" />
               Comenzar checklist
@@ -337,8 +414,8 @@ export function ChecklistSessionGate({
       ) : null}
 
       {expired ? (
-        <div className="mx-auto max-w-lg px-4 py-16">
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
+        <div className="mx-auto max-w-lg px-4 py-6 sm:py-12">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-6">
             <p className="inline-flex items-center gap-2 text-sm font-semibold text-rose-900">
               <Lock className="h-4 w-4" />
               Checklist cerrado
@@ -353,7 +430,7 @@ export function ChecklistSessionGate({
                 type="button"
                 disabled={busy || !run?.id}
                 onClick={() => void mutate("reopen")}
-                className="mt-5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                className="mt-5 min-h-12 w-full rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 sm:w-auto"
               >
                 Desbloquear 20 minutos más
               </button>
@@ -370,12 +447,26 @@ export function ChecklistSessionGate({
         <ChecklistRunProvider
           value={{
             actorRole: run?.actorRole ?? actorRole,
+            runId: run?.id ?? null,
             priorSnapshot,
+            evidenceKeys,
             saveSnapshot,
+            uploadEvidence,
           }}
         >
           {children}
         </ChecklistRunProvider>
+      ) : null}
+
+      {signOpen ? (
+        <ChecklistSignaturePad
+          busy={busy}
+          error={error}
+          onCancel={() => setSignOpen(false)}
+          onConfirm={(signaturePng) => {
+            void mutate("complete", { signaturePng });
+          }}
+        />
       ) : null}
     </div>
   );

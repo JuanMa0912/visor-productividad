@@ -13,15 +13,25 @@ import {
   expireIfNeeded,
   findLatestEncargadoRun,
   findMonthlyRun,
+  getChecklistEvidence,
+  listChecklistEvidenceKeys,
   listExpiredChecklistRuns,
   loadLatestRun,
   mapChecklistRun,
   reopenChecklistRun,
   saveChecklistSnapshot,
   startChecklistRun,
+  upsertChecklistEvidence,
 } from "@/lib/checklists/session-store";
 import { isChecklistSessionId } from "@/lib/checklists/session";
 import { parseChecklistSnapshot } from "@/lib/checklists/snapshot";
+import {
+  CHECKLIST_MIGRATION_HINT,
+  isChecklistSchemaError,
+  missingChecklistPhotoKeys,
+  parseChecklistEvidencePhoto,
+  parseChecklistSignature,
+} from "@/lib/checklists/evidence";
 import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
@@ -98,13 +108,49 @@ export async function GET(request: Request) {
               period.month,
             ).then((row) => (row && row.id !== latest.id ? row : null))
           : null;
+    const evidenceKeys = latest
+      ? await listChecklistEvidenceKeys(client, latest.id).catch((error) => {
+          if (isChecklistSchemaError(error)) return [] as string[];
+          throw error;
+        })
+      : [];
+    const evidenceItem = url.searchParams.get("evidenceItem")?.trim() ?? "";
+    if (latest && evidenceItem) {
+      const photo = await getChecklistEvidence(
+        client,
+        latest.id,
+        session.user.id,
+        evidenceItem,
+      );
+      return withSession(session, {
+        run: mapChecklistRun(latest),
+        evidenceKeys,
+        evidence: photo,
+      });
+    }
     return withSession(session, {
-      run: latest ? mapChecklistRun(latest) : null,
+      run: latest
+        ? { ...mapChecklistRun(latest), evidenceKeys }
+        : null,
       priorRun:
         prior && prior.status === "completed" ? mapChecklistRun(prior) : null,
       canFillEncargado: canFillChecklistAsEncargado(specialRoles, isAdmin),
       canFillRevisor: canFillChecklistAsRevisor(specialRoles, isAdmin),
+      evidenceKeys,
     });
+  } catch (error) {
+    console.error("[checklists/runs GET]", error);
+    return withSession(
+      session,
+      {
+        error: isChecklistSchemaError(error)
+          ? `Faltan tablas o columnas de checklists. ${CHECKLIST_MIGRATION_HINT}`
+          : error instanceof Error
+            ? error.message
+            : "No se pudo leer el intento.",
+      },
+      500,
+    );
   } finally {
     client.release();
   }
@@ -312,6 +358,37 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "photo") {
+      if (!runId) {
+        return withSession(session, { error: "Falta el intento." }, 400);
+      }
+      const itemKey =
+        typeof body.itemKey === "string" ? body.itemKey.trim() : "";
+      if (!itemKey) {
+        return withSession(session, { error: "Falta el ítem de la foto." }, 400);
+      }
+      const parsed = parseChecklistEvidencePhoto(body.fotoBase64, body.mime);
+      if (!parsed.ok) {
+        return withSession(session, { error: parsed.error }, 400);
+      }
+      const saved = await upsertChecklistEvidence(client, {
+        runId,
+        userId: session.user.id,
+        itemKey,
+        fotoBase64: parsed.base64,
+        mime: parsed.mime,
+      });
+      if (!saved) {
+        return withSession(
+          session,
+          { error: "No se pudo guardar la foto. El intento no está en curso." },
+          409,
+        );
+      }
+      const evidenceKeys = await listChecklistEvidenceKeys(client, runId);
+      return withSession(session, { ok: true, evidenceKeys });
+    }
+
     if (action === "complete") {
       if (!runId) {
         return withSession(session, { error: "Falta el intento a finalizar." }, 400);
@@ -334,20 +411,57 @@ export async function POST(request: Request) {
           409,
         );
       }
-      const snapshot = body.snapshot ? parseChecklistSnapshot(body.snapshot) : null;
+      const snapshot = body.snapshot
+        ? parseChecklistSnapshot(body.snapshot)
+        : parseChecklistSnapshot(latest.answers);
+      const signature = parseChecklistSignature(body.signaturePng);
+      if (!signature.ok) {
+        return withSession(session, { error: signature.error }, 400);
+      }
+      const evidenceKeys = await listChecklistEvidenceKeys(client, runId);
+      const missingPhotos = missingChecklistPhotoKeys(
+        snapshot.answers,
+        evidenceKeys,
+      );
+      if (missingPhotos.length > 0) {
+        return withSession(
+          session,
+          {
+            error: `Hay ${missingPhotos.length} hallazgo(s) P/NC sin foto. Sube la foto antes de finalizar.`,
+            missingPhotos,
+          },
+          400,
+        );
+      }
       const completed = await completeChecklistRun(
         client,
         runId,
         session.user.id,
         snapshot,
+        signature.value,
       );
       if (!completed) {
         return withSession(session, { error: "No se pudo finalizar el checklist." }, 409);
       }
-      return withSession(session, { run: mapChecklistRun(completed) });
+      return withSession(session, {
+        run: { ...mapChecklistRun(completed), evidenceKeys },
+      });
     }
 
     return withSession(session, { error: "Accion invalida." }, 400);
+  } catch (error) {
+    console.error("[checklists/runs POST]", error);
+    return withSession(
+      session,
+      {
+        error: isChecklistSchemaError(error)
+          ? `Faltan tablas o columnas de checklists. ${CHECKLIST_MIGRATION_HINT}`
+          : error instanceof Error
+            ? error.message
+            : "No se pudo actualizar el intento.",
+      },
+      500,
+    );
   } finally {
     client.release();
   }

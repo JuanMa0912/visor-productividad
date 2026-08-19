@@ -8,6 +8,7 @@ import {
 export type InformeVariacionMeta = {
   ready: boolean;
   maxDate: string | null;
+  minDate: string | null;
   table: MargenDataTable | null;
   message?: string | null;
 };
@@ -69,6 +70,7 @@ export const loadInformeVariacionMeta = async (
     return {
       ready: false,
       maxDate: null,
+      minDate: null,
       table: null,
       message:
         kind === "dinastia"
@@ -81,7 +83,11 @@ export const loadInformeVariacionMeta = async (
   const params: Array<string | string[]> = [];
   const sedeFilterSql = buildMetaSedeFilter(table, allowedSedeKeys, params);
 
-  const result = await client.query<{ max_date: string | null; has_rows: boolean }>(
+  const result = await client.query<{
+    max_date: string | null;
+    min_date: string | null;
+    has_rows: boolean;
+  }>(
     `
       SELECT
         (
@@ -91,6 +97,13 @@ export const loadInformeVariacionMeta = async (
             AND fecha_dcto ~ '^[0-9]{8}$'
             ${sedeFilterSql}
         ) AS max_date,
+        (
+          SELECT MIN(fecha_dcto)
+          FROM ${table}
+          WHERE fecha_dcto IS NOT NULL
+            AND fecha_dcto ~ '^[0-9]{8}$'
+            ${sedeFilterSql}
+        ) AS min_date,
         EXISTS (
           SELECT 1
           FROM ${table}
@@ -105,10 +118,12 @@ export const loadInformeVariacionMeta = async (
   const row = result.rows[0];
   const hasRows = Boolean(row?.has_rows);
   const maxDate = row?.max_date ?? null;
+  const minDate = row?.min_date ?? null;
 
   return {
     ready: hasRows,
     maxDate,
+    minDate,
     table,
     message: hasRows
       ? null

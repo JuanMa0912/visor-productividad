@@ -1,6 +1,6 @@
 /**
  * Pobla rolls de margen:
- *   - margen_final_roll (legacy) + margen_item_dia_roll
+ *   - margen_final_roll (legacy) + margen_item_dia_roll + margen_item_mes_roll
  *   - margen_dinastia_roll (si existe la funcion/tabla)
  *
  * Uso:
@@ -252,6 +252,36 @@ const main = async () => {
       console.log(
         `  margen_item_dia_roll: ${itemRows.toLocaleString("es-CO")} filas (${formatMs(performance.now() - itemStarted)})`,
       );
+
+      const mesExists = await client.query<{ ok: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = 'margen_item_mes_roll'
+        ) AS ok
+      `);
+      if (mesExists.rows[0]?.ok) {
+        console.log("[legacy] Refrescando margen_item_mes_roll (informe YTD)...");
+        const mesStarted = performance.now();
+        const mesResult = await client.query<{
+          inserted_rows: string;
+          elapsed_ms: string;
+        }>(
+          INCREMENTAL
+            ? `SELECT * FROM refresh_margen_item_mes_roll($1, $2)`
+            : `SELECT * FROM refresh_margen_item_mes_roll(NULL, NULL)`,
+          INCREMENTAL ? [FROM, TO] : [],
+        );
+        const mesRows = Number(mesResult.rows[0]?.inserted_rows ?? 0);
+        console.log(
+          `  margen_item_mes_roll: ${mesRows.toLocaleString("es-CO")} filas (${formatMs(performance.now() - mesStarted)})`,
+        );
+      } else {
+        console.log(
+          "[legacy] Aviso: margen_item_mes_roll no existe. Aplica db/migrations/20260820_margen_item_mes_roll.sql.",
+        );
+      }
     } else {
       console.log(
         "[legacy] Aviso: margen_item_dia_roll no existe. Aplica 20260708_margen_item_dia_roll.sql.",

@@ -33,6 +33,8 @@ export type ChecklistRunRow = {
   scorePct: number | null;
   durationSeconds: number | null;
   answers?: unknown;
+  evidenceKeys?: string[];
+  hasSignature?: boolean;
 };
 
 export const isChecklistSessionId = (value: string): value is ChecklistSessionId =>

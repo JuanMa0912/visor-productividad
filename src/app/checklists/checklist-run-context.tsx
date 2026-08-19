@@ -6,8 +6,11 @@ import type { ChecklistSnapshot } from "@/lib/checklists/snapshot";
 
 type ChecklistRunContextValue = {
   actorRole: ChecklistActorRole | null;
+  runId: string | null;
   priorSnapshot: ChecklistSnapshot | null;
+  evidenceKeys: string[];
   saveSnapshot: (snapshot: ChecklistSnapshot) => void;
+  uploadEvidence: (itemKey: string, file: File) => Promise<void>;
 };
 
 const ChecklistRunContext = createContext<ChecklistRunContextValue | null>(null);

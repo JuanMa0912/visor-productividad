@@ -2,6 +2,7 @@ import { deleteCachedQuery, getCachedQuery, setCachedQuery } from "@/lib/margene
 import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { scopeExcludedTiposCacheSuffix, scopeLineasCacheSuffix, scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
+import { informeRangeCacheKey, type InformeSelectedRanges } from "@/lib/informe-variacion/date-range";
 import { informeCompareCacheSuffix } from "@/lib/informe-variacion/periods";
 
 const INFORME_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -12,6 +13,20 @@ const scopeCacheSuffix = (
   excludedMargenTipos?: string[] | null,
 ) =>
   `${scopeTiposCacheSuffix(forcedMargenTipos)}${scopeLineasCacheSuffix(forcedMargenLineas)}${scopeExcludedTiposCacheSuffix(excludedMargenTipos)}`;
+
+export const buildInformeRangeCacheKey = (
+  ranges: InformeSelectedRanges,
+  allowedSedeKeys: string[] | null,
+  forcedMargenTipos?: string[] | null,
+  forcedMargenLineas?: string[] | null,
+  excludedMargenTipos?: string[] | null,
+): string => {
+  const sedes =
+    allowedSedeKeys && allowedSedeKeys.length > 0
+      ? [...allowedSedeKeys].sort().join(",")
+      : "*";
+  return `informe:v3:${informeRangeCacheKey(ranges)}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
+};
 
 export const buildInformeCacheKey = (
   year: number,

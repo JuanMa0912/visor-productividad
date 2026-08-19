@@ -17,7 +17,7 @@ import {
   buildRotacionCriticalDigestConsolidatedText,
 } from "@/lib/rotacion/critical-digest-consolidated-email";
 import {
-  ROTACION_EMAIL_PILOT_ONLY_TO,
+  resolveRotacionEmailConsolidatedRecipients,
   resolveRotacionEmailRecipientsForSede,
 } from "@/lib/rotacion/email-pilot-sedes";
 import { loadRotacionCriticalDigestSource } from "@/lib/rotacion/server/load-critical-digest-source";
@@ -186,9 +186,10 @@ const main = async () => {
     return;
   }
 
-  // Consolidado: siempre aprendiz (o FORCE_TO). No usa el mapa por sede.
-  const consolidatedTo =
-    process.env.ROTACION_EMAIL_FORCE_TO?.trim() || ROTACION_EMAIL_PILOT_ONLY_TO;
+  // Consolidado: todas las sedes → aprendiz + alexander (o FORCE_TO CSV).
+  const consolidatedTo = resolveRotacionEmailConsolidatedRecipients(
+    process.env.ROTACION_EMAIL_FORCE_TO,
+  );
   // Prueba: redirige TODOS los individuales a una sola bandeja.
   const forceIndividualTo =
     process.env.ROTACION_EMAIL_FORCE_INDIVIDUAL_TO?.trim() || "";
@@ -316,7 +317,7 @@ const main = async () => {
           buildRotacionCriticalDigestConsolidatedHtml(consolidatedDigests);
         const text =
           buildRotacionCriticalDigestConsolidatedText(consolidatedDigests);
-        const recipients = [consolidatedTo];
+        const recipients = consolidatedTo;
 
         if (dryRun || !transporter) {
           console.log(

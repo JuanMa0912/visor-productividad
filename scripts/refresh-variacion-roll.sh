@@ -145,6 +145,19 @@ fi
 
 run_psql_maintenance "ANALYZE margen_item_dia_roll;" > /dev/null
 
+mes_fn=$("${PSQL[@]}" -c "SELECT 1 FROM pg_proc WHERE proname='refresh_margen_item_mes_roll' LIMIT 1;" | tr -d '[:space:]')
+if [[ -n "$mes_fn" ]]; then
+  log "Refrescando margen_item_mes_roll..."
+  if [[ -n "$FROM" ]]; then
+    run_psql_maintenance "SELECT inserted_rows, elapsed_ms FROM refresh_margen_item_mes_roll('${FROM}', '${TO}');" >/dev/null
+  else
+    run_psql_maintenance "SELECT inserted_rows, elapsed_ms FROM refresh_margen_item_mes_roll();" >/dev/null
+  fi
+  run_psql_maintenance "ANALYZE margen_item_mes_roll;" > /dev/null
+else
+  log "WARN: refresh_margen_item_mes_roll no existe. Aplica db/migrations/20260820_margen_item_mes_roll.sql"
+fi
+
 row_count=$("${PSQL[@]}" -c "SELECT COUNT(*) FROM margen_item_dia_roll;" | tr -d '[:space:]')
 max_fecha=$("${PSQL[@]}" -c "SELECT COALESCE(MAX(fecha_dcto), '') FROM margen_item_dia_roll;" | tr -d '[:space:]')
 elapsed=$(( $(date +%s) - start_ts ))

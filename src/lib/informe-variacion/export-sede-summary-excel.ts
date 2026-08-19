@@ -81,7 +81,7 @@ export type InformeSedeSummaryExcelOptions = {
   rows: SedeSummaryExportRow[];
   metric: InformeMetric;
   periodLabel: string;
-  yoyLabel: string;
+  yoyLabel?: string;
   momLabel: string;
 };
 
@@ -89,7 +89,6 @@ export const writeInformeSedeSummaryWorkbook = async ({
   rows,
   metric,
   periodLabel,
-  yoyLabel,
   momLabel,
 }: InformeSedeSummaryExcelOptions): Promise<ArrayBuffer> => {
   const workbook = new ExcelJS.Workbook();
@@ -110,24 +109,21 @@ const MARG_FMT = '0.0"%";"—"';
     { key: "sede", width: 30 },
     { key: "current", width: 16 },
     { key: "currentMargPct", width: 10 },
-    { key: "yoyBase", width: 16 },
-    { key: "yoyMargPct", width: 10 },
-    { key: "yoyPct", width: 12 },
     { key: "momBase", width: 16 },
     { key: "momMargPct", width: 10 },
     { key: "momPct", width: 12 },
     { key: "participationPct", width: 14 },
   ];
 
-  sheet.mergeCells("A1:K1");
+  sheet.mergeCells("A1:H1");
   const titleCell = sheet.getCell("A1");
-  titleCell.value = "Informe de variacion MoM · YoY";
+  titleCell.value = "Informe de variacion";
   titleCell.font = { bold: true, size: 14, color: { argb: HEADER_FONT } };
   titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1D4ED8" } };
   titleCell.alignment = { vertical: "middle" };
   sheet.getRow(1).height = 28;
 
-  sheet.mergeCells("A2:K2");
+  sheet.mergeCells("A2:H2");
   const subtitleCell = sheet.getCell("A2");
   subtitleCell.value = `Periodo: ${periodLabel}  ·  Metrica: ${metric === "u" ? "Unidades" : "Valor ($ miles)"}`;
   subtitleCell.font = { size: 10, color: { argb: "FF1E293B" } };
@@ -135,7 +131,7 @@ const MARG_FMT = '0.0"%";"—"';
   subtitleCell.alignment = { vertical: "middle" };
   sheet.getRow(2).height = 20;
 
-  sheet.mergeCells("A3:K3");
+  sheet.mergeCells("A3:H3");
   const metaCell = sheet.getCell("A3");
   metaCell.value = `Generado: ${new Date().toLocaleString("es-CO")}`;
   metaCell.font = { size: 9, italic: true, color: { argb: NEUTRAL_FONT } };
@@ -148,12 +144,9 @@ const MARG_FMT = '0.0"%";"—"';
     "Sede",
     valueHeader,
     "Marg %",
-    `${yoyLabel} base`,
+    `${momLabel}`,
     "Marg %",
-    "YoY %",
-    `${momLabel} base`,
-    "Marg %",
-    "Ant. %",
+    "Var. %",
     "Participacion %",
   ].forEach((label, index) => {
     const cell = headerRow.getCell(index + 1);
@@ -177,8 +170,6 @@ const MARG_FMT = '0.0"%";"—"';
       sede: row.kind === "sede" ? `    ${row.sede}` : row.sede,
       current: row.current,
       currentMargPct: row.currentMargPct ?? "",
-      yoyBase: row.yoyBase ?? "",
-      yoyMargPct: row.yoyMargPct ?? "",
       momBase: row.momBase,
       momMargPct: row.momMargPct ?? "",
       participationPct: row.participationPct ?? "",
@@ -215,8 +206,7 @@ const MARG_FMT = '0.0"%";"—"';
     if (kind === "empresa") sedeStripe = 0;
 
     excelRow.getCell(3).numFmt = valueFmt;
-    if (row.yoyBase !== null) excelRow.getCell(5).numFmt = valueFmt;
-    excelRow.getCell(8).numFmt = valueFmt;
+    excelRow.getCell(5).numFmt = valueFmt;
 
     const writeMargCell = (cell: ExcelJS.Cell, value: number | null) => {
       if (value === null) {
@@ -231,13 +221,10 @@ const MARG_FMT = '0.0"%";"—"';
     };
 
     writeMargCell(excelRow.getCell(4), row.currentMargPct);
-    writeMargCell(excelRow.getCell(6), row.yoyMargPct);
-    writeMargCell(excelRow.getCell(9), row.momMargPct);
+    writeMargCell(excelRow.getCell(6), row.momMargPct);
+    writePctCell(excelRow.getCell(7), row.momPct, row.momPctValue);
 
-    writePctCell(excelRow.getCell(7), row.yoyPct, row.yoyPctValue);
-    writePctCell(excelRow.getCell(10), row.momPct, row.momPctValue);
-
-    const partCell = excelRow.getCell(11);
+    const partCell = excelRow.getCell(8);
     if (row.participationPct === null) {
       partCell.value = "";
     } else {
@@ -255,7 +242,7 @@ const MARG_FMT = '0.0"%";"—"';
 
   sheet.autoFilter = {
     from: { row: 4, column: 1 },
-    to: { row: 4 + rows.length, column: 11 },
+    to: { row: 4 + rows.length, column: 8 },
   };
 
   return workbook.xlsx.writeBuffer();

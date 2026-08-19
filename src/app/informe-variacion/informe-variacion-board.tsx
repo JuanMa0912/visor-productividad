@@ -7,10 +7,8 @@ import {
   aggregateMarginBySede,
   aggregateVentasBySede,
   compileInformeRowFilter,
-  filterRowIndices,
   hasActiveInformeFilters,
   sumFilteredRows,
-  sumRowIndices,
   type PeriodTriple,
   type prepareInformeData,
 } from "@/lib/informe-variacion/aggregate";
@@ -85,10 +83,10 @@ function InformeVariacionBoardReady({
   const [rankingDimension, setRankingDimension] =
     useState<InformeRankingDimension>("item");
   const [rankingSort, setRankingSort] = useState<InformeRankingSort>("cur");
-  const [rankingMode, setRankingMode] = useState<"yoy" | "mom">("yoy");
+  const rankingMode = "mom" as const;
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
   const deferredFilters = useDeferredValue(filters);
-  const [matrixMode, setMatrixMode] = useState<"yoy" | "mom">("yoy");
+  const matrixMode = "mom" as const;
   const [matrixDisplay, setMatrixDisplay] = useState<"pct" | "value">("pct");
   const [matrixDepth, setMatrixDepth] = useState<"cat" | "lin">("cat");
   const [matrixOpen, setMatrixOpen] = useState<Set<string>>(() => new Set());
@@ -99,13 +97,14 @@ function InformeVariacionBoardReady({
   const filtersPending =
     deferredFilters !== filters && hasActiveInformeFilters(filters);
 
-  const pass = useCallback(
-    compileInformeRowFilter(
-      deferredFilters,
-      prepared.sedeEmpresas,
-      prepared.itemsLow,
-      prepared.itemProv,
-    ),
+  const pass = useMemo(
+    () =>
+      compileInformeRowFilter(
+        deferredFilters,
+        prepared.sedeEmpresas,
+        prepared.itemsLow,
+        prepared.itemProv,
+      ),
     [deferredFilters, prepared],
   );
 
@@ -129,14 +128,6 @@ function InformeVariacionBoardReady({
     return sumFilteredRows(prepared.rows, kpiMetric, pass, prepared.metricCtx);
   }, [boardWarm, kpiMetric, pass, prepared.metricCtx, prepared.rows]);
 
-  const kpiYoyComparable = useMemo(() => {
-    if (boardWarm) return boardWarm.kpiYoy[kpiMetric];
-    const indices = filterRowIndices(prepared.rows, pass).filter(
-      (index) => prepared.sedeYoy[prepared.rows[index]![0]],
-    );
-    return sumRowIndices(prepared.rows, indices, kpiMetric, prepared.metricCtx);
-  }, [boardWarm, kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy]);
-
   const growthSedes = useMemo(() => {
     if (boardWarm) return boardWarm.growthSedes[kpiMetric];
     const perSede = aggregateBySede(
@@ -147,13 +138,11 @@ function InformeVariacionBoardReady({
       prepared.metricCtx,
     );
     let count = 0;
-    perSede.forEach((values, index) => {
-      if (prepared.sedeYoy[index] && values[2] > 0 && values[0] > values[2]) {
-        count += 1;
-      }
+    perSede.forEach((values) => {
+      if (values[1] > 0 && values[0] > values[1]) count += 1;
     });
     return count;
-  }, [boardWarm, kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedeYoy, prepared.sedes.length]);
+  }, [boardWarm, kpiMetric, pass, prepared.metricCtx, prepared.rows, prepared.sedes.length]);
 
   const updateFilter = (patch: Partial<InformeGlobalFilters>) => {
     startTransition(() => {
@@ -169,13 +158,6 @@ function InformeVariacionBoardReady({
     });
   };
 
-  const periodShort = (compactFrom: string) => {
-    const month = Number(compactFrom.slice(4, 6));
-    const year = compactFrom.slice(2, 4);
-    const names = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-    return `${names[month - 1] ?? "??"}-${year}`;
-  };
-
   /**
    * Alias de `payload.periods.current` con un nombre que NO termina en `current`.
    *
@@ -187,9 +169,9 @@ function InformeVariacionBoardReady({
    */
   const periodoActual = payload.periods.current;
 
-  const curLabel = periodShort(periodoActual.from);
-  const momLabel = periodShort(payload.periods.mom.from);
-  const yoyLabel = periodShort(payload.periods.yoy.from);
+  const curLabel = "Actual";
+  const momLabel = "Anterior";
+  const yoyLabel = momLabel;
 
   const matrixSortKeys = (
     keys: number[],
@@ -206,8 +188,7 @@ function InformeVariacionBoardReady({
       const values = per?.[matrixSort.col];
       if (!values) return matrixSort.dir > 0 ? -Infinity : Infinity;
       if (matrixDisplay === "value") return values[0];
-      if (matrixMode === "yoy" && !prepared.sedeYoy[matrixSort.col]) return 0;
-      const base = matrixMode === "mom" ? values[1] : values[2];
+      const base = values[1];
       return base > 0 ? values[0] / base - 1 : values[0] > 0 ? Infinity : -Infinity;
     };
     return [...keys].sort((a, b) => (val(b) - val(a)) * matrixSort.dir);
@@ -330,7 +311,7 @@ function InformeVariacionBoardReady({
       ) : null}
       {payload.meta.comparisonAvailable === false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          No hay datos reales de comparacion (periodo anterior / YoY) en margen para este mes. Los
+          No hay datos reales de comparacion en el periodo anterior. Los
           porcentajes y heatmaps quedaran vacios hasta que existan bases en la base de datos.
         </div>
       ) : null}
@@ -352,16 +333,6 @@ function InformeVariacionBoardReady({
               <span className="inline-block h-3.5 w-28 animate-pulse rounded bg-slate-200 align-middle" />
             ) : (
               payload.periods.mom.label
-            )}
-          </b>
-        </span>
-        <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600">
-          YoY vs:{" "}
-          <b className="text-slate-900">
-            {dataPending ? (
-              <span className="inline-block h-3.5 w-28 animate-pulse rounded bg-slate-200 align-middle" />
-            ) : (
-              payload.periods.yoy.label
             )}
           </b>
         </span>
@@ -388,35 +359,24 @@ function InformeVariacionBoardReady({
             loading={dataPending}
           />
           <KpiCard
-            title={`${yoyLabel} (base YoY)`}
-            value={formatInformeValue(kpiYoyComparable[2], kpiMetric)}
-            tag={filteredTag}
-            loading={dataPending}
-            footer={
-              <>
-                <VariationChip current={kpiYoyComparable[0]} previous={kpiYoyComparable[2]} /> YoY
-              </>
-            }
-          />
-          <KpiCard
             title={`${momLabel} (base anterior)`}
             value={formatInformeValue(kpiTotals[1], kpiMetric)}
             tag={filteredTag}
             loading={dataPending}
             footer={
               <>
-                <VariationChip current={kpiTotals[0]} previous={kpiTotals[1]} /> Ant.
+                <VariationChip current={kpiTotals[0]} previous={kpiTotals[1]} /> vs anterior
               </>
             }
           />
           <KpiCard
-            title={`Sedes con crecimiento YoY`}
+            title={`Sedes con crecimiento`}
             value={String(growthSedes)}
             tag={filteredTag}
             loading={dataPending}
             footer={
               <span className="text-slate-500">
-                de las sedes con base {yoyLabel.toLowerCase()}
+                de las sedes con base {momLabel.toLowerCase()}
               </span>
             }
           />
@@ -497,7 +457,6 @@ function InformeVariacionBoardReady({
           preferWarm={!filtersActive}
           curLabel={curLabel}
           momLabel={momLabel}
-          yoyLabel={yoyLabel}
           sort={sedeSort}
           onSort={(col) =>
             setSedeSort((current) => ({
@@ -531,7 +490,7 @@ function InformeVariacionBoardReady({
           sort={rankingSort}
           onSortChange={setRankingSort}
           mode={rankingMode}
-          onModeChange={setRankingMode}
+          onModeChange={() => undefined}
           pass={pass}
         />
       </Section>
@@ -551,16 +510,6 @@ function InformeVariacionBoardReady({
               ]}
               onChange={(value) => setMatrixDisplay(value as "pct" | "value")}
             />
-            <span className={cn(matrixDisplay === "value" && "opacity-50")}>
-              <ToggleGroup
-                value={matrixMode}
-                options={[
-                  { id: "yoy", label: "YoY %" },
-                  { id: "mom", label: "Ant. %" },
-                ]}
-                onChange={(value) => setMatrixMode(value as "yoy" | "mom")}
-              />
-            </span>
             <ToggleGroup
               value={matrixDepth}
               options={[
@@ -861,7 +810,7 @@ function InformeFilters({
     return [...ids]
       .sort((a, b) => payload.lins[a]!.localeCompare(payload.lins[b]!, "es"))
       .map((value) => ({ value: String(value), label: payload.lins[value]! }));
-  }, [filters.cat, payload.lins, payload.rowIndex.linsByCat]);
+  }, [filters.cat, payload]);
 
   const subOptions = useMemo(() => {
     if (filters.cat.length === 0 || filters.lin.length === 0) return [];
@@ -876,7 +825,7 @@ function InformeFilters({
     return [...ids]
       .sort((a, b) => payload.subs[a]!.localeCompare(payload.subs[b]!, "es"))
       .map((value) => ({ value: String(value), label: payload.subs[value]! }));
-  }, [filters.cat, filters.lin, payload.rowIndex.subsByCatLin, payload.subs]);
+  }, [filters.cat, filters.lin, payload]);
 
   const itemOptions = useMemo(() => {
     if (
@@ -1082,7 +1031,6 @@ function SedeSummaryTable({
   preferWarm,
   curLabel,
   momLabel,
-  yoyLabel,
   sort,
   onSort,
 }: {
@@ -1092,7 +1040,6 @@ function SedeSummaryTable({
   preferWarm: boolean;
   curLabel: string;
   momLabel: string;
-  yoyLabel: string;
   sort: { col: string; dir: number };
   onSort: (col: string) => void;
 }) {
@@ -1145,14 +1092,6 @@ function SedeSummaryTable({
     (acc, values) => [acc[0] + values[0], acc[1] + values[1], acc[2] + values[2]],
     [0, 0, 0],
   );
-  const totalYoyVentas = perSedeVentas.reduce(
-    (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
-    0,
-  );
-  const totalYoyMargin = perSedeMargin.reduce(
-    (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
-    0,
-  );
 
   const arrow = (col: string) =>
     sort.col === col ? (sort.dir > 0 ? " ▼" : " ▲") : "";
@@ -1174,12 +1113,9 @@ function SedeSummaryTable({
     { id: "name", label: "Empresa / Sede", align: "left" },
     { id: "cur", label: curLabel, align: "right" },
     { id: "curMarg", label: "Marg %", align: "right" },
-    { id: "yoy", label: yoyLabel, align: "right" },
-    { id: "yoyMarg", label: "Marg %", align: "right" },
-    { id: "yoypct", label: "YoY %", align: "right" },
     { id: "mom", label: momLabel, align: "right" },
     { id: "momMarg", label: "Marg %", align: "right" },
-    { id: "mompct", label: "Ant. %", align: "right" },
+    { id: "mompct", label: "Var. %", align: "right" },
     { id: "part", label: "Participacion", align: "right" },
   ];
 
@@ -1187,16 +1123,13 @@ function SedeSummaryTable({
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1080px] table-fixed border-collapse text-sm">
         <colgroup>
-          <col style={{ width: "19%" }} />
-          <col style={{ width: "11%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "11%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "11%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "11%" }} />
+          <col style={{ width: "22%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "18%" }} />
         </colgroup>
         <thead>
           <tr className="text-xs uppercase tracking-wide text-slate-500">
@@ -1254,25 +1187,6 @@ function SedeSummaryTable({
                   <td className={tdClass("right", "text-slate-600")}>
                     {marginPct(empresaVentas, empresaMargin, 0)}
                   </td>
-                  <td className={tdClass("right")}>
-                    {payload.empYoy[empresa.label]
-                      ? formatInformeValue(empresaSum[2], metric)
-                      : "N/D"}
-                  </td>
-                  <td className={tdClass("right", "text-slate-600")}>
-                    {payload.empYoy[empresa.label]
-                      ? marginPct(empresaVentas, empresaMargin, 2)
-                      : "—"}
-                  </td>
-                  <td className={tdClass("right")}>
-                    <div className="flex justify-end">
-                      <VariationChip
-                        current={empresaSum[0]}
-                        previous={empresaSum[2]}
-                        yoyOk={payload.empYoy[empresa.label]}
-                      />
-                    </div>
-                  </td>
                   <td className={tdClass("right")}>{formatInformeValue(empresaSum[1], metric)}</td>
                   <td className={tdClass("right", "text-slate-600")}>
                     {marginPct(empresaVentas, empresaMargin, 1)}
@@ -1299,25 +1213,6 @@ function SedeSummaryTable({
                         {marginPct(perSedeVentas[index], perSedeMargin[index], 0)}
                       </td>
                       <td className={tdClass("right")}>
-                        {payload.sedeYoy[index]
-                          ? formatInformeValue(values[2], metric)
-                          : "N/D"}
-                      </td>
-                      <td className={tdClass("right", "text-slate-600")}>
-                        {payload.sedeYoy[index]
-                          ? marginPct(perSedeVentas[index], perSedeMargin[index], 2)
-                          : "—"}
-                      </td>
-                      <td className={tdClass("right")}>
-                        <div className="flex justify-end">
-                          <VariationChip
-                            current={values[0]}
-                            previous={values[2]}
-                            yoyOk={payload.sedeYoy[index]}
-                          />
-                        </div>
-                      </td>
-                      <td className={tdClass("right")}>
                         {formatInformeValue(values[1], metric)}
                       </td>
                       <td className={tdClass("right", "text-slate-600")}>
@@ -1340,26 +1235,6 @@ function SedeSummaryTable({
             <td className={tdClass("right")}>{formatInformeValue(total[0], metric)}</td>
             <td className={tdClass("right", "text-slate-700")}>
               {marginPct(totalVentas, totalMargin, 0)}
-            </td>
-            <td className={tdClass("right")}>
-              {formatInformeValue(
-                perSede.reduce((sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0), 0),
-                metric,
-              )}
-            </td>
-            <td className={tdClass("right", "text-slate-700")}>
-              {formatMargenPct(totalYoyVentas, totalYoyMargin)}
-            </td>
-            <td className={tdClass("right")}>
-              <div className="flex justify-end">
-                <VariationChip
-                  current={total[0]}
-                  previous={perSede.reduce(
-                    (sum, values, index) => sum + (payload.sedeYoy[index] ? values[2] : 0),
-                    0,
-                  )}
-                />
-              </div>
             </td>
             <td className={tdClass("right")}>{formatInformeValue(total[1], metric)}</td>
             <td className={tdClass("right", "text-slate-700")}>
