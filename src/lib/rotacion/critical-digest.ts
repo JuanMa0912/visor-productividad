@@ -22,6 +22,8 @@ import {
 
 export type SurtidoEstadoBreakdown = {
   itemCount: number;
+  /** Valor de inventario de esos ítems (COP). */
+  totalInventario: number;
   sinVerificar: number;
   seguimiento: number;
   surtido: number;
@@ -121,6 +123,7 @@ const countEstadoBreakdown = (
   const itemCount = rows.length;
   return {
     itemCount,
+    totalInventario: sumInventoryValue(rows),
     sinVerificar,
     seguimiento,
     surtido,

@@ -164,6 +164,7 @@ describe("buildRotacionCriticalDigest", () => {
         },
         ceroRotacion: {
           itemCount: 2,
+          totalInventario: 0,
           sinVerificar: 1,
           seguimiento: 1,
           surtido: 0,
@@ -171,6 +172,7 @@ describe("buildRotacionCriticalDigest", () => {
         },
         restockS: {
           itemCount: 1,
+          totalInventario: 0,
           sinVerificar: 0,
           seguimiento: 0,
           surtido: 1,
@@ -186,6 +188,7 @@ describe("buildRotacionCriticalDigest", () => {
         },
         ceroRotacion: {
           itemCount: 1,
+          totalInventario: 150_000,
           sinVerificar: 0,
           seguimiento: 0,
           surtido: 1,
@@ -193,6 +196,7 @@ describe("buildRotacionCriticalDigest", () => {
         },
         restockS: {
           itemCount: 1,
+          totalInventario: 80_000,
           sinVerificar: 0,
           seguimiento: 1,
           surtido: 0,
@@ -218,6 +222,10 @@ describe("buildRotacionCriticalDigest", () => {
     assert.match(html, /Puntuación restock/);
     assert.match(html, />67</);
     assert.match(html, /400\.000/);
+    assert.match(html, /150\.000/);
+    assert.match(html, /80\.000/);
+    assert.match(html, /Ver D\+0\+S en Rotación/);
+    assert.match(html, /vista=d0s/);
     assert.doesNotMatch(html, /600\.000/);
 
     const text = buildRotacionCriticalDigestText(digest);
@@ -226,6 +234,9 @@ describe("buildRotacionCriticalDigest", () => {
     assert.match(text, /Días de inventario/);
     assert.match(text, /PUNTUACIÓN RESTOCK: 67/);
     assert.match(text, /400\.000/);
+    assert.match(text, /150\.000/);
+    assert.match(text, /80\.000/);
+    assert.match(text, /Ver D\+0\+S en Rotación/);
     assert.doesNotMatch(text, /600\.000/);
   });
 
@@ -242,6 +253,7 @@ describe("buildRotacionCriticalDigest", () => {
         demandaD: { itemCount: 0, totalInventario: 0, diasInventario: 0 },
         ceroRotacion: {
           itemCount: 0,
+          totalInventario: 0,
           sinVerificar: 0,
           seguimiento: 0,
           surtido: 0,
@@ -249,6 +261,7 @@ describe("buildRotacionCriticalDigest", () => {
         },
         restockS: {
           itemCount: 0,
+          totalInventario: 0,
           sinVerificar: 0,
           seguimiento: 0,
           surtido: 0,
@@ -264,6 +277,7 @@ describe("buildRotacionCriticalDigest", () => {
         },
         ceroRotacion: {
           itemCount: 3,
+          totalInventario: 0,
           sinVerificar: 3,
           seguimiento: 0,
           surtido: 0,
@@ -271,6 +285,7 @@ describe("buildRotacionCriticalDigest", () => {
         },
         restockS: {
           itemCount: 2,
+          totalInventario: 0,
           sinVerificar: 2,
           seguimiento: 0,
           surtido: 0,

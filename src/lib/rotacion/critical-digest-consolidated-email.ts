@@ -50,8 +50,11 @@ export const sedeCriticalBreakdown = (digest: RotacionCriticalDigest) => {
   const restockEstado: SurtidoEstadoBreakdown = section.restockS;
   return {
     demandaD: section.demandaD.itemCount,
+    demandaInventario: section.demandaD.totalInventario,
     cero: ceroEstado.itemCount,
+    ceroInventario: ceroEstado.totalInventario ?? 0,
     restockS: restockEstado.itemCount,
+    restockInventario: restockEstado.totalInventario ?? 0,
     ceroEstado,
     restockEstado,
     itemCount: section.total.itemCount,
@@ -215,9 +218,21 @@ const buildOverviewRows = (digests: readonly RotacionCriticalDigest[]) =>
           "right",
           "font-size:15px;font-weight:800;color:#1d4ed8;font-variant-numeric:tabular-nums;",
         )}
-        ${td(formatCount(breakdown.demandaD), "right", "font-variant-numeric:tabular-nums;color:#9f1239;")}
-        ${td(formatCount(breakdown.cero), "right", "font-variant-numeric:tabular-nums;color:#475569;")}
-        ${td(formatCount(breakdown.restockS), "right", "font-variant-numeric:tabular-nums;color:#0e7490;")}
+        ${td(
+          `${formatCount(breakdown.demandaD)}<div style="font-size:10px;color:#9f1239;">${formatInventario(breakdown.demandaInventario)}</div>`,
+          "right",
+          "font-variant-numeric:tabular-nums;color:#9f1239;",
+        )}
+        ${td(
+          `${formatCount(breakdown.cero)}<div style="font-size:10px;color:#64748b;">${formatInventario(breakdown.ceroInventario)}</div>`,
+          "right",
+          "font-variant-numeric:tabular-nums;color:#475569;",
+        )}
+        ${td(
+          `${formatCount(breakdown.restockS)}<div style="font-size:10px;color:#0e7490;">${formatInventario(breakdown.restockInventario)}</div>`,
+          "right",
+          "font-variant-numeric:tabular-nums;color:#0e7490;",
+        )}
       </tr>`;
     })
     .join("");

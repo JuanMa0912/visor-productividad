@@ -353,6 +353,8 @@ export function RotacionPageInner() {
   const whatsappDetailsRef = useRef<HTMLDetailsElement>(null);
   const whatsappShareLockRef = useRef(false);
   const skipSedeRestoreRef = useRef(false);
+  const urlQueryAppliedRef = useRef(false);
+  const pendingD0SViewRef = useRef(false);
   const rotacionPrefetchKeyRef = useRef<string | null>(null);
   const userScopedLastSedeStorageKey = useMemo(
     () => buildUserLastSedeStorageKey(lastSedeStorageKey, authUser?.id),
@@ -1683,6 +1685,47 @@ export function RotacionPageInner() {
   }, [allSedeOptions, isLoadingLineCatalog, selectedSedes.length]);
 
   useEffect(() => {
+    if (urlQueryAppliedRef.current) return;
+    if (!ready || isLoadingLineCatalog) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const sedeParam = params.get("sede")?.trim() ?? "";
+    const familiaParam = params.get("familia")?.trim().toLowerCase() ?? "";
+    const vistaParam = params.get("vista")?.trim().toLowerCase() ?? "";
+    if (!sedeParam && !familiaParam && !vistaParam) {
+      urlQueryAppliedRef.current = true;
+      return;
+    }
+    if (sedeParam && allSedeOptions.length === 0) return;
+    urlQueryAppliedRef.current = true;
+
+    if (familiaParam === "manufactura" || familiaParam === "perecederos") {
+      setLineaN1FamilyKeys([familiaParam]);
+    }
+
+    if (sedeParam) {
+      skipSedeRestoreRef.current = true;
+      const match = allSedeOptions.find(
+        (option) =>
+          option.value === sedeParam ||
+          `${option.empresa}::${option.sedeId}` === sedeParam,
+      );
+      if (match) {
+        setSelectedSedes([match.value]);
+        setSelectedCompanies([match.empresa]);
+      }
+    }
+
+    if (
+      vistaParam === "d0s" ||
+      vistaParam === "d-0-s" ||
+      vistaParam === "d+0+s"
+    ) {
+      pendingD0SViewRef.current = true;
+    }
+  }, [ready, isLoadingLineCatalog, allSedeOptions]);
+
+  useEffect(() => {
     if (!ready || isLoadingLineCatalog) return;
     if (selectedSedes.length > 0) return;
     if (skipSedeRestoreRef.current) return;
@@ -1907,6 +1950,28 @@ export function RotacionPageInner() {
     () => rowsBySede.map((group) => `${group.empresa}-${group.sedeId}`),
     [rowsBySede],
   );
+
+  useEffect(() => {
+    if (!pendingD0SViewRef.current) return;
+    if (selectedSedes.length === 0) return;
+    pendingD0SViewRef.current = false;
+    setAbcdFilterByGroup((prev) => {
+      const next = { ...prev };
+      for (const value of selectedSedes) {
+        next[value] = "D0S";
+        const sep = value.indexOf("::");
+        if (sep > 0) {
+          const empresa = value.slice(0, sep);
+          const sedeId = value.slice(sep + 2);
+          next[`${empresa}-${sedeId}`] = "D0S";
+        }
+      }
+      if (consolidatedFilterGroupKey) {
+        next[consolidatedFilterGroupKey] = "D0S";
+      }
+      return next;
+    });
+  }, [selectedSedes, consolidatedFilterGroupKey]);
   const tableTourReady =
     hasLoadedItems &&
     rowsAfterProductFilter.length > 0 &&
@@ -3725,6 +3790,18 @@ export function RotacionPageInner() {
                             ? filteredRows.filter((row) =>
                                 isNuevoItemInSelectedRange(row),
                               )
+                            : categoryFilter === "D0S"
+                              ? filteredRows.filter((row) => {
+                                  const isS = isNuevoItemInSelectedRange(row);
+                                  const isZero = isCeroRotacionExcludingNuevo(
+                                    row,
+                                    dateRange,
+                                  );
+                                  const isD =
+                                    isAbcdFilterableRow(row) &&
+                                    categoryByItem.get(row.item) === "D";
+                                  return isS || isZero || isD;
+                                })
                             : isOverstockFilter(categoryFilter)
                               ? filteredRows.filter((row) =>
                                   matchesOverstockFilter(row, categoryFilter),
@@ -3848,11 +3925,14 @@ export function RotacionPageInner() {
                         )
                       : [];
                     const hasAbcSelection = abcSelectedLetters.length > 0;
+                    const isD0SView = categoryFilter === "D0S";
                     const hasCriticalD =
-                      Array.isArray(categoryFilter) &&
-                      categoryFilter.includes("D");
-                    const hasCritical0 = categoryFilter === "0";
+                      isD0SView ||
+                      (Array.isArray(categoryFilter) &&
+                        categoryFilter.includes("D"));
+                    const hasCritical0 = isD0SView || categoryFilter === "0";
                     const hasCriticalS =
+                      isD0SView ||
                       categoryFilter === "S" ||
                       categoryFilter === "R" ||
                       categoryFilter === "N";
@@ -4446,7 +4526,27 @@ export function RotacionPageInner() {
                                     </Button>
                                   </div>
                                     </div>
-                                    <div className="mt-1.5 rounded-lg border border-rose-200/80 bg-white/80 px-2.5 py-1.5 shadow-sm">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAbcdFilterByGroup((prev) => ({
+                                          ...prev,
+                                          [groupKey]:
+                                            categoryFilter === "D0S"
+                                              ? "all"
+                                              : "D0S",
+                                        }));
+                                        setPageByGroupKey((prev) => ({
+                                          ...prev,
+                                          [groupKey]: 1,
+                                        }));
+                                      }}
+                                      className={`mt-1.5 w-full rounded-lg border px-2.5 py-1.5 text-left shadow-sm transition ${
+                                        categoryFilter === "D0S"
+                                          ? "border-rose-500 bg-rose-100 ring-2 ring-rose-200"
+                                          : "border-rose-200/80 bg-white/80 hover:bg-rose-50"
+                                      }`}
+                                    >
                                       <div className="flex items-center justify-between gap-3">
                                         <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-rose-700">
                                           Total D+0+S
@@ -4458,9 +4558,9 @@ export function RotacionPageInner() {
                                         </span>
                                       </div>
                                       <p className="mt-0.5 text-[10px] leading-snug text-rose-800/70">
-                                        Productos para revisar
+                                        Ver Demanda, Cero y Restock juntos
                                       </p>
-                                    </div>
+                                    </button>
                                   </div>
                                   <div
                                     className={`min-w-0 w-full rounded-xl border px-3 py-2 shadow-sm ring-1 ${

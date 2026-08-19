@@ -11,6 +11,30 @@ import {
   NO_SALES_DI_VALUE,
 } from "@/app/rotacion/rotacion-preamble";
 
+const DEFAULT_PUBLIC_APP_ORIGIN = "https://uaid.mercamio.com.co";
+
+const resolvePublicAppOrigin = () => {
+  const raw = (
+    process.env.PUBLIC_APP_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.LOCAL_PORTAL_CLOUD_URL ??
+    DEFAULT_PUBLIC_APP_ORIGIN
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  return raw || DEFAULT_PUBLIC_APP_ORIGIN;
+};
+
+/** Deep link a Rotación con la sede y la vista D+0+S. */
+export const buildRotacionD0SBoardUrl = (digest: RotacionCriticalDigest) => {
+  const params = new URLSearchParams({
+    sede: `${digest.empresa}::${digest.sedeId}`,
+    familia: "manufactura",
+    vista: "d0s",
+  });
+  return `${resolvePublicAppOrigin()}/rotacion?${params.toString()}`;
+};
+
 /** Monto completo en pesos (con ceros de millones); solo para el correo. */
 const formatEmailInventario = (value: number) => formatPrice(value);
 
@@ -68,7 +92,10 @@ const renderEstadoCell = (
   <td width="33%" valign="top" style="padding:6px;border:1px solid #e2e8f0;border-radius:8px;background:#ffffff;">
     <div style="font-size:11px;font-weight:800;color:${accent};">${code} · ${title}</div>
     <div style="margin-top:4px;font-size:18px;font-weight:800;color:#0f172a;line-height:1;">${formatCount(breakdown.itemCount)}</div>
-    <div style="margin-top:4px;font-size:11px;line-height:1.35;color:#475569;">${formatEstadoLine(breakdown)}</div>
+    <div style="margin-top:4px;font-size:11px;line-height:1.35;color:#475569;">
+      ${formatEmailInventario(breakdown.totalInventario)}<br/>
+      ${formatEstadoLine(breakdown)}
+    </div>
   </td>
 `;
 
@@ -122,8 +149,8 @@ const renderSectionText = (familyLabel: string, section: RotacionCriticalDigestS
     `=== ${familyLabel.toUpperCase()} ===`,
     `Total D+0+S: ${formatCount(section.total.itemCount)} · ${formatEmailInventario(section.total.totalInventario)}`,
     `D Demanda: ${formatCount(section.demandaD.itemCount)} · ${formatEmailInventario(section.demandaD.totalInventario)} · Días de inventario ${formatDiasInventario(section.demandaD.diasInventario)}`,
-    `0 Cero: ${formatCount(section.ceroRotacion.itemCount)} · ${formatEstadoLine(section.ceroRotacion)}`,
-    `S Restock: ${formatCount(section.restockS.itemCount)} · ${formatEstadoLine(section.restockS)}`,
+    `0 Cero: ${formatCount(section.ceroRotacion.itemCount)} · ${formatEmailInventario(section.ceroRotacion.totalInventario)} · ${formatEstadoLine(section.ceroRotacion)}`,
+    `S Restock: ${formatCount(section.restockS.itemCount)} · ${formatEmailInventario(section.restockS.totalInventario)} · ${formatEstadoLine(section.restockS)}`,
   ].join("\n");
 };
 
@@ -212,6 +239,16 @@ export const buildRotacionCriticalDigestHtml = (
       </td>
     </tr>
     <tr>
+      <td style="padding:4px 14px 10px;">
+        <a href="${buildRotacionD0SBoardUrl(digest)}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;font-size:12px;font-weight:800;letter-spacing:0.04em;padding:10px 14px;border-radius:8px;">
+          Ver D+0+S en Rotación
+        </a>
+        <div style="margin-top:6px;font-size:10px;line-height:1.35;color:#64748b;">
+          Abre Rotación en esta sede, familia Manufactura y filtro D+0+S.
+        </div>
+      </td>
+    </tr>
+    <tr>
       <td style="padding:8px 14px 12px;border-top:1px solid #f1f5f9;font-size:10px;line-height:1.4;color:#94a3b8;">
         Automático · Visor. Solo ${familyLabel} (resto de líneas N1; perecederos 01–04 y 12 omitidos por ahora). Puntuación restock: primera marca a surtido en el rango + venta en o después.
       </td>
@@ -239,5 +276,7 @@ export const buildRotacionCriticalDigestText = (
     `${familyLabel.toUpperCase()} D+0+S: ${formatCount(section.total.itemCount)} · ${formatEmailInventario(section.total.totalInventario)} · Días de inventario ${formatDiasInventario(section.demandaD.diasInventario)}`,
     "",
     renderSectionText(familyLabel, section),
+    "",
+    `Ver D+0+S en Rotación: ${buildRotacionD0SBoardUrl(digest)}`,
   ].join("\n");
 };

@@ -171,6 +171,7 @@ type GroupAbcdFilter =
   | "O"
   | "O32"
   | "O50"
+  | "D0S"
   | AbcdCategory[];
 
 const ABCD_FILTER_LETTERS_ORDER: AbcdCategory[] = ["A", "B", "C", "D"];
@@ -191,7 +192,8 @@ const toggleAbcdLetterFilter = (
     current === "N" ||
     current === "O" ||
     current === "O32" ||
-    current === "O50"
+    current === "O50" ||
+    current === "D0S"
   ) {
     return normalizeAbcdLetterSelection([letter]);
   }
