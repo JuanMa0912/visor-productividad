@@ -77,13 +77,13 @@ pdv_ind AS (
 pdv_total AS (SELECT COALESCE(SUM(iva_pos),0) AS t FROM pdv_ind),
 mayor_ajustado AS (
     SELECT id_terc, iva_generado, dev_compras,
-        CASE WHEN $4 IS NOT NULL THEN 0 ELSE impoconsumo END AS impoconsumo
+        CASE WHEN $4::numeric IS NOT NULL THEN 0 ELSE impoconsumo END AS impoconsumo
     FROM mayor WHERE TRIM(id_terc) NOT IN ('222222222222','VC')
     UNION ALL
     SELECT '222222222222',
         COALESCE(SUM(iva_generado),0) - (SELECT t FROM pdv_total),
         COALESCE(SUM(dev_compras),0),
-        CASE WHEN $4 IS NOT NULL THEN $4::numeric ELSE COALESCE(SUM(impoconsumo),0) END
+        CASE WHEN $4::numeric IS NOT NULL THEN $4::numeric ELSE COALESCE(SUM(impoconsumo),0) END
     FROM mayor WHERE TRIM(id_terc) IN ('222222222222','VC')
     UNION ALL
     SELECT id_terc, iva_pos, 0, 0 FROM pdv_ind
