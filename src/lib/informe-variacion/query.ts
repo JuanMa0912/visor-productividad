@@ -446,6 +446,7 @@ export type LoadInformeVariacionOptions = {
   forcedMargenLineas?: string[] | null;
   excludedMargenTipos?: string[] | null;
   kind?: "default" | "dinastia";
+  compare?: { year: number; month: number } | null;
 };
 
 export const loadInformeVariacionPayload = async (
@@ -455,7 +456,12 @@ export const loadInformeVariacionPayload = async (
   allowedSedeKeys: string[] | null,
   options: LoadInformeVariacionOptions = {},
 ): Promise<InformeVariacionPayload> => {
-  const periods = computeInformePeriods(year, month, options.dayRange);
+  const periods = computeInformePeriods(
+    year,
+    month,
+    options.dayRange,
+    options.compare,
+  );
   const dbRows = await queryInformeVariacionRows(
     client,
     periods,

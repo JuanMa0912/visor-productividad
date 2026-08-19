@@ -72,14 +72,14 @@ export type InformeVariacionPayload = {
 export type InformeMetric = "u" | "v";
 
 export type InformeGlobalFilters = {
-  emp: string;
-  sede: string;
-  cat: string;
-  lin: string;
-  sub: string;
-  item: string;
-  /** Índice en `payload.provs`. */
-  prov: string;
+  emp: string[];
+  sede: string[];
+  cat: string[];
+  lin: string[];
+  sub: string[];
+  item: string[];
+  /** Índices en `payload.provs`. */
+  prov: string[];
   q: string;
 };
 
@@ -91,12 +91,12 @@ export const INFORME_EMPRESA_ORDER = [
 ] as const;
 
 export const EMPTY_INFORME_FILTERS: InformeGlobalFilters = {
-  emp: "",
-  sede: "",
-  cat: "",
-  lin: "",
-  sub: "",
-  item: "",
-  prov: "",
+  emp: [],
+  sede: [],
+  cat: [],
+  lin: [],
+  sub: [],
+  item: [],
+  prov: [],
   q: "",
 };

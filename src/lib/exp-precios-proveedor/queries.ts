@@ -10,6 +10,19 @@ import type {
   PreciosProveedorRow,
   PreciosProveedorSedeColumn,
 } from "@/lib/exp-precios-proveedor/types";
+import {
+  mergeExpandCellInto,
+  mergeProveedorNits,
+} from "@/lib/exp-precios-proveedor/expand-merge";
+import {
+  ocEntradaInvTipdocSql,
+  ocEntradaPoTipdocSql,
+  ocEntradaQtySql,
+  ocEntradaTipdocSql,
+  proveedorExpandGroupKey,
+  stripEmpresaProveedorLabel,
+  stripMercamioProveedorLabel,
+} from "@/lib/exp-precios-proveedor/labels";
 
 const toNum = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
@@ -53,16 +66,17 @@ const resolveItemProveedorRow = (row: {
 }): ResolvedItemProveedor => {
   const criterioId =
     String(row.id_cricla1 ?? "").trim() || "@SP";
-  const criterioLabel =
+  const criterioLabel = stripMercamioProveedorLabel(
     String(row.criterio_nombre ?? "").trim() ||
-    (criterioId !== "@SP" ? criterioId : "(Sin proveedor)");
+      (criterioId !== "@SP" ? criterioId : "(Sin proveedor)"),
+  );
   const nit = String(row.nit ?? "").trim() || null;
   const terceroCodigo = String(row.tercero_codigo ?? "").trim();
   const terceroNombre = String(row.tercero_nombre ?? "").trim();
   if (terceroCodigo || terceroNombre) {
     return {
       id: terceroCodigo ? `t:${terceroCodigo}` : `t:${criterioId}`,
-      label: terceroNombre || criterioLabel,
+      label: stripMercamioProveedorLabel(terceroNombre || criterioLabel),
       criterioId: criterioId === "@SP" ? null : criterioId,
       criterioLabel,
       nit,
@@ -82,6 +96,8 @@ const resolveItemProveedorRow = (row: {
 type OcLineProveedor = ResolvedItemProveedor & {
   idCos: Set<string>;
   qtyByCo: Map<string, number>;
+  invQtyByCo: Map<string, number>;
+  poQtyByCo: Map<string, number>;
 };
 
 /**
@@ -112,6 +128,7 @@ async function queryOrdenCompraLineaProveedores(
     id_terc: string;
     terc_nombre: string | null;
     terc_nit: string | null;
+    tipdoc: string;
     qty: string | number | null;
   }>(
     `
@@ -122,15 +139,16 @@ async function queryOrdenCompraLineaProveedores(
         WHEN BTRIM(id_co) ~ '^[0-9]+$' THEN LPAD(BTRIM(id_co), 3, '0')
         ELSE BTRIM(id_co)
       END AS id_co,
-      BTRIM(id_terc) AS id_terc,
+      BTRIM(COALESCE(id_terc, '')) AS id_terc,
       NULLIF(BTRIM(terc_nombre), '') AS terc_nombre,
       NULLIF(BTRIM(terc_nit), '') AS terc_nit,
-      COALESCE(NULLIF(cantidad_ent, 0), cantidad, 0) AS qty
+      UPPER(BTRIM(tipdoc)) AS tipdoc,
+      ${ocEntradaQtySql("tipdoc")} AS qty
     FROM orden_compra_linea
     WHERE BTRIM(id_item) = ANY($1::text[])
       AND fecha_dcto >= $2
       AND fecha_dcto <= $3
-      AND BTRIM(COALESCE(id_terc, '')) <> ''
+      AND ${ocEntradaTipdocSql("empresa", "tipdoc")}
     `,
     [itemIds, fromCompact, toCompact],
   );
@@ -138,9 +156,16 @@ async function queryOrdenCompraLineaProveedores(
   for (const row of res.rows) {
     const itemId = String(row.id_item ?? "").trim();
     const empresa = String(row.empresa ?? "").trim();
-    const idTerc = String(row.id_terc ?? "").trim();
+    const tipdoc = String(row.tipdoc ?? "").trim().toUpperCase();
+    let idTerc = String(row.id_terc ?? "").trim();
+    let nombre = String(row.terc_nombre ?? "").trim();
     const idCo = String(row.id_co ?? "").padStart(3, "0");
-    if (!itemId || !empresa || !idTerc) continue;
+    if (!itemId || !empresa) continue;
+    if (!idTerc) {
+      if (tipdoc !== "ET") continue;
+      idTerc = "ET";
+      nombre = nombre || "Tránsito";
+    }
     const groupKey = `${itemId}::${empresa}`;
     let list = map.get(groupKey);
     if (!list) {
@@ -150,25 +175,50 @@ async function queryOrdenCompraLineaProveedores(
     const provId = `oc:${idTerc}`;
     let prov = list.find((entry) => entry.id === provId);
     if (!prov) {
-      const nombre = String(row.terc_nombre ?? "").trim();
       prov = {
         id: provId,
-        label: nombre || idTerc,
+        label: stripMercamioProveedorLabel(nombre || idTerc),
         criterioId: null,
         criterioLabel: null,
         nit: String(row.terc_nit ?? "").trim() || null,
         fromTercero: true,
         idCos: new Set(),
         qtyByCo: new Map(),
+        invQtyByCo: new Map(),
+        poQtyByCo: new Map(),
       };
       list.push(prov);
     }
-    if (idCo) {
-      prov.idCos.add(idCo);
-      const qty = toNum(row.qty);
-      if (qty > 0) {
-        prov.qtyByCo.set(idCo, (prov.qtyByCo.get(idCo) ?? 0) + qty);
+    if (!idCo) continue;
+    const qty = toNum(row.qty);
+    if (!(qty > 0)) continue;
+    const isInv = tipdoc === "ET" || tipdoc === "EF";
+    const bucket = isInv ? prov.invQtyByCo : prov.poQtyByCo;
+    bucket.set(idCo, (bucket.get(idCo) ?? 0) + qty);
+  }
+
+  for (const list of map.values()) {
+    const invCos = new Set<string>();
+    for (const prov of list) {
+      for (const [co, qty] of prov.invQtyByCo) {
+        if (qty > 0) invCos.add(co);
       }
+    }
+    for (const prov of list) {
+      prov.qtyByCo = new Map();
+      for (const [co, qty] of prov.invQtyByCo) {
+        if (qty > 0) prov.qtyByCo.set(co, qty);
+      }
+      for (const [co, qty] of prov.poQtyByCo) {
+        if (invCos.has(co) || !(qty > 0)) continue;
+        prov.qtyByCo.set(co, (prov.qtyByCo.get(co) ?? 0) + qty);
+      }
+      prov.idCos = new Set(prov.qtyByCo.keys());
+    }
+    const kept = list.filter((prov) => prov.qtyByCo.size > 0);
+    if (kept.length !== list.length) {
+      list.length = 0;
+      list.push(...kept);
     }
   }
   return map;
@@ -307,25 +357,68 @@ export const queryPreciosProveedorMeta = async (
       key: col.key,
       label: col.label,
     })),
-    marcas: [...new Set(prototypeSedeColumns().map((col) => col.empresa))].map(
+    empresas: [...new Set(prototypeSedeColumns().map((col) => col.empresa))].map(
       (id) => ({ id, label: empresaLabel(id) }),
     ),
+    proveedores: await queryPreciosProveedorCatalogo(client),
     note:
-      "Costo de entrada = EF (OC/FR del día: valor/kilos entregados). Si ese día no hay EF, se usa el promedio. Precio venta no se toca. Doble clic: kilos, venta y margen por quien entregó.",
+      "Costo de entrada = inventario ET/EF del POS (cmmovimiento_inventario en 217). Si ese día no hay ET/EF, se usa el pedido FR/OC. En Mercatodo ET (tránsito) + EF. Precio venta no se toca. Doble clic: $/kg, kilos y margen vendido.",
   };
 };
+
+async function queryPreciosProveedorCatalogo(
+  client: PoolClient,
+): Promise<Array<{ id: string; label: string }>> {
+  const byId = new Map<string, string>();
+  const add = (id: string, label: string) => {
+    const key = id.trim();
+    if (!key) return;
+    const name = stripMercamioProveedorLabel(label.trim() || key);
+    if (!byId.has(key)) byId.set(key, name);
+  };
+  try {
+    const catalog = await client.query<{ id: string; label: string }>(`
+      SELECT
+        COALESCE(NULLIF(BTRIM(id_cricla1), ''), '@SP') AS id,
+        COALESCE(NULLIF(BTRIM(nombre), ''), id_cricla1, '(Sin proveedor)') AS label
+      FROM proveedor_pos_catalogo
+      WHERE COALESCE(activo, TRUE) IS TRUE
+      ORDER BY 2
+      LIMIT 400
+    `);
+    for (const row of catalog.rows) add(String(row.id), String(row.label));
+  } catch {
+    // catálogo opcional
+  }
+  try {
+    const oc = await client.query<{ id: string; label: string }>(`
+      SELECT
+        'oc:' || BTRIM(id_terc) AS id,
+        COALESCE(NULLIF(BTRIM(MAX(terc_nombre)), ''), BTRIM(id_terc)) AS label
+      FROM orden_compra_linea
+      WHERE BTRIM(COALESCE(id_terc, '')) <> ''
+      GROUP BY BTRIM(id_terc)
+      ORDER BY 2
+      LIMIT 400
+    `);
+    for (const row of oc.rows) add(String(row.id), String(row.label));
+  } catch {
+    // OC opcional
+  }
+  return [...byId.entries()]
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "es"));
+}
 
 export type PreciosProveedorQueryInput = {
   fromIso: string;
   toIso: string;
-  lineaId?: string | null;
+  lineaIds?: string[] | null;
   sublineaId?: string | null;
+  proveedorId?: string | null;
   /** Claves `empresa|idCo`. Vacío/null = todas las sedes del prototipo. */
   sedeKeys?: string[] | null;
   search?: string | null;
-  /** Filtro sobre el promedio del ítem (sedes seleccionadas). */
-  pvuMin?: number | null;
-  pvuMax?: number | null;
   itemLimit?: number;
 };
 
@@ -366,14 +459,54 @@ export const queryPreciosProveedorMatrix = async (
 
   const params: unknown[] = [fromCompact, toCompact, fetchLimit];
   let lineaSql = "";
-  if (input.lineaId?.trim()) {
-    params.push(input.lineaId.trim());
+  const lineaIds = (input.lineaIds ?? [])
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (lineaIds.length === 1) {
+    params.push(lineaIds[0]);
     lineaSql = ` AND r.id_linea1 = $${params.length}`;
+  } else if (lineaIds.length > 1) {
+    params.push(lineaIds);
+    lineaSql = ` AND r.id_linea1 = ANY($${params.length}::text[])`;
   }
   let sublineaSql = "";
   if (input.sublineaId?.trim()) {
     params.push(input.sublineaId.trim());
     sublineaSql = ` AND r.id_linea2 = $${params.length}`;
+  }
+  let proveedorSql = "";
+  const proveedorId = input.proveedorId?.trim() ?? "";
+  if (proveedorId.startsWith("oc:")) {
+    params.push(proveedorId.slice(3));
+    proveedorSql = ` AND EXISTS (
+      SELECT 1 FROM orden_compra_linea oc
+      WHERE BTRIM(oc.id_item) = BTRIM(r.id_item)
+        AND LOWER(BTRIM(oc.empresa)) = LOWER(BTRIM(r.empresa_norm))
+        AND BTRIM(oc.id_terc) = $${params.length}
+    )`;
+  } else if (proveedorId.startsWith("t:")) {
+    params.push(proveedorId.slice(2));
+    proveedorSql = ` AND EXISTS (
+      SELECT 1 FROM proveedor_item pi0
+      LEFT JOIN proveedor_tercero pt0
+        ON pt0.empresa = pi0.empresa
+       AND pt0.nit = NULLIF(BTRIM((
+         SELECT pc0.nit FROM proveedor_pos_catalogo pc0
+         WHERE pc0.empresa = pi0.empresa AND pc0.id_cricla1 = pi0.id_cricla1
+         LIMIT 1
+       )), '')
+      WHERE pi0.empresa = r.empresa_norm
+        AND pi0.id_item = r.id_item
+        AND BTRIM(COALESCE(pt0.codigo, '')) = $${params.length}
+    )`;
+  } else if (proveedorId) {
+    params.push(proveedorId);
+    proveedorSql = ` AND EXISTS (
+      SELECT 1 FROM proveedor_item pi0
+      WHERE pi0.empresa = r.empresa_norm
+        AND pi0.id_item = r.id_item
+        AND COALESCE(NULLIF(BTRIM(pi0.id_cricla1), ''), '@SP') = $${params.length}
+    )`;
   }
 
   const sedePairs = columns.map((col) => ({
@@ -396,25 +529,6 @@ export const queryPreciosProveedorMatrix = async (
       OR LOWER(COALESCE(r.item_descripcion, '')) LIKE $${params.length}
     )`;
   }
-
-  const parseBound = (value: number | null | undefined) =>
-    typeof value === "number" && Number.isFinite(value) ? value : null;
-  const pvuMin = parseBound(input.pvuMin ?? null);
-  const pvuMax = parseBound(input.pvuMax ?? null);
-
-  const priceFilterParts: string[] = [];
-  if (pvuMin != null) {
-    params.push(pvuMin);
-    priceFilterParts.push(`AVG(pvu) FILTER (WHERE pvu IS NOT NULL) >= $${params.length}`);
-  }
-  if (pvuMax != null) {
-    params.push(pvuMax);
-    priceFilterParts.push(`AVG(pvu) FILTER (WHERE pvu IS NOT NULL) <= $${params.length}`);
-  }
-  const priceHavingSql =
-    priceFilterParts.length > 0
-      ? `HAVING ${priceFilterParts.join(" AND ")}`
-      : "";
 
   const provCheck = await client.query<{ ok: boolean; tercero: boolean }>(`
     SELECT
@@ -520,6 +634,7 @@ export const queryPreciosProveedorMatrix = async (
         AND NULLIF(TRIM(r.id_item), '') IS NOT NULL
         ${lineaSql}
         ${sublineaSql}
+        ${proveedorSql}
         ${sedeSql}
         ${searchSql}
       GROUP BY r.fecha_dcto, r.empresa_norm, r.id_co_norm, r.id_item
@@ -554,7 +669,6 @@ export const queryPreciosProveedorMatrix = async (
       SELECT id_item
       FROM enriched
       GROUP BY id_item
-      ${priceHavingSql}
       ORDER BY SUM(ventas_netas) DESC
       LIMIT $3
     )
@@ -610,7 +724,9 @@ export const queryPreciosProveedorMatrix = async (
     });
 
     const provId = String(row.proveedor_id ?? "@SP").trim() || "@SP";
-    const provLabel = String(row.proveedor_label ?? "(Sin proveedor)").trim() || "(Sin proveedor)";
+    const provLabel = stripMercamioProveedorLabel(
+      String(row.proveedor_label ?? "(Sin proveedor)").trim() || "(Sin proveedor)",
+    );
     const existing = rowMap.get(itemId);
     if (existing) {
       existing.units += units;
@@ -741,16 +857,24 @@ async function queryCostoEntradaMap(
     })
     .join(", ");
 
-  const ocExists = await client.query<{ ok: boolean }>(`
-    SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
-    ) AS ok
+  const tables = await client.query<{ oc: boolean; rot: boolean }>(`
+    SELECT
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
+      ) AS oc,
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'rotacion_salidas_dia'
+      ) AS rot
   `);
+  const ocExists = Boolean(tables.rows[0]?.oc);
+  const rotExists = Boolean(tables.rows[0]?.rot);
 
-  const efCte = ocExists.rows[0]?.ok
-    ? `
-    ef AS (
+  const extraCtes: string[] = [];
+  if (ocExists) {
+    extraCtes.push(`
+    etef_oc AS (
       SELECT
         LOWER(BTRIM(empresa)) AS empresa,
         CASE
@@ -760,42 +884,91 @@ async function queryCostoEntradaMap(
         BTRIM(id_item) AS id_item,
         BTRIM(fecha_dcto) AS fecha,
         SUM(tot_bruto)
-          / NULLIF(SUM(COALESCE(NULLIF(cantidad_ent, 0), cantidad)), 0) AS pcu_ef
+          / NULLIF(SUM(${ocEntradaQtySql("tipdoc")}), 0) AS pcu
       FROM orden_compra_linea
       WHERE BTRIM(fecha_dcto) >= $4
         AND BTRIM(fecha_dcto) <= $5
         AND BTRIM(id_item) = ANY($3::text[])
+        AND ${ocEntradaInvTipdocSql("empresa", "tipdoc")}
       GROUP BY 1, 2, 3, 4
-      HAVING SUM(COALESCE(NULLIF(cantidad_ent, 0), cantidad)) > 0
-    ),
-    days AS (
-      SELECT empresa, id_co, id_item, fecha FROM inv
-      UNION
-      SELECT empresa, id_co, id_item, fecha FROM ef
-    )
-    SELECT
-      d.empresa,
-      d.id_co,
-      d.id_item,
-      AVG(COALESCE(e.pcu_ef, i.pcu_inv)) AS costo_entrada
-    FROM days d
-    LEFT JOIN ef e
-      ON e.empresa = d.empresa AND e.id_co = d.id_co
-     AND e.id_item = d.id_item AND e.fecha = d.fecha
-    LEFT JOIN inv i
+      HAVING SUM(${ocEntradaQtySql("tipdoc")}) > 0
+    )`);
+    extraCtes.push(`
+    po AS (
+      SELECT
+        LOWER(BTRIM(empresa)) AS empresa,
+        CASE
+          WHEN BTRIM(id_co) ~ '^[0-9]+$' THEN LPAD(BTRIM(id_co), 3, '0')
+          ELSE BTRIM(id_co)
+        END AS id_co,
+        BTRIM(id_item) AS id_item,
+        BTRIM(fecha_dcto) AS fecha,
+        SUM(tot_bruto)
+          / NULLIF(SUM(${ocEntradaQtySql("tipdoc")}), 0) AS pcu
+      FROM orden_compra_linea
+      WHERE BTRIM(fecha_dcto) >= $4
+        AND BTRIM(fecha_dcto) <= $5
+        AND BTRIM(id_item) = ANY($3::text[])
+        AND ${ocEntradaPoTipdocSql("empresa", "tipdoc")}
+      GROUP BY 1, 2, 3, 4
+      HAVING SUM(${ocEntradaQtySql("tipdoc")}) > 0
+    )`);
+  }
+  if (rotExists) {
+    extraCtes.push(`
+    etef_rot AS (
+      SELECT
+        LOWER(BTRIM(empresa)) AS empresa,
+        ${ROTACION_SEDE_SQL} AS id_co,
+        BTRIM(id_item) AS id_item,
+        TO_CHAR(fecha_dia, 'YYYYMMDD') AS fecha,
+        SUM(valor) / NULLIF(SUM(unidades), 0) AS pcu
+      FROM rotacion_salidas_dia
+      WHERE fecha_dia >= $1::date
+        AND fecha_dia <= $2::date
+        AND BTRIM(id_item) = ANY($3::text[])
+        AND ind_es = 1
+        AND ${ocEntradaInvTipdocSql("empresa", "doc_inv_tipo")}
+        AND (LOWER(BTRIM(empresa)), ${ROTACION_SEDE_SQL}) IN (${tupleSql})
+      GROUP BY 1, 2, 3, 4
+      HAVING SUM(unidades) > 0
+    )`);
+  }
+
+  const dayParts = ["SELECT empresa, id_co, id_item, fecha FROM inv"];
+  if (ocExists) {
+    dayParts.push("SELECT empresa, id_co, id_item, fecha FROM etef_oc");
+    dayParts.push("SELECT empresa, id_co, id_item, fecha FROM po");
+  }
+  if (rotExists) {
+    dayParts.push("SELECT empresa, id_co, id_item, fecha FROM etef_rot");
+  }
+  extraCtes.push(`days AS (${dayParts.join(" UNION ")})`);
+
+  const joins: string[] = [];
+  const coalesceArgs: string[] = [];
+  if (ocExists) {
+    joins.push(`LEFT JOIN etef_oc eo
+      ON eo.empresa = d.empresa AND eo.id_co = d.id_co
+     AND eo.id_item = d.id_item AND eo.fecha = d.fecha`);
+    coalesceArgs.push("eo.pcu");
+  }
+  if (rotExists) {
+    joins.push(`LEFT JOIN etef_rot er
+      ON er.empresa = d.empresa AND er.id_co = d.id_co
+     AND er.id_item = d.id_item AND er.fecha = d.fecha`);
+    coalesceArgs.push("er.pcu");
+  }
+  if (ocExists) {
+    joins.push(`LEFT JOIN po p
+      ON p.empresa = d.empresa AND p.id_co = d.id_co
+     AND p.id_item = d.id_item AND p.fecha = d.fecha`);
+    coalesceArgs.push("p.pcu");
+  }
+  joins.push(`LEFT JOIN inv i
       ON i.empresa = d.empresa AND i.id_co = d.id_co
-     AND i.id_item = d.id_item AND i.fecha = d.fecha
-    GROUP BY 1, 2, 3
-    `
-    : `
-    SELECT
-      empresa,
-      id_co,
-      id_item,
-      AVG(pcu_inv) AS costo_entrada
-    FROM inv
-    GROUP BY 1, 2, 3
-    `;
+     AND i.id_item = d.id_item AND i.fecha = d.fecha`);
+  coalesceArgs.push("i.pcu_inv");
 
   const result = await client.query<{
     empresa: string;
@@ -819,8 +992,16 @@ async function queryCostoEntradaMap(
         AND BTRIM(id_item) = ANY($3::text[])
         AND (LOWER(BTRIM(empresa)), ${ROTACION_SEDE_SQL}) IN (${tupleSql})
       GROUP BY 1, 2, 3, 4
-    )${ocExists.rows[0]?.ok ? "," : ""}
-    ${efCte}
+    ),
+    ${extraCtes.join(",\n")}
+    SELECT
+      d.empresa,
+      d.id_co,
+      d.id_item,
+      AVG(COALESCE(${coalesceArgs.join(", ")})) AS costo_entrada
+    FROM days d
+    ${joins.join("\n    ")}
+    GROUP BY 1, 2, 3
     `,
     params,
   );
@@ -1051,11 +1232,17 @@ export async function queryPreciosProveedorItemExpand(
     empresa: string,
     cell: PreciosProveedorCell,
   ) => {
-    const expandId = `${variantId}::${empresa}::${prov.id}`;
+    const proveedorLabel = stripEmpresaProveedorLabel(prov.label);
+    const expandId = proveedorExpandGroupKey(variantId, proveedorLabel);
     const nextCell = { ...cell, rowId: expandId };
     const existing = expandMap.get(expandId);
     if (existing) {
-      existing.cells.push(nextCell);
+      mergeExpandCellInto(existing.cells, nextCell);
+      existing.fromTercero = existing.fromTercero || prov.fromTercero;
+      existing.nit = mergeProveedorNits(existing.nit, prov.nit);
+      if (prov.id.startsWith("oc:") && !existing.proveedorId.startsWith("oc:")) {
+        existing.proveedorId = prov.id;
+      }
       return;
     }
     expandMap.set(expandId, {
@@ -1063,7 +1250,7 @@ export async function queryPreciosProveedorItemExpand(
       itemId: variantId,
       label: variantLabel,
       proveedorId: prov.id,
-      proveedorLabel: prov.label,
+      proveedorLabel,
       criterioId: prov.criterioId,
       criterioLabel: prov.criterioLabel,
       empresa,
@@ -1121,7 +1308,8 @@ export async function queryPreciosProveedorItemExpand(
     const idCo = (sedeKey.split("|")[1] ?? "").padStart(3, "0");
     const variantLabel = itemLabelById.get(variantId) ?? variantId;
     for (const prov of provsForSede(variantId, empresa, idCo)) {
-      const expandId = `${variantId}::${empresa}::${prov.id}`;
+      const proveedorLabel = stripEmpresaProveedorLabel(prov.label);
+      const expandId = proveedorExpandGroupKey(variantId, proveedorLabel);
       let existing = expandMap.get(expandId);
       if (!existing) {
         existing = {
@@ -1129,7 +1317,7 @@ export async function queryPreciosProveedorItemExpand(
           itemId: variantId,
           label: variantLabel,
           proveedorId: prov.id,
-          proveedorLabel: prov.label,
+          proveedorLabel,
           criterioId: prov.criterioId,
           criterioLabel: prov.criterioLabel,
           empresa,
@@ -1139,6 +1327,12 @@ export async function queryPreciosProveedorItemExpand(
           cells: [],
         };
         expandMap.set(expandId, existing);
+      } else {
+        existing.fromTercero = existing.fromTercero || prov.fromTercero;
+        existing.nit = mergeProveedorNits(existing.nit, prov.nit);
+        if (prov.id.startsWith("oc:") && !existing.proveedorId.startsWith("oc:")) {
+          existing.proveedorId = prov.id;
+        }
       }
       const current = existing.cells.find((cell) => cell.sedeKey === sedeKey);
       if (current) {
@@ -1168,11 +1362,9 @@ export async function queryPreciosProveedorItemExpand(
   const rows = [...expandMap.values()].sort((a, b) => {
     if (a.itemId === itemId && b.itemId !== itemId) return -1;
     if (b.itemId === itemId && a.itemId !== itemId) return 1;
-    const byEmpresa = a.empresaLabel.localeCompare(b.empresaLabel, "es");
-    if (byEmpresa !== 0) return byEmpresa;
     const byProv = a.proveedorLabel.localeCompare(b.proveedorLabel, "es");
     if (byProv !== 0) return byProv;
-    return a.empresa.localeCompare(b.empresa, "es");
+    return a.itemId.localeCompare(b.itemId, "es");
   });
 
   return { itemId, label, rows };

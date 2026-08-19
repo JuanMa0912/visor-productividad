@@ -16,6 +16,7 @@ const EXACT_PATH_LABELS: Record<string, string> = {
   "/analisis-de-inventario": "Días de inventario",
   "/participacion-comercial": "Participación comercial",
   "/proveedores": "Proveedores",
+  "/costos": "Costos",
   "/exp/precios-proveedor": "Costos",
   "/ordenes-compra": "Órdenes de compra",
   "/exp/efectividad-cajero": "Efectividad cajero (exp)",

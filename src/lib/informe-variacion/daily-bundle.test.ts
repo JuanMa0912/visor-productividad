@@ -54,6 +54,46 @@ describe("aggregateDailyRowsForRange", () => {
     assert.equal(Number(agg[0].m_yoy), 3);
   });
 
+  it("agrega el periodo anterior arbitrario sin mover YoY", () => {
+    const dailyRows: InformeDailyDbRow[] = [
+      row("20260801", 2, 20, 4),
+      row("20260814", 3, 30, 6),
+      row("20250301", 5, 50, 1),
+      row("20250314", 7, 70, 2),
+      row("20250801", 11, 110, 8),
+      row("20250814", 13, 130, 9),
+      row("20260701", 99, 990, 99),
+    ];
+    const range = parseInformeDayRangeId("1-14");
+    assert.ok(range);
+    const agg = aggregateDailyRowsForRange(dailyRows, 2026, 8, range, {
+      year: 2025,
+      month: 3,
+    });
+    assert.equal(agg.length, 1);
+    assert.equal(Number(agg[0].u_cur), 5);
+    assert.equal(Number(agg[0].u_mom), 12);
+    assert.equal(Number(agg[0].v_mom), 120);
+    assert.equal(Number(agg[0].u_yoy), 24);
+    assert.equal(Number(agg[0].v_yoy), 240);
+  });
+
+  it("si el periodo anterior coincide con YoY, asigna ambos slots", () => {
+    const dailyRows: InformeDailyDbRow[] = [
+      row("20260801", 2, 20, 1),
+      row("20250801", 4, 40, 2),
+    ];
+    const range = parseInformeDayRangeId("1-7");
+    assert.ok(range);
+    const agg = aggregateDailyRowsForRange(dailyRows, 2026, 8, range, {
+      year: 2025,
+      month: 8,
+    });
+    assert.equal(agg.length, 1);
+    assert.equal(Number(agg[0].u_mom), 4);
+    assert.equal(Number(agg[0].u_yoy), 4);
+  });
+
   it("excluye dias fuera del rango parcial", () => {
     const dailyRows: InformeDailyDbRow[] = [
       row("20260607", 1, 10, 1),

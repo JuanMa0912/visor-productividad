@@ -473,7 +473,7 @@ export const listOipvAsistenciaBoard = async (
     }
   }
 
-  // COGS mercancía (misma familia que /exp/precios-proveedor).
+  // COGS mercancía (misma familia que /costos).
   // Si hay filtro de línea, el roll ya trajo el costo recortado.
   if (linea === "todas") try {
     const costoParams: unknown[] = [

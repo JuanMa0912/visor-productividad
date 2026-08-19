@@ -8,7 +8,9 @@ import { lastDayOfMonth } from "@/lib/informe-variacion/day-ranges";
 import {
   computeInformeDailyFetchBounds,
   computeInformePeriods,
+  resolveInformeCompareMonth,
   toCompactDate,
+  type InformeYearMonth,
 } from "@/lib/informe-variacion/periods";
 import {
   buildInformeMargenExcludedTipoFilter,
@@ -63,20 +65,20 @@ const monthFullBounds = (year: number, month: number) => {
 
 type PeriodKind = "cur" | "mom" | "yoy";
 
-const resolvePeriodKind = (
+const resolvePeriodKinds = (
   fecha: string,
   year: number,
   month: number,
-): PeriodKind | null => {
-  if (!/^\d{8}$/.test(fecha)) return null;
+  compare: InformeYearMonth,
+): PeriodKind[] => {
+  if (!/^\d{8}$/.test(fecha)) return [];
   const y = Number(fecha.slice(0, 4));
   const m = Number(fecha.slice(4, 6));
-  const momMonth = month === 1 ? 12 : month - 1;
-  const momYear = month === 1 ? year - 1 : year;
-  if (y === year && m === month) return "cur";
-  if (y === momYear && m === momMonth) return "mom";
-  if (y === year - 1 && m === month) return "yoy";
-  return null;
+  const kinds: PeriodKind[] = [];
+  if (y === year && m === month) kinds.push("cur");
+  if (y === compare.year && m === compare.month) kinds.push("mom");
+  if (y === year - 1 && m === month) kinds.push("yoy");
+  return kinds;
 };
 
 const dayInRange = (
@@ -127,20 +129,20 @@ export const queryInformeDailyRows = async (
   availableRanges: InformeDayRangeSpec[] = [],
   forcedMargenLineas: string[] | null = null,
   excludedMargenTipos: string[] | null = null,
+  compare?: InformeYearMonth | null,
 ): Promise<InformeDailyDbRow[]> => {
   const table = await resolveInformeMargenDataSource(client);
   if (table !== MARGEN_ITEM_DIA_ROLL_TABLE) {
     return [];
   }
 
-  const momMonth = month === 1 ? 12 : month - 1;
-  const momYear = month === 1 ? year - 1 : year;
+  const resolvedCompare = resolveInformeCompareMonth(year, month, compare);
   const { cur, mom, yoy } =
     availableRanges.length > 0
-      ? computeInformeDailyFetchBounds(year, month, availableRanges)
+      ? computeInformeDailyFetchBounds(year, month, availableRanges, resolvedCompare)
       : {
           cur: monthFullBounds(year, month),
-          mom: monthFullBounds(momYear, momMonth),
+          mom: monthFullBounds(resolvedCompare.year, resolvedCompare.month),
           yoy: monthFullBounds(year - 1, month),
         };
 
@@ -215,11 +217,11 @@ export const aggregateDailyRowsForRange = (
   year: number,
   month: number,
   dayRange: InformeDayRangeSpec,
+  compare?: InformeYearMonth | null,
 ): InformeDbAggRow[] => {
+  const resolvedCompare = resolveInformeCompareMonth(year, month, compare);
   const curLast = lastDayOfMonth(year, month);
-  const momMonth = month === 1 ? 12 : month - 1;
-  const momYear = month === 1 ? year - 1 : year;
-  const momLast = lastDayOfMonth(momYear, momMonth);
+  const momLast = lastDayOfMonth(resolvedCompare.year, resolvedCompare.month);
   const yoyLast = lastDayOfMonth(year - 1, month);
 
   const lastByPeriod: Record<PeriodKind, number> = {
@@ -231,69 +233,77 @@ export const aggregateDailyRowsForRange = (
   const map = new Map<string, InformeDbAggRow>();
 
   for (const row of dailyRows) {
-    const period = resolvePeriodKind(row.fecha_dcto, year, month);
-    if (!period) continue;
+    const periods = resolvePeriodKinds(
+      row.fecha_dcto,
+      year,
+      month,
+      resolvedCompare,
+    );
+    if (periods.length === 0) continue;
 
     const day = Number(row.fecha_dcto.slice(6, 8));
-    const rangeToDay =
-      period === "cur" && dayRange.projection
-        ? dayRange.projection.actualToDay
-        : dayRange.projection && period !== "cur"
-          ? dayRange.projection.targetToDay
-          : dayRange.toDay;
-    if (
-      !dayInRange(
-        day,
-        dayRange.fromDay,
-        rangeToDay,
-        lastByPeriod[period],
-      )
-    ) {
-      continue;
-    }
-
-    const key = itemKey(row);
-    let acc = map.get(key);
-    if (!acc) {
-      acc = {
-        empresa: row.empresa,
-        id_co: row.id_co,
-        id_tipo: row.id_tipo,
-        id_linea1: row.id_linea1,
-        nombre_linea1: row.nombre_linea1,
-        id_linea2: row.id_linea2,
-        nombre_linea2: row.nombre_linea2,
-        id_item: row.id_item,
-        item_descripcion: row.item_descripcion,
-        id_unidad: "",
-        u_cur: 0,
-        u_mom: 0,
-        u_yoy: 0,
-        v_cur: 0,
-        v_mom: 0,
-        v_yoy: 0,
-        m_cur: 0,
-        m_mom: 0,
-        m_yoy: 0,
-      };
-      map.set(key, acc);
-    }
-
     const qty = toNum(row.cantidad);
     const val = toNum(row.ventas_netas);
     const margen = toNum(row.margen_pesos);
-    if (period === "cur") {
-      acc.u_cur = toNum(acc.u_cur) + qty;
-      acc.v_cur = toNum(acc.v_cur) + val;
-      acc.m_cur = toNum(acc.m_cur) + margen;
-    } else if (period === "mom") {
-      acc.u_mom = toNum(acc.u_mom) + qty;
-      acc.v_mom = toNum(acc.v_mom) + val;
-      acc.m_mom = toNum(acc.m_mom) + margen;
-    } else {
-      acc.u_yoy = toNum(acc.u_yoy) + qty;
-      acc.v_yoy = toNum(acc.v_yoy) + val;
-      acc.m_yoy = toNum(acc.m_yoy) + margen;
+    const key = itemKey(row);
+    let acc = map.get(key);
+
+    for (const period of periods) {
+      const rangeToDay =
+        period === "cur" && dayRange.projection
+          ? dayRange.projection.actualToDay
+          : dayRange.projection && period !== "cur"
+            ? dayRange.projection.targetToDay
+            : dayRange.toDay;
+      if (
+        !dayInRange(
+          day,
+          dayRange.fromDay,
+          rangeToDay,
+          lastByPeriod[period],
+        )
+      ) {
+        continue;
+      }
+
+      if (!acc) {
+        acc = {
+          empresa: row.empresa,
+          id_co: row.id_co,
+          id_tipo: row.id_tipo,
+          id_linea1: row.id_linea1,
+          nombre_linea1: row.nombre_linea1,
+          id_linea2: row.id_linea2,
+          nombre_linea2: row.nombre_linea2,
+          id_item: row.id_item,
+          item_descripcion: row.item_descripcion,
+          id_unidad: "",
+          u_cur: 0,
+          u_mom: 0,
+          u_yoy: 0,
+          v_cur: 0,
+          v_mom: 0,
+          v_yoy: 0,
+          m_cur: 0,
+          m_mom: 0,
+          m_yoy: 0,
+        };
+        map.set(key, acc);
+      }
+
+      if (period === "cur") {
+        acc.u_cur = toNum(acc.u_cur) + qty;
+        acc.v_cur = toNum(acc.v_cur) + val;
+        acc.m_cur = toNum(acc.m_cur) + margen;
+      } else if (period === "mom") {
+        acc.u_mom = toNum(acc.u_mom) + qty;
+        acc.v_mom = toNum(acc.v_mom) + val;
+        acc.m_mom = toNum(acc.m_mom) + margen;
+      } else {
+        acc.u_yoy = toNum(acc.u_yoy) + qty;
+        acc.v_yoy = toNum(acc.v_yoy) + val;
+        acc.m_yoy = toNum(acc.m_yoy) + margen;
+      }
     }
   }
 
@@ -339,9 +349,10 @@ export const loadInformeVariacionMonthBundle = async (
   forcedMargenTipos: string[] | null = null,
   forcedMargenLineas: string[] | null = null,
   excludedMargenTipos: string[] | null = null,
-  options?: { kind?: "default" | "dinastia" },
+  options?: { kind?: "default" | "dinastia"; compare?: InformeYearMonth | null },
 ): Promise<InformeMonthBundleLoadResult | null> => {
   const kind = options?.kind ?? "default";
+  const compare = options?.compare ?? null;
 
   // Dinastia: no hay margen_item_dia_roll dedicado. Armar bundle rango-a-rango
   // desde margen_dinastia_roll / crudo (mas lento, pero funcional).
@@ -361,6 +372,7 @@ export const loadInformeVariacionMonthBundle = async (
           forcedMargenLineas,
           excludedMargenTipos,
           kind: "dinastia",
+          compare,
         },
       );
     }
@@ -404,6 +416,7 @@ export const loadInformeVariacionMonthBundle = async (
         forcedMargenLineas,
         excludedMargenTipos,
         kind,
+        compare,
       },
     );
     const sqlMs = Date.now() - sqlStarted;
@@ -433,6 +446,7 @@ export const loadInformeVariacionMonthBundle = async (
     availableRanges,
     forcedMargenLineas,
     excludedMargenTipos,
+    compare,
   );
   const sqlMs = Date.now() - sqlStarted;
 
@@ -450,8 +464,14 @@ export const loadInformeVariacionMonthBundle = async (
   };
   const payloads: Record<string, InformeVariacionPayload> = {};
   for (const range of availableRanges) {
-    const dbRows = aggregateDailyRowsForRange(dailyRows, year, month, range);
-    const periods = computeInformePeriods(year, month, range);
+    const dbRows = aggregateDailyRowsForRange(
+      dailyRows,
+      year,
+      month,
+      range,
+      compare,
+    );
+    const periods = computeInformePeriods(year, month, range, compare);
     const payload = applyInformeDayRangeProjection(
       filterInformePayloadForLineScope(
         buildInformeVariacionPayload(dbRows, periods, allowedSedeKeys, kind),

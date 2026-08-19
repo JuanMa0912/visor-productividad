@@ -67,7 +67,7 @@ function DetailRows({
   const defs: Array<[string, 0 | 1 | 2]> = [
     ["Actual", 0],
     ["YoY base", 2],
-    ["MoM base", 1],
+    ["Anterior", 1],
   ];
   return (
     <>
@@ -158,7 +158,7 @@ export function MatrixTable({
         }
         const title =
           matrixMode === "mom"
-            ? `Actual: ${formatInformeValue(cell.cur, metric)} | MoM base: ${formatInformeValue(cell.base, metric)}`
+            ? `Actual: ${formatInformeValue(cell.cur, metric)} | Anterior: ${formatInformeValue(cell.base, metric)}`
             : cell.nd
               ? `Actual: ${formatInformeValue(cell.cur, metric)}`
               : `Actual: ${formatInformeValue(cell.cur, metric)} | YoY base: ${formatInformeValue(cell.base, metric)}`;
@@ -406,7 +406,7 @@ export function MatrixTable({
   return (
     <div className="overflow-x-auto">
       <p className="mb-2 text-xs text-slate-500">
-        Clic: ver Actual / YoY / MoM · Doble clic: expandir nivel
+        Clic: ver Actual / YoY / Anterior · Doble clic: expandir nivel
       </p>
       <table className="min-w-full border-collapse text-sm">
         <thead>
@@ -513,11 +513,11 @@ function MatrixRow({
       )}
       title={
         onDetailClick && onExpand
-          ? "Clic: ver Actual / YoY / MoM · Doble clic: expandir"
+          ? "Clic: ver Actual / YoY / Anterior · Doble clic: expandir"
           : onExpand
             ? "Doble clic: expandir"
             : onDetailClick
-              ? "Clic: ver Actual / YoY / MoM"
+              ? "Clic: ver Actual / YoY / Anterior"
               : undefined
       }
     >

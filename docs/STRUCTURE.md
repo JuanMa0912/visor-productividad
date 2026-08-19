@@ -104,11 +104,11 @@ Codigo compartido sin UI de pagina.
 | Grupo | Rutas |
 | --- | --- |
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
-| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público), `/exp/precios-proveedor` (subtablero opt-in), `/ordenes-compra` (subtablero opt-in) |
+| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público), `/costos` (subtablero opt-in; `/exp/precios-proveedor` redirige), `/ordenes-compra` (subtablero opt-in) |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]`, `/checklists/panel` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
-| Experimental | `/exp/efectividad-cajero` (solo admin); `/exp/precios-proveedor` vive en hub Venta con subtablero `precios-proveedor` |
+| Experimental | `/exp/efectividad-cajero` (solo admin) |
 | Otros | `/ExcelDian` (PascalCase historico de URL) |
 
 ### APIs
@@ -123,7 +123,7 @@ Codigo compartido sin UI de pagina.
 | `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v4`/disco (`volumeSchema=4`); tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und menos visitas QR del día/sede, fruver/carnes/pollo=kg, asadero=UND.Pollo+horas+Unidades+horas) y conservan `$` para Excel/PDF |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
-| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar); el warm matutino precarga también ese `mtd-N` para first paint vía `payload-std`; UI carga **solo el rango visible** (chips bajo demanda) y construye la matriz en chunks; filtro general (empresa/sede/marca=categoría/proveedor/línea) aplica a indicadores, ranking, matriz y explorador; ranking producto×sede (línea/sublínea/marca=categoría/proveedor/producto) y resumen por empresa encima de la matriz |
+| `informe-variacion` | informe de variacion; periodo actual y periodo anterior elegibles (default = mes calendario previo) más YoY del mes actual; los rangos de días se aplican igual a ambos meses; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` solo si el anterior es el MoM por defecto); UI carga **solo el rango visible** y separa tablas en pestañas (empresa/sede, ranking, matriz); filtro general aplica a indicadores y a la pestaña activa |
 | `rotacion` | rotacion e inventario con baja salida; capitulos A-B-C, criticos (D+0+S) y sobrestock (32+ / 50+ dias de inventario); filtro CAT (multi); restock muestra conteo S.inventario (sin verificar / seguimiento / surtido) |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `rotacion/restock-fotos` | GET metadatos o foto base64; PUT foto de item restock ya surtido |
@@ -135,7 +135,7 @@ Codigo compartido sin UI de pagina.
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets; **sin Dinastía** (empresa/sedes excluidas en catálogo y consultas) |
 | `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`); en nivel ítem muestra proveedor (`proveedor_item` + `proveedor_pos_catalogo`); mapa: clic en sede ordena filas por DI (menos→mayor); detalle por sede ordena DI asc por defecto |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
-| `exp/precios-proveedor` | subtablero `precios-proveedor` (opt-in): heatmap ítem×sede; **costo de entrada = EF** (`orden_compra_linea` valor/kilos del día; si no hay EF, promedio de inventario); precio venta no se toca; doble clic: kilos, venta y margen por quien entregó; filtro marca (empresa); sin min/max de costo; máx. 14 días |
+| `costos` | tablero `/costos` (subtablero opt-in `precios-proveedor`; `/exp/precios-proveedor` redirige): heatmap ítem×sede; **costo de entrada = inventario ET/EF** (`cmmovimiento_inventario` en 217 → `orden_compra_linea` / `rotacion_salidas_dia`; si no hay ET/EF ese día, FR/OC); Mercatodo: ET tránsito + EF; precio venta no se toca; doble clic: $/kg, kilos y margen vendido; filtros empresa+sede (obligatorios), proveedor y líneas múltiples; proveedor sin prefijo de empresa (Bogotá/Mercamio/Mercatodo); al expandir, el mismo nombre se agrupa en una fila y suma el costo; máx. 14 días |
 | `ordenes-compra` | tablero opt-in (`ordenes-compra` en `allowed_subdashboards`): OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas; cumplimiento `diaDesde`–`diaHasta` (día del documento, vencidas fuera; cerradas 100% + abiertas/incompletas por qty) |
 | `proveedores/ingreso` | público: meta/catálogo (`proveedor_tercero` filtrado por empresa de la sede del QR) + lookup/entrada/salida; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
@@ -228,7 +228,7 @@ Orden completo despues de `schema-auth.sql`:
 | `create-admin.js` | crear/actualizar admin desde `ADMIN_*` |
 | `test-db.js`, `test-db-postgres.js` | pruebas de conexion |
 | `apply-migration-file.mjs` | aplicar un SQL de `db/migrations/` |
-| `etl/orden-compra/etl_orden_compra.py` | OC incremental POS 217 → `orden_compra` + `orden_compra_linea` (232): dias nuevos + abiertas; GCP via `$SYNC --only orden_compra --only orden_compra_linea` (no entra en el diario 07:50) |
+| `etl/orden-compra/etl_orden_compra.py` | OC incremental POS 217 → `orden_compra` + `orden_compra_linea` (232): dias nuevos + abiertas; ET/EF desde `cmmovimiento_inventario` solo a lineas; GCP via `$SYNC --only orden_compra --only orden_compra_linea` (no entra en el diario 07:50) |
 | `apply-activity-log-migration.mjs` | apoyo historico para migracion de actividad |
 | `playwright_smoke.py` | smoke E2E con dev server activo |
 | `cleanup-logs.sh` | limpieza de logs/sesiones para systemd |

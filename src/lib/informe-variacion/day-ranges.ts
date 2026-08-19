@@ -361,18 +361,31 @@ export const isInformeDayRangeAvailable = (
 const compactDate = (year: number, month: number, day: number) =>
   `${year}${String(month).padStart(2, "0")}${String(day).padStart(2, "0")}`;
 
-/** El payload mostrado corresponde al mes y rango de dias seleccionados en la UI. */
+/** El payload mostrado corresponde al mes, rango de dias y periodo anterior. */
 export const payloadMatchesInformeSelection = (
-  payload: { periods: { current: { from: string; to: string } } },
+  payload: {
+    periods: {
+      current: { from: string; to: string };
+      mom?: { from: string; to: string };
+    };
+  },
   year: number,
   month: number,
   dayRangeId: InformeDayRangeId | "",
   availableRanges: readonly InformeDayRangeSpec[],
+  compare?: { year: number; month: number } | null,
 ): boolean => {
   const { from, to } = payload.periods.current;
   const payloadYear = Number(from.slice(0, 4));
   const payloadMonth = Number(from.slice(4, 6));
   if (payloadYear !== year || payloadMonth !== month) return false;
+  if (compare) {
+    const momFrom = payload.periods.mom?.from;
+    if (!momFrom) return false;
+    const momYear = Number(momFrom.slice(0, 4));
+    const momMonth = Number(momFrom.slice(4, 6));
+    if (momYear !== compare.year || momMonth !== compare.month) return false;
+  }
   if (!dayRangeId) return true;
 
   // Los dias sueltos y el MTD preciso no siempre viven en `availableRanges`

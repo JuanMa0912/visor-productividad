@@ -8,7 +8,9 @@ import { useRequireAuth } from "@/lib/auth/auth-context";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
 import {
   defaultInformeYearMonth,
+  isInformeYearMonthBefore,
   parseYearMonthInput,
+  previousCalendarMonth,
   yearMonthToInputValue,
 } from "@/lib/informe-variacion/periods";
 import {
@@ -48,7 +50,7 @@ type InformeMeta = {
  * v1 compartía clave entre usuarios; v2 namespaced; v3 fuerza wipe al desplegar
  * tras el incidente de payloads solo-Asaderos en sessionStorage.
  */
-const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v5:";
+const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v6:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
 
 const sessionStoragePrefixForUser = (
@@ -79,7 +81,11 @@ const buildRangeCacheKey = (
   month: number,
   rangeId: InformeDayRangeId,
   scopeSuffix = "",
-) => `${year}-${month}:range=${rangeId}${scopeSuffix}`;
+  compare?: { year: number; month: number } | null,
+) => {
+  const cmp = compare ?? previousCalendarMonth(year, month);
+  return `${year}-${month}:cmp=${cmp.year}-${cmp.month}:range=${rangeId}${scopeSuffix}`;
+};
 
 const readSessionInforme = (
   storagePrefix: string,
@@ -222,6 +228,7 @@ export default function InformeVariacionPage() {
   const [metaLoading, setMetaLoading] = useState(true);
   const [maxDate, setMaxDate] = useState<string | null>(null);
   const [monthInput, setMonthInput] = useState("");
+  const [prevMonthInput, setPrevMonthInput] = useState("");
   const [dayRangeId, setDayRangeId] = useState<InformeDayRangeId | "">("");
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -281,10 +288,14 @@ export default function InformeVariacionPage() {
         setMaxDate(data.maxDate);
         const { year, month } = defaultInformeYearMonth(data.maxDate);
         setMonthInput(yearMonthToInputValue(year, month));
+        const prev = previousCalendarMonth(year, month);
+        setPrevMonthInput(yearMonthToInputValue(prev.year, prev.month));
       } catch {
         if (!cancelled) {
           const now = defaultInformeYearMonth(null);
           setMonthInput(yearMonthToInputValue(now.year, now.month));
+          const prev = previousCalendarMonth(now.year, now.month);
+          setPrevMonthInput(yearMonthToInputValue(prev.year, prev.month));
         }
       } finally {
         if (!cancelled) setMetaLoading(false);
@@ -297,6 +308,10 @@ export default function InformeVariacionPage() {
   }, [canAccess, ready, router, tenantEmpresaParam]);
 
   const parsedMonth = useMemo(() => parseYearMonthInput(monthInput), [monthInput]);
+  const parsedPrev = useMemo(
+    () => parseYearMonthInput(prevMonthInput),
+    [prevMonthInput],
+  );
 
   const availableDayRanges = useMemo(() => {
     if (!parsedMonth) return [];
@@ -350,6 +365,16 @@ export default function InformeVariacionPage() {
     if (!parsedMonth) return "";
     return `${parsedMonth.year}-${parsedMonth.month}`;
   }, [parsedMonth]);
+  const prevKey = useMemo(() => {
+    if (!parsedPrev) return "";
+    return `${parsedPrev.year}-${parsedPrev.month}`;
+  }, [parsedPrev]);
+  const selectionKey = monthKey && prevKey ? `${monthKey}:${prevKey}` : "";
+  const prevMonthMax = useMemo(() => {
+    if (!parsedMonth) return undefined;
+    const prev = previousCalendarMonth(parsedMonth.year, parsedMonth.month);
+    return yearMonthToInputValue(prev.year, prev.month);
+  }, [parsedMonth]);
 
   const markRangeReady = useCallback((rangeId: InformeDayRangeId) => {
     setReadyRanges((current) => {
@@ -380,7 +405,7 @@ export default function InformeVariacionPage() {
       // No persistir vacios (p.ej. durante TRUNCATE del refresh diario).
       const scoped = filterInformePayloadForLineScope(data, lineCategoryScope);
       if (!scoped.rows?.length) return null;
-      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
+      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix, parsedPrev);
       memoryCacheRef.current.set(key, scoped);
       const persist = options.persistSession ?? "idle";
       if (persist === "sync") {
@@ -397,7 +422,7 @@ export default function InformeVariacionPage() {
       }
       return scoped;
     },
-    [lineCategoryScope, markRangeReady, markViewReady, scopeCacheSuffix, sessionStoragePrefix],
+    [lineCategoryScope, markRangeReady, markViewReady, parsedPrev, scopeCacheSuffix, sessionStoragePrefix],
   );
 
   const readCachedPayload = useCallback(
@@ -407,7 +432,7 @@ export default function InformeVariacionPage() {
       rangeId: InformeDayRangeId,
       options: { warm?: boolean } = {},
     ): InformeVariacionPayload | null => {
-      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
+      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix, parsedPrev);
       const memoryHit = memoryCacheRef.current.get(key);
       if (memoryHit) {
         markRangeReady(rangeId);
@@ -441,6 +466,7 @@ export default function InformeVariacionPage() {
       lineCategoryScope,
       markRangeReady,
       markViewReady,
+      parsedPrev,
       scopeCacheSuffix,
       sessionStoragePrefix,
     ],
@@ -454,7 +480,7 @@ export default function InformeVariacionPage() {
       signal: AbortSignal,
       options: { force?: boolean } = {},
     ): Promise<InformeVariacionPayload> => {
-      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix);
+      const key = buildRangeCacheKey(year, month, rangeId, scopeCacheSuffix, parsedPrev);
       if (!options.force) {
         const cached = readCachedPayload(year, month, rangeId);
         if (cached) return cached;
@@ -490,6 +516,10 @@ export default function InformeVariacionPage() {
             month: String(month),
             range: rangeId,
           });
+          if (parsedPrev) {
+            params.set("compareYear", String(parsedPrev.year));
+            params.set("compareMonth", String(parsedPrev.month));
+          }
           if (options.force) params.set("force", "1");
           if (tenantEmpresaParam) params.set("empresa", tenantEmpresaParam);
           const response = await fetch(
@@ -534,7 +564,7 @@ export default function InformeVariacionPage() {
       inflightRef.current.set(key, request);
       return request;
     },
-    [readCachedPayload, router, storePayload, scopeCacheSuffix, tenantEmpresaParam],
+    [parsedPrev, readCachedPayload, router, storePayload, scopeCacheSuffix, tenantEmpresaParam],
   );
 
   /** Clic: swap sync si la vista ya esta caliente; si no, calienta sin congelar el UI. */
@@ -643,13 +673,18 @@ export default function InformeVariacionPage() {
     const mom = weekdayOf(payload.periods.mom.from);
     const yoy = weekdayOf(payload.periods.yoy.from);
     if (cur === mom && cur === yoy) return null;
-    return `Se compara el mismo numero de dia: este es ${NAMES[cur]}, el del mes anterior cae en ${NAMES[mom]} y el del año pasado en ${NAMES[yoy]}. Parte de la variacion puede ser efecto calendario, no venta.`;
+    return `Se compara el mismo numero de dia: este es ${NAMES[cur]}, el del periodo anterior cae en ${NAMES[mom]} y el del año pasado en ${NAMES[yoy]}. Parte de la variacion puede ser efecto calendario, no venta.`;
   }, [activeSingleDay, payload]);
 
   const loadMonthBundle = useCallback(
     async (options: { force?: boolean } = {}) => {
-      if (!parsedMonth) {
+      if (!parsedMonth || !parsedPrev) {
         setError("Selecciona un mes valido.");
+        setMonthLoadLocked(false);
+        return;
+      }
+      if (!isInformeYearMonthBefore(parsedPrev, parsedMonth)) {
+        setError("El periodo anterior debe ser anterior al periodo actual.");
         setMonthLoadLocked(false);
         return;
       }
@@ -663,7 +698,7 @@ export default function InformeVariacionPage() {
       }
 
       const { year, month } = parsedMonth;
-      const monthToken = `${year}-${month}`;
+      const monthToken = `${year}-${month}:${parsedPrev.year}-${parsedPrev.month}`;
       activeMonthKeyRef.current = monthToken;
       setMonthLoadLocked(true);
 
@@ -679,7 +714,7 @@ export default function InformeVariacionPage() {
           }
         }
         for (const key of [...inflightRef.current.keys()]) {
-          if (key.startsWith(`${year}-${month}:range=`)) {
+          if (key.startsWith(`${year}-${month}:`)) {
             inflightRef.current.delete(key);
           }
         }
@@ -708,11 +743,11 @@ export default function InformeVariacionPage() {
             if (
               current.has(range.id) ||
               memoryCacheRef.current.has(
-                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix),
+                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix, parsedPrev),
               ) ||
               readSessionInforme(
                 sessionStoragePrefix,
-                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix),
+                buildRangeCacheKey(year, month, range.id, scopeCacheSuffix, parsedPrev),
               )
             ) {
               kept.add(range.id);
@@ -801,12 +836,12 @@ export default function InformeVariacionPage() {
         }
       }
     },
-    [availableDayRanges, fetchRangePayload, parsedMonth, readCachedPayload, scopeCacheSuffix, sessionStoragePrefix],
+    [availableDayRanges, fetchRangePayload, parsedMonth, parsedPrev, readCachedPayload, scopeCacheSuffix, sessionStoragePrefix],
   );
 
-  // Carga / precarga al entrar o cambiar de mes.
+  // Carga al entrar o cambiar periodo actual / anterior.
   useEffect(() => {
-    if (!ready || !canAccess || metaLoading || !monthKey) return;
+    if (!ready || !canAccess || metaLoading || !selectionKey) return;
     setReadyRanges(new Set());
     setViewReadyRanges(new Set());
     setPrefetchDone(0);
@@ -820,8 +855,8 @@ export default function InformeVariacionPage() {
       monthAbortRef.current?.abort();
       rangeAbortRef.current?.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bundle solo por mes
-  }, [canAccess, metaLoading, monthKey, ready]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bundle por mes actual + anterior
+  }, [canAccess, metaLoading, selectionKey, ready]);
 
   const preloadReady =
     prefetchTotal > 0 &&
@@ -838,8 +873,9 @@ export default function InformeVariacionPage() {
       parsedMonth.month,
       dayRangeId,
       availableDayRanges,
+      parsedPrev,
     );
-  }, [availableDayRanges, dayRangeId, parsedMonth, payload]);
+  }, [availableDayRanges, dayRangeId, parsedMonth, parsedPrev, payload]);
   const boardDataPending =
     rangeSwitchPending ||
     (Boolean(payload) &&
@@ -900,20 +936,6 @@ export default function InformeVariacionPage() {
               Fuente: Dinastía
             </span>
           ) : null}
-          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-            Periodo actual
-            <input
-              type="month"
-              value={monthInput}
-              disabled={periodControlsDisabled}
-              onChange={(event) => {
-                if (periodControlsDisabled) return;
-                setMonthInput(event.target.value);
-              }}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-              aria-busy={monthLoadLocked}
-            />
-          </label>
           <button
             type="button"
             onClick={() => void loadMonthBundle({ force: true })}
@@ -927,8 +949,9 @@ export default function InformeVariacionPage() {
           </button>
         </div>
 
+        <div className="mb-5 rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
         {availableDayRanges.length > 0 ? (
-          <div className="mb-5 rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+          <>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Rango de dias
@@ -994,14 +1017,70 @@ export default function InformeVariacionPage() {
                 (último cargado). Fórmula: (venta 1→
                 {payload.meta.dayRange.projection.actualToDay} /{" "}
                 {payload.meta.dayRange.projection.actualToDay}) ×{" "}
-                {payload.meta.dayRange.projection.targetToDay}. MoM/YoY usan el
-                tramo cerrado comparable.
+                {payload.meta.dayRange.projection.targetToDay}. El periodo
+                anterior y YoY usan el tramo cerrado comparable.
               </p>
             ) : null}
+          </>
+        ) : parsedMonth ? (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Este mes aun no tiene dias cargados en la fuente de datos. Elige un mes
+            anterior o espera a que suba el primer dia del mes.
+          </p>
+        ) : null}
 
-            {maxSingleDay ? (
-              <div className="mt-3 border-t border-slate-100 pt-3">
-                <div className="flex flex-wrap items-center gap-2">
+            <div
+              className={cn(
+                "flex flex-wrap items-end gap-3",
+                availableDayRanges.length > 0 && "mt-3 border-t border-slate-100 pt-3",
+              )}
+            >
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Periodo actual
+                <input
+                  type="month"
+                  value={monthInput}
+                  disabled={periodControlsDisabled}
+                  max={
+                    maxDate && maxDate.length >= 6
+                      ? `${maxDate.slice(0, 4)}-${maxDate.slice(4, 6)}`
+                      : undefined
+                  }
+                  onChange={(event) => {
+                    if (periodControlsDisabled) return;
+                    const next = parseYearMonthInput(event.target.value);
+                    if (!next) return;
+                    setMonthInput(event.target.value);
+                    const prev = previousCalendarMonth(next.year, next.month);
+                    setPrevMonthInput(
+                      yearMonthToInputValue(prev.year, prev.month),
+                    );
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  aria-busy={monthLoadLocked}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                Periodo anterior
+                <input
+                  type="month"
+                  value={prevMonthInput}
+                  disabled={periodControlsDisabled || !parsedMonth}
+                  max={prevMonthMax}
+                  onChange={(event) => {
+                    if (periodControlsDisabled || !parsedMonth) return;
+                    const next = parseYearMonthInput(event.target.value);
+                    if (!next || !isInformeYearMonthBefore(next, parsedMonth)) {
+                      return;
+                    }
+                    setPrevMonthInput(event.target.value);
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                />
+              </label>
+
+              {maxSingleDay ? (
+                <>
                   <button
                     type="button"
                     disabled={periodControlsDisabled}
@@ -1075,27 +1154,21 @@ export default function InformeVariacionPage() {
                     ›
                   </button>
 
-                  <span className="text-xs text-slate-400">
+                  <span className="pb-2 text-xs text-slate-400">
                     {activeSingleDay
                       ? "Venta de un solo dia"
                       : `Ultimo dia cargado: ${maxSingleDay}`}
                   </span>
-                </div>
+                </>
+              ) : null}
+            </div>
 
                 {activeSingleDay && weekdayComparisonWarning ? (
                   <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
                     {weekdayComparisonWarning}
                   </p>
                 ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : parsedMonth ? (
-          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Este mes aun no tiene dias cargados en la fuente de datos. Elige un mes
-            anterior o espera a que suba el primer dia del mes.
-          </div>
-        ) : null}
+        </div>
 
         {error ? (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -1115,7 +1188,7 @@ export default function InformeVariacionPage() {
           </div>
         ) : showBoard ? (
           <InformeVariacionBoard
-            key={`${monthKey || "informe"}${scopeCacheSuffix}`}
+            key={`${selectionKey || "informe"}${scopeCacheSuffix}`}
             payload={payload!}
             dataPending={boardDataPending}
             categoryScopeLocked={Boolean(

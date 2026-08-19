@@ -657,7 +657,8 @@ ETL: `scripts/etl/orden-compra/etl_orden_compra.py` (ver su
 
 Notas:
 
-- Origen: `cmmovimiento_ocompra` en 217 (`OC` comercial, `FR` fruver, `OM` mercaderista, `OS` SAC).
+- Origen OC: `cmmovimiento_ocompra` en 217 (`OC` comercial, `FR` fruver, `OM` mercaderista, `OS` SAC).
+- Origen ET/EF: `cmmovimiento_inventario` en 217 (entrada `ind_es=1`, bodega `01`). Solo se escriben en `orden_compra_linea` (no en cabecera, para no mezclar el tablero de OC). Costos usa esos costos por encima de FR.
 - Diario: dias de `fecha_dcto` que faltan hasta ayer + refresh de OC abiertas (`ind_estado <> 2`) ya en dest. No toca las cumplidas.
 - Primera carga: `--mes-actual` / `--desde`. Backfill sucio: `--reemplazar --desde/--hasta`.
 - Confirmacion del sistema: `usuario_conf` / `fecha_conf` / `hora_conf`. Recepcion: `cantidad` vs `cantidad_ent`.

@@ -16,7 +16,7 @@ export const INFORME_RANKING_DIMENSIONS: Array<{
 }> = [
   { id: "lin", label: "Línea", keyIndex: 2 },
   { id: "sub", label: "Sublínea", keyIndex: 3 },
-  { id: "marca", label: "Marca", keyIndex: 1 },
+  { id: "marca", label: "Categoría", keyIndex: 1 },
   { id: "prov", label: "Proveedor", keyIndex: -1 },
   { id: "item", label: "Producto", keyIndex: 4 },
 ];

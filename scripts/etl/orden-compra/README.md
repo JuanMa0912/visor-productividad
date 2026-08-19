@@ -15,6 +15,11 @@ Origen POS: `cmmovimiento_ocompra` (tipos `OC` `FR` `OM` `OS`). Confirmacion del
 sistema = `usuario_conf` / `fecha_conf` / `hora_conf`. Recepcion = `cantidad` vs
 `cantidad_ent` y `ind_estado` (`1` CONFIRMADO, `2` CUMPLIDO).
 
+ET/EF **no** estan en esa tabla: salen de `cmmovimiento_inventario` (entrada
+`ind_es=1`, bodega principal `01`) y se cargan **solo** en `orden_compra_linea`.
+Primera carga: `--solo-et-ef --mes-actual`. El incremental diario las refresca
+junto con las OC. El tablero Costos prefiere ET/EF sobre FR para no duplicar.
+
 ## Carga incremental (default)
 
 Dos pasos, sin reescribir el historico cumplido:

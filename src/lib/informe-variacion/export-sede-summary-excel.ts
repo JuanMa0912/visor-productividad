@@ -153,7 +153,7 @@ const MARG_FMT = '0.0"%";"—"';
     "YoY %",
     `${momLabel} base`,
     "Marg %",
-    "MoM %",
+    "Ant. %",
     "Participacion %",
   ].forEach((label, index) => {
     const cell = headerRow.getCell(index + 1);

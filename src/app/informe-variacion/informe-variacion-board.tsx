@@ -6,9 +6,9 @@ import {
   aggregateBySede,
   aggregateMarginBySede,
   aggregateVentasBySede,
+  compileInformeRowFilter,
   filterRowIndices,
   hasActiveInformeFilters,
-  passInformeRowFilter,
   sumFilteredRows,
   sumRowIndices,
   type PeriodTriple,
@@ -36,17 +36,22 @@ import {
 import { cn } from "@/lib/shared/utils";
 import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
 import { MatrixTable } from "@/app/informe-variacion/informe-variacion-matrix";
-import {
-  InformeEmpresaSummaryCards,
-  InformeRankingTable,
-} from "@/app/informe-variacion/informe-variacion-ranking";
-import { TreeTable } from "@/app/informe-variacion/informe-variacion-tree";
+import { InformeEmpresaSummaryCards, InformeRankingTable } from "@/app/informe-variacion/informe-variacion-ranking";
+import { DiMultiSelect } from "@/app/analisis-de-inventario/di-multi-select";
 import type {
   InformeRankingDimension,
   InformeRankingSort,
 } from "@/lib/informe-variacion/ranking";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
+
+type InformeBoardTab = "resumen" | "ranking" | "matriz";
+
+const BOARD_TABS: Array<{ id: InformeBoardTab; label: string }> = [
+  { id: "resumen", label: "Empresa y sede" },
+  { id: "ranking", label: "Ranking" },
+  { id: "matriz", label: "Matriz" },
+];
 
 type Props = {
   payload: InformeVariacionPayload;
@@ -81,33 +86,26 @@ function InformeVariacionBoardReady({
     useState<InformeRankingDimension>("item");
   const [rankingSort, setRankingSort] = useState<InformeRankingSort>("cur");
   const [rankingMode, setRankingMode] = useState<"yoy" | "mom">("yoy");
-  const [treeMetric, setTreeMetric] = useState<InformeMetric>("v");
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
   const deferredFilters = useDeferredValue(filters);
   const [matrixMode, setMatrixMode] = useState<"yoy" | "mom">("yoy");
   const [matrixDisplay, setMatrixDisplay] = useState<"pct" | "value">("pct");
   const [matrixDepth, setMatrixDepth] = useState<"cat" | "lin">("cat");
   const [matrixOpen, setMatrixOpen] = useState<Set<string>>(() => new Set());
-  const [treeOpen, setTreeOpen] = useState<Set<string>>(() => new Set());
-  const [treeShown, setTreeShown] = useState<Record<string, number>>({});
   const [sedeSort, setSedeSort] = useState({ col: "name", dir: 1 });
-  const [treeSort, setTreeSort] = useState({ col: "name", dir: 1 });
   const [matrixSort, setMatrixSort] = useState({ col: -1, dir: 1 });
-  /** El explorador es costoso; no montarlo hasta que el usuario lo pida. */
-  const [treeMounted, setTreeMounted] = useState(false);
+  const [boardTab, setBoardTab] = useState<InformeBoardTab>("resumen");
 
   const filtersPending =
     deferredFilters !== filters && hasActiveInformeFilters(filters);
 
   const pass = useCallback(
-    (row: (typeof prepared.rows)[number]) =>
-      passInformeRowFilter(
-        row,
-        deferredFilters,
-        prepared.sedeEmpresas,
-        prepared.itemsLow,
-        prepared.itemProv,
-      ),
+    compileInformeRowFilter(
+      deferredFilters,
+      prepared.sedeEmpresas,
+      prepared.itemsLow,
+      prepared.itemProv,
+    ),
     [deferredFilters, prepared],
   );
 
@@ -332,7 +330,7 @@ function InformeVariacionBoardReady({
       ) : null}
       {payload.meta.comparisonAvailable === false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          No hay datos reales de comparacion (MoM / YoY) en margen para este mes. Los
+          No hay datos reales de comparacion (periodo anterior / YoY) en margen para este mes. Los
           porcentajes y heatmaps quedaran vacios hasta que existan bases en la base de datos.
         </div>
       ) : null}
@@ -348,7 +346,7 @@ function InformeVariacionBoardReady({
           </b>
         </span>
         <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600">
-          MoM vs:{" "}
+          Periodo anterior:{" "}
           <b className="text-slate-900">
             {dataPending ? (
               <span className="inline-block h-3.5 w-28 animate-pulse rounded bg-slate-200 align-middle" />
@@ -401,13 +399,13 @@ function InformeVariacionBoardReady({
             }
           />
           <KpiCard
-            title={`${momLabel} (base MoM)`}
+            title={`${momLabel} (base anterior)`}
             value={formatInformeValue(kpiTotals[1], kpiMetric)}
             tag={filteredTag}
             loading={dataPending}
             footer={
               <>
-                <VariationChip current={kpiTotals[0]} previous={kpiTotals[1]} /> MoM
+                <VariationChip current={kpiTotals[0]} previous={kpiTotals[1]} /> Ant.
               </>
             }
           />
@@ -425,8 +423,8 @@ function InformeVariacionBoardReady({
         </div>
         {kpiMetric === "u" ? (
           <p className="mt-3 text-xs text-slate-500">
-            En unidades, totales de sede/empresa/categoría (matriz, resumen y
-            explorador) convierten kilos/litros/pollos/huevos con reglas de{" "}
+            En unidades, totales de sede/empresa/categoría (matriz y resumen)
+            convierten kilos/litros/pollos/huevos con reglas de{" "}
             <span className="font-medium text-slate-700">rollup</span> (en
             asadero las porciones excluidas siguen en crudo para no romper
             padre≥hijo). En el resumen por empresa/sede, los pollos und se
@@ -449,6 +447,32 @@ function InformeVariacionBoardReady({
           aria-hidden
         />
       ) : null}
+      <div
+        role="tablist"
+        aria-label="Tablas del informe"
+        className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
+      >
+        {BOARD_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={boardTab === tab.id}
+            onClick={() => setBoardTab(tab.id)}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
+              boardTab === tab.id
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {boardTab === "resumen" ? (
+        <>
       <Section
         title="Resumen por empresa y sede"
         actions={
@@ -483,7 +507,17 @@ function InformeVariacionBoardReady({
           }
         />
       </Section>
+      <Section title="Resumen por empresa">
+        <InformeEmpresaSummaryCards
+          payload={prepared}
+          metric={rankingMetric}
+          pass={pass}
+        />
+      </Section>
+        </>
+      ) : null}
 
+      {boardTab === "ranking" ? (
       <Section
         title="Ranking producto × sede"
         actions={null}
@@ -501,15 +535,9 @@ function InformeVariacionBoardReady({
           pass={pass}
         />
       </Section>
+      ) : null}
 
-      <Section title="Resumen por empresa">
-        <InformeEmpresaSummaryCards
-          payload={prepared}
-          metric={rankingMetric}
-          pass={pass}
-        />
-      </Section>
-
+      {boardTab === "matriz" ? (
       <Section
         title="Matriz comparativa entre sedes"
         actions={
@@ -528,7 +556,7 @@ function InformeVariacionBoardReady({
                 value={matrixMode}
                 options={[
                   { id: "yoy", label: "YoY %" },
-                  { id: "mom", label: "MoM %" },
+                  { id: "mom", label: "Ant. %" },
                 ]}
                 onChange={(value) => setMatrixMode(value as "yoy" | "mom")}
               />
@@ -569,57 +597,7 @@ function InformeVariacionBoardReady({
           matrixSortKeys={matrixSortKeys}
         />
       </Section>
-
-      <Section
-        title="Explorador jerarquico"
-        actions={
-          treeMounted ? (
-            <MetricToggle value={treeMetric} onChange={setTreeMetric} />
-          ) : null
-        }
-      >
-        {treeMounted ? (
-          <>
-            <TreeTable
-              payload={prepared}
-              metric={treeMetric}
-              pass={pass}
-              treeOpen={treeOpen}
-              setTreeOpen={setTreeOpen}
-              treeShown={treeShown}
-              setTreeShown={setTreeShown}
-              sort={treeSort}
-              onSort={(col) =>
-                setTreeSort((current) => ({
-                  col,
-                  dir: current.col === col ? current.dir * -1 : 1,
-                }))
-              }
-              curLabel={curLabel}
-              momLabel={momLabel}
-              yoyLabel={yoyLabel}
-            />
-            <p className="mt-3 text-xs text-slate-500">
-              Participacion % = peso del nodo dentro del total filtrado del periodo actual. «Nuevo» =
-              sin venta en el periodo base.
-            </p>
-          </>
-        ) : (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
-            <p className="text-sm text-slate-600">
-              El explorador carga el detalle completo sede → categoría → ítem y
-              puede ralentizar el navegador. Ábrelo solo si lo necesitas.
-            </p>
-            <button
-              type="button"
-              onClick={() => setTreeMounted(true)}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-            >
-              Mostrar explorador
-            </button>
-          </div>
-        )}
-      </Section>
+      ) : null}
 
       <footer className="text-xs text-slate-500">
         Fuente: margen_final (movimiento unificado). Valor = ventas netas (vlrtot_bru) en miles de
@@ -843,88 +821,120 @@ function InformeFilters({
   categoryScopeLocked?: boolean;
   lineScopeLocked?: boolean;
 }) {
+  const keep = (selected: string[], allowed: Array<string | number>) => {
+    const set = new Set(allowed.map(String));
+    return selected.filter((value) => set.has(value));
+  };
+
+  const empOptions = INFORME_EMPRESA_ORDER.filter((entry) =>
+    payload.sedes.some((sede) => sede.e === entry.label),
+  ).map((entry) => ({ value: entry.label, label: entry.label }));
+
   const sedeOptions = payload.sedes
     .map((sede, index) => ({ index, sede }))
-    .filter(({ sede }) => !filters.emp || sede.e === filters.emp);
+    .filter(
+      ({ sede }) =>
+        filters.emp.length === 0 || filters.emp.includes(sede.e),
+    )
+    .map(({ index, sede }) => ({
+      value: String(index),
+      label: `${sede.e} · ${sede.s}`,
+    }));
 
   const catOptions = useMemo(
     () =>
       payload.rowIndex.allCats
         .slice()
-        .sort((a, b) => payload.cats[a]!.localeCompare(payload.cats[b]!, "es")),
+        .sort((a, b) => payload.cats[a]!.localeCompare(payload.cats[b]!, "es"))
+        .map((value) => ({ value: String(value), label: payload.cats[value]! })),
     [payload.cats, payload.rowIndex.allCats],
   );
 
   const linOptions = useMemo(() => {
-    if (filters.cat === "") return [];
-    return (payload.rowIndex.linsByCat.get(Number(filters.cat)) ?? []).slice().sort((a, b) =>
-      payload.lins[a]!.localeCompare(payload.lins[b]!, "es"),
-    );
+    if (filters.cat.length === 0) return [];
+    const ids = new Set<number>();
+    for (const cat of filters.cat) {
+      for (const lin of payload.rowIndex.linsByCat.get(Number(cat)) ?? []) {
+        ids.add(lin);
+      }
+    }
+    return [...ids]
+      .sort((a, b) => payload.lins[a]!.localeCompare(payload.lins[b]!, "es"))
+      .map((value) => ({ value: String(value), label: payload.lins[value]! }));
   }, [filters.cat, payload.lins, payload.rowIndex.linsByCat]);
 
   const subOptions = useMemo(() => {
-    if (filters.cat === "" || filters.lin === "") return [];
-    const key = `${filters.cat}|${filters.lin}`;
-    return (payload.rowIndex.subsByCatLin.get(key) ?? []).slice().sort((a, b) =>
-      payload.subs[a]!.localeCompare(payload.subs[b]!, "es"),
-    );
+    if (filters.cat.length === 0 || filters.lin.length === 0) return [];
+    const ids = new Set<number>();
+    for (const cat of filters.cat) {
+      for (const lin of filters.lin) {
+        for (const sub of payload.rowIndex.subsByCatLin.get(`${cat}|${lin}`) ?? []) {
+          ids.add(sub);
+        }
+      }
+    }
+    return [...ids]
+      .sort((a, b) => payload.subs[a]!.localeCompare(payload.subs[b]!, "es"))
+      .map((value) => ({ value: String(value), label: payload.subs[value]! }));
   }, [filters.cat, filters.lin, payload.rowIndex.subsByCatLin, payload.subs]);
 
   const itemOptions = useMemo(() => {
-    if (filters.cat === "" || filters.lin === "" || filters.sub === "") return [];
-    const key = `${filters.cat}|${filters.lin}|${filters.sub}`;
-    let items = payload.rowIndex.itemsByCatLinSub.get(key) ?? [];
-    if (filters.emp || filters.sede || filters.q) {
-      const allowed = new Set<number>();
-      for (const row of payload.rows) {
-        if (filters.emp && payload.sedeEmpresas[row[0]] !== filters.emp) continue;
-        if (filters.sede !== "" && row[0] !== Number(filters.sede)) continue;
-        if (row[1] !== Number(filters.cat)) continue;
-        if (row[2] !== Number(filters.lin)) continue;
-        if (row[3] !== Number(filters.sub)) continue;
-        if (filters.q && !payload.itemsLow[row[4]]?.includes(filters.q)) continue;
-        allowed.add(row[4]);
-      }
-      items = items.filter((item) => allowed.has(item));
+    if (
+      filters.cat.length === 0 ||
+      filters.lin.length === 0 ||
+      filters.sub.length === 0
+    ) {
+      return [];
     }
-    return items
-      .slice()
+    const ids = new Set<number>();
+    for (const cat of filters.cat) {
+      for (const lin of filters.lin) {
+        for (const sub of filters.sub) {
+          for (const item of payload.rowIndex.itemsByCatLinSub.get(
+            `${cat}|${lin}|${sub}`,
+          ) ?? []) {
+            ids.add(item);
+          }
+        }
+      }
+    }
+    const matcher = compileInformeRowFilter(
+      { ...filters, item: [], prov: [] },
+      payload.sedeEmpresas,
+      payload.itemsLow,
+      payload.itemProv,
+    );
+    const allowed = new Set<number>();
+    for (const row of payload.rows) {
+      if (matcher(row)) allowed.add(row[4]);
+    }
+    return [...ids]
+      .filter((item) => allowed.has(item))
       .sort((a, b) => payload.items[a]!.localeCompare(payload.items[b]!, "es"))
-      .slice(0, 6000);
+      .slice(0, 6000)
+      .map((value) => ({ value: String(value), label: payload.items[value]! }));
   }, [filters, payload]);
 
   const provOptions = useMemo(() => {
     const labels = payload.provs ?? [];
     if (labels.length === 0) return [];
+    const matcher = compileInformeRowFilter(
+      { ...filters, prov: [] },
+      payload.sedeEmpresas,
+      payload.itemsLow,
+      payload.itemProv,
+    );
     const allowed = new Set<number>();
     for (const row of payload.rows) {
-      if (filters.emp && payload.sedeEmpresas[row[0]] !== filters.emp) continue;
-      if (filters.sede !== "" && row[0] !== Number(filters.sede)) continue;
-      if (filters.cat !== "" && row[1] !== Number(filters.cat)) continue;
-      if (filters.lin !== "" && row[2] !== Number(filters.lin)) continue;
-      if (filters.sub !== "" && row[3] !== Number(filters.sub)) continue;
-      if (filters.item !== "" && row[4] !== Number(filters.item)) continue;
-      if (filters.q && !payload.itemsLow[row[4]]?.includes(filters.q)) continue;
-      allowed.add(payload.itemProv?.[row[4]] ?? 0);
+      if (matcher(row)) allowed.add(payload.itemProv?.[row[4]] ?? 0);
     }
     return [...allowed]
-      .sort((a, b) =>
-        (labels[a] ?? "").localeCompare(labels[b] ?? "", "es"),
-      );
+      .sort((a, b) => (labels[a] ?? "").localeCompare(labels[b] ?? "", "es"))
+      .map((value) => ({
+        value: String(value),
+        label: labels[value] ?? `Proveedor ${value}`,
+      }));
   }, [filters, payload]);
-
-  const activeLabel =
-    filters.item !== ""
-      ? payload.items[Number(filters.item)]
-      : filters.prov !== ""
-        ? payload.provs?.[Number(filters.prov)]
-        : filters.sub !== ""
-          ? payload.subs[Number(filters.sub)]
-          : filters.lin !== ""
-            ? payload.lins[Number(filters.lin)]
-            : filters.cat !== ""
-              ? payload.cats[Number(filters.cat)]
-              : "";
 
   return (
     <section className="rounded-xl border border-l-4 border-l-blue-600 border-slate-200 bg-white p-4 shadow-sm">
@@ -934,114 +944,134 @@ function InformeFilters({
           Limpiar filtros
         </button>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <FilterSelect
-          value={filters.emp}
-          onChange={(value) => onChange({ emp: value, sede: "" })}
-          placeholder="Todas las empresas"
-          options={INFORME_EMPRESA_ORDER.filter((entry) =>
-            payload.sedes.some((sede) => sede.e === entry.label),
-          ).map((entry) => ({
-            value: entry.label,
-            label: entry.label,
-          }))}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <DiMultiSelect
+          label="Empresas"
+          values={filters.emp}
+          options={empOptions}
+          emptyLabel="Todas"
+          onChange={(emp) =>
+            onChange({
+              emp,
+              sede: keep(
+                filters.sede,
+                payload.sedes.flatMap((sede, index) =>
+                  emp.length === 0 || emp.includes(sede.e) ? [String(index)] : [],
+                ),
+              ),
+            })
+          }
         />
-        <FilterSelect
-          value={filters.sede}
-          onChange={(value) => onChange({ sede: value })}
-          placeholder="Todas las sedes"
-          options={sedeOptions.map(({ index, sede }) => ({
-            value: String(index),
-            label: `${sede.e} · ${sede.s}`,
-          }))}
+        <DiMultiSelect
+          label="Sedes"
+          values={filters.sede}
+          options={sedeOptions}
+          emptyLabel="Todas"
+          searchable
+          onChange={(sede) => onChange({ sede })}
         />
-        <FilterSelect
-          value={filters.cat}
-          onChange={(value) => onChange({ cat: value, lin: "", sub: "", item: "", prov: "" })}
-          placeholder="Todas las marcas"
-          options={catOptions.map((value) => ({ value: String(value), label: payload.cats[value] }))}
+        <DiMultiSelect
+          label="Categoria"
+          values={filters.cat}
+          options={catOptions}
+          emptyLabel="Todas"
+          searchable
           disabled={categoryScopeLocked}
+          onChange={(cat) => {
+            const nextLins = new Set<number>();
+            for (const id of cat) {
+              for (const lin of payload.rowIndex.linsByCat.get(Number(id)) ?? []) {
+                nextLins.add(lin);
+              }
+            }
+            const lin = keep(filters.lin, [...nextLins]);
+            const nextSubs = new Set<number>();
+            for (const catId of cat) {
+              for (const linId of lin) {
+                for (const sub of payload.rowIndex.subsByCatLin.get(
+                  `${catId}|${linId}`,
+                ) ?? []) {
+                  nextSubs.add(sub);
+                }
+              }
+            }
+            const sub = keep(filters.sub, [...nextSubs]);
+            onChange({ cat, lin, sub, item: [] });
+          }}
         />
         {payload.provs && payload.provs.length > 0 ? (
-          <FilterSelect
-            value={filters.prov}
-            onChange={(value) => onChange({ prov: value })}
-            placeholder="Todos los proveedores"
-            options={provOptions.map((value) => ({
-              value: String(value),
-              label: payload.provs?.[value] ?? `Proveedor ${value}`,
-            }))}
+          <DiMultiSelect
+            label="Proveedores"
+            values={filters.prov}
+            options={provOptions}
+            emptyLabel="Todos"
+            searchable
+            onChange={(prov) => onChange({ prov })}
           />
         ) : null}
-        <FilterSelect
-          value={filters.lin}
-          onChange={(value) => onChange({ lin: value, sub: "", item: "", prov: "" })}
-          placeholder="Todas las lineas"
-          options={linOptions.map((value) => ({ value: String(value), label: payload.lins[value] }))}
-          disabled={lineScopeLocked}
+        <DiMultiSelect
+          label="Lineas"
+          values={filters.lin}
+          options={linOptions}
+          emptyLabel={filters.cat.length === 0 ? "Elige categoria" : "Todas"}
+          searchable
+          disabled={lineScopeLocked || filters.cat.length === 0}
+          onChange={(lin) => {
+            const nextSubs = new Set<number>();
+            for (const catId of filters.cat) {
+              for (const linId of lin) {
+                for (const sub of payload.rowIndex.subsByCatLin.get(
+                  `${catId}|${linId}`,
+                ) ?? []) {
+                  nextSubs.add(sub);
+                }
+              }
+            }
+            onChange({
+              lin,
+              sub: keep(filters.sub, [...nextSubs]),
+              item: [],
+            });
+          }}
         />
-        <FilterSelect
-          value={filters.sub}
-          onChange={(value) => onChange({ sub: value, item: "", prov: "" })}
-          placeholder="Todas las sublineas"
-          options={subOptions.map((value) => ({ value: String(value), label: payload.subs[value] }))}
+        <DiMultiSelect
+          label="Sublineas"
+          values={filters.sub}
+          options={subOptions}
+          emptyLabel={
+            filters.lin.length === 0 ? "Elige linea" : "Todas"
+          }
+          searchable
+          disabled={filters.lin.length === 0}
+          onChange={(sub) => onChange({ sub, item: [] })}
         />
-        <FilterSelect
-          value={filters.item}
-          onChange={(value) => onChange({ item: value })}
-          placeholder="Todos los items"
-          options={itemOptions.map((value) => ({
-            value: String(value),
-            label: payload.items[value],
-          }))}
+        <DiMultiSelect
+          label="Items"
+          values={filters.item}
+          options={itemOptions}
+          emptyLabel={
+            filters.sub.length === 0 ? "Elige sublinea" : "Todos"
+          }
+          searchable
+          disabled={filters.sub.length === 0}
+          onChange={(item) => onChange({ item })}
         />
-        <input
-          type="search"
-          value={filters.q}
-          onChange={(event) => onChange({ q: event.target.value.trim().toLowerCase(), item: "" })}
-          placeholder="Buscar item por texto..."
-          className="min-w-[240px] rounded-lg border border-slate-200 px-3 py-2 text-sm"
-        />
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Buscar item
+          </span>
+          <input
+            type="search"
+            value={filters.q}
+            onChange={(event) =>
+              onChange({ q: event.target.value.trim().toLowerCase() })
+            }
+            placeholder="Buscar item por texto..."
+            className="h-9 rounded-lg border border-slate-200 px-3 text-sm"
+          />
+        </label>
       </div>
-      {activeLabel ? (
-        <div className="mt-3 inline-flex max-w-xl rounded-xl bg-gradient-to-r from-blue-700 to-violet-600 px-4 py-3 text-white shadow">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider opacity-85">Filtro activo</div>
-            <div className="text-lg font-bold">{activeLabel}</div>
-          </div>
-        </div>
-      ) : null}
     </section>
-  );
-}
-
-function FilterSelect({
-  value,
-  onChange,
-  placeholder,
-  options,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  options: Array<{ value: string; label: string }>;
-  disabled?: boolean;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-    >
-      <option value="">{placeholder}</option>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
   );
 }
 
@@ -1149,7 +1179,7 @@ function SedeSummaryTable({
     { id: "yoypct", label: "YoY %", align: "right" },
     { id: "mom", label: momLabel, align: "right" },
     { id: "momMarg", label: "Marg %", align: "right" },
-    { id: "mompct", label: "MoM %", align: "right" },
+    { id: "mompct", label: "Ant. %", align: "right" },
     { id: "part", label: "Participacion", align: "right" },
   ];
 

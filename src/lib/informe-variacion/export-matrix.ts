@@ -361,6 +361,6 @@ export const matrixExportMetaLine = (
       ? "Valores actuales"
       : matrixMode === "yoy"
         ? "Variacion YoY %"
-        : "Variacion MoM %";
+        : "Variacion anterior %";
   return `Periodo: ${periodLabel} · Metrica: ${metricLabel} · Vista: ${viewLabel}`;
 };

@@ -38,6 +38,11 @@ import {
   resolveDataSourceKind,
   userIsDinastiaOnly,
 } from "@/lib/shared/data-tenant";
+import {
+  isDefaultInformeCompareMonth,
+  isInformeCompareMonthError,
+  parseInformeCompareMonthParam,
+} from "@/lib/informe-variacion/periods";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
 
 export const maxDuration = 120;
@@ -97,6 +102,23 @@ export async function GET(request: Request) {
       ),
     );
   }
+
+  const compareOrError = parseInformeCompareMonthParam(
+    year,
+    month,
+    url.searchParams.get("compareYear"),
+    url.searchParams.get("compareMonth"),
+  );
+  if (isInformeCompareMonthError(compareOrError)) {
+    return withSession(
+      NextResponse.json(
+        { error: compareOrError.error },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+  const compare = compareOrError;
+  const customCompare = !isDefaultInformeCompareMonth(year, month, compare);
 
   const scope = resolveMargenSedeScope({
     role: session.user.role,
@@ -209,6 +231,7 @@ export async function GET(request: Request) {
       month,
       allowedSedeKeys,
       lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
+      compare,
     )}:ds=${dataKind}`;
     if (forceRefresh) {
       invalidateInformeCacheKey(bundleKey);
@@ -222,6 +245,7 @@ export async function GET(request: Request) {
             lineScope.forcedMargenTipos,
             lineScope.forcedMargenLineas,
             lineScope.excludedMargenTipos,
+            compare,
           )}:ds=${dataKind}`,
         );
       }
@@ -241,7 +265,7 @@ export async function GET(request: Request) {
 
     // Intenta std aunque haya mtd-N: el warm matutino ya materializa ese rango.
     // Si falta algún range_id en la tabla, getInformePayloadStdBundle devuelve null.
-    const useStd = dataKind === "default" && !forceRefresh;
+    const useStd = dataKind === "default" && !forceRefresh && !customCompare;
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
       try {
@@ -299,7 +323,7 @@ export async function GET(request: Request) {
         allowedSedeKeys,
         availableRanges,
         lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
-        { kind: dataKind },
+        { kind: dataKind, compare },
       );
       const elapsedMs = Date.now() - startedAt;
       await client.query("COMMIT");
@@ -441,6 +465,7 @@ export async function GET(request: Request) {
     allowedSedeKeys,
     effectiveRange?.id,
     lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
+    compare,
   )}:ds=${dataKind}`;
   if (forceRefresh) {
     invalidateInformeCacheKey(cacheKey);
@@ -461,7 +486,8 @@ export async function GET(request: Request) {
   const useStd =
     dataKind === "default" &&
     !forceRefresh &&
-    !effectiveRange.projection;
+    !effectiveRange.projection &&
+    !customCompare;
   if (useStd) {
     const stdClient = await (await getDbPool()).connect();
     try {
@@ -512,6 +538,7 @@ export async function GET(request: Request) {
         forcedMargenLineas: lineScope.forcedMargenLineas,
         excludedMargenTipos: lineScope.excludedMargenTipos,
         kind: dataKind,
+        compare,
       },
     );
     const elapsedMs = Date.now() - startedAt;

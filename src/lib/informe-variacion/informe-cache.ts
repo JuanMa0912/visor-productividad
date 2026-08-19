@@ -2,6 +2,7 @@ import { deleteCachedQuery, getCachedQuery, setCachedQuery } from "@/lib/margene
 import type { InformeVariacionMonthBundle } from "@/lib/informe-variacion/daily-bundle";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { scopeExcludedTiposCacheSuffix, scopeLineasCacheSuffix, scopeTiposCacheSuffix } from "@/lib/shared/line-category-scope";
+import { informeCompareCacheSuffix } from "@/lib/informe-variacion/periods";
 
 const INFORME_CACHE_TTL_MS = 30 * 60 * 1000;
 
@@ -20,13 +21,14 @@ export const buildInformeCacheKey = (
   forcedMargenTipos?: string[] | null,
   forcedMargenLineas?: string[] | null,
   excludedMargenTipos?: string[] | null,
+  compare?: { year: number; month: number } | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
   const range = dayRangeId?.trim() || "1-eom";
-  return `informe:v2:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
+  return `informe:v2:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}${informeCompareCacheSuffix(year, month, compare)}`;
 };
 
 export const getCachedInformePayload = (
@@ -53,12 +55,13 @@ export const buildInformeBundleCacheKey = (
   forcedMargenTipos?: string[] | null,
   forcedMargenLineas?: string[] | null,
   excludedMargenTipos?: string[] | null,
+  compare?: { year: number; month: number } | null,
 ): string => {
   const sedes =
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
-  return `informe-bundle:v2:${year}:${month}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
+  return `informe-bundle:v2:${year}:${month}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}${informeCompareCacheSuffix(year, month, compare)}`;
 };
 
 export const getCachedInformeMonthBundle = (

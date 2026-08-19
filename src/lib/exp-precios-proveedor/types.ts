@@ -7,8 +7,10 @@ export type PreciosProveedorMeta = {
   defaultEnd: string;
   lineas: Array<{ id: string; label: string }>;
   sublineas: Array<{ id: string; label: string; lineaId: string }>;
-  marcas: Array<{ id: string; label: string }>;
+  /** Empresas (Mercamio / Mercatodo / Merkmios). No es marca comercial. */
+  empresas: Array<{ id: string; label: string }>;
   sedes: Array<{ key: string; label: string }>;
+  proveedores: Array<{ id: string; label: string }>;
   note: string;
 };
 

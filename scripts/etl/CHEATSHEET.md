@@ -69,6 +69,7 @@ OC="python3 /home/prodapp/visor-productividad/scripts/etl/orden-compra/etl_orden
 | Solo refrescar incompletas | `$OC --solo-abiertas` |
 | Incremental sin abiertas | `$OC --no-abiertas` |
 | Solo el mes en curso | `$OC --mes-actual` |
+| Backfill ET/EF inventario (Costos) | `$OC --solo-et-ef --mes-actual` |
 | Rango fijo | `$OC --desde 20260801 --hasta 20260831` |
 | Ventana N dias (upsert, no borra el resto) | `$OC --dias 30` |
 | Rehacer un rango sucio | `$OC --reemplazar --desde 20260801 --hasta 20260812` |

@@ -34,7 +34,7 @@ seguimiento operativo.
 | Hub Venta UAID | `/venta` | - | acceso agrupado a ventas e inventario |
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV/XLSX/PDF/PNG |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
-| Informe variacion | `/informe-variacion` | `/api/informe-variacion` | MoM/YoY; ranking producto×sede (línea/sublínea/marca/producto); resumen por empresa; alcance por `allowed_lines` (asadero/fruver) |
+| Informe variacion | `/informe-variacion` | `/api/informe-variacion` | Periodo actual vs periodo anterior (default MoM) y YoY; tablas por pestaña; ranking producto×sede; alcance por `allowed_lines` (asadero/fruver) |
 | Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, filtro CAT, estados de S.inventario (restock: conteo sin verificar/seguimiento/surtido) y auditoria |
 | Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario y resumenes con margen `SUM/SUM` |
 | Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | matrices, pivotes y presets por usuario |
@@ -54,7 +54,7 @@ La definicion canonica esta en `src/lib/shared/portal-sections.ts`.
 
 | Seccion | Ruta hub | Subtableros principales |
 | --- | --- | --- |
-| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores`, `precios-proveedor` (`/exp/precios-proveedor`, opt-in), `ordenes-compra` (opt-in) |
+| `venta` | `/venta` | `ventas-x-item`, `inventario-x-item`, `analisis-de-inventario`, `participacion-comercial`, `proveedores`, `precios-proveedor` (`/costos`, opt-in), `ordenes-compra` (opt-in) |
 | `producto` | `/productividad` | `mix-y-linea`, `margenes`, `rotacion` |
 | `operacion` | `/horario` | `consulta-operativa`, `planilla-vs-asistencia`, `registro-de-horarios` |
 
@@ -137,7 +137,7 @@ Reglas notables:
 - `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
 - Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
 - `/informe-variacion` exige el subtablero `informe-variacion` (no se hereda de `margenes` ni `rotacion`).
-- `/exp/precios-proveedor` exige el subtablero `precios-proveedor` marcado de forma explícita (no se hereda de `allowed_subdashboards = NULL`; perfiles gerente/subadmin no lo reciben solos).
+- `/costos` exige el subtablero `precios-proveedor` marcado de forma explícita (no se hereda de `allowed_subdashboards = NULL`; perfiles gerente/subadmin no lo reciben solos). `/exp/precios-proveedor` redirige a `/costos`.
 
 ### Headers y rate limiting
 

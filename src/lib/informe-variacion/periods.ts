@@ -19,8 +19,110 @@ const MONTH_NAMES = [
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
+export type InformeYearMonth = { year: number; month: number };
+
 export const toCompactDate = (year: number, month: number, day: number): string =>
   `${year}${pad2(month)}${pad2(day)}`;
+
+export const previousCalendarMonth = (
+  year: number,
+  month: number,
+): InformeYearMonth =>
+  month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+
+export const isSameInformeYearMonth = (
+  a: InformeYearMonth,
+  b: InformeYearMonth,
+): boolean => a.year === b.year && a.month === b.month;
+
+export const isInformeYearMonthBefore = (
+  a: InformeYearMonth,
+  b: InformeYearMonth,
+): boolean => a.year < b.year || (a.year === b.year && a.month < b.month);
+
+/** Mes de comparacion (slot MoM). Si no hay override, es el calendario anterior. */
+export const resolveInformeCompareMonth = (
+  year: number,
+  month: number,
+  compare?: InformeYearMonth | null,
+): InformeYearMonth => {
+  if (!compare) return previousCalendarMonth(year, month);
+  if (
+    !Number.isInteger(compare.year) ||
+    compare.year < 2000 ||
+    compare.year > 2100 ||
+    !Number.isInteger(compare.month) ||
+    compare.month < 1 ||
+    compare.month > 12
+  ) {
+    throw new Error("Mes de comparacion invalido para el informe.");
+  }
+  if (compare.year === year && compare.month === month) {
+    throw new Error(
+      "El periodo anterior no puede ser el mismo mes que el periodo actual.",
+    );
+  }
+  if (!isInformeYearMonthBefore(compare, { year, month })) {
+    throw new Error(
+      "El periodo anterior debe ser anterior al periodo actual.",
+    );
+  }
+  return compare;
+};
+
+export const isDefaultInformeCompareMonth = (
+  year: number,
+  month: number,
+  compare?: InformeYearMonth | null,
+): boolean =>
+  isSameInformeYearMonth(
+    resolveInformeCompareMonth(year, month, compare),
+    previousCalendarMonth(year, month),
+  );
+
+export const parseInformeCompareMonthParam = (
+  year: number,
+  month: number,
+  compareYearRaw: string | null,
+  compareMonthRaw: string | null,
+): InformeYearMonth | { error: string } => {
+  const missingYear = compareYearRaw == null || compareYearRaw.trim() === "";
+  const missingMonth = compareMonthRaw == null || compareMonthRaw.trim() === "";
+  if (missingYear && missingMonth) return previousCalendarMonth(year, month);
+  if (missingYear || missingMonth) {
+    return { error: "Parametros compareYear y compareMonth invalidos." };
+  }
+  try {
+    return resolveInformeCompareMonth(year, month, {
+      year: Number(compareYearRaw),
+      month: Number(compareMonthRaw),
+    });
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Parametros compareYear y compareMonth invalidos.",
+    };
+  }
+};
+
+export const isInformeCompareMonthError = (
+  value: InformeYearMonth | { error: string },
+): value is { error: string } => "error" in value;
+
+/** Vacio cuando el compare es el MoM por defecto, para reutilizar cache/std. */
+export const informeCompareCacheSuffix = (
+  year: number,
+  month: number,
+  compare?: InformeYearMonth | null,
+): string => {
+  const resolved = resolveInformeCompareMonth(year, month, compare);
+  if (isSameInformeYearMonth(resolved, previousCalendarMonth(year, month))) {
+    return "";
+  }
+  return `:cmp=${resolved.year}-${pad2(resolved.month)}`;
+};
 
 export const formatInformePeriodLabel = (
   fromCompact: string,
@@ -69,14 +171,16 @@ export const computeInformeDailyFetchBounds = (
   year: number,
   month: number,
   ranges: InformeDayRangeSpec[],
+  compare?: InformeYearMonth | null,
 ): {
   cur: { from: string; to: string };
   mom: { from: string; to: string };
   yoy: { from: string; to: string };
 } => {
   const monthLast = lastDayOfMonth(year, month);
-  const momMonth = month === 1 ? 12 : month - 1;
-  const momYear = month === 1 ? year - 1 : year;
+  const resolvedCompare = resolveInformeCompareMonth(year, month, compare);
+  const momYear = resolvedCompare.year;
+  const momMonth = resolvedCompare.month;
   const momLast = lastDayOfMonth(momYear, momMonth);
   const yoyLast = lastDayOfMonth(year - 1, month);
 
@@ -123,6 +227,7 @@ export const computeInformePeriods = (
   year: number,
   month: number,
   dayRange?: InformeDayRangeSpec | null,
+  compare?: InformeYearMonth | null,
 ): InformePeriods => {
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     throw new Error("Año inválido para el informe.");
@@ -131,6 +236,7 @@ export const computeInformePeriods = (
     throw new Error("Mes inválido para el informe.");
   }
 
+  const resolvedCompare = resolveInformeCompareMonth(year, month, compare);
   const fromDay = dayRange?.fromDay ?? 1;
   const targetToDay = dayRange?.toDay ?? null;
   // SQL del periodo actual: solo dias reales cargados cuando hay proyeccion.
@@ -144,8 +250,8 @@ export const computeInformePeriods = (
     throw new Error("Rango de dias invalido para el mes seleccionado.");
   }
 
-  const momMonth = month === 1 ? 12 : month - 1;
-  const momYear = month === 1 ? year - 1 : year;
+  const momYear = resolvedCompare.year;
+  const momMonth = resolvedCompare.month;
   const momBounds = monthRangeBounds(momYear, momMonth, fromDay, compareToDay);
   const yoyBounds = monthRangeBounds(year - 1, month, fromDay, compareToDay);
 

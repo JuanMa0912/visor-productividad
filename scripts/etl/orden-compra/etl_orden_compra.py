@@ -27,6 +27,9 @@ usuario_conf / fecha_conf / hora_conf.
 TIPOS
 -----
 OC comercial, FR fruver, OM mercaderista, OS servicio al cliente.
+ET/EF NO viven en cmmovimiento_ocompra: salen de cmmovimiento_inventario
+(entrada ind_es=1, bodega 01) y se escriben solo en orden_compra_linea
+(no contaminan el tablero de OC). Costos prefiere esos costos sobre FR.
 Si una empresa POS no tiene cmmovimiento_ocompra, se salta (no borra lo ya cargado).
 
 Config: el mismo .env.etl de la raiz del deploy. Override con ETL_ENV_FILE.
@@ -41,6 +44,7 @@ Uso:
   python3 etl_orden_compra.py --dias 30               # upsert ultimos 30d, no borra el resto
   python3 etl_orden_compra.py --reemplazar --desde 20260801 --hasta 20260812
   python3 etl_orden_compra.py --empresa mercamio
+  python3 etl_orden_compra.py --solo-et-ef --mes-actual
   python3 etl_orden_compra.py --dry-run
 
 Codigos de salida: 0 OK | 1 error | 2 uso invalido | 3 warning (alguna empresa sin filas).
@@ -66,12 +70,14 @@ EMPRESAS = [
     {"empresa": "bogota",   "db": "bogota",   "user": "bogota",   "pwd_env": "DB_PWD_POS_BOGOTA"},
 ]
 
-TIPDOCS = ("OC", "FR", "OM", "OS")
+TIPDOCS = ("OC", "FR", "OM", "OS", "ET", "EF")
 TIPDOC_NOM = {
     "OC": "Orden de compra comercial",
     "FR": "Orden de compra fruver",
     "OM": "Orden de compra mercaderista",
     "OS": "Orden de compra servicio al cliente",
+    "ET": "Entrada en transito",
+    "EF": "Entrada de factura",
 }
 
 TABLE = "public.orden_compra"
@@ -115,7 +121,7 @@ WITH lineas AS (
     NULLIF(BTRIM(oc.fecha_conf), '')        AS fecha_conf,
     NULLIF(BTRIM(oc.hora_conf), '')         AS hora_conf
   FROM public.cmmovimiento_ocompra oc
-  WHERE BTRIM(oc.id_tipdoc) IN ('OC','FR','OM','OS')
+  WHERE BTRIM(oc.id_tipdoc) IN ('OC','FR','OM','OS','ET','EF')
     AND ({filtro})
 ),
 agg AS (
@@ -199,9 +205,68 @@ WITH agg AS (
     COALESCE(SUM(oc.cantidad_ent), 0)       AS cantidad_ent,
     COALESCE(SUM(oc.tot_bruto), 0)          AS tot_bruto
   FROM public.cmmovimiento_ocompra oc
-  WHERE BTRIM(oc.id_tipdoc) IN ('OC','FR','OM','OS')
+  WHERE BTRIM(oc.id_tipdoc) IN ('OC','FR','OM','OS','ET','EF')
     AND NULLIF(BTRIM(oc.id_item), '') IS NOT NULL
     AND ({filtro})
+  GROUP BY 1, 2, 3, 4, 5, 6, 7
+)
+SELECT
+  a.id_co,
+  a.tipdoc,
+  a.documento_oc,
+  a.fecha_dcto,
+  a.id_item,
+  a.id_terc,
+  a.id_suc_terc,
+  terc.terc_nombre,
+  terc.terc_nit,
+  a.cantidad,
+  a.cantidad_ent,
+  a.tot_bruto
+FROM agg a
+LEFT JOIN LATERAL (
+  SELECT
+    NULLIF(BTRIM(t.descripcion), '') AS terc_nombre,
+    NULLIF(BTRIM(t.nit), '')         AS terc_nit
+  FROM public.terceros t
+  WHERE a.id_terc <> ''
+    AND BTRIM(t.codigo) = a.id_terc
+  ORDER BY
+    CASE WHEN a.id_suc_terc IS NOT NULL
+              AND BTRIM(COALESCE(t.sucursal, '')) = a.id_suc_terc
+         THEN 0 ELSE 1 END,
+    t.sucursal
+  LIMIT 1
+) terc ON true
+ORDER BY a.tipdoc, a.documento_oc, a.id_co, a.id_item
+"""
+
+# ET/EF reales: inventario POS (no OC). Solo lineas; ind_es=1 = entrada.
+SQL_INV_LINEAS = r"""
+WITH agg AS (
+  SELECT
+    CASE
+      WHEN LEFT(BTRIM(m.id_local), 3) ~ '^[0-9]+$'
+        THEN LPAD(LEFT(BTRIM(m.id_local), 3), 3, '0')
+      ELSE LEFT(BTRIM(m.id_local), 3)
+    END AS id_co,
+    BTRIM(m.doc_inv_tipo) AS tipdoc,
+    BTRIM(m.documento_inv) AS documento_oc,
+    BTRIM(m.fecha_fc) AS fecha_dcto,
+    NULLIF(BTRIM(m.id_item), '') AS id_item,
+    COALESCE(NULLIF(BTRIM(m.id_terc), ''), '') AS id_terc,
+    NULLIF(BTRIM(m.id_suc), '') AS id_suc_terc,
+    COALESCE(SUM(m.cantidad_1), 0) AS cantidad,
+    COALESCE(SUM(m.cantidad_1), 0) AS cantidad_ent,
+    COALESCE(SUM(m.costot), 0) AS tot_bruto
+  FROM public.cmmovimiento_inventario m
+  WHERE BTRIM(m.doc_inv_tipo) IN ('ET', 'EF')
+    AND BTRIM(COALESCE(m.ind_es, '')) = '1'
+    AND RIGHT(BTRIM(m.id_local), 2) = '01'
+    AND LEFT(BTRIM(m.id_local), 3) <> 'PPT'
+    AND NULLIF(BTRIM(m.id_item), '') IS NOT NULL
+    AND NULLIF(BTRIM(m.documento_inv), '') IS NOT NULL
+    AND m.fecha_fc BETWEEN '{fecha_ini}' AND '{fecha_fin}'
   GROUP BY 1, 2, 3, 4, 5, 6, 7
 )
 SELECT
@@ -447,6 +512,30 @@ def pos_tiene_oc(conn) -> bool:
         return cur.fetchone() is not None
 
 
+def pos_tiene_inv(conn) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public'
+               AND table_name = 'cmmovimiento_inventario'
+             LIMIT 1
+            """
+        )
+        return cur.fetchone() is not None
+
+
+def fechas_de_filtro_between(filtro: str) -> tuple[str, str] | None:
+    m = re.search(
+        r"fecha_dcto\s+BETWEEN\s+'(\d{8})'\s+AND\s+'(\d{8})'",
+        filtro,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return m.group(1), m.group(2)
+
+
 UPSERT_SQL = f"""
 INSERT INTO {TABLE} (
     empresa, id_co, sede, tipdoc, tipdoc_nom, documento_oc,
@@ -463,6 +552,8 @@ SELECT
       WHEN 'FR' THEN %s
       WHEN 'OM' THEN %s
       WHEN 'OS' THEN %s
+      WHEN 'ET' THEN %s
+      WHEN 'EF' THEN %s
       ELSE s.tipdoc
     END,
     s.documento_oc, s.fecha_dcto, s.fecha_entrega,
@@ -573,6 +664,7 @@ def upsert_filtro(
             UPSERT_SQL,
             (empresa,
              TIPDOC_NOM["OC"], TIPDOC_NOM["FR"], TIPDOC_NOM["OM"], TIPDOC_NOM["OS"],
+             TIPDOC_NOM["ET"], TIPDOC_NOM["EF"],
              empresa),
         )
         n_ins = tc.rowcount
@@ -614,6 +706,57 @@ def upsert_filtro(
     return n_ins
 
 
+def upsert_inv_et_ef(
+    *,
+    src,
+    tgt,
+    empresa: str,
+    fecha_ini: str,
+    fecha_fin: str,
+    dry_run: bool,
+) -> int:
+    datetime.datetime.strptime(fecha_ini, "%Y%m%d")
+    datetime.datetime.strptime(fecha_fin, "%Y%m%d")
+    q = SQL_INV_LINEAS.format(fecha_ini=fecha_ini, fecha_fin=fecha_fin)
+    if dry_run:
+        with src.cursor() as c:
+            c.execute(f"SELECT count(*) FROM ({q}) s")
+            n = c.fetchone()[0]
+        log(f"[{empresa}] DRY-RUN: {n} lineas ET/EF inventario "
+            f"({fecha_ini}..{fecha_fin})")
+        return n
+
+    buf = io.StringIO()
+    with src.cursor() as sc:
+        sc.copy_expert(f"COPY ({q}) TO STDOUT", buf)
+    payload = buf.getvalue()
+
+    with tgt.cursor() as tc:
+        tc.execute(
+            f"""
+            DELETE FROM {TABLE_LINEA}
+             WHERE empresa = %s
+               AND fecha_dcto BETWEEN %s AND %s
+               AND tipdoc IN ('ET', 'EF')
+            """,
+            (empresa, fecha_ini, fecha_fin),
+        )
+        n_del = tc.rowcount
+        n_ins = 0
+        if payload.strip():
+            tc.execute("TRUNCATE stg_orden_compra_linea;")
+            tc.copy_expert(
+                f"COPY stg_orden_compra_linea ({STG_LINEA_COLS}) FROM STDIN",
+                io.StringIO(payload),
+            )
+            tc.execute(UPSERT_LINEA_SQL, (empresa,))
+            n_ins = tc.rowcount
+    tgt.commit()
+    log(f"[{empresa}] inventario ET/EF {fecha_ini}..{fecha_fin}: "
+        f"{n_del} borradas, {n_ins} upsert")
+    return n_ins
+
+
 def cargar(
     env: dict,
     empresas,
@@ -624,6 +767,7 @@ def cargar(
     rango_borrar: tuple[str, str] | None,
     refrescar_abiertas: bool,
     dry_run: bool,
+    solo_et_ef: bool = False,
 ) -> list[str]:
     vacios: list[str] = []
     ayer = ayer_yyyymmdd()
@@ -645,8 +789,24 @@ def cargar(
             if incremental:
                 dia_antes_ayer = add_days(ayer, -1)
                 with tgt.cursor() as tc:
-                    max_cerrada = max_fecha_pasada(tc, empresa, dia_antes_ayer)
+                    if solo_et_ef:
+                        tc.execute(
+                            f"SELECT max(fecha_dcto) FROM {TABLE_LINEA} "
+                            f"WHERE empresa = %s AND tipdoc IN ('ET','EF') "
+                            f"AND fecha_dcto <= %s",
+                            (empresa, dia_antes_ayer),
+                        )
+                        row = tc.fetchone()
+                        max_cerrada = (row[0] or "").strip() if row else ""
+                        max_cerrada = max_cerrada or None
+                    else:
+                        max_cerrada = max_fecha_pasada(tc, empresa, dia_antes_ayer)
                 if not max_cerrada:
+                    if solo_et_ef:
+                        vacios.append(empresa)
+                        log(f"[{empresa}] incremental ET/EF vacio -> "
+                            f"corre --solo-et-ef --mes-actual una vez")
+                        continue
                     with tgt.cursor() as tc:
                         tc.execute(
                             f"SELECT 1 FROM {TABLE} WHERE empresa = %s LIMIT 1",
@@ -674,6 +834,23 @@ def cargar(
                 continue
 
             with pos_conn(env, db) as src:
+                if solo_et_ef:
+                    if not pos_tiene_inv(src):
+                        vacios.append(empresa)
+                        log(f"[{empresa}] POS no tiene cmmovimiento_inventario -> se salta")
+                        continue
+                    fechas = fechas_de_filtro_between(filtro or "")
+                    if not fechas:
+                        vacios.append(empresa)
+                        log(f"[{empresa}] --solo-et-ef sin rango de fechas -> se salta")
+                        continue
+                    upsert_inv_et_ef(
+                        src=src, tgt=tgt, empresa=empresa,
+                        fecha_ini=fechas[0], fecha_fin=fechas[1],
+                        dry_run=dry_run,
+                    )
+                    continue
+
                 if not pos_tiene_oc(src):
                     vacios.append(empresa)
                     log(f"[{empresa}] POS no tiene cmmovimiento_ocompra -> se salta")
@@ -700,6 +877,13 @@ def cargar(
                             src=src, tgt=tgt, empresa=empresa,
                             filtro=filtro, etiqueta=etiqueta,
                             rango_borrar=rango_borrar, dry_run=dry_run,
+                        )
+                    fechas = fechas_de_filtro_between(filtro)
+                    if fechas and pos_tiene_inv(src):
+                        upsert_inv_et_ef(
+                            src=src, tgt=tgt, empresa=empresa,
+                            fecha_ini=fechas[0], fecha_fin=fechas[1],
+                            dry_run=dry_run,
                         )
 
                 if not refrescar_abiertas:
@@ -754,6 +938,10 @@ def main() -> int:
     ap.add_argument("--reemplazar", action="store_true",
                     help="borra el rango pedido y vuelve a insertarlo (backfill sucio)")
     ap.add_argument("--empresa", help="una sola empresa (mercamio|mtodo|bogota)")
+    ap.add_argument(
+        "--solo-et-ef", action="store_true",
+        help="solo carga ET/EF desde cmmovimiento_inventario a orden_compra_linea",
+    )
     ap.add_argument("--dry-run", action="store_true", help="solo cuenta filas en origen")
     args = ap.parse_args()
 
@@ -771,6 +959,9 @@ def main() -> int:
     if args.no_abiertas and args.solo_abiertas:
         log("ERROR: --no-abiertas y --solo-abiertas no van juntos")
         return 2
+    if args.solo_et_ef and args.solo_abiertas:
+        log("ERROR: --solo-et-ef y --solo-abiertas no van juntos")
+        return 2
     if (args.desde is None) != (args.hasta is None):
         log("ERROR: --desde y --hasta van juntos")
         return 2
@@ -781,7 +972,11 @@ def main() -> int:
     if args.reemplazar and (incremental or args.solo_abiertas):
         log("ERROR: --reemplazar no aplica al modo incremental/abiertas")
         return 2
-    refrescar_abiertas = (incremental or args.solo_abiertas) and not args.no_abiertas
+    refrescar_abiertas = (
+        (incremental or args.solo_abiertas)
+        and not args.no_abiertas
+        and not args.solo_et_ef
+    )
 
     filtro_fijo = None
     etiqueta_fija = None
@@ -834,6 +1029,7 @@ def main() -> int:
             rango_borrar=rango_borrar,
             refrescar_abiertas=refrescar_abiertas,
             dry_run=args.dry_run,
+            solo_et_ef=args.solo_et_ef,
         )
     except Exception as exc:
         log(f"ERROR: {exc}")

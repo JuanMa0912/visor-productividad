@@ -67,25 +67,47 @@ export const buildSedeEmpresaMap = (sedes: InformeSedeMeta[]) =>
 export const buildSedeYoyFlags = (sedes: InformeSedeMeta[]) =>
   sedes.map((sede) => sede.yoyOk);
 
+const toIdSet = (values: string[]): Set<number> | null => {
+  if (values.length === 0) return null;
+  return new Set(values.map((value) => Number(value)));
+};
+
+export const compileInformeRowFilter = (
+  filters: InformeGlobalFilters,
+  sedeEmpresas: string[],
+  itemsLow: string[],
+  itemProv?: number[],
+): ((row: InformeCompactRow) => boolean) => {
+  const emp = filters.emp.length > 0 ? new Set(filters.emp) : null;
+  const sede = toIdSet(filters.sede);
+  const cat = toIdSet(filters.cat);
+  const lin = toIdSet(filters.lin);
+  const sub = toIdSet(filters.sub);
+  const item = toIdSet(filters.item);
+  const prov = toIdSet(filters.prov);
+  const query = filters.q;
+
+  return (row) => {
+    if (emp && !emp.has(sedeEmpresas[row[0]] ?? "")) return false;
+    if (sede && !sede.has(row[0])) return false;
+    if (cat && !cat.has(row[1])) return false;
+    if (lin && !lin.has(row[2])) return false;
+    if (sub && !sub.has(row[3])) return false;
+    if (item && !item.has(row[4])) return false;
+    if (prov && !prov.has(itemProv?.[row[4]] ?? 0)) return false;
+    if (query && !itemsLow[row[4]]?.includes(query)) return false;
+    return true;
+  };
+};
+
 export const passInformeRowFilter = (
   row: InformeCompactRow,
   filters: InformeGlobalFilters,
   sedeEmpresas: string[],
   itemsLow: string[],
   itemProv?: number[],
-): boolean => {
-  if (filters.emp && sedeEmpresas[row[0]] !== filters.emp) return false;
-  if (filters.sede !== "" && row[0] !== Number(filters.sede)) return false;
-  if (filters.cat !== "" && row[1] !== Number(filters.cat)) return false;
-  if (filters.lin !== "" && row[2] !== Number(filters.lin)) return false;
-  if (filters.sub !== "" && row[3] !== Number(filters.sub)) return false;
-  if (filters.item !== "" && row[4] !== Number(filters.item)) return false;
-  if (filters.prov !== "" && (itemProv?.[row[4]] ?? 0) !== Number(filters.prov)) {
-    return false;
-  }
-  if (filters.q && !itemsLow[row[4]]?.includes(filters.q)) return false;
-  return true;
-};
+): boolean =>
+  compileInformeRowFilter(filters, sedeEmpresas, itemsLow, itemProv)(row);
 
 export const aggregateBySede = (
   rows: InformeCompactRow[],
@@ -233,13 +255,13 @@ export const buildItemsLower = (items: string[]) =>
 
 export const hasActiveInformeFilters = (filters: InformeGlobalFilters) =>
   Boolean(
-    filters.emp ||
-      filters.sede ||
-      filters.cat ||
-      filters.lin ||
-      filters.sub ||
-      filters.item ||
-      filters.prov ||
+    filters.emp.length ||
+      filters.sede.length ||
+      filters.cat.length ||
+      filters.lin.length ||
+      filters.sub.length ||
+      filters.item.length ||
+      filters.prov.length ||
       filters.q,
   );
 
