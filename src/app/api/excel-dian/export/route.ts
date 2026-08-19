@@ -11,15 +11,13 @@ import {
   getExcelDianPool,
   type ExcelDianDbEmpresa,
 } from "@/lib/excel-dian/excel-dian-db";
+import { buildYearLapsoRange } from "@/lib/excel-dian/mtodo-medios-magneticos";
 import {
-  MTODO_MEDIOS_MAGNETICOS_COLUMNS,
-  buildYearLapsoRange,
-  queryMtodoMediosMagneticos,
-} from "@/lib/excel-dian/mtodo-medios-magneticos";
-import {
-  queryAnexoCuentas,
-  type AnexoCuentaRow,
-} from "@/lib/excel-dian/anexo-cuentas";
+  FORMATOS,
+  parseFormatoParam,
+  type FormatoDian,
+} from "@/lib/excel-dian/formatos-dian";
+import type { AnexoRow } from "@/lib/excel-dian/formato-1006";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 import { isExcelDianPublicAccess } from "@/lib/excel-dian/public-export-env";
 import {
@@ -34,10 +32,6 @@ export const dynamic = "force-dynamic";
 
 const MIN_YEAR = 2000;
 const MAX_YEAR = 2100;
-const NUMERIC_VALUE_KEYS = new Set([
-  "Ingresos Brutos Recibidos",
-  "Devoluciones Rebajas Descuentos",
-]);
 
 const COLUMN_WIDTH_BY_KEY: Partial<Record<string, number>> = {
   Concepto: 10,
@@ -144,33 +138,39 @@ const toWholeNumber = (value: string | number | null | undefined) => {
 };
 
 const normalizeExcelRow = (
-  row: Awaited<ReturnType<typeof queryMtodoMediosMagneticos>>["rows"][number],
+  row: Record<string, unknown>,
+  columns: readonly { key: string; header: string }[],
+  valueKeys: Set<string>,
 ) =>
   Object.fromEntries(
-    MTODO_MEDIOS_MAGNETICOS_COLUMNS.map((column) => {
+    columns.map((column) => {
       const value = row[column.key];
       return [
         column.key,
-        NUMERIC_VALUE_KEYS.has(column.key)
-          ? toWholeNumber(value)
+        valueKeys.has(column.key)
+          ? toWholeNumber(value as string | number | null | undefined)
           : (value ?? ""),
       ];
     }),
   );
 
 const buildWorkbook = async (
-  rows: Awaited<ReturnType<typeof queryMtodoMediosMagneticos>>["rows"],
+  rows: Record<string, unknown>[],
   startLapso: string,
   endLapso: string,
   metaEmpresa: { label: string; dbCode: ExcelDianDbEmpresa },
-  anexoRows: AnexoCuentaRow[],
+  anexoRows: AnexoRow[],
+  formato: FormatoDian,
 ) => {
+  const columns = formato.columns;
+  const valueKeys = new Set<string>(formato.valueKeys);
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Visor de Productividad";
   workbook.created = new Date();
   workbook.properties.date1904 = false;
 
-  const sheet = workbook.addWorksheet("F1007", {
+  const sheet = workbook.addWorksheet(formato.sheetName, {
     views: [
       {
         state: "frozen",
@@ -187,7 +187,7 @@ const buildWorkbook = async (
     },
   });
 
-  sheet.columns = MTODO_MEDIOS_MAGNETICOS_COLUMNS.map((column) => ({
+  sheet.columns = columns.map((column) => ({
     header: column.header,
     key: column.key,
     width:
@@ -210,7 +210,7 @@ const buildWorkbook = async (
     fgColor: { argb: HEADER_FILL },
   };
   headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-    if (colNumber <= MTODO_MEDIOS_MAGNETICOS_COLUMNS.length) {
+    if (colNumber <= columns.length) {
       cell.border = {
         top: BORDER_GRID,
         left: BORDER_GRID,
@@ -221,13 +221,13 @@ const buildWorkbook = async (
   });
 
   rows.forEach((row) => {
-    sheet.addRow(normalizeExcelRow(row));
+    sheet.addRow(normalizeExcelRow(row, columns, valueKeys));
   });
 
-  const colCount = MTODO_MEDIOS_MAGNETICOS_COLUMNS.length;
-  MTODO_MEDIOS_MAGNETICOS_COLUMNS.forEach((column, index) => {
+  const colCount = columns.length;
+  columns.forEach((column, index) => {
     const col = sheet.getColumn(index + 1);
-    if (NUMERIC_VALUE_KEYS.has(column.key)) {
+    if (valueKeys.has(column.key)) {
       col.alignment = { horizontal: "right", vertical: "middle" };
     } else {
       col.alignment = { horizontal: "left", vertical: "middle", wrapText: false };
@@ -260,8 +260,8 @@ const buildWorkbook = async (
       };
       cell.fill = zebraFill;
       cell.font = { name: "Calibri", size: DATA_FONT_SIZE };
-      const key = MTODO_MEDIOS_MAGNETICOS_COLUMNS[colNumber - 1]?.key;
-      if (key && NUMERIC_VALUE_KEYS.has(key)) {
+      const key = columns[colNumber - 1]?.key;
+      if (key && valueKeys.has(key)) {
         cell.numFmt = NUM_FMT_ACCOUNTING_INT;
       }
     });
@@ -398,7 +398,7 @@ const buildWorkbook = async (
 
   const tituloEmpresa = anexo.addRow([metaEmpresa.label]);
   tituloEmpresa.getCell(1).font = { bold: true, name: "Calibri", size: 12 };
-  anexo.addRow(["ANEXO 1007"]).getCell(1).font = {
+  anexo.addRow([formato.anexoTitle]).getCell(1).font = {
     bold: true,
     name: "Calibri",
     size: DATA_FONT_SIZE,
@@ -416,7 +416,7 @@ const buildWorkbook = async (
     "Suma de Debitos",
     "Suma de Creditos",
     "Suma de Movimiento",
-    "Concepto",
+    formato.anexoGroupHeader,
   ]);
   anexoHeader.height = 20;
   anexoHeader.eachCell({ includeEmpty: true }, (cell, col) => {
@@ -478,10 +478,10 @@ const buildWorkbook = async (
   let subD = 0;
   let subC = 0;
   let subM = 0;
-  let conceptoActual: string | null = null;
+  let grupoActual: string | null = null;
   for (const r of anexoRows) {
-    if (conceptoActual !== null && r.concepto !== conceptoActual) {
-      addAnexoRow("", `Subtotal ${conceptoActual}`, subD, subC, subM, conceptoActual, {
+    if (grupoActual !== null && r.grupo !== grupoActual) {
+      addAnexoRow("", `Subtotal ${grupoActual}`, subD, subC, subM, grupoActual, {
         bold: true,
         fill: SUB_FILL,
       });
@@ -489,14 +489,14 @@ const buildWorkbook = async (
       subC = 0;
       subM = 0;
     }
-    conceptoActual = r.concepto;
+    grupoActual = r.grupo;
     addAnexoRow(
       r.cuenta,
       r.nombre_cuenta,
       r.suma_debitos,
       r.suma_creditos,
       r.suma_movimiento,
-      r.concepto,
+      r.grupo,
     );
     subD += r.suma_debitos;
     subC += r.suma_creditos;
@@ -505,8 +505,8 @@ const buildWorkbook = async (
     totC += r.suma_creditos;
     totM += r.suma_movimiento;
   }
-  if (conceptoActual !== null) {
-    addAnexoRow("", `Subtotal ${conceptoActual}`, subD, subC, subM, conceptoActual, {
+  if (grupoActual !== null) {
+    addAnexoRow("", `Subtotal ${grupoActual}`, subD, subC, subM, grupoActual, {
       bold: true,
       fill: SUB_FILL,
     });
@@ -584,6 +584,40 @@ export async function GET(request: Request) {
         { status: 422, headers: { "Cache-Control": "no-store" } },
       ),
     );
+  }
+
+  // Formato DIAN (1007 ingresos / 1005 IVA descontable / 1006 IVA generado) y su
+  // parametro manual opcional (casilla): % prorrateo (1005) o impoconsumo (1006).
+  const formato = FORMATOS[parseFormatoParam(url.searchParams.get("formato"))];
+  let manualParam: number | null = null;
+  if (formato.manualParam === "prorrateo") {
+    const raw = url.searchParams.get("prorrateo");
+    if (raw != null && raw.trim() !== "") {
+      const pctv = Number.parseFloat(raw.replace(",", "."));
+      if (!Number.isFinite(pctv) || pctv < 0 || pctv > 100) {
+        return finalizeResponse(
+          NextResponse.json(
+            { error: "El % de prorrateo debe estar entre 0 y 100." },
+            { status: 400, headers: { "Cache-Control": "no-store" } },
+          ),
+        );
+      }
+      manualParam = pctv / 100;
+    }
+  } else if (formato.manualParam === "impoconsumo") {
+    const raw = url.searchParams.get("impoconsumo");
+    if (raw != null && raw.trim() !== "") {
+      const v = Number.parseFloat(raw.replace(/[.,\s]/g, ""));
+      if (!Number.isFinite(v) || v < 0) {
+        return finalizeResponse(
+          NextResponse.json(
+            { error: "El impuesto al consumo debe ser un número mayor o igual a 0." },
+            { status: 400, headers: { "Cache-Control": "no-store" } },
+          ),
+        );
+      }
+      manualParam = v;
+    }
   }
 
   const lapsoStartQ = parseLapsoParam(url.searchParams.get("startLapso"));
@@ -684,19 +718,21 @@ export async function GET(request: Request) {
     const client = await pool.connect();
     try {
       const idEmp = EXCEL_DIAN_ID_EMP[empresa];
-      const { rows, startLapso: sl, endLapso: el } =
-        await queryMtodoMediosMagneticos(client, startLapso, endLapso, idEmp);
-      const anexoRows = await queryAnexoCuentas(client, sl, el, idEmp);
+      const sl = startLapso;
+      const el = endLapso;
+      const rows = await formato.query(client, sl, el, idEmp, manualParam);
+      const anexoRows = await formato.anexo(client, sl, el, idEmp);
       const workbook = await buildWorkbook(
         rows,
         sl,
         el,
         { label: excelDianEmpresaLabel(empresa), dbCode: empresa },
         anexoRows,
+        formato,
       );
       const raw = await workbook.xlsx.writeBuffer();
       const body = Buffer.isBuffer(raw) ? raw : Buffer.from(new Uint8Array(raw as ArrayBuffer));
-      const filename = `medios-magneticos-${empresa}-${sl}-${el}.xlsx`;
+      const filename = `dian-${formato.id}-${empresa}-${sl}-${el}.xlsx`;
       const byteLength = body.length;
 
       if (session) {
@@ -713,7 +749,7 @@ export async function GET(request: Request) {
               fileName: filename,
               dateFrom: String(sl),
               dateTo: String(el),
-              filters: { empresa },
+              filters: { empresa, formato: formato.id },
               rowCount: rows.length,
               byteSize: byteLength,
               ip: getAuditNetworkId(clientIp) ?? clientIp,
