@@ -46,6 +46,13 @@ export function sortOcSedes(sedes: string[]): string[] {
   });
 }
 
+export function parseOcMonthDay(raw: string | null | undefined): number | null {
+  if (raw == null || String(raw).trim() === "") return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 31) return null;
+  return n;
+}
+
 export function ocSedeMatchesEmpresas(sede: string, empresas: string[]): boolean {
   if (empresas.length === 0) return true;
   const sedeIdx = getSedeOrderIndexForRawName(sede);

@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { BodegaGerencialBoard } from "@/app/checklists/bodega-board";
+import { ChecklistSessionGate } from "@/app/checklists/checklist-session-gate";
+import { PuntoVentaBoard } from "@/app/checklists/punto-venta-board";
 import { getChecklistCatalogEntry } from "@/lib/checklists/catalog";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
@@ -47,7 +49,22 @@ export default function ChecklistByIdPage() {
   }
 
   if (id === "bodega-gerencial" && entry?.status === "available") {
-    return <BodegaGerencialBoard />;
+    return (
+      <ChecklistSessionGate checklistId="bodega-gerencial" title="Checklist de Bodega">
+        <BodegaGerencialBoard />
+      </ChecklistSessionGate>
+    );
+  }
+
+  if (id === "punto-venta" && entry?.status === "available") {
+    return (
+      <ChecklistSessionGate
+        checklistId="punto-venta"
+        title="Checklist de Punto de Venta"
+      >
+        <PuntoVentaBoard />
+      </ChecklistSessionGate>
+    );
   }
 
   const title = entry?.title ?? "Checklist";

@@ -38,9 +38,10 @@ export type { PasswordChangeReason } from "@/lib/auth/password-policy";
 import type { AuthUser, AuthRole, AuthUserPublic } from "./types";
 export type { AuthUser, AuthRole, AuthUserPublic };
 
+import { SESSION_IDLE_MINUTES } from "./session-idle";
+
 const SESSION_COOKIE = "vp_session";
 const CSRF_COOKIE = "vp_csrf";
-const SESSION_IDLE_MINUTES = 60;
 /** Namespace for `pg_advisory_xact_lock` so login for one user serializes without colliding with other app locks. */
 const SESSION_LOGIN_ADVISORY_KEY1 = 849_201;
 
@@ -291,6 +292,28 @@ const refreshSession = async (tokenHash: string, expiresAt: Date) => {
   }
 };
 
+/** Solo actividad real (heartbeat). No usar en /me ni en APIs de lectura. */
+export const extendSessionOnActivity = async (
+  token: string,
+  path?: string | null,
+): Promise<Date> => {
+  const expiresAt = getSessionExpiry();
+  await refreshSession(hashToken(token), expiresAt);
+  if (path) {
+    try {
+      await updateSessionLastPath(path);
+    } catch (error) {
+      console.warn("[session] no se pudo guardar last_path", error);
+    }
+    try {
+      await recordUserActivity(path);
+    } catch (error) {
+      console.warn("[session] no se pudo registrar la actividad", error);
+    }
+  }
+  return expiresAt;
+};
+
 const MAX_LAST_PATH_LENGTH = 256;
 
 /**
@@ -535,6 +558,7 @@ export const getUserSession = async (): Promise<UserSession | null> => {
       password_change_required: boolean;
       password_change_reason: string | null;
       portalProfile?: string | null;
+      expires_at: Date | string;
     };
     const passwordState = resolvePasswordChangeState({
       password_change_required: row.password_change_required,
@@ -565,8 +589,7 @@ export const getUserSession = async (): Promise<UserSession | null> => {
       },
       passwordState,
     );
-    const expiresAt = getSessionExpiry();
-    await refreshSession(tokenHash, expiresAt);
+    const expiresAt = new Date(row.expires_at);
     return {
       user,
       token,

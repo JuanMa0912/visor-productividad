@@ -1,0 +1,382 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Clock3, Lock, Play } from "lucide-react";
+import { useAuth, usePermissions } from "@/lib/auth/auth-context";
+import { BODEGA_DEFAULT_CFG } from "@/lib/checklists/bodega-gerencial";
+import {
+  canAccessChecklistPanel,
+  canFillChecklistAsEncargado,
+  canFillChecklistAsRevisor,
+} from "@/lib/checklists/access";
+import {
+  CHECKLIST_DURATION_MINUTES,
+  formatCountdown,
+  remainingMs,
+  type ChecklistActorRole,
+  type ChecklistRunRow,
+  type ChecklistSessionId,
+} from "@/lib/checklists/session";
+import { parseChecklistSnapshot, type ChecklistSnapshot } from "@/lib/checklists/snapshot";
+import { ChecklistRunProvider } from "@/app/checklists/checklist-run-context";
+
+const cookieValue = (name: string) => {
+  if (typeof document === "undefined") return "";
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}=([^;]*)`),
+  );
+  return match ? decodeURIComponent(match[1]) : "";
+};
+
+type GateProps = {
+  checklistId: ChecklistSessionId;
+  title: string;
+  children: React.ReactNode;
+};
+
+export function ChecklistSessionGate({
+  checklistId,
+  title,
+  children,
+}: GateProps) {
+  const { user } = useAuth();
+  const { isAdmin } = usePermissions();
+  const specialRoles = user?.specialRoles ?? [];
+  const canEncargado = canFillChecklistAsEncargado(specialRoles, isAdmin);
+  const canRevisor = canFillChecklistAsRevisor(specialRoles, isAdmin);
+  const canUnlock = canAccessChecklistPanel(specialRoles, isAdmin);
+
+  const [run, setRun] = useState<ChecklistRunRow | null>(null);
+  const [priorRun, setPriorRun] = useState<ChecklistRunRow | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [actorRole, setActorRole] = useState<ChecklistActorRole>(
+    canEncargado ? "encargado" : "revisor",
+  );
+  const [empresa, setEmpresa] = useState(BODEGA_DEFAULT_CFG[0]?.empresa ?? "");
+  const [sede, setSede] = useState(BODEGA_DEFAULT_CFG[0]?.sedes[0] ?? "");
+  const latestSnapshot = useRef<ChecklistSnapshot | null>(null);
+
+  const sedes =
+    BODEGA_DEFAULT_CFG.find((row) => row.empresa === empresa)?.sedes ?? [];
+
+  const load = useCallback(async () => {
+    const response = await fetch(
+      `/api/checklists/runs?checklistId=${encodeURIComponent(checklistId)}`,
+      { cache: "no-store" },
+    );
+    const json = (await response.json()) as {
+      run?: ChecklistRunRow | null;
+      priorRun?: ChecklistRunRow | null;
+      error?: string;
+    };
+    if (!response.ok) throw new Error(json.error || "No se pudo leer el intento.");
+    setRun(json.run ?? null);
+    setPriorRun(json.priorRun ?? null);
+    if (json.run?.empresa) setEmpresa(json.run.empresa);
+    if (json.run?.sede) setSede(json.run.sede);
+    if (json.run?.actorRole) setActorRole(json.run.actorRole);
+  }, [checklistId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void load()
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "No se pudo cargar.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (run?.status !== "in_progress") return;
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [run?.status]);
+
+  const leftMs = useMemo(() => {
+    if (!run || run.status !== "in_progress") return 0;
+    return remainingMs(run.deadlineAt, new Date(now));
+  }, [now, run]);
+
+  useEffect(() => {
+    if (run?.status !== "in_progress" || leftMs > 0) return;
+    void load().catch(() => {
+      setRun((current) =>
+        current ? { ...current, status: "expired", remainingMs: 0 } : current,
+      );
+    });
+  }, [leftMs, load, run?.status]);
+
+  const mutate = async (action: "start" | "complete" | "reopen") => {
+    setBusy(true);
+    setError(null);
+    try {
+      const csrf = cookieValue("vp_csrf");
+      const response = await fetch("/api/checklists/runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrf,
+        },
+        body: JSON.stringify({
+          action,
+          checklistId,
+          runId: run?.id,
+          actorRole,
+          empresa,
+          sede,
+          snapshot: action === "complete" ? latestSnapshot.current : undefined,
+        }),
+      });
+      const json = (await response.json()) as {
+        run?: ChecklistRunRow;
+        priorRun?: ChecklistRunRow | null;
+        error?: string;
+      };
+      if (!response.ok) {
+        if (json.run) setRun(json.run);
+        if (json.priorRun) setPriorRun(json.priorRun);
+        throw new Error(json.error || "No se pudo actualizar el intento.");
+      }
+      setRun(json.run ?? null);
+      setPriorRun(json.priorRun ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo actualizar.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveSnapshot = useCallback(
+    (snapshot: ChecklistSnapshot) => {
+      latestSnapshot.current = snapshot;
+      if (!run?.id) return;
+      const csrf = cookieValue("vp_csrf");
+      void fetch("/api/checklists/runs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrf,
+        },
+        body: JSON.stringify({
+          action: "save",
+          checklistId,
+          runId: run.id,
+          snapshot,
+        }),
+      }).catch(() => undefined);
+    },
+    [checklistId, run?.id],
+  );
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-slate-600">
+        Cargando checklist...
+      </div>
+    );
+  }
+
+  if (!canEncargado && !canRevisor && !isAdmin) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-16">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+          <p className="mt-3 text-sm text-slate-600">
+            Este checklist solo lo diligencian personas con rol de encargado de
+            sede o de revisor. Pide ese rol en administración de usuarios.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const running = run?.status === "in_progress" && leftMs > 0;
+  const expired =
+    run?.status === "expired" || (run?.status === "in_progress" && leftMs <= 0);
+  const completed = run?.status === "completed";
+  const idle = !run || completed;
+  const priorSnapshot = priorRun
+    ? parseChecklistSnapshot(priorRun.answers)
+    : null;
+
+  return (
+    <div className="relative">
+      {running ? (
+        <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-amber-950">
+            <Clock3 className={`h-4 w-4 ${leftMs <= 180_000 ? "text-rose-600" : ""}`} />
+            {run?.actorRole === "revisor" ? "Revisor" : "Encargado"} ·{" "}
+            {run?.sede} · tiempo{" "}
+            <span
+              className={`tabular-nums ${leftMs <= 180_000 ? "text-rose-700" : "text-amber-900"}`}
+            >
+              {formatCountdown(leftMs)}
+            </span>
+            <span className="font-normal text-amber-800">
+              / {CHECKLIST_DURATION_MINUTES}:00
+            </span>
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void mutate("complete")}
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            Finalizar checklist
+          </button>
+        </div>
+      ) : null}
+
+      {idle ? (
+        <div className="mx-auto max-w-lg px-4 py-16">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Confirma el inicio. Tendrás{" "}
+              <strong>{CHECKLIST_DURATION_MINUTES} minutos exactos</strong>. Cada
+              checklist se hace <strong>una vez al mes por sede</strong>. El
+              revisor ve lo que respondió el encargado y lo compara con lo que
+              encuentra.
+            </p>
+            {canEncargado && canRevisor ? (
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActorRole("encargado")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    actorRole === "encargado"
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  Encargado de sede
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActorRole("revisor")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    actorRole === "revisor"
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  Revisor
+                </button>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Rol: {canRevisor && !canEncargado ? "Revisor" : "Encargado de sede"}
+              </p>
+            )}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600">
+                Empresa
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={empresa}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setEmpresa(next);
+                    const nextSedes =
+                      BODEGA_DEFAULT_CFG.find((row) => row.empresa === next)
+                        ?.sedes ?? [];
+                    setSede(nextSedes[0] ?? "");
+                  }}
+                >
+                  {BODEGA_DEFAULT_CFG.map((row) => (
+                    <option key={row.empresa} value={row.empresa}>
+                      {row.empresa}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600">
+                Sede
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={sede}
+                  onChange={(event) => setSede(event.target.value)}
+                >
+                  {sedes.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {completed ? (
+              <p className="mt-2 text-sm text-emerald-700">
+                Ya hay un intento finalizado. Si es de este mes en esa sede, no
+                se puede repetir.
+              </p>
+            ) : null}
+            {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void mutate("start")}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
+            >
+              <Play className="h-4 w-4" />
+              Comenzar checklist
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {expired ? (
+        <div className="mx-auto max-w-lg px-4 py-16">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
+            <p className="inline-flex items-center gap-2 text-sm font-semibold text-rose-900">
+              <Lock className="h-4 w-4" />
+              Checklist cerrado
+            </p>
+            <p className="mt-3 text-sm leading-6 text-rose-900/80">
+              Los {CHECKLIST_DURATION_MINUTES} minutos se agotaron o no se
+              terminó. Quien tenga el panel de checklists puede desbloquearlo.
+            </p>
+            {error ? <p className="mt-3 text-sm text-rose-800">{error}</p> : null}
+            {canUnlock ? (
+              <button
+                type="button"
+                disabled={busy || !run?.id}
+                onClick={() => void mutate("reopen")}
+                className="mt-5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                Desbloquear 20 minutos más
+              </button>
+            ) : (
+              <p className="mt-4 text-xs text-rose-800/80">
+                Pide a alguien con panel de checklists que lo desbloquee.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {running ? (
+        <ChecklistRunProvider
+          value={{
+            actorRole: run?.actorRole ?? actorRole,
+            priorSnapshot,
+            saveSnapshot,
+          }}
+        >
+          {children}
+        </ChecklistRunProvider>
+      ) : null}
+    </div>
+  );
+}

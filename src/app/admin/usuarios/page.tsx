@@ -306,6 +306,18 @@ const SPECIAL_ROLE_OPTIONS = [
     id: "proveedores_qr",
     label: "QR proveedores (links)",
   },
+  {
+    id: "checklist_encargado",
+    label: "Checklist encargado de sede (1 vez al mes)",
+  },
+  {
+    id: "checklist_revisor",
+    label: "Checklist revisor (cruza con el encargado)",
+  },
+  {
+    id: "checklist_panel",
+    label: "Checklist panel de control y desbloqueo",
+  },
 ];
 
 type PermissionCellSummary = {

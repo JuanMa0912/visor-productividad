@@ -1,13 +1,15 @@
 import type { PoolClient } from "pg";
-import type { OcVista } from "./status";
 import {
   OC_SLA_DAYS,
+  buildOcCumplimiento,
+  EMPTY_OC_CUMPLIMIENTO,
   ocFlags,
   ocMatchesVista,
   ocPrimaryBadge,
   yyyymmddAddDays,
   yyyymmddDiffDays,
   yyyymmddToday,
+  type OcVista,
 } from "./status";
 import { sortOcEmpresas, sortOcSedes } from "./filters";
 import type {
@@ -50,6 +52,12 @@ const VENCIDAS_SQL = `
   AND COALESCE(cantidad_ent, 0) < COALESCE(cantidad, 0) - 0.0001
   AND BTRIM(fecha_dcto) < to_char(CURRENT_DATE - ${OC_SLA_DAYS}, 'YYYYMMDD')
 `;
+const CERRADAS_SQL = `
+  BTRIM(ind_estado) = '2'
+  OR COALESCE(cantidad_ent, 0) >= COALESCE(cantidad, 0) - 0.0001
+`;
+const ABIERTAS_NO_VENCIDAS_SQL = `(${ABIERTAS_SQL}) AND NOT (${VENCIDAS_SQL})`;
+const INCOMPLETAS_NO_VENCIDAS_SQL = `(${INCOMPLETAS_SQL}) AND NOT (${VENCIDAS_SQL})`;
 
 function mapBreakdown(rows: Record<string, unknown>[]): OrdenCompraBreakdown[] {
   return rows.map((raw) => ({
@@ -77,6 +85,8 @@ export async function queryOrdenesCompraBoard(
     comprador?: string | null;
     desde?: string | null;
     hasta?: string | null;
+    diaDesde?: number | null;
+    diaHasta?: number | null;
     limit?: number;
   },
 ): Promise<OrdenCompraBoard> {
@@ -126,6 +136,24 @@ export async function queryOrdenesCompraBoard(
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const limit = Math.min(Math.max(input.limit ?? 1500, 1), 3000);
+
+  const cumplimientoWhere = [...where];
+  const cumplimientoParams = [...params];
+  if (input.diaDesde != null) {
+    cumplimientoParams.push(input.diaDesde);
+    cumplimientoWhere.push(
+      `BTRIM(fecha_dcto) ~ '^[0-9]{8}$' AND SUBSTRING(BTRIM(fecha_dcto) FROM 7 FOR 2)::int >= $${cumplimientoParams.length}`,
+    );
+  }
+  if (input.diaHasta != null) {
+    cumplimientoParams.push(input.diaHasta);
+    cumplimientoWhere.push(
+      `BTRIM(fecha_dcto) ~ '^[0-9]{8}$' AND SUBSTRING(BTRIM(fecha_dcto) FROM 7 FOR 2)::int <= $${cumplimientoParams.length}`,
+    );
+  }
+  const cumplimientoWhereSql = cumplimientoWhere.length
+    ? `WHERE ${cumplimientoWhere.join(" AND ")}`
+    : "";
 
   const metaRes = await client.query(
     `
@@ -202,7 +230,7 @@ export async function queryOrdenesCompraBoard(
     COALESCE(SUM(tot_bruto), 0)::float AS tot_bruto
   `;
 
-  const [empresaBd, sedeBd, tipdocBd, dataRes] = await Promise.all([
+  const [empresaBd, sedeBd, tipdocBd, dataRes, cumplimientoRes] = await Promise.all([
     client.query(
       `
       SELECT empresa AS key, empresa AS label, ${breakdownSelect}
@@ -254,6 +282,22 @@ export async function queryOrdenesCompraBoard(
       LIMIT ${limit}
       `,
       params,
+    ),
+    client.query(
+      `
+      SELECT
+        count(*) FILTER (WHERE (${CERRADAS_SQL}))::int AS cerradas_count,
+        COALESCE(SUM(cantidad) FILTER (WHERE (${CERRADAS_SQL})), 0)::float AS cerradas_cant,
+        count(*) FILTER (WHERE ${ABIERTAS_NO_VENCIDAS_SQL})::int AS abiertas_count,
+        COALESCE(SUM(cantidad) FILTER (WHERE ${ABIERTAS_NO_VENCIDAS_SQL}), 0)::float AS abiertas_cant,
+        COALESCE(SUM(cantidad_ent) FILTER (WHERE ${ABIERTAS_NO_VENCIDAS_SQL}), 0)::float AS abiertas_ent,
+        count(*) FILTER (WHERE ${INCOMPLETAS_NO_VENCIDAS_SQL})::int AS incompletas_count,
+        COALESCE(SUM(cantidad) FILTER (WHERE ${INCOMPLETAS_NO_VENCIDAS_SQL}), 0)::float AS incompletas_cant,
+        COALESCE(SUM(cantidad_ent) FILTER (WHERE ${INCOMPLETAS_NO_VENCIDAS_SQL}), 0)::float AS incompletas_ent
+      FROM orden_compra
+      ${cumplimientoWhereSql}
+      `,
+      cumplimientoParams,
     ),
   ]);
 
@@ -326,6 +370,18 @@ export async function queryOrdenesCompraBoard(
       totBrutoAbiertas: num(kpiRow.tot_bruto_abiertas),
       pctRecibidaAbiertas: num(kpiRow.pct_recibida_abiertas),
     },
+    cumplimiento: cumplimientoRes.rows[0]
+      ? buildOcCumplimiento({
+          cerradasCount: num(cumplimientoRes.rows[0].cerradas_count),
+          cerradasCantidad: num(cumplimientoRes.rows[0].cerradas_cant),
+          abiertasCount: num(cumplimientoRes.rows[0].abiertas_count),
+          abiertasCantidad: num(cumplimientoRes.rows[0].abiertas_cant),
+          abiertasEnt: num(cumplimientoRes.rows[0].abiertas_ent),
+          incompletasCount: num(cumplimientoRes.rows[0].incompletas_count),
+          incompletasCantidad: num(cumplimientoRes.rows[0].incompletas_cant),
+          incompletasEnt: num(cumplimientoRes.rows[0].incompletas_ent),
+        })
+      : EMPTY_OC_CUMPLIMIENTO,
     breakdowns: {
       empresa: mapBreakdown(empresaBd.rows),
       sede: mapBreakdown(sedeBd.rows),

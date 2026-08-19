@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { applySessionCookies, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { parseOcMonthDay } from "@/lib/ordenes-compra/filters";
 import { queryOrdenesCompraBoard } from "@/lib/ordenes-compra/queries";
 import type { OcVista } from "@/lib/ordenes-compra/status";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
@@ -106,6 +107,25 @@ export async function GET(request: Request) {
       NextResponse.json({ error: "El rango de fechas es invalido." }, { status: 400 }),
     );
   }
+  const diaDesdeRaw = url.searchParams.get("diaDesde");
+  const diaHastaRaw = url.searchParams.get("diaHasta");
+  const diaDesde = parseOcMonthDay(diaDesdeRaw);
+  const diaHasta = parseOcMonthDay(diaHastaRaw);
+  if (diaDesdeRaw && diaDesde == null) {
+    return withSession(
+      NextResponse.json({ error: "Dia desde invalido (1-31)." }, { status: 400 }),
+    );
+  }
+  if (diaHastaRaw && diaHasta == null) {
+    return withSession(
+      NextResponse.json({ error: "Dia hasta invalido (1-31)." }, { status: 400 }),
+    );
+  }
+  if (diaDesde != null && diaHasta != null && diaDesde > diaHasta) {
+    return withSession(
+      NextResponse.json({ error: "El rango de dias de cumplimiento es invalido." }, { status: 400 }),
+    );
+  }
 
   const pool = await getDbPool();
   const client = await pool.connect();
@@ -120,6 +140,8 @@ export async function GET(request: Request) {
       comprador,
       desde,
       hasta,
+      diaDesde,
+      diaHasta,
     });
     return withSession(NextResponse.json(board));
   } catch (error) {

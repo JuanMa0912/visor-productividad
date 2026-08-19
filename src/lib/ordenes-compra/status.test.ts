@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   OC_SLA_DAYS,
+  buildOcCumplimiento,
   ocFlags,
   ocMatchesVista,
   ocPrimaryBadge,
@@ -65,6 +66,24 @@ test("vencida SLA: fecha_dcto + 7 < hoy y no cumplida", () => {
   assert.equal(flags.vencidaSla, true);
   assert.equal(flags.pendiente, true);
   assert.equal(ocPrimaryBadge(flags), "vencida");
+});
+
+test("cumplimiento excluye vencidas: cerradas 100% y abiertas por cantidad", () => {
+  const out = buildOcCumplimiento({
+    cerradasCount: 8,
+    cerradasCantidad: 100,
+    abiertasCount: 2,
+    abiertasCantidad: 50,
+    abiertasEnt: 20,
+    incompletasCount: 1,
+    incompletasCantidad: 30,
+    incompletasEnt: 12,
+  });
+  assert.equal(out.cerradas.pct, 100);
+  assert.equal(out.abiertas.pct, 40);
+  assert.equal(out.incompletas.pct, 40);
+  assert.equal(out.total.count, 10);
+  assert.equal(out.total.pct, 80);
 });
 
 test("a tiempo: dentro de 7 dias y sin reciba", () => {

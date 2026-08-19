@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   labelOcEmpresa,
   ocSedeMatchesEmpresas,
+  parseOcMonthDay,
   sortOcEmpresas,
   sortOcSedes,
 } from "./filters";
@@ -20,6 +21,15 @@ test("empresas OC se etiquetan y ordenan Mercamio → Mercatodo → Merkmios", (
 test("sedes OC siguen el orden del portal", () => {
   const sorted = sortOcSedes(["Chia", "Calle 5ta", "Floresta", "Palmira"]);
   assert.deepEqual(sorted, ["Calle 5ta", "Palmira", "Floresta", "Chia"]);
+});
+
+test("día del mes para nivel de cumplimiento es 1–31", () => {
+  assert.equal(parseOcMonthDay("1"), 1);
+  assert.equal(parseOcMonthDay("18"), 18);
+  assert.equal(parseOcMonthDay("31"), 31);
+  assert.equal(parseOcMonthDay("0"), null);
+  assert.equal(parseOcMonthDay("32"), null);
+  assert.equal(parseOcMonthDay(""), null);
 });
 
 test("sede se filtra por empresa seleccionada", () => {

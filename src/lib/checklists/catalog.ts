@@ -1,5 +1,6 @@
 import type { ChecklistCatalogEntry } from "@/lib/checklists/types";
 import { BODEGA_BLOCKS } from "@/lib/checklists/bodega-gerencial";
+import { PUNTO_VENTA_BLOCKS, PUNTO_VENTA_ITEM_COUNT } from "@/lib/checklists/punto-venta";
 
 export const CHECKLIST_CATALOG: ChecklistCatalogEntry[] = [
   {
@@ -11,6 +12,16 @@ export const CHECKLIST_CATALOG: ChecklistCatalogEntry[] = [
     bloques: BODEGA_BLOCKS.length,
     status: "available",
     href: "/checklists/bodega-gerencial",
+  },
+  {
+    id: "punto-venta",
+    title: "Checklist de Punto de Venta",
+    subtitle: "Auditoría PVTA de surtido, precio, exhibición y gestión comercial",
+    badge: "OPERACIÓN",
+    puntos: PUNTO_VENTA_ITEM_COUNT,
+    bloques: PUNTO_VENTA_BLOCKS.length,
+    status: "available",
+    href: "/checklists/punto-venta",
   },
   {
     id: "sala-comercial",

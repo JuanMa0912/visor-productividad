@@ -36,7 +36,15 @@ import {
 import { cn } from "@/lib/shared/utils";
 import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
 import { MatrixTable } from "@/app/informe-variacion/informe-variacion-matrix";
+import {
+  InformeEmpresaSummaryCards,
+  InformeRankingTable,
+} from "@/app/informe-variacion/informe-variacion-ranking";
 import { TreeTable } from "@/app/informe-variacion/informe-variacion-tree";
+import type {
+  InformeRankingDimension,
+  InformeRankingSort,
+} from "@/lib/informe-variacion/ranking";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
 
@@ -68,6 +76,11 @@ function InformeVariacionBoardReady({
   const [kpiMetric, setKpiMetric] = useState<InformeMetric>("v");
   const [sedeMetric, setSedeMetric] = useState<InformeMetric>("v");
   const [matrixMetric, setMatrixMetric] = useState<InformeMetric>("v");
+  const [rankingMetric, setRankingMetric] = useState<InformeMetric>("v");
+  const [rankingDimension, setRankingDimension] =
+    useState<InformeRankingDimension>("item");
+  const [rankingSort, setRankingSort] = useState<InformeRankingSort>("cur");
+  const [rankingMode, setRankingMode] = useState<"yoy" | "mom">("yoy");
   const [treeMetric, setTreeMetric] = useState<InformeMetric>("v");
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
   const deferredFilters = useDeferredValue(filters);
@@ -467,6 +480,32 @@ function InformeVariacionBoardReady({
               dir: current.col === col ? current.dir * -1 : 1,
             }))
           }
+        />
+      </Section>
+
+      <Section
+        title="Ranking producto × sede"
+        actions={null}
+      >
+        <InformeRankingTable
+          payload={prepared}
+          metric={rankingMetric}
+          onMetricChange={setRankingMetric}
+          dimension={rankingDimension}
+          onDimensionChange={setRankingDimension}
+          sort={rankingSort}
+          onSortChange={setRankingSort}
+          mode={rankingMode}
+          onModeChange={setRankingMode}
+          pass={pass}
+        />
+      </Section>
+
+      <Section title="Resumen por empresa">
+        <InformeEmpresaSummaryCards
+          payload={prepared}
+          metric={rankingMetric}
+          pass={pass}
         />
       </Section>
 

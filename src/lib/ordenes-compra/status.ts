@@ -1,3 +1,5 @@
+import type { OcCumplimiento } from "./types";
+
 export const OC_SLA_DAYS = 7;
 
 export type OcVista =
@@ -91,6 +93,57 @@ export function ocPrimaryBadge(flags: OcFlags): OcBadge {
   if (flags.pendiente) return "pendiente";
   return "a_tiempo";
 }
+
+const roundPct = (n: number) => Math.round(n * 10) / 10;
+
+export function qtyRatioPct(entregada: number, pedida: number): number {
+  if (!(pedida > 0)) return 0;
+  return roundPct((entregada / pedida) * 100);
+}
+
+/** Cerradas = 100%. Abiertas/incompletas = qty recibida. Vencidas no entran. */
+export function buildOcCumplimiento(input: {
+  cerradasCount: number;
+  cerradasCantidad: number;
+  abiertasCount: number;
+  abiertasCantidad: number;
+  abiertasEnt: number;
+  incompletasCount: number;
+  incompletasCantidad: number;
+  incompletasEnt: number;
+}): OcCumplimiento {
+  const cerradasCant = Math.max(0, input.cerradasCantidad);
+  const abiertasCant = Math.max(0, input.abiertasCantidad);
+  return {
+    cerradas: {
+      count: input.cerradasCount,
+      pct: input.cerradasCount > 0 ? 100 : 0,
+    },
+    abiertas: {
+      count: input.abiertasCount,
+      pct: qtyRatioPct(input.abiertasEnt, abiertasCant),
+    },
+    incompletas: {
+      count: input.incompletasCount,
+      pct: qtyRatioPct(input.incompletasEnt, input.incompletasCantidad),
+    },
+    total: {
+      count: input.cerradasCount + input.abiertasCount,
+      pct: qtyRatioPct(cerradasCant + input.abiertasEnt, cerradasCant + abiertasCant),
+    },
+  };
+}
+
+export const EMPTY_OC_CUMPLIMIENTO: OcCumplimiento = buildOcCumplimiento({
+  cerradasCount: 0,
+  cerradasCantidad: 0,
+  abiertasCount: 0,
+  abiertasCantidad: 0,
+  abiertasEnt: 0,
+  incompletasCount: 0,
+  incompletasCantidad: 0,
+  incompletasEnt: 0,
+});
 
 export function ocMatchesVista(
   flags: OcFlags,

@@ -11,6 +11,7 @@ import {
   MerkmiosLogo,
 } from "@/components/portal/brand-logos";
 import { useAuth } from "@/lib/auth/auth-context";
+import { LOGIN_IDLE_QUERY } from "@/lib/auth/session-idle";
 import type { AuthUser } from "@/lib/auth/types";
 
 const sanitizeFrom = (raw: string | null): string => {
@@ -107,6 +108,11 @@ export function LoginPageInner() {
           <p className="mt-2 text-sm text-slate-600">
             Ingresa tus credenciales para acceder al portal.
           </p>
+          {searchParams.get("razon") === LOGIN_IDLE_QUERY ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              Tu sesión se cerró por inactividad. Vuelve a ingresar.
+            </p>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
             <div>

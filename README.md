@@ -34,16 +34,16 @@ seguimiento operativo.
 | Hub Venta UAID | `/venta` | - | acceso agrupado a ventas e inventario |
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV/XLSX/PDF/PNG |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
-| Informe variacion | `/informe-variacion` | `/api/informe-variacion` | MoM/YoY; alcance por `allowed_lines` (asadero/fruver) |
-| Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, estados de S.inventario y auditoria |
+| Informe variacion | `/informe-variacion` | `/api/informe-variacion` | MoM/YoY; ranking producto×sede (línea/sublínea/marca/producto); resumen por empresa; alcance por `allowed_lines` (asadero/fruver) |
+| Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, filtro CAT, estados de S.inventario (restock: conteo sin verificar/seguimiento/surtido) y auditoria |
 | Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario y resumenes con margen `SUM/SUM` |
 | Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | matrices, pivotes y presets por usuario |
 | Días de inventario | `/analisis-de-inventario` | `/api/analisis-de-inventario` | DI und/valor, drill sede→ítem y mapa de calor |
 | Participación comercial | `/participacion-comercial` | `/api/participacion-comercial` | mix sede↔línea por almacén y drill completo |
 | Proveedores | `/proveedores`, `/proveedores/ingreso/[token]` | `/api/proveedores/visitas`, `/api/proveedores/ingreso`, `/api/proveedores/ventas`, `/api/proveedores/productividad` | Subtablero `proveedores`; QR público por sede; links/QR del tablero con `proveedores_qr`; visitas + ventas 30d + productividad und/kg/tx y volumen÷horas |
-| Órdenes de compra | `/ordenes-compra` | `/api/ordenes-compra` | Tablero opt-in (`ordenes-compra`): abiertas/incompletas/vencidas (SLA 7d); recarga diaria 08:00 |
+| Órdenes de compra | `/ordenes-compra` | `/api/ordenes-compra` | Tablero opt-in (`ordenes-compra`): abiertas/incompletas/vencidas (SLA 7d); cumplimiento por días del mes (p. ej. 1–18); recarga diaria 08:00 |
 | Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, meta/summary/options y XLSX |
-| Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis` | consultas operativas, reporte Alex, planillas, comparativos y checklists (subtablero `checklists`) |
+| Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]`, `/checklists/panel` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis`, `/api/checklists/runs`, `/api/checklists/panel` | checklists 20 min, 1/mes por sede, roles encargado/revisor/panel y cruce de respuestas |
 | Cronograma | `/cronograma` | `/api/cronograma` | lectura de bases de datos embebidas en una pagina de Notion |
 | Excel DIAN | `/ExcelDian` | `/api/excel-dian/export` | exportes DIAN por empresa desde bases PostgreSQL separadas |
 | Administracion | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` | `/api/admin/*`, `/api/exports/log`, `/api/auth/heartbeat` | usuarios, permisos, presencia, auditoria admin, bitacora de descargas (solo metadatos), flush de cache, logins fallidos y metricas de actividad |
@@ -103,13 +103,13 @@ Piezas compartidas principales:
 2. Se revocan sesiones previas del usuario y se crea una nueva fila en `app_user_sessions`.
 3. Se registra login en `app_user_login_logs` con IP auditada y User-Agent.
 4. La UI consulta `GET /api/auth/me`; los endpoints protegidos usan `requireAuthSession` o `requireAdminSession`.
-5. `POST /api/auth/heartbeat` refresca sesion, actualiza `last_activity_at`, guarda `last_path` e inserta actividad en `app_user_activity_log`.
+5. `POST /api/auth/heartbeat` solo con actividad real: renueva `expires_at`/`last_activity_at`, guarda `last_path` e inserta `app_user_activity_log`. Sin actividad 60 min, la sesion vence.
 
 ### Cookies
 
 | Cookie | Uso | Propiedades |
 | --- | --- | --- |
-| `vp_session` | token de sesion | `httpOnly`, `sameSite=lax`, `secure` segun `SESSION_COOKIE_SECURE` o `NODE_ENV=production`, expiracion deslizante de 60 minutos |
+| `vp_session` | token de sesion | `httpOnly`, `sameSite=lax`, `secure` segun `SESSION_COOKIE_SECURE` o `NODE_ENV=production`; 60 min de inactividad real (sin clic/teclado/navegacion) cierran la sesion y dejan de contar metricas de uso |
 | `vp_csrf` | token CSRF para mutaciones protegidas | legible por cliente, `sameSite=lax`, `secure` igual que la sesion |
 
 En despliegues HTTP planos se debe usar `SESSION_COOKIE_SECURE=false`; al pasar a

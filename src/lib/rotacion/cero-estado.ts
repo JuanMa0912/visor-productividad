@@ -52,6 +52,23 @@ export const makeCeroRotacionEstadoKey = (
   item: string,
 ) => `${empresa}\u001f${sedeId}\u001f${item}`;
 
+export function countCeroRotacionEstados(
+  rows: ReadonlyArray<{ empresa: string; sedeId: string; item: string }>,
+  estadoByKey: Readonly<Record<string, CeroRotacionEstado>>,
+): Record<CeroRotacionEstado, number> {
+  const counts: Record<CeroRotacionEstado, number> = {
+    sin_verificar: 0,
+    seguimiento: 0,
+    surtido: 0,
+  };
+  for (const row of rows) {
+    const key = makeCeroRotacionEstadoKey(row.empresa, row.sedeId, row.item);
+    const estado = estadoByKey[key] ?? DEFAULT_CERO_ROTACION_ESTADO;
+    counts[estado] += 1;
+  }
+  return counts;
+}
+
 export const parseCeroRotacionEstado = (
   raw: string | null | undefined,
 ): CeroRotacionEstado | null => {

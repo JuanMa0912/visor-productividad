@@ -33,6 +33,19 @@ export type OrdenCompraRow = {
   badge: "cumplida" | "vencida" | "incompleta" | "pendiente" | "a_tiempo";
 };
 
+export type OcCumplimientoGrupo = {
+  count: number;
+  pct: number;
+};
+
+/** Universo sin vencidas: cerradas = 100%, abiertas/incompletas por cantidad recibida. */
+export type OcCumplimiento = {
+  cerradas: OcCumplimientoGrupo;
+  abiertas: OcCumplimientoGrupo;
+  incompletas: OcCumplimientoGrupo;
+  total: OcCumplimientoGrupo;
+};
+
 export type OrdenCompraKpis = {
   total: number;
   abiertas: number;
@@ -68,6 +81,7 @@ export type OrdenCompraMeta = {
 export type OrdenCompraBoard = {
   meta: OrdenCompraMeta;
   kpis: OrdenCompraKpis;
+  cumplimiento: OcCumplimiento;
   breakdowns: {
     empresa: OrdenCompraBreakdown[];
     sede: OrdenCompraBreakdown[];

@@ -19,6 +19,7 @@ import {
   PackageSearch,
   CircleHelp,
   SlidersHorizontal,
+  Tags,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ import {
   CERO_ROTACION_ESTADO_LABELS,
   CERO_ROTACION_ESTADO_SORT_ORDER,
   CERO_ROTACION_ESTADO_VALUES,
+  countCeroRotacionEstados,
   DEFAULT_CERO_ROTACION_ESTADO,
   makeCeroRotacionEstadoKey,
   type CeroRotacionEstado,
@@ -875,7 +877,13 @@ export function RotacionPageInner() {
         });
         const defaultCategoriaKeys = buildDefaultCategoriaKeys(allCategorias);
         setSelectedLineaN1Values(allLineasN1);
-        setSelectedCategoriaKeys(defaultCategoriaKeys);
+        setSelectedCategoriaKeys((prev) => {
+          const optionSet = new Set(
+            allCategorias.map((categoria) => categoria.categoriaKey),
+          );
+          const kept = prev.filter((key) => optionSet.has(key));
+          return kept.length > 0 ? kept : defaultCategoriaKeys;
+        });
         if (payload.meta?.abcdConfig) {
           const normalizedConfig = normalizeAbcdConfig(payload.meta.abcdConfig);
           setAbcdConfig(normalizedConfig);
@@ -1450,6 +1458,16 @@ export function RotacionPageInner() {
     () => filterCatalog.categorias ?? [],
     [filterCatalog.categorias],
   );
+  const categoriaSelectOptions = useMemo(
+    () =>
+      categoriaFilterOptions.map((option) => ({
+        value: option.categoriaKey,
+        label: option.nombreCategoria
+          ? `${option.categoriaKey} · ${option.nombreCategoria}`
+          : option.categoriaKey,
+      })),
+    [categoriaFilterOptions],
+  );
 
   useEffect(() => {
     const optionValues = lineaN1Options.map((option) => option.value);
@@ -1609,7 +1627,16 @@ export function RotacionPageInner() {
   ]);
 
   useEffect(() => {
-    setSelectedCategoriaKeys(buildDefaultCategoriaKeys(categoriaFilterOptions));
+    setSelectedCategoriaKeys((prev) => {
+      const optionKeys = categoriaFilterOptions.map(
+        (option) => option.categoriaKey,
+      );
+      if (optionKeys.length === 0) return prev.length === 0 ? prev : [];
+      const optionSet = new Set(optionKeys);
+      const kept = prev.filter((key) => optionSet.has(key));
+      if (kept.length > 0) return kept;
+      return buildDefaultCategoriaKeys(categoriaFilterOptions);
+    });
   }, [categoriaFilterOptions]);
 
   useEffect(() => {
@@ -2894,7 +2921,7 @@ export function RotacionPageInner() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <FilterSelectField
                   icon={Building2}
                   label="Empresa"
@@ -2946,6 +2973,25 @@ export function RotacionPageInner() {
                   }
                   accentClassName="text-sky-700"
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
+                />
+                <FilterSelectField
+                  icon={Tags}
+                  label="CAT"
+                  values={selectedCategoriaKeys}
+                  options={categoriaSelectOptions}
+                  onChange={setSelectedCategoriaKeys}
+                  helperText={
+                    lineCategoryScope?.locked
+                      ? "Categoria fija por tu perfil."
+                      : categoriaSelectOptions.length === 0
+                        ? "Carga una sede para ver categorias."
+                        : "Elige una o varias categorias (CAT)."
+                  }
+                  accentClassName="text-teal-700"
+                  disabled={
+                    lineCategoryScope?.locked ||
+                    categoriaSelectOptions.length === 0
+                  }
                 />
               </div>
               <div
@@ -3714,6 +3760,19 @@ export function RotacionPageInner() {
                                   );
                                 })
                               : filteredRows;
+                    const surtidoEstadoCountRows = isRestockCategoryView
+                      ? quickFilteredRows.filter((row) =>
+                          isNuevoItemInSelectedRange(row),
+                        )
+                      : isCeroTableContext
+                        ? quickFilteredRows.filter((row) =>
+                            isCeroRotacionExcludingNuevo(row, dateRange),
+                          )
+                        : [];
+                    const surtidoEstadoCounts = countCeroRotacionEstados(
+                      surtidoEstadoCountRows,
+                      estadoMapForFilter,
+                    );
                     const infoTotalItems = filteredRows.length;
                     const infoTotalInv = filteredRows.reduce(
                       (acc, row) => acc + row.inventoryValue,
@@ -4777,7 +4836,11 @@ export function RotacionPageInner() {
                                                 : ""
                                             }`}
                                           >
-                                            {CERO_ROTACION_ESTADO_LABELS[est]}
+                                            {CERO_ROTACION_ESTADO_LABELS[est]} (
+                                            {surtidoEstadoCounts[est].toLocaleString(
+                                              "es-CO",
+                                            )}
+                                            )
                                           </Button>
                                         );
                                       })}
@@ -5182,6 +5245,26 @@ export function RotacionPageInner() {
                           </div>
                         </div>
                         <CardContent className="px-0 py-0">
+                          {isRestockCategoryView ? (
+                            <div className="flex flex-wrap items-center gap-2 border-b border-cyan-100 bg-cyan-50/80 px-4 py-3">
+                              <p className="mr-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-800">
+                                Restock · S.inventario
+                              </p>
+                              {CERO_ROTACION_ESTADO_VALUES.map((est) => (
+                                <span
+                                  key={est}
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200 bg-white px-2.5 py-1 text-xs font-semibold text-cyan-950"
+                                >
+                                  {CERO_ROTACION_ESTADO_LABELS[est]}
+                                  <span className="tabular-nums text-cyan-800">
+                                    {surtidoEstadoCounts[est].toLocaleString(
+                                      "es-CO",
+                                    )}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                           <div ref={(node) => setTableHostRef(groupKey, node)}>
                             <Table
                               containerClassName="rotacion-table-capture-scroll min-w-0 overscroll-x-contain"

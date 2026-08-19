@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ClipboardCheck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import { ChecklistExpiredAdminPanel } from "@/app/checklists/checklist-expired-admin";
+import { canAccessChecklistPanel } from "@/lib/checklists/access";
 import { CHECKLIST_CATALOG } from "@/lib/checklists/catalog";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
@@ -63,16 +65,26 @@ export default function ChecklistsHubPage() {
               Checklists
             </h1>
             <p className="mt-1 max-w-xl text-sm text-slate-600">
-              Tableros de auditoría ponderada por sede. Guarde y cargue JSON
-              localmente; aún no hay persistencia en servidor.
+              Encargado de sede: un checklist al mes. El revisor lo cruza con
+              esa respuesta. El panel ve puntajes y puede desbloquear vencidos.
             </p>
           </div>
-          <Link
-            href="/horario"
-            className="text-sm font-medium text-sky-700 hover:underline"
-          >
-            ← Volver a operación
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            {canAccessChecklistPanel(user.specialRoles, isAdmin) ? (
+              <Link
+                href="/checklists/panel"
+                className="text-sm font-semibold text-indigo-700 hover:underline"
+              >
+                Panel de control
+              </Link>
+            ) : null}
+            <Link
+              href="/horario"
+              className="text-sm font-medium text-sky-700 hover:underline"
+            >
+              ← Volver a operación
+            </Link>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -124,6 +136,9 @@ export default function ChecklistsHubPage() {
             );
           })}
         </div>
+        {canAccessChecklistPanel(user.specialRoles, isAdmin) ? (
+          <ChecklistExpiredAdminPanel />
+        ) : null}
       </main>
     </div>
   );

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock3,
   PackageOpen,
+  Percent,
   Search,
   X,
 } from "lucide-react";
@@ -63,6 +64,11 @@ const fmtMoney = (n: number) =>
 
 const isoToYmd = (iso: string) => iso.replace(/-/g, "");
 
+const DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => i + 1);
+
+const fmtPct = (n: number) =>
+  `${n.toLocaleString("es-CO", { maximumFractionDigits: 1, minimumFractionDigits: 0 })}%`;
+
 export function OrdenesCompraBoard() {
   const [vista, setVista] = useState<OcVista>("abiertas");
   const [q, setQ] = useState("");
@@ -74,6 +80,8 @@ export function OrdenesCompraBoard() {
   const [comprador, setComprador] = useState("");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
+  const [diaDesde, setDiaDesde] = useState(1);
+  const [diaHasta, setDiaHasta] = useState(() => new Date().getDate());
   const [sortKey, setSortKey] = useState<SortKey>("sla");
   const [data, setData] = useState<OrdenCompraBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +105,8 @@ export function OrdenesCompraBoard() {
     if (comprador) params.set("comprador", comprador);
     if (desde) params.set("desde", isoToYmd(desde));
     if (hasta) params.set("hasta", isoToYmd(hasta));
+    params.set("diaDesde", String(diaDesde));
+    params.set("diaHasta", String(diaHasta));
     try {
       const res = await fetch(`/api/ordenes-compra?${params.toString()}`, {
         cache: "no-store",
@@ -110,7 +120,7 @@ export function OrdenesCompraBoard() {
     } finally {
       setLoading(false);
     }
-  }, [vista, qDebounced, empresas, sedes, proveedores, tipdoc, comprador, desde, hasta]);
+  }, [vista, qDebounced, empresas, sedes, proveedores, tipdoc, comprador, desde, hasta, diaDesde, diaHasta]);
 
   useEffect(() => {
     void load();
@@ -118,7 +128,7 @@ export function OrdenesCompraBoard() {
 
   useEffect(() => {
     setSelected(null);
-  }, [vista, empresas, sedes, proveedores, tipdoc, comprador, qDebounced, desde, hasta]);
+  }, [vista, empresas, sedes, proveedores, tipdoc, comprador, qDebounced, desde, hasta, diaDesde, diaHasta]);
 
   const loadedLabel = useMemo(() => {
     if (!data?.meta.loadedAt) return "sin recarga registrada";
@@ -140,6 +150,7 @@ export function OrdenesCompraBoard() {
   }, [data?.rows, sortKey]);
 
   const kpis = data?.kpis;
+  const cumplimiento = data?.cumplimiento;
   const badgeMix = useMemo(() => {
     if (!kpis) return [];
     return [
@@ -238,6 +249,90 @@ export function OrdenesCompraBoard() {
           value={kpis?.deAyer ?? "—"}
           hint={kpis ? `${kpis.cumplidas.toLocaleString("es-CO")} cumplidas en filtro` : "OC con fecha de ayer"}
         />
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <Percent className="h-3.5 w-3.5" />
+              Nivel de cumplimiento
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Días {diaDesde}–{diaHasta} del documento. Vencidas no entran. Cerradas = 100%;
+              abiertas e incompletas por cantidad recibida.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold text-slate-600">
+              Del
+              <select
+                value={diaDesde}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setDiaDesde(next);
+                  if (next > diaHasta) setDiaHasta(next);
+                }}
+                className="ml-1.5 h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm"
+              >
+                {DAY_OPTIONS.map((day) => (
+                  <option key={day} value={day}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-slate-600">
+              al
+              <select
+                value={diaHasta}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setDiaHasta(next);
+                  if (next < diaDesde) setDiaDesde(next);
+                }}
+                className="ml-1.5 h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm"
+              >
+                {DAY_OPTIONS.map((day) => (
+                  <option key={day} value={day}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <CumplimientoStat
+            label="Cerradas"
+            pct={cumplimiento?.cerradas.pct}
+            count={cumplimiento?.cerradas.count}
+            hint="Completas"
+            tone="emerald"
+          />
+          <CumplimientoStat
+            label="Abiertas"
+            pct={cumplimiento?.abiertas.pct}
+            count={cumplimiento?.abiertas.count}
+            hint="Sin vencer"
+            tone="sky"
+          />
+          <CumplimientoStat
+            label="Incompletas"
+            pct={cumplimiento?.incompletas.pct}
+            count={cumplimiento?.incompletas.count}
+            hint="Parcial recibido"
+            tone="amber"
+          />
+          <CumplimientoStat
+            label="Cumplimiento"
+            pct={cumplimiento?.total.pct}
+            count={cumplimiento?.total.count}
+            hint="Cerradas + abiertas"
+            tone="slate"
+            emphasize
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -525,6 +620,42 @@ export function OrdenesCompraBoard() {
         <DetailPanel row={selected} onClose={() => setSelected(null)} />
       </div>
       <ScrollToTopButton />
+    </div>
+  );
+}
+
+function CumplimientoStat({
+  label,
+  pct,
+  count,
+  hint,
+  tone,
+  emphasize,
+}: {
+  label: string;
+  pct: number | undefined;
+  count: number | undefined;
+  hint: string;
+  tone: "emerald" | "sky" | "amber" | "slate";
+  emphasize?: boolean;
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "border-emerald-200 bg-emerald-50"
+      : tone === "sky"
+        ? "border-sky-200 bg-sky-50"
+        : tone === "amber"
+          ? "border-amber-200 bg-amber-50"
+          : "border-slate-200 bg-slate-50";
+  return (
+    <div className={`rounded-xl border px-3 py-3 ${toneClass} ${emphasize ? "ring-1 ring-slate-300" : ""}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-slate-900">
+        {pct == null ? "—" : fmtPct(pct)}
+      </p>
+      <p className="mt-1 text-xs text-slate-600">
+        {count == null ? hint : `${count.toLocaleString("es-CO")} OC · ${hint}`}
+      </p>
     </div>
   );
 }

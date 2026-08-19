@@ -3,69 +3,81 @@
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
+import {
+  SESSION_IDLE_MS,
+  isSessionIdle,
+  loginUrlAfterIdle,
+} from "@/lib/auth/session-idle";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
+const IDLE_CHECK_INTERVAL_MS = 15_000;
 const ACTIVITY_WINDOW_MS = 60_000;
 
 /**
- * Envia un ping a /api/auth/heartbeat para alimentar el panel de presencia.
- * - Cada 60 s mientras la pestana este visible y el usuario haya interactuado
- *   en el ultimo minuto (mouse / teclado / scroll / focus / touch).
- * - Forzado tambien al cambiar de ruta (asi `last_path` queda al dia aunque el
- *   usuario lleve un rato sin tocar nada) y al regresar la pestana al frente.
- *
- * IMPORTANTE: solo se activa cuando hay sesion (`status === "authenticated"`).
- * Antes este componente disparaba el POST en /login y en cualquier estado
- * intermedio, lo que generaba errores 401 (Unauthorized) en consola.
+ * Reporta uso real a /api/auth/heartbeat y cierra la sesion a los 60 min
+ * sin clic/teclado/scroll/navegacion, para no inflar metricas de uso.
  */
 export default function PresenceHeartbeat() {
   const pathname = usePathname();
-  const { status } = useAuth();
+  const { status, logout } = useAuth();
   const isAuthenticated = status === "authenticated";
   const lastActivityRef = useRef<number>(
     typeof window === "undefined" ? 0 : Date.now(),
   );
   const inFlightRef = useRef(false);
   const cancelledRef = useRef(false);
+  const loggingOutRef = useRef(false);
 
-  const sendHeartbeat = useCallback(async (force = false) => {
-    if (cancelledRef.current || inFlightRef.current) return;
-    if (typeof document === "undefined") return;
-    if (document.visibilityState !== "visible") return;
-    if (
-      !force &&
-      Date.now() - lastActivityRef.current > ACTIVITY_WINDOW_MS
-    ) {
-      return;
-    }
-    inFlightRef.current = true;
-    try {
-      const path =
-        typeof window !== "undefined" ? window.location.pathname : "/";
-      await fetch("/api/auth/heartbeat", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "x-presence-heartbeat": "1",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ path }),
-        cache: "no-store",
-        keepalive: true,
-      });
-    } catch {
-      // los heartbeats son best-effort; si falla la red se reintenta en el siguiente tick
-    } finally {
-      inFlightRef.current = false;
-    }
-  }, []);
+  const endIdleSession = useCallback(() => {
+    if (loggingOutRef.current) return;
+    loggingOutRef.current = true;
+    void logout({ redirectTo: loginUrlAfterIdle() });
+  }, [logout]);
+
+  const sendHeartbeat = useCallback(
+    async (force = false) => {
+      if (cancelledRef.current || inFlightRef.current) return;
+      if (typeof document === "undefined") return;
+      if (document.visibilityState !== "visible") return;
+      if (isSessionIdle(lastActivityRef.current)) {
+        endIdleSession();
+        return;
+      }
+      if (!force && Date.now() - lastActivityRef.current > ACTIVITY_WINDOW_MS) {
+        return;
+      }
+      inFlightRef.current = true;
+      try {
+        const path =
+          typeof window !== "undefined" ? window.location.pathname : "/";
+        const response = await fetch("/api/auth/heartbeat", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "x-presence-heartbeat": "1",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ path }),
+          cache: "no-store",
+          keepalive: true,
+        });
+        if (response.status === 401) {
+          endIdleSession();
+        }
+      } catch {
+        // best-effort; el siguiente tick reintenta
+      } finally {
+        inFlightRef.current = false;
+      }
+    },
+    [endIdleSession],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Sin sesion no hay nada que reportar; evitamos el 401 en consola y la
-    // carga innecesaria al backend (ej. mientras el usuario esta en /login).
     if (!isAuthenticated) return;
     cancelledRef.current = false;
+    loggingOutRef.current = false;
 
     const markActive = () => {
       lastActivityRef.current = Date.now();
@@ -78,7 +90,6 @@ export default function PresenceHeartbeat() {
       "touchstart",
       "click",
       "pointerdown",
-      "focus",
     ];
     activityEvents.forEach((event) =>
       window.addEventListener(event, markActive, {
@@ -86,27 +97,36 @@ export default function PresenceHeartbeat() {
       } as AddEventListenerOptions),
     );
 
-    const intervalId = window.setInterval(() => {
+    const heartbeatId = window.setInterval(() => {
       void sendHeartbeat();
     }, HEARTBEAT_INTERVAL_MS);
 
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        lastActivityRef.current = Date.now();
-        void sendHeartbeat(true);
+    const idleId = window.setInterval(() => {
+      if (isSessionIdle(lastActivityRef.current)) {
+        endIdleSession();
       }
+    }, IDLE_CHECK_INTERVAL_MS);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (isSessionIdle(lastActivityRef.current)) {
+        endIdleSession();
+        return;
+      }
+      void sendHeartbeat();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelledRef.current = true;
-      window.clearInterval(intervalId);
+      window.clearInterval(heartbeatId);
+      window.clearInterval(idleId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       activityEvents.forEach((event) =>
         window.removeEventListener(event, markActive),
       );
     };
-  }, [sendHeartbeat, isAuthenticated]);
+  }, [sendHeartbeat, isAuthenticated, endIdleSession]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

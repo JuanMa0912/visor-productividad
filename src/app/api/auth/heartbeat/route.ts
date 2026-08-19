@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   applySessionCookies,
+  extendSessionOnActivity,
   getUserSession,
-  recordUserActivity,
-  updateSessionLastPath,
 } from "@/lib/auth";
 
 /**
- * Refresca la sesion (y de paso last_activity_at + last_path) cuando el cliente
- * reporta actividad reciente. El componente <PresenceHeartbeat /> lo llama
- * mientras la pestana este visible y el usuario haya interactuado en el ultimo
- * minuto, enviando { path: window.location.pathname } en el body.
+ * Renueva la sesion y las metricas de uso solo cuando el cliente reporta
+ * actividad real (clic, teclado, scroll, navegacion). No se llama en idle.
  */
 export async function POST(request: Request) {
   const session = await getUserSession();
@@ -29,19 +26,8 @@ export async function POST(request: Request) {
   } catch {
     path = null;
   }
-  if (path) {
-    try {
-      await updateSessionLastPath(path);
-    } catch (error) {
-      console.warn("[heartbeat] no se pudo guardar last_path", error);
-    }
-    try {
-      await recordUserActivity(path);
-    } catch (error) {
-      console.warn("[heartbeat] no se pudo registrar la actividad", error);
-    }
-  }
 
+  const expiresAt = await extendSessionOnActivity(session.token, path);
   const response = NextResponse.json({ ok: true });
-  return applySessionCookies(response, session);
+  return applySessionCookies(response, { ...session, expiresAt });
 }

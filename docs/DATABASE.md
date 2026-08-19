@@ -694,5 +694,18 @@ python3 scripts/etl/proveedores/etl_proveedor_tercero.py
 bash scripts/etl/sync-local-to-gcp.sh --only proveedor_tercero --no-refresh --verify
 ```
 
+### 4.ac Checklists (intentos de 20 minutos)
+
+Migracion: `db/migrations/20260819_checklist_runs.sql`.
+
+| Tabla | Uso |
+| --- | --- |
+| `checklist_run` | intento por sede/rol/mes (`actor_role`, `sede`, `period_year/month`, `answers`, `score_pct`, `duration_seconds`); 20 min; 1 vez al mes; panel puede reabrir vencidos |
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_checklist_runs.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_checklist_run_workflow.sql
+```
+
 Actualizar este documento cuando cambien migraciones, tablas leidas, columnas
 dinamicas, indices acordados en produccion o bases externas.

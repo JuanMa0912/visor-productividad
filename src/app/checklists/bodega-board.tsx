@@ -37,6 +37,8 @@ import type {
   ChecklistItemState,
   ChecklistMeta,
 } from "@/lib/checklists/types";
+import { useChecklistRunContext } from "@/app/checklists/checklist-run-context";
+import { formatPriorAnswer } from "@/lib/checklists/snapshot";
 import "./bodega-board.css";
 
 type TabId = "a" | "c" | "g";
@@ -158,6 +160,15 @@ export function BodegaGerencialBoard() {
     () => computeChecklist(blocks, states),
     [blocks, states],
   );
+  const runCtx = useChecklistRunContext();
+  useEffect(() => {
+    if (!runCtx) return;
+    const answers: Record<string, { v: string | number | null; n?: string }> = {};
+    for (const [key, state] of Object.entries(states)) {
+      answers[key] = { v: state.v, n: state.h };
+    }
+    runCtx.saveSnapshot({ answers, scorePct: result.pct });
+  }, [result.pct, runCtx, states]);
   const pct =
     result.pct == null ? null : Math.round(result.pct * 10) / 10;
   const scale = verdictScale(pct);
@@ -986,6 +997,14 @@ export function BodegaGerencialBoard() {
                               </button>
                             </div>
                             <div className="opts">
+                              {runCtx?.priorSnapshot?.answers[String(it.c)] ? (
+                                <span className="text-[10px] font-semibold text-indigo-700">
+                                  Encargado:{" "}
+                                  {formatPriorAnswer(
+                                    runCtx.priorSnapshot.answers[String(it.c)]?.v,
+                                  )}
+                                </span>
+                              ) : null}
                               {ANSWERS.map((v) => (
                                 <button
                                   key={v}
