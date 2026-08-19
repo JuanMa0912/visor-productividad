@@ -56,7 +56,8 @@ const resolveHubTheme = (theme: HubSectionTheme) =>
   HUB_THEME_STYLES[theme] ?? HUB_THEME_STYLES.operacion;
 
 const renderHubIcon = (Icon: LucideIcon | undefined, className: string) => {
-  if (typeof Icon !== "function") return null;
+  // Lucide 0.56+ entrega forwardRef (typeof === "object"), no una function.
+  if (Icon == null) return null;
   return <Icon className={className} />;
 };
 
