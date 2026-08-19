@@ -146,8 +146,10 @@ export function InformeRankingTable({
                 <td className="sticky left-0 bg-white px-2 py-1.5 text-xs text-slate-400">
                   {index + 1}
                 </td>
-                <td className="sticky left-8 max-w-[14rem] truncate bg-white px-2 py-1.5 font-medium text-slate-800">
-                  {row.label}
+                <td className="sticky left-8 bg-white px-2 py-1.5 align-top font-medium text-slate-800">
+                  <span className="block max-w-[14rem] whitespace-normal break-words">
+                    {row.label}
+                  </span>
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
                   {formatInformeValue(row.total[0], metric)}
