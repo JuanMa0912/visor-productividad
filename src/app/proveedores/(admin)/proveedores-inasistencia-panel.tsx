@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
+import type { ProveedorLineaFilter } from "@/lib/proveedores/board-filters";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import {
   inasistenciaHorasFromUnidades,
@@ -56,8 +57,12 @@ const MetricCard = ({
   </div>
 );
 
-export function ProveedoresInasistenciaPanel() {
-  const [days, setDays] = useState(30);
+export function ProveedoresInasistenciaPanel({
+  linea = "todas",
+}: {
+  linea?: ProveedorLineaFilter;
+}) {
+  const [days, setDays] = useState(1);
   const [sede, setSede] = useState("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
@@ -76,6 +81,7 @@ export function ProveedoresInasistenciaPanel() {
       const params = new URLSearchParams({ days: String(days) });
       if (sede) params.set("sede", sede);
       if (q.trim()) params.set("q", q.trim());
+      if (linea !== "todas") params.set("linea", linea);
       const response = await fetch(
         `/api/proveedores/ventas?${params.toString()}`,
         { credentials: "include", cache: "no-store" },
@@ -95,7 +101,7 @@ export function ProveedoresInasistenciaPanel() {
     } finally {
       setLoading(false);
     }
-  }, [days, q, sede]);
+  }, [days, linea, q, sede]);
 
   useEffect(() => {
     void load();
@@ -150,6 +156,7 @@ export function ProveedoresInasistenciaPanel() {
     });
     if (sede) params.set("sede", sede);
     if (q.trim()) params.set("q", q.trim());
+    if (linea !== "todas") params.set("linea", linea);
     window.open(`/api/proveedores/ventas?${params.toString()}`, "_blank");
   };
 
@@ -189,9 +196,10 @@ export function ProveedoresInasistenciaPanel() {
               onChange={(e) => setDays(Number(e.target.value))}
               className="mt-1 block h-9 rounded-lg border border-slate-200 px-3 text-sm"
             >
-              <option value={30}>Últimos 30 días</option>
+              <option value={1}>Último día con datos</option>
               <option value={7}>Últimos 7 días</option>
               <option value={14}>Últimos 14 días</option>
+              <option value={30}>Últimos 30 días</option>
               <option value={60}>Últimos 60 días</option>
             </select>
           </label>
@@ -238,9 +246,8 @@ export function ProveedoresInasistenciaPanel() {
           </button>
         </div>
         <p className="mt-3 text-[11px] text-slate-500">
-          Inasistencia = personas-mes para surtir la venta: unidades ÷ 350
-          (horas) ÷ 7 (jornada) ÷ 30 (días). Valor = venta neta del proveedor
-          (visual ÷ 1.000.000). Ventana de 30 días = lectura mensual.
+          Personas = unidades ÷ 350 (horas de surtido) ÷ 7 (jornada). Valor =
+          venta neta (visual ÷ 1.000.000). Por defecto, último día con datos.
         </p>
       </section>
 
@@ -265,7 +272,7 @@ export function ProveedoresInasistenciaPanel() {
           <MetricCard
             label="Inasistencia"
             value={people(totals.personas)}
-            hint="Personas-mes (÷ 7 ÷ 30)"
+            hint="Personas = horas ÷ 7"
           />
           <MetricCard
             label="Valor"

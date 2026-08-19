@@ -6,6 +6,7 @@ import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
+import type { ProveedorLineaFilter } from "@/lib/proveedores/board-filters";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import { inasistenciaPersonasFromUnidades } from "@/lib/proveedores/inasistencia";
 import type {
@@ -124,8 +125,12 @@ const SortTh = ({
   </th>
 );
 
-export function ProveedoresVentasPanel() {
-  const [days, setDays] = useState(30);
+export function ProveedoresVentasPanel({
+  linea = "todas",
+}: {
+  linea?: ProveedorLineaFilter;
+}) {
+  const [days, setDays] = useState(1);
   const [sede, setSede] = useState("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
@@ -150,6 +155,7 @@ export function ProveedoresVentasPanel() {
       const params = new URLSearchParams({ days: String(days) });
       if (sede) params.set("sede", sede);
       if (q.trim()) params.set("q", q.trim());
+      if (linea !== "todas") params.set("linea", linea);
       const response = await fetch(
         `/api/proveedores/ventas?${params.toString()}`,
         { credentials: "include", cache: "no-store" },
@@ -175,7 +181,7 @@ export function ProveedoresVentasPanel() {
     } finally {
       setLoading(false);
     }
-  }, [days, q, sede]);
+  }, [days, linea, q, sede]);
 
   useEffect(() => {
     void load();
@@ -188,6 +194,7 @@ export function ProveedoresVentasPanel() {
     });
     if (sede) params.set("sede", sede);
     if (q.trim()) params.set("q", q.trim());
+    if (linea !== "todas") params.set("linea", linea);
     window.open(`/api/proveedores/ventas?${params.toString()}`, "_blank");
   };
 
@@ -310,9 +317,10 @@ export function ProveedoresVentasPanel() {
               onChange={(e) => setDays(Number(e.target.value))}
               className="mt-1 block h-9 rounded-lg border border-slate-200 px-3 text-sm"
             >
-              <option value={30}>Últimos 30 días</option>
+              <option value={1}>Último día con datos</option>
               <option value={7}>Últimos 7 días</option>
               <option value={14}>Últimos 14 días</option>
+              <option value={30}>Últimos 30 días</option>
               <option value={60}>Últimos 60 días</option>
             </select>
           </label>
@@ -389,7 +397,7 @@ export function ProveedoresVentasPanel() {
           <MetricCard
             label="Inasistencia"
             value={people(inasistenciaPersonasFromUnidades(metrics.unidadesTotal))}
-            hint="Personas-mes · und÷350÷7÷30"
+            hint="Personas · und÷350÷7"
           />
           <MetricCard
             label="Venta neta"

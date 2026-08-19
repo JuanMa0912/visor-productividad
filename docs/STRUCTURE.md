@@ -89,7 +89,7 @@ Codigo compartido sin UI de pagina.
 | `inventario/` | inventario por item y presets |
 | `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
 | `participacion-comercial/` | mix/participación sede↔línea por almacén |
-| `proveedores/` | visitas QR (`qr_*` por sede), ventas, inasistencia (personas-mes = und÷350÷7÷30), productividad und/kg/tx, OIPV asistencia (admin) |
+| `proveedores/` | visitas QR (`qr_*` por sede), ventas, inasistencia (personas = und÷350÷7), productividad und/kg/tx, OIPV asistencia (admin); filtro de línea industria/fruver/carnes; fechas ancladas al último día con datos |
 | `productivity/` | ventana de fechas, cache disco y volumen de tarjetas Mix y Línea (`tx`/`und`/`kg`/`UND.Pollo`) |
 | `checklists/` | catálogo (bodega + punto de venta); 20 min; 1 vez al mes por sede; roles encargado/revisor/panel; cruce revisor vs encargado |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
@@ -139,7 +139,7 @@ Codigo compartido sin UI de pagina.
 | `ordenes-compra` | tablero opt-in (`ordenes-compra` en `allowed_subdashboards`): OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas; cumplimiento `diaDesde`–`diaHasta` (día del documento, vencidas fuera; cerradas 100% + abiertas/incompletas por qty) |
 | `proveedores/ingreso` | público: meta/catálogo (`proveedor_tercero` filtrado por empresa de la sede del QR) + lookup/entrada/salida; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
-| `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración); inasistencia = und÷350÷7÷30 (personas-mes) en KPI/tabla/CSV |
+| `proveedores/ventas` | subtablero `proveedores`: por defecto último día con datos (`ventas_proveedor_dia`); filtro `linea=industria\|fruver\|carnes` vía `margen_item_dia_roll`; inasistencia = und÷350÷7 (personas) |
 | `proveedores/productividad` | subtablero `proveedores`: `mode=board` (KPIs/sede/día + volumen÷horas pagadas, cache 45s) + `mode=proveedores` (ranking); industria=und, fruver/carnes=kg, cajas=tx; máx. 31 días |
 | `proveedores/oipv` | **solo admin**: cruce QR L–D + ventas + COGS mercancía (`margen_item_dia_roll` vía `proveedor_item`; no es cobro OIPV); columna **HL** = unidades ÷ 350; filtro `all|con_visita|visita_sin_venta|venta_sin_visita` |
 | UI `proveedores` pestaña Inasistencia | misma fuente que ventas; **inasistencia** = personas-mes (und÷350÷7÷30); **valor** = venta neta del proveedor |

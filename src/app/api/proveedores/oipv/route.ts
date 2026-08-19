@@ -4,6 +4,7 @@ import {
   requireAuthSession,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { parseProveedorLineaFilter } from "@/lib/proveedores/board-filters";
 import {
   filterOipvRows,
   isOipvAsistenciaFilter,
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
   const dateEnd = url.searchParams.get("dateEnd")?.trim() ?? "";
   const sede = url.searchParams.get("sede")?.trim() || null;
   const q = url.searchParams.get("q")?.trim() || null;
+  const linea = parseProveedorLineaFilter(url.searchParams.get("linea"));
   const filterRaw = url.searchParams.get("filter")?.trim() || "all";
   if (!isOipvAsistenciaFilter(filterRaw)) {
     return withSession(
@@ -83,6 +85,7 @@ export async function GET(request: Request) {
       dateEnd,
       sede,
       q,
+      linea,
       limit: mode === "export" ? 5000 : 2000,
     });
 

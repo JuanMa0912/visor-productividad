@@ -1,5 +1,11 @@
 import type { PoolClient } from "pg";
+import {
+  parseProveedorLineaFilter,
+  proveedorLineaFamiliaSql,
+  type ProveedorLineaFilter,
+} from "@/lib/proveedores/board-filters";
 import { findTiendaSedeByName } from "@/lib/proveedores/line-family";
+import { listMargenLineaProveedorAgg } from "@/lib/proveedores/margen-linea";
 import { listQrVisitasTablePairs } from "@/lib/proveedores/qr-tables";
 import {
   isProveedoresQrSede,
@@ -250,11 +256,13 @@ export const listOipvAsistenciaBoard = async (
     dateEnd: string;
     sede?: string | null;
     q?: string | null;
+    linea?: ProveedorLineaFilter | string | null;
     limit?: number;
   },
 ): Promise<ProveedorOipvBoard> => {
   const dateStart = args.dateStart;
   const dateEnd = args.dateEnd;
+  const linea = parseProveedorLineaFilter(args.linea);
   const sede = args.sede?.trim() || null;
   if (sede && !isProveedoresQrSede(sede)) {
     throw new Error("Sede no válida.");
@@ -332,6 +340,34 @@ export const listOipvAsistenciaBoard = async (
     if (wd) acc.weekdays[wd] = true;
   }
 
+  if (linea !== "todas") {
+    const margenRows = await listMargenLineaProveedorAgg(client, {
+      fechaInicioCompact: isoToCompact(dateStart),
+      fechaFinCompact: isoToCompact(dateEnd),
+      linea,
+      sede,
+      q,
+      limit: 5000,
+    });
+    for (const row of margenRows) {
+      const codigo = row.codigo.trim();
+      if (!codigo) continue;
+      const key = oipvRowKey({ codigo });
+      const acc = ensureAcc(map, key, {
+        codigo,
+        empresa: row.empresa,
+        rsProveedor: row.proveedor || "—",
+      });
+      acc.unidades += row.unidades;
+      acc.ventaNeta += row.ventaNeta;
+      acc.costoMercancia += row.costoMercancia;
+      if (!acc.codigo) acc.codigo = codigo;
+      if (row.empresa && !acc.empresa) acc.empresa = row.empresa;
+      if (row.proveedor && (acc.rsProveedor === "—" || acc.rsProveedor === codigo)) {
+        acc.rsProveedor = row.proveedor;
+      }
+    }
+  } else {
   const ventasParams: unknown[] = [isoToCompact(dateStart), isoToCompact(dateEnd)];
   const ventasClauses = [
     `fecha_dcto >= $1`,
@@ -396,6 +432,7 @@ export const listOipvAsistenciaBoard = async (
       acc.rsProveedor = nombre;
     }
   }
+  }
 
   // Nombres canónicos del catálogo cuando hay código.
   const codigos = [...map.values()]
@@ -437,7 +474,8 @@ export const listOipvAsistenciaBoard = async (
   }
 
   // COGS mercancía (misma familia que /exp/precios-proveedor).
-  try {
+  // Si hay filtro de línea, el roll ya trajo el costo recortado.
+  if (linea === "todas") try {
     const costoParams: unknown[] = [
       isoToCompact(dateStart),
       isoToCompact(dateEnd),

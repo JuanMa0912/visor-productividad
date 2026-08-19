@@ -1,4 +1,14 @@
 import type { PoolClient } from "pg";
+import {
+  parseProveedorLineaFilter,
+  type ProveedorLineaFilter,
+} from "@/lib/proveedores/board-filters";
+import { resolveTiendaSede } from "@/lib/proveedores/line-family";
+import {
+  listMargenLineaByDay,
+  listMargenLineaBySede,
+  listMargenLineaProveedorAgg,
+} from "@/lib/proveedores/margen-linea";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 
 export type ProveedorVentasRow = {
@@ -103,12 +113,40 @@ const resolveWindow = async (
   };
 };
 
+const emptyVentas = (
+  days: number,
+  fechaInicio = "",
+  fechaFin = "",
+): {
+  metrics: ProveedorVentasMetrics;
+  rows: ProveedorVentasRow[];
+  bySede: ProveedorVentasBySede[];
+  byDay: ProveedorVentasByDay[];
+} => ({
+  metrics: {
+    fechaInicio,
+    fechaFin,
+    dias: days,
+    proveedores: 0,
+    unidadesTotal: 0,
+    ventaNetaTotal: 0,
+    ventaConImpuestoTotal: 0,
+    ticketPromedioNeta: null,
+    top1SharePct: null,
+    top10SharePct: null,
+  },
+  rows: [],
+  bySede: [],
+  byDay: [],
+});
+
 export const listVentasProveedorRolling = async (
   client: PoolClient,
   args: {
     days?: number;
     sede?: string | null;
     q?: string | null;
+    linea?: ProveedorLineaFilter | string | null;
     limit?: number;
   } = {},
 ): Promise<{
@@ -117,24 +155,79 @@ export const listVentasProveedorRolling = async (
   bySede: ProveedorVentasBySede[];
   byDay: ProveedorVentasByDay[];
 }> => {
-  const window = await resolveWindow(client, args.days ?? 30);
+  const linea = parseProveedorLineaFilter(args.linea);
+  const window = await resolveWindow(client, args.days ?? 1);
   if (!window.fechaFin) {
+    return emptyVentas(args.days ?? 1);
+  }
+
+  if (linea !== "todas") {
+    const limit = Math.min(Math.max(args.limit ?? 500, 1), 2000);
+    const agg = await listMargenLineaProveedorAgg(client, {
+      fechaInicioCompact: window.fechaInicio,
+      fechaFinCompact: window.fechaFin,
+      linea,
+      sede: args.sede,
+      q: args.q,
+      limit,
+    });
+    const rows: ProveedorVentasRow[] = agg.map((row) => ({
+      proveedor: row.proveedor,
+      codigo: row.codigo,
+      unidades: row.unidades,
+      ventaNeta: row.ventaNeta,
+      ventaConImpuesto: row.ventaNeta,
+      items: row.items,
+      sedesActivas: row.sedesActivas,
+    }));
+    const ventaNetaTotal = rows.reduce((sum, row) => sum + row.ventaNeta, 0);
+    const unidadesTotal = rows.reduce((sum, row) => sum + row.unidades, 0);
+    const proveedores = rows.length;
+    const ranked = [...rows].sort((a, b) => b.ventaNeta - a.ventaNeta);
+    const top1 = ranked[0]?.ventaNeta ?? 0;
+    const top10 = ranked.slice(0, 10).reduce((sum, row) => sum + row.ventaNeta, 0);
+    const [bySedeRaw, byDayRaw] = await Promise.all([
+      listMargenLineaBySede(client, {
+        fechaInicioCompact: window.fechaInicio,
+        fechaFinCompact: window.fechaFin,
+        linea,
+        sede: args.sede,
+      }),
+      listMargenLineaByDay(client, {
+        fechaInicioCompact: window.fechaInicio,
+        fechaFinCompact: window.fechaFin,
+        linea,
+        sede: args.sede,
+      }),
+    ]);
     return {
       metrics: {
-        fechaInicio: "",
-        fechaFin: "",
-        dias: args.days ?? 30,
-        proveedores: 0,
-        unidadesTotal: 0,
-        ventaNetaTotal: 0,
-        ventaConImpuestoTotal: 0,
-        ticketPromedioNeta: null,
-        top1SharePct: null,
-        top10SharePct: null,
+        fechaInicio: compactToIso(window.fechaInicio),
+        fechaFin: compactToIso(window.fechaFin),
+        dias: window.dias,
+        proveedores,
+        unidadesTotal,
+        ventaNetaTotal,
+        ventaConImpuestoTotal: ventaNetaTotal,
+        ticketPromedioNeta:
+          proveedores > 0 ? Math.round(ventaNetaTotal / proveedores) : null,
+        top1SharePct:
+          ventaNetaTotal > 0 ? Math.round((top1 / ventaNetaTotal) * 1000) / 10 : null,
+        top10SharePct:
+          ventaNetaTotal > 0
+            ? Math.round((top10 / ventaNetaTotal) * 1000) / 10
+            : null,
       },
-      rows: [],
-      bySede: [],
-      byDay: [],
+      rows,
+      bySede: bySedeRaw.map((row) => ({
+        sede:
+          resolveTiendaSede(row.empresa, row.idCo)?.name ??
+          `${row.empresa}|${row.idCo}`,
+        ventaNeta: row.ventaNeta,
+        unidades: row.unidades,
+        proveedores: row.proveedores,
+      })),
+      byDay: byDayRaw,
     };
   }
 

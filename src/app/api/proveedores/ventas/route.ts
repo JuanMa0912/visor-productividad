@@ -4,6 +4,7 @@ import {
   requireAuthSession,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { parseProveedorLineaFilter } from "@/lib/proveedores/board-filters";
 import {
   isProveedoresVentasSede,
   listVentasProveedorRolling,
@@ -47,11 +48,12 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const mode = url.searchParams.get("mode") ?? "list";
-  const daysRaw = Number(url.searchParams.get("days") ?? 30);
+  const daysRaw = Number(url.searchParams.get("days") ?? 1);
   const days =
-    Number.isFinite(daysRaw) && daysRaw > 0 && daysRaw <= 90 ? daysRaw : 30;
+    Number.isFinite(daysRaw) && daysRaw > 0 && daysRaw <= 90 ? daysRaw : 1;
   const sede = url.searchParams.get("sede")?.trim() || null;
   const q = url.searchParams.get("q")?.trim() || null;
+  const linea = parseProveedorLineaFilter(url.searchParams.get("linea"));
 
   if (sede && !isProveedoresVentasSede(sede)) {
     return withSession(
@@ -65,6 +67,7 @@ export async function GET(request: Request) {
       days,
       sede,
       q,
+      linea,
       limit: mode === "export" ? 2000 : 500,
     });
 

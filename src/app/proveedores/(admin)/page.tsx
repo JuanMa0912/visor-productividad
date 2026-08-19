@@ -13,10 +13,12 @@ import type {
   ProveedorVisitasMetrics,
 } from "@/lib/proveedores/types";
 import { ProveedorSedeQr } from "./proveedor-sede-qr";
+import type { ProveedorLineaFilter } from "@/lib/proveedores/board-filters";
 import { ProveedoresVentasPanel } from "./proveedores-ventas-panel";
 import { ProveedoresProductividadPanel } from "./proveedores-productividad-panel";
 import { ProveedoresInasistenciaPanel } from "./proveedores-inasistencia-panel";
 import { ProveedoresOipvPanel } from "./proveedores-oipv-panel";
+import { ProveedoresLineaFilter } from "./proveedores-linea-filter";
 
 const toISODate = (date: Date) => {
   const y = date.getFullYear();
@@ -95,6 +97,8 @@ export default function ProveedoresBoardPage() {
   const [tab, setTab] = useState<
     "visitas" | "ventas" | "productividad" | "inasistencia" | "oipv"
   >("visitas");
+  const [linea, setLinea] = useState<ProveedorLineaFilter>("todas");
+  const [lastDataDate, setLastDataDate] = useState<string | null>(null);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -104,10 +108,6 @@ export default function ProveedoresBoardPage() {
   }, [status, canAccessBoard, router]);
 
   const loadMeta = useCallback(async () => {
-    if (!canViewQr) {
-      setQrLinks([]);
-      return;
-    }
     try {
       const response = await fetch("/api/proveedores/visitas?mode=meta", {
         credentials: "include",
@@ -116,9 +116,15 @@ export default function ProveedoresBoardPage() {
       const data = (await response.json()) as {
         error?: string;
         qrLinks?: QrLink[];
+        lastDataDate?: string | null;
       };
       if (!response.ok) throw new Error(data.error || "Error meta");
-      setQrLinks(data.qrLinks ?? []);
+      setQrLinks(canViewQr ? (data.qrLinks ?? []) : []);
+      if (data.lastDataDate) {
+        setLastDataDate(data.lastDataDate);
+        setDateStart(data.lastDataDate);
+        setDateEnd(data.lastDataDate);
+      }
     } catch {
       setQrLinks([]);
     }
@@ -220,14 +226,15 @@ export default function ProveedoresBoardPage() {
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
               QR de asistencia (entrada/salida por sede), ventas por proveedor,
-              inasistencia (personas-mes = und÷350÷7÷30) y productividad por
-              familia: unidades (industria), kilos (fruver y carnes) y
-              transacciones (cajas).
+              inasistencia (personas = und÷350÷7) y productividad por familia:
+              unidades (industria), kilos (fruver y carnes) y transacciones
+              (cajas). Fechas ancladas al último día con datos.
             </p>
           </div>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setTab("visitas")}
@@ -285,12 +292,23 @@ export default function ProveedoresBoardPage() {
               OIPV asistencia
             </button>
           ) : null}
+          </div>
+          <ProveedoresLineaFilter value={linea} onChange={setLinea} />
         </div>
 
-        {tab === "ventas" ? <ProveedoresVentasPanel /> : null}
-        {tab === "productividad" ? <ProveedoresProductividadPanel /> : null}
-        {tab === "inasistencia" ? <ProveedoresInasistenciaPanel /> : null}
-        {tab === "oipv" && isAdmin ? <ProveedoresOipvPanel /> : null}
+        {tab === "ventas" ? <ProveedoresVentasPanel linea={linea} /> : null}
+        {tab === "productividad" ? (
+          <ProveedoresProductividadPanel
+            linea={linea}
+            lastDataDate={lastDataDate}
+          />
+        ) : null}
+        {tab === "inasistencia" ? (
+          <ProveedoresInasistenciaPanel linea={linea} />
+        ) : null}
+        {tab === "oipv" && isAdmin ? (
+          <ProveedoresOipvPanel linea={linea} lastDataDate={lastDataDate} />
+        ) : null}
 
         {tab === "visitas" ? (
           <>

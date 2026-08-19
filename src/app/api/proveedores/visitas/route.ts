@@ -4,6 +4,7 @@ import {
   requireAuthSession,
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { queryLastProveedoresDataDate } from "@/lib/proveedores/board-filters";
 import { listSedeQrTokens, listVisitas, computeVisitasMetrics } from "@/lib/proveedores/repo";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import { getLocalPortalCloudUrl } from "@/lib/shared/local-portal-notices";
@@ -83,10 +84,12 @@ export async function GET(request: Request) {
       );
       const origin = resolveProveedoresPublicOrigin(url);
       const qr = canQr ? await listSedeQrTokens(client) : [];
+      const lastDataDate = await queryLastProveedoresDataDate(client);
       return withSession(
         NextResponse.json({
           sedes: [...PROVEEDORES_QR_SEDES],
           publicOrigin: origin,
+          lastDataDate,
           qrLinks: qr.map((row) => ({
             sedeName: row.sedeName,
             activo: row.activo,

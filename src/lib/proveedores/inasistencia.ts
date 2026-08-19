@@ -1,14 +1,10 @@
 /** Unidades que una persona surte en una hora (mismo factor HL de OIPV). */
 export const INASISTENCIA_UNIDADES_POR_HORA = 350;
-/** Horas de una jornada laboral. */
+/** Horas de una jornada laboral. Personas = horas ÷ 7. */
 export const INASISTENCIA_HORAS_POR_JORNADA = 7;
-/** Días del mes en el denominador de personas. */
-export const INASISTENCIA_DIAS_MES = 30;
 
-const UNIDADES_POR_PERSONA_MES =
-  INASISTENCIA_UNIDADES_POR_HORA *
-  INASISTENCIA_HORAS_POR_JORNADA *
-  INASISTENCIA_DIAS_MES;
+const UNIDADES_POR_PERSONA_DIA =
+  INASISTENCIA_UNIDADES_POR_HORA * INASISTENCIA_HORAS_POR_JORNADA;
 
 const finiteOrZero = (value: number): number =>
   Number.isFinite(value) && value > 0 ? value : 0;
@@ -18,11 +14,11 @@ export const inasistenciaHorasFromUnidades = (unidades: number): number =>
   finiteOrZero(unidades) / INASISTENCIA_UNIDADES_POR_HORA;
 
 /**
- * Personas-mes para surtir esas unidades:
- * und ÷ 350 ÷ 7 ÷ 30.
+ * Personas para surtir esas unidades en una jornada:
+ * und ÷ 350 ÷ 7 (horas ÷ jornada).
  */
 export const inasistenciaPersonasFromUnidades = (unidades: number): number =>
-  finiteOrZero(unidades) / UNIDADES_POR_PERSONA_MES;
+  finiteOrZero(unidades) / UNIDADES_POR_PERSONA_DIA;
 
 export type InasistenciaBreakdown = {
   unidades: number;

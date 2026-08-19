@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
+import type { ProveedorLineaFilter } from "@/lib/proveedores/board-filters";
+import { inasistenciaPersonasFromUnidades } from "@/lib/proveedores/inasistencia";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import {
   defaultOipvWeekRange,
@@ -22,6 +24,12 @@ const money = (value: number) =>
 
 const qty = (value: number) =>
   value.toLocaleString("es-CO", { maximumFractionDigits: 1 });
+
+const people = (value: number) =>
+  value.toLocaleString("es-CO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const WEEKDAY_LABEL: Record<(typeof OIPV_WEEKDAY_KEYS)[number], string> = {
   L: "L",
@@ -53,8 +61,20 @@ const MetricCard = ({
   </div>
 );
 
-export function ProveedoresOipvPanel() {
-  const initial = useMemo(() => defaultOipvWeekRange(), []);
+export function ProveedoresOipvPanel({
+  linea = "todas",
+  lastDataDate = null,
+}: {
+  linea?: ProveedorLineaFilter;
+  lastDataDate?: string | null;
+}) {
+  const initial = useMemo(
+    () =>
+      lastDataDate
+        ? { dateStart: lastDataDate, dateEnd: lastDataDate }
+        : defaultOipvWeekRange(),
+    [lastDataDate],
+  );
   const [dateStart, setDateStart] = useState(initial.dateStart);
   const [dateEnd, setDateEnd] = useState(initial.dateEnd);
   const [sede, setSede] = useState("");
@@ -78,6 +98,7 @@ export function ProveedoresOipvPanel() {
       const params = new URLSearchParams({ dateStart, dateEnd });
       if (sede) params.set("sede", sede);
       if (qApplied.trim()) params.set("q", qApplied.trim());
+      if (linea !== "todas") params.set("linea", linea);
       const response = await fetch(`/api/proveedores/oipv?${params.toString()}`, {
         credentials: "include",
         cache: "no-store",
@@ -93,7 +114,13 @@ export function ProveedoresOipvPanel() {
     } finally {
       setLoading(false);
     }
-  }, [dateEnd, dateStart, qApplied, sede]);
+  }, [dateEnd, dateStart, linea, qApplied, sede]);
+
+  useEffect(() => {
+    if (!lastDataDate) return;
+    setDateStart(lastDataDate);
+    setDateEnd(lastDataDate);
+  }, [lastDataDate]);
 
   useEffect(() => {
     void load();
@@ -113,6 +140,7 @@ export function ProveedoresOipvPanel() {
     if (sede) params.set("sede", sede);
     if (qApplied.trim()) params.set("q", qApplied.trim());
     if (asistenciaFilter !== "all") params.set("filter", asistenciaFilter);
+    if (linea !== "todas") params.set("linea", linea);
     window.open(`/api/proveedores/oipv?${params.toString()}`, "_blank");
   };
 
@@ -281,6 +309,12 @@ export function ProveedoresOipvPanel() {
                 >
                   HL
                 </th>
+                <th
+                  className="sticky top-0 bg-slate-50 px-3 py-2 text-right"
+                  title="HL ÷ 7 (jornada)"
+                >
+                  Personas
+                </th>
                 <th className="sticky top-0 bg-slate-50 px-3 py-2 text-right">
                   Venta $$
                 </th>
@@ -292,14 +326,14 @@ export function ProveedoresOipvPanel() {
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={15} className="px-3 py-8 text-center text-slate-500">
                     Cargando…
                   </td>
                 </tr>
               ) : null}
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={15} className="px-3 py-8 text-center text-slate-500">
                     Sin filas en el rango.
                   </td>
                 </tr>
@@ -336,6 +370,9 @@ export function ProveedoresOipvPanel() {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {qty(row.hl)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                    {people(inasistenciaPersonasFromUnidades(row.unidades))}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {money(row.ventaNeta)}

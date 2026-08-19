@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download } from "lucide-react";
 import { LineChart } from "@mui/x-charts/LineChart";
+import type { ProveedorLineaFilter } from "@/lib/proveedores/board-filters";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import { PRODUCTIVIDAD_FAMILIA_META } from "@/lib/proveedores/line-family";
 import type {
@@ -177,7 +178,13 @@ const FAMILIA_RGB: Record<
   cajas: [180, 83, 9],
 };
 
-export function ProveedoresProductividadPanel() {
+export function ProveedoresProductividadPanel({
+  linea = "todas",
+  lastDataDate = null,
+}: {
+  linea?: ProveedorLineaFilter;
+  lastDataDate?: string | null;
+}) {
   const initial = useMemo(() => defaultRange(), []);
   const [dateStart, setDateStart] = useState(initial.start);
   const [dateEnd, setDateEnd] = useState(initial.end);
@@ -289,6 +296,16 @@ export function ProveedoresProductividadPanel() {
       if (reqId === provReqId.current) setProvLoading(false);
     }
   }, [dateEnd, dateStart, qApplied, sede]);
+
+  useEffect(() => {
+    if (!lastDataDate) return;
+    setDateStart(lastDataDate);
+    setDateEnd(lastDataDate);
+  }, [lastDataDate]);
+
+  useEffect(() => {
+    setFamilia(linea);
+  }, [linea]);
 
   useEffect(() => {
     void loadBoard();

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  INASISTENCIA_DIAS_MES,
   INASISTENCIA_HORAS_POR_JORNADA,
   INASISTENCIA_UNIDADES_POR_HORA,
   inasistenciaFromUnidades,
@@ -10,19 +9,17 @@ import {
 } from "@/lib/proveedores/inasistencia";
 
 describe("inasistenciaFromUnidades", () => {
-  it("350 und = 1 hora; 7 horas = 1 jornada; 30 jornadas = 1 persona", () => {
+  it("350 und = 1 hora; 7 horas = 1 persona", () => {
     assert.equal(inasistenciaHorasFromUnidades(350), 1);
     assert.equal(
       inasistenciaPersonasFromUnidades(
-        INASISTENCIA_UNIDADES_POR_HORA *
-          INASISTENCIA_HORAS_POR_JORNADA *
-          INASISTENCIA_DIAS_MES,
+        INASISTENCIA_UNIDADES_POR_HORA * INASISTENCIA_HORAS_POR_JORNADA,
       ),
       1,
     );
-    const onePerson = inasistenciaFromUnidades(73_500);
-    assert.equal(onePerson.horas, 210);
-    assert.equal(onePerson.jornadas, 30);
+    const onePerson = inasistenciaFromUnidades(2_450);
+    assert.equal(onePerson.horas, 7);
+    assert.equal(onePerson.jornadas, 1);
     assert.equal(onePerson.personas, 1);
   });
 
