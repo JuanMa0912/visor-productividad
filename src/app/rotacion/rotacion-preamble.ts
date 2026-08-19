@@ -231,6 +231,7 @@ const formatAbcdCategoryFilterLabel = (
 type RotationSortField =
   | "item"
   | "descripcion"
+  | "categoria"
   | "totalSales"
   | "totalCost"
   | "totalMargin"
@@ -287,7 +288,11 @@ const ROTACION_FLOATING_HEADER_TOP_PX = 57;
 const ROTACION_FLOATING_HEADER_COLUMNS = [
   { label: "#", align: "right" as const },
   { label: "Item", align: "left" as const, field: "item" as const },
-  { label: "Cat.", align: "center" as const },
+  {
+    label: "Cat.",
+    align: "center" as const,
+    field: "categoria" as const,
+  },
   {
     label: "Descripcion",
     align: "left" as const,
@@ -324,7 +329,11 @@ const ROTACION_FLOATING_HEADER_COLUMNS = [
 const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
   { label: "#", align: "right" as const },
   { label: "Item", align: "left" as const, field: "item" as const },
-  { label: "Cat.", align: "center" as const },
+  {
+    label: "Cat.",
+    align: "center" as const,
+    field: "categoria" as const,
+  },
   {
     label: "R.inventario",
     align: "left" as const,
@@ -1298,6 +1307,7 @@ const getDefaultSortDirection = (
 ): RotationSortDirection =>
   field === "item" ||
   field === "descripcion" ||
+  field === "categoria" ||
   field === "status" ||
   field === "ceroRotacionEstado"
     ? "asc"
@@ -1327,6 +1337,21 @@ const sortRotationRows = (
       case "descripcion":
         result = compareRotationText(left.descripcion, right.descripcion);
         break;
+      case "categoria": {
+        const leftCategoria = Number.parseInt(left.categoria ?? "", 10);
+        const rightCategoria = Number.parseInt(right.categoria ?? "", 10);
+        const leftIsNumeric = Number.isFinite(leftCategoria);
+        const rightIsNumeric = Number.isFinite(rightCategoria);
+        if (leftIsNumeric && rightIsNumeric) {
+          result = leftCategoria - rightCategoria;
+        } else {
+          result = compareRotationText(
+            left.categoria ?? "",
+            right.categoria ?? "",
+          );
+        }
+        break;
+      }
       case "totalSales":
         result = left.totalSales - right.totalSales;
         break;

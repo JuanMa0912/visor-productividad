@@ -19,7 +19,6 @@ import {
   PackageSearch,
   CircleHelp,
   SlidersHorizontal,
-  Tags,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -168,6 +167,7 @@ import "@/lib/ui/product-tour/product-tour.css";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { logExportDownload } from "@/lib/client/log-export-download";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
+import { RestockSurtidoFotoControl } from "./restock-surtido-foto-control";
 import {
   buildRotacionRowsCacheKey,
   readRotacionRowsIdbCache,
@@ -337,6 +337,9 @@ export function RotacionPageInner() {
   >({});
   const [restockEstadoByKey, setRestockEstadoByKey] = useState<
     Record<string, CeroRotacionEstado>
+  >({});
+  const [restockFotoMetaByKey, setRestockFotoMetaByKey] = useState<
+    Record<string, { mime: string; updatedAt: string }>
   >({});
   const [isFamilyFilterOpen, setIsFamilyFilterOpen] = useState(false);
   const [floatingHeaderState, setFloatingHeaderState] = useState<{
@@ -1167,6 +1170,19 @@ export function RotacionPageInner() {
         const nextRestock = data.estadosRestock ?? {};
         setCeroEstadoByKey((prev) => ({ ...prev, ...nextCero }));
         setRestockEstadoByKey((prev) => ({ ...prev, ...nextRestock }));
+        const fotoRes = await fetch(
+          `/api/rotacion/restock-fotos?${params.toString()}`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        if (fotoRes.ok) {
+          const fotoData = (await fotoRes.json()) as {
+            fotos?: Record<string, { mime: string; updatedAt: string }>;
+          };
+          setRestockFotoMetaByKey((prev) => ({
+            ...prev,
+            ...(fotoData.fotos ?? {}),
+          }));
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
       }
@@ -1457,16 +1473,6 @@ export function RotacionPageInner() {
   const categoriaFilterOptions = useMemo(
     () => filterCatalog.categorias ?? [],
     [filterCatalog.categorias],
-  );
-  const categoriaSelectOptions = useMemo(
-    () =>
-      categoriaFilterOptions.map((option) => ({
-        value: option.categoriaKey,
-        label: option.nombreCategoria
-          ? `${option.categoriaKey} · ${option.nombreCategoria}`
-          : option.categoriaKey,
-      })),
-    [categoriaFilterOptions],
   );
 
   useEffect(() => {
@@ -2921,7 +2927,7 @@ export function RotacionPageInner() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <FilterSelectField
                   icon={Building2}
                   label="Empresa"
@@ -2973,25 +2979,6 @@ export function RotacionPageInner() {
                   }
                   accentClassName="text-sky-700"
                   disabled={isLoadingLineCatalog && allSedeOptions.length === 0}
-                />
-                <FilterSelectField
-                  icon={Tags}
-                  label="CAT"
-                  values={selectedCategoriaKeys}
-                  options={categoriaSelectOptions}
-                  onChange={setSelectedCategoriaKeys}
-                  helperText={
-                    lineCategoryScope?.locked
-                      ? "Categoria fija por tu perfil."
-                      : categoriaSelectOptions.length === 0
-                        ? "Carga una sede para ver categorias."
-                        : "Elige una o varias categorias (CAT)."
-                  }
-                  accentClassName="text-teal-700"
-                  disabled={
-                    lineCategoryScope?.locked ||
-                    categoriaSelectOptions.length === 0
-                  }
                 />
               </div>
               <div
@@ -3122,7 +3109,7 @@ export function RotacionPageInner() {
                       accentClassName="text-violet-700"
                     />
                     <p className="max-w-xl text-[11px] leading-snug text-slate-500">
-                      Al cambiar lineas N1 o categorías, la tabla se actualiza
+                      Al cambiar lineas N1, la tabla se actualiza
                       sola en unos instantes. Usa{" "}
                       <span className="font-medium text-slate-600">
                         Actualizar ahora
@@ -3240,14 +3227,6 @@ export function RotacionPageInner() {
                   {selectedSedes.length > 0
                     ? `${selectedSedes.length} sede(s)`
                     : "Todas las sedes"}
-                </Badge>
-                <Badge className="border-teal-200 bg-teal-50 text-teal-800">
-                  {categoriaFilterOptions.length === 0
-                    ? "Sin categorias"
-                    : selectedCategoriaKeys.length ===
-                        categoriaFilterOptions.length
-                      ? "Todas las categorias"
-                      : `${selectedCategoriaKeys.length} de ${categoriaFilterOptions.length} categorias`}
                 </Badge>
                 <Badge className="border-violet-200 bg-violet-50 text-violet-700">
                   {lineaN1FamilyKeys.length === 0 ||
@@ -3613,9 +3592,9 @@ export function RotacionPageInner() {
                         Sin productos para los filtros actuales
                       </h2>
                       <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                        No hay items que coincidan con las lineas N1, sublineas N2
-                        o categorias seleccionadas. Prueba ampliar la seleccion
-                        de sublineas o lineas.
+                        No hay items que coincidan con las lineas N1 o sublineas
+                        N2 seleccionadas. Prueba ampliar la seleccion de
+                        sublineas o lineas.
                       </p>
                       {singleSelectedLineaN1 &&
                       selectedLineaN2Values.length < lineaN2Options.length ? (
@@ -5294,8 +5273,14 @@ export function RotacionPageInner() {
                                           onSort={handleTableSort}
                                         />
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
-                                        Cat.
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="categoria"
+                                          label="Cat."
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
                                       </TableHead>
                                       <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                                         <SortableRotationHeader
@@ -5404,8 +5389,14 @@ export function RotacionPageInner() {
                                           onSort={handleTableSort}
                                         />
                                       </TableHead>
-                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 text-center align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
-                                        Cat.
+                                      <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-1 py-2 align-bottom backdrop-blur-sm">
+                                        <SortableRotationHeader
+                                          field="categoria"
+                                          label="Cat."
+                                          activeField={tableSortField}
+                                          direction={tableSortDirection}
+                                          onSort={handleTableSort}
+                                        />
                                       </TableHead>
                                       <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                                         <SortableRotationHeader
@@ -5612,6 +5603,7 @@ export function RotacionPageInner() {
                                             </Badge>
                                           </TableCell>
                                           <TableCell className="min-w-0 px-1 py-2 align-top">
+                                            <div className="flex min-w-0 flex-col items-start gap-1">
                                             <select
                                               className="max-w-44 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-left text-xs text-slate-800 shadow-sm"
                                               value={
@@ -5648,6 +5640,57 @@ export function RotacionPageInner() {
                                                 ),
                                               )}
                                             </select>
+                                            {isRestockCategoryView ? (
+                                              <RestockSurtidoFotoControl
+                                                row={row}
+                                                estado={
+                                                  restockEstadoByKey[
+                                                    makeCeroRotacionEstadoKey(
+                                                      row.empresa,
+                                                      row.sedeId,
+                                                      row.item,
+                                                    )
+                                                  ] ?? DEFAULT_CERO_ROTACION_ESTADO
+                                                }
+                                                dateStart={dateRange.start}
+                                                dateEnd={dateRange.end}
+                                                hasPhoto={Boolean(
+                                                  restockFotoMetaByKey[
+                                                    makeCeroRotacionEstadoKey(
+                                                      row.empresa,
+                                                      row.sedeId,
+                                                      row.item,
+                                                    )
+                                                  ],
+                                                )}
+                                                onHasPhotoChange={(hasPhoto) => {
+                                                  const key =
+                                                    makeCeroRotacionEstadoKey(
+                                                      row.empresa,
+                                                      row.sedeId,
+                                                      row.item,
+                                                    );
+                                                  setRestockFotoMetaByKey((prev) => {
+                                                    if (hasPhoto) {
+                                                      return {
+                                                        ...prev,
+                                                        [key]:
+                                                          prev[key] ?? {
+                                                            mime: "image/jpeg",
+                                                            updatedAt:
+                                                              new Date().toISOString(),
+                                                          },
+                                                      };
+                                                    }
+                                                    const next = { ...prev };
+                                                    delete next[key];
+                                                    return next;
+                                                  });
+                                                }}
+                                                onError={setError}
+                                              />
+                                            ) : null}
+                                            </div>
                                           </TableCell>
                                           <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
                                             <div className="wrap-break-word">
@@ -5934,7 +5977,7 @@ export function RotacionPageInner() {
                               activeField={tableSortField}
                               direction={tableSortDirection}
                               onSort={handleTableSort}
-                              align={col.align === "right" ? "right" : "left"}
+                              align={col.align}
                             />
                           ) : (
                             col.label

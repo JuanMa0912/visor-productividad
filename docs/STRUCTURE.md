@@ -126,6 +126,7 @@ Codigo compartido sin UI de pagina.
 | `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar); el warm matutino precarga también ese `mtd-N` para first paint vía `payload-std`; UI carga **solo el rango visible** (chips bajo demanda) y construye la matriz en chunks; ranking producto×sede (línea/sublínea/marca=categoría/producto) y resumen por empresa encima de la matriz |
 | `rotacion` | rotacion e inventario con baja salida; capitulos A-B-C, criticos (D+0+S) y sobrestock (32+ / 50+ dias de inventario); filtro CAT (multi); restock muestra conteo S.inventario (sin verificar / seguimiento / surtido) |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
+| `rotacion/restock-fotos` | GET metadatos o foto base64; PUT foto de item restock ya surtido |
 | `checklists/runs` | GET/POST intento: 20 min, rol encargado/revisor, 1/mes por sede, guardar respuestas, desbloqueo panel |
 | `checklists/panel` | GET listado mensual de sedes/puntajes/tiempo/responsable |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |

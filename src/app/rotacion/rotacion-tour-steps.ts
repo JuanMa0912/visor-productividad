@@ -35,9 +35,9 @@ export const ROTACION_TOUR_STEPS: DriveStep[] = [
   {
     element: rotacionTourSelector(ROTACION_TOUR_ANCHOR.lineFilters),
     popover: {
-      title: "Familias, líneas y categorías",
+      title: "Familias y líneas",
       description:
-        "Reduce el universo por CAT (una o varias categorías), familias y líneas N1/N2. La tabla se actualiza al cambiar estos filtros.",
+        "Reduce el universo por familias y líneas N1/N2. Para ordenar por categoría (CAT) usa la flecha en el encabezado de la tabla.",
       side: "top",
       align: "start",
     },
@@ -77,7 +77,7 @@ export const ROTACION_TOUR_STEPS: DriveStep[] = [
     popover: {
       title: "Filtros rápidos",
       description:
-        "Cero rotación, topes de venta e inventario, y chips S.inventario al filtrar cero o restock. En restock, arriba de la tabla ves cuántos hay en sin verificar, seguimiento y surtido.",
+        "Cero rotación, topes de venta e inventario, y chips S.inventario al filtrar cero o restock. En restock, arriba ves sin verificar / seguimiento / surtido. Si el ítem ya está surtido, en la fila puedes tomar o ver la foto de evidencia.",
       side: "top",
       align: "start",
     },

@@ -351,6 +351,7 @@ porcentajes.
 | `rotacion_abcd_config_sede` | runtime/API | umbrales ABCD por empresa/sede |
 | `rotacion_cero_item_estado` | migraciones | estado operativo cero/restock |
 | `rotacion_cero_item_estado_audit` | migraciones | historial de cambios |
+| `rotacion_restock_surtido_foto` | migraciones | foto JPEG/PNG/WebP en base64 de items restock ya surtidos |
 
 DIC (dias de inventario) = `inventory_units * tracked_days / demanda_units`, con
 `demanda_units = total_units + uds_equivalentes` y `uds_equivalentes` = salidas
@@ -705,7 +706,18 @@ Migracion: `db/migrations/20260819_checklist_runs.sql`.
 ```bash
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_checklist_runs.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_checklist_run_workflow.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260819_rotacion_restock_surtido_foto.sql
 ```
+
+### 4.ad Restock: foto de surtido
+
+Migracion: `db/migrations/20260819_rotacion_restock_surtido_foto.sql`.
+
+| Tabla | Uso |
+| --- | --- |
+| `rotacion_restock_surtido_foto` | PK `(empresa, sede_id, item)`; `foto_base64` (texto SQL-safe) + `mime` + `updated_by` |
+
+La UI de rotacion (filtro restock, estado **surtido**) permite tomar/subir la foto en la fila. El listado GET no trae el binario; la vista previa pide el item. API: `/api/rotacion/restock-fotos`.
 
 Actualizar este documento cuando cambien migraciones, tablas leidas, columnas
 dinamicas, indices acordados en produccion o bases externas.
