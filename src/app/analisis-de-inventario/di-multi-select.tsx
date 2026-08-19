@@ -79,6 +79,21 @@ export function DiMultiSelect({
     onChange([...values, value]);
   };
 
+  const filteredValues = filtered.map((opt) => opt.value);
+  const allFilteredSelected =
+    filteredValues.length > 0 &&
+    filteredValues.every((value) => values.includes(value));
+  const selectAll = () => {
+    if (filteredValues.length === 0) return;
+    const next = new Set(values);
+    for (const value of filteredValues) next.add(value);
+    onChange([...next]);
+  };
+  const clearAll = () => {
+    if (values.length === 0) return;
+    onChange([]);
+  };
+
   return (
     <div ref={rootRef} className={`relative min-w-0 ${className}`}>
       <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -87,14 +102,15 @@ export function DiMultiSelect({
       <button
         type="button"
         disabled={disabled}
+        title={summary}
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-left text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex min-h-9 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-xs font-medium leading-snug text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className="truncate">{summary}</span>
+        <span className="min-w-0 flex-1 whitespace-normal break-words">{summary}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
       </button>
       {open ? (
-        <div className="absolute z-50 mt-1 max-h-56 w-full min-w-[12rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+        <div className="absolute left-0 z-50 mt-1 w-max min-w-full max-w-[min(28rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
           {searchable || controlled ? (
             <input
               type="search"
@@ -109,7 +125,25 @@ export function DiMultiSelect({
               autoFocus
             />
           ) : null}
-          <div className="max-h-44 overflow-auto py-1">
+          <div className="flex border-b border-slate-100">
+            <button
+              type="button"
+              onClick={selectAll}
+              disabled={filteredValues.length === 0 || allFilteredSelected}
+              className="flex-1 px-2 py-1.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+            >
+              Seleccionar todos
+            </button>
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={values.length === 0}
+              className="flex-1 border-l border-slate-100 px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+            >
+              Borrar todos
+            </button>
+          </div>
+          <div className="max-h-64 overflow-auto py-1">
             {filtered.length === 0 ? (
               <p className="px-2.5 py-2 text-xs text-slate-500">
                 {controlled && query.trim().length < 2
@@ -123,11 +157,12 @@ export function DiMultiSelect({
                   <button
                     key={opt.value}
                     type="button"
+                    title={opt.label}
                     onClick={() => toggle(opt.value)}
-                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-slate-800 hover:bg-slate-50"
+                    className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs leading-snug text-slate-800 hover:bg-slate-50"
                   >
                     <span
-                      className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                      className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
                         selected
                           ? "border-slate-900 bg-slate-900 text-white"
                           : "border-slate-300"
@@ -135,21 +170,14 @@ export function DiMultiSelect({
                     >
                       {selected ? <Check className="h-2.5 w-2.5" /> : null}
                     </span>
-                    <span className="truncate">{opt.label}</span>
+                    <span className="min-w-0 flex-1 whitespace-normal break-words">
+                      {opt.label}
+                    </span>
                   </button>
                 );
               })
             )}
           </div>
-          {values.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="w-full border-t border-slate-100 px-2.5 py-1.5 text-left text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              Limpiar
-            </button>
-          ) : null}
         </div>
       ) : null}
     </div>
