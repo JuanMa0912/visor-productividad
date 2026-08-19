@@ -71,7 +71,12 @@ Uso:
   python etl_rotacion_dim.py --dry-run                 # cuenta en origen, no escribe
   python etl_rotacion_dim.py --empresas mercamio
 
-Codigos de salida: 0 OK | 1 error | 2 uso invalido.
+Codigos de salida: 0 OK | 1 error | 2 uso invalido |
+3 WARNING: algun (empresa, dia) quedo INCOMPLETO en el origen (sin filas, o con
+filas pero sin un solo documento EK, que el POS genera en el cierre nocturno).
+El dato cargado NO sirve todavia: re-correr cuando el POS cierre, ANTES de que el
+sync de las 07:35 lo suba a GCP. La unit `visor-etl-rotacion-dim.service` NO
+declara SuccessExitStatus=3 a proposito, para que systemd lo marque failed.
 """
 import argparse
 import datetime
@@ -324,8 +329,19 @@ def cargar_dimensiones(env: dict, empresas, dry_run: bool) -> int:
 
 # ── Carga del hecho diario ───────────────────────────────────────────────────
 
-def cargar_salidas(env: dict, empresas, desde: str, hasta: str, dry_run: bool) -> int:
+def cargar_salidas(env: dict, empresas, desde: str, hasta: str, dry_run: bool):
+    """Devuelve (filas_cargadas, avisos).
+
+    `avisos` son los (empresa, dia) que quedaron INCOMPLETOS en el origen. El POS
+    genera el documento EK (ensamble de kit) en el cierre nocturno, asi que un dia
+    sin EK todavia no cerro. Medido el 2026-08-19: el POS no tenia ni una linea de
+    venta del 18-ago 33 horas despues, y este ETL cargaba 4.452 filas de mercamio
+    con EK=0 reportando exito. Sin este aviso el timer no puede distinguir "dia
+    flojo" de "dia que aun no existe", y el sync sube a GCP un dia a medias que
+    infla el DIC.
+    """
     total = 0
+    avisos = []
     for emp in empresas:
         nombre = emp["empresa"]
         with pos_conn(env, emp) as src:
@@ -340,6 +356,18 @@ def cargar_salidas(env: dict, empresas, desde: str, hasta: str, dry_run: bool) -
                 log(f"empresa={nombre:<9} fecha={dia}  filas={len(rows):>5}  "
                     f"EK_salida={ek:,.0f} uds")
 
+                # En 48 dias x 3 empresas medidos, el minimo de EK fue 3.201 uds
+                # (bogota) y nunca hubo un dia en cero: EK=0 es senal fiable de
+                # cierre pendiente, no de dia flojo.
+                if not rows:
+                    avisos.append((nombre, dia, "sin ninguna fila"))
+                    log(f"AVISO  empresa={nombre:<9} fecha={dia}  el POS no tiene "
+                        f"NADA de ese dia; aun no cerro.")
+                elif ek == 0:
+                    avisos.append((nombre, dia, "sin EK"))
+                    log(f"AVISO  empresa={nombre:<9} fecha={dia}  hay {len(rows)} "
+                        f"filas pero NINGUN documento EK; el cierre esta a medias.")
+
                 if dry_run:
                     continue
 
@@ -353,7 +381,7 @@ def cargar_salidas(env: dict, empresas, desde: str, hasta: str, dry_run: bool) -
                     copy_rows(tgt, "rotacion_salidas_dia", COLS_SALIDAS, rows)
                     tgt.commit()
                 total += len(rows)
-    return total
+    return total, avisos
 
 
 def parse_args(argv=None):
@@ -394,12 +422,13 @@ def main(argv=None) -> int:
     log(f"inicio  modo={args.mode}  {modo}  rango={desde}..{hasta}  "
         f"empresas={','.join(e['empresa'] for e in empresas)}")
 
+    avisos = []
     try:
         if args.mode in ("all", "dim"):
             n = cargar_dimensiones(env, empresas, args.dry_run)
             log(f"dimensiones: {n} filas")
         if args.mode in ("all", "salidas"):
-            n = cargar_salidas(env, empresas, desde, hasta, args.dry_run)
+            n, avisos = cargar_salidas(env, empresas, desde, hasta, args.dry_run)
             log(f"salidas: {n} filas")
     except psycopg2.Error as e:
         log(f"ERROR de base de datos: {e}")
@@ -407,6 +436,12 @@ def main(argv=None) -> int:
     except Exception as e:  # noqa: BLE001 - el timer necesita exit code, no traceback
         log(f"ERROR: {e}")
         return 1
+
+    if avisos:
+        detalle = ", ".join(f"{e}@{d} ({motivo})" for e, d, motivo in avisos)
+        log(f"=== AVISO: {len(avisos)} dia(s) INCOMPLETO(s) en el origen: {detalle}. "
+            f"Exit 3: NO subir a GCP todavia; re-correr cuando el POS cierre. ===")
+        return 3
 
     log("fin OK")
     return 0
