@@ -36,6 +36,7 @@ export function DiMultiSelect({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const [localQuery, setLocalQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
   const controlled = typeof onSearchChange === "function";
@@ -51,6 +52,20 @@ export function DiMultiSelect({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
+  /** El panel crece hasta 28rem: si no cabe a la derecha, se ancla al borde opuesto. */
+  const toggleOpen = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (rect) {
+      const width = Math.max(rect.width, Math.min(448, window.innerWidth - 24));
+      setAlignRight(rect.left + width > window.innerWidth - 12);
+    }
+    setOpen(true);
+  };
+
   const filtered = controlled
     ? options
     : searchable
@@ -64,12 +79,16 @@ export function DiMultiSelect({
         })
       : options;
 
+  const labelByValue = new Map(options.map((opt) => [opt.value, opt.label]));
+  const selectedLabels = values.map((value) => labelByValue.get(value) ?? value);
   const summary =
     values.length === 0
       ? emptyLabel
       : values.length === 1
-        ? (options.find((o) => o.value === values[0])?.label ?? values[0])
-        : `${values.length} seleccionadas`;
+        ? selectedLabels[0]!
+        : `(${values.length}) ${selectedLabels.join(", ")}`;
+  const summaryTitle =
+    values.length === 0 ? emptyLabel : selectedLabels.join("\n");
 
   const toggle = (value: string) => {
     if (values.includes(value)) {
@@ -102,15 +121,19 @@ export function DiMultiSelect({
       <button
         type="button"
         disabled={disabled}
-        title={summary}
-        onClick={() => setOpen((prev) => !prev)}
+        title={summaryTitle}
+        onClick={toggleOpen}
         className="flex min-h-9 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-xs font-medium leading-snug text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className="min-w-0 flex-1 whitespace-normal break-words">{summary}</span>
+        <span className="max-h-[4.5rem] min-w-0 flex-1 overflow-y-auto whitespace-normal break-words">
+          {summary}
+        </span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
       </button>
       {open ? (
-        <div className="absolute left-0 z-50 mt-1 w-max min-w-full max-w-[min(28rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+        <div
+          className={`absolute ${alignRight ? "right-0" : "left-0"} z-50 mt-1 w-max min-w-full max-w-[min(28rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg`}
+        >
           {searchable || controlled ? (
             <input
               type="search"

@@ -520,13 +520,15 @@ function MatrixRow({
               : undefined
       }
     >
-      <td className="max-w-xs truncate px-2 py-1" style={{ paddingLeft: 8 + depth * 18 }}>
-        {expandable ? (
-          <span className={cn("mr-1 inline-block text-slate-400", open && "rotate-90")}>▶</span>
-        ) : (
-          <span className="mr-1 inline-block w-3" />
-        )}
-        {label}
+      <td className="px-2 py-1 align-top" style={{ paddingLeft: 8 + depth * 18 }}>
+        <span className="flex max-w-xs items-start whitespace-normal break-words">
+          {expandable ? (
+            <span className={cn("mr-1 inline-block text-slate-400", open && "rotate-90")}>▶</span>
+          ) : (
+            <span className="mr-1 inline-block w-3 shrink-0" />
+          )}
+          <span className="min-w-0 flex-1">{label}</span>
+        </span>
       </td>
       {cells.map((cell, index) => (
         <Fragment key={index}>{renderCell(cell)}</Fragment>
