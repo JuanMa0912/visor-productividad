@@ -58,11 +58,14 @@ export function ChecklistExpiredAdminPanel() {
   };
 
   return (
-    <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5">
-      <h2 className="text-base font-semibold text-slate-900">
+    <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-6 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-rose-500">
+      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-rose-700">
+        Operación • Checklists
+      </p>
+      <h2 className="mt-2 text-xl font-black tracking-tight text-slate-900">
         Intentos vencidos
       </h2>
-      <p className="mt-1 text-sm text-slate-600">
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
         Si alguien no terminó en 20 minutos, habilita aquí otros 20 minutos.
       </p>
       {error ? <p className="mt-2 text-sm text-rose-700">{error}</p> : null}

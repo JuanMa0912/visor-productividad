@@ -86,6 +86,8 @@ type HubHeroCardProps = {
   description: string;
   moduleCount: number;
   tourAnchorId?: string;
+  actions?: React.ReactNode;
+  countNoun?: string;
 };
 
 export function PortalHubHeroCard({
@@ -96,6 +98,8 @@ export function PortalHubHeroCard({
   description,
   moduleCount,
   tourAnchorId,
+  actions,
+  countNoun = "modulos",
 }: HubHeroCardProps) {
   const styles = HUB_THEME_STYLES[theme];
   const countLabel = String(Math.max(0, moduleCount)).padStart(2, "0");
@@ -126,9 +130,12 @@ export function PortalHubHeroCard({
             </p>
           </div>
         </div>
-        <p className="shrink-0 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-          {countLabel} modulos
-        </p>
+        <div className="flex shrink-0 flex-col items-end gap-3">
+          {actions}
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+            {countLabel} {countNoun}
+          </p>
+        </div>
       </div>
     </div>
   );

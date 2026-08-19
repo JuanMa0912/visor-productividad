@@ -1,15 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ClipboardCheck } from "lucide-react";
+import {
+  ClipboardCheck,
+  MonitorSmartphone,
+  Store,
+  Warehouse,
+} from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import {
+  PortalHubHeroCard,
+  PortalHubModuleGrid,
+  PortalHubShell,
+  type HubModuleItem,
+} from "@/components/portal/hub-section-cards";
 import { ChecklistExpiredAdminPanel } from "@/app/checklists/checklist-expired-admin";
 import { canAccessChecklistPanel } from "@/lib/checklists/access";
 import { CHECKLIST_CATALOG } from "@/lib/checklists/catalog";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessPortalSubsection } from "@/lib/shared/portal-sections";
+
+const CHECKLIST_ICONS = {
+  "bodega-gerencial": Warehouse,
+  "punto-venta": Store,
+  "sala-comercial": ClipboardCheck,
+  "cajas-operacion": MonitorSmartphone,
+} as const;
 
 export default function ChecklistsHubPage() {
   const router = useRouter();
@@ -19,6 +37,29 @@ export default function ChecklistsHubPage() {
   const canAccess =
     isAdmin ||
     canAccessPortalSubsection(user?.allowedSubdashboards, "checklists");
+  const canSeePanel = canAccessChecklistPanel(user?.specialRoles, isAdmin);
+
+  const modules = useMemo<HubModuleItem[]>(
+    () =>
+      CHECKLIST_CATALOG.map((entry) => {
+        const available = entry.status === "available";
+        return {
+          id: entry.id,
+          icon:
+            CHECKLIST_ICONS[entry.id as keyof typeof CHECKLIST_ICONS] ??
+            ClipboardCheck,
+          badge: entry.badge,
+          title: entry.title,
+          description: entry.subtitle,
+          href: entry.href,
+          disabled: !available,
+          footerLabel: available
+            ? `${entry.puntos} puntos · ${entry.bloques} bloques`
+            : "Próximamente",
+        };
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (ready && !canAccess) {
@@ -55,91 +96,41 @@ export default function ChecklistsHubPage() {
         sede={user.sede}
         showSeccionesShortcut
       />
-      <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Operación
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-              Checklists
-            </h1>
-            <p className="mt-1 max-w-xl text-sm text-slate-600">
-              Encargado de sede: un checklist al mes. El revisor lo cruza con
-              esa respuesta. El panel ve puntajes y puede desbloquear vencidos.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            {canAccessChecklistPanel(user.specialRoles, isAdmin) ? (
+      <PortalHubShell>
+        <PortalHubHeroCard
+          theme="operacion"
+          icon={ClipboardCheck}
+          eyebrow="Operación • Checklists"
+          title="Checklists"
+          description="Encargado de sede: un checklist al mes. El revisor lo cruza con esa respuesta. El panel ve puntajes y puede desbloquear vencidos."
+          moduleCount={modules.length}
+          actions={
+            <div className="flex flex-wrap justify-end gap-2">
+              {canSeePanel ? (
+                <Link
+                  href="/checklists/panel"
+                  className="inline-flex h-9 items-center rounded-full border border-rose-200/80 bg-rose-50 px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-800 hover:bg-rose-100/90"
+                >
+                  Panel de control
+                </Link>
+              ) : null}
               <Link
-                href="/checklists/panel"
-                className="text-sm font-semibold text-indigo-700 hover:underline"
+                href="/horario"
+                className="inline-flex h-9 items-center rounded-full border border-slate-200/90 bg-white px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600 hover:border-slate-300 hover:bg-slate-50"
               >
-                Panel de control
+                ← Volver a operación
               </Link>
-            ) : null}
-            <Link
-              href="/horario"
-              className="text-sm font-medium text-sky-700 hover:underline"
-            >
-              ← Volver a operación
-            </Link>
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {CHECKLIST_CATALOG.map((entry) => {
-            const available = entry.status === "available";
-            const card = (
-              <div
-                className={`rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_12px_40px_-28px_rgba(15,23,42,0.35)] transition ${
-                  available
-                    ? "hover:-translate-y-0.5 hover:border-sky-300/80"
-                    : "opacity-70"
-                }`}
-              >
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                    <ClipboardCheck className="h-3.5 w-3.5" />
-                    {entry.badge}
-                  </span>
-                  {!available && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
-                      Próximamente
-                    </span>
-                  )}
-                </div>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  {entry.title}
-                </h2>
-                <p className="mt-1 text-sm text-slate-600">{entry.subtitle}</p>
-                {available && (
-                  <p className="mt-3 text-xs font-medium text-slate-500">
-                    {entry.puntos} puntos · {entry.bloques} bloques
-                  </p>
-                )}
-              </div>
-            );
-
-            if (!available) {
-              return (
-                <div key={entry.id} aria-disabled="true">
-                  {card}
-                </div>
-              );
-            }
-
-            return (
-              <Link key={entry.id} href={entry.href} className="block">
-                {card}
-              </Link>
-            );
-          })}
-        </div>
-        {canAccessChecklistPanel(user.specialRoles, isAdmin) ? (
-          <ChecklistExpiredAdminPanel />
-        ) : null}
-      </main>
+            </div>
+          }
+        />
+        <PortalHubModuleGrid
+          theme="operacion"
+          items={modules}
+          onNavigate={(href) => router.push(href)}
+          columnsClassName="gap-4 sm:grid-cols-2"
+        />
+        {canSeePanel ? <ChecklistExpiredAdminPanel /> : null}
+      </PortalHubShell>
     </div>
   );
 }

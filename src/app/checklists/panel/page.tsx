@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { LayoutDashboard } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import {
+  PortalHubHeroCard,
+  PortalHubShell,
+} from "@/components/portal/hub-section-cards";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessChecklistPanel } from "@/lib/checklists/access";
 import { getChecklistCatalogEntry } from "@/lib/checklists/catalog";
@@ -110,36 +115,41 @@ export default function ChecklistPanelPage() {
         sede={user.sede}
         showSeccionesShortcut
       />
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <Link href="/checklists" className="text-sm text-sky-700 hover:underline">
-              ← Checklists
-            </Link>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900">
-              Panel de checklists
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Sedes, puntajes, tiempo y responsables. Desde aquí se desbloquean
-              intentos vencidos o sin terminar.
-            </p>
-          </div>
-          <label className="text-xs font-semibold text-slate-600">
-            Mes
-            <input
-              type="month"
-              className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              value={periodValue}
-              onChange={(event) => {
-                const [nextYear, nextMonth] = event.target.value.split("-");
-                setYear(Number(nextYear));
-                setMonth(Number(nextMonth));
-              }}
-            />
-          </label>
-        </div>
-        {error ? <p className="mb-3 text-sm text-rose-700">{error}</p> : null}
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <PortalHubShell>
+        <PortalHubHeroCard
+          theme="operacion"
+          icon={LayoutDashboard}
+          eyebrow="Operación • Checklists"
+          title="Panel de checklists"
+          description="Sedes, puntajes, tiempo y responsables. Desde aquí se desbloquean intentos vencidos o sin terminar."
+          moduleCount={runs.length}
+          countNoun="registros"
+          actions={
+            <div className="flex flex-wrap items-end justify-end gap-3">
+              <Link
+                href="/checklists"
+                className="inline-flex h-9 items-center rounded-full border border-slate-200/90 bg-white px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+              >
+                ← Checklists
+              </Link>
+              <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                Mes
+                <input
+                  type="month"
+                  className="mt-1 block rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-900"
+                  value={periodValue}
+                  onChange={(event) => {
+                    const [nextYear, nextMonth] = event.target.value.split("-");
+                    setYear(Number(nextYear));
+                    setMonth(Number(nextMonth));
+                  }}
+                />
+              </label>
+            </div>
+          }
+        />
+        {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-[0_16px_34px_-28px_rgba(15,23,42,0.28)]">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -206,7 +216,7 @@ export default function ChecklistPanelPage() {
             </tbody>
           </table>
         </div>
-      </main>
+      </PortalHubShell>
     </div>
   );
 }
