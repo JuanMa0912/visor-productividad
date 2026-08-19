@@ -7,9 +7,11 @@ import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import { getDbPool } from "@/lib/db";
 import {
   queryPreciosProveedorItemExpand,
+  queryPreciosProveedorItemOptions,
   queryPreciosProveedorMatrix,
   queryPreciosProveedorMeta,
 } from "@/lib/exp-precios-proveedor/queries";
+import { splitCostosCsv } from "@/lib/exp-precios-proveedor/filters";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 const CACHE_CONTROL = "no-store";
@@ -77,7 +79,11 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const modeRaw = url.searchParams.get("mode");
   const mode =
-    modeRaw === "matrix" || modeRaw === "proveedores" ? modeRaw : "meta";
+    modeRaw === "matrix" ||
+    modeRaw === "proveedores" ||
+    modeRaw === "items"
+      ? modeRaw
+      : "meta";
 
   try {
     const pool = await getDbPool();
@@ -110,13 +116,22 @@ export async function GET(request: Request) {
         );
       }
 
-      const sedesRaw = url.searchParams.get("sedes")?.trim() ?? "";
-      const sedeKeys = sedesRaw
-        ? sedesRaw
-            .split(",")
-            .map((key) => key.trim())
-            .filter(Boolean)
-        : null;
+      const sedeKeys = splitCostosCsv(url.searchParams.get("sedes"));
+      const lineaIds = splitCostosCsv(url.searchParams.get("linea"));
+      const sublineaIds = splitCostosCsv(url.searchParams.get("sublinea"));
+      const proveedorIds = splitCostosCsv(url.searchParams.get("proveedor"));
+      const itemIds = splitCostosCsv(url.searchParams.get("items"));
+
+      if (mode === "items") {
+        const items = await queryPreciosProveedorItemOptions(client, {
+          q: url.searchParams.get("q"),
+          lineaIds,
+          sublineaIds,
+          fromIso: from,
+          toIso: to,
+        });
+        return withSession(NextResponse.json({ items }));
+      }
 
       if (mode === "proveedores") {
         const item = url.searchParams.get("item")?.trim() ?? "";
@@ -133,22 +148,19 @@ export async function GET(request: Request) {
           label: url.searchParams.get("label"),
           fromIso: from,
           toIso: to,
-          sedeKeys,
+          sedeKeys: sedeKeys.length > 0 ? sedeKeys : null,
         });
         return withSession(NextResponse.json({ expand }));
       }
 
-      const lineaIds = (url.searchParams.get("linea") ?? "")
-        .split(",")
-        .map((id) => id.trim())
-        .filter(Boolean);
       const matrix = await queryPreciosProveedorMatrix(client, {
         fromIso: from,
         toIso: to,
         lineaIds,
-        sublineaId: url.searchParams.get("sublinea"),
-        proveedorId: url.searchParams.get("proveedor"),
-        sedeKeys,
+        sublineaIds,
+        proveedorIds,
+        itemIds,
+        sedeKeys: sedeKeys.length > 0 ? sedeKeys : null,
         search: url.searchParams.get("search"),
         itemLimit: Number(url.searchParams.get("limit") ?? 40) || 40,
       });

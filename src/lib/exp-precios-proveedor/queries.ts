@@ -15,6 +15,10 @@ import {
   mergeProveedorNits,
 } from "@/lib/exp-precios-proveedor/expand-merge";
 import {
+  hasProveedorFilter,
+  parseProveedorFilterIds,
+} from "@/lib/exp-precios-proveedor/filters";
+import {
   ocEntradaInvTipdocSql,
   ocEntradaPoTipdocSql,
   ocEntradaQtySql,
@@ -414,12 +418,115 @@ export type PreciosProveedorQueryInput = {
   fromIso: string;
   toIso: string;
   lineaIds?: string[] | null;
+  sublineaIds?: string[] | null;
+  /** @deprecated usar `sublineaIds`. */
   sublineaId?: string | null;
+  proveedorIds?: string[] | null;
+  /** @deprecated usar `proveedorIds`. */
   proveedorId?: string | null;
+  itemIds?: string[] | null;
   /** Claves `empresa|idCo`. Vacío/null = todas las sedes del prototipo. */
   sedeKeys?: string[] | null;
   search?: string | null;
   itemLimit?: number;
+};
+
+const uniqueTrimmed = (
+  values: Array<string | null | undefined> | null | undefined,
+) =>
+  [
+    ...new Set(
+      (values ?? [])
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
+
+const sqlEqOrAny = (
+  params: unknown[],
+  columnSql: string,
+  values: string[],
+): string => {
+  if (values.length === 1) {
+    params.push(values[0]);
+    return `${columnSql} = $${params.length}`;
+  }
+  params.push(values);
+  return `${columnSql} = ANY($${params.length}::text[])`;
+};
+
+export const queryPreciosProveedorItemOptions = async (
+  client: PoolClient,
+  input: {
+    q?: string | null;
+    lineaIds?: string[] | null;
+    sublineaIds?: string[] | null;
+    fromIso?: string | null;
+    toIso?: string | null;
+    limit?: number;
+  },
+): Promise<
+  Array<{ id: string; label: string; lineaId: string; sublineaId: string }>
+> => {
+  const limit = Math.min(80, Math.max(10, Number(input.limit) || 40));
+  const params: unknown[] = [];
+  const where: string[] = [
+    "TRIM(COALESCE(id_tipo, '')) = '4'",
+    "NULLIF(TRIM(id_item), '') IS NOT NULL",
+  ];
+  const lineaIds = uniqueTrimmed(input.lineaIds);
+  if (lineaIds.length > 0) {
+    where.push(sqlEqOrAny(params, "id_linea1", lineaIds));
+  }
+  const sublineaIds = uniqueTrimmed(input.sublineaIds);
+  if (sublineaIds.length > 0) {
+    where.push(sqlEqOrAny(params, "id_linea2", sublineaIds));
+  }
+  const fromCompact = input.fromIso ? isoToCompact(input.fromIso) : "";
+  const toCompact = input.toIso ? isoToCompact(input.toIso) : "";
+  if (/^\d{8}$/.test(fromCompact) && /^\d{8}$/.test(toCompact)) {
+    params.push(fromCompact, toCompact);
+    where.push(
+      `fecha_dcto >= $${params.length - 1} AND fecha_dcto <= $${params.length}`,
+    );
+  }
+  const q = String(input.q ?? "")
+    .trim()
+    .toLowerCase();
+  if (q.length >= 2) {
+    params.push(`%${q}%`);
+    where.push(`(
+      LOWER(id_item) LIKE $${params.length}
+      OR LOWER(COALESCE(item_descripcion, '')) LIKE $${params.length}
+    )`);
+  }
+  params.push(limit);
+  const result = await client.query<{
+    id: string;
+    label: string;
+    linea_id: string;
+    sublinea_id: string;
+  }>(
+    `
+    SELECT
+      BTRIM(id_item) AS id,
+      COALESCE(NULLIF(MAX(item_descripcion), ''), BTRIM(id_item)) AS label,
+      COALESCE(MAX(id_linea1), '') AS linea_id,
+      COALESCE(MAX(id_linea2), '') AS sublinea_id
+    FROM margen_item_dia_roll
+    WHERE ${where.join(" AND ")}
+    GROUP BY BTRIM(id_item)
+    ORDER BY SUM(COALESCE(ventas_netas, 0)) DESC
+    LIMIT $${params.length}
+    `,
+    params,
+  );
+  return result.rows.map((row) => ({
+    id: String(row.id).trim(),
+    label: `${String(row.id).trim()} · ${String(row.label ?? "").trim() || String(row.id).trim()}`,
+    lineaId: String(row.linea_id ?? "").trim(),
+    sublineaId: String(row.sublinea_id ?? "").trim(),
+  }));
 };
 
 /**
@@ -434,8 +541,15 @@ export const queryPreciosProveedorMatrix = async (
   const t0 = performance.now();
   const fromCompact = isoToCompact(input.fromIso);
   const toCompact = isoToCompact(input.toIso);
-  const itemLimit = Math.min(80, Math.max(10, Number(input.itemLimit) || 40));
-  const fetchLimit = Math.min(120, Math.max(itemLimit * 3, itemLimit));
+  const selectedItemIds = uniqueTrimmed(input.itemIds);
+  const itemLimit =
+    selectedItemIds.length > 0
+      ? Math.min(80, Math.max(selectedItemIds.length, 1))
+      : Math.min(80, Math.max(10, Number(input.itemLimit) || 40));
+  const fetchLimit =
+    selectedItemIds.length > 0
+      ? selectedItemIds.length
+      : Math.min(120, Math.max(itemLimit * 3, itemLimit));
   const allColumns = prototypeSedeColumns();
   const requestedKeys = (input.sedeKeys ?? [])
     .map((key) => key.trim())
@@ -459,34 +573,35 @@ export const queryPreciosProveedorMatrix = async (
 
   const params: unknown[] = [fromCompact, toCompact, fetchLimit];
   let lineaSql = "";
-  const lineaIds = (input.lineaIds ?? [])
-    .map((id) => id.trim())
-    .filter(Boolean);
-  if (lineaIds.length === 1) {
-    params.push(lineaIds[0]);
-    lineaSql = ` AND r.id_linea1 = $${params.length}`;
-  } else if (lineaIds.length > 1) {
-    params.push(lineaIds);
-    lineaSql = ` AND r.id_linea1 = ANY($${params.length}::text[])`;
+  const lineaIds = uniqueTrimmed(input.lineaIds);
+  if (lineaIds.length > 0) {
+    lineaSql = ` AND ${sqlEqOrAny(params, "r.id_linea1", lineaIds)}`;
   }
   let sublineaSql = "";
-  if (input.sublineaId?.trim()) {
-    params.push(input.sublineaId.trim());
-    sublineaSql = ` AND r.id_linea2 = $${params.length}`;
+  const sublineaIds = uniqueTrimmed([
+    ...(input.sublineaIds ?? []),
+    input.sublineaId ?? "",
+  ]);
+  if (sublineaIds.length > 0) {
+    sublineaSql = ` AND ${sqlEqOrAny(params, "r.id_linea2", sublineaIds)}`;
   }
   let proveedorSql = "";
-  const proveedorId = input.proveedorId?.trim() ?? "";
-  if (proveedorId.startsWith("oc:")) {
-    params.push(proveedorId.slice(3));
-    proveedorSql = ` AND EXISTS (
+  const proveedorIds = parseProveedorFilterIds([
+    ...(input.proveedorIds ?? []),
+    input.proveedorId ?? "",
+  ]);
+  if (hasProveedorFilter(proveedorIds)) {
+    const parts: string[] = [];
+    if (proveedorIds.oc.length > 0) {
+      parts.push(`EXISTS (
       SELECT 1 FROM orden_compra_linea oc
       WHERE BTRIM(oc.id_item) = BTRIM(r.id_item)
         AND LOWER(BTRIM(oc.empresa)) = LOWER(BTRIM(r.empresa_norm))
-        AND BTRIM(oc.id_terc) = $${params.length}
-    )`;
-  } else if (proveedorId.startsWith("t:")) {
-    params.push(proveedorId.slice(2));
-    proveedorSql = ` AND EXISTS (
+        AND ${sqlEqOrAny(params, "BTRIM(oc.id_terc)", proveedorIds.oc)}
+    )`);
+    }
+    if (proveedorIds.tercero.length > 0) {
+      parts.push(`EXISTS (
       SELECT 1 FROM proveedor_item pi0
       LEFT JOIN proveedor_tercero pt0
         ON pt0.empresa = pi0.empresa
@@ -497,16 +612,20 @@ export const queryPreciosProveedorMatrix = async (
        )), '')
       WHERE pi0.empresa = r.empresa_norm
         AND pi0.id_item = r.id_item
-        AND BTRIM(COALESCE(pt0.codigo, '')) = $${params.length}
-    )`;
-  } else if (proveedorId) {
-    params.push(proveedorId);
-    proveedorSql = ` AND EXISTS (
+        AND ${sqlEqOrAny(params, "BTRIM(COALESCE(pt0.codigo, ''))", proveedorIds.tercero)}
+    )`);
+    }
+    if (proveedorIds.criterio.length > 0) {
+      parts.push(`EXISTS (
       SELECT 1 FROM proveedor_item pi0
       WHERE pi0.empresa = r.empresa_norm
         AND pi0.id_item = r.id_item
-        AND COALESCE(NULLIF(BTRIM(pi0.id_cricla1), ''), '@SP') = $${params.length}
-    )`;
+        AND ${sqlEqOrAny(params, "COALESCE(NULLIF(BTRIM(pi0.id_cricla1), ''), '@SP')", proveedorIds.criterio)}
+    )`);
+    }
+    if (parts.length > 0) {
+      proveedorSql = ` AND (${parts.join(" OR ")})`;
+    }
   }
 
   const sedePairs = columns.map((col) => ({
@@ -522,7 +641,9 @@ export const queryPreciosProveedorMatrix = async (
   const sedeSql = ` AND (r.empresa_norm, LPAD(TRIM(r.id_co_norm), 3, '0')) IN (${sedeTupleSql})`;
 
   let searchSql = "";
-  if (input.search?.trim()) {
+  if (selectedItemIds.length > 0) {
+    searchSql = ` AND ${sqlEqOrAny(params, "BTRIM(r.id_item)", selectedItemIds)}`;
+  } else if (input.search?.trim()) {
     params.push(`%${input.search.trim().toLowerCase()}%`);
     searchSql = ` AND (
       LOWER(r.id_item) LIKE $${params.length}

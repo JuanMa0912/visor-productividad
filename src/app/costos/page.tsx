@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
+import { DiMultiSelect } from "@/app/analisis-de-inventario/di-multi-select";
+import { keepSelected } from "@/lib/exp-precios-proveedor/filters";
 import type {
   PreciosProveedorExpandRow,
   PreciosProveedorMatrix,
@@ -130,13 +132,19 @@ export default function CostosPage() {
   const [dateStart, setDateStart] = useState(yesterdayIso);
   const [dateEnd, setDateEnd] = useState(yesterdayIso);
   const [selectedLineas, setSelectedLineas] = useState<string[]>([]);
-  const [sublinea, setSublinea] = useState("");
-  const [empresa, setEmpresa] = useState("");
-  const [proveedor, setProveedor] = useState("");
+  const [selectedSublineas, setSelectedSublineas] = useState<string[]>([]);
+  const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
+  const [selectedProveedores, setSelectedProveedores] = useState<string[]>([]);
   const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [itemQuery, setItemQuery] = useState("");
+  const [itemHits, setItemHits] = useState<Array<{ value: string; label: string }>>(
+    [],
+  );
+  const [itemLabelById, setItemLabelById] = useState<Record<string, string>>(
+    {},
+  );
   const [sedesReady, setSedesReady] = useState(false);
-  const [search, setSearch] = useState("");
-  const [searchApplied, setSearchApplied] = useState("");
   const [metric, setMetric] = useState<PreciosProveedorMetric>("pcu");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,28 +168,68 @@ export default function CostosPage() {
   );
   const visibleSedeKeys = useMemo(
     () =>
-      empresa
-        ? allSedeKeys.filter((key) => key.startsWith(`${empresa}|`))
+      selectedEmpresas.length > 0
+        ? allSedeKeys.filter((key) =>
+            selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
+          )
         : allSedeKeys,
-    [allSedeKeys, empresa],
+    [allSedeKeys, selectedEmpresas],
   );
 
-  const toggleSede = (key: string) => {
-    setSelectedSedes((prev) => {
-      if (prev.includes(key)) {
-        if (prev.length <= 1) return prev;
-        return prev.filter((item) => item !== key);
-      }
-      return [...prev, key];
-    });
-  };
-
-  const toggleLinea = (id: string) => {
-    setSelectedLineas((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
-    );
-    setSublinea("");
-  };
+  const empresaOptions = useMemo(
+    () =>
+      (meta?.empresas ?? []).map((opt) => ({
+        value: opt.id,
+        label: opt.label,
+      })),
+    [meta],
+  );
+  const sedeOptions = useMemo(
+    () =>
+      (meta?.sedes ?? [])
+        .filter((sede) =>
+          selectedEmpresas.length === 0
+            ? true
+            : selectedEmpresas.some((emp) => sede.key.startsWith(`${emp}|`)),
+        )
+        .map((sede) => ({ value: sede.key, label: sede.label })),
+    [meta, selectedEmpresas],
+  );
+  const lineaOptions = useMemo(
+    () =>
+      (meta?.lineas ?? []).map((opt) => ({ value: opt.id, label: opt.label })),
+    [meta],
+  );
+  const sublineaSelectOptions = useMemo(() => {
+    const options = sublineasOptions.map((opt) => ({
+      value: opt.id,
+      label: opt.label,
+    }));
+    const missing = selectedSublineas
+      .filter((id) => !options.some((opt) => opt.value === id))
+      .map((id) => ({ value: id, label: id }));
+    return [...options, ...missing];
+  }, [sublineasOptions, selectedSublineas]);
+  const proveedorOptions = useMemo(() => {
+    const options = (meta?.proveedores ?? []).map((opt) => ({
+      value: opt.id,
+      label: opt.label,
+    }));
+    const missing = selectedProveedores
+      .filter((id) => !options.some((opt) => opt.value === id))
+      .map((id) => ({ value: id, label: id }));
+    return [...options, ...missing];
+  }, [meta, selectedProveedores]);
+  const itemOptions = useMemo(() => {
+    const fromHits = itemHits;
+    const missing = selectedItems
+      .filter((id) => !fromHits.some((opt) => opt.value === id))
+      .map((id) => ({
+        value: id,
+        label: itemLabelById[id] ?? id,
+      }));
+    return [...fromHits, ...missing];
+  }, [itemHits, itemLabelById, selectedItems]);
 
   const cellByKey = useMemo(() => {
     const map = new Map<
@@ -232,7 +280,9 @@ export default function CostosPage() {
       const from = override?.from ?? dateStart;
       const to = override?.to ?? dateEnd;
       const sedes = (override?.sedes ?? selectedSedes).filter((key) =>
-        empresa ? key.startsWith(`${empresa}|`) : true,
+        selectedEmpresas.length === 0
+          ? true
+          : selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
       );
       if (!from || !to) return;
       if (sedes.length === 0) {
@@ -254,15 +304,21 @@ export default function CostosPage() {
           mode: "matrix",
           from,
           to,
-          limit: "40",
+          limit: selectedItems.length > 0 ? String(selectedItems.length) : "40",
           sedes: sedes.join(","),
         });
         if (selectedLineas.length > 0) {
           params.set("linea", selectedLineas.join(","));
         }
-        if (sublinea) params.set("sublinea", sublinea);
-        if (proveedor) params.set("proveedor", proveedor);
-        if (searchApplied.trim()) params.set("search", searchApplied.trim());
+        if (selectedSublineas.length > 0) {
+          params.set("sublinea", selectedSublineas.join(","));
+        }
+        if (selectedProveedores.length > 0) {
+          params.set("proveedor", selectedProveedores.join(","));
+        }
+        if (selectedItems.length > 0) {
+          params.set("items", selectedItems.join(","));
+        }
         const res = await fetch(`/api/costos?${params}`, {
           cache: "no-store",
         });
@@ -272,6 +328,15 @@ export default function CostosPage() {
         };
         if (!res.ok) throw new Error(data.error ?? "Error matriz");
         setMatrix(data.matrix ?? null);
+        if (data.matrix?.rows?.length) {
+          setItemLabelById((prev) => {
+            const next = { ...prev };
+            for (const row of data.matrix!.rows) {
+              next[row.id] = `${row.id} · ${row.label}`;
+            }
+            return next;
+          });
+        }
         setExpandedItemId(null);
         setExpandRows([]);
         setExpandError(null);
@@ -287,11 +352,11 @@ export default function CostosPage() {
       dateEnd,
       dateStart,
       selectedLineas,
-      sublinea,
-      proveedor,
+      selectedSublineas,
+      selectedProveedores,
+      selectedItems,
       selectedSedes,
-      searchApplied,
-      empresa,
+      selectedEmpresas,
     ],
   );
 
@@ -371,7 +436,7 @@ export default function CostosPage() {
     setMeta(data.meta);
     setDateStart(start);
     setDateEnd(end);
-    setEmpresa(defaultEmpresa);
+    setSelectedEmpresas(defaultEmpresa ? [defaultEmpresa] : []);
     setSelectedSedes(sedeKeys);
     setSedesReady(true);
     // Carga inmediata del día anterior (no espera otro ciclo ni input del usuario).
@@ -408,30 +473,73 @@ export default function CostosPage() {
     dateStart,
     dateEnd,
     selectedLineas,
-    sublinea,
-    proveedor,
+    selectedSublineas,
+    selectedProveedores,
+    selectedItems,
     selectedSedes,
+    selectedEmpresas,
     sedesReady,
-    searchApplied,
-    empresa,
     loadMatrix,
   ]);
 
   useEffect(() => {
-    const trimmed = search.trim();
-    if (trimmed.length < 2) {
-      setSearchApplied("");
+    const q = itemQuery.trim();
+    const scoped =
+      selectedLineas.length > 0 || selectedSublineas.length > 0;
+    if ((q.length < 2 && !scoped) || !dateStart || !dateEnd) {
+      setItemHits([]);
       return;
     }
-    const timer = window.setTimeout(() => setSearchApplied(trimmed), 350);
-    return () => window.clearTimeout(timer);
-  }, [search]);
-
-  useEffect(() => {
-    if (!sublinea) return;
-    const stillValid = sublineasOptions.some((opt) => opt.id === sublinea);
-    if (!stillValid) setSublinea("");
-  }, [selectedLineas, sublinea, sublineasOptions]);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({
+            mode: "items",
+            from: dateStart,
+            to: dateEnd,
+          });
+          if (q.length >= 2) params.set("q", q);
+          if (selectedLineas.length > 0) {
+            params.set("linea", selectedLineas.join(","));
+          }
+          if (selectedSublineas.length > 0) {
+            params.set("sublinea", selectedSublineas.join(","));
+          }
+          const res = await fetch(`/api/costos?${params}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          const data = (await res.json()) as {
+            items?: Array<{ id: string; label: string }>;
+          };
+          if (!res.ok) return;
+          const next = (data.items ?? []).map((item) => ({
+            value: item.id,
+            label: item.label,
+          }));
+          setItemHits(next);
+          setItemLabelById((prev) => {
+            const merged = { ...prev };
+            for (const item of next) merged[item.value] = item.label;
+            return merged;
+          });
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+      })();
+    }, 300);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [
+    dateEnd,
+    dateStart,
+    itemQuery,
+    selectedLineas,
+    selectedSublineas,
+  ]);
 
   if (status !== "authenticated" || !user) {
     return (
@@ -543,193 +651,147 @@ export default function CostosPage() {
           </p>
         ) : null}
 
-        <div className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="text-xs font-semibold text-slate-600">
-            Empresa
-            <select
-              required
-              value={empresa}
-              onChange={(e) => {
-                const next = e.target.value;
-                if (!next) return;
-                setEmpresa(next);
-                const keys = (meta?.sedes ?? [])
-                  .map((sede) => sede.key)
-                  .filter((key) => key.startsWith(`${next}|`));
-                setSelectedSedes(keys);
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <DiMultiSelect
+              label="Empresa"
+              values={selectedEmpresas}
+              options={empresaOptions}
+              emptyLabel="Todas"
+              onChange={(next) => {
+                setSelectedEmpresas(next);
+                const allowed = (meta?.sedes ?? [])
+                  .filter(
+                    (sede) =>
+                      next.length === 0 ||
+                      next.some((emp) => sede.key.startsWith(`${emp}|`)),
+                  )
+                  .map((sede) => sede.key);
+                const added = next.filter(
+                  (emp) => !selectedEmpresas.includes(emp),
+                );
+                setSelectedSedes((prev) => {
+                  const kept = prev.filter((key) => allowed.includes(key));
+                  const extra = allowed.filter((key) =>
+                    added.some((emp) => key.startsWith(`${emp}|`)),
+                  );
+                  const merged = [...new Set([...kept, ...extra])];
+                  return merged.length > 0 ? merged : allowed;
+                });
               }}
-              className="mt-1 block min-w-[10rem] rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            >
-              {(meta?.empresas ?? []).map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
+            />
+            <DiMultiSelect
+              label="Sedes"
+              values={selectedSedes}
+              options={sedeOptions}
+              emptyLabel="Todas"
+              searchable
+              onChange={(next) => {
+                setSelectedSedes(next.length > 0 ? next : visibleSedeKeys);
+              }}
+            />
+            <DiMultiSelect
+              label="Líneas"
+              values={selectedLineas}
+              options={lineaOptions}
+              emptyLabel="Todas"
+              searchable
+              onChange={(next) => {
+                setSelectedLineas(next);
+                const allowedSubs = (meta?.sublineas ?? [])
+                  .filter(
+                    (opt) =>
+                      next.length === 0 || next.includes(opt.lineaId),
+                  )
+                  .map((opt) => opt.id);
+                setSelectedSublineas((prev) => keepSelected(prev, allowedSubs));
+                setSelectedItems([]);
+              }}
+            />
+            <DiMultiSelect
+              label="Sublíneas"
+              values={selectedSublineas}
+              options={sublineaSelectOptions}
+              emptyLabel="Todas"
+              searchable
+              onChange={(next) => {
+                setSelectedSublineas(next);
+                setSelectedItems([]);
+              }}
+            />
+            <DiMultiSelect
+              label="Ítems"
+              values={selectedItems}
+              options={itemOptions}
+              emptyLabel="Todos"
+              searchable
+              searchValue={itemQuery}
+              onSearchChange={setItemQuery}
+              searchPlaceholder="Código o descripción (≥2)"
+              onChange={setSelectedItems}
+            />
+            <DiMultiSelect
+              label="Proveedores"
+              values={selectedProveedores}
+              options={proveedorOptions}
+              emptyLabel="Todos"
+              searchable
+              onChange={setSelectedProveedores}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="text-xs font-semibold text-slate-600">
+              Desde
+              <input
+                type="date"
+                value={dateStart}
+                min={meta?.minDate ?? undefined}
+                max={meta?.maxDate ?? undefined}
+                onChange={(e) => setDateStart(e.target.value)}
+                className="mt-1 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-600">
+              Hasta
+              <input
+                type="date"
+                value={dateEnd}
+                min={meta?.minDate ?? undefined}
+                max={meta?.maxDate ?? undefined}
+                onChange={(e) => setDateEnd(e.target.value)}
+                className="mt-1 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <div className="flex rounded-lg border border-slate-200 p-1">
+              {(
+                [
+                  ["pcu", "Costo entrada"],
+                  ["pvu", "Precio venta"],
+                  ["margenPct", "Margen %"],
+                  ["units", "Kilos"],
+                ] as Array<[PreciosProveedorMetric, string]>
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMetric(key)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${
+                    metric === key
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
               ))}
-            </select>
-          </label>
-          <div className="w-full">
-            <div className="mb-1.5 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600">Sedes</span>
-              <button
-                type="button"
-                onClick={() => setSelectedSedes(visibleSedeKeys)}
-                className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Todas
-              </button>
-              <span className="text-[10px] text-slate-400">
-                {selectedSedes.length}/{visibleSedeKeys.length} · siempre una
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {(meta?.sedes ?? [])
-                .filter((sede) =>
-                  empresa ? sede.key.startsWith(`${empresa}|`) : true,
-                )
-                .map((sede) => {
-                const active = selectedSedes.includes(sede.key);
-                return (
-                  <button
-                    key={sede.key}
-                    type="button"
-                    onClick={() => toggleSede(sede.key)}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {sede.label}
-                  </button>
-                );
-              })}
             </div>
           </div>
-          <div className="w-full">
-            <div className="mb-1.5 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600">Líneas</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedLineas([]);
-                  setSublinea("");
-                }}
-                className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Todas
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {(meta?.lineas ?? []).map((opt) => {
-                const active = selectedLineas.includes(opt.id);
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => toggleLinea(opt.id)}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <label className="text-xs font-semibold text-slate-600">
-            Desde
-            <input
-              type="date"
-              value={dateStart}
-              min={meta?.minDate ?? undefined}
-              max={meta?.maxDate ?? undefined}
-              onChange={(e) => setDateStart(e.target.value)}
-              className="mt-1 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-xs font-semibold text-slate-600">
-            Hasta
-            <input
-              type="date"
-              value={dateEnd}
-              min={meta?.minDate ?? undefined}
-              max={meta?.maxDate ?? undefined}
-              onChange={(e) => setDateEnd(e.target.value)}
-              className="mt-1 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-xs font-semibold text-slate-600">
-            Sublínea
-            <select
-              value={sublinea}
-              onChange={(e) => setSublinea(e.target.value)}
-              className="mt-1 block min-w-[14rem] rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            >
-              <option value="">Todas</option>
-              {sublineasOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="min-w-[14rem] flex-1 text-xs font-semibold text-slate-600">
-            Buscar ítem
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Código o descripción…"
-              className="mt-1 block w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-xs font-semibold text-slate-600">
-            Proveedor
-            <select
-              value={proveedor}
-              onChange={(e) => setProveedor(e.target.value)}
-              className="mt-1 block min-w-[14rem] rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            >
-              <option value="">Todos</option>
-              {(meta?.proveedores ?? []).map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex rounded-lg border border-slate-200 p-1">
-            {(
-              [
-                ["pcu", "Costo entrada"],
-                ["pvu", "Precio venta"],
-                ["margenPct", "Margen %"],
-                ["units", "Kilos"],
-              ] as Array<[PreciosProveedorMetric, string]>
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setMetric(key)}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${
-                  metric === key
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="w-full text-[11px] text-slate-500">
+          <p className="mt-3 w-full text-[11px] text-slate-500">
             {isSingleDay
               ? "Modo 1 día: precio venta / costo de entrada de ese día."
               : "Modo rango: promedio simple diario de precio venta y costo de entrada."}{" "}
-            Empresa y sede van siempre seleccionadas. En kilos/margen se ve
-            valor por kilo, kilos y margen vendido.
+            Marca una o varias opciones en cada lista. Al menos una sede. En
+            kilos/margen se ve valor por kilo, kilos y margen vendido.
           </p>
         </div>
 
