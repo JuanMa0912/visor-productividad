@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, ClipboardCheck, Clock, GitCompareArrows } from "lucide-react";
+import { Activity, ClipboardCheck, Clock, GitCompare } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PortalHubHeroCard,
@@ -58,7 +58,7 @@ const BASE_OPERACION_MODULES: HubModuleItem[] = [
 
 const COMPARAR_MODULE: HubModuleItem = {
   id: "horarios-comparar",
-  icon: GitCompareArrows,
+  icon: GitCompare,
   badge: "COMPARAR",
   title: "Planilla vs asistencia",
   description:

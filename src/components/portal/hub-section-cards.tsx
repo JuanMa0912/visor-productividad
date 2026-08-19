@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 
@@ -51,7 +52,15 @@ export const HUB_THEME_STYLES: Record<
   },
 };
 
-type HubShellProps = { children: React.ReactNode };
+const resolveHubTheme = (theme: HubSectionTheme) =>
+  HUB_THEME_STYLES[theme] ?? HUB_THEME_STYLES.operacion;
+
+const renderHubIcon = (Icon: LucideIcon | undefined, className: string) => {
+  if (typeof Icon !== "function") return null;
+  return <Icon className={className} />;
+};
+
+type HubShellProps = { children: ReactNode };
 
 export function PortalHubShell({ children }: HubShellProps) {
   return (
@@ -86,7 +95,7 @@ type HubHeroCardProps = {
   description: string;
   moduleCount: number;
   tourAnchorId?: string;
-  actions?: React.ReactNode;
+  actions?: ReactNode;
   countNoun?: string;
 };
 
@@ -101,7 +110,7 @@ export function PortalHubHeroCard({
   actions,
   countNoun = "modulos",
 }: HubHeroCardProps) {
-  const styles = HUB_THEME_STYLES[theme];
+  const styles = resolveHubTheme(theme);
   const countLabel = String(Math.max(0, moduleCount)).padStart(2, "0");
 
   return (
@@ -114,7 +123,7 @@ export function PortalHubHeroCard({
           <span
             className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${styles.iconClasses}`}
           >
-            <Icon className="h-5 w-5" />
+            {renderHubIcon(Icon, "h-5 w-5")}
           </span>
           <div className="min-w-0 flex-1">
             <p
@@ -167,7 +176,7 @@ export function PortalHubModuleCard({
   total,
   onNavigate,
 }: HubModuleCardProps) {
-  const styles = HUB_THEME_STYLES[theme];
+  const styles = resolveHubTheme(theme);
   const Icon = item.icon;
   const sectionNumber = String(index + 1).padStart(2, "0");
   const totalLabel = String(Math.max(total, 1)).padStart(2, "0");
@@ -194,7 +203,7 @@ export function PortalHubModuleCard({
             isDisabled ? "" : "group-hover:scale-105"
           } ${styles.iconClasses}`}
         >
-          <Icon className="h-5 w-5" />
+          {renderHubIcon(Icon, "h-5 w-5")}
         </span>
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
           {sectionNumber} / {totalLabel}
