@@ -102,6 +102,18 @@ function monthsForYear(
   );
 }
 
+type FormatoDianValue = "1007" | "1005" | "1006";
+
+const FORMATO_DIAN_OPTIONS: {
+  value: FormatoDianValue;
+  label: string;
+  manual: "prorrateo" | "impoconsumo" | null;
+}[] = [
+  { value: "1007", label: "1007 · Ingresos recibidos", manual: null },
+  { value: "1005", label: "1005 · IVA descontable", manual: "prorrateo" },
+  { value: "1006", label: "1006 · IVA generado", manual: "impoconsumo" },
+];
+
 export function ExcelDianPanel() {
   const now = new Date();
   const calendarYear = now.getFullYear();
@@ -127,6 +139,9 @@ export function ExcelDianPanel() {
   const [spanEndYear, setSpanEndYear] = useState(() => String(calendarYear));
 
   const [empresa, setEmpresa] = useState<ExcelDianEmpresaValue>("mtodo");
+  const [formato, setFormato] = useState<FormatoDianValue>("1007");
+  const [prorrateoInput, setProrrateoInput] = useState("");
+  const [impoconsumoInput, setImpoconsumoInput] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -244,9 +259,16 @@ export function ExcelDianPanel() {
 
       const params = new URLSearchParams({
         empresa,
+        formato,
         startLapso: lapsoBounds.startLapso,
         endLapso: lapsoBounds.endLapso,
       });
+      if (formato === "1005" && prorrateoInput.trim() !== "") {
+        params.set("prorrateo", prorrateoInput.trim());
+      }
+      if (formato === "1006" && impoconsumoInput.trim() !== "") {
+        params.set("impoconsumo", impoconsumoInput.trim());
+      }
       const response = await fetch(`/api/excel-dian/export?${params}`, {
         method: "GET",
         cache: "no-store",
@@ -308,7 +330,7 @@ export function ExcelDianPanel() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `medios-magneticos-${empresa}-${lapsoBounds.startLapso}-${lapsoBounds.endLapso}.xlsx`;
+      link.download = `dian-${formato}-${empresa}-${lapsoBounds.startLapso}-${lapsoBounds.endLapso}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -468,14 +490,90 @@ export function ExcelDianPanel() {
               Exportacion Excel
             </h1>
             <p className="mt-2.5 max-w-xl text-pretty text-sm leading-relaxed text-slate-500">
-              Elige la empresa (Comercializadora, Mercamio o Merkmios) y el
+              Elige el formato (1007 Ingresos, 1005 IVA descontable o 1006 IVA
+              generado), la empresa (Comercializadora, Mercamio o Merkmios) y el
               periodo: un mes, varios meses o el año calendario completo
-              (enero–diciembre). Cada empresa usa su base en formato lapso
-              YYYYMM.
+              (enero–diciembre). Los formatos de IVA permiten ajustar el
+              prorrateo o el impuesto al consumo a mano.
             </p>
           </header>
 
-          <div className="mt-8 grid gap-6 sm:grid-cols-2">
+          <div className="mt-8 space-y-2 text-left">
+            <label
+              htmlFor="excel-dian-formato"
+              className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+            >
+              Formato DIAN
+            </label>
+            <Select
+              value={formato}
+              onValueChange={(v) => {
+                setFormato(v as FormatoDianValue);
+                setDownloadError("");
+              }}
+            >
+              <SelectTrigger
+                id="excel-dian-formato"
+                size="default"
+                className="h-11 w-full min-w-0 rounded-lg border-slate-200 bg-white text-left text-[15px] font-medium text-slate-900 shadow-sm hover:border-slate-300 hover:bg-slate-50/80 focus-visible:ring-slate-300/50"
+              >
+                <SelectValue placeholder="Elegir formato" />
+              </SelectTrigger>
+              <SelectContent position="popper" className={selectListClassName}>
+                {FORMATO_DIAN_OPTIONS.map((f) => (
+                  <SelectItem
+                    key={f.value}
+                    value={f.value}
+                    className={selectItemClassName}
+                  >
+                    {f.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {formato === "1005" && (
+              <div className="pt-1">
+                <label
+                  htmlFor="excel-dian-prorrateo"
+                  className="block text-[11px] font-medium text-slate-500"
+                >
+                  % Prorrateo Art.490 (opcional)
+                </label>
+                <input
+                  id="excel-dian-prorrateo"
+                  type="text"
+                  inputMode="decimal"
+                  value={prorrateoInput}
+                  onChange={(e) => setProrrateoInput(e.target.value)}
+                  placeholder="Ej: 64.6565 — vacío = calculado de las cuentas"
+                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[14px] text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {formato === "1006" && (
+              <div className="pt-1">
+                <label
+                  htmlFor="excel-dian-impo"
+                  className="block text-[11px] font-medium text-slate-500"
+                >
+                  Impuesto al consumo total (opcional)
+                </label>
+                <input
+                  id="excel-dian-impo"
+                  type="text"
+                  inputMode="numeric"
+                  value={impoconsumoInput}
+                  onChange={(e) => setImpoconsumoInput(e.target.value)}
+                  placeholder="Ej: 415102755 — vacío = neto contable"
+                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[14px] text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 grid gap-6 sm:grid-cols-2">
             <div className="space-y-2 text-left">
               <label
                 htmlFor="excel-dian-empresa"
